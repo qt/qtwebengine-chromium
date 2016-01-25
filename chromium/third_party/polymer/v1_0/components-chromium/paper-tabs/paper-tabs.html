@@ -8,16 +8,17 @@ Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
 --><html><head><link rel="import" href="../polymer/polymer.html">
 <link rel="import" href="../iron-flex-layout/iron-flex-layout.html">
-<link rel="import" href="../iron-flex-layout/classes/iron-flex-layout.html">
-<link rel="import" href="../iron-resizable-behavior/iron-resizable-behavior.html">
-<link rel="import" href="../iron-menu-behavior/iron-menubar-behavior.html">
 <link rel="import" href="../iron-icon/iron-icon.html">
+<link rel="import" href="../iron-menu-behavior/iron-menubar-behavior.html">
+<link rel="import" href="../iron-resizable-behavior/iron-resizable-behavior.html">
 <link rel="import" href="../paper-icon-button/paper-icon-button.html">
 <link rel="import" href="../paper-styles/color.html">
 <link rel="import" href="paper-tabs-icons.html">
 <link rel="import" href="paper-tab.html">
 
 <!--
+Material design: [Tabs](https://www.google.com/design/spec/components/tabs.html)
+
 `paper-tabs` makes it easy to explore and switch between different views or functional aspects of
 an app, or to browse categorized data sets.
 
@@ -55,15 +56,23 @@ element in `paper-tab`.
 
 Example:
 
+    <style is="custom-style">
+      .link {
+        @apply(--layout-horizontal);
+        @apply(--layout-center-center);
+      }
+    }
+    </style>
+
     <paper-tabs selected="0">
       <paper-tab link>
-        <a href="#link1" class="horizontal center-center layout">TAB ONE</a>
+        <a href="#link1" class="link">TAB ONE</a>
       </paper-tab>
       <paper-tab link>
-        <a href="#link2" class="horizontal center-center layout">TAB TWO</a>
+        <a href="#link2" class="link">TAB TWO</a>
       </paper-tab>
       <paper-tab link>
-        <a href="#link3" class="horizontal center-center layout">TAB THREE</a>
+        <a href="#link3" class="link">TAB THREE</a>
       </paper-tab>
     </paper-tabs>
 
@@ -81,113 +90,115 @@ Custom property | Description | Default
 -->
 
 </head><body><dom-module id="paper-tabs">
-
-  <style>
-
-    :host {
-      @apply(--layout);
-      @apply(--layout-center);
-
-      height: 48px;
-      font-size: 14px;
-      font-weight: 500;
-      overflow: hidden;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      -webkit-tap-highlight-color: rgba(0,0,0,0);
-
-      @apply(--paper-tabs);
-    }
-
-    #tabsContainer {
-      position: relative;
-      height: 100%;
-      white-space: nowrap;
-      overflow: hidden;
-    }
-
-    #tabsContent {
-      height: 100%;
-    }
-
-    #tabsContent.scrollable {
-      position: absolute;
-      white-space: nowrap;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    .not-visible {
-      opacity: 0;
-    }
-
-    paper-icon-button {
-      width: 24px;
-      padding: 16px;
-    }
-
-    #selectionBar {
-      position: absolute;
-      height: 2px;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background-color: var(--paper-tabs-selection-bar-color, --paper-yellow-a100);
-      -webkit-transform-origin: left center;
-      transform-origin: left center;
-      -webkit-transform: scale(0);
-      transform: scale(0);
-      transition: -webkit-transform;
-      transition: transform;
-
-      @apply(--paper-tabs-selection-bar);
-    }
-
-    #selectionBar.align-bottom {
-      top: 0;
-      bottom: auto;
-    }
-
-    #selectionBar.expand {
-      transition-duration: 0.15s;
-      transition-timing-function: cubic-bezier(0.4, 0.0, 1, 1);
-    }
-
-    #selectionBar.contract {
-      transition-duration: 0.18s;
-      transition-timing-function: cubic-bezier(0.0, 0.0, 0.2, 1);
-    }
-
-    #tabsContent > ::content > *:not(#selectionBar) {
-      height: 100%;
-    }
-
-  </style>
-
   <template>
+    <style>
+      :host {
+        @apply(--layout);
+        @apply(--layout-center);
 
-    <paper-icon-button icon="paper-tabs:chevron-left" class$="[[_computeScrollButtonClass(_leftHidden, scrollable, hideScrollButtons)]]" on-up="_onScrollButtonUp" on-down="_onLeftScrollButtonDown"></paper-icon-button>
+        height: 48px;
+        font-size: 14px;
+        font-weight: 500;
+        overflow: hidden;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: rgba(0,0,0,0);
 
-    <div id="tabsContainer" class="flex" on-track="_scroll" on-down="_down">
+        @apply(--paper-tabs);
+      }
 
+      :host-context([dir=rtl]) {
+        @apply(--layout-horizontal-reverse);
+      }
+
+      #tabsContainer {
+        position: relative;
+        height: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        @apply(--layout-flex);
+      }
+
+      #tabsContent {
+        height: 100%;
+      }
+
+      #tabsContent.scrollable {
+        position: absolute;
+        white-space: nowrap;
+      }
+
+      #tabsContent.horizontal {
+        @apply(--layout-horizontal);
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .not-visible {
+        opacity: 0;
+        cursor: default;
+      }
+
+      paper-icon-button {
+        width: 48px;
+        height: 48px;
+        padding: 12px;
+        margin: 0 4px;
+      }
+
+      #selectionBar {
+        position: absolute;
+        height: 2px;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background-color: var(--paper-tabs-selection-bar-color, --paper-yellow-a100);
+          -webkit-transform: scale(0);
+        transform: scale(0);
+          -webkit-transform-origin: left center;
+        transform-origin: left center;
+          transition: -webkit-transform;
+        transition: transform;
+
+        @apply(--paper-tabs-selection-bar);
+      }
+
+      #selectionBar.align-bottom {
+        top: 0;
+        bottom: auto;
+      }
+
+      #selectionBar.expand {
+        transition-duration: 0.15s;
+        transition-timing-function: cubic-bezier(0.4, 0.0, 1, 1);
+      }
+
+      #selectionBar.contract {
+        transition-duration: 0.18s;
+        transition-timing-function: cubic-bezier(0.0, 0.0, 0.2, 1);
+      }
+
+      #tabsContent > ::content > *:not(#selectionBar) {
+        height: 100%;
+      }
+    </style>
+
+    <paper-icon-button icon="paper-tabs:chevron-left" class$="[[_computeScrollButtonClass(_leftHidden, scrollable, hideScrollButtons)]]" on-up="_onScrollButtonUp" on-down="_onLeftScrollButtonDown" tabindex="-1"></paper-icon-button>
+
+    <div id="tabsContainer" on-track="_scroll" on-down="_down">
       <div id="tabsContent" class$="[[_computeTabsContentClass(scrollable)]]">
-
         <content select="*"></content>
-
         <div id="selectionBar" class$="[[_computeSelectionBarClass(noBar, alignBottom)]]" on-transitionend="_onBarTransitionEnd"></div>
-
       </div>
-
     </div>
 
-    <paper-icon-button icon="paper-tabs:chevron-right" class$="[[_computeScrollButtonClass(_rightHidden, scrollable, hideScrollButtons)]]" on-up="_onScrollButtonUp" on-down="_onRightScrollButtonDown"></paper-icon-button>
+    <paper-icon-button icon="paper-tabs:chevron-right" class$="[[_computeScrollButtonClass(_rightHidden, scrollable, hideScrollButtons)]]" on-up="_onScrollButtonUp" on-down="_onRightScrollButtonDown" tabindex="-1"></paper-icon-button>
 
   </template>
 
-</dom-module>
-
+  </dom-module>
 <script src="paper-tabs-extracted.js"></script></body></html>

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/track/vtt/VTTParser.h"
 
 #include "core/dom/Document.h"
@@ -102,7 +101,7 @@ void VTTParser::getNewRegions(HeapVector<Member<VTTRegion>>& outputRegions)
     outputRegions.swap(m_regionList);
 }
 
-void VTTParser::parseBytes(const char* data, unsigned length)
+void VTTParser::parseBytes(const char* data, size_t length)
 {
     String textData = m_decoder->decode(data, length);
     m_lineReader.append(textData);

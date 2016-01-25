@@ -22,6 +22,46 @@
         }],
       ],
     }],
+    # TODO(tkchin): Mac support. There are a bunch of problems right now because
+    # of some settings pulled down from Chromium.
+    ['OS=="ios"', {
+      'targets': [
+        {
+          'target_name': 'rtc_base_objc',
+          'type': 'static_library',
+          'dependencies': [
+            'rtc_base',
+          ],
+          'sources': [
+            'objc/NSString+StdString.h',
+            'objc/NSString+StdString.mm',
+            'objc/RTCDispatcher.h',
+            'objc/RTCDispatcher.m',
+            'objc/RTCLogging.h',
+            'objc/RTCLogging.mm',
+          ],
+          'conditions': [
+            ['OS=="ios"', {
+              'sources': [
+                'objc/RTCCameraPreviewView.h',
+                'objc/RTCCameraPreviewView.m',
+              ],
+              'all_dependent_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-framework AVFoundation',
+                  ],
+                },
+              },
+            }],
+          ],
+          'xcode_settings': {
+            'CLANG_ENABLE_OBJC_ARC': 'YES',
+            'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'YES',
+          },
+        }
+      ],
+    }], # OS=="ios"
   ],
   'targets': [
     {
@@ -29,8 +69,8 @@
       'target_name': 'rtc_base_approved',
       'type': 'static_library',
       'sources': [
+        'array_view.h',
         'atomicops.h',
-        'basictypes.h',
         'bitbuffer.cc',
         'bitbuffer.h',
         'buffer.cc',
@@ -45,6 +85,7 @@
         'constructormagic.h',
         'criticalsection.cc',
         'criticalsection.h',
+        'deprecation.h',
         'event.cc',
         'event.h',
         'event_tracer.cc',
@@ -57,10 +98,14 @@
         'md5.h',
         'md5digest.cc',
         'md5digest.h',
+        'optional.h',
         'platform_file.cc',
         'platform_file.h',
         'platform_thread.cc',
         'platform_thread.h',
+        'platform_thread_types.h',
+        'random.cc',
+        'random.h',
         'ratetracker.cc',
         'ratetracker.h',
         'safe_conversions.h',
@@ -83,8 +128,15 @@
       ],
       'conditions': [
         ['build_with_chromium==1', {
+          'dependencies': [
+            '<(DEPTH)/base/base.gyp:base',
+          ],
           'include_dirs': [
             '../../webrtc_overrides',
+          ],
+          'sources': [
+            '../../webrtc_overrides/webrtc/base/logging.cc',
+            '../../webrtc_overrides/webrtc/base/logging.h',
           ],
           'sources!': [
             'logging.cc',
@@ -98,6 +150,9 @@
       'type': 'static_library',
       'dependencies': [
         '<(webrtc_root)/common.gyp:webrtc_common',
+        'rtc_base_approved',
+      ],
+      'export_dependent_settings': [
         'rtc_base_approved',
       ],
       'defines': [
@@ -129,7 +184,6 @@
         'bandwidthsmoother.h',
         'base64.cc',
         'base64.h',
-        'basicdefs.h',
         'bind.h',
         'callback.h',
         'common.cc',
@@ -170,6 +224,9 @@
         'httpserver.h',
         'ifaddrs-android.cc',
         'ifaddrs-android.h',
+        'ifaddrs_converter.cc',
+        'ifaddrs_converter.h',
+        'macifaddrs_converter.cc',
         'iosfilesystem.mm',
         'ipaddress.cc',
         'ipaddress.h',
@@ -219,6 +276,8 @@
         'nethelpers.h',
         'network.cc',
         'network.h',
+        'networkmonitor.cc',
+        'networkmonitor.h',
         'nullsocketserver.h',
         'openssl.h',
         'openssladapter.cc',
@@ -252,8 +311,6 @@
         'rollingaccumulator.h',
         'rtccertificate.cc',
         'rtccertificate.h',
-        'schanneladapter.cc',
-        'schanneladapter.h',
         'scoped_autorelease_pool.h',
         'scoped_autorelease_pool.mm',
         'scoped_ref_ptr.h',
@@ -379,8 +436,6 @@
           ],
           'sources': [
             '../../webrtc_overrides/webrtc/base/win32socketinit.cc',
-            '../../webrtc_overrides/webrtc/base/logging.cc',
-            '../../webrtc_overrides/webrtc/base/logging.h',
           ],
           'sources!': [
             'atomicops.h',
@@ -388,7 +443,6 @@
             'bandwidthsmoother.h',
             'bind.h',
             'callback.h',
-            'constructormagic.h',
             'dbus.cc',
             'dbus.h',
             'diskcache_win32.cc',
@@ -491,6 +545,17 @@
                 # build.
                 'WEBRTC_EXTERNAL_JSON',
               ],
+            }],
+            ['OS=="win" and clang==1', {
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # Disable warnings failing when compiling with Clang on Windows.
+                    # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                    '-Wno-missing-braces',
+                  ],
+                },
+              },
             }],
           ],
         }],
@@ -600,6 +665,9 @@
           ],
         }],
         ['OS=="win"', {
+          'sources!': [
+            'ifaddrs_converter.cc',
+          ],
           'link_settings': {
             'libraries': [
               '-lcrypt32.lib',
@@ -617,8 +685,6 @@
             ['exclude', 'win32[a-z0-9]*\\.(h|cc)$'],
           ],
           'sources!': [
-              'schanneladapter.cc',
-              'schanneladapter.h',
               'winping.cc',
               'winping.h',
               'winfirewall.cc',
@@ -653,6 +719,7 @@
         }],
         ['OS!="ios" and OS!="mac"', {
           'sources!': [
+            'macifaddrs_converter.cc',
             'scoped_autorelease_pool.mm',
           ],
         }],

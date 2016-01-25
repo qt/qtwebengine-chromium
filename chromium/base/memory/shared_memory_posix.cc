@@ -4,7 +4,9 @@
 
 #include "base/memory/shared_memory.h"
 
+#include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -18,6 +20,7 @@
 #include "base/profiler/scoped_tracker.h"
 #include "base/scoped_generic.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 
 #if defined(OS_ANDROID)
 #include "base/os_compat_android.h"
@@ -97,6 +100,13 @@ bool CreateAnonymousSharedMemory(const SharedMemoryCreateOptions& options,
 #endif  // !defined(OS_ANDROID)
 }
 
+SharedMemoryCreateOptions::SharedMemoryCreateOptions()
+    : name_deprecated(nullptr),
+      open_existing_deprecated(false),
+      size(0),
+      executable(false),
+      share_read_only(false) {}
+
 SharedMemory::SharedMemory()
     : mapped_file_(-1),
       readonly_mapped_file_(-1),
@@ -113,20 +123,6 @@ SharedMemory::SharedMemory(const SharedMemoryHandle& handle, bool read_only)
       memory_(NULL),
       read_only_(read_only),
       requested_size_(0) {
-}
-
-SharedMemory::SharedMemory(const SharedMemoryHandle& handle,
-                           bool read_only,
-                           ProcessHandle process)
-    : mapped_file_(handle.fd),
-      readonly_mapped_file_(-1),
-      mapped_size_(0),
-      memory_(NULL),
-      read_only_(read_only),
-      requested_size_(0) {
-  // We don't handle this case yet (note the ignored parameter); let's die if
-  // someone comes calling.
-  NOTREACHED();
 }
 
 SharedMemory::~SharedMemory() {
@@ -303,7 +299,7 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     return false;
   }
 
-  return PrepareMapFile(fp.Pass(), readonly_fd.Pass());
+  return PrepareMapFile(std::move(fp), std::move(readonly_fd));
 }
 
 // Our current implementation of shmem is with mmap()ing of files.
@@ -335,7 +331,7 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
     DPLOG(ERROR) << "open(\"" << path.value() << "\", O_RDONLY) failed";
     return false;
   }
-  return PrepareMapFile(fp.Pass(), readonly_fd.Pass());
+  return PrepareMapFile(std::move(fp), std::move(readonly_fd));
 }
 #endif  // !defined(OS_ANDROID)
 
@@ -485,6 +481,10 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
 
   const int new_fd = HANDLE_EINTR(dup(handle_to_dup));
   if (new_fd < 0) {
+    if (close_self) {
+      Unmap();
+      Close();
+    }
     DPLOG(ERROR) << "dup() failed.";
     return false;
   }

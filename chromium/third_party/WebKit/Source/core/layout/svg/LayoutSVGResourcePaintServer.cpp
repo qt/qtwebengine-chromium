@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 
 #include "core/layout/svg/SVGResources.h"
@@ -52,12 +51,13 @@ void SVGPaintServer::applyToSkPaint(SkPaint& paint, float paintAlpha)
 {
     SkColor baseColor = m_gradient || m_pattern ? SK_ColorBLACK : m_color.rgb();
     paint.setColor(scaleAlpha(baseColor, paintAlpha));
-    if (m_pattern)
-        paint.setShader(m_pattern->shader());
-    else if (m_gradient)
-        paint.setShader(m_gradient->shader());
-    else
+    if (m_pattern) {
+        m_pattern->applyToPaint(paint);
+    } else if (m_gradient) {
+        m_gradient->applyToPaint(paint);
+    } else {
         paint.setShader(nullptr);
+    }
 }
 
 void SVGPaintServer::prependTransform(const AffineTransform& transform)
@@ -91,8 +91,12 @@ static SVGPaintDescription requestPaint(const LayoutObject& object, const Comput
     bool hasColor = false;
     switch (paintType) {
     case SVG_PAINTTYPE_CURRENTCOLOR:
-    case SVG_PAINTTYPE_RGBCOLOR:
     case SVG_PAINTTYPE_URI_CURRENTCOLOR:
+        // The keyword `currentcolor` takes its value from the value of the `color` property on the same element.
+        color = style.visitedDependentColor(CSSPropertyColor);
+        hasColor = true;
+        break;
+    case SVG_PAINTTYPE_RGBCOLOR:
     case SVG_PAINTTYPE_URI_RGBCOLOR:
         color = applyToFill ? svgStyle.fillPaintColor() : svgStyle.strokePaintColor();
         hasColor = true;

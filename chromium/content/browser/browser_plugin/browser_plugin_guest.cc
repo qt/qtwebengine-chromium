@@ -4,11 +4,15 @@
 
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
@@ -236,10 +240,11 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
   RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
       web_contents()->GetRenderWidgetHostView());
   // Until the guest is attached, it should not be handling input events.
-  if (attached() && rwhv && rwhv->OnMessageReceivedFromEmbedder(
+  if (attached() && rwhv &&
+      rwhv->OnMessageReceivedFromEmbedder(
           message,
-          static_cast<RenderViewHostImpl*>(
-              embedder_web_contents()->GetRenderViewHost()))) {
+          RenderWidgetHostImpl::From(
+              embedder_web_contents()->GetRenderViewHost()->GetWidget()))) {
     return true;
   }
 
@@ -332,8 +337,8 @@ void BrowserPluginGuest::InitInternal(
   DCHECK(GetWebContents()->GetRenderViewHost());
 
   // Initialize the device scale factor by calling |NotifyScreenInfoChanged|.
-  auto render_widget_host =
-      RenderWidgetHostImpl::From(GetWebContents()->GetRenderViewHost());
+  auto render_widget_host = RenderWidgetHostImpl::From(
+      GetWebContents()->GetRenderViewHost()->GetWidget());
   render_widget_host->NotifyScreenInfoChanged();
 
   // TODO(chrishtr): this code is wrong. The navigate_on_drag_drop field will
@@ -395,7 +400,7 @@ void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
 // TODO(wjmaclean): Remove this once any remaining users of this pathway
 // are gone.
 void BrowserPluginGuest::SwapCompositorFrame(
-    uint32 output_surface_id,
+    uint32_t output_surface_id,
     int host_process_id,
     int host_routing_id,
     scoped_ptr<cc::CompositorFrame> frame) {
@@ -443,20 +448,15 @@ void BrowserPluginGuest::OnRequireSequence(
   surface->AddDestructionDependency(sequence);
 }
 
-void BrowserPluginGuest::SetContentsOpaque(bool opaque) {
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_SetContentsOpaque(
-          browser_plugin_instance_id(), opaque));
+bool BrowserPluginGuest::HandleFindForEmbedder(
+    int request_id,
+    const base::string16& search_text,
+    const blink::WebFindOptions& options) {
+  return delegate_->HandleFindForEmbedder(request_id, search_text, options);
 }
 
-bool BrowserPluginGuest::Find(int request_id,
-                              const base::string16& search_text,
-                              const blink::WebFindOptions& options) {
-  return delegate_->Find(request_id, search_text, options);
-}
-
-bool BrowserPluginGuest::StopFinding(StopFindAction action) {
-  return delegate_->StopFinding(action);
+bool BrowserPluginGuest::HandleStopFindingForEmbedder(StopFindAction action) {
+  return delegate_->HandleStopFindingForEmbedder(action);
 }
 
 void BrowserPluginGuest::ResendEventToEmbedder(
@@ -564,6 +564,46 @@ void BrowserPluginGuest::EmbedderSystemDragEnded() {
   EndSystemDragIfApplicable();
 }
 
+// TODO(wjmaclean): Replace this approach with ones based on std::function
+// as in https://codereview.chromium.org/1404353004/ once all Chrome platforms
+// support this. https://crbug.com/544212
+IPC::Message* BrowserPluginGuest::UpdateInstanceIdIfNecessary(
+    IPC::Message* msg) const {
+  DCHECK(msg);
+
+  int msg_browser_plugin_instance_id = browser_plugin::kInstanceIDNone;
+  base::PickleIterator iter(*msg);
+  if (!iter.ReadInt(&msg_browser_plugin_instance_id) ||
+      msg_browser_plugin_instance_id != browser_plugin::kInstanceIDNone) {
+    return msg;
+  }
+
+  // This method may be called with no browser_plugin_instance_id in tests.
+  if (!browser_plugin_instance_id())
+    return msg;
+
+  scoped_ptr<IPC::Message> new_msg(
+      new IPC::Message(msg->routing_id(), msg->type(), msg->priority()));
+  new_msg->WriteInt(browser_plugin_instance_id());
+
+  // Copy remaining payload from original message.
+  // TODO(wjmaclean): it would be nice if IPC::PickleIterator had a method
+  // like 'RemainingBytes()' so that we don't have to include implementation-
+  // specific details like sizeof() in the next line.
+  DCHECK(msg->payload_size() > sizeof(int));
+  size_t remaining_bytes = msg->payload_size() - sizeof(int);
+  const char* data = nullptr;
+  bool read_success = iter.ReadBytes(&data, remaining_bytes);
+  CHECK(read_success)
+      << "Unexpected failure reading remaining IPC::Message payload.";
+  bool write_success = new_msg->WriteBytes(data, remaining_bytes);
+  CHECK(write_success)
+      << "Unexpected failure writing remaining IPC::Message payload.";
+
+  delete msg;
+  return new_msg.release();
+}
+
 void BrowserPluginGuest::SendQueuedMessages() {
   if (!attached())
     return;
@@ -571,7 +611,8 @@ void BrowserPluginGuest::SendQueuedMessages() {
   while (!pending_messages_.empty()) {
     linked_ptr<IPC::Message> message_ptr = pending_messages_.front();
     pending_messages_.pop_front();
-    SendMessageToEmbedder(message_ptr.release());
+    SendMessageToEmbedder(
+        UpdateInstanceIdIfNecessary(message_ptr.release()));
   }
 }
 
@@ -610,8 +651,9 @@ void BrowserPluginGuest::RenderViewReady() {
   Send(new InputMsg_SetFocus(routing_id(), focused_));
   UpdateVisibility();
 
-  RenderWidgetHostImpl::From(rvh)->set_hung_renderer_delay(
-      base::TimeDelta::FromMilliseconds(kHungRendererDelayMs));
+  RenderWidgetHostImpl::From(rvh->GetWidget())
+      ->set_hung_renderer_delay(
+          base::TimeDelta::FromMilliseconds(kHungRendererDelayMs));
 }
 
 void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
@@ -746,13 +788,14 @@ void BrowserPluginGuest::OnWillAttachComplete(
   // does not create a new RenderView on navigation.
   if (!use_cross_process_frames && has_render_view_) {
     // This will trigger a callback to RenderViewReady after a round-trip IPC.
-    static_cast<RenderViewHostImpl*>(
-        GetWebContents()->GetRenderViewHost())->Init();
+    static_cast<RenderViewHostImpl*>(GetWebContents()->GetRenderViewHost())
+        ->GetWidget()
+        ->Init();
     WebContentsViewGuest* web_contents_view =
         static_cast<WebContentsViewGuest*>(GetWebContents()->GetView());
-    if (!web_contents()->GetRenderViewHost()->GetView()) {
+    if (!web_contents()->GetRenderViewHost()->GetWidget()->GetView()) {
       web_contents_view->CreateViewForWidget(
-          web_contents()->GetRenderViewHost(), true);
+          web_contents()->GetRenderViewHost()->GetWidget(), true);
     }
   }
 
@@ -763,6 +806,9 @@ void BrowserPluginGuest::OnWillAttachComplete(
   SendQueuedMessages();
 
   delegate_->DidAttach(GetGuestProxyRoutingID());
+  RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
+      web_contents()->GetRenderWidgetHostView());
+  rwhv->RegisterSurfaceNamespaceId();
 
   if (!use_cross_process_frames)
     has_render_view_ = true;
@@ -787,6 +833,12 @@ void BrowserPluginGuest::OnDetach(int browser_plugin_instance_id) {
   // This tells BrowserPluginGuest to queue up all IPCs to BrowserPlugin until
   // it's attached again.
   attached_ = false;
+
+  RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
+       web_contents()->GetRenderWidgetHostView());
+  // If the guest is terminated, our host may already be gone.
+  if (rwhv)
+    rwhv->UnregisterSurfaceNamespaceId();
 
   delegate_->DidDetach();
 }
@@ -947,10 +999,10 @@ void BrowserPluginGuest::OnUpdateGeometry(int browser_plugin_instance_id,
   // The plugin has moved within the embedder without resizing or the
   // embedder/container's view rect changing.
   guest_window_rect_ = view_rect;
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      GetWebContents()->GetRenderViewHost());
-  if (rvh)
-    rvh->SendScreenRects();
+  RenderWidgetHostImpl* rwh = RenderWidgetHostImpl::From(
+      GetWebContents()->GetRenderViewHost()->GetWidget());
+  if (rwh)
+    rwh->SendScreenRects();
 }
 
 void BrowserPluginGuest::OnHasTouchEventHandlers(bool accept) {
@@ -966,7 +1018,7 @@ void BrowserPluginGuest::OnShowPopup(
   gfx::Rect translated_bounds(params.bounds);
   translated_bounds.Offset(guest_window_rect_.OffsetFromOrigin());
   BrowserPluginPopupMenuHelper popup_menu_helper(
-      owner_web_contents_->GetRenderViewHost(), render_frame_host);
+      owner_web_contents_->GetMainFrame(), render_frame_host);
   popup_menu_helper.ShowPopupMenu(translated_bounds,
                                   params.item_height,
                                   params.item_font_size,

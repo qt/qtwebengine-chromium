@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLFrameElementBase.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -36,6 +35,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 
@@ -45,7 +45,7 @@ using namespace HTMLNames;
 
 HTMLFrameElementBase::HTMLFrameElementBase(const QualifiedName& tagName, Document& document)
     : HTMLFrameOwnerElement(tagName, document)
-    , m_scrolling(ScrollbarAuto)
+    , m_scrollingMode(ScrollbarAuto)
     , m_marginWidth(-1)
     , m_marginHeight(-1)
 {
@@ -98,11 +98,19 @@ void HTMLFrameElementBase::openURL(bool replaceCurrentItem)
     toLocalFrame(contentFrame())->script().executeScriptIfJavaScriptURL(scriptURL);
 }
 
-void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLFrameElementBase::frameOwnerPropertiesChanged()
+{
+    // Don't notify about updates if contentFrame() is null, for example when
+    // the subframe hasn't been created yet.
+    if (contentFrame())
+        document().frame()->loader().client()->didChangeFrameOwnerProperties(this);
+}
+
+void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == srcdocAttr) {
         if (!value.isNull()) {
-            setLocation("about:srcdoc");
+            setLocation(srcdocURL().string());
         } else {
             const AtomicString& srcValue = fastGetAttribute(srcAttr);
             if (!srcValue.isNull())
@@ -112,7 +120,7 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
         setLocation(stripLeadingAndTrailingHTMLSpaces(value));
     } else if (name == idAttr) {
         // Important to call through to base for the id attribute so the hasID bit gets set.
-        HTMLFrameOwnerElement::parseAttribute(name, value);
+        HTMLFrameOwnerElement::parseAttribute(name, oldValue, value);
         m_frameName = value;
     } else if (name == nameAttr) {
         m_frameName = value;
@@ -120,23 +128,23 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
         // FIXME: If we are already attached, this doesn't check for frame name
         // conflicts and generate a unique frame name.
     } else if (name == marginwidthAttr) {
-        m_marginWidth = value.toInt();
+        setMarginWidth(value.toInt());
         // FIXME: If we are already attached, this has no effect.
     } else if (name == marginheightAttr) {
-        m_marginHeight = value.toInt();
+        setMarginHeight(value.toInt());
         // FIXME: If we are already attached, this has no effect.
     } else if (name == scrollingAttr) {
         // Auto and yes both simply mean "allow scrolling." No means "don't allow scrolling."
         if (equalIgnoringCase(value, "auto") || equalIgnoringCase(value, "yes"))
-            m_scrolling = ScrollbarAuto;
+            setScrollingMode(ScrollbarAuto);
         else if (equalIgnoringCase(value, "no"))
-            m_scrolling = ScrollbarAlwaysOff;
+            setScrollingMode(ScrollbarAlwaysOff);
         // FIXME: If we are already attached, this has no effect.
     } else if (name == onbeforeunloadAttr) {
         // FIXME: should <frame> elements have beforeunload handlers?
         setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value, eventParameterName()));
     } else {
-        HTMLFrameOwnerElement::parseAttribute(name, value);
+        HTMLFrameOwnerElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -226,6 +234,24 @@ void HTMLFrameElementBase::defaultEventHandler(Event* event)
         return;
     }
     HTMLFrameOwnerElement::defaultEventHandler(event);
+}
+
+void HTMLFrameElementBase::setScrollingMode(ScrollbarMode scrollbarMode)
+{
+    m_scrollingMode = scrollbarMode;
+    frameOwnerPropertiesChanged();
+}
+
+void HTMLFrameElementBase::setMarginWidth(int marginWidth)
+{
+    m_marginWidth = marginWidth;
+    frameOwnerPropertiesChanged();
+}
+
+void HTMLFrameElementBase::setMarginHeight(int marginHeight)
+{
+    m_marginHeight = marginHeight;
+    frameOwnerPropertiesChanged();
 }
 
 } // namespace blink

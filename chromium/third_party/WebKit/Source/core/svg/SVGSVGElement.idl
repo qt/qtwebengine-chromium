@@ -22,16 +22,13 @@
 
 // http://www.w3.org/TR/SVG2/struct.html#InterfaceSVGSVGElement
 
-[
-    TypeChecking=Interface,
-] interface SVGSVGElement : SVGGraphicsElement {
-
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] readonly attribute SVGAnimatedLength x;
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] readonly attribute SVGAnimatedLength y;
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] readonly attribute SVGAnimatedLength width;
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] readonly attribute SVGAnimatedLength height;
+interface SVGSVGElement : SVGGraphicsElement {
+    [MeasureAs=SVG1DOMSVGElement] readonly attribute SVGAnimatedLength x;
+    [MeasureAs=SVG1DOMSVGElement] readonly attribute SVGAnimatedLength y;
+    [MeasureAs=SVG1DOMSVGElement] readonly attribute SVGAnimatedLength width;
+    [MeasureAs=SVG1DOMSVGElement] readonly attribute SVGAnimatedLength height;
     // TODO(philipj): viewport should be a DOMRectReadOnly.
-    readonly attribute SVGRect viewport;
+    [Measure] readonly attribute SVGRect viewport;
     // TODO(philipj): useCurrentView and currentView have been removed:
     // https://github.com/w3c/svgwg/commit/4c26fd36937a65192024208d85c144a21071b057
     [Measure] readonly attribute boolean useCurrentView;
@@ -40,10 +37,10 @@
     // TODO(philipj): currentTranslate should be a DOMPointReadOnly.
     [ImplementedAs=currentTranslateFromJavascript] readonly attribute SVGPoint currentTranslate;
 
-    [RuntimeEnabled=SVG1DOM, DeprecateAs=SVGSVGElementSuspendRedraw] unsigned long suspendRedraw(unsigned long maxWaitMilliseconds);
-    [RuntimeEnabled=SVG1DOM, DeprecateAs=SVGSVGElementUnsuspendRedraw] void unsuspendRedraw(unsigned long suspendHandleId);
-    [RuntimeEnabled=SVG1DOM, DeprecateAs=SVGSVGElementUnsuspendRedrawAll] void unsuspendRedrawAll();
-    [RuntimeEnabled=SVG1DOM, DeprecateAs=SVGSVGElementForceRedraw] void forceRedraw();
+    [MeasureAs=SVGSVGElementSuspendRedraw] unsigned long suspendRedraw(unsigned long maxWaitMilliseconds);
+    [MeasureAs=SVGSVGElementUnsuspendRedraw] void unsuspendRedraw(unsigned long suspendHandleId);
+    [MeasureAs=SVGSVGElementUnsuspendRedrawAll] void unsuspendRedrawAll();
+    [MeasureAs=SVGSVGElementForceRedraw] void forceRedraw();
 
     [RuntimeEnabled=smil] void pauseAnimations();
     [RuntimeEnabled=smil] void unpauseAnimations();
@@ -57,15 +54,15 @@
     boolean checkIntersection(SVGElement element, SVGRect rect);
     boolean checkEnclosure(SVGElement element, SVGRect rect);
     void deselectAll();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGNumber createSVGNumber();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGLength createSVGLength();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGAngle createSVGAngle();
+    [Measure] SVGNumber createSVGNumber();
+    [Measure] SVGLength createSVGLength();
+    [Measure] SVGAngle createSVGAngle();
     // TODO(philipj): SVGPoint/Matrix/Rect should be DOMPoint/Matrix/Rect.
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGPoint createSVGPoint();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGMatrix createSVGMatrix();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGRect createSVGRect();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGTransform createSVGTransform();
-    [RuntimeEnabled=SVG1DOM, MeasureAs=SVG1DOM] SVGTransform createSVGTransformFromMatrix(SVGMatrix matrix);
+    [Measure] SVGPoint createSVGPoint();
+    [Measure] SVGMatrix createSVGMatrix();
+    [Measure] SVGRect createSVGRect();
+    [Measure] SVGTransform createSVGTransform();
+    [Measure] SVGTransform createSVGTransformFromMatrix(SVGMatrix matrix);
 
     // TODO(philipj): The following was part of SVG 1.1:
     // http://www.w3.org/TR/SVG11/struct.html#InterfaceSVGSVGElement

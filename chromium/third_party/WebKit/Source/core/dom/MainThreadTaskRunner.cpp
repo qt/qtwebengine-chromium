@@ -24,7 +24,6 @@
  *
  */
 
-#include "config.h"
 #include "core/dom/MainThreadTaskRunner.h"
 
 #include "core/dom/ExecutionContext.h"
@@ -36,7 +35,7 @@
 namespace blink {
 
 class MainThreadTask : public WebTaskRunner::Task {
-    WTF_MAKE_NONCOPYABLE(MainThreadTask); WTF_MAKE_FAST_ALLOCATED(MainThreadTask);
+    WTF_MAKE_NONCOPYABLE(MainThreadTask); USING_FAST_MALLOC(MainThreadTask);
 public:
     MainThreadTask(WeakPtrWillBeRawPtr<MainThreadTaskRunner> runner, PassOwnPtr<ExecutionContextTask> task, bool isInspectorTask)
         : m_runner(runner)
@@ -119,7 +118,7 @@ void MainThreadTaskRunner::resume()
 {
     ASSERT(m_suspended);
     if (!m_pendingTasks.isEmpty())
-        m_pendingTasksTimer.startOneShot(0, FROM_HERE);
+        m_pendingTasksTimer.startOneShot(0, BLINK_FROM_HERE);
 
     m_suspended = false;
 }

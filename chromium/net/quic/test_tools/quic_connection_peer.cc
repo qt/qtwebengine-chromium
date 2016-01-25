@@ -73,6 +73,12 @@ QuicTime::Delta QuicConnectionPeer::GetNetworkTimeout(
 }
 
 // static
+QuicSentEntropyManager* QuicConnectionPeer::GetSentEntropyManager(
+    QuicConnection* connection) {
+  return &connection->sent_entropy_manager_;
+}
+
+// static
 // TODO(ianswett): Create a GetSentEntropyHash which accepts an AckFrame.
 QuicPacketEntropyHash QuicConnectionPeer::GetSentEntropyHash(
     QuicConnection* connection,
@@ -120,6 +126,11 @@ void QuicConnectionPeer::SetPeerAddress(QuicConnection* connection,
 // static
 bool QuicConnectionPeer::IsSilentCloseEnabled(QuicConnection* connection) {
   return connection->silent_close_enabled_;
+}
+
+// static
+bool QuicConnectionPeer::IsMultipathEnabled(QuicConnection* connection) {
+  return connection->multipath_enabled_;
 }
 
 // static
@@ -213,7 +224,11 @@ void QuicConnectionPeer::CloseConnection(QuicConnection* connection) {
 // static
 QuicEncryptedPacket* QuicConnectionPeer::GetConnectionClosePacket(
     QuicConnection* connection) {
-  return connection->connection_close_packet_.get();
+  if (connection->termination_packets_ == nullptr ||
+      connection->termination_packets_->empty()) {
+    return nullptr;
+  }
+  return (*connection->termination_packets_)[0];
 }
 
 // static
@@ -250,6 +265,11 @@ void QuicConnectionPeer::SetPacketsBetweenMtuProbes(QuicConnection* connection,
 void QuicConnectionPeer::SetNextMtuProbeAt(QuicConnection* connection,
                                            QuicPacketNumber number) {
   connection->next_mtu_probe_at_ = number;
+}
+
+// static
+void QuicConnectionPeer::EnableAckDecimation(QuicConnection* connection) {
+  connection->ack_decimation_enabled_ = true;
 }
 
 }  // namespace test

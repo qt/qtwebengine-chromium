@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8EventListener.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -38,10 +37,9 @@
 
 namespace blink {
 
-V8EventListener::V8EventListener(v8::Local<v8::Object> listener, bool isAttribute, ScriptState* scriptState)
+V8EventListener::V8EventListener(bool isAttribute, ScriptState* scriptState)
     : V8AbstractEventListener(isAttribute, scriptState->world(), scriptState->isolate())
 {
-    setListenerObject(listener);
 }
 
 v8::Local<v8::Function> V8EventListener::getListenerFunction(ScriptState* scriptState)

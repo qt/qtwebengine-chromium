@@ -23,13 +23,14 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/DateTimeFormat.h"
 
+#include "wtf/build_config.h"
+
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/TimeRanges.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 #include <sstream>
 
 namespace blink {

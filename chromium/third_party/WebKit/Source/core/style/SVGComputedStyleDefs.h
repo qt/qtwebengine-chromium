@@ -29,6 +29,7 @@
 #define SVGComputedStyleDefs_h
 
 #include "core/CoreExport.h"
+#include "core/style/StylePath.h"
 #include "platform/Length.h"
 #include "platform/graphics/Color.h"
 #include "wtf/Allocator.h"
@@ -70,14 +71,6 @@ enum EColorRendering {
 };
 enum EShapeRendering {
     SR_AUTO, SR_OPTIMIZESPEED, SR_CRISPEDGES, SR_GEOMETRICPRECISION
-};
-
-enum SVGWritingMode {
-    WM_LRTB, WM_LR, WM_RLTB, WM_RL, WM_TBRL, WM_TB
-};
-
-enum EGlyphOrientation {
-    GO_0DEG, GO_90DEG, GO_180DEG, GO_270DEG, GO_AUTO
 };
 
 enum EAlignmentBaseline {
@@ -151,7 +144,7 @@ private:
 };
 
 class UnzoomedLength {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit UnzoomedLength(const Length& length) : m_length(length) { }
 
@@ -297,6 +290,7 @@ class StyleLayoutData : public RefCounted<StyleLayoutData> {
         {
             return !(*this == other);
         }
+        RefPtr<StylePath> d;
         Length cx;
         Length cy;
         Length x;

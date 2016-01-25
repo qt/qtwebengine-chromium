@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/forms/TextFieldInputType.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -352,7 +351,7 @@ void TextFieldInputType::listAttributeTargetChanged()
             rpContainer->appendChild(editingViewPort.release());
             rpContainer->appendChild(DataListIndicatorElement::create(document));
             if (element().document().focusedElement() == element())
-                element().updateFocusAppearance(true /* restore selection */);
+                element().updateFocusAppearance(SelectionBehaviorOnFocus::Restore);
         }
     } else {
         picker->remove(ASSERT_NO_EXCEPTION);
@@ -419,8 +418,7 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
     // that case, and nothing in the text field will be removed.
     unsigned selectionLength = 0;
     if (element().focused()) {
-        const VisibleSelection& selection = element().document().frame()->selection().selection();
-        selectionLength = plainText(selection.toNormalizedEphemeralRange()).length();
+        selectionLength = element().document().frame()->selection().selectedText().length();
     }
     ASSERT(oldLength >= selectionLength);
 
@@ -466,7 +464,7 @@ void TextFieldInputType::updatePlaceholderText()
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         Element* container = containerElement();
         Node* previous = container ? container : element().innerEditorElement();
-        previous->parentNode()->insertBefore(placeholder, previous->nextSibling());
+        previous->parentNode()->insertBefore(placeholder, previous);
         ASSERT_WITH_SECURITY_IMPLICATION(placeholder->parentNode() == previous->parentNode());
     }
     placeholder->setTextContent(placeholderText);
@@ -487,16 +485,10 @@ String TextFieldInputType::convertFromVisibleValue(const String& visibleValue) c
 
 void TextFieldInputType::subtreeHasChanged()
 {
-    ASSERT(element().layoutObject());
-
     bool wasChanged = element().wasChangedSinceLastFormControlChangeEvent();
     element().setChangedSinceLastFormControlChangeEvent(true);
 
-    // We don't need to call sanitizeUserInputValue() function here because
-    // HTMLInputElement::handleBeforeTextInsertedEvent() has already called
-    // sanitizeUserInputValue().
-    // sanitizeValue() is needed because IME input doesn't dispatch BeforeTextInsertedEvent.
-    element().setValueFromRenderer(sanitizeValue(convertFromVisibleValue(element().innerEditorValue())));
+    element().setValueFromRenderer(sanitizeUserInputValue(convertFromVisibleValue(element().innerEditorValue())));
     element().updatePlaceholderVisibility();
     element().pseudoStateChanged(CSSSelector::PseudoValid);
     element().pseudoStateChanged(CSSSelector::PseudoInvalid);

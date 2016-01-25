@@ -6,6 +6,7 @@
 #define UI_EVENTS_OZONE_TABLET_EVENT_CONVERTER_EVDEV_H_
 
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/message_loop/message_pump_libevent.h"
 #include "ui/events/event.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
@@ -63,11 +64,14 @@ class EVENTS_OZONE_EVDEV_EXPORT TabletEventConverterEvdev
   int x_abs_range_;
   int y_abs_range_;
 
+  int tilt_x_min_;
+  int tilt_x_range_;
+  int tilt_y_min_;
+  int tilt_y_range_;
+
   float tilt_x_ = 0.0f;
   float tilt_y_ = 0.0f;
   float pressure_ = 0.0f;
-  int tilt_x_max_;
-  int tilt_y_max_;
   int pressure_max_;
 
   // BTN_TOOL_ code for the active device

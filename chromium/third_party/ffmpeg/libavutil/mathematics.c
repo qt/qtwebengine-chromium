@@ -27,16 +27,32 @@
 #include <limits.h>
 
 #include "mathematics.h"
+#include "libavutil/intmath.h"
 #include "libavutil/common.h"
 #include "avassert.h"
 #include "version.h"
 
-int64_t av_gcd(int64_t a, int64_t b)
-{
-    if (b)
-        return av_gcd(b, a % b);
-    else
+/* Stein's binary GCD algorithm:
+ * https://en.wikipedia.org/wiki/Binary_GCD_algorithm */
+int64_t av_gcd(int64_t a, int64_t b) {
+    int za, zb, k;
+    int64_t u, v;
+    if (a == 0)
+        return b;
+    if (b == 0)
         return a;
+    za = ff_ctzll(a);
+    zb = ff_ctzll(b);
+    k  = FFMIN(za, zb);
+    u = llabs(a >> za);
+    v = llabs(b >> zb);
+    while (u != v) {
+        if (u > v)
+            FFSWAP(int64_t, v, u);
+        v -= u;
+        v >>= ff_ctzll(v);
+    }
+    return (uint64_t)u << k;
 }
 
 int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
@@ -55,8 +71,8 @@ int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
         rnd -= AV_ROUND_PASS_MINMAX;
     }
 
-    if (a < 0 && a != INT64_MIN)
-        return -av_rescale_rnd(-a, b, c, rnd ^ ((rnd >> 1) & 1));
+    if (a < 0)
+        return -(uint64_t)av_rescale_rnd(-FFMAX(a, -INT64_MAX), b, c, rnd ^ ((rnd >> 1) & 1));
 
     if (rnd == AV_ROUND_NEAR_INF)
         r = c / 2;
@@ -66,8 +82,13 @@ int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
     if (b <= INT_MAX && c <= INT_MAX) {
         if (a <= INT_MAX)
             return (a * b + r) / c;
-        else
-            return a / c * b + (a % c * b + r) / c;
+        else {
+            int64_t ad = a / c;
+            int64_t a2 = (a % c * b + r) / c;
+            if (ad >= INT32_MAX && b && ad > (INT64_MAX - a2) / b)
+                return INT64_MIN;
+            return ad * b + a2;
+        }
     } else {
 #if 1
         uint64_t a0  = a & 0xFFFFFFFF;
@@ -91,6 +112,8 @@ int64_t av_rescale_rnd(int64_t a, int64_t b, int64_t c, enum AVRounding rnd)
                 t1++;
             }
         }
+        if (t1 > INT64_MAX)
+            return INT64_MIN;
         return t1;
     }
 #else

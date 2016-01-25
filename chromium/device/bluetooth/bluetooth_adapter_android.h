@@ -7,6 +7,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 
@@ -82,17 +83,28 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterAndroid final
       const CreateAdvertisementCallback& callback,
       const CreateAdvertisementErrorCallback& error_callback) override;
 
+  // Returns BluetoothAdapter Observers for use by Android platform
+  // implementation classes to send event notifications. Intentionally not
+  // exposed on the public base class BluetoothAdapter as it is an
+  // implementation detail.
+  base::ObserverList<device::BluetoothAdapter::Observer>& GetObservers() {
+    return observers_;
+  }
+
   // Handles a scan error event by invalidating all discovery sessions.
-  void OnScanFailed(JNIEnv* env, jobject caller);
+  void OnScanFailed(JNIEnv* env,
+                    const base::android::JavaParamRef<jobject>& caller);
 
   // Creates or updates device with advertised UUID information when a device is
   // discovered during a scan.
   void CreateOrUpdateDeviceOnScan(
       JNIEnv* env,
-      jobject caller,
-      const jstring& address,
-      jobject bluetooth_device_wrapper,  // Java Type: bluetoothDeviceWrapper
-      jobject advertised_uuids);         // Java Type: List<ParcelUuid>
+      const base::android::JavaParamRef<jobject>& caller,
+      const base::android::JavaParamRef<jstring>& address,
+      const base::android::JavaParamRef<jobject>&
+          bluetooth_device_wrapper,  // Java Type: bluetoothDeviceWrapper
+      const base::android::JavaParamRef<jobject>&
+          advertised_uuids);  // Java Type: List<ParcelUuid>
 
  protected:
   BluetoothAdapterAndroid();

@@ -43,7 +43,7 @@ class WebServiceWorkerResponse;
 class WebURL;
 
 class ServiceWorkerGlobalScopeClientImpl final : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerGlobalScopeClientImpl>, public ServiceWorkerGlobalScopeClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ServiceWorkerGlobalScopeClientImpl);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ServiceWorkerGlobalScopeClientImpl);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerGlobalScopeClientImpl);
 public:
     static PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
@@ -69,6 +69,7 @@ public:
     void claim(WebServiceWorkerClientsClaimCallbacks*) override;
     void focus(const WebString& clientUUID, WebServiceWorkerClientCallbacks*) override;
     void navigate(const WebString& clientUUID, const WebURL&, WebServiceWorkerClientCallbacks*) override;
+    void registerForeignFetchScopes(const WebVector<WebURL>& subScopes) override;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { ServiceWorkerGlobalScopeClient::trace(visitor); }
 

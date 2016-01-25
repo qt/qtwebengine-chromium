@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/browser/webui/url_data_manager.h"
@@ -25,7 +25,6 @@ class RefCountedMemory;
 
 namespace content {
 
-class AppCacheServiceImpl;
 class ChromeBlobStorageContext;
 class ResourceContext;
 class URLDataManagerBackend;
@@ -47,7 +46,6 @@ class URLDataManagerBackend : public base::SupportsUserData::Data {
   CONTENT_EXPORT static scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
   CreateProtocolHandler(content::ResourceContext* resource_context,
                         bool is_incognito,
-                        AppCacheServiceImpl* appcache_service,
                         ChromeBlobStorageContext* blob_storage_context);
 
   // Adds a DataSource to the collection of data sources.

@@ -4,6 +4,9 @@
 
 #include "mojo/android/system/core_impl.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/android/base_jni_registrar.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
@@ -369,7 +372,7 @@ static ScopedJavaLocalRef<jobject> AsyncWait(
   MojoAsyncWaitID cancel_id;
   if (static_cast<MojoHandle>(mojo_handle) != MOJO_HANDLE_INVALID) {
     cancel_id = Environment::GetDefaultAsyncWaiter()->AsyncWait(
-        1, mojo_handle, signals, deadline, AsyncWaitCallback, callback_data);
+        mojo_handle, signals, deadline, AsyncWaitCallback, callback_data);
   } else {
     cancel_id = kInvalidHandleCancelID;
     base::MessageLoop::current()->PostTask(

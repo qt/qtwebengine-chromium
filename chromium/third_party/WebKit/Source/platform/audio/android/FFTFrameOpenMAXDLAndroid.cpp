@@ -22,9 +22,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
+#include "wtf/build_config.h"
 
 #if OS(ANDROID) && USE(WEBAUDIO_OPENMAX_DL_FFT)
 
@@ -174,4 +172,3 @@ OMXFFTSpec_R_F32* FFTFrame::contextForSize(unsigned log2FFTSize)
 
 #endif // #if OS(ANDROID) && !USE(WEBAUDIO_OPENMAX_DL_FFT)
 
-#endif // ENABLE(WEB_AUDIO)

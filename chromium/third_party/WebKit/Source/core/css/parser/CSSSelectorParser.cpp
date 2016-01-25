@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/parser/CSSSelectorParser.h"
 
 #include "core/css/CSSSelectorList.h"
@@ -39,6 +38,22 @@ static void recordSelectorStats(const CSSParserContext& context, const CSSSelect
             case CSSSelector::PseudoFullScreen:
                 feature = UseCounter::CSSSelectorPseudoFullScreen;
                 break;
+            case CSSSelector::PseudoListBox:
+                if (context.mode() != UASheetMode)
+                    feature = UseCounter::CSSSelectorInternalPseudoListBox;
+                break;
+            case CSSSelector::PseudoWebKitCustomElement:
+                if (context.mode() != UASheetMode) {
+                    if (current->value() == "-internal-media-controls-cast-button")
+                        feature = UseCounter::CSSSelectorInternalMediaControlsCastButton;
+                    else if (current->value() == "-internal-media-controls-overlay-cast-button")
+                        feature = UseCounter::CSSSelectorInternalMediaControlsOverlayCastButton;
+                }
+                break;
+            case CSSSelector::PseudoSpatialNavigationFocus:
+                if (context.mode() != UASheetMode)
+                    feature = UseCounter::CSSSelectorInternalPseudoSpatialNavigationFocus;
+                break;
             default:
                 break;
             }
@@ -50,52 +65,52 @@ static void recordSelectorStats(const CSSParserContext& context, const CSSSelect
     }
 }
 
-void CSSSelectorParser::parseSelector(CSSParserTokenRange range, const CSSParserContext& context, StyleSheetContents* styleSheet, CSSSelectorList& output)
+CSSSelectorList CSSSelectorParser::parseSelector(CSSParserTokenRange range, const CSSParserContext& context, StyleSheetContents* styleSheet)
 {
     CSSSelectorParser parser(context, styleSheet);
     range.consumeWhitespace();
-    CSSSelectorList result;
-    parser.consumeComplexSelectorList(range, result);
-    if (range.atEnd()) {
-        output.adopt(result);
-        recordSelectorStats(context, output);
-    }
-    ASSERT(!(output.isValid() && parser.m_failedParsing));
+    CSSSelectorList result = parser.consumeComplexSelectorList(range);
+    if (!range.atEnd())
+        return CSSSelectorList();
+
+    recordSelectorStats(context, result);
+    return result;
 }
 
 CSSSelectorParser::CSSSelectorParser(const CSSParserContext& context, StyleSheetContents* styleSheet)
-: m_context(context)
-, m_styleSheet(styleSheet)
-, m_failedParsing(false)
+    : m_context(context)
+    , m_styleSheet(styleSheet)
 {
 }
 
-void CSSSelectorParser::consumeComplexSelectorList(CSSParserTokenRange& range, CSSSelectorList& output)
+CSSSelectorList CSSSelectorParser::consumeComplexSelectorList(CSSParserTokenRange& range)
 {
     Vector<OwnPtr<CSSParserSelector>> selectorList;
     OwnPtr<CSSParserSelector> selector = consumeComplexSelector(range);
     if (!selector)
-        return;
+        return CSSSelectorList();
     selectorList.append(selector.release());
     while (!range.atEnd() && range.peek().type() == CommaToken) {
         range.consumeIncludingWhitespace();
         selector = consumeComplexSelector(range);
         if (!selector)
-            return;
+            return CSSSelectorList();
         selectorList.append(selector.release());
     }
 
-    if (!m_failedParsing)
-        output.adoptSelectorVector(selectorList);
+    if (m_failedParsing)
+        return CSSSelectorList();
+
+    return CSSSelectorList::adoptSelectorVector(selectorList);
 }
 
-void CSSSelectorParser::consumeCompoundSelectorList(CSSParserTokenRange& range, CSSSelectorList& output)
+CSSSelectorList CSSSelectorParser::consumeCompoundSelectorList(CSSParserTokenRange& range)
 {
     Vector<OwnPtr<CSSParserSelector>> selectorList;
     OwnPtr<CSSParserSelector> selector = consumeCompoundSelector(range);
     range.consumeWhitespace();
     if (!selector)
-        return;
+        return CSSSelectorList();
     selectorList.append(selector.release());
     while (!range.atEnd() && range.peek().type() == CommaToken) {
         // FIXME: This differs from the spec grammar:
@@ -105,12 +120,14 @@ void CSSSelectorParser::consumeCompoundSelectorList(CSSParserTokenRange& range, 
         selector = consumeCompoundSelector(range);
         range.consumeWhitespace();
         if (!selector)
-            return;
+            return CSSSelectorList();
         selectorList.append(selector.release());
     }
 
-    if (!m_failedParsing)
-        output.adoptSelectorVector(selectorList);
+    if (m_failedParsing)
+        return CSSSelectorList();
+
+    return CSSSelectorList::adoptSelectorVector(selectorList);
 }
 
 PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeComplexSelector(CSSParserTokenRange& range)
@@ -118,16 +135,26 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeComplexSelector(CSSParse
     OwnPtr<CSSParserSelector> selector = consumeCompoundSelector(range);
     if (!selector)
         return nullptr;
+
+    bool previousCompoundHasContentPseudo = false;
+
+    for (CSSParserSelector* simple = selector.get(); simple && !previousCompoundHasContentPseudo; simple = simple->tagHistory())
+        previousCompoundHasContentPseudo = simple->pseudoType() == CSSSelector::PseudoContent;
+
     while (CSSSelector::Relation combinator = consumeCombinator(range)) {
         OwnPtr<CSSParserSelector> nextSelector = consumeCompoundSelector(range);
         if (!nextSelector)
             return combinator == CSSSelector::Descendant ? selector.release() : nullptr;
         CSSParserSelector* end = nextSelector.get();
-        while (end->tagHistory())
+        bool compoundHasContentPseudo = end->pseudoType() == CSSSelector::PseudoContent;
+        while (end->tagHistory()) {
             end = end->tagHistory();
+            compoundHasContentPseudo |= end->pseudoType() == CSSSelector::PseudoContent;
+        }
         end->setRelation(combinator);
-        if (selector->pseudoType() == CSSSelector::PseudoContent)
+        if (previousCompoundHasContentPseudo)
             end->setRelationIsAffectedByPseudoContent();
+        previousCompoundHasContentPseudo = compoundHasContentPseudo;
         end->setTagHistory(selector.release());
 
         selector = nextSelector.release();
@@ -136,21 +163,108 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeComplexSelector(CSSParse
     return selector.release();
 }
 
+namespace {
+
+bool isScrollbarPseudoClass(CSSSelector::PseudoType pseudo)
+{
+    switch (pseudo) {
+    case CSSSelector::PseudoEnabled:
+    case CSSSelector::PseudoDisabled:
+    case CSSSelector::PseudoHover:
+    case CSSSelector::PseudoActive:
+    case CSSSelector::PseudoHorizontal:
+    case CSSSelector::PseudoVertical:
+    case CSSSelector::PseudoDecrement:
+    case CSSSelector::PseudoIncrement:
+    case CSSSelector::PseudoStart:
+    case CSSSelector::PseudoEnd:
+    case CSSSelector::PseudoDoubleButton:
+    case CSSSelector::PseudoSingleButton:
+    case CSSSelector::PseudoNoButton:
+    case CSSSelector::PseudoCornerPresent:
+    case CSSSelector::PseudoWindowInactive:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool isUserActionPseudoClass(CSSSelector::PseudoType pseudo)
+{
+    switch (pseudo) {
+    case CSSSelector::PseudoHover:
+    case CSSSelector::PseudoFocus:
+    case CSSSelector::PseudoActive:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool isPseudoClassValidAfterPseudoElement(CSSSelector::PseudoType pseudoClass, CSSSelector::PseudoType compoundPseudoElement)
+{
+    switch (compoundPseudoElement) {
+    case CSSSelector::PseudoResizer:
+    case CSSSelector::PseudoScrollbar:
+    case CSSSelector::PseudoScrollbarCorner:
+    case CSSSelector::PseudoScrollbarButton:
+    case CSSSelector::PseudoScrollbarThumb:
+    case CSSSelector::PseudoScrollbarTrack:
+    case CSSSelector::PseudoScrollbarTrackPiece:
+        return isScrollbarPseudoClass(pseudoClass);
+    case CSSSelector::PseudoSelection:
+        return pseudoClass == CSSSelector::PseudoWindowInactive;
+    case CSSSelector::PseudoWebKitCustomElement:
+        return isUserActionPseudoClass(pseudoClass);
+    default:
+        return false;
+    }
+}
+
+bool isSimpleSelectorValidAfterPseudoElement(const CSSParserSelector& simpleSelector, CSSSelector::PseudoType compoundPseudoElement)
+{
+    if (compoundPseudoElement == CSSSelector::PseudoUnknown)
+        return true;
+    if (simpleSelector.match() != CSSSelector::PseudoClass)
+        return false;
+    CSSSelector::PseudoType pseudo = simpleSelector.pseudoType();
+    if (pseudo == CSSSelector::PseudoNot) {
+        ASSERT(simpleSelector.selectorList());
+        ASSERT(simpleSelector.selectorList()->first());
+        ASSERT(!simpleSelector.selectorList()->first()->tagHistory());
+        pseudo = simpleSelector.selectorList()->first()->pseudoType();
+    }
+    return isPseudoClassValidAfterPseudoElement(pseudo, compoundPseudoElement);
+}
+
+} // namespace
+
 PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeCompoundSelector(CSSParserTokenRange& range)
 {
     OwnPtr<CSSParserSelector> compoundSelector;
 
     AtomicString namespacePrefix;
     AtomicString elementName;
+    CSSSelector::PseudoType compoundPseudoElement = CSSSelector::PseudoUnknown;
     if (!consumeName(range, elementName, namespacePrefix)) {
         compoundSelector = consumeSimpleSelector(range);
         if (!compoundSelector)
             return nullptr;
+        if (compoundSelector->match() == CSSSelector::PseudoElement)
+            compoundPseudoElement = compoundSelector->pseudoType();
     }
     if (m_context.isHTMLDocument())
         elementName = elementName.lower();
 
     while (OwnPtr<CSSParserSelector> simpleSelector = consumeSimpleSelector(range)) {
+        // TODO(rune@opera.com): crbug.com/578131
+        // The UASheetMode check is a work-around to allow this selector in mediaControls(New).css:
+        // video::-webkit-media-text-track-region-container.scrolling
+        if (m_context.mode() != UASheetMode && !isSimpleSelectorValidAfterPseudoElement(*simpleSelector.get(), compoundPseudoElement))
+            return nullptr;
+        if (simpleSelector->match() == CSSSelector::PseudoElement)
+            compoundPseudoElement = simpleSelector->pseudoType();
+
         if (compoundSelector)
             compoundSelector = addSimpleSelectorToCompound(compoundSelector.release(), simpleSelector.release());
         else
@@ -164,7 +278,7 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeCompoundSelector(CSSPars
         return CSSParserSelector::create(QualifiedName(namespacePrefix, elementName, namespaceURI));
     }
     prependTypeSelectorIfNeeded(namespacePrefix, elementName, compoundSelector.get());
-    return compoundSelector.release();
+    return splitCompoundAtImplicitShadowCrossingCombinator(compoundSelector.release());
 }
 
 PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeSimpleSelector(CSSParserTokenRange& range)
@@ -232,10 +346,7 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeId(CSSParserTokenRange& 
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(CSSSelector::Id);
     const AtomicString& value = range.consume().value();
-    if (isQuirksModeBehavior(m_context.mode()))
-        selector->setValue(value.lower());
-    else
-        selector->setValue(value);
+    selector->setValue(value, isQuirksModeBehavior(m_context.mode()));
     return selector.release();
 }
 
@@ -249,10 +360,7 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeClass(CSSParserTokenRang
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(CSSSelector::Class);
     const AtomicString& value = range.consume().value();
-    if (isQuirksModeBehavior(m_context.mode()))
-        selector->setValue(value.lower());
-    else
-        selector->setValue(value);
+    selector->setValue(value, isQuirksModeBehavior(m_context.mode()));
     return selector.release();
 }
 
@@ -322,6 +430,9 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
     bool hasArguments = token.type() == FunctionToken;
     selector->updatePseudoType(AtomicString(value.is8Bit() ? value.lower() : value), hasArguments);
 
+    if (selector->match() == CSSSelector::PseudoElement && m_disallowPseudoElements)
+        return nullptr;
+
     if (token.type() == IdentToken) {
         range.consume();
         if (selector->pseudoType() == CSSSelector::PseudoUnknown)
@@ -340,8 +451,10 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
     case CSSSelector::PseudoAny:
     case CSSSelector::PseudoCue:
         {
+            DisallowPseudoElementsScope scope(this);
+
             OwnPtr<CSSSelectorList> selectorList = adoptPtr(new CSSSelectorList());
-            consumeCompoundSelectorList(block, *selectorList);
+            *selectorList = consumeCompoundSelectorList(block);
             if (!selectorList->isValid() || !block.atEnd())
                 return nullptr;
             selector->setSelectorList(selectorList.release());
@@ -451,10 +564,8 @@ CSSSelector::AttributeMatchType CSSSelectorParser::consumeAttributeFlags(CSSPars
     if (range.peek().type() != IdentToken)
         return CSSSelector::CaseSensitive;
     const CSSParserToken& flag = range.consumeIncludingWhitespace();
-    if (String(flag.value()) == "i") {
-        if (RuntimeEnabledFeatures::cssAttributeCaseSensitivityEnabled() || isUASheetBehavior(m_context.mode()))
-            return CSSSelector::CaseInsensitive;
-    }
+    if (String(flag.value()) == "i")
+        return CSSSelector::CaseInsensitive;
     m_failedParsing = true;
     return CSSSelector::CaseSensitive;
 }
@@ -553,74 +664,36 @@ const AtomicString& CSSSelectorParser::determineNamespace(const AtomicString& pr
 
 void CSSSelectorParser::prependTypeSelectorIfNeeded(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector* compoundSelector)
 {
-    if (elementName.isNull() && defaultNamespace() == starAtom && !compoundSelector->crossesTreeScopes())
+    if (elementName.isNull() && defaultNamespace() == starAtom && !compoundSelector->needsImplicitShadowCrossingCombinatorForMatching())
         return;
 
     AtomicString determinedElementName = elementName.isNull() ? starAtom : elementName;
     AtomicString namespaceURI = determineNamespace(namespacePrefix);
-    if (namespaceURI.isNull())
+    if (namespaceURI.isNull()) {
+        m_failedParsing = true;
         return;
+    }
     QualifiedName tag = QualifiedName(namespacePrefix, determinedElementName, namespaceURI);
 
-    if (compoundSelector->crossesTreeScopes())
-        return rewriteSpecifiersWithElementNameForCustomPseudoElement(tag, compoundSelector, elementName.isNull());
-
-    if (compoundSelector->pseudoType() == CSSSelector::PseudoContent)
-        return rewriteSpecifiersWithElementNameForContentPseudoElement(tag, compoundSelector, elementName.isNull());
-
-    // *:host never matches, so we can't discard the * otherwise we can't tell the
-    // difference between *:host and just :host.
-    if (tag == anyQName() && !compoundSelector->hasHostPseudoSelector())
-        return;
-    compoundSelector->prependTagSelector(tag, elementName.isNull());
-}
-
-void CSSSelectorParser::rewriteSpecifiersWithElementNameForCustomPseudoElement(const QualifiedName& tag, CSSParserSelector* specifiers, bool tagIsImplicit)
-{
-    CSSParserSelector* lastShadowPseudo = specifiers;
-    CSSParserSelector* history = specifiers;
-    while (history->tagHistory()) {
-        history = history->tagHistory();
-        if (history->crossesTreeScopes() || history->hasShadowPseudo())
-            lastShadowPseudo = history;
-    }
-
-    if (lastShadowPseudo->tagHistory()) {
-        if (tag != anyQName())
-            lastShadowPseudo->tagHistory()->prependTagSelector(tag, tagIsImplicit);
-        return;
-    }
-
-    // For shadow-ID pseudo-elements to be correctly matched, the ShadowPseudo combinator has to be used.
-    // We therefore create a new Selector with that combinator here in any case, even if matching any (host) element in any namespace (i.e. '*').
-    OwnPtr<CSSParserSelector> elementNameSelector = CSSParserSelector::create(tag);
-    lastShadowPseudo->setTagHistory(elementNameSelector.release());
-    lastShadowPseudo->setRelation(CSSSelector::ShadowPseudo);
-}
-
-void CSSSelectorParser::rewriteSpecifiersWithElementNameForContentPseudoElement(const QualifiedName& tag, CSSParserSelector* specifiers, bool tagIsImplicit)
-{
-    CSSParserSelector* last = specifiers;
-    CSSParserSelector* history = specifiers;
-    while (history->tagHistory()) {
-        history = history->tagHistory();
-        if (history->pseudoType() == CSSSelector::PseudoContent || history->relationIsAffectedByPseudoContent())
-            last = history;
-    }
-
-    if (last->tagHistory()) {
-        if (tag != anyQName())
-            last->tagHistory()->prependTagSelector(tag, tagIsImplicit);
-        return;
-    }
-
-    // For shadow-ID pseudo-elements to be correctly matched, the ShadowPseudo combinator has to be used.
-    // We therefore create a new Selector with that combinator here in any case, even if matching any (host) element in any namespace (i.e. '*').
-    OwnPtr<CSSParserSelector> elementNameSelector = CSSParserSelector::create(tag);
-    last->setTagHistory(elementNameSelector.release());
+    // *:host/*:host-context never matches, so we can't discard the *,
+    // otherwise we can't tell the difference between *:host and just :host.
+    //
+    // Also, selectors where we use a ShadowPseudo combinator between the
+    // element and the pseudo element for matching (custom pseudo elements,
+    // ::cue, ::shadow), we need a universal selector to set the combinator
+    // (relation) on in the cases where there are no simple selectors preceding
+    // the pseudo element.
+    if (tag != anyQName() || compoundSelector->isHostPseudoSelector() || compoundSelector->needsImplicitShadowCrossingCombinatorForMatching())
+        compoundSelector->prependTagSelector(tag, elementName.isNull());
 }
 
 PassOwnPtr<CSSParserSelector> CSSSelectorParser::addSimpleSelectorToCompound(PassOwnPtr<CSSParserSelector> compoundSelector, PassOwnPtr<CSSParserSelector> simpleSelector)
+{
+    compoundSelector->appendTagHistory(CSSSelector::SubSelector, simpleSelector);
+    return compoundSelector;
+}
+
+PassOwnPtr<CSSParserSelector> CSSSelectorParser::splitCompoundAtImplicitShadowCrossingCombinator(PassOwnPtr<CSSParserSelector> compoundSelector)
 {
     // The tagHistory is a linked list that stores combinator separated compound selectors
     // from right-to-left. Yet, within a single compound selector, stores the simple selectors
@@ -634,40 +707,18 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::addSimpleSelectorToCompound(Pas
     // the selector parser as a single compound selector.
     //
     // Example: input#x::-webkit-clear-button -> [ ::-webkit-clear-button, input, #x ]
-    //
-    // ::content is kept at the end of the compound in order easily know when to call
-    // setRelationIsAffectedByPseudoContent.
-    //
-    // We are currently not dropping selectors containing multiple instances of ::content,
-    // ::shadow, ::cue, and custom pseudo elements in arbitrary order. There are known
-    // issues like crbug.com/478563
-    //
-    // TODO(rune@opera.com): We should try to remove the need for the re-ordering tricks
-    // below and in the remaining rewrite* methods by using a more suitable storage
-    // structure in CSSSelectorParser.
-    //
-    // The code below is to keep ::content at the end of the compound, and to keep the
-    // tagHistory order correct for implicit ShadowPseudo and juggling multiple (two?)
-    // compounds.
 
-    CSSSelector::Relation relation = CSSSelector::SubSelector;
+    CSSParserSelector* splitAfter = compoundSelector.get();
 
-    if (simpleSelector->crossesTreeScopes() || simpleSelector->pseudoType() == CSSSelector::PseudoContent) {
-        if (simpleSelector->crossesTreeScopes())
-            relation = CSSSelector::ShadowPseudo;
-        simpleSelector->appendTagHistory(relation, compoundSelector);
-        return simpleSelector;
-    }
-    if (compoundSelector->crossesTreeScopes() || compoundSelector->pseudoType() == CSSSelector::PseudoContent) {
-        if (compoundSelector->crossesTreeScopes())
-            relation = CSSSelector::ShadowPseudo;
-        compoundSelector->insertTagHistory(CSSSelector::SubSelector, simpleSelector, relation);
+    while (splitAfter->tagHistory() && !splitAfter->tagHistory()->needsImplicitShadowCrossingCombinatorForMatching())
+        splitAfter = splitAfter->tagHistory();
+
+    if (!splitAfter || !splitAfter->tagHistory())
         return compoundSelector;
-    }
 
-    // All other simple selectors are added to the end of the compound.
-    compoundSelector->appendTagHistory(CSSSelector::SubSelector, simpleSelector);
-    return compoundSelector;
+    OwnPtr<CSSParserSelector> secondCompound = splitAfter->releaseTagHistory();
+    secondCompound->appendTagHistory(CSSSelector::ShadowPseudo, compoundSelector);
+    return secondCompound.release();
 }
 
 } // namespace blink

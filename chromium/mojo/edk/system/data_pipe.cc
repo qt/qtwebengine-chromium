@@ -4,7 +4,12 @@
 
 #include "mojo/edk/system/data_pipe.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
+
+#include <algorithm>
+#include <limits>
 
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/options_validation.h"
@@ -16,18 +21,20 @@ namespace edk {
 
 namespace {
 
-const size_t kInvalidDataPipeHandleIndex = static_cast<size_t>(-1);
+const uint32_t kInvalidDataPipeHandleIndex = static_cast<uint32_t>(-1);
 
 struct MOJO_ALIGNAS(8) SerializedDataPipeHandleDispatcher {
-  size_t platform_handle_index;  // (Or |kInvalidDataPipeHandleIndex|.)
+  MOJO_ALIGNAS(4)
+  uint32_t platform_handle_index;  // (Or |kInvalidDataPipeHandleIndex|.)
 
   // These are from MojoCreateDataPipeOptions
-  MojoCreateDataPipeOptionsFlags flags;
-  uint32_t element_num_bytes;
-  uint32_t capacity_num_bytes;
+  MOJO_ALIGNAS(4) MojoCreateDataPipeOptionsFlags flags;
+  MOJO_ALIGNAS(4) uint32_t element_num_bytes;
+  MOJO_ALIGNAS(4) uint32_t capacity_num_bytes;
 
-  size_t shared_memory_handle_index;  // (Or |kInvalidDataPipeHandleIndex|.)
-  uint32_t shared_memory_size;
+  MOJO_ALIGNAS(4)
+  uint32_t shared_memory_handle_index;  // (Or |kInvalidDataPipeHandleIndex|.)
+  MOJO_ALIGNAS(4) uint32_t shared_memory_size;
 };
 
 }  // namespace
@@ -105,7 +112,6 @@ void DataPipe::StartSerialize(bool have_channel_handle,
     (*max_platform_handles)++;
   if (have_shared_memory)
     (*max_platform_handles)++;
-  DCHECK_LE(*max_size, TransportData::kMaxSerializedDispatcherSize);
 }
 
 void DataPipe::EndSerialize(const MojoCreateDataPipeOptions& options,
@@ -118,7 +124,9 @@ void DataPipe::EndSerialize(const MojoCreateDataPipeOptions& options,
   SerializedDataPipeHandleDispatcher* serialization =
       static_cast<SerializedDataPipeHandleDispatcher*>(destination);
   if (channel_handle.is_valid()) {
-    serialization->platform_handle_index = platform_handles->size();
+    DCHECK(platform_handles->size() < std::numeric_limits<uint32_t>::max());
+    serialization->platform_handle_index =
+        static_cast<uint32_t>(platform_handles->size());
     platform_handles->push_back(channel_handle.release());
   } else {
     serialization->platform_handle_index = kInvalidDataPipeHandleIndex;
@@ -130,8 +138,12 @@ void DataPipe::EndSerialize(const MojoCreateDataPipeOptions& options,
 
   serialization->shared_memory_size = static_cast<uint32_t>(shared_memory_size);
   if (serialization->shared_memory_size) {
-    serialization->shared_memory_handle_index = platform_handles->size();
+    DCHECK(platform_handles->size() < std::numeric_limits<uint32_t>::max());
+    serialization->shared_memory_handle_index =
+        static_cast<uint32_t>(platform_handles->size());
     platform_handles->push_back(shared_memory_handle.release());
+  } else {
+    serialization->shared_memory_handle_index = kInvalidDataPipeHandleIndex;
   }
 
   *actual_size = sizeof(SerializedDataPipeHandleDispatcher);
@@ -145,7 +157,7 @@ ScopedPlatformHandle DataPipe::Deserialize(
     ScopedPlatformHandle* shared_memory_handle,
     size_t* shared_memory_size) {
   if (size != sizeof(SerializedDataPipeHandleDispatcher)) {
-    LOG(ERROR) << "Invalid serialized platform handle dispatcher (bad size)";
+    LOG(ERROR) << "Invalid serialized data pipe dispatcher (bad size)";
     return ScopedPlatformHandle();
   }
 
@@ -159,7 +171,7 @@ ScopedPlatformHandle DataPipe::Deserialize(
     if (!platform_handles ||
         platform_handle_index >= platform_handles->size()) {
       LOG(ERROR)
-          << "Invalid serialized platform handle dispatcher (missing handles)";
+          << "Invalid serialized data pipe dispatcher (missing handles)";
       return ScopedPlatformHandle();
     }
 
@@ -178,10 +190,10 @@ ScopedPlatformHandle DataPipe::Deserialize(
     if (*shared_memory_size) {
       DCHECK(serialization->shared_memory_handle_index !=
              kInvalidDataPipeHandleIndex);
-      if (!serialization->shared_memory_handle_index ||
+      if (!platform_handles ||
           serialization->shared_memory_handle_index >=
               platform_handles->size()) {
-        LOG(ERROR) << "Invalid serialized platform handle dispatcher "
+        LOG(ERROR) << "Invalid serialized data pipe dispatcher "
                    << "(missing handles)";
         return ScopedPlatformHandle();
       }

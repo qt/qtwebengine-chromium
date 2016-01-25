@@ -7,12 +7,17 @@
 
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "media/base/media_export.h"
 #include "media/capture/content/thread_safe_capture_oracle.h"
 #include "media/capture/video/video_capture_device.h"
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -68,7 +73,7 @@ class MEDIA_EXPORT ScreenCaptureDeviceCore
 
  private:
   // Flag indicating current state.
-  enum State { kIdle, kCapturing, kError };
+  enum State { kIdle, kCapturing, kError, kLastCaptureState };
 
   void TransitionStateTo(State next_state);
 
@@ -77,7 +82,8 @@ class MEDIA_EXPORT ScreenCaptureDeviceCore
   void CaptureStarted(bool success);
 
   // Stops capturing and notifies client_ of an error state.
-  void Error(const std::string& reason);
+  void Error(const tracked_objects::Location& from_here,
+             const std::string& reason);
 
   // Tracks that all activity occurs on the media stream manager's thread.
   base::ThreadChecker thread_checker_;

@@ -29,7 +29,6 @@
  *
  */
 
-#include "config.h"
 #include "core/events/EventTarget.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -48,6 +47,28 @@
 using namespace WTF;
 
 namespace blink {
+namespace {
+
+void setDefaultEventListenerOptionsLegacy(EventListenerOptions& options, bool useCapture)
+{
+    options.setCapture(useCapture);
+    options.setPassive(false);
+}
+
+void setDefaultEventListenerOptions(EventListenerOptions& options)
+{
+    // The default for capture is based on whether the eventListenerOptions
+    // runtime setting is enabled. That is
+    // addEventListener('type', function(e) {}, {});
+    // behaves differently under the setting. With the setting off
+    // capture is true; with the setting on capture is false.
+    if (!options.hasCapture())
+        options.setCapture(!RuntimeEnabledFeatures::eventListenerOptionsEnabled());
+    if (!options.hasPassive())
+        options.setPassive(false);
+}
+
+} // namespace
 
 EventTargetData::EventTargetData()
 {
@@ -75,6 +96,11 @@ Node* EventTarget::toNode()
     return nullptr;
 }
 
+const LocalDOMWindow* EventTarget::toDOMWindow() const
+{
+    return nullptr;
+}
+
 LocalDOMWindow* EventTarget::toDOMWindow()
 {
     return nullptr;
@@ -94,6 +120,30 @@ inline LocalDOMWindow* EventTarget::executingWindow()
 
 bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
+    EventListenerOptions options;
+    setDefaultEventListenerOptionsLegacy(options, useCapture);
+    return addEventListenerInternal(eventType, listener, options);
+}
+
+bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptionsOrBoolean& optionsUnion)
+{
+    if (optionsUnion.isBoolean())
+        return addEventListener(eventType, listener, optionsUnion.getAsBoolean());
+    if (optionsUnion.isEventListenerOptions()) {
+        EventListenerOptions options = optionsUnion.getAsEventListenerOptions();
+        return addEventListener(eventType, listener, options);
+    }
+    return addEventListener(eventType, listener);
+}
+
+bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, EventListenerOptions& options)
+{
+    setDefaultEventListenerOptions(options);
+    return addEventListenerInternal(eventType, listener, options);
+}
+
+bool EventTarget::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
+{
     if (!listener)
         return false;
 
@@ -105,10 +155,34 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWill
         activityLogger->logEvent("blinkAddEventListener", argv.size(), argv.data());
     }
 
-    return ensureEventTargetData().eventListenerMap.add(eventType, listener, useCapture);
+    return ensureEventTargetData().eventListenerMap.add(eventType, listener, options);
 }
 
 bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+{
+    EventListenerOptions options;
+    setDefaultEventListenerOptionsLegacy(options, useCapture);
+    return removeEventListenerInternal(eventType, listener, options);
+}
+
+bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptionsOrBoolean& optionsUnion)
+{
+    if (optionsUnion.isBoolean())
+        return removeEventListener(eventType, listener, optionsUnion.getAsBoolean());
+    if (optionsUnion.isEventListenerOptions()) {
+        EventListenerOptions options = optionsUnion.getAsEventListenerOptions();
+        return removeEventListener(eventType, listener, options);
+    }
+    return removeEventListener(eventType, listener);
+}
+
+bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, EventListenerOptions& options)
+{
+    setDefaultEventListenerOptions(options);
+    return removeEventListenerInternal(eventType, listener, options);
+}
+
+bool EventTarget::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (!listener)
         return false;
@@ -119,7 +193,7 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrW
 
     size_t indexOfRemovedListener;
 
-    if (!d->eventListenerMap.remove(eventType, listener.get(), useCapture, indexOfRemovedListener))
+    if (!d->eventListenerMap.remove(eventType, listener.get(), options, indexOfRemovedListener))
         return false;
 
     // Notify firing events planning to invoke the listener at 'index' that
@@ -177,10 +251,6 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
 
 bool EventTarget::dispatchEventForBindings(PassRefPtrWillBeRawPtr<Event> event, ExceptionState& exceptionState)
 {
-    if (!event) {
-        exceptionState.throwDOMException(InvalidStateError, "The event provided is null.");
-        return false;
-    }
     if (event->type().isEmpty()) {
         exceptionState.throwDOMException(InvalidStateError, "The event provided is uninitialized.");
         return false;
@@ -361,11 +431,15 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
         if (!context)
             break;
 
+        event->setHandlingPassive(registeredListener.passive);
+
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::willHandleEvent(this, event, registeredListener.listener.get(), registeredListener.useCapture);
 
         // To match Mozilla, the AT_TARGET phase fires both capturing and bubbling
         // event listeners, even though that violates some versions of the DOM spec.
         registeredListener.listener->handleEvent(context, event);
+        event->setHandlingPassive(false);
+
         RELEASE_ASSERT(i <= size);
 
         InspectorInstrumentation::didHandleEvent(cookie);

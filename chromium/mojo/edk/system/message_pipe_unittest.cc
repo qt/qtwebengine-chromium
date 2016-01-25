@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/system/test_utils.h"
 #include "mojo/public/c/system/core.h"
@@ -16,7 +18,7 @@ const MojoHandleSignals kAllSignals = MOJO_HANDLE_SIGNAL_READABLE |
                                       MOJO_HANDLE_SIGNAL_PEER_CLOSED;
 static const char kHelloWorld[] = "hello world";
 
-class MessagePipeTest : public test::MojoSystemTest {
+class MessagePipeTest : public testing::Test {
  public:
   MessagePipeTest() {
     CHECK_EQ(MOJO_RESULT_OK, MojoCreateMessagePipe(nullptr, &pipe0_, &pipe1_));

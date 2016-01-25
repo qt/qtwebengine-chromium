@@ -4,6 +4,9 @@
 
 #include "mojo/message_pump/handle_watcher.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 
 #include "base/atomic_sequence_num.h"
@@ -14,16 +17,16 @@
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "mojo/message_pump/message_pump_mojo.h"
 #include "mojo/message_pump/message_pump_mojo_handler.h"
 #include "mojo/message_pump/time_helper.h"
+#include "mojo/public/c/system/message_pipe.h"
 
 namespace mojo {
 namespace common {
@@ -42,12 +45,8 @@ base::TimeTicks MojoDeadlineToTimeTicks(MojoDeadline deadline) {
 // Tracks the data for a single call to Start().
 struct WatchData {
   WatchData()
-      : location(0),
-        id(0),
-        handle_signals(MOJO_HANDLE_SIGNAL_NONE),
-        task_runner(NULL) {}
+      : id(0), handle_signals(MOJO_HANDLE_SIGNAL_NONE), task_runner(NULL) {}
 
-  int location;
   WatcherID id;
   Handle handle;
   MojoHandleSignals handle_signals;
@@ -67,8 +66,6 @@ class WatcherBackend : public MessagePumpMojoHandler {
   ~WatcherBackend() override;
 
   void StartWatching(const WatchData& data);
-
-  // Cancels a previously scheduled request to start a watch.
   void StopWatching(WatcherID watcher_id);
 
  private:
@@ -103,18 +100,20 @@ void WatcherBackend::StartWatching(const WatchData& data) {
   DCHECK_EQ(0u, handle_to_data_.count(data.handle));
 
   handle_to_data_[data.handle] = data;
-  MessagePumpMojo::current()->AddHandler(data.location, this, data.handle,
-                                         data.handle_signals, data.deadline);
+  MessagePumpMojo::current()->AddHandler(this, data.handle,
+                                         data.handle_signals,
+                                         data.deadline);
 }
 
 void WatcherBackend::StopWatching(WatcherID watcher_id) {
   // Because of the thread hop it is entirely possible to get here and not
   // have a valid handle registered for |watcher_id|.
   Handle handle;
-  if (GetMojoHandleByWatcherID(watcher_id, &handle)) {
-    handle_to_data_.erase(handle);
-    MessagePumpMojo::current()->RemoveHandler(handle);
-  }
+  if (!GetMojoHandleByWatcherID(watcher_id, &handle))
+    return;
+
+  handle_to_data_.erase(handle);
+  MessagePumpMojo::current()->RemoveHandler(handle);
 }
 
 void WatcherBackend::RemoveAndNotify(const Handle& handle,
@@ -153,8 +152,6 @@ void WatcherBackend::OnHandleError(const Handle& handle, MojoResult result) {
 
 // WatcherThreadManager manages the background thread that listens for handles
 // to be ready. All requests are handled by WatcherBackend.
-}  // namespace
-
 class WatcherThreadManager {
  public:
   ~WatcherThreadManager();
@@ -166,8 +163,7 @@ class WatcherThreadManager {
   // stop watching the handle. When the handle is ready |callback| is notified
   // on the thread StartWatching() was invoked on.
   // This may be invoked on any thread.
-  WatcherID StartWatching(int location,
-                          const Handle& handle,
+  WatcherID StartWatching(const Handle& handle,
                           MojoHandleSignals handle_signals,
                           base::TimeTicks deadline,
                           const base::Callback<void(MojoResult)>& callback);
@@ -184,12 +180,11 @@ class WatcherThreadManager {
 
   // See description of |requests_| for details.
   struct RequestData {
-    RequestData() : type(REQUEST_START), stop_id(0), stop_event(NULL) {}
+    RequestData() : type(REQUEST_START), stop_id(0) {}
 
     RequestType type;
     WatchData start_data;
     WatcherID stop_id;
-    base::WaitableEvent* stop_event;
   };
 
   typedef std::vector<RequestData> Requests;
@@ -230,14 +225,12 @@ WatcherThreadManager* WatcherThreadManager::GetInstance() {
 }
 
 WatcherID WatcherThreadManager::StartWatching(
-    int location,
     const Handle& handle,
     MojoHandleSignals handle_signals,
     base::TimeTicks deadline,
     const base::Callback<void(MojoResult)>& callback) {
   RequestData request_data;
   request_data.type = REQUEST_START;
-  request_data.start_data.location = location;
   request_data.start_data.id = watcher_id_generator_.GetNext();
   request_data.start_data.handle = handle;
   request_data.start_data.callback = callback;
@@ -262,16 +255,15 @@ void WatcherThreadManager::StopWatching(WatcherID watcher_id) {
     }
   }
 
-  base::ThreadRestrictions::ScopedAllowWait allow_wait;
-  base::WaitableEvent event(true, false);
+  // TODO(amistry): Remove ScopedTracker below once http://crbug.com/554761 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "554761 WatcherThreadManager::StopWatching"));
   RequestData request_data;
   request_data.type = REQUEST_STOP;
   request_data.stop_id = watcher_id;
-  request_data.stop_event = &event;
   AddRequest(request_data);
-
-  // We need to block until the handle is actually removed.
-  event.Wait();
 }
 
 void WatcherThreadManager::AddRequest(const RequestData& data) {
@@ -282,7 +274,8 @@ void WatcherThreadManager::AddRequest(const RequestData& data) {
     if (!was_empty)
       return;
   }
-  // We own |thread_|, so it's safe to use Unretained() here.
+
+  // We outlive |thread_|, so it's safe to use Unretained() here.
   thread_.task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&WatcherThreadManager::ProcessRequestsOnBackendThread,
@@ -302,7 +295,6 @@ void WatcherThreadManager::ProcessRequestsOnBackendThread() {
       backend_.StartWatching(requests[i].start_data);
     } else {
       backend_.StopWatching(requests[i].stop_id);
-      requests[i].stop_event->Signal();
     }
   }
 }
@@ -313,6 +305,8 @@ WatcherThreadManager::WatcherThreadManager()
   thread_options.message_pump_factory = base::Bind(&MessagePumpMojo::Create);
   thread_.StartWithOptions(thread_options);
 }
+
+}  // namespace
 
 // HandleWatcher::StateBase and subclasses -------------------------------------
 
@@ -378,9 +372,8 @@ class HandleWatcher::SameThreadWatchingState : public StateBase,
         handle_(handle) {
     DCHECK(MessagePumpMojo::IsCurrent());
 
-    MessagePumpMojo::current()->AddHandler(watcher->location(), this, handle,
-                                           handle_signals,
-                                           MojoDeadlineToTimeTicks(deadline));
+    MessagePumpMojo::current()->AddHandler(
+        this, handle, handle_signals, MojoDeadlineToTimeTicks(deadline));
   }
 
   ~SameThreadWatchingState() override {
@@ -422,7 +415,8 @@ class HandleWatcher::SecondaryThreadWatchingState : public StateBase {
       : StateBase(watcher, callback),
         weak_factory_(this) {
     watcher_id_ = WatcherThreadManager::GetInstance()->StartWatching(
-        watcher->location(), handle, handle_signals,
+        handle,
+        handle_signals,
         MojoDeadlineToTimeTicks(deadline),
         base::Bind(&SecondaryThreadWatchingState::NotifyHandleReady,
                    weak_factory_.GetWeakPtr()));
@@ -449,7 +443,8 @@ class HandleWatcher::SecondaryThreadWatchingState : public StateBase {
 
 // HandleWatcher ---------------------------------------------------------------
 
-HandleWatcher::HandleWatcher(int location) : location_(location) {}
+HandleWatcher::HandleWatcher() {
+}
 
 HandleWatcher::~HandleWatcher() {
 }
@@ -467,6 +462,17 @@ void HandleWatcher::Start(const Handle& handle,
     state_.reset(new SameThreadWatchingState(
         this, handle, handle_signals, deadline, callback));
   } else {
+#if !defined(OFFICIAL_BUILD)
+    // Just for making debugging non-transferable message pipes easier. Since
+    // they can't be sent after they're read/written/listened to,
+    // MessagePipeDispatcher saves the callstack of when it's "bound" to a
+    // pipe id. Triggering a read here, instead of later in the PostTask, means
+    // we have a callstack that is useful to check if the pipe is erronously
+    // attempted to be sent.
+    uint32_t temp = 0;
+    MojoReadMessage(handle.value(), nullptr, &temp, nullptr, nullptr,
+                    MOJO_READ_MESSAGE_FLAG_NONE);
+#endif
     state_.reset(new SecondaryThreadWatchingState(
         this, handle, handle_signals, deadline, callback));
   }

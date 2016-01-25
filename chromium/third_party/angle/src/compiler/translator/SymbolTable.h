@@ -128,34 +128,16 @@ class TVariable : public TSymbol
         type.setQualifier(qualifier);
     }
 
-    TConstantUnion *getConstPointer()
-    { 
-        if (!unionArray)
-            unionArray = new TConstantUnion[type.getObjectSize()];
+    const TConstantUnion *getConstPointer() const { return unionArray; }
 
-        return unionArray;
-    }
-
-    TConstantUnion *getConstPointer() const
-    {
-        return unionArray;
-    }
-
-    void shareConstPointer(TConstantUnion *constArray)
-    {
-        if (unionArray == constArray)
-            return;
-
-        delete[] unionArray;
-        unionArray = constArray;  
-    }
+    void shareConstPointer(const TConstantUnion *constArray) { unionArray = constArray; }
 
   private:
     TType type;
     bool userType;
     // we are assuming that Pool Allocator will free the memory
     // allocated to unionArray when this object is destroyed.
-    TConstantUnion *unionArray;
+    const TConstantUnion *unionArray;
 };
 
 // Immutable version of TParameter.
@@ -215,12 +197,16 @@ struct TParameter
 class TFunction : public TSymbol
 {
   public:
-    TFunction(const TString *name, const TType *retType, TOperator tOp = EOpNull, const char *ext = "")
+    TFunction(const TString *name,
+              const TType *retType,
+              TOperator tOp   = EOpNull,
+              const char *ext = "")
         : TSymbol(name),
           returnType(retType),
           mangledName(nullptr),
           op(tOp),
-          defined(false)
+          defined(false),
+          mHasPrototypeDeclaration(false)
     {
         relateToExtension(ext);
     }
@@ -260,14 +246,10 @@ class TFunction : public TSymbol
         return op;
     }
 
-    void setDefined()
-    {
-        defined = true;
-    }
-    bool isDefined()
-    {
-        return defined;
-    }
+    void setDefined() { defined = true; }
+    bool isDefined() { return defined; }
+    void setHasPrototypeDeclaration() { mHasPrototypeDeclaration = true; }
+    bool hasPrototypeDeclaration() const { return mHasPrototypeDeclaration; }
 
     size_t getParamCount() const
     {
@@ -287,6 +269,7 @@ class TFunction : public TSymbol
     mutable const TString *mangledName;
     TOperator op;
     bool defined;
+    bool mHasPrototypeDeclaration;
 };
 
 // Interface block name sub-symbol
@@ -400,7 +383,9 @@ class TSymbolTable : angle::NonCopyable
     {
         TVariable *constant = new TVariable(
             NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
-        constant->getConstPointer()->setIConst(value);
+        TConstantUnion *unionArray = new TConstantUnion[1];
+        unionArray[0].setIConst(value);
+        constant->shareConstPointer(unionArray);
         return insert(level, constant);
     }
 
@@ -408,7 +393,9 @@ class TSymbolTable : angle::NonCopyable
     {
         TVariable *constant =
             new TVariable(NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
-        constant->getConstPointer()->setIConst(value);
+        TConstantUnion *unionArray = new TConstantUnion[1];
+        unionArray[0].setIConst(value);
+        constant->shareConstPointer(unionArray);
         return insert(level, ext, constant);
     }
 
@@ -449,6 +436,8 @@ class TSymbolTable : angle::NonCopyable
     {
         if (!SupportsPrecision(type.type))
             return false;
+        if (type.type == EbtUInt)
+            return false;  // ESSL 3.00.4 section 4.5.4
         if (type.isAggregate())
             return false; // Not allowed to set for aggregate types
         int indexOfLastElement = static_cast<int>(precisionStack.size()) - 1;

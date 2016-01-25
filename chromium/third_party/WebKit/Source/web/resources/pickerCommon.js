@@ -89,19 +89,20 @@ Rectangle.intersection = function(rect1, rect2) {
 };
 
 /**
- * @param {!number} width
- * @param {!number} height
+ * @param {!number} width in CSS pixel
+ * @param {!number} height in CSS pixel
  */
 function resizeWindow(width, height) {
-    setWindowRect(adjustWindowRect(width, height, width, height));
+    var zoom = global.params.zoomFactor ? global.params.zoomFactor : 1;
+    setWindowRect(adjustWindowRect(width * zoom, height * zoom, width * zoom, height * zoom));
 }
 
 /**
- * @param {!number} width
- * @param {!number} height
- * @param {?number} minWidth
- * @param {?number} minHeight
- * @return {!Rectangle}
+ * @param {!number} width in physical pixel
+ * @param {!number} height in physical pixel
+ * @param {?number} minWidth in physical pixel
+ * @param {?number} minHeight in physical pixel
+ * @return {!Rectangle} Adjusted rectangle with physical pixels
  */
 function adjustWindowRect(width, height, minWidth, minHeight) {
     if (typeof minWidth !== "number")
@@ -109,7 +110,7 @@ function adjustWindowRect(width, height, minWidth, minHeight) {
     if (typeof minHeight !== "number")
         minHeight = 0;
 
-    var windowRect = new Rectangle(0, 0, width, height);
+    var windowRect = new Rectangle(0, 0, Math.ceil(width), Math.ceil(height));
 
     if (!global.params.anchorRectInScreen)
         return windowRect;
@@ -123,6 +124,9 @@ function adjustWindowRect(width, height, minWidth, minHeight) {
     return windowRect;
 }
 
+/**
+ * Arguments are physical pixels.
+ */
 function _adjustWindowRectVertically(windowRect, availRect, anchorRect, minHeight) {
     var availableSpaceAbove = anchorRect.y - availRect.y;
     availableSpaceAbove = Math.max(0, Math.min(availRect.height, availableSpaceAbove));
@@ -140,6 +144,9 @@ function _adjustWindowRectVertically(windowRect, availRect, anchorRect, minHeigh
     }
 }
 
+/**
+ * Arguments are physical pixels.
+ */
 function _adjustWindowRectHorizontally(windowRect, availRect, anchorRect, minWidth) {
     windowRect.width = Math.min(windowRect.width, availRect.width);
     windowRect.width = Math.max(windowRect.width, minWidth);
@@ -152,7 +159,7 @@ function _adjustWindowRectHorizontally(windowRect, availRect, anchorRect, minWid
 }
 
 /**
- * @param {!Rectangle} rect
+ * @param {!Rectangle} rect Window position and size with physical pixels.
  */
 function setWindowRect(rect) {
     if (window.frameElement) {
@@ -164,14 +171,17 @@ function setWindowRect(rect) {
 }
 
 function hideWindow() {
-    resizeWindow(1, 1);
+    setWindowRect(adjustWindowRect(1, 1, 1, 1));
 }
 
 /**
  * @return {!boolean}
  */
 function isWindowHidden() {
-    return window.innerWidth === 1 && window.innerHeight === 1;
+    // window.innerWidth and innerHeight are zoom-adjusted values.  If we call
+    // setWindowRect with width=100 and the zoom-level is 2.0, innerWidth will
+    // return 50.
+    return window.innerWidth <= 1 && window.innerHeight <= 1;
 }
 
 window.addEventListener("resize", function() {

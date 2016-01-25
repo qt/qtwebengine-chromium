@@ -5,6 +5,8 @@
 #ifndef MEDIA_BASE_VIDEO_CAPTURE_TYPES_H_
 #define MEDIA_BASE_VIDEO_CAPTURE_TYPES_H_
 
+#include <stddef.h>
+
 #include <vector>
 
 #include "build/build_config.h"
@@ -24,7 +26,6 @@ typedef int VideoCaptureSessionId;
 // TODO(mcasas): http://crbug.com/504160 Consider making this an enum class.
 enum VideoPixelStorage {
   PIXEL_STORAGE_CPU,
-  PIXEL_STORAGE_TEXTURE,
   PIXEL_STORAGE_GPUMEMORYBUFFER,
   PIXEL_STORAGE_MAX = PIXEL_STORAGE_GPUMEMORYBUFFER,
 };
@@ -62,6 +63,7 @@ enum class PowerLineFrequency {
   FREQUENCY_60HZ = 60,
   FREQUENCY_MAX = FREQUENCY_60HZ
 };
+
 // Assert that the int:frequency mapping is correct.
 static_assert(static_cast<int>(PowerLineFrequency::FREQUENCY_DEFAULT) == 0,
               "static_cast<int>(FREQUENCY_DEFAULT) must equal 0.");
@@ -124,6 +126,10 @@ typedef std::vector<VideoCaptureFormat> VideoCaptureFormats;
 // returned.
 struct MEDIA_EXPORT VideoCaptureParams {
   VideoCaptureParams();
+
+  // Returns true if requested_format.IsValid() and all other values are within
+  // their expected ranges.
+  bool IsValid() const;
 
   bool operator==(const VideoCaptureParams& other) const {
     return requested_format == other.requested_format &&

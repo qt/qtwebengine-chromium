@@ -5,11 +5,14 @@
 #ifndef CC_BASE_RTREE_H_
 #define CC_BASE_RTREE_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <deque>
 #include <vector>
 
 #include "cc/base/cc_export.h"
-#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -46,7 +49,7 @@ class CC_EXPORT RTree {
     branches.reserve(items.size());
 
     for (size_t i = 0; i < items.size(); i++) {
-      const gfx::RectF& bounds = bounds_getter(items[i]);
+      const gfx::Rect& bounds = bounds_getter(items[i]);
       if (bounds.IsEmpty())
         continue;
 
@@ -70,10 +73,16 @@ class CC_EXPORT RTree {
 
   template <typename Container>
   void Build(const Container& items) {
-    Build(items, [](const gfx::RectF& bounds) { return bounds; });
+    Build(items, [](const gfx::Rect& bounds) { return bounds; });
   }
 
-  void Search(const gfx::RectF& query, std::vector<size_t>* results) const;
+  void Search(const gfx::Rect& query, std::vector<size_t>* results) const;
+
+  // Equivalent, behaviorally, to checking if |Search| added anything to
+  // |results|. This is faster, however.
+  bool ContainsItemInRect(const gfx::Rect& query) const;
+
+  gfx::Rect GetBounds() const;
 
  private:
   // These values were empirically determined to produce reasonable performance
@@ -90,7 +99,7 @@ class CC_EXPORT RTree {
       Node* subtree;
       size_t index;
     };
-    gfx::RectF bounds;
+    gfx::Rect bounds;
   };
 
   struct Node {
@@ -100,8 +109,10 @@ class CC_EXPORT RTree {
   };
 
   void SearchRecursive(Node* root,
-                       const gfx::RectF& query,
+                       const gfx::Rect& query,
                        std::vector<size_t>* results) const;
+
+  bool ContainsItemInRectRecursive(Node* node, const gfx::Rect& query) const;
 
   // Consumes the input array.
   Branch BuildRecursive(std::vector<Branch>* branches, int level);

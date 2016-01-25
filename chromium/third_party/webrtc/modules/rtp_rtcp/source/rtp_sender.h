@@ -10,14 +10,16 @@
 
 #ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_SENDER_H_
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_SENDER_H_
-#include <assert.h>
-#include <math.h>
 
+#include <list>
 #include <map>
+#include <utility>
+#include <vector>
 
+#include "webrtc/base/random.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/bitrate.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_history.h"
@@ -25,8 +27,6 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/ssrc_database.h"
 #include "webrtc/transport.h"
-
-#define MAX_INIT_RTP_SEQ_NUMBER 32767  // 2^15 -1.
 
 namespace webrtc {
 
@@ -116,7 +116,7 @@ class RTPSender : public RTPSenderInterface {
   int32_t RegisterPayload(
       const char payload_name[RTP_PAYLOAD_NAME_SIZE],
       const int8_t payload_type, const uint32_t frequency,
-      const uint8_t channels, const uint32_t rate);
+      const size_t channels, const uint32_t rate);
 
   int32_t DeRegisterSendPayload(const int8_t payload_type);
 
@@ -163,7 +163,7 @@ class RTPSender : public RTPSenderInterface {
   int32_t SetTransportSequenceNumber(uint16_t sequence_number);
 
   int32_t RegisterRtpHeaderExtension(RTPExtensionType type, uint8_t id);
-  virtual bool IsRtpHeaderExtensionRegistered(RTPExtensionType type) override;
+  bool IsRtpHeaderExtensionRegistered(RTPExtensionType type) override;
   int32_t DeregisterRtpHeaderExtension(RTPExtensionType type);
 
   size_t RtpHeaderExtensionTotalLength() const;
@@ -202,10 +202,10 @@ class RTPSender : public RTPSenderInterface {
                         bool is_voiced,
                         uint8_t dBov) const;
 
-  virtual bool UpdateVideoRotation(uint8_t* rtp_packet,
-                                   size_t rtp_packet_length,
-                                   const RTPHeader& rtp_header,
-                                   VideoRotation rotation) const override;
+  bool UpdateVideoRotation(uint8_t* rtp_packet,
+                           size_t rtp_packet_length,
+                           const RTPHeader& rtp_header,
+                           VideoRotation rotation) const override;
 
   bool TimeToSendPacket(uint16_t sequence_number, int64_t capture_time_ms,
                         bool retransmission);
@@ -282,8 +282,6 @@ class RTPSender : public RTPSenderInterface {
   RtpVideoCodecTypes VideoCodecType() const;
 
   uint32_t MaxConfiguredBitrateVideo() const;
-
-  int32_t SendRTPIntraRequest();
 
   // FEC.
   void SetGenericFECStatus(bool enable,
@@ -388,6 +386,7 @@ class RTPSender : public RTPSenderInterface {
 
   Clock* clock_;
   int64_t clock_delta_ms_;
+  Random random_ GUARDED_BY(send_critsect_);
 
   rtc::scoped_ptr<BitrateAggregator> bitrates_;
   Bitrate total_bitrate_sent_;

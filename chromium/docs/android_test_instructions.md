@@ -51,6 +51,8 @@ behavior._ This can interfere with the test runner. To disable this dialog, run:
 Use an emulator (i.e. Android Virtual Device, AVD): Enabling Intel's
 Virtualizaton support provides the fastest, most reliable emulator configuration
 available (i.e. x86 emulator with GPU acceleration and KVM support).
+Remember to build with `target_arch=ia32` for x86. Otherwise installing the APKs
+will fail with `INSTALL_FAILED_NO_MATCHING_ABIS`.
 
 1.  Enable Intel Virtualization support in the BIOS.
 
@@ -63,7 +65,7 @@ available (i.e. x86 emulator with GPU acceleration and KVM support).
 3.  Install emulator deps:
 
     ```shell
-    build/android/install_emulator_deps.py --api-level=19
+    build/android/install_emulator_deps.py --api-level=23
     ```
 
     This script will download Android SDK and place it a directory called
@@ -76,7 +78,7 @@ available (i.e. x86 emulator with GPU acceleration and KVM support).
     --abi.
 
     ```shell
-    build/android/avd.py --api-level=19
+    build/android/avd.py --api-level=23
     ```
 
     This script will attempt to use GPU emulation, so you must be running the
@@ -94,6 +96,8 @@ settings, since Chromium requires it to render.
 It may not be immediately obvious where your test code gets compiled to, so here
 are some general rules:
 
+*  If your test code lives under /base, it will be built as part of the
+   base_unittests_apk.
 *  If your test code lives under /content, it will probably be built as part of
    the content_shell_test_apk
 *  If your test code lives under /chrome (or higher), it will probably be built
@@ -124,7 +128,9 @@ If you build in an output directory other than "out", you may have to tell
 test\_runner.py where you place it. Say you build your android code in
 out\_android, then do `export CHROMIUM_OUT_DIR=out_android` before running the
 command below. You have to do this even if your "out" directory is a symlink
-pointing to "out_android".
+pointing to "out_android". You can also use `--output-directory` to point to the
+path of your output directory, for example,
+`--output-directory=out_android/Debug`.
 
 ## INSTALL\_FAILED\_CONTAINER\_ERROR or INSTALL\_FAILED\_INSUFFICIENT\_STORAGE
 
@@ -134,20 +140,63 @@ with the following commands:
 
 ```shell
 # Resize userdata partition to be 1G
-resize2fs android_emulator_sdk/sdk/system-images/android-19/x86/userdata.img 1G
+resize2fs android_emulator_sdk/sdk/system-images/android-23/x86/userdata.img 1G
 
 # Set filesystem parameter to continue on errors; Android doesn't like some
 # things e2fsprogs does.
-tune2fs -e continue android_emulator_sdk/sdk/system-images/android-19/x86/userdata.img
+tune2fs -e continue android_emulator_sdk/sdk/system-images/android-23/x86/userdata.img
 ```
 
 ## Symbolizing Crashes
 
 Crash stacks are logged and can be viewed using adb logcat. To symbolize the
-traces, pipe the output through
-`third_party/android_platform/development/scripts/stack`. If you build in an
-output directory other than "out", pass
-`--chrome-symbols-dir=out_directory/{Debug,Release}/lib` to the script as well.
+traces, define `CHROMIUM_OUTPUT_DIR=$OUTDIR` where `$OUTDIR` is the argument you
+pass to `ninja -C`, and pipe the output through
+`third_party/android_platform/development/scripts/stack`. If
+`$CHROMIUM_OUTPUT_DIR` is unset, the script will search `out/Debug` and
+`out/Release`. For example:
+
+```shell
+# If you build with
+ninja -C out/Debug chrome_public_test_apk
+# You can run:
+adb logcat -d | third_party/android_platform/development/scripts/stack
+
+# If you build with
+ninja -C out/android chrome_public_test_apk
+# You can run:
+adb logcat -d | CHROMIUM_OUTPUT_DIR=out/android third_party/android_platform/development/scripts/stack
+# or
+export CHROMIUM_OUTPUT_DIR=out/android
+adb logcat -d | third_party/android_platform/development/scripts/stack
+```
+
+## JUnit tests
+
+JUnit tests are Java unittests running on the host instead of the target device.
+They are faster to run and therefore are recommended over instrumentation tests
+when possible.
+
+The JUnits tests are usually following the pattern of *target*\_junit\_tests,
+for example, `content_junit_tests` and `chrome_junit_tests`.
+
+When adding a new JUnit test, the associated `BUILD.gn` file must be updated.
+For example, adding a test to `chrome_junit_tests` requires to update
+`chrome/android/BUILD.gn`. If you are a GYP user, you will not need to do that
+step in order to run the test locally but it is still required for GN users to
+run the test.
+
+```shell
+# Build the test suite.
+ninja -C out/Release chrome_junit_tests
+
+# Run the test suite.
+build/android/test_runner.py junit -s chrome_junit_tests --release -vvv
+
+# Run a subset of tests. You might need to pass the package name for some tests.
+build/android/test_runner.py junit -s chrome_junit_tests --release -vvv
+-f "org.chromium.chrome.browser.media.*"
+```
 
 ## Gtests
 

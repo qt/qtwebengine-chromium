@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include <string>
 
+#include "base/macros.h"
 #include "content/common/media/audio_messages.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "media/audio/audio_output_ipc.h"
@@ -41,11 +44,6 @@ class MockAudioDelegate : public media::AudioOutputIPCDelegate {
     length_ = length;
   }
 
-  void OnOutputDeviceSwitched(media::OutputDeviceStatus result) override {
-    output_device_switched_received_ = true;
-    device_status_ = result;
-  }
-
   void OnIPCClosed() override {}
 
   void Reset() {
@@ -62,8 +60,6 @@ class MockAudioDelegate : public media::AudioOutputIPCDelegate {
 
     volume_received_ = false;
     volume_ = 0;
-
-    output_device_switched_received_ = false;
   }
 
   bool state_changed_received() { return state_changed_received_; }
@@ -75,11 +71,7 @@ class MockAudioDelegate : public media::AudioOutputIPCDelegate {
 
   bool created_received() { return created_received_; }
   base::SharedMemoryHandle handle() { return handle_; }
-  uint32 length() { return length_; }
-
-  bool output_device_switched_received() {
-    return output_device_switched_received_;
-  }
+  uint32_t length() { return length_; }
 
  private:
   bool state_changed_received_;
@@ -95,8 +87,6 @@ class MockAudioDelegate : public media::AudioOutputIPCDelegate {
 
   bool volume_received_;
   double volume_;
-
-  bool output_device_switched_received_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAudioDelegate);
 };
@@ -138,7 +128,7 @@ TEST(AudioMessageFilterTest, Basic) {
 
   // AudioMsg_NotifyStreamCreated
   base::SyncSocket::TransitDescriptor socket_descriptor;
-  const uint32 kLength = 1024;
+  const uint32_t kLength = 1024;
   EXPECT_FALSE(delegate.created_received());
   filter->OnMessageReceived(AudioMsg_NotifyStreamCreated(
       kStreamId, base::SharedMemory::NULLHandle(), socket_descriptor, kLength));
@@ -155,13 +145,6 @@ TEST(AudioMessageFilterTest, Basic) {
   EXPECT_TRUE(delegate.state_changed_received());
   EXPECT_EQ(media::AUDIO_OUTPUT_IPC_DELEGATE_STATE_PLAYING, delegate.state());
   delegate.Reset();
-
-  // AudioMsg_NotifyOutputDeviceSwitched
-  EXPECT_FALSE(delegate.output_device_switched_received());
-  filter->OnOutputDeviceSwitched(kStreamId, media::OUTPUT_DEVICE_STATUS_OK);
-  EXPECT_TRUE(delegate.output_device_switched_received());
-  EXPECT_EQ(media::OUTPUT_DEVICE_STATUS_OK, delegate.device_status());
-  message_loop.RunUntilIdle();
 
   ipc->CloseStream();
   EXPECT_EQ(static_cast<media::AudioOutputIPCDelegate*>(NULL),

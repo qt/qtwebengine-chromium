@@ -4,6 +4,8 @@
 
 #include "content/browser/compositor/browser_compositor_overlay_candidate_validator_mac.h"
 
+#include <stddef.h>
+
 #include "cc/output/overlay_strategy_sandwich.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
@@ -26,8 +28,12 @@ BrowserCompositorOverlayCandidateValidatorMac::
 
 void BrowserCompositorOverlayCandidateValidatorMac::GetStrategies(
     cc::OverlayProcessor::StrategyList* strategies) {
-  strategies->push_back(scoped_ptr<cc::OverlayProcessor::Strategy>(
-      new cc::OverlayStrategyCommon(this, new cc::OverlayStrategySandwich)));
+}
+
+bool BrowserCompositorOverlayCandidateValidatorMac::AllowCALayerOverlays() {
+  if (software_mirror_active_ || ca_layers_disabled_)
+    return false;
+  return true;
 }
 
 void BrowserCompositorOverlayCandidateValidatorMac::CheckOverlaySupport(

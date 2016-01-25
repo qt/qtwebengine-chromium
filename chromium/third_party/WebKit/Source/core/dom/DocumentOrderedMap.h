@@ -45,9 +45,11 @@ class Element;
 class TreeScope;
 
 class DocumentOrderedMap : public NoBaseWillBeGarbageCollected<DocumentOrderedMap> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentOrderedMap);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(DocumentOrderedMap);
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentOrderedMap);
 public:
     static PassOwnPtrWillBeRawPtr<DocumentOrderedMap> create();
+
     void add(const AtomicString&, Element*);
     void remove(const AtomicString&, Element*);
 
@@ -62,7 +64,30 @@ public:
 
     DECLARE_TRACE();
 
+#if ENABLE(ASSERT)
+    // While removing a ContainerNode, ID lookups won't be precise should the tree
+    // have elements with duplicate IDs contained in the element being removed.
+    // Rare trees, but ID lookups may legitimately fail across such removals;
+    // this scope object informs DocumentOrderedMaps about the transitory
+    // state of the underlying tree.
+    class RemoveScope {
+        STACK_ALLOCATED();
+    public:
+        RemoveScope();
+        ~RemoveScope();
+    };
+#else
+    class RemoveScope {
+        STACK_ALLOCATED();
+    public:
+        RemoveScope() { }
+        ~RemoveScope() { }
+    };
+#endif
+
 private:
+    DocumentOrderedMap();
+
     template<bool keyMatches(const AtomicString&, const Element&)>
     Element* get(const AtomicString&, const TreeScope*) const;
 

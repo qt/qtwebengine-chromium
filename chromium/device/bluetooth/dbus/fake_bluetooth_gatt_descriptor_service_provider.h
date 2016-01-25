@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_
-#define CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_
+#ifndef DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_
+#define DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_
+
+#include <stdint.h>
 
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/dbus/bluetooth_gatt_descriptor_service_provider.h"
@@ -29,14 +32,14 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothGattDescriptorServiceProvider
   ~FakeBluetoothGattDescriptorServiceProvider() override;
 
   // BluetoothGattDescriptorServiceProvider override.
-  void SendValueChanged(const std::vector<uint8>& value) override;
+  void SendValueChanged(const std::vector<uint8_t>& value) override;
 
   // Methods to simulate value get/set requests issued from a remote device. The
   // methods do nothing, if the associated service was not registered with the
   // GATT manager.
   void GetValue(const Delegate::ValueCallback& callback,
                 const Delegate::ErrorCallback& error_callback);
-  void SetValue(const std::vector<uint8>& value,
+  void SetValue(const std::vector<uint8_t>& value,
                 const base::Closure& callback,
                 const Delegate::ErrorCallback& error_callback);
 
@@ -64,4 +67,4 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothGattDescriptorServiceProvider
 
 }  // namespace bluez
 
-#endif  // CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_
+#endif  // DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_SERVICE_PROVIDER_H_

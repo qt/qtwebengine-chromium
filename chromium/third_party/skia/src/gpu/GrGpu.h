@@ -11,6 +11,7 @@
 #include "GrPipelineBuilder.h"
 #include "GrProgramDesc.h"
 #include "GrStencil.h"
+#include "GrTextureParamsAdjuster.h"
 #include "GrXferProcessor.h"
 #include "SkPath.h"
 
@@ -30,6 +31,7 @@ class GrRenderTarget;
 class GrStencilAttachment;
 class GrSurface;
 class GrTexture;
+class GrTransferBuffer;
 class GrVertexBuffer;
 class GrVertices;
 
@@ -127,6 +129,17 @@ public:
      */
     GrIndexBuffer* createIndexBuffer(size_t size, bool dynamic);
 
+    /**
+     * Creates a transfer buffer.
+     *
+     * @param size      size in bytes of the index buffer
+     * @param toGpu     true if used to transfer from the cpu to the gpu
+     *                  otherwise to be used to transfer from the gpu to the cpu
+     *
+     * @return The transfer buffer if successful, otherwise nullptr.
+     */
+    GrTransferBuffer* createTransferBuffer(size_t size, TransferType type);
+    
     /**
      * Resolves MSAA.
      */
@@ -248,6 +261,25 @@ public:
                      size_t rowBytes);
 
     /**
+     * Updates the pixels in a rectangle of a surface using a GrTransferBuffer
+     *
+     * @param surface       The surface to write to.
+     * @param left          left edge of the rectangle to write (inclusive)
+     * @param top           top edge of the rectangle to write (inclusive)
+     * @param width         width of rectangle to write in pixels.
+     * @param height        height of rectangle to write in pixels.
+     * @param config        the pixel config of the source buffer
+     * @param buffer        GrTransferBuffer to read pixels from
+     * @param offset        offset from the start of the buffer
+     * @param rowBytes      number of bytes between consecutive rows. Zero
+     *                      means rows are tightly packed.
+     */
+    bool transferPixels(GrSurface* surface,
+                        int left, int top, int width, int height,
+                        GrPixelConfig config, GrTransferBuffer* buffer,
+                        size_t offset, size_t rowBytes);
+
+    /**
      * Clear the passed in render target. Ignores the draw state and clip.
      */
     void clear(const SkIRect& rect, GrColor color, GrRenderTarget* renderTarget);
@@ -326,6 +358,7 @@ public:
             fShaderCompilations = 0;
             fTextureCreates = 0;
             fTextureUploads = 0;
+            fTransfersToTexture = 0;
             fStencilAttachmentCreates = 0;
             fNumDraws = 0;
         }
@@ -338,23 +371,29 @@ public:
         void incTextureCreates() { fTextureCreates++; }
         int textureUploads() const { return fTextureUploads; }
         void incTextureUploads() { fTextureUploads++; }
+        int transfersToTexture() const { return fTransfersToTexture; }
+        void incTransfersToTexture() { fTransfersToTexture++; }
         void incStencilAttachmentCreates() { fStencilAttachmentCreates++; }
         void incNumDraws() { fNumDraws++; }
         void dump(SkString*);
+        void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
 
     private:
         int fRenderTargetBinds;
         int fShaderCompilations;
         int fTextureCreates;
         int fTextureUploads;
+        int fTransfersToTexture;
         int fStencilAttachmentCreates;
         int fNumDraws;
 #else
-        void dump(SkString*) {};
+        void dump(SkString*) {}
+        void dumpKeyValuePairs(SkTArray<SkString>*, SkTArray<double>*) {}
         void incRenderTargetBinds() {}
         void incShaderCompilations() {}
         void incTextureCreates() {}
         void incTextureUploads() {}
+        void incTransfersToTexture() {}
         void incStencilAttachmentCreates() {}
         void incNumDraws() {}
 #endif
@@ -362,12 +401,18 @@ public:
 
     Stats* stats() { return &fStats; }
 
-    // creation and deletion of raw texture for testing
-    // only to be used in GPU-specific tests
+    /** Creates a texture directly in the backend API without wrapping it in a GrTexture. This is
+        only to be used for testing (particularly for testing the methods that import an externally
+        created texture into Skia. Must be matched with a call to deleteTestingOnlyTexture(). */
     virtual GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
                                                             GrPixelConfig config) const = 0;
-    virtual bool isTestingOnlyBackendTexture(GrBackendObject id) const = 0;
-    virtual void deleteTestingOnlyBackendTexture(GrBackendObject id) const = 0;
+    /** Check a handle represents an actual texture in the backend API that has not been freed. */
+    virtual bool isTestingOnlyBackendTexture(GrBackendObject) const = 0;
+    /** If ownership of the backend texture has been transferred pass true for abandonTexture. This
+        will do any necessary cleanup of the handle without freeing the texture in the backend
+        API. */
+    virtual void deleteTestingOnlyBackendTexture(GrBackendObject,
+                                                 bool abandonTexture = false) const = 0;
 
     // width and height may be larger than rt (if underlying API allows it).
     // Returns nullptr if compatible sb could not be created, otherwise the caller owns the ref on
@@ -378,8 +423,20 @@ public:
     // clears target's entire stencil buffer to 0
     virtual void clearStencil(GrRenderTarget* target) = 0;
 
+    // draws an outline rectangle for debugging/visualization purposes.
+    virtual void drawDebugWireRect(GrRenderTarget*, const SkIRect&, GrColor) = 0;
+
+    // Determines whether a copy of a texture must be made in order to be compatible with
+    // a given GrTextureParams. If so, the width, height and filter used for the copy are
+    // output via the CopyParams.
+    bool makeCopyForTextureParams(int width, int height, const GrTextureParams&,
+                                  GrTextureProducer::CopyParams*) const;
+
     // This is only to be used in GL-specific tests.
     virtual const GrGLContext* glContextForTesting() const { return nullptr; }
+
+    // This is only to be used by testing code
+    virtual void resetShaderCacheForTesting() const {}
 
 protected:
     // Functions used to map clip-respecting stencil tests into normal
@@ -401,6 +458,12 @@ protected:
         GR_STATIC_ASSERT(GrGpu::kRequireDraw_DrawPreference >
                          GrGpu::kGpuPrefersDraw_DrawPreference);
         *preference = SkTMax(*preference, elevation);
+    }
+
+    void handleDirtyContext() {
+        if (fResetBits) {
+            this->resetContext();
+        }
     }
 
     Stats                                   fStats;
@@ -430,6 +493,7 @@ private:
                                                       GrWrapOwnership) = 0;
     virtual GrVertexBuffer* onCreateVertexBuffer(size_t size, bool dynamic) = 0;
     virtual GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic) = 0;
+    virtual GrTransferBuffer* onCreateTransferBuffer(size_t size, TransferType type) = 0;
 
     // overridden by backend-specific derived class to perform the clear.
     virtual void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) = 0;
@@ -463,6 +527,12 @@ private:
                                GrPixelConfig config, const void* buffer,
                                size_t rowBytes) = 0;
 
+    // overridden by backend-specific derived class to perform the surface write
+    virtual bool onTransferPixels(GrSurface*,
+                                  int left, int top, int width, int height,
+                                  GrPixelConfig config, GrTransferBuffer* buffer,
+                                  size_t offset, size_t rowBytes) = 0;
+
     // overridden by backend-specific derived class to perform the resolve
     virtual void onResolveRenderTarget(GrRenderTarget* target) = 0;
 
@@ -476,12 +546,6 @@ private:
         this->onResetContext(fResetBits);
         fResetBits = 0;
         ++fResetTimestamp;
-    }
-
-    void handleDirtyContext() {
-        if (fResetBits) {
-            this->resetContext();
-        }
     }
 
     ResetTimestamp                                                      fResetTimestamp;

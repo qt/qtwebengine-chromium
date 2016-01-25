@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include <vector>
 
 #include "base/bind.h"
@@ -72,7 +74,7 @@ TEST_F(StatisticsRecorderTest, NotInitialized) {
   DeleteHistogram(histogram);
 
   // RegisterOrDeleteDuplicateRanges is a no-op.
-  BucketRanges* ranges = new BucketRanges(3);;
+  BucketRanges* ranges = new BucketRanges(3);
   ranges->ResetChecksum();
   EXPECT_EQ(ranges,
             StatisticsRecorder::RegisterOrDeleteDuplicateRanges(ranges));
@@ -83,9 +85,9 @@ TEST_F(StatisticsRecorderTest, NotInitialized) {
 TEST_F(StatisticsRecorderTest, RegisterBucketRanges) {
   std::vector<const BucketRanges*> registered_ranges;
 
-  BucketRanges* ranges1 = new BucketRanges(3);;
+  BucketRanges* ranges1 = new BucketRanges(3);
   ranges1->ResetChecksum();
-  BucketRanges* ranges2 = new BucketRanges(4);;
+  BucketRanges* ranges2 = new BucketRanges(4);
   ranges2->ResetChecksum();
 
   // Register new ranges.
@@ -109,7 +111,7 @@ TEST_F(StatisticsRecorderTest, RegisterBucketRanges) {
   EXPECT_EQ(0, ranges1->range(2));
 
   // Register ranges with same values.
-  BucketRanges* ranges3 = new BucketRanges(3);;
+  BucketRanges* ranges3 = new BucketRanges(3);
   ranges3->ResetChecksum();
   EXPECT_EQ(ranges1,  // returning ranges1
             StatisticsRecorder::RegisterOrDeleteDuplicateRanges(ranges3));
@@ -263,8 +265,7 @@ TEST_F(StatisticsRecorderTest, ToJSON) {
   std::string json(StatisticsRecorder::ToJSON(std::string()));
 
   // Check for valid JSON.
-  scoped_ptr<Value> root;
-  root.reset(JSONReader::DeprecatedRead(json));
+  scoped_ptr<Value> root = JSONReader::Read(json);
   ASSERT_TRUE(root.get());
 
   DictionaryValue* root_dict = NULL;
@@ -289,7 +290,7 @@ TEST_F(StatisticsRecorderTest, ToJSON) {
   std::string query("TestHistogram2");
   json = StatisticsRecorder::ToJSON(query);
 
-  root.reset(JSONReader::DeprecatedRead(json));
+  root = JSONReader::Read(json);
   ASSERT_TRUE(root.get());
   ASSERT_TRUE(root->GetAsDictionary(&root_dict));
 

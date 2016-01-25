@@ -52,13 +52,43 @@ public:
     static PassRefPtrWillBeRawPtr<MHTMLArchive> create(const KURL&, SharedBuffer*);
     ~MHTMLArchive();
 
+    // Binary encoding results in smaller MHTML files but they might not work in other browsers.
     enum EncodingPolicy {
         UseDefaultEncoding,
         UseBinaryEncoding
     };
 
-    // Binary encoding results in smaller MHTML files but they might not work in other browsers.
-    static PassRefPtr<SharedBuffer> generateMHTMLData(const Vector<SerializedResource>&, EncodingPolicy, const String& title, const String& mimeType);
+    // Generates an MHTML header and appends it to |outputBuffer|.
+    //
+    // Same |boundary| needs to used for all generateMHTMLHeader and
+    // generateMHTMLPart and generateMHTMLFooter calls that belong to the same
+    // MHTML document (see also rfc1341, section 7.2.1, "boundary" description).
+    static void generateMHTMLHeader(
+        const String& boundary, const String& title, const String& mimeType,
+        SharedBuffer& outputBuffer);
+
+    // Serializes SerializedResource as an MHTML part and appends it in
+    // |outputBuffer|.
+    //
+    // Same |boundary| needs to used for all generateMHTMLHeader and
+    // generateMHTMLPart and generateMHTMLFooter calls that belong to the same
+    // MHTML document (see also rfc1341, section 7.2.1, "boundary" description).
+    //
+    // If |contentID| is non-empty, then it will be used as a Content-ID header.
+    // See rfc2557 - section 8.3 - "Use of the Content-ID header and CID URLs".
+    static void generateMHTMLPart(
+        const String& boundary, const String& contentID,
+        EncodingPolicy, const SerializedResource&,
+        SharedBuffer& outputBuffer);
+
+    // Generates an MHTML footer and appends it to |outputBuffer|.
+    //
+    // Same |boundary| needs to used for all generateMHTMLHeader and
+    // generateMHTMLPart and generateMHTMLFooter calls that belong to the same
+    // MHTML document (see also rfc1341, section 7.2.1, "boundary" description).
+    static void generateMHTMLFooter(
+        const String& boundary,
+        SharedBuffer& outputBuffer);
 
     typedef WillBeHeapVector<RefPtrWillBeMember<ArchiveResource>> SubArchiveResources;
     typedef WillBeHeapVector<RefPtrWillBeMember<MHTMLArchive>> SubFrameArchives;

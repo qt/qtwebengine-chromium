@@ -60,6 +60,9 @@ enum class FrameDetachType { Remove, Swap };
 // Status of user gesture.
 enum class UserGestureStatus { Active, None };
 
+// Frame is the base class of LocalFrame and RemoteFrame and should only contain
+// functionality shared between both. In particular, any method related to
+// input, layout, or painting probably belongs on LocalFrame.
 class CORE_EXPORT Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
 public:
     virtual ~Frame();
@@ -111,7 +114,6 @@ public:
     // Returns true if the frame is ready to receive the next commit, or false
     // otherwise.
     virtual bool prepareForCommit() = 0;
-    void finishSwapFrom(Frame*);
 
     bool canNavigate(const Frame&);
     virtual void printNavigationErrorMessage(const Frame&, const char* reason) = 0;
@@ -129,10 +131,10 @@ public:
     void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
     bool isLoading() const { return m_isLoading; }
 
+    virtual WindowProxyManager* windowProxyManager() const = 0;
+
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);
-
-    virtual WindowProxyManager* windowProxyManager() const = 0;
 
     mutable FrameTree m_treeNode;
 
@@ -140,7 +142,7 @@ protected:
     RawPtrWillBeMember<FrameOwner> m_owner;
 
 private:
-    FrameClient* m_client;
+    RawPtrWillBeMember<FrameClient> m_client;
     // Needed to identify Frame Timing requests.
     int64_t m_frameID;
     bool m_isLoading;

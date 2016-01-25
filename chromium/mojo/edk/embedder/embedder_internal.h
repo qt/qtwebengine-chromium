@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 
+#include "mojo/edk/system/system_impl_export.h"
+
 namespace base {
 class TaskRunner;
 }
@@ -19,11 +21,15 @@ namespace mojo {
 
 namespace edk {
 
+class Broker;
 class Core;
 class PlatformSupport;
 class ProcessDelegate;
 
 namespace internal {
+
+// Instance of |Broker| to use.
+extern Broker* g_broker;
 
 // Instance of |PlatformSupport| to use.
 extern PlatformSupport* g_platform_support;
@@ -32,11 +38,11 @@ extern PlatformSupport* g_platform_support;
 extern Core* g_core;
 extern base::TaskRunner* g_delegate_thread_task_runner;
 extern ProcessDelegate* g_process_delegate;
-extern base::TaskRunner* g_io_thread_task_runner;
+MOJO_SYSTEM_IMPL_EXPORT extern base::TaskRunner* g_io_thread_task_runner;
 
-// Called on the IO thread.
-void ChannelStarted();
-void ChannelShutdown();
+// TODO(use_chrome_edk): temporary until we have only one SDK.
+MOJO_SYSTEM_IMPL_EXPORT Core* GetCore();
+
 }  // namespace internal
 
 }  // namepace edk

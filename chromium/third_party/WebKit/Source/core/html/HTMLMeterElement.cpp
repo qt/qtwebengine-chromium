@@ -18,8 +18,6 @@
  *
  */
 
-#include "config.h"
-
 #include "core/html/HTMLMeterElement.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -84,12 +82,12 @@ LayoutObject* HTMLMeterElement::createLayoutObject(const ComputedStyle& style)
     return new LayoutMeter(this);
 }
 
-void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == valueAttr || name == minAttr || name == maxAttr || name == lowAttr || name == highAttr || name == optimumAttr)
         didElementStateChange();
     else
-        LabelableElement::parseAttribute(name, value);
+        LabelableElement::parseAttribute(name, oldValue, value);
 }
 
 double HTMLMeterElement::value() const

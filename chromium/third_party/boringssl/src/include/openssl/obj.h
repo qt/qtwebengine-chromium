@@ -54,8 +54,8 @@
  * copied and put under another distribution licence
  * [including the GNU Public Licence.] */
 
-#ifndef OPENSSL_HEADER_OBJECTS_H
-#define OPENSSL_HEADER_OBJECTS_H
+#ifndef OPENSSL_HEADER_OBJ_H
+#define OPENSSL_HEADER_OBJ_H
 
 #include <openssl/base.h>
 
@@ -125,7 +125,7 @@ OPENSSL_EXPORT const ASN1_OBJECT *OBJ_nid2obj(int nid);
 /* OBJ_nid2sn returns the short name for |nid|, or NULL if |nid| is unknown. */
 OPENSSL_EXPORT const char *OBJ_nid2sn(int nid);
 
-/* OBJ_nid2sn returns the long name for |nid|, or NULL if |nid| is unknown. */
+/* OBJ_nid2ln returns the long name for |nid|, or NULL if |nid| is unknown. */
 OPENSSL_EXPORT const char *OBJ_nid2ln(int nid);
 
 /* OBJ_nid2cbb writes |nid| as an ASN.1 OBJECT IDENTIFIER to |out|. It returns
@@ -195,4 +195,4 @@ OPENSSL_EXPORT int OBJ_find_sigid_by_algs(int *out_sign_nid, int digest_nid,
 
 #define OBJ_R_UNKNOWN_NID 100
 
-#endif  /* OPENSSL_HEADER_OBJECTS_H */
+#endif  /* OPENSSL_HEADER_OBJ_H */

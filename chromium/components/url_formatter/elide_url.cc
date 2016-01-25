@@ -4,9 +4,12 @@
 
 #include "components/url_formatter/elide_url.h"
 
+#include <stddef.h>
+
 #include "base/logging.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/escape.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -349,9 +352,8 @@ base::string16 ElideHost(const GURL& url,
   if (subdomain_width <= 0)
     return base::string16(gfx::kEllipsisUTF16) + kDot + url_domain;
 
-  const base::string16 elided_subdomain = gfx::ElideText(
-      url_subdomain, font_list, subdomain_width, gfx::ELIDE_HEAD);
-  return elided_subdomain + url_domain;
+  return gfx::ElideText(url_host, font_list, available_pixel_width,
+                        gfx::ELIDE_HEAD);
 }
 
 #endif  // !defined(OS_ANDROID)

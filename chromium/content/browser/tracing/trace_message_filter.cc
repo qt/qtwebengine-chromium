@@ -62,6 +62,8 @@ bool TraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnProcessMemoryDumpResponse)
     IPC_MESSAGE_HANDLER(TracingHostMsg_TriggerBackgroundTrace,
                         OnTriggerBackgroundTrace)
+    IPC_MESSAGE_HANDLER(TracingHostMsg_AbortBackgroundTrace,
+                        OnAbortBackgroundTrace)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -71,7 +73,7 @@ void TraceMessageFilter::SendBeginTracing(
       const base::trace_event::TraceConfig& trace_config) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   Send(new TracingMsg_BeginTracing(
-      trace_config.ToString(), base::TraceTicks::Now(), tracing_process_id_));
+      trace_config.ToString(), base::TimeTicks::Now(), tracing_process_id_));
 }
 
 void TraceMessageFilter::SendEndTracing() {
@@ -88,16 +90,16 @@ void TraceMessageFilter::SendCancelTracing() {
   Send(new TracingMsg_CancelTracing);
 }
 
-void TraceMessageFilter::SendEnableMonitoring(
+void TraceMessageFilter::SendStartMonitoring(
       const base::trace_event::TraceConfig& trace_config) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  Send(new TracingMsg_EnableMonitoring(trace_config.ToString(),
-                                       base::TraceTicks::Now()));
+  Send(new TracingMsg_StartMonitoring(trace_config.ToString(),
+                                       base::TimeTicks::Now()));
 }
 
-void TraceMessageFilter::SendDisableMonitoring() {
+void TraceMessageFilter::SendStopMonitoring() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  Send(new TracingMsg_DisableMonitoring);
+  Send(new TracingMsg_StopMonitoring);
 }
 
 void TraceMessageFilter::SendCaptureMonitoringSnapshot() {
@@ -130,7 +132,7 @@ void TraceMessageFilter::SendProcessMemoryDumpRequest(
 }
 
 // Called by TracingControllerImpl, which handles the multiprocess coordination.
-void TraceMessageFilter::SendGlobalMemoryDumpResponse(uint64 dump_guid,
+void TraceMessageFilter::SendGlobalMemoryDumpResponse(uint64_t dump_guid,
                                                       bool success) {
   Send(new TracingMsg_GlobalMemoryDumpResponse(dump_guid, success));
 }
@@ -146,7 +148,7 @@ void TraceMessageFilter::OnEndTracingAck(
   // child process is compromised.
   if (is_awaiting_end_ack_) {
     is_awaiting_end_ack_ = false;
-    TracingControllerImpl::GetInstance()->OnDisableRecordingAcked(
+    TracingControllerImpl::GetInstance()->OnStopTracingAcked(
         this, known_categories);
   } else {
     NOTREACHED();
@@ -200,7 +202,7 @@ void TraceMessageFilter::OnGlobalMemoryDumpRequest(
       base::Bind(&TraceMessageFilter::SendGlobalMemoryDumpResponse, this));
 }
 
-void TraceMessageFilter::OnProcessMemoryDumpResponse(uint64 dump_guid,
+void TraceMessageFilter::OnProcessMemoryDumpResponse(uint64_t dump_guid,
                                                      bool success) {
   TracingControllerImpl::GetInstance()->OnProcessMemoryDumpResponse(
       this, dump_guid, success);
@@ -208,6 +210,10 @@ void TraceMessageFilter::OnProcessMemoryDumpResponse(uint64 dump_guid,
 
 void TraceMessageFilter::OnTriggerBackgroundTrace(const std::string& name) {
   BackgroundTracingManagerImpl::GetInstance()->OnHistogramTrigger(name);
+}
+
+void TraceMessageFilter::OnAbortBackgroundTrace() {
+  BackgroundTracingManagerImpl::GetInstance()->AbortScenario();
 }
 
 }  // namespace content

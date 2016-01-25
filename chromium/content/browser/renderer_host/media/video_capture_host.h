@@ -53,6 +53,7 @@
 
 #include <map>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -130,7 +131,7 @@ class CONTENT_EXPORT VideoCaptureHost
   // the controller.
   void OnRendererFinishedWithBuffer(int device_id,
                                     int buffer_id,
-                                    uint32 sync_point,
+                                    const gpu::SyncToken& sync_token,
                                     double consumer_resource_utilization);
 
   // IPC message: Get supported formats referenced by |capture_session_id|.

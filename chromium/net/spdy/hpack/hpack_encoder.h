@@ -5,12 +5,13 @@
 #ifndef NET_SPDY_HPACK_ENCODER_H_
 #define NET_SPDY_HPACK_ENCODER_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/macros.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
@@ -51,14 +52,11 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   // Called upon a change to SETTINGS_HEADER_TABLE_SIZE. Specifically, this
   // is to be called after receiving (and sending an acknowledgement for) a
   // SETTINGS_HEADER_TABLE_SIZE update from the remote decoding endpoint.
-  void ApplyHeaderTableSizeSetting(size_t size_setting) {
-    header_table_.SetSettingsHeaderTableSize(size_setting);
-  }
+  void ApplyHeaderTableSizeSetting(size_t size_setting);
 
-  // Sets externally-owned storage for aggregating character counts of emitted
-  // literal representations.
-  void SetCharCountsStorage(std::vector<size_t>* char_counts,
-                            size_t* total_char_counts);
+  size_t CurrentHeaderTableSizeSetting() const {
+    return header_table_.settings_size_bound();
+  }
 
  private:
   typedef std::pair<base::StringPiece, base::StringPiece> Representation;
@@ -75,7 +73,9 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   // Emits a Huffman or identity string (whichever is smaller).
   void EmitString(base::StringPiece str);
 
-  void UpdateCharacterCounts(base::StringPiece str);
+  // Emits the current dynamic table size if the table size was recently
+  // updated and we have not yet emitted it (Section 6.3).
+  void MaybeEmitTableSize();
 
   // Crumbles a cookie header into ";" delimited crumbs.
   static void CookieToCrumbs(const Representation& cookie,
@@ -88,12 +88,10 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   HpackHeaderTable header_table_;
   HpackOutputStream output_stream_;
 
-  bool allow_huffman_compression_;
   const HpackHuffmanTable& huffman_table_;
-
-  // Externally-owned, nullable storage for character counts of literals.
-  std::vector<size_t>* char_counts_;
-  size_t* total_char_counts_;
+  size_t min_table_size_setting_received_;
+  bool allow_huffman_compression_;
+  bool should_emit_table_size_;
 
   DISALLOW_COPY_AND_ASSIGN(HpackEncoder);
 };

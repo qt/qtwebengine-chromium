@@ -11,7 +11,6 @@
 
 namespace blink {
 
-class CSSPrimitiveValue;
 class LayoutObject;
 class ComputedStyle;
 class FilterOperations;
@@ -19,14 +18,17 @@ class ShadowData;
 class ShadowList;
 class StyleColor;
 class Node;
+class CSSVariableData;
 
 class ComputedStyleCSSValueMapping {
     STATIC_ONLY(ComputedStyleCSSValueMapping);
 public:
     // FIXME: Resolve computed auto alignment in applyProperty/ComputedStyle and remove this non-const styledNode parameter.
     static PassRefPtrWillBeRawPtr<CSSValue> get(CSSPropertyID, const ComputedStyle&, const LayoutObject* = nullptr, Node* styledNode = nullptr, bool allowVisitedStyle = false);
+    static PassRefPtrWillBeRawPtr<CSSValue> get(const AtomicString customPropertyName, const ComputedStyle&);
+    static const HashMap<AtomicString, RefPtr<CSSVariableData>>* getVariables(const ComputedStyle&);
 private:
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> currentColorOrValidColor(const ComputedStyle&, const StyleColor&);
+    static PassRefPtrWillBeRawPtr<CSSValue> currentColorOrValidColor(const ComputedStyle&, const StyleColor&);
     static PassRefPtrWillBeRawPtr<CSSValue> valueForShadowData(const ShadowData&, const ComputedStyle&, bool useSpread);
     static PassRefPtrWillBeRawPtr<CSSValue> valueForShadowList(const ShadowList*, const ComputedStyle&, bool useSpread);
     static PassRefPtrWillBeRawPtr<CSSValue> valueForFilter(const ComputedStyle&, const FilterOperations&);

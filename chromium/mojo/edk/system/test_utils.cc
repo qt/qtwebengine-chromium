@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/test_utils.h"
 
+#include <stdint.h>
+
 #include <limits>
 
 #include "base/logging.h"
@@ -67,15 +69,6 @@ MojoDeadline Stopwatch::Elapsed() {
   // |DCHECK_GE|, not |CHECK_GE|, since this may be performance-important.
   DCHECK_GE(result, 0);
   return static_cast<MojoDeadline>(result);
-}
-
-
-MojoSystemTest::MojoSystemTest()
-    : test_io_thread_(base::TestIOThread::kAutoStart),
-      ipc_support_(test_io_thread_.task_runner()) {
-}
-
-MojoSystemTest::~MojoSystemTest() {
 }
 
 }  // namespace test

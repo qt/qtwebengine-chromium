@@ -4,6 +4,8 @@
 
 #include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
 
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "media/base/decrypt_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -44,7 +46,7 @@ bool FFmpegH265ToAnnexBBitstreamConverter::ConvertPacket(AVPacket* packet) {
     }
   }
 
-  std::vector<uint8> input_frame;
+  std::vector<uint8_t> input_frame;
   std::vector<SubsampleEntry> subsamples;
   // TODO(servolk): Performance could be improved here, by reducing unnecessary
   // data copying, but first annex b conversion code needs to be refactored to
@@ -64,7 +66,7 @@ bool FFmpegH265ToAnnexBBitstreamConverter::ConvertPacket(AVPacket* packet) {
     DVLOG(4) << "Inserted HEVC decoder params";
   }
 
-  uint32 output_packet_size = input_frame.size();
+  uint32_t output_packet_size = input_frame.size();
 
   if (output_packet_size == 0)
     return false;  // Invalid input packet.
@@ -84,7 +86,7 @@ bool FFmpegH265ToAnnexBBitstreamConverter::ConvertPacket(AVPacket* packet) {
   memcpy(dest_packet.data, &input_frame[0], input_frame.size());
 
   // At the end we must destroy the old packet.
-  av_free_packet(packet);
+  av_packet_unref(packet);
   *packet = dest_packet;  // Finally, replace the values in the input packet.
 
   return true;

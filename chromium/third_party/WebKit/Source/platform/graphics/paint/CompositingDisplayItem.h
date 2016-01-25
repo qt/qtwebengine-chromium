@@ -18,7 +18,7 @@ namespace blink {
 
 class PLATFORM_EXPORT BeginCompositingDisplayItem final : public PairedBeginDisplayItem {
 public:
-    BeginCompositingDisplayItem(const DisplayItemClientWrapper& client, const SkXfermode::Mode xferMode, const float opacity, const FloatRect* bounds, ColorFilter colorFilter = ColorFilterNone)
+    BeginCompositingDisplayItem(const DisplayItemClient& client, const SkXfermode::Mode xferMode, const float opacity, const FloatRect* bounds, ColorFilter colorFilter = ColorFilterNone)
         : PairedBeginDisplayItem(client, BeginCompositing, sizeof(*this))
         , m_xferMode(xferMode)
         , m_opacity(opacity)
@@ -29,8 +29,8 @@ public:
             m_bounds = FloatRect(*bounds);
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #ifndef NDEBUG
@@ -57,11 +57,11 @@ private:
 
 class PLATFORM_EXPORT EndCompositingDisplayItem final : public PairedEndDisplayItem {
 public:
-    EndCompositingDisplayItem(const DisplayItemClientWrapper& client)
+    EndCompositingDisplayItem(const DisplayItemClient& client)
         : PairedEndDisplayItem(client, EndCompositing, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)

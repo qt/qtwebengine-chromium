@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/FontLoader.h"
 
 #include "core/css/CSSFontSelector.h"
@@ -60,7 +59,7 @@ void FontLoader::addFontToBeginLoading(FontResource* fontResource)
     m_fontsToBeginLoading.append(FontToLoad::create(fontResource, *m_document));
     fontResource->didScheduleLoad();
     if (!m_beginLoadingTimer.isActive())
-        m_beginLoadingTimer.startOneShot(0, FROM_HERE);
+        m_beginLoadingTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void FontLoader::beginLoadTimerFired(Timer<blink::FontLoader>*)
@@ -96,10 +95,11 @@ void FontLoader::didFailToDecode(FontResource* fontResource)
 {
     // FIXME: Provide more useful message such as OTS rejection reason.
     // See crbug.com/97467
-    if (m_fontSelector && m_fontSelector->document())
+    if (m_fontSelector && m_fontSelector->document()) {
         m_fontSelector->document()->addConsoleMessage(ConsoleMessage::create(OtherMessageSource, WarningMessageLevel, "Failed to decode downloaded font: " + fontResource->url().elidedString()));
         if (fontResource->otsParsingMessage().length() > 1)
             m_fontSelector->document()->addConsoleMessage(ConsoleMessage::create(OtherMessageSource, WarningMessageLevel, "OTS parsing error: " + fontResource->otsParsingMessage()));
+    }
 }
 
 #if !ENABLE(OILPAN)

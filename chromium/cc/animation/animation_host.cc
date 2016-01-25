@@ -6,7 +6,9 @@
 
 #include <algorithm>
 
+#include "base/macros.h"
 #include "cc/animation/animation_delegate.h"
+#include "cc/animation/animation_events.h"
 #include "cc/animation/animation_id_provider.h"
 #include "cc/animation/animation_player.h"
 #include "cc/animation/animation_registrar.h"
@@ -45,25 +47,22 @@ class AnimationHost::ScrollOffsetAnimations : public AnimationDelegate {
                              const gfx::ScrollOffset& target_offset,
                              const gfx::ScrollOffset& current_offset) {
     scoped_ptr<ScrollOffsetAnimationCurve> curve =
-        ScrollOffsetAnimationCurve::Create(target_offset,
-                                           EaseInOutTimingFunction::Create());
+        ScrollOffsetAnimationCurve::Create(
+            target_offset, EaseInOutTimingFunction::Create(),
+            ScrollOffsetAnimationCurve::DurationBehavior::INVERSE_DELTA);
     curve->SetInitialValue(current_offset);
 
     scoped_ptr<Animation> animation = Animation::Create(
-        curve.Pass(), AnimationIdProvider::NextAnimationId(),
+        std::move(curve), AnimationIdProvider::NextAnimationId(),
         AnimationIdProvider::NextGroupId(), Animation::SCROLL_OFFSET);
     animation->set_is_impl_only(true);
 
     DCHECK(scroll_offset_animation_player_);
     DCHECK(scroll_offset_animation_player_->animation_timeline());
 
-    if (scroll_offset_animation_player_->layer_id() != layer_id) {
-      if (scroll_offset_animation_player_->layer_id())
-        scroll_offset_animation_player_->DetachLayer();
-      scroll_offset_animation_player_->AttachLayer(layer_id);
-    }
+    ReattachScrollOffsetPlayerIfNeeded(layer_id);
 
-    scroll_offset_animation_player_->AddAnimation(animation.Pass());
+    scroll_offset_animation_player_->AddAnimation(std::move(animation));
   }
 
   bool ScrollAnimationUpdateTarget(int layer_id,
@@ -71,6 +70,9 @@ class AnimationHost::ScrollOffsetAnimations : public AnimationDelegate {
                                    const gfx::ScrollOffset& max_scroll_offset,
                                    base::TimeTicks frame_monotonic_time) {
     DCHECK(scroll_offset_animation_player_);
+    if (!scroll_offset_animation_player_->element_animations())
+      return false;
+
     DCHECK_EQ(layer_id, scroll_offset_animation_player_->layer_id());
 
     Animation* animation = scroll_offset_animation_player_->element_animations()
@@ -96,6 +98,11 @@ class AnimationHost::ScrollOffsetAnimations : public AnimationDelegate {
     return true;
   }
 
+  void ScrollAnimationAbort() {
+    DCHECK(scroll_offset_animation_player_);
+    scroll_offset_animation_player_->AbortAnimations(Animation::SCROLL_OFFSET);
+  }
+
   // AnimationDelegate implementation.
   void NotifyAnimationStarted(base::TimeTicks monotonic_time,
                               Animation::TargetProperty target_property,
@@ -107,8 +114,20 @@ class AnimationHost::ScrollOffsetAnimations : public AnimationDelegate {
     DCHECK(animation_host_->mutator_host_client());
     animation_host_->mutator_host_client()->ScrollOffsetAnimationFinished();
   }
+  void NotifyAnimationAborted(base::TimeTicks monotonic_time,
+                              Animation::TargetProperty target_property,
+                              int group) override {}
 
  private:
+  void ReattachScrollOffsetPlayerIfNeeded(int layer_id) {
+    if (scroll_offset_animation_player_->layer_id() != layer_id) {
+      if (scroll_offset_animation_player_->layer_id())
+        scroll_offset_animation_player_->DetachLayer();
+      if (layer_id)
+        scroll_offset_animation_player_->AttachLayer(layer_id);
+    }
+  }
+
   AnimationHost* animation_host_;
   scoped_refptr<AnimationTimeline> scroll_offset_timeline_;
 
@@ -207,7 +226,7 @@ void AnimationHost::RegisterPlayerForLayer(int layer_id,
     element_animations = new_element_animations.get();
 
     layer_to_element_animations_map_.add(layer_id,
-                                         new_element_animations.Pass());
+                                         std::move(new_element_animations));
     element_animations->CreateLayerAnimationController(layer_id);
   }
 
@@ -242,6 +261,11 @@ void AnimationHost::SetMutatorHostClient(MutatorHostClient* client) {
 void AnimationHost::SetNeedsCommit() {
   DCHECK(mutator_host_client_);
   mutator_host_client_->SetMutatorsNeedCommit();
+}
+
+void AnimationHost::SetNeedsRebuildPropertyTrees() {
+  DCHECK(mutator_host_client_);
+  mutator_host_client_->SetMutatorsNeedRebuildPropertyTrees();
 }
 
 void AnimationHost::PushPropertiesTo(AnimationHost* host_impl) {
@@ -337,18 +361,17 @@ bool AnimationHost::AnimateLayers(base::TimeTicks monotonic_time) {
 }
 
 bool AnimationHost::UpdateAnimationState(bool start_ready_animations,
-                                         AnimationEventsVector* events) {
+                                         AnimationEvents* events) {
   return animation_registrar_->UpdateAnimationState(start_ready_animations,
                                                     events);
 }
 
-scoped_ptr<AnimationEventsVector> AnimationHost::CreateEvents() {
+scoped_ptr<AnimationEvents> AnimationHost::CreateEvents() {
   return animation_registrar_->CreateEvents();
 }
 
-void AnimationHost::SetAnimationEvents(
-    scoped_ptr<AnimationEventsVector> events) {
-  return animation_registrar_->SetAnimationEvents(events.Pass());
+void AnimationHost::SetAnimationEvents(scoped_ptr<AnimationEvents> events) {
+  return animation_registrar_->SetAnimationEvents(std::move(events));
 }
 
 bool AnimationHost::ScrollOffsetAnimationWasInterrupted(int layer_id) const {
@@ -558,6 +581,11 @@ bool AnimationHost::ImplOnlyScrollAnimationUpdateTarget(
   DCHECK(scroll_offset_animations_);
   return scroll_offset_animations_->ScrollAnimationUpdateTarget(
       layer_id, scroll_delta, max_scroll_offset, frame_monotonic_time);
+}
+
+void AnimationHost::ScrollAnimationAbort() {
+  DCHECK(scroll_offset_animations_);
+  return scroll_offset_animations_->ScrollAnimationAbort();
 }
 
 }  // namespace cc

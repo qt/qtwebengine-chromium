@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/editing/EditingUtilities.h"
 
 #include "core/editing/EditingTestBase.h"
@@ -37,16 +36,16 @@ TEST_F(EditingUtilitiesTest, firstEditablePositionAfterPositionInRoot)
     Node* two = document().getElementById("two");
     Node* three = shadowRoot->getElementById("three");
 
-    EXPECT_EQ(Position(one, 0), firstEditablePositionAfterPositionInRoot(Position(one, 0), host));
-    EXPECT_EQ(Position(one->firstChild(), 0), firstEditableVisiblePositionAfterPositionInRoot(Position(one, 0), host).deepEquivalent());
+    EXPECT_EQ(Position(one, 0), firstEditablePositionAfterPositionInRoot(Position(one, 0), *host));
+    EXPECT_EQ(Position(one->firstChild(), 0), firstEditableVisiblePositionAfterPositionInRoot(Position(one, 0), *host).deepEquivalent());
 
-    EXPECT_EQ(PositionInComposedTree(one, 0), firstEditablePositionAfterPositionInRoot(PositionInComposedTree(one, 0), host));
-    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 2), firstEditableVisiblePositionAfterPositionInRoot(PositionInComposedTree(one, 0), host).deepEquivalent());
+    EXPECT_EQ(PositionInComposedTree(one, 0), firstEditablePositionAfterPositionInRoot(PositionInComposedTree(one, 0), *host));
+    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 2), firstEditableVisiblePositionAfterPositionInRoot(PositionInComposedTree(one, 0), *host).deepEquivalent());
 
-    EXPECT_EQ(Position::firstPositionInNode(host), firstEditablePositionAfterPositionInRoot(Position(three, 0), host));
-    EXPECT_EQ(Position(one->firstChild(), 0), firstEditableVisiblePositionAfterPositionInRoot(Position(three, 0), host).deepEquivalent());
-    EXPECT_EQ(PositionInComposedTree::afterNode(host), firstEditablePositionAfterPositionInRoot(PositionInComposedTree(three, 0), host));
-    EXPECT_EQ(PositionInComposedTree::lastPositionInNode(host), firstEditableVisiblePositionAfterPositionInRoot(PositionInComposedTree(three, 0), host).deepEquivalent());
+    EXPECT_EQ(Position::firstPositionInNode(host), firstEditablePositionAfterPositionInRoot(Position(three, 0), *host));
+    EXPECT_EQ(Position(one->firstChild(), 0), firstEditableVisiblePositionAfterPositionInRoot(Position(three, 0), *host).deepEquivalent());
+    EXPECT_EQ(PositionInComposedTree::afterNode(host), firstEditablePositionAfterPositionInRoot(PositionInComposedTree(three, 0), *host));
+    EXPECT_EQ(PositionInComposedTree::lastPositionInNode(host), firstEditableVisiblePositionAfterPositionInRoot(PositionInComposedTree(three, 0), *host).deepEquivalent());
 }
 
 TEST_F(EditingUtilitiesTest, enclosingBlock)
@@ -117,16 +116,16 @@ TEST_F(EditingUtilitiesTest, lastEditablePositionBeforePositionInRoot)
     Node* two = document().getElementById("two");
     Node* three = shadowRoot->getElementById("three");
 
-    EXPECT_EQ(Position(one, 0), lastEditablePositionBeforePositionInRoot(Position(one, 0), host));
-    EXPECT_EQ(Position(one->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(Position(one, 0), host).deepEquivalent());
+    EXPECT_EQ(Position(one, 0), lastEditablePositionBeforePositionInRoot(Position(one, 0), *host));
+    EXPECT_EQ(Position(one->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(Position(one, 0), *host).deepEquivalent());
 
-    EXPECT_EQ(PositionInComposedTree(one, 0), lastEditablePositionBeforePositionInRoot(PositionInComposedTree(one, 0), host));
-    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 2), lastEditableVisiblePositionBeforePositionInRoot(PositionInComposedTree(one, 0), host).deepEquivalent());
+    EXPECT_EQ(PositionInComposedTree(one, 0), lastEditablePositionBeforePositionInRoot(PositionInComposedTree(one, 0), *host));
+    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 2), lastEditableVisiblePositionBeforePositionInRoot(PositionInComposedTree(one, 0), *host).deepEquivalent());
 
-    EXPECT_EQ(Position::firstPositionInNode(host), lastEditablePositionBeforePositionInRoot(Position(three, 0), host));
-    EXPECT_EQ(Position(one->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(Position(three, 0), host).deepEquivalent());
-    EXPECT_EQ(PositionInComposedTree::firstPositionInNode(host), lastEditablePositionBeforePositionInRoot(PositionInComposedTree(three, 0), host));
-    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(PositionInComposedTree(three, 0), host).deepEquivalent());
+    EXPECT_EQ(Position::firstPositionInNode(host), lastEditablePositionBeforePositionInRoot(Position(three, 0), *host));
+    EXPECT_EQ(Position(one->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(Position(three, 0), *host).deepEquivalent());
+    EXPECT_EQ(PositionInComposedTree::firstPositionInNode(host), lastEditablePositionBeforePositionInRoot(PositionInComposedTree(three, 0), *host));
+    EXPECT_EQ(PositionInComposedTree(two->firstChild(), 0), lastEditableVisiblePositionBeforePositionInRoot(PositionInComposedTree(three, 0), *host).deepEquivalent());
 }
 
 TEST_F(EditingUtilitiesTest, NextNodeIndex)

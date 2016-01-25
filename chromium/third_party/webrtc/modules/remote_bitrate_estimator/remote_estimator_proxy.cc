@@ -12,15 +12,15 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/modules/pacing/include/packet_router.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 
 namespace webrtc {
 
 // TODO(sprang): Tune these!
-const int RemoteEstimatorProxy::kDefaultProcessIntervalMs = 200;
+const int RemoteEstimatorProxy::kDefaultProcessIntervalMs = 50;
 const int RemoteEstimatorProxy::kBackWindowMs = 500;
 
 RemoteEstimatorProxy::RemoteEstimatorProxy(Clock* clock,
@@ -45,7 +45,11 @@ void RemoteEstimatorProxy::IncomingPacket(int64_t arrival_time_ms,
                                           size_t payload_size,
                                           const RTPHeader& header,
                                           bool was_paced) {
-  RTC_DCHECK(header.extension.hasTransportSequenceNumber);
+  if (!header.extension.hasTransportSequenceNumber) {
+    LOG(LS_WARNING) << "RemoteEstimatorProxy: Incoming packet "
+                       "is missing the transport sequence number extension!";
+    return;
+  }
   rtc::CritScope cs(&lock_);
   media_ssrc_ = header.ssrc;
   OnPacketArrival(header.extension.transportSequenceNumber, arrival_time_ms);

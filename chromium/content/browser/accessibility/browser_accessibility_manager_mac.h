@@ -7,6 +7,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/macros.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 
 namespace content {
@@ -16,11 +17,11 @@ class CONTENT_EXPORT BrowserAccessibilityManagerMac
  public:
   BrowserAccessibilityManagerMac(
       NSView* parent_view,
-      const SimpleAXTreeUpdate& initial_tree,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
-  static SimpleAXTreeUpdate GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   BrowserAccessibility* GetFocus(BrowserAccessibility* root) override;
 
@@ -35,6 +36,9 @@ class CONTENT_EXPORT BrowserAccessibilityManagerMac
       ui::AXTree* tree,
       bool root_changed,
       const std::vector<ui::AXTreeDelegate::Change>& changes) override;
+
+  // Returns an autoreleased object.
+  NSDictionary* GetUserInfoForSelectedTextChangedNotification();
 
   // This gives BrowserAccessibilityManager::Create access to the class
   // constructor.

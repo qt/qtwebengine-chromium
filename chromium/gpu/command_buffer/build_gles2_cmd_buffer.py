@@ -84,6 +84,10 @@ _CAPABILITY_FLAGS = [
    'state_flag': 'framebuffer_state_.clear_state_dirty'},
   {'name': 'rasterizer_discard', 'es3': True},
   {'name': 'primitive_restart_fixed_index', 'es3': True},
+  {'name': 'multisample_ext', 'default': True,
+   'extension_flag': 'ext_multisample_compatibility'},
+  {'name': 'sample_alpha_to_one_ext',
+   'extension_flag': 'ext_multisample_compatibility'},
 ]
 
 _STATES = {
@@ -145,6 +149,18 @@ _STATES = {
     'states': [
       {'name': 'stencil_clear', 'type': 'GLint', 'default': '0'},
     ],
+  },
+  'CoverageModulationCHROMIUM': {
+    'type': 'Normal',
+    'func': 'CoverageModulationNV',
+    'extension_flag': 'chromium_framebuffer_mixed_samples',
+    'states': [
+      { 'enum': 'GL_COVERAGE_MODULATION_CHROMIUM',
+        'name': 'coverage_modulation',
+        'type': 'GLenum',
+        'default': 'GL_NONE',
+      },
+    ]
   },
   'BlendColor': {
     'type': 'Normal',
@@ -414,6 +430,70 @@ _STATES = {
         'type': 'GLint',
         'enum': 'GL_UNPACK_ALIGNMENT',
         'default': '4'
+      },
+      {
+        'name': 'pack_row_length',
+        'type': 'GLint',
+        'enum': 'GL_PACK_ROW_LENGTH',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'pack_skip_pixels',
+        'type': 'GLint',
+        'enum': 'GL_PACK_SKIP_PIXELS',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'pack_skip_rows',
+        'type': 'GLint',
+        'enum': 'GL_PACK_SKIP_ROWS',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'unpack_row_length',
+        'type': 'GLint',
+        'enum': 'GL_UNPACK_ROW_LENGTH',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'unpack_image_height',
+        'type': 'GLint',
+        'enum': 'GL_UNPACK_IMAGE_HEIGHT',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'unpack_skip_pixels',
+        'type': 'GLint',
+        'enum': 'GL_UNPACK_SKIP_PIXELS',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'unpack_skip_rows',
+        'type': 'GLint',
+        'enum': 'GL_UNPACK_SKIP_ROWS',
+        'default': '0',
+        'es3': True,
+        'manual': True,
+      },
+      {
+        'name': 'unpack_skip_images',
+        'type': 'GLint',
+        'enum': 'GL_UNPACK_SKIP_IMAGES',
+        'default': '0',
+        'es3': True,
+        'manual': True,
       }
     ],
   },
@@ -579,15 +659,24 @@ _STATES = {
 #                 deprecated in ES 3.
 # is_complete: The list of valid values of type are final and will not be
 #              modified during runtime.
+# validator: If set to False will prevent creation of a ValueValidator. Values
+#            are still expected to be checked for validity and will be tested.
 _NAMED_TYPE_INFO = {
   'BlitFilter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NEAREST',
       'GL_LINEAR',
     ],
     'invalid': [
       'GL_LINEAR_MIPMAP_LINEAR',
+    ],
+  },
+  'CoverageModulationComponents': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_RGB', 'GL_RGBA', 'GL_ALPHA', 'GL_NONE'
     ],
   },
   'FrameBufferTarget': {
@@ -603,16 +692,6 @@ _NAMED_TYPE_INFO = {
       'GL_RENDERBUFFER',
     ],
   },
-  'InvalidateFrameBufferTarget': {
-    'type': 'GLenum',
-    'valid': [
-      'GL_FRAMEBUFFER',
-    ],
-    'invalid': [
-      'GL_DRAW_FRAMEBUFFER' ,
-      'GL_READ_FRAMEBUFFER' ,
-    ],
-  },
   'RenderBufferTarget': {
     'type': 'GLenum',
     'valid': [
@@ -624,6 +703,7 @@ _NAMED_TYPE_INFO = {
   },
   'BufferTarget': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_ARRAY_BUFFER',
       'GL_ELEMENT_ARRAY_BUFFER',
@@ -642,6 +722,7 @@ _NAMED_TYPE_INFO = {
   },
   'IndexedBufferTarget': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_TRANSFORM_FEEDBACK_BUFFER',
       'GL_UNIFORM_BUFFER',
@@ -652,6 +733,7 @@ _NAMED_TYPE_INFO = {
   },
   'MapBufferAccess': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_MAP_READ_BIT',
       'GL_MAP_WRITE_BIT',
@@ -666,6 +748,7 @@ _NAMED_TYPE_INFO = {
   },
   'Bufferiv': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_COLOR',
       'GL_STENCIL',
@@ -685,6 +768,7 @@ _NAMED_TYPE_INFO = {
   },
   'Bufferfv': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_COLOR',
       'GL_DEPTH',
@@ -704,6 +788,7 @@ _NAMED_TYPE_INFO = {
   },
   'BufferUsage': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_STREAM_DRAW',
       'GL_STATIC_DRAW',
@@ -880,6 +965,7 @@ _NAMED_TYPE_INFO = {
   },
   'IndexedGLState': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_TRANSFORM_FEEDBACK_BUFFER_BINDING',
       'GL_TRANSFORM_FEEDBACK_BUFFER_SIZE',
@@ -908,6 +994,7 @@ _NAMED_TYPE_INFO = {
   },
   'ReadBuffer': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NONE',
       'GL_BACK',
@@ -949,6 +1036,7 @@ _NAMED_TYPE_INFO = {
   },
   'Texture3DTarget': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_TEXTURE_3D',
       'GL_TEXTURE_2D_ARRAY',
@@ -983,6 +1071,7 @@ _NAMED_TYPE_INFO = {
   },
   'TransformFeedbackPrimitiveMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_POINTS',
       'GL_LINES',
@@ -994,6 +1083,7 @@ _NAMED_TYPE_INFO = {
   },
   'ShaderType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_VERTEX_SHADER',
       'GL_FRAGMENT_SHADER',
@@ -1004,6 +1094,7 @@ _NAMED_TYPE_INFO = {
   },
   'FaceType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_FRONT',
       'GL_BACK',
@@ -1012,6 +1103,7 @@ _NAMED_TYPE_INFO = {
   },
   'FaceMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_CW',
       'GL_CCW',
@@ -1019,6 +1111,7 @@ _NAMED_TYPE_INFO = {
   },
   'CmpFunction': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NEVER',
       'GL_LESS',
@@ -1087,9 +1180,11 @@ _NAMED_TYPE_INFO = {
   'Capability': {
     'type': 'GLenum',
     'valid': ["GL_%s" % cap['name'].upper() for cap in _CAPABILITY_FLAGS
-        if 'es3' not in cap or cap['es3'] != True],
+        if ('es3' not in cap or cap['es3'] != True)
+              and 'extension_flag' not in cap],
     'valid_es3': ["GL_%s" % cap['name'].upper() for cap in _CAPABILITY_FLAGS
-        if 'es3' in cap and cap['es3'] == True],
+        if ('es3' in cap and cap['es3'] == True)
+              and 'extension_flag' not in cap],
     'invalid': [
       'GL_CLIP_PLANE0',
       'GL_POINT_SPRITE',
@@ -1097,6 +1192,7 @@ _NAMED_TYPE_INFO = {
   },
   'DrawMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_POINTS',
       'GL_LINE_STRIP',
@@ -1126,6 +1222,7 @@ _NAMED_TYPE_INFO = {
   },
   'GetMaxIndexType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_UNSIGNED_BYTE',
       'GL_UNSIGNED_SHORT',
@@ -1152,6 +1249,7 @@ _NAMED_TYPE_INFO = {
   },
   'BackbufferAttachment': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_COLOR_EXT',
       'GL_DEPTH_EXT',
@@ -1160,6 +1258,7 @@ _NAMED_TYPE_INFO = {
   },
   'BufferParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_BUFFER_SIZE',
       'GL_BUFFER_USAGE',
@@ -1174,6 +1273,7 @@ _NAMED_TYPE_INFO = {
   },
   'BufferParameter64': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_BUFFER_SIZE',
       'GL_BUFFER_MAP_LENGTH',
@@ -1185,6 +1285,7 @@ _NAMED_TYPE_INFO = {
   },
   'BufferMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_INTERLEAVED_ATTRIBS',
       'GL_SEPARATE_ATTRIBS',
@@ -1215,6 +1316,7 @@ _NAMED_TYPE_INFO = {
   },
   'MatrixMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_PATH_PROJECTION_CHROMIUM',
       'GL_PATH_MODELVIEW_CHROMIUM',
@@ -1222,6 +1324,7 @@ _NAMED_TYPE_INFO = {
   },
   'ProgramParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_DELETE_STATUS',
       'GL_LINK_STATUS',
@@ -1246,6 +1349,7 @@ _NAMED_TYPE_INFO = {
   },
   'QueryObjectParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_QUERY_RESULT_EXT',
       'GL_QUERY_RESULT_AVAILABLE_EXT',
@@ -1253,12 +1357,14 @@ _NAMED_TYPE_INFO = {
   },
   'QueryParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_CURRENT_QUERY_EXT',
     ],
   },
   'QueryTarget': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_ANY_SAMPLES_PASSED_EXT',
       'GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT',
@@ -1287,6 +1393,7 @@ _NAMED_TYPE_INFO = {
   },
   'InternalFormatParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NUM_SAMPLE_COUNTS',
       'GL_SAMPLES',
@@ -1294,6 +1401,7 @@ _NAMED_TYPE_INFO = {
   },
   'SamplerParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_TEXTURE_MAG_FILTER',
       'GL_TEXTURE_MIN_FILTER',
@@ -1311,6 +1419,7 @@ _NAMED_TYPE_INFO = {
   },
   'ShaderParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_SHADER_TYPE',
       'GL_DELETE_STATUS',
@@ -1322,6 +1431,7 @@ _NAMED_TYPE_INFO = {
   },
   'ShaderPrecision': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_LOW_FLOAT',
       'GL_MEDIUM_FLOAT',
@@ -1333,6 +1443,7 @@ _NAMED_TYPE_INFO = {
   },
   'StringType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_VENDOR',
       'GL_RENDERER',
@@ -1346,7 +1457,6 @@ _NAMED_TYPE_INFO = {
     'valid': [
       'GL_TEXTURE_MAG_FILTER',
       'GL_TEXTURE_MIN_FILTER',
-      'GL_TEXTURE_POOL_CHROMIUM',
       'GL_TEXTURE_WRAP_S',
       'GL_TEXTURE_WRAP_T',
     ],
@@ -1365,15 +1475,9 @@ _NAMED_TYPE_INFO = {
       'GL_GENERATE_MIPMAP',
     ],
   },
-  'TexturePool': {
-    'type': 'GLenum',
-    'valid': [
-      'GL_TEXTURE_POOL_MANAGED_CHROMIUM',
-      'GL_TEXTURE_POOL_UNMANAGED_CHROMIUM',
-    ],
-  },
   'TextureWrapMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_CLAMP_TO_EDGE',
       'GL_MIRRORED_REPEAT',
@@ -1382,6 +1486,7 @@ _NAMED_TYPE_INFO = {
   },
   'TextureMinFilterMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NEAREST',
       'GL_LINEAR',
@@ -1393,6 +1498,7 @@ _NAMED_TYPE_INFO = {
   },
   'TextureMagFilterMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NEAREST',
       'GL_LINEAR',
@@ -1400,6 +1506,7 @@ _NAMED_TYPE_INFO = {
   },
   'TextureCompareFunc': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_LEQUAL',
       'GL_GEQUAL',
@@ -1420,6 +1527,7 @@ _NAMED_TYPE_INFO = {
   },
   'TextureUsage': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_NONE',
       'GL_FRAMEBUFFER_ATTACHMENT_ANGLE',
@@ -1463,6 +1571,7 @@ _NAMED_TYPE_INFO = {
   },
   'HintMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_FASTEST',
       'GL_NICEST',
@@ -1492,6 +1601,7 @@ _NAMED_TYPE_INFO = {
   },
   'PixelStoreAlignment': {
     'type': 'GLint',
+    'is_complete': True,
     'valid': [
       '1',
       '2',
@@ -1547,6 +1657,7 @@ _NAMED_TYPE_INFO = {
   },
   'PathCoordType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_BYTE',
       'GL_UNSIGNED_BYTE',
@@ -1557,6 +1668,7 @@ _NAMED_TYPE_INFO = {
   },
   'PathCoverMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_CONVEX_HULL_CHROMIUM',
       'GL_BOUNDING_BOX_CHROMIUM',
@@ -1564,14 +1676,37 @@ _NAMED_TYPE_INFO = {
   },
   'PathFillMode': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_INVERT',
       'GL_COUNT_UP_CHROMIUM',
       'GL_COUNT_DOWN_CHROMIUM',
     ],
   },
+  'PathInstancedCoverMode': {
+    'type': 'GLenum',
+    'is_complete': True,
+    'valid': [
+      'GL_CONVEX_HULL_CHROMIUM',
+      'GL_BOUNDING_BOX_CHROMIUM',
+      'GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM',
+    ],
+  },
+  'PathNameType': {
+    'type': 'GLenum',
+    'is_complete': True,
+    'valid': [
+      'GL_UNSIGNED_BYTE',
+      'GL_BYTE',
+      'GL_UNSIGNED_SHORT',
+      'GL_SHORT',
+      'GL_UNSIGNED_INT',
+      'GL_INT',
+    ],
+  },
   'PathParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_PATH_STROKE_WIDTH_CHROMIUM',
       'GL_PATH_END_CAPS_CHROMIUM',
@@ -1582,6 +1717,7 @@ _NAMED_TYPE_INFO = {
   },
   'PathParameterCapValues': {
     'type': 'GLint',
+    'is_complete': True,
     'valid': [
       'GL_FLAT',
       'GL_SQUARE_CHROMIUM',
@@ -1590,11 +1726,37 @@ _NAMED_TYPE_INFO = {
   },
   'PathParameterJoinValues': {
     'type': 'GLint',
+    'is_complete': True,
     'valid': [
       'GL_MITER_REVERT_CHROMIUM',
       'GL_BEVEL_CHROMIUM',
       'GL_ROUND_CHROMIUM',
     ]
+  },
+  'PathTransformType': {
+    'type': 'GLenum',
+    'is_complete': True,
+    'valid': [
+      'GL_NONE',
+      'GL_TRANSLATE_X_CHROMIUM',
+      'GL_TRANSLATE_Y_CHROMIUM',
+      'GL_TRANSLATE_2D_CHROMIUM',
+      'GL_TRANSLATE_3D_CHROMIUM',
+      'GL_AFFINE_2D_CHROMIUM',
+      'GL_AFFINE_3D_CHROMIUM',
+      'GL_TRANSPOSE_AFFINE_2D_CHROMIUM',
+      'GL_TRANSPOSE_AFFINE_3D_CHROMIUM',
+    ],
+  },
+  'PathFragmentInputGenMode': {
+    'type': 'GLenum',
+    'is_complete': True,
+    'valid': [
+      'GL_NONE',
+      'GL_EYE_LINEAR_CHROMIUM',
+      'GL_OBJECT_LINEAR_CHROMIUM',
+      'GL_CONSTANT_CHROMIUM',
+    ],
   },
   'ReadPixelType': {
     'type': 'GLenum',
@@ -1663,6 +1825,7 @@ _NAMED_TYPE_INFO = {
   },
   'StencilOp': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_KEEP',
       'GL_ZERO',
@@ -1863,14 +2026,14 @@ _NAMED_TYPE_INFO = {
       'GL_RGB',
       'GL_RGB_YUV_420_CHROMIUM',
       'GL_RGB_YCBCR_422_CHROMIUM',
+      'GL_RGB_YCBCR_420V_CHROMIUM',
       'GL_RGBA',
     ],
   },
   'ImageUsage': {
     'type': 'GLenum',
     'valid': [
-      'GL_MAP_CHROMIUM',
-      'GL_SCANOUT_CHROMIUM'
+      'GL_READ_WRITE_CHROMIUM',
     ],
   },
   'ValueBufferTarget': {
@@ -1887,6 +2050,7 @@ _NAMED_TYPE_INFO = {
   },
   'UniformParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_UNIFORM_SIZE',
       'GL_UNIFORM_TYPE',
@@ -1903,6 +2067,7 @@ _NAMED_TYPE_INFO = {
   },
   'UniformBlockParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_UNIFORM_BLOCK_BINDING',
       'GL_UNIFORM_BLOCK_DATA_SIZE',
@@ -1939,6 +2104,7 @@ _NAMED_TYPE_INFO = {
   },
   'VertexAttribIType': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_BYTE',
       'GL_UNSIGNED_BYTE',
@@ -1964,6 +2130,7 @@ _NAMED_TYPE_INFO = {
   },
   'VertexAttribSize': {
     'type': 'GLint',
+    'validator': False,
     'valid': [
       '1',
       '2',
@@ -1973,16 +2140,6 @@ _NAMED_TYPE_INFO = {
     'invalid': [
       '0',
       '5',
-    ],
-  },
-  'ZeroOnly': {
-    'type': 'GLint',
-    'is_complete': True,
-    'valid': [
-      '0',
-    ],
-    'invalid': [
-      '1',
     ],
   },
   'FalseOnly': {
@@ -1997,6 +2154,7 @@ _NAMED_TYPE_INFO = {
   },
   'ResetStatus': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_GUILTY_CONTEXT_RESET_ARB',
       'GL_INNOCENT_CONTEXT_RESET_ARB',
@@ -2035,6 +2193,7 @@ _NAMED_TYPE_INFO = {
   },
   'SyncParameter': {
     'type': 'GLenum',
+    'is_complete': True,
     'valid': [
       'GL_SYNC_STATUS',  # This needs to be the 1st; all others are cached.
       'GL_OBJECT_TYPE',
@@ -2124,6 +2283,8 @@ _PEPPER_INTERFACES = [
 # not_shared:   For GENn types, True if objects can't be shared between contexts
 # unsafe:       True = no validation is implemented on the service side and the
 #               command is only available with --enable-unsafe-es3-apis.
+# use_helper:   True = use explicit helper or decoder functions rather than the
+#               defaults created when unsafe is True.
 # id_mapping:   A list of resource type names whose client side IDs need to be
 #               mapped to service side IDs.  This is only used for unsafe APIs.
 
@@ -2183,14 +2344,15 @@ _FUNCTION_INFO = {
   },
   'BindSampler': {
     'type': 'Bind',
-    'id_mapping': [ 'Sampler' ],
+    'decoder_func': 'DoBindSampler',
     'unsafe': True,
+    'use_helper': True,
   },
   'BindTexture': {
     'type': 'Bind',
     'decoder_func': 'DoBindTexture',
     'gen_func': 'GenTextures',
-    # TODO(gman): remove this once client side caching works.
+    # TODO: remove this once client side caching works.
     'client_test': False,
     'trace_level': 2,
   },
@@ -2284,7 +2446,7 @@ _FUNCTION_INFO = {
     'type': 'Custom',
     'data_transfer_methods': ['shm'],
     'cmd_args': 'GLuint sync, GLbitfieldSyncFlushFlags flags, '
-                'GLuint timeout_0, GLuint timeout_1, GLenum* result',
+                'GLuint64 timeout, GLenum* result',
     'unsafe': True,
     'result': ['GLenum'],
     'trace_level': 2,
@@ -2308,6 +2470,14 @@ _FUNCTION_INFO = {
   },
   'CopyBufferSubData': {
     'unsafe': True,
+  },
+  'CoverageModulationCHROMIUM': {
+    'type': 'StateSet',
+    'state': 'CoverageModulationCHROMIUM',
+    'decoder_func': 'glCoverageModulationNV',
+    'chromium': True,
+    'extension': 'CHROMIUM_framebuffer_mixed_samples',
+    'extension_flag': 'chromium_framebuffer_mixed_samples',
   },
   'CreateAndConsumeTextureCHROMIUM': {
     'decoder_func': 'DoCreateAndConsumeTextureCHROMIUM',
@@ -2533,8 +2703,9 @@ _FUNCTION_INFO = {
   'LineWidth': {
     'type': 'StateSet',
     'state': 'LineWidth',
+    'decoder_func': 'DoLineWidth',
     'valid_args': {
-      '0': '0.5f'
+      '0': '2.0f'
     },
   },
   'PolygonOffset': {
@@ -2567,6 +2738,7 @@ _FUNCTION_INFO = {
     'resource_type': 'Sampler',
     'resource_types': 'Samplers',
     'unsafe': True,
+    'use_helper': True
   },
   'DeleteShader': { 'type': 'Delete' },
   'DeleteSync': {
@@ -2660,6 +2832,7 @@ _FUNCTION_INFO = {
   'FramebufferTexture2D': {
     'decoder_func': 'DoFramebufferTexture2D',
     'gl_test_func': 'glFramebufferTexture2DEXT',
+    'unit_test': False,
     'trace_level': 1,
   },
   'FramebufferTexture2DMultisampleEXT': {
@@ -2710,6 +2883,7 @@ _FUNCTION_INFO = {
     'resource_type': 'Sampler',
     'resource_types': 'Samplers',
     'unsafe': True,
+    'use_helper': True,
   },
   'GenTextures': {
     'type': 'GENn',
@@ -2785,6 +2959,16 @@ _FUNCTION_INFO = {
         'GLidProgram program, uint32_t name_bucket_id, GLint* location',
     'result': ['GLint'],
     'error_return': -1,
+  },
+  'GetFragDataIndexEXT': {
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
+    'cmd_args':
+        'GLidProgram program, uint32_t name_bucket_id, GLint* index',
+    'result': ['GLint'],
+    'error_return': -1,
+    'extension': 'EXT_blend_func_extended',
+    'extension_flag': 'ext_blend_func_extended',
   },
   'GetFragDataLocation': {
     'type': 'Custom',
@@ -2917,15 +3101,17 @@ _FUNCTION_INFO = {
   },
   'GetSamplerParameterfv': {
     'type': 'GETn',
+    'decoder_func': 'DoGetSamplerParameterfv',
     'result': ['SizedResult<GLfloat>'],
-    'id_mapping': [ 'Sampler' ],
     'unsafe': True,
+    'use_helper': True,
   },
   'GetSamplerParameteriv': {
     'type': 'GETn',
+    'decoder_func': 'DoGetSamplerParameteriv',
     'result': ['SizedResult<GLint>'],
-    'id_mapping': [ 'Sampler' ],
     'unsafe': True,
+    'use_helper': True,
   },
   'GetShaderiv': {
     'type': 'GETn',
@@ -3162,9 +3348,10 @@ _FUNCTION_INFO = {
   },
   'IsSampler': {
     'type': 'Is',
-    'id_mapping': [ 'Sampler' ],
+    'decoder_func': 'DoIsSampler',
     'expectation': False,
     'unsafe': True,
+    'use_helper': True,
   },
   'IsSync': {
     'type': 'Is',
@@ -3307,7 +3494,12 @@ _FUNCTION_INFO = {
         'uint32_t pixels_shm_id, uint32_t pixels_shm_offset, '
         'uint32_t result_shm_id, uint32_t result_shm_offset, '
         'GLboolean async',
-    'result': ['uint32_t'],
+    'result': [
+      'uint32_t success',
+      # Below args exclude out-of-bounds area.
+      'int32_t row_length',
+      'int32_t num_rows',
+    ],
     'defer_reads': True,
     'trace_level': 1,
   },
@@ -3322,8 +3514,9 @@ _FUNCTION_INFO = {
     'valid_args': {
       '2': 'GL_NEAREST'
     },
-    'id_mapping': [ 'Sampler' ],
+    'decoder_func': 'DoSamplerParameterf',
     'unsafe': True,
+    'use_helper': True,
   },
   'SamplerParameterfv': {
     'type': 'PUT',
@@ -3332,15 +3525,16 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glSamplerParameterf',
     'decoder_func': 'DoSamplerParameterfv',
     'first_element_only': True,
-    'id_mapping': [ 'Sampler' ],
     'unsafe': True,
+    'use_helper': True,
   },
   'SamplerParameteri': {
     'valid_args': {
       '2': 'GL_NEAREST'
     },
-    'id_mapping': [ 'Sampler' ],
+    'decoder_func': 'DoSamplerParameteri',
     'unsafe': True,
+    'use_helper': True,
   },
   'SamplerParameteriv': {
     'type': 'PUT',
@@ -3350,6 +3544,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoSamplerParameteriv',
     'first_element_only': True,
     'unsafe': True,
+    'use_helper': True,
   },
   'ShaderBinary': {
     'type': 'Custom',
@@ -3380,16 +3575,16 @@ _FUNCTION_INFO = {
   'SwapBuffers': {
     'impl_func': False,
     'decoder_func': 'DoSwapBuffers',
-    'unit_test': False,
     'client_test': False,
+    'expectation': False,
     'extension': True,
     'trace_level': 1,
   },
   'SwapInterval': {
     'impl_func': False,
     'decoder_func': 'DoSwapInterval',
-    'unit_test': False,
     'client_test': False,
+    'expectation': False,
     'extension': True,
     'trace_level': 1,
   },
@@ -3722,7 +3917,7 @@ _FUNCTION_INFO = {
   'WaitSync': {
     'type': 'Custom',
     'cmd_args': 'GLuint sync, GLbitfieldSyncFlushFlags flags, '
-                'GLuint timeout_0, GLuint timeout_1',
+                'GLuint64 timeout',
     'impl_func': False,
     'client_test': False,
     'unsafe': True,
@@ -3758,14 +3953,6 @@ _FUNCTION_INFO = {
     'extension': 'CHROMIUM_request_extension',
     'chromium': True,
   },
-  'CreateStreamTextureCHROMIUM':  {
-    'type': 'HandWritten',
-    'impl_func': False,
-    'gen_cmd': False,
-    'extension': True,
-    'chromium': True,
-    'trace_level': 1,
-  },
   'TexImageIOSurface2DCHROMIUM': {
     'decoder_func': 'DoTexImageIOSurface2DCHROMIUM',
     'unit_test': False,
@@ -3789,12 +3976,6 @@ _FUNCTION_INFO = {
   },
   'CompressedCopyTextureCHROMIUM': {
     'decoder_func': 'DoCompressedCopyTextureCHROMIUM',
-    'unit_test': False,
-    'extension': 'CHROMIUM_copy_compressed_texture',
-    'chromium': True,
-  },
-  'CompressedCopySubTextureCHROMIUM': {
-    'decoder_func': 'DoCompressedCopySubTextureCHROMIUM',
     'unit_test': False,
     'extension': 'CHROMIUM_copy_compressed_texture',
     'chromium': True,
@@ -3947,6 +4128,22 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
   },
+  'BindFragDataLocationEXT': {
+    'type': 'GLchar',
+    'data_transfer_methods': ['bucket'],
+    'needs_size': True,
+    'gl_test_func': 'DoBindFragDataLocationEXT',
+    'extension': 'EXT_blend_func_extended',
+    'extension_flag': 'ext_blend_func_extended',
+  },
+  'BindFragDataLocationIndexedEXT': {
+    'type': 'GLchar',
+    'data_transfer_methods': ['bucket'],
+    'needs_size': True,
+    'gl_test_func': 'DoBindFragDataLocationIndexedEXT',
+    'extension': 'EXT_blend_func_extended',
+    'extension_flag': 'ext_blend_func_extended',
+  },
   'BindUniformLocationCHROMIUM': {
     'type': 'GLchar',
     'extension': 'CHROMIUM_bind_uniform_location',
@@ -4085,10 +4282,48 @@ _FUNCTION_INFO = {
   },
   'WaitSyncPointCHROMIUM': {
     'type': 'Custom',
-    'impl_func': True,
+    'impl_func': False,
+    'unit_test': False,
+    'client_test': False,
     'extension': "CHROMIUM_sync_point",
     'chromium': True,
     'trace_level': 1,
+  },
+  'InsertFenceSyncCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'cmd_args': 'GLuint64 release_count',
+    'extension': "CHROMIUM_sync_point",
+    'chromium': True,
+    'trace_level': 1,
+  },
+  'GenSyncTokenCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'extension': "CHROMIUM_sync_point",
+    'chromium': True,
+  },
+  'GenUnverifiedSyncTokenCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'extension': "CHROMIUM_sync_point",
+    'chromium': True,
+  },
+  'VerifySyncTokensCHROMIUM' : {
+    'type': 'Custom',
+    'impl_func': False,
+    'extension': "CHROMIUM_sync_point",
+    'chromium': True,
+  },
+  'WaitSyncTokenCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'cmd_args': 'GLint namespace_id, '
+                'GLuint64 command_buffer_id, '
+                'GLuint64 release_count',
+    'client_test': False,
+    'extension': "CHROMIUM_sync_point",
+    'chromium': True,
   },
   'DiscardBackbufferCHROMIUM': {
     'type': 'Custom',
@@ -4098,12 +4333,31 @@ _FUNCTION_INFO = {
     'trace_level': 2,
   },
   'ScheduleOverlayPlaneCHROMIUM': {
-      'type': 'Custom',
-      'impl_func': True,
-      'unit_test': False,
-      'client_test': False,
-      'extension': 'CHROMIUM_schedule_overlay_plane',
-      'chromium': True,
+    'type': 'Custom',
+    'impl_func': True,
+    'unit_test': False,
+    'client_test': False,
+    'extension': 'CHROMIUM_schedule_overlay_plane',
+    'chromium': True,
+  },
+  'ScheduleCALayerCHROMIUM': {
+    'type': 'Custom',
+    'impl_func': False,
+    'client_test': False,
+    'cmd_args': 'GLuint contents_texture_id, GLfloat opacity, '
+                'GLuint background_color, GLuint edge_aa_mask, '
+                'GLboolean is_clipped, GLint sorting_context_id, '
+                'GLuint shm_id, GLuint shm_offset',
+    'extension': 'CHROMIUM_schedule_ca_layer',
+    'chromium': True,
+  },
+  'CommitOverlayPlanesCHROMIUM': {
+    'impl_func': False,
+    'decoder_func': 'DoCommitOverlayPlanes',
+    'unit_test': False,
+    'client_test': False,
+    'extension': 'CHROMIUM_commit_overlay_planes',
+    'chromium': True,
   },
   'MatrixLoadfCHROMIUM': {
     'type': 'PUT',
@@ -4209,7 +4463,56 @@ _FUNCTION_INFO = {
     'extension': 'CHROMIUM_path_rendering',
     'extension_flag': 'chromium_path_rendering',
   },
-
+  'StencilFillPathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'StencilStrokePathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'CoverFillPathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'CoverStrokePathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'StencilThenCoverFillPathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'StencilThenCoverStrokePathInstancedCHROMIUM': {
+    'type': 'Custom',
+    'chromium': True,
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'BindFragmentInputLocationCHROMIUM': {
+    'type': 'GLchar',
+    'data_transfer_methods': ['bucket'],
+    'needs_size': True,
+    'gl_test_func': 'DoBindFragmentInputLocationCHROMIUM',
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'ProgramPathFragmentInputGenCHROMIUM': {
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
+    'extension': 'CHROMIUM_path_rendering',
+    'extension_flag': 'chromium_path_rendering',
+  },
 }
 
 
@@ -4302,7 +4605,7 @@ class CWriter(object):
   """
   def __init__(self, filename):
     self.filename = filename
-    self._file = open(filename, 'w')
+    self._file = open(filename, 'wb')
     self._ENTER_MSG = _LICENSE + _DO_NOT_EDIT_WARNING
     self._EXIT_MSG = ""
 
@@ -4381,34 +4684,42 @@ class TypeHandler(object):
     func.WriteCmdSetHeader(f)
     func.WriteCmdInit(f)
     func.WriteCmdSet(f)
+    func.WriteArgAccessors(f)
 
     f.write("  gpu::CommandHeader header;\n")
+    total_args = 0
     args = func.GetCmdArgs()
     for arg in args:
-      f.write("  %s %s;\n" % (arg.cmd_type, arg.name))
+      for cmd_type, name in arg.GetArgDecls():
+        f.write("  %s %s;\n" % (cmd_type, name))
+        total_args += 1
 
     consts = func.GetCmdConstants()
     for const in consts:
+      const_decls = const.GetArgDecls()
+      assert(len(const_decls) == 1)
+      const_cmd_type, const_name = const_decls[0]
       f.write("  static const %s %s = %s;\n" %
-                 (const.cmd_type, const.name, const.GetConstantValue()))
+                 (const_cmd_type, const_name, const.GetConstantValue()))
 
     f.write("};\n")
     f.write("\n")
 
-    size = len(args) * _SIZE_OF_UINT32 + _SIZE_OF_COMMAND_HEADER
+    size = total_args * _SIZE_OF_UINT32 + _SIZE_OF_COMMAND_HEADER
     f.write("static_assert(sizeof(%s) == %d,\n" % (func.name, size))
     f.write("              \"size of %s should be %d\");\n" %
-               (func.name, size))
+            (func.name, size))
     f.write("static_assert(offsetof(%s, header) == 0,\n" % func.name)
     f.write("              \"offset of %s header should be 0\");\n" %
-               func.name)
+            func.name)
     offset = _SIZE_OF_COMMAND_HEADER
     for arg in args:
-      f.write("static_assert(offsetof(%s, %s) == %d,\n" %
-                 (func.name, arg.name, offset))
-      f.write("              \"offset of %s %s should be %d\");\n" %
-                 (func.name, arg.name, offset))
-      offset += _SIZE_OF_UINT32
+      for _, name in arg.GetArgDecls():
+        f.write("static_assert(offsetof(%s, %s) == %d,\n" %
+                (func.name, name, offset))
+        f.write("              \"offset of %s %s should be %d\");\n" %
+                (func.name, name, offset))
+        offset += _SIZE_OF_UINT32
     if not result == None and len(result) > 1:
       offset = 0;
       for line in result:
@@ -4508,7 +4819,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     func.type_handler.WriteCmdSizeTest(func, f)
     for value, arg in enumerate(args):
       f.write("  EXPECT_EQ(static_cast<%s>(%d), cmd.%s);\n" %
-                 (arg.type, value + 11, arg.name))
+                 (arg.type, value + 11, arg.GetArgAccessor()))
     f.write("  CheckBytesWrittenMatchesExpectedSize(\n")
     f.write("      next_cmd, sizeof(cmd));\n")
     f.write("}\n")
@@ -4605,9 +4916,7 @@ static_assert(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
   def WriteHandlerExtensionCheck(self, func, f):
     if func.GetInfo('extension_flag'):
       f.write("  if (!features().%s) {\n" % func.GetInfo('extension_flag'))
-      f.write("    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, \"gl%s\","
-                 " \"function not available\");\n" % func.original_name)
-      f.write("    return error::kNoError;")
+      f.write("    return error::kUnknownCommand;")
       f.write("  }\n\n")
 
   def WriteHandlerDeferReadWrite(self, func, f):
@@ -4755,7 +5064,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 
   def WriteImmediateServiceUnitTest(self, func, f, *extras):
     """Writes the service unit test for an immediate command."""
-    f.write("// TODO(gman): %s\n" % func.name)
+    pass
 
   def WriteImmediateValidationCode(self, func, f):
     """Writes the validation code for an immediate version of a command."""
@@ -4763,7 +5072,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 
   def WriteBucketServiceUnitTest(self, func, f, *extras):
     """Writes the service unit test for a bucket command."""
-    f.write("// TODO(gman): %s\n" % func.name)
+    pass
 
   def WriteGLES2ImplementationDeclaration(self, func, f):
     """Writes the GLES2 Implemention declaration."""
@@ -4962,9 +5271,6 @@ TEST_F(GLES2ImplementationTest, %(name)sInvalidConstantArg%(invalid_index)d) {
             'args': ", ".join(gl_arg_strings),
             'gl_error': invalid[2],
           })
-    else:
-      if client_test != False:
-        f.write("// TODO(zmo): Implement unit test for %s\n" % func.name)
 
   def WriteDestinationInitalizationValidation(self, func, f):
     """Writes the client side destintion initialization validation."""
@@ -5018,7 +5324,7 @@ TEST_F(GLES2ImplementationTest, %(name)sInvalidConstantArg%(invalid_index)d) {
   def WriteImmediateCmdHelper(self, func, f):
     """Writes the cmd helper definition for the immediate version of a cmd."""
     code = """  void %(name)s(%(typed_args)s) {
-    const uint32_t s = 0;  // TODO(gman): compute correct size
+    const uint32_t s = 0;
     gles2::cmds::%(name)s* c =
         GetImmediateCmdSpaceTotalSize<gles2::cmds::%(name)s>(s);
     if (c) {
@@ -5273,16 +5579,16 @@ class CustomHandler(TypeHandler):
 
   def WriteServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateCmdGetTotalSize(self, func, f):
     """Overrriden from TypeHandler."""
     f.write(
-        "    uint32_t total_size = 0;  // TODO(gman): get correct size.\n")
+        "    uint32_t total_size = 0;  // WARNING: compute correct size.\n")
 
   def WriteImmediateCmdInit(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5291,7 +5597,7 @@ class CustomHandler(TypeHandler):
     f.write("    SetHeader(total_size);\n")
     args = func.GetCmdArgs()
     for arg in args:
-      f.write("    %s = _%s;\n" % (arg.name, arg.name))
+      arg.WriteSetCode(f, 4, '_%s' % arg.name)
     f.write("  }\n")
     f.write("\n")
 
@@ -5333,15 +5639,15 @@ class HandWrittenHandler(CustomHandler):
 
   def WriteServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteBucketServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteServiceImplementation(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5365,11 +5671,11 @@ class HandWrittenHandler(CustomHandler):
 
   def WriteFormatTest(self, func, f):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): Write test for %s\n" % func.name)
+    pass
 
   def WriteImmediateFormatTest(self, func, f):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): Write test for %s\n" % func.name)
+    pass
 
 
 class ManualHandler(CustomHandler):
@@ -5394,11 +5700,11 @@ class ManualHandler(CustomHandler):
 
   def WriteServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateServiceImplementation(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5406,7 +5712,7 @@ class ManualHandler(CustomHandler):
 
   def WriteImmediateFormatTest(self, func, f):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): Implement test for %s\n" % func.name)
+    pass
 
   def WriteGLES2Implementation(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5422,7 +5728,7 @@ class ManualHandler(CustomHandler):
 
   def WriteImmediateCmdGetTotalSize(self, func, f):
     """Overrriden from TypeHandler."""
-    # TODO(gman): Move this data to _FUNCTION_INFO?
+    # TODO: Move this data to _FUNCTION_INFO?
     CustomHandler.WriteImmediateCmdGetTotalSize(self, func, f)
 
 
@@ -5439,7 +5745,7 @@ class DataHandler(TypeHandler):
 
   def WriteGetDataSizeCode(self, func, f):
     """Overrriden from TypeHandler."""
-    # TODO(gman): Move this data to _FUNCTION_INFO?
+    # TODO: Move this data to _FUNCTION_INFO?
     name = func.name
     if name.endswith("Immediate"):
       name = name[0:-9]
@@ -5465,7 +5771,7 @@ class DataHandler(TypeHandler):
       f.write(code)
     else:
       f.write(
-          "// uint32_t data_size = 0;  // TODO(gman): get correct size!\n")
+          "// uint32_t data_size = 0;  // WARNING: compute correct size.\n")
 
   def WriteImmediateCmdGetTotalSize(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5496,17 +5802,16 @@ class DataHandler(TypeHandler):
 
   def WriteImmediateFormatTest(self, func, f):
     """Overrriden from TypeHandler."""
-    # TODO(gman): Remove this exception.
-    f.write("// TODO(gman): Implement test for %s\n" % func.name)
+    # TODO: Remove this exception.
     return
 
   def WriteServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteImmediateServiceUnitTest(self, func, f, *extras):
     """Overrriden from TypeHandler."""
-    f.write("// TODO(gman): %s\n\n" % func.name)
+    pass
 
   def WriteBucketServiceImplementation(self, func, f):
     """Overrriden from TypeHandler."""
@@ -5737,7 +6042,7 @@ class GENnHandler(TypeHandler):
 
   def WriteImmediateHandlerImplementation(self, func, f):
     """Overrriden from TypeHandler."""
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       f.write("""  for (GLsizei ii = 0; ii < n; ++ii) {
     if (group_->Get%(resource_name)sServiceId(%(last_arg_name)s[ii], NULL)) {
       return error::kInvalidArguments;
@@ -5842,7 +6147,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   cmd.Init(%(args)s);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());"""
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       valid_test += """
   GLuint service_id;
   EXPECT_TRUE(Get%(resource_name)sServiceId(kNewClientId, &service_id));
@@ -5888,7 +6193,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   EXPECT_EQ(error::kNoError,
             ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());"""
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       valid_test += """
   GLuint service_id;
   EXPECT_TRUE(Get%(resource_name)sServiceId(kNewClientId, &service_id));
@@ -6190,7 +6495,7 @@ class DeleteHandler(TypeHandler):
     """Overrriden from TypeHandler."""
     assert len(func.GetOriginalArgs()) == 1
     arg = func.GetOriginalArgs()[0]
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       f.write("""  %(arg_type)s service_id = 0;
   if (group_->Get%(resource_type)sServiceId(%(arg_name)s, &service_id)) {
     glDelete%(resource_type)s(service_id);
@@ -6291,7 +6596,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   EXPECT_EQ(error::kNoError,
             ExecuteImmediateCmd(cmd, sizeof(client_%(resource_name)s_id_)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());"""
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       valid_test += """
   EXPECT_FALSE(Get%(upper_resource_name)sServiceId(
       client_%(resource_name)s_id_, NULL));
@@ -6341,7 +6646,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
 
   def WriteImmediateHandlerImplementation (self, func, f):
     """Overrriden from TypeHandler."""
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       f.write("""  for (GLsizei ii = 0; ii < n; ++ii) {
     GLuint service_id = 0;
     if (group_->Get%(resource_type)sServiceId(
@@ -6801,7 +7106,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   cmds::%(name)s& cmd = *GetImmediateAs<cmds::%(name)s>();
   SpecializedSetup<cmds::%(name)s, 0>(true);
   %(data_type)s temp[%(data_count)s] = { %(data_value)s, };
-  cmd.Init(%(gl_args)s, &temp[0]);
+  cmd.Init(%(gl_client_args)s, &temp[0]);
   EXPECT_CALL(
       *gl_,
       %(gl_func_name)s(%(gl_args)s, %(data_ref)sreinterpret_cast<
@@ -6821,6 +7126,9 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
     valid_test += """
 }
 """
+    gl_client_arg_strings = [
+      arg.GetValidArg(func) for arg in func.GetOriginalArgs()[0:-1]
+    ]
     gl_arg_strings = [
       arg.GetValidGLArg(func) for arg in func.GetOriginalArgs()[0:-1]
     ]
@@ -6831,6 +7139,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
       'data_type': self.GetArrayType(func),
       'data_count': self.GetArrayCount(func),
       'data_value': func.GetInfo('data_value') or '0',
+      'gl_client_args': ", ".join(gl_client_arg_strings),
       'gl_args': ", ".join(gl_arg_strings),
       'gl_any_args': ", ".join(gl_any_strings),
     }
@@ -7072,7 +7381,7 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
     f.write("  CheckBytesWrittenMatchesExpectedSize(\n")
     f.write("      next_cmd, sizeof(cmd) +\n")
     f.write("      RoundSizeToMultipleOfEntries(sizeof(data)));\n")
-    f.write("  // TODO(gman): Check that data was inserted;\n")
+    # TODO: Check that data was inserted
     f.write("}\n")
     f.write("\n")
 
@@ -7417,7 +7726,7 @@ TEST_F(GLES2ImplementationTest, %(name)sInvalidConstantArg%(invalid_index)d) {
     f.write("  CheckBytesWrittenMatchesExpectedSize(\n")
     f.write("      next_cmd, sizeof(cmd) +\n")
     f.write("      RoundSizeToMultipleOfEntries(sizeof(data)));\n")
-    f.write("  // TODO(gman): Check that data was inserted;\n")
+    # TODO: Check that data was inserted
     f.write("}\n")
     f.write("\n")
 
@@ -7505,7 +7814,7 @@ class PUTSTRHandler(ArrayArgTypeHandler):
     """Overrriden from TypeHandler."""
     code = """
 TEST_F(GLES2ImplementationTest, %(name)s) {
-  const uint32 kBucketId = GLES2Implementation::kResultBucketId;
+  const uint32_t kBucketId = GLES2Implementation::kResultBucketId;
   const char* kString1 = "happy";
   const char* kString2 = "ending";
   const size_t kString1Size = ::strlen(kString1) + 1;
@@ -7576,7 +7885,7 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
       return
     code = """
 TEST_F(GLES2ImplementationTest, %(name)sWithLength) {
-  const uint32 kBucketId = GLES2Implementation::kResultBucketId;
+  const uint32_t kBucketId = GLES2Implementation::kResultBucketId;
   const char* kString = "foobar******";
   const size_t kStringSize = 6;  // We only need "foobar".
   const size_t kHeaderSize = sizeof(GLint) * 2;
@@ -7656,7 +7965,7 @@ TEST_F(GLES2ImplementationTest, %(name)sWithLength) {
     test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
   EXPECT_CALL(*gl_, %(gl_func_name)s(%(gl_args)s));
-  const uint32 kBucketId = 123;
+  const uint32_t kBucketId = 123;
   const char kSource0[] = "hello";
   const char* kSource[] = { kSource0 };
   const char kValidStrEnd = 0;
@@ -7680,7 +7989,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
 
     test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
-  const uint32 kBucketId = 123;
+  const uint32_t kBucketId = 123;
   const char kSource0[] = "hello";
   const char* kSource[] = { kSource0 };
   const char kValidStrEnd = 0;
@@ -7703,7 +8012,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
 
     test = """
 TEST_P(%(test_name)s, %(name)sInvalidHeader) {
-  const uint32 kBucketId = 123;
+  const uint32_t kBucketId = 123;
   const char kSource0[] = "hello";
   const char* kSource[] = { kSource0 };
   const char kValidStrEnd = 0;
@@ -7729,7 +8038,7 @@ TEST_P(%(test_name)s, %(name)sInvalidHeader) {
 
     test = """
 TEST_P(%(test_name)s, %(name)sInvalidStringEnding) {
-  const uint32 kBucketId = 123;
+  const uint32_t kBucketId = 123;
   const char kSource0[] = "hello";
   const char* kSource[] = { kSource0 };
   const char kInvalidStrEnd = '*';
@@ -8055,7 +8364,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
 """
     f.write(code % {'func_name': func.name})
     func.WriteHandlerValidation(f)
-    if func.IsUnsafe():
+    if func.IsUnsafe() and not func.UseHelper():
       assert func.GetInfo('id_mapping')
       assert len(func.GetInfo('id_mapping')) == 1
       assert len(args) == 1
@@ -8283,6 +8592,8 @@ class NamedType(object):
       self.deprecated_es3 = info['deprecated_es3']
     else:
       self.deprecated_es3 = []
+    self.create_validator = info.get('validator', True)
+    self.is_complete = info.get('is_complete', False)
 
   def GetType(self):
     return self.info['type']
@@ -8299,11 +8610,17 @@ class NamedType(object):
   def GetDeprecatedValuesES3(self):
     return self.deprecated_es3
 
-  def IsConstant(self):
-    if not 'is_complete' in self.info:
-      return False
+  def HasES3Values(self):
+    return self.valid_es3 or self.deprecated_es3
 
-    return len(self.GetValidValues()) == 1
+  def IsConstant(self):
+    return self.is_complete and len(self.GetValidValues()) == 1
+
+  def IsComplete(self):
+    return self.is_complete
+
+  def CreateValidator(self):
+    return self.create_validator and not self.IsConstant()
 
   def GetConstantValue(self):
     return self.GetValidValues()[0]
@@ -8312,13 +8629,14 @@ class Argument(object):
   """A class that represents a function argument."""
 
   cmd_type_map_ = {
-    'GLenum': 'uint32_t',
-    'GLint': 'int32_t',
-    'GLintptr': 'int32_t',
-    'GLsizei': 'int32_t',
-    'GLsizeiptr': 'int32_t',
-    'GLfloat': 'float',
-    'GLclampf': 'float',
+    'GLenum': ['uint32_t'],
+    'GLint': ['int32_t'],
+    'GLintptr': ['int32_t'],
+    'GLsizei': ['int32_t'],
+    'GLsizeiptr': ['int32_t'],
+    'GLfloat': ['float'],
+    'GLclampf': ['float'],
+    'GLuint64': ['uint32_t', 'uint32_t'],
   }
   need_validation_ = ['GLsizei*', 'GLboolean*', 'GLenum*', 'GLint*']
 
@@ -8326,13 +8644,13 @@ class Argument(object):
     self.name = name
     self.optional = type.endswith("Optional*")
     if self.optional:
-      type = type[:-9] + "*"
+      type = type[:-len("Optional*")] + "*"
     self.type = type
 
     if type in self.cmd_type_map_:
       self.cmd_type = self.cmd_type_map_[type]
     else:
-      self.cmd_type = 'uint32_t'
+      self.cmd_type = ['uint32_t']
 
   def IsPointer(self):
     """Returns true if argument is a pointer."""
@@ -8364,6 +8682,14 @@ class Argument(object):
 
     index = func.GetOriginalArgs().index(self)
     return str(index + 1)
+
+  def GetArgDecls(self):
+    if len(self.cmd_type) == 1:
+      return [(self.cmd_type[0], self.name)]
+    else:
+      return [(cmd_type, self.name + '_%d' % i)
+              for i, cmd_type
+              in enumerate(self.cmd_type)]
 
   def GetValidClientSideArg(self, func):
     """Gets a valid value for this argument."""
@@ -8422,6 +8748,10 @@ class Argument(object):
     """returns an invalid value and expected parse result by index."""
     return ("---ERROR0---", "---ERROR2---", None)
 
+  def GetArgAccessor(self):
+    """Returns the name of the accessor for the argument within the struct."""
+    return self.name
+
   def GetLogArg(self):
     """Get argument appropriate for LOG macro."""
     if self.type == 'GLboolean':
@@ -8438,6 +8768,13 @@ class Argument(object):
       my_type = self.type
     f.write("  %s %s = static_cast<%s>(c.%s);\n" %
                (my_type, self.name, my_type, self.name))
+
+  def WriteSetCode(self, f, indent, var):
+    f.write("%s%s = %s;\n" % (' ' * indent, self.name, var))
+
+  def WriteArgAccessor(self, f):
+    """Writes specialized accessor for argument."""
+    pass
 
   def WriteValidationCode(self, f, func):
     """Writes the validation code for an argument."""
@@ -8557,9 +8894,6 @@ class SizeArgument(Argument):
 
 class SizeNotNegativeArgument(SizeArgument):
   """class for GLsizeiNotNegative. It's NEVER allowed to be negative"""
-
-  def __init__(self, name, type, gl_type):
-    SizeArgument.__init__(self, name, gl_type)
 
   def GetInvalidArg(self, index):
     """overridden from SizeArgument."""
@@ -8682,7 +9016,6 @@ class EnumArgument(EnumBaseArgument):
     """Overridden from Argument."""
     return ("GLES2Util::GetString%s(%s)" %
             (self.type_name, self.name))
-
 
 class IntArgument(EnumBaseArgument):
   """A class for a GLint argument that can only accept specific values.
@@ -8956,7 +9289,7 @@ class ResourceIdArgument(Argument):
       my_type = "GLuint"
     else:
       my_type = self.type
-    f.write("  %s %s = c.%s;\n" % (my_type, self.name, self.name))
+    f.write("  %s %s = c.%s;\n" % (my_type, self.name, self.GetArgAccessor()))
 
   def GetValidArg(self, func):
     return "client_%s_id_" % self.resource_type.lower()
@@ -9000,7 +9333,7 @@ class ResourceIdZeroArgument(Argument):
 
   def WriteGetCode(self, f):
     """Overridden from Argument."""
-    f.write("  %s %s = c.%s;\n" % (self.type, self.name, self.name))
+    f.write("  %s %s = c.%s;\n" % (self.type, self.name, self.GetArgAccessor()))
 
   def GetValidArg(self, func):
     return "client_%s_id_" % self.resource_type.lower()
@@ -9016,6 +9349,38 @@ class ResourceIdZeroArgument(Argument):
     """returns an invalid value by index."""
     return ("kInvalidClientId", "kNoError", "GL_INVALID_VALUE")
 
+
+class Int64Argument(Argument):
+  """Represents a GLuint64 argument which splits up into 2 uint32_t items."""
+
+  def __init__(self, name, type):
+    Argument.__init__(self, name, type)
+
+  def GetArgAccessor(self):
+    return "%s()" % self.name
+
+  def WriteArgAccessor(self, f):
+    """Writes specialized accessor for compound members."""
+    f.write("  %s %s() const {\n" % (self.type, self.name))
+    f.write("    return static_cast<%s>(\n" % self.type)
+    f.write("        GLES2Util::MapTwoUint32ToUint64(\n")
+    f.write("            %s_0,\n" % self.name)
+    f.write("            %s_1));\n" % self.name)
+    f.write("  }\n")
+    f.write("\n")
+
+  def WriteGetCode(self, f):
+    """Writes the code to get an argument from a command structure."""
+    f.write("  %s %s = c.%s();\n" % (self.type, self.name, self.name))
+
+  def WriteSetCode(self, f, indent, var):
+    indent_str = ' ' * indent
+    f.write("%sGLES2Util::MapUint64ToTwoUint32(static_cast<uint64_t>(%s),\n" %
+            (indent_str, var))
+    f.write("%s                                &%s_0,\n" %
+            (indent_str, self.name))
+    f.write("%s                                &%s_1);\n" %
+            (indent_str, self.name))
 
 class Function(object):
   """A class that represents a function."""
@@ -9121,6 +9486,10 @@ class Function(object):
   def IsUnsafe(self):
     """Returns whether the function has service side validation or not."""
     return self.GetInfo('unsafe', False)
+
+  def UseHelper(self):
+    """Returns whether the function uses explicit helper functions."""
+    return self.GetInfo('use_helper', False)
 
   def GetInfo(self, name, default = None):
     """Returns a value from the function info for this function."""
@@ -9361,7 +9730,7 @@ class Function(object):
     else:
       cmd_flags = 0
 
-    f.write("  static const uint8 cmd_flags = %s;\n" % cmd_flags)
+    f.write("  static const uint8_t cmd_flags = %s;\n" % cmd_flags)
 
 
   def WriteCmdArgFlag(self, f):
@@ -9389,7 +9758,7 @@ class Function(object):
     f.write("    SetHeader();\n")
     args = self.GetCmdArgs()
     for arg in args:
-      f.write("    %s = _%s;\n" % (arg.name, arg.name))
+      arg.WriteSetCode(f, 4, '_%s' % arg.name)
     f.write("  }\n")
     f.write("\n")
 
@@ -9402,6 +9771,11 @@ class Function(object):
     f.write("    return NextCmdAddress<ValueType>(cmd);\n")
     f.write("  }\n")
     f.write("\n")
+
+  def WriteArgAccessors(self, f):
+    """Writes the cmd's accessor functions."""
+    for arg in self.GetCmdArgs():
+      arg.WriteArgAccessor(f)
 
   def WriteStruct(self, f):
     self.type_handler.WriteStruct(self, f)
@@ -9634,44 +10008,52 @@ class BucketFunction(Function):
 
 
 def CreateArg(arg_string):
-  """Creates an Argument."""
-  arg_parts = arg_string.split()
-  if len(arg_parts) == 1 and arg_parts[0] == 'void':
+  """Convert string argument to an Argument class that represents it.
+
+  The parameter 'arg_string' can be a single argument to a GL function,
+  something like 'GLsizei width' or 'const GLenum* bufs'. Returns an instance of
+  the Argument class, or None if 'arg_string' is 'void'.
+  """
+  if arg_string == 'void':
     return None
+
+  arg_parts = arg_string.strip().split()
+  assert len(arg_parts) > 1
+  arg_name = arg_parts[-1]
+  arg_type = " ".join(arg_parts[0:-1])
+  t = arg_parts[0]  # only the first part of arg_type
+
   # Is this a pointer argument?
-  elif arg_string.find('*') >= 0:
-    return PointerArgument(
-        arg_parts[-1],
-        " ".join(arg_parts[0:-1]))
+  if arg_string.find('*') >= 0:
+    return PointerArgument(arg_name, arg_type)
   # Is this a resource argument? Must come after pointer check.
-  elif arg_parts[0].startswith('GLidBind'):
-    return ResourceIdBindArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLidZero'):
-    return ResourceIdZeroArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLid'):
-    return ResourceIdArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLenum') and len(arg_parts[0]) > 6:
-    return EnumArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLbitfield') and len(arg_parts[0]) > 10:
-    return BitFieldArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLboolean') and len(arg_parts[0]) > 9:
-    return ValidatedBoolArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLboolean'):
-    return BoolArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif arg_parts[0].startswith('GLintUniformLocation'):
-    return UniformLocationArgument(arg_parts[-1])
-  elif (arg_parts[0].startswith('GLint') and len(arg_parts[0]) > 5 and
-        not arg_parts[0].startswith('GLintptr')):
-    return IntArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
-  elif (arg_parts[0].startswith('GLsizeiNotNegative') or
-        arg_parts[0].startswith('GLintptrNotNegative')):
-    return SizeNotNegativeArgument(arg_parts[-1],
-                                   " ".join(arg_parts[0:-1]),
-                                   arg_parts[0][0:-11])
-  elif arg_parts[0].startswith('GLsize'):
-    return SizeArgument(arg_parts[-1], " ".join(arg_parts[0:-1]))
+  elif t.startswith('GLidBind'):
+    return ResourceIdBindArgument(arg_name, arg_type)
+  elif t.startswith('GLidZero'):
+    return ResourceIdZeroArgument(arg_name, arg_type)
+  elif t.startswith('GLid'):
+    return ResourceIdArgument(arg_name, arg_type)
+  elif t.startswith('GLenum') and t !='GLenum':
+    return EnumArgument(arg_name, arg_type)
+  elif t.startswith('GLbitfield') and t != 'GLbitfield':
+    return BitFieldArgument(arg_name, arg_type)
+  elif t.startswith('GLboolean') and t != 'GLboolean':
+    return ValidatedBoolArgument(arg_name, arg_type)
+  elif t.startswith('GLboolean'):
+    return BoolArgument(arg_name, arg_type)
+  elif t.startswith('GLintUniformLocation'):
+    return UniformLocationArgument(arg_name)
+  elif (t.startswith('GLint') and t != 'GLint' and
+        not t.startswith('GLintptr')):
+    return IntArgument(arg_name, arg_type)
+  elif t == 'GLsizeiNotNegative' or t == 'GLintptrNotNegative':
+    return SizeNotNegativeArgument(arg_name, t.replace('NotNegative', ''))
+  elif t.startswith('GLsize'):
+    return SizeArgument(arg_name, arg_type)
+  elif t == 'GLuint64' or t == 'GLint64':
+    return Int64Argument(arg_name, arg_type)
   else:
-    return Argument(arg_parts[-1], " ".join(arg_parts[0:-1]))
+    return Argument(arg_name, arg_type)
 
 
 class GLGenerator(object):
@@ -9913,6 +10295,8 @@ class GLGenerator(object):
       f.write("struct EnableFlags {\n")
       f.write("  EnableFlags();\n")
       for capability in _CAPABILITY_FLAGS:
+        if 'extension_flag' in capability:
+          continue
         f.write("  bool %s;\n" % capability['name'])
       f.write("};\n\n")
     self.generated_cpp_filenames.append(filename)
@@ -10018,6 +10402,9 @@ void ContextState::InitCapabilities(const ContextState* prev_state) const {
           capability_es3 = 'es3' in capability and capability['es3'] == True
           if capability_es3 and not es3_caps or not capability_es3 and es3_caps:
             continue
+          if 'extension_flag' in capability:
+            f.write("  if (feature_info_->feature_flags().%s) {\n  " %
+                       capability['extension_flag'])
           if test_prev:
             f.write("""  if (prev_state->enable_flags.cached_%s !=
                                 enable_flags.cached_%s) {\n""" %
@@ -10025,6 +10412,8 @@ void ContextState::InitCapabilities(const ContextState* prev_state) const {
           f.write("    EnableDisable(GL_%s, enable_flags.cached_%s);\n" %
                      (capability_name.upper(), capability_name))
           if test_prev:
+            f.write("  }")
+          if 'extension_flag' in capability:
             f.write("  }")
 
       f.write("  if (prev_state) {")
@@ -10071,6 +10460,12 @@ void ContextState::InitState(const ContextState *prev_state) const {
             for item in state['states']:
               item_name = CachedStateName(item)
 
+              if 'manual' in item:
+                assert item['manual']
+                continue
+              if 'es3' in item:
+                assert item['es3']
+                f.write("  if (feature_info_->IsES3Capable()) {\n");
               if 'extension_flag' in item:
                 f.write("  if (feature_info_->feature_flags().%s) {\n  " %
                            item['extension_flag'])
@@ -10096,7 +10491,7 @@ void ContextState::InitState(const ContextState *prev_state) const {
                           (item['enum_set']
                              if 'enum_set' in item else item['enum']),
                           item['name']))
-              if 'gl_version_flag' in item:
+              if 'gl_version_flag' in item or 'es3' in item:
                 f.write("  }\n")
               if test_prev:
                 if 'extension_flag' in item:
@@ -10128,6 +10523,7 @@ void ContextState::InitState(const ContextState *prev_state) const {
       f.write("  } else {")
       WriteStates(False)
       f.write("  }")
+      f.write("  InitStateManual(prev_state);")
       f.write("}\n")
 
       f.write("""bool ContextState::GetEnabled(GLenum cap) const {
@@ -10151,6 +10547,8 @@ void ContextState::InitState(const ContextState *prev_state) const {
     with CHeaderWriter(filename, comment) as f:
       code = []
       for capability in _CAPABILITY_FLAGS:
+        if 'extension_flag' in capability:
+          continue
         code.append("%s(%s)" %
                     (capability['name'],
                      ('false', 'true')['default' in capability]))
@@ -10166,6 +10564,8 @@ bool ClientContextState::SetCapabilityState(
   switch (cap) {
 """)
       for capability in _CAPABILITY_FLAGS:
+        if 'extension_flag' in capability:
+          continue
         f.write("    case GL_%s:\n" % capability['name'].upper())
         f.write("""      if (enable_flags.%(name)s != enabled) {
          *changed = true;
@@ -10183,6 +10583,8 @@ bool ClientContextState::SetCapabilityState(
   switch (cap) {
 """)
       for capability in _CAPABILITY_FLAGS:
+        if 'extension_flag' in capability:
+          continue
         f.write("    case GL_%s:\n" % capability['name'].upper())
         f.write("      *enabled = enable_flags.%s;\n" % capability['name'])
         f.write("      return true;\n")
@@ -10264,9 +10666,7 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
           if True:
           #gen_cmd = func.GetInfo('gen_cmd')
           #if gen_cmd == True or gen_cmd == None:
-            if func.GetInfo('unit_test') == False:
-              f.write("// TODO(gman): %s\n" % func.name)
-            else:
+            if func.GetInfo('unit_test') != False:
               func.WriteServiceUnitTest(f, {
                 'test_name': test_name
               })
@@ -10280,11 +10680,17 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
       bool es3_capable) {""")
       for capability in _CAPABILITY_FLAGS:
         capability_es3 = 'es3' in capability and capability['es3'] == True
-        if not capability_es3:
-          f.write("  ExpectEnableDisable(GL_%s, %s);\n" %
-                     (capability['name'].upper(),
-                      ('false', 'true')['default' in capability]))
-
+        if capability_es3:
+          continue
+        if 'extension_flag' in capability:
+          f.write("  if (group_->feature_info()->feature_flags().%s) {\n" %
+                   capability['extension_flag'])
+          f.write("  ")
+        f.write("  ExpectEnableDisable(GL_%s, %s);\n" %
+                (capability['name'].upper(),
+                 ('false', 'true')['default' in capability]))
+        if 'extension_flag' in capability:
+          f.write("  }")
       f.write("  if (es3_capable) {")
       for capability in _CAPABILITY_FLAGS:
         capability_es3 = 'es3' in capability and capability['es3'] == True
@@ -10295,7 +10701,7 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
       f.write("""  }
 }
 
-void GLES2DecoderTestBase::SetupInitStateExpectations() {
+void GLES2DecoderTestBase::SetupInitStateExpectations(bool es3_capable) {
 """)
       # We need to sort the keys so the expectations match
       for state_name in sorted(_STATES.keys()):
@@ -10316,9 +10722,16 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
             f.write("      .RetiresOnSaturation();\n")
         elif state['type'] == 'NamedParameter':
           for item in state['states']:
+            if 'manual' in item:
+              assert item['manual']
+              continue
             if 'extension_flag' in item:
               f.write("  if (group_->feature_info()->feature_flags().%s) {\n" %
                          item['extension_flag'])
+              f.write("  ")
+            if 'es3' in item:
+              assert item['es3']
+              f.write("  if (es3_capable) {\n")
               f.write("  ")
             expect_value = item['default']
             if isinstance(expect_value, list):
@@ -10333,7 +10746,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
                  expect_value))
             f.write("      .Times(1)\n")
             f.write("      .RetiresOnSaturation();\n")
-            if 'extension_flag' in item:
+            if 'extension_flag' in item or 'es3' in item:
               f.write("  }\n")
         else:
           if 'extension_flag' in state:
@@ -10354,6 +10767,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
           f.write("      .RetiresOnSaturation();\n")
           if 'extension_flag' in state:
             f.write("  }\n")
+      f.write("  SetupInitStateManualExpectations(es3_capable);\n")
       f.write("}\n")
     self.generated_cpp_filenames.append(filename)
 
@@ -10368,9 +10782,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
     with CHeaderWriter(filename, comment) as f:
       for func in functions:
         if True:
-          if func.GetInfo('unit_test') == False:
-            f.write("// TODO(gman): %s\n" % func.name)
-          else:
+          if func.GetInfo('unit_test') != False:
             extension = ToCamelCase(
               ToGLExtensionString(func.GetInfo('extension_flag')))
             func.WriteServiceUnitTest(f, {
@@ -10424,7 +10836,7 @@ extern const NameToFunc g_gles2_function_table[] = {
                "// GL api functions.\n")
     code = """
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "third_party/mojo/src/mojo/public/c/gles2/gles2.h"
+#include "mojo/public/c/gles2/gles2.h"
 
 namespace mojo {
 
@@ -10455,8 +10867,8 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
 #include "mojo/gpu/mojo_gles2_impl_autogen.h"
 
 #include "base/logging.h"
-#include "third_party/mojo/src/mojo/public/c/gles2/chromium_extension.h"
-#include "third_party/mojo/src/mojo/public/c/gles2/gles2.h"
+#include "mojo/public/c/gles2/chromium_extension.h"
+#include "mojo/public/c/gles2/gles2.h"
 
 namespace mojo {
 
@@ -10539,10 +10951,26 @@ namespace mojo {
     with CHeaderWriter(filename) as f:
       for name in sorted(_NAMED_TYPE_INFO.keys()):
         named_type = NamedType(_NAMED_TYPE_INFO[name])
-        if named_type.IsConstant():
+        if not named_type.CreateValidator():
           continue
-        f.write("ValueValidator<%s> %s;\n" %
-                   (named_type.GetType(), ToUnderscore(name)))
+        if named_type.IsComplete():
+          f.write("""class %(name)sValidator {
+                      public:
+                       bool IsValid(const %(type)s value) const;"""% {
+            'name': name,
+            'type': named_type.GetType()
+          })
+          if named_type.HasES3Values():
+            f.write("""%sValidator();
+                       void SetIsES3(bool is_es3) { is_es3_ = is_es3; }
+                      private:
+                       bool is_es3_;""" % name)
+          f.write("};\n")
+          f.write("%sValidator %s;\n\n" %
+                     (name, ToUnderscore(name)))
+        else:
+          f.write("ValueValidator<%s> %s;\n" %
+                     (named_type.GetType(), ToUnderscore(name)))
       f.write("\n")
     self.generated_cpp_filenames.append(filename)
 
@@ -10552,34 +10980,60 @@ namespace mojo {
       names = sorted(_NAMED_TYPE_INFO.keys())
       for name in names:
         named_type = NamedType(_NAMED_TYPE_INFO[name])
-        if named_type.IsConstant():
+        if not named_type.CreateValidator():
           continue
-        if named_type.GetValidValues():
-          f.write("static const %s valid_%s_table[] = {\n" %
-                     (named_type.GetType(), ToUnderscore(name)))
-          for value in named_type.GetValidValues():
-            f.write("  %s,\n" % value)
-          f.write("};\n")
+        if named_type.IsComplete():
+          if named_type.HasES3Values():
+            f.write("""Validators::%(name)sValidator::%(name)sValidator()
+                         : is_es3_(false) {}""" % { 'name': name })
+
+          f.write("""bool Validators::%(name)sValidator::IsValid(
+                         const %(type)s value) const {
+                       switch(value) {\n""" % {
+            'name': name,
+            'type': named_type.GetType()
+          })
+          if named_type.GetValidValues():
+            for value in named_type.GetValidValues():
+                f.write("case %s:\n" % value)
+            f.write("return true;\n")
+          if named_type.GetValidValuesES3():
+            for value in named_type.GetValidValuesES3():
+                f.write("case %s:\n" % value)
+            f.write("return is_es3_;\n")
+          if named_type.GetDeprecatedValuesES3():
+            for value in named_type.GetDeprecatedValuesES3():
+                f.write("case %s:\n" % value)
+            f.write("return !is_es3_;\n")
+          f.write("}\nreturn false;\n};\n")
           f.write("\n")
-        if named_type.GetValidValuesES3():
-          f.write("static const %s valid_%s_table_es3[] = {\n" %
-                     (named_type.GetType(), ToUnderscore(name)))
-          for value in named_type.GetValidValuesES3():
-            f.write("  %s,\n" % value)
-          f.write("};\n")
-          f.write("\n")
-        if named_type.GetDeprecatedValuesES3():
-          f.write("static const %s deprecated_%s_table_es3[] = {\n" %
-                     (named_type.GetType(), ToUnderscore(name)))
-          for value in named_type.GetDeprecatedValuesES3():
-            f.write("  %s,\n" % value)
-          f.write("};\n")
+        else:
+          if named_type.GetValidValues():
+            f.write("static const %s valid_%s_table[] = {\n" %
+                       (named_type.GetType(), ToUnderscore(name)))
+            for value in named_type.GetValidValues():
+              f.write("  %s,\n" % value)
+            f.write("};\n")
+            f.write("\n")
+          if named_type.GetValidValuesES3():
+            f.write("static const %s valid_%s_table_es3[] = {\n" %
+                       (named_type.GetType(), ToUnderscore(name)))
+            for value in named_type.GetValidValuesES3():
+              f.write("  %s,\n" % value)
+            f.write("};\n")
+            f.write("\n")
+          if named_type.GetDeprecatedValuesES3():
+            f.write("static const %s deprecated_%s_table_es3[] = {\n" %
+                       (named_type.GetType(), ToUnderscore(name)))
+            for value in named_type.GetDeprecatedValuesES3():
+              f.write("  %s,\n" % value)
+            f.write("};\n")
           f.write("\n")
       f.write("Validators::Validators()")
       pre = '    : '
       for count, name in enumerate(names):
         named_type = NamedType(_NAMED_TYPE_INFO[name])
-        if named_type.IsConstant():
+        if not named_type.CreateValidator() or named_type.IsComplete():
           continue
         if named_type.GetValidValues():
           code = """%(pre)s%(name)s(
@@ -10597,6 +11051,12 @@ namespace mojo {
       f.write("void Validators::UpdateValuesES3() {\n")
       for name in names:
         named_type = NamedType(_NAMED_TYPE_INFO[name])
+        if not named_type.IsConstant() and named_type.IsComplete():
+          if named_type.HasES3Values():
+            f.write("  %(name)s.SetIsES3(true);" % {
+              'name': ToUnderscore(name),
+            })
+          continue
         if named_type.GetDeprecatedValuesES3():
           code = """  %(name)s.RemoveValues(
       deprecated_%(name)s_table_es3, arraysize(deprecated_%(name)s_table_es3));
@@ -10652,7 +11112,7 @@ namespace mojo {
     with CHeaderWriter(filename) as f:
       f.write("static const GLES2Util::EnumToString "
                  "enum_to_string_table[] = {\n")
-      for value in dict:
+      for value in sorted(dict):
         f.write('  { %s, "%s", },\n' % (value, dict[value]))
       f.write("""};
 
@@ -10670,7 +11130,9 @@ const size_t GLES2Util::enum_to_string_table_len_ =
                      enum)
           valid_list = _NAMED_TYPE_INFO[enum]['valid']
           if 'valid_es3' in _NAMED_TYPE_INFO[enum]:
-            valid_list = valid_list + _NAMED_TYPE_INFO[enum]['valid_es3']
+            for es3_enum in _NAMED_TYPE_INFO[enum]['valid_es3']:
+              if not es3_enum in valid_list:
+                valid_list.append(es3_enum)
           assert len(valid_list) == len(set(valid_list))
           if len(valid_list) > 0:
             f.write("  static const EnumToString string_table[] = {\n")
@@ -10911,6 +11373,7 @@ def main(argv):
 
   # Add in states and capabilites to GLState
   gl_state_valid = _NAMED_TYPE_INFO['GLState']['valid']
+  gl_state_valid_es3 = _NAMED_TYPE_INFO['GLState']['valid_es3']
   for state_name in sorted(_STATES.keys()):
     state = _STATES[state_name]
     if 'extension_flag' in state:
@@ -10922,9 +11385,16 @@ def main(argv):
       for item in state['states']:
         if 'extension_flag' in item:
           continue
-        if not item['enum'] in gl_state_valid:
-          gl_state_valid.append(item['enum'])
+        if 'es3' in item:
+          assert item['es3']
+          if not item['enum'] in gl_state_valid_es3:
+            gl_state_valid_es3.append(item['enum'])
+        else:
+          if not item['enum'] in gl_state_valid:
+            gl_state_valid.append(item['enum'])
   for capability in _CAPABILITY_FLAGS:
+    if 'extension_flag' in capability:
+      continue
     valid_value = "GL_%s" % capability['name'].upper()
     if not valid_value in gl_state_valid:
       gl_state_valid.append(valid_value)
@@ -10998,8 +11468,7 @@ def main(argv):
   gen.WriteCommonUtilsImpl(
     "gpu/command_buffer/common/gles2_cmd_utils_implementation_autogen.h")
   gen.WriteGLES2Header("gpu/GLES2/gl2chromium_autogen.h")
-  mojo_gles2_prefix = ("third_party/mojo/src/mojo/public/c/gles2/"
-                       "gles2_call_visitor")
+  mojo_gles2_prefix = ("mojo/public/c/gles2/gles2_call_visitor")
   gen.WriteMojoGLCallVisitor(mojo_gles2_prefix + "_autogen.h")
   gen.WriteMojoGLCallVisitorForExtension(
       mojo_gles2_prefix + "_chromium_extension_autogen.h")

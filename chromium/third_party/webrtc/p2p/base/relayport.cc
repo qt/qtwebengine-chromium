@@ -16,7 +16,7 @@
 
 namespace cricket {
 
-static const uint32 kMessageConnectTimeout = 1;
+static const uint32_t kMessageConnectTimeout = 1;
 static const int kKeepAliveDelay           = 10 * 60 * 1000;
 static const int kRetryTimeout             = 50 * 1000;  // ICE says 50 secs
 // How long to wait for a socket to connect to remote host in milliseconds
@@ -144,6 +144,10 @@ class RelayEntry : public rtc::MessageHandler,
     const char* data, size_t size,
     const rtc::SocketAddress& remote_addr,
     const rtc::PacketTime& packet_time);
+
+  void OnSentPacket(rtc::AsyncPacketSocket* socket,
+                    const rtc::SentPacket& sent_packet);
+
   // Called when the socket is currently able to send.
   void OnReadyToSend(rtc::AsyncPacketSocket* socket);
 
@@ -171,19 +175,26 @@ class AllocateRequest : public StunRequest {
  private:
   RelayEntry* entry_;
   RelayConnection* connection_;
-  uint32 start_time_;
+  uint32_t start_time_;
 };
 
 RelayPort::RelayPort(rtc::Thread* thread,
                      rtc::PacketSocketFactory* factory,
                      rtc::Network* network,
                      const rtc::IPAddress& ip,
-                     uint16 min_port,
-                     uint16 max_port,
+                     uint16_t min_port,
+                     uint16_t max_port,
                      const std::string& username,
                      const std::string& password)
-    : Port(thread, RELAY_PORT_TYPE, factory, network, ip, min_port, max_port,
-           username, password),
+    : Port(thread,
+           RELAY_PORT_TYPE,
+           factory,
+           network,
+           ip,
+           min_port,
+           max_port,
+           username,
+           password),
       ready_(false),
       error_(0) {
   entries_.push_back(
@@ -501,6 +512,7 @@ void RelayEntry::Connect() {
 
   // Otherwise, create the new connection and configure any socket options.
   socket->SignalReadPacket.connect(this, &RelayEntry::OnReadPacket);
+  socket->SignalSentPacket.connect(this, &RelayEntry::OnSentPacket);
   socket->SignalReadyToSend.connect(this, &RelayEntry::OnReadyToSend);
   current_connection_ = new RelayConnection(ra, socket, port()->thread());
   for (size_t i = 0; i < port_->options().size(); ++i) {
@@ -738,6 +750,11 @@ void RelayEntry::OnReadPacket(
   // Process the actual data and remote address in the normal manner.
   port_->OnReadPacket(data_attr->bytes(), data_attr->length(), remote_addr2,
                       PROTO_UDP, packet_time);
+}
+
+void RelayEntry::OnSentPacket(rtc::AsyncPacketSocket* socket,
+                              const rtc::SentPacket& sent_packet) {
+  port_->OnSentPacket(socket, sent_packet);
 }
 
 void RelayEntry::OnReadyToSend(rtc::AsyncPacketSocket* socket) {

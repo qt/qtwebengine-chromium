@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/test/histogram.h"
 
 namespace webrtc {
 
@@ -28,8 +29,9 @@ class SendStatisticsProxyTest : public ::testing::Test {
 
  protected:
   virtual void SetUp() {
-    statistics_proxy_.reset(
-        new SendStatisticsProxy(&fake_clock_, GetTestConfig()));
+    statistics_proxy_.reset(new SendStatisticsProxy(
+        &fake_clock_, GetTestConfig(),
+        VideoEncoderConfig::ContentType::kRealtimeVideo));
     expected_ = VideoSendStream::Stats();
   }
 
@@ -285,6 +287,33 @@ TEST_F(SendStatisticsProxyTest, SendSideDelay) {
   }
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
   ExpectEqual(expected_, stats);
+}
+
+TEST_F(SendStatisticsProxyTest, OnEncodedFrame) {
+  const int kEncodeTimeMs = 11;
+  statistics_proxy_->OnEncodedFrame(kEncodeTimeMs);
+
+  VideoSendStream::Stats stats = statistics_proxy_->GetStats();
+  EXPECT_EQ(kEncodeTimeMs, stats.avg_encode_time_ms);
+}
+
+TEST_F(SendStatisticsProxyTest, SwitchContentTypeUpdatesHistograms) {
+  test::ClearHistograms();
+  const int kMinRequiredSamples = 200;
+  const int kWidth = 640;
+  const int kHeight = 480;
+
+  for (int i = 0; i < kMinRequiredSamples; ++i)
+    statistics_proxy_->OnIncomingFrame(kWidth, kHeight);
+
+  // No switch, stats not should be updated.
+  statistics_proxy_->SetContentType(
+      VideoEncoderConfig::ContentType::kRealtimeVideo);
+  EXPECT_EQ(0, test::NumHistogramSamples("WebRTC.Video.InputWidthInPixels"));
+
+  // Switch to screenshare, real-time stats should be updated.
+  statistics_proxy_->SetContentType(VideoEncoderConfig::ContentType::kScreen);
+  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.InputWidthInPixels"));
 }
 
 TEST_F(SendStatisticsProxyTest, NoSubstreams) {

@@ -4,6 +4,9 @@
 
 #include "content/browser/mojo/mojo_app_connection_impl.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "content/browser/mojo/mojo_shell_context.h"
 #include "mojo/shell/capability_filter.h"
@@ -38,7 +41,7 @@ MojoAppConnectionImpl::~MojoAppConnectionImpl() {
 void MojoAppConnectionImpl::ConnectToService(
     const std::string& service_name,
     mojo::ScopedMessagePipeHandle handle) {
-  services_->ConnectToService(service_name, handle.Pass());
+  services_->ConnectToService(service_name, std::move(handle));
 }
 
 }  // namespace content

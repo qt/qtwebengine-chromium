@@ -5,11 +5,14 @@
 #ifndef DEVICE_BLUETOOTH_DBUS_BLUETOOTH_MEDIA_CLIENT_H_
 #define DEVICE_BLUETOOTH_DBUS_BLUETOOTH_MEDIA_CLIENT_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/values.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"

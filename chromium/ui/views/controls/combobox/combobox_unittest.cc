@@ -6,8 +6,9 @@
 
 #include <set>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/models/combobox_model.h"
@@ -15,6 +16,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/test/combobox_test_api.h"
@@ -695,13 +697,19 @@ TEST_F(ComboboxTest, TypingPrefixNotifiesListener) {
       widget_->GetInputMethod()->GetTextInputClient();
 
   // Type the first character of the second menu item ("JELLY").
-  input_client->InsertChar('J', ui::EF_NONE);
+  ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_J, ui::DomCode::US_J, 0,
+                         ui::DomKey::FromCharacter('J'), ui::EventTimeForNow());
+
+  input_client->InsertChar(key_event);
   EXPECT_EQ(1, listener.actions_performed());
   EXPECT_EQ(1, listener.perform_action_index());
 
   // Type the second character of "JELLY", item shouldn't change and
   // OnPerformAction() shouldn't be re-called.
-  input_client->InsertChar('E', ui::EF_NONE);
+  key_event =
+      ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_E, ui::DomCode::US_E, 0,
+                   ui::DomKey::FromCharacter('E'), ui::EventTimeForNow());
+  input_client->InsertChar(key_event);
   EXPECT_EQ(1, listener.actions_performed());
   EXPECT_EQ(1, listener.perform_action_index());
 
@@ -711,7 +719,10 @@ TEST_F(ComboboxTest, TypingPrefixNotifiesListener) {
 
   // Type the first character of "PEANUT BUTTER", which should change the
   // selected index and perform an action.
-  input_client->InsertChar('P', ui::EF_NONE);
+  key_event =
+      ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_E, ui::DomCode::US_P, 0,
+                   ui::DomKey::FromCharacter('P'), ui::EventTimeForNow());
+  input_client->InsertChar(key_event);
   EXPECT_EQ(2, listener.actions_performed());
   EXPECT_EQ(2, listener.perform_action_index());
 }

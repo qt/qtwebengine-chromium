@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/PopupMenuImpl.h"
 
 #include "core/HTMLNames.h"
@@ -188,7 +187,7 @@ public:
         addProperty("backgroundColor", m_backgroundColor.serialized(), m_buffer);
         addProperty("color", baseStyle().visitedDependentColor(CSSPropertyColor).serialized(), m_buffer);
         addProperty("textTransform", String(textTransformToString(baseStyle().textTransform())), m_buffer);
-        addProperty("fontSize", baseFont().computedPixelSize(), m_buffer);
+        addProperty("fontSize", baseFont().specifiedSize(), m_buffer);
         addProperty("fontStyle", String(fontStyleToString(baseFont().style())), m_buffer);
         addProperty("fontVariant", String(fontVariantToString(baseFont().variant())), m_buffer);
 
@@ -254,13 +253,9 @@ PopupMenuImpl::~PopupMenuImpl()
 
 DEFINE_TRACE(PopupMenuImpl)
 {
+    visitor->trace(m_chromeClient);
     visitor->trace(m_ownerElement);
     PopupMenu::trace(visitor);
-}
-
-IntSize PopupMenuImpl::contentSize()
-{
-    return IntSize();
 }
 
 void PopupMenuImpl::writeDocument(SharedBuffer* data)
@@ -294,9 +289,13 @@ void PopupMenuImpl::writeDocument(SharedBuffer* data)
     PagePopupClient::addString("],\n", data);
 
     addProperty("anchorRectInScreen", anchorRectInScreen, data);
+    float zoom = zoomFactor();
+    IntRect inScreen = m_chromeClient->viewportToScreen(IntRect(0, 0, 100, 0));
+    float scaleFactor = 100.f / inScreen.width();
+    addProperty("zoomFactor", zoom / scaleFactor, data);
     bool isRTL = !ownerStyle->isLeftToRightDirection();
     addProperty("isRTL", isRTL, data);
-    addProperty("paddingStart", isRTL ? ownerElement.clientPaddingRight().toDouble() : ownerElement.clientPaddingLeft().toDouble(), data);
+    addProperty("paddingStart", isRTL ? ownerElement.clientPaddingRight().toDouble() / zoom : ownerElement.clientPaddingLeft().toDouble() / zoom, data);
     PagePopupClient::addString("};\n", data);
     data->append(Platform::current()->loadResource("pickerCommon.js"));
     data->append(Platform::current()->loadResource("listPicker.js"));
@@ -328,8 +327,11 @@ void PopupMenuImpl::addElementStyle(ItemIterationContext& context, HTMLElement& 
         addProperty("backgroundColor", backgroundColor.serialized(), data);
     const FontDescription& baseFont = context.baseFont();
     const FontDescription& fontDescription = style->font().fontDescription();
-    if (baseFont.computedPixelSize() != fontDescription.computedPixelSize())
-        addProperty("fontSize", fontDescription.computedPixelSize(), data);
+    if (baseFont.computedPixelSize() != fontDescription.computedPixelSize()) {
+        // We don't use FontDescription::specifiedSize() because this element
+        // might have its own zoom level.
+        addProperty("fontSize", fontDescription.computedSize() / zoomFactor(), data);
+    }
     // Our UA stylesheet has font-weight:normal for OPTION.
     if (FontWeightNormal != fontDescription.weight())
         addProperty("fontWeight", String(fontWeightToString(fontDescription.weight())), data);
@@ -356,7 +358,7 @@ void PopupMenuImpl::addOption(ItemIterationContext& context, HTMLOptionElement& 
 {
     SharedBuffer* data = context.m_buffer;
     PagePopupClient::addString("{", data);
-    addProperty("label", element.text(), data);
+    addProperty("label", element.displayLabel(), data);
     addProperty("value", context.m_listIndex, data);
     if (!element.title().isEmpty())
         addProperty("title", element.title(), data);
@@ -487,7 +489,7 @@ void PopupMenuImpl::updateFromElement()
     if (m_needsUpdate)
         return;
     m_needsUpdate = true;
-    ownerElement().document().postTask(FROM_HERE, createSameThreadTask(&PopupMenuImpl::update, PassRefPtrWillBeRawPtr<PopupMenuImpl>(this)));
+    ownerElement().document().postTask(BLINK_FROM_HERE, createSameThreadTask(&PopupMenuImpl::update, PassRefPtrWillBeRawPtr<PopupMenuImpl>(this)));
 }
 
 void PopupMenuImpl::update()

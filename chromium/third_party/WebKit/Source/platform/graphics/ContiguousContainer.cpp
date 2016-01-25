@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/ContiguousContainer.h"
 
+#include "wtf/Allocator.h"
 #include "wtf/ContainerAnnotations.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/PartitionAlloc.h"
 #include "wtf/Partitions.h"
 #include "wtf/PassOwnPtr.h"
@@ -20,13 +19,13 @@ static const unsigned kDefaultInitialBufferSize = 32;
 
 class ContiguousContainerBase::Buffer {
     WTF_MAKE_NONCOPYABLE(Buffer);
-    WTF_MAKE_FAST_ALLOCATED(Buffer);
+    USING_FAST_MALLOC(Buffer);
 public:
-    explicit Buffer(size_t bufferSize)
+    explicit Buffer(size_t bufferSize, const char* typeName)
     {
         m_capacity = WTF::Partitions::bufferActualSize(bufferSize);
         m_begin = m_end = static_cast<char*>(
-            WTF::Partitions::bufferMalloc(m_capacity));
+            WTF::Partitions::bufferMalloc(m_capacity, typeName));
         ANNOTATE_NEW_BUFFER(m_begin, m_capacity, 0);
     }
 
@@ -66,17 +65,17 @@ private:
     size_t m_capacity;
 };
 
-ContiguousContainerBase::ContiguousContainerBase(size_t maxObjectSize)
+ContiguousContainerBase::ContiguousContainerBase(size_t maxObjectSize, const char* typeName)
     : m_endIndex(0)
     , m_maxObjectSize(maxObjectSize)
 {
 }
 
 ContiguousContainerBase::ContiguousContainerBase(
-    size_t maxObjectSize, size_t initialSizeBytes)
-    : ContiguousContainerBase(maxObjectSize)
+    size_t maxObjectSize, size_t initialSizeBytes, const char* typeName)
+    : ContiguousContainerBase(maxObjectSize, typeName)
 {
-    allocateNewBufferForNextAllocation(std::max(maxObjectSize, initialSizeBytes));
+    allocateNewBufferForNextAllocation(std::max(maxObjectSize, initialSizeBytes), typeName);
 }
 
 ContiguousContainerBase::~ContiguousContainerBase()
@@ -105,7 +104,7 @@ size_t ContiguousContainerBase::memoryUsageInBytes() const
         + m_elements.capacity() * sizeof(m_elements[0]);
 }
 
-void* ContiguousContainerBase::allocate(size_t objectSize)
+void* ContiguousContainerBase::allocate(size_t objectSize, const char* typeName)
 {
     ASSERT(objectSize <= m_maxObjectSize);
 
@@ -122,7 +121,7 @@ void* ContiguousContainerBase::allocate(size_t objectSize)
         size_t newBufferSize = m_buffers.isEmpty()
             ? kDefaultInitialBufferSize * m_maxObjectSize
             : 2 * m_buffers.last()->capacity();
-        bufferForAlloc = allocateNewBufferForNextAllocation(newBufferSize);
+        bufferForAlloc = allocateNewBufferForNextAllocation(newBufferSize, typeName);
     }
 
     void* element = bufferForAlloc->allocate(objectSize);
@@ -162,10 +161,10 @@ void ContiguousContainerBase::swap(ContiguousContainerBase& other)
 }
 
 ContiguousContainerBase::Buffer*
-ContiguousContainerBase::allocateNewBufferForNextAllocation(size_t bufferSize)
+ContiguousContainerBase::allocateNewBufferForNextAllocation(size_t bufferSize, const char* typeName)
 {
     ASSERT(m_buffers.isEmpty() || m_endIndex == m_buffers.size() - 1);
-    OwnPtr<Buffer> newBuffer = adoptPtr(new Buffer(bufferSize));
+    OwnPtr<Buffer> newBuffer = adoptPtr(new Buffer(bufferSize, typeName));
     Buffer* bufferToReturn = newBuffer.get();
     m_buffers.append(newBuffer.release());
     m_endIndex = m_buffers.size() - 1;

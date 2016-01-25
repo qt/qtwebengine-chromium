@@ -4,6 +4,7 @@
 
 #include "cc/scheduler/compositor_timing_history.h"
 
+#include "base/macros.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -50,10 +51,12 @@ base::TimeTicks TestCompositorTimingHistory::Now() const {
   return test_->Now();
 }
 
-TEST_F(CompositorTimingHistoryTest, AllSequentialCommit) {
+TEST_F(CompositorTimingHistoryTest, AllSequentialCommit_Critical) {
   base::TimeDelta one_second = base::TimeDelta::FromSeconds(1);
 
-  base::TimeDelta begin_main_frame_to_commit_duration =
+  base::TimeDelta begin_main_frame_queue_duration =
+      base::TimeDelta::FromMilliseconds(1);
+  base::TimeDelta begin_main_frame_start_to_commit_duration =
       base::TimeDelta::FromMilliseconds(1);
   base::TimeDelta prepare_tiles_duration = base::TimeDelta::FromMilliseconds(2);
   base::TimeDelta prepare_tiles_end_to_ready_to_activate_duration =
@@ -63,9 +66,10 @@ TEST_F(CompositorTimingHistoryTest, AllSequentialCommit) {
   base::TimeDelta activate_duration = base::TimeDelta::FromMilliseconds(4);
   base::TimeDelta draw_duration = base::TimeDelta::FromMilliseconds(5);
 
-  timing_history_.WillBeginMainFrame();
-  AdvanceNowBy(begin_main_frame_to_commit_duration);
-  // timing_history_.BeginMainFrameAborted();
+  timing_history_.WillBeginMainFrame(true);
+  AdvanceNowBy(begin_main_frame_queue_duration);
+  timing_history_.BeginMainFrameStarted(Now());
+  AdvanceNowBy(begin_main_frame_start_to_commit_duration);
   timing_history_.DidCommit();
   timing_history_.WillPrepareTiles();
   AdvanceNowBy(prepare_tiles_duration);
@@ -81,10 +85,21 @@ TEST_F(CompositorTimingHistoryTest, AllSequentialCommit) {
   AdvanceNowBy(one_second);
   timing_history_.WillDraw();
   AdvanceNowBy(draw_duration);
-  timing_history_.DidDraw();
+  timing_history_.DidDraw(true);
 
-  EXPECT_EQ(begin_main_frame_to_commit_duration,
+  EXPECT_EQ(begin_main_frame_queue_duration,
+            timing_history_.BeginMainFrameQueueDurationCriticalEstimate());
+  EXPECT_EQ(base::TimeDelta(),
+            timing_history_.BeginMainFrameQueueDurationNotCriticalEstimate());
+  EXPECT_EQ(begin_main_frame_start_to_commit_duration,
+            timing_history_.BeginMainFrameStartToCommitDurationEstimate());
+
+  base::TimeDelta begin_main_frame_to_commit_duration_expected_ =
+      begin_main_frame_queue_duration +
+      begin_main_frame_start_to_commit_duration;
+  EXPECT_EQ(begin_main_frame_to_commit_duration_expected_,
             timing_history_.BeginMainFrameToCommitDurationEstimate());
+
   EXPECT_EQ(commit_to_ready_to_activate_duration,
             timing_history_.CommitToReadyToActivateDurationEstimate());
   EXPECT_EQ(prepare_tiles_duration,
@@ -93,10 +108,13 @@ TEST_F(CompositorTimingHistoryTest, AllSequentialCommit) {
   EXPECT_EQ(draw_duration, timing_history_.DrawDurationEstimate());
 }
 
-TEST_F(CompositorTimingHistoryTest, AllSequentialBeginMainFrameAborted) {
+TEST_F(CompositorTimingHistoryTest,
+       AllSequentialBeginMainFrameAborted_NotCritical) {
   base::TimeDelta one_second = base::TimeDelta::FromSeconds(1);
 
-  base::TimeDelta begin_main_frame_to_commit_duration =
+  base::TimeDelta begin_main_frame_queue_duration =
+      base::TimeDelta::FromMilliseconds(1);
+  base::TimeDelta begin_main_frame_start_to_commit_duration =
       base::TimeDelta::FromMilliseconds(1);
   base::TimeDelta prepare_tiles_duration = base::TimeDelta::FromMilliseconds(2);
   base::TimeDelta prepare_tiles_end_to_ready_to_activate_duration =
@@ -106,8 +124,10 @@ TEST_F(CompositorTimingHistoryTest, AllSequentialBeginMainFrameAborted) {
   base::TimeDelta activate_duration = base::TimeDelta::FromMilliseconds(4);
   base::TimeDelta draw_duration = base::TimeDelta::FromMilliseconds(5);
 
-  timing_history_.WillBeginMainFrame();
-  AdvanceNowBy(begin_main_frame_to_commit_duration);
+  timing_history_.WillBeginMainFrame(false);
+  AdvanceNowBy(begin_main_frame_queue_duration);
+  timing_history_.BeginMainFrameStarted(Now());
+  AdvanceNowBy(begin_main_frame_start_to_commit_duration);
   // BeginMainFrameAborted counts as a commit complete.
   timing_history_.BeginMainFrameAborted();
   timing_history_.WillPrepareTiles();
@@ -124,10 +144,21 @@ TEST_F(CompositorTimingHistoryTest, AllSequentialBeginMainFrameAborted) {
   AdvanceNowBy(one_second);
   timing_history_.WillDraw();
   AdvanceNowBy(draw_duration);
-  timing_history_.DidDraw();
+  timing_history_.DidDraw(true);
 
-  EXPECT_EQ(begin_main_frame_to_commit_duration,
+  EXPECT_EQ(base::TimeDelta(),
+            timing_history_.BeginMainFrameQueueDurationCriticalEstimate());
+  EXPECT_EQ(begin_main_frame_queue_duration,
+            timing_history_.BeginMainFrameQueueDurationNotCriticalEstimate());
+  EXPECT_EQ(begin_main_frame_start_to_commit_duration,
+            timing_history_.BeginMainFrameStartToCommitDurationEstimate());
+
+  base::TimeDelta begin_main_frame_to_commit_duration_expected_ =
+      begin_main_frame_queue_duration +
+      begin_main_frame_start_to_commit_duration;
+  EXPECT_EQ(begin_main_frame_to_commit_duration_expected_,
             timing_history_.BeginMainFrameToCommitDurationEstimate());
+
   EXPECT_EQ(commit_to_ready_to_activate_duration,
             timing_history_.CommitToReadyToActivateDurationEstimate());
   EXPECT_EQ(prepare_tiles_duration,

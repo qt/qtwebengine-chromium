@@ -4,6 +4,9 @@
 
 #include "content/child/service_worker/web_service_worker_impl.h"
 
+#include <utility>
+
+#include "base/macros.h"
 #include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/thread_safe_sender.h"
@@ -21,6 +24,20 @@ namespace content {
 
 namespace {
 
+class HandleImpl : public blink::WebServiceWorker::Handle {
+ public:
+  explicit HandleImpl(const scoped_refptr<WebServiceWorkerImpl>& worker)
+      : worker_(worker) {}
+  ~HandleImpl() override {}
+
+  blink::WebServiceWorker* serviceWorker() override { return worker_.get(); }
+
+ private:
+  scoped_refptr<WebServiceWorkerImpl> worker_;
+
+  DISALLOW_COPY_AND_ASSIGN(HandleImpl);
+};
+
 void SendPostMessageToWorkerOnMainThread(
     ThreadSafeSender* thread_safe_sender,
     int handle_id,
@@ -28,7 +45,7 @@ void SendPostMessageToWorkerOnMainThread(
     scoped_ptr<WebMessagePortChannelArray> channels) {
   thread_safe_sender->Send(new ServiceWorkerHostMsg_PostMessageToWorker(
       handle_id, message,
-      WebMessagePortChannelImpl::ExtractMessagePortIDs(channels.Pass())));
+      WebMessagePortChannelImpl::ExtractMessagePortIDs(std::move(channels))));
 }
 
 }  // namespace
@@ -36,23 +53,15 @@ void SendPostMessageToWorkerOnMainThread(
 WebServiceWorkerImpl::WebServiceWorkerImpl(
     scoped_ptr<ServiceWorkerHandleReference> handle_ref,
     ThreadSafeSender* thread_safe_sender)
-    : handle_ref_(handle_ref.Pass()),
+    : handle_ref_(std::move(handle_ref)),
       state_(handle_ref_->state()),
       thread_safe_sender_(thread_safe_sender),
-      proxy_(NULL) {
+      proxy_(nullptr) {
+  DCHECK_NE(kInvalidServiceWorkerHandleId, handle_ref_->handle_id());
   ServiceWorkerDispatcher* dispatcher =
       ServiceWorkerDispatcher::GetThreadSpecificInstance();
   DCHECK(dispatcher);
   dispatcher->AddServiceWorker(handle_ref_->handle_id(), this);
-}
-
-WebServiceWorkerImpl::~WebServiceWorkerImpl() {
-  if (handle_ref_->handle_id() == kInvalidServiceWorkerHandleId)
-    return;
-  ServiceWorkerDispatcher* dispatcher =
-      ServiceWorkerDispatcher::GetThreadSpecificInstance();
-  if (dispatcher)
-    dispatcher->RemoveServiceWorker(handle_ref_->handle_id());
 }
 
 void WebServiceWorkerImpl::OnStateChanged(
@@ -103,6 +112,22 @@ void WebServiceWorkerImpl::postMessage(const WebString& message,
 void WebServiceWorkerImpl::terminate() {
   thread_safe_sender_->Send(
       new ServiceWorkerHostMsg_TerminateWorker(handle_ref_->handle_id()));
+}
+
+// static
+blink::WebPassOwnPtr<blink::WebServiceWorker::Handle>
+WebServiceWorkerImpl::CreateHandle(
+    const scoped_refptr<WebServiceWorkerImpl>& worker) {
+  if (!worker)
+    return nullptr;
+  return blink::adoptWebPtr(new HandleImpl(worker));
+}
+
+WebServiceWorkerImpl::~WebServiceWorkerImpl() {
+  ServiceWorkerDispatcher* dispatcher =
+      ServiceWorkerDispatcher::GetThreadSpecificInstance();
+  if (dispatcher)
+    dispatcher->RemoveServiceWorker(handle_ref_->handle_id());
 }
 
 }  // namespace content

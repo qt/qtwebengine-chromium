@@ -7,6 +7,7 @@
 #include "base/stl_util.h"
 #include "net/quic/congestion_control/loss_detection_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sent_packet_manager.h"
 
@@ -52,8 +53,7 @@ void QuicSentPacketManagerPeer::SetPerspective(
 }
 
 // static
-const SendAlgorithmInterface*
-    QuicSentPacketManagerPeer::GetSendAlgorithm(
+const SendAlgorithmInterface* QuicSentPacketManagerPeer::GetSendAlgorithm(
     const QuicSentPacketManager& sent_packet_manager) {
   return sent_packet_manager.send_algorithm_.get();
 }
@@ -106,6 +106,17 @@ bool QuicSentPacketManagerPeer::IsRetransmission(
     QuicSentPacketManager* sent_packet_manager,
     QuicPacketNumber packet_number) {
   DCHECK(sent_packet_manager->HasRetransmittableFrames(packet_number));
+  if (FLAGS_quic_track_single_retransmission) {
+    if (!sent_packet_manager->HasRetransmittableFrames(packet_number)) {
+      return false;
+    }
+    for (auto transmission_info : sent_packet_manager->unacked_packets_) {
+      if (transmission_info.retransmission == packet_number) {
+        return true;
+      }
+    }
+    return false;
+  }
   return sent_packet_manager->HasRetransmittableFrames(packet_number) &&
          sent_packet_manager->unacked_packets_.GetTransmissionInfo(
                                                   packet_number)
@@ -154,8 +165,8 @@ QuicByteCount QuicSentPacketManagerPeer::GetBytesInFlight(
 
 // static
 QuicSentPacketManager::NetworkChangeVisitor*
-    QuicSentPacketManagerPeer::GetNetworkChangeVisitor(
-        const QuicSentPacketManager* sent_packet_manager) {
+QuicSentPacketManagerPeer::GetNetworkChangeVisitor(
+    const QuicSentPacketManager* sent_packet_manager) {
   return sent_packet_manager->network_change_visitor_;
 }
 

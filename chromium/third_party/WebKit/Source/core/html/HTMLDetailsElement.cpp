@@ -18,7 +18,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLDetailsElement.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -74,8 +73,8 @@ private:
 
 static DetailsEventSender& detailsToggleEventSender()
 {
-    DEFINE_STATIC_LOCAL(DetailsEventSender, sharedToggleEventSender, (EventTypeNames::toggle));
-    return sharedToggleEventSender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<DetailsEventSender>, sharedToggleEventSender, (DetailsEventSender::create(EventTypeNames::toggle)));
+    return *sharedToggleEventSender;
 }
 
 PassRefPtrWillBeRawPtr<HTMLDetailsElement> HTMLDetailsElement::create(Document& document)
@@ -94,7 +93,9 @@ HTMLDetailsElement::HTMLDetailsElement(Document& document)
 
 HTMLDetailsElement::~HTMLDetailsElement()
 {
+#if !ENABLE(OILPAN)
     detailsToggleEventSender().cancelEvent(this);
+#endif
 }
 
 void HTMLDetailsElement::dispatchPendingEvent(DetailsEventSender* eventSender)
@@ -136,7 +137,7 @@ Element* HTMLDetailsElement::findMainSummary() const
     return toElement(content->firstChild());
 }
 
-void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == openAttr) {
         bool oldValue = m_isOpen;
@@ -166,7 +167,7 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
 
         return;
     }
-    HTMLElement::parseAttribute(name, value);
+    HTMLElement::parseAttribute(name, oldValue, value);
 }
 
 void HTMLDetailsElement::toggleOpen()

@@ -1,9 +1,7 @@
-{% from 'conversions.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value %}
-
+{% from 'utilities.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value, check_api_experiment %}
 
 {##############################################################################}
 {% macro attribute_getter(attribute, world_suffix) %}
-{% filter conditional(attribute.conditional_string) %}
 static void {{attribute.name}}AttributeGetter{{world_suffix}}(
 {%- if attribute.is_data_type_property %}
 const v8::PropertyCallbackInfo<v8::Value>& info
@@ -11,6 +9,9 @@ const v8::PropertyCallbackInfo<v8::Value>& info
 const v8::FunctionCallbackInfo<v8::Value>& info
 {%- endif %})
 {
+    {% if attribute.is_api_experiment_enabled %}
+    {{check_api_experiment(attribute) | indent}}
+    {% endif %}
     {% if attribute.is_reflect and not attribute.is_url
           and attribute.idl_type == 'DOMString' and is_node
           and not attribute.is_implemented_in_private_script %}
@@ -19,22 +20,19 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {# holder #}
     {% if not attribute.is_static %}
     {% if attribute.is_lenient_this %}
-    v8::Local<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
-    if (holder.IsEmpty())
+    {# Make sure that info.Holder() really points to an instance if [LenientThis]. #}
+    if (!{{v8_class}}::hasInstance(info.Holder(), info.GetIsolate()))
         return; // Return silently because of [LenientThis].
-    // Note that it's okay to use |holder|, but |info.Holder()| is still unsafe
-    // and must not be used.
-    {% else %}
-    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
+    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
     {# impl #}
     {% if attribute.cached_attribute_validation_method %}
     v8::Local<v8::String> propertyName = v8AtomicString(info.GetIsolate(), "{{attribute.name}}");
     {{cpp_class}}* impl = {{v8_class}}::toImpl(holder);
     if (!impl->{{attribute.cached_attribute_validation_method}}()) {
-        v8::Local<v8::Value> v8Value = V8HiddenValue::getHiddenValue(info.GetIsolate(), holder, propertyName);
-        if (!v8Value.IsEmpty()) {
+        v8::Local<v8::Value> v8Value = V8HiddenValue::getHiddenValue(ScriptState::current(info.GetIsolate()), holder, propertyName);
+        if (!v8Value.IsEmpty() && !v8Value->IsUndefined()) {
             v8SetReturnValue(info, v8Value);
             return;
         }
@@ -53,10 +51,9 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% if attribute.is_call_with_script_state %}
     ScriptState* scriptState = ScriptState::current(info.GetIsolate());
     {% endif %}
-    {% if ((attribute.is_check_security_for_frame or
-            attribute.is_check_security_for_window) and
+    {% if (attribute.is_check_security_for_receiver and
            not attribute.is_data_type_property) or
-          attribute.is_check_security_for_node or
+          attribute.is_check_security_for_return_value or
           attribute.is_getter_raises_exception %}
     ExceptionState exceptionState(ExceptionState::GetterContext, "{{attribute.name}}", "{{interface_name}}", holder, info.GetIsolate());
     {% endif %}
@@ -77,26 +74,16 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     {# Security checks #}
     {% if not attribute.is_data_type_property %}
-    {% if attribute.is_check_security_for_window %}
-    if (LocalDOMWindow* window = impl->toDOMWindow()) {
-        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), window->frame(), exceptionState)) {
-            v8SetReturnValueNull(info);
-            exceptionState.throwIfNeeded();
-            return;
-        }
-        if (!window->document())
-            return;
-    }
-    {% elif attribute.is_check_security_for_frame %}
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    {% if attribute.is_check_security_for_receiver %}
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         v8SetReturnValueNull(info);
         exceptionState.throwIfNeeded();
         return;
     }
     {% endif %}
     {% endif %}
-    {% if attribute.is_check_security_for_node %}
-    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), {{attribute.cpp_value}}, exceptionState)) {
+    {% if attribute.is_check_security_for_return_value %}
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), {{attribute.cpp_value}}, exceptionState)) {
         v8SetReturnValueNull(info);
         exceptionState.throwIfNeeded();
         return;
@@ -116,7 +103,7 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     {% if attribute.cached_attribute_validation_method %}
     v8::Local<v8::Value> v8Value({{attribute.cpp_value_to_v8_value}});
-    V8HiddenValue::setHiddenValue(info.GetIsolate(), holder, propertyName, v8Value);
+    V8HiddenValue::setHiddenValue(ScriptState::current(info.GetIsolate()), holder, propertyName, v8Value);
     {% endif %}
     {# v8SetReturnValue #}
     {% if attribute.is_keep_alive_for_gc %}
@@ -124,7 +111,7 @@ const v8::FunctionCallbackInfo<v8::Value>& info
         return;
     v8::Local<v8::Value> v8Value(toV8({{attribute.cpp_value}}.get(), holder, info.GetIsolate()));
     if (!v8Value.IsEmpty()) {
-        V8HiddenValue::setHiddenValue(info.GetIsolate(), holder, v8AtomicString(info.GetIsolate(), "{{attribute.name}}"), v8Value);
+        V8HiddenValue::setHiddenValue(ScriptState::current(info.GetIsolate()), holder, v8AtomicString(info.GetIsolate(), "{{attribute.name}}"), v8Value);
         {{attribute.v8_set_return_value}};
     }
     {% elif world_suffix %}
@@ -137,7 +124,6 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {{attribute.v8_set_return_value}};
     {% endif %}
 }
-{% endfilter %}
 {% endmacro %}
 
 
@@ -177,7 +163,6 @@ if ({{cpp_value}}.isEmpty()) {
 
 {##############################################################################}
 {% macro attribute_getter_callback(attribute, world_suffix) %}
-{% filter conditional(attribute.conditional_string) %}
 static void {{attribute.name}}AttributeGetterCallback{{world_suffix}}(
 {%- if attribute.is_data_type_property %}
 v8::Local<v8::Name>, const v8::PropertyCallbackInfo<v8::Value>& info
@@ -187,10 +172,13 @@ const v8::FunctionCallbackInfo<v8::Value>& info
 {
     TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     {% if attribute.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
+    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
     {% endif %}
     {% if attribute.measure_as %}
-    UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('AttributeGetter')}});
+    UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('AttributeGetter')}});
+    {% endif %}
+    {% if attribute.is_api_experiment_enabled %}
+    {{check_api_experiment(attribute) | indent}}
     {% endif %}
     {% if world_suffix in attribute.activity_logging_world_list_for_getter %}
     ScriptState* scriptState = ScriptState::from(info.GetIsolate()->GetCurrentContext());
@@ -209,32 +197,31 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
-{% endfilter %}
 {% endmacro %}
 
 
 {##############################################################################}
 {% macro constructor_getter_callback(attribute, world_suffix) %}
-{% filter conditional(attribute.conditional_string) %}
 static void {{attribute.name}}ConstructorGetterCallback{{world_suffix}}(v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     {% if attribute.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
+    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
     {% endif %}
     {% if attribute.measure_as %}
-    UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('ConstructorGetter')}});
+    UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('ConstructorGetter')}});
+    {% endif %}
+    {% if attribute.is_api_experiment_enabled %}
+    {{check_api_experiment(attribute) | indent}}
     {% endif %}
     v8ConstructorAttributeGetter(property, info);
     TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
-{% endfilter %}
 {% endmacro %}
 
 
 {##############################################################################}
 {% macro attribute_setter(attribute, world_suffix) %}
-{% filter conditional(attribute.conditional_string) %}
 static void {{attribute.name}}AttributeSetter{{world_suffix}}(
 {%- if attribute.is_data_type_property %}
 v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info
@@ -250,9 +237,8 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
           ((not attribute.is_replaceable and
             not attribute.constructor_type and
             not attribute.is_data_type_property) and
-           (attribute.is_check_security_for_frame or
-            attribute.is_check_security_for_node or
-            attribute.is_check_security_for_window)) %}
+           (attribute.is_check_security_for_receiver or
+            attribute.is_check_security_for_return_value)) %}
     {% set raise_exception = 1 %}
     {% else %}
     {% set raise_exception = 0 %}
@@ -263,14 +249,11 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
            not attribute.constructor_type) or
           raise_exception %}
     {% if attribute.is_lenient_this %}
-    v8::Local<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
-    if (holder.IsEmpty())
+    {# Make sure that info.Holder() really points to an instance if [LenientThis]. #}
+    if (!{{v8_class}}::hasInstance(info.Holder(), info.GetIsolate()))
         return; // Return silently because of [LenientThis].
-    // Note that it's okay to use |holder|, but |info.Holder()| is still unsafe
-    // and must not be used.
-    {% else %}
-    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
+    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
     {% if raise_exception %}
     ExceptionState exceptionState(ExceptionState::SetterContext, "{{attribute.name}}", "{{interface_name}}", holder, info.GetIsolate());
@@ -298,30 +281,16 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
     {% if not attribute.is_replaceable and
           not attribute.constructor_type %}
     {% if not attribute.is_data_type_property %}
-    {% if attribute.is_check_security_for_window %}
-    if (LocalDOMWindow* window = impl->toDOMWindow()) {
-        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), window->frame(), exceptionState)) {
-            v8SetReturnValue(info, v8Value);
-            exceptionState.throwIfNeeded();
-            return;
-        }
-        if (!window->document())
-            return;
-    }
-    {% elif attribute.is_check_security_for_frame %}
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    {% if attribute.is_check_security_for_receiver %}
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         v8SetReturnValue(info, v8Value);
         exceptionState.throwIfNeeded();
         return;
     }
     {% endif %}
     {% endif %}
-    {% if attribute.is_check_security_for_node %}
-    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), {{attribute.cpp_value}}, exceptionState)) {
-        v8SetReturnValue(info, v8Value);
-        exceptionState.throwIfNeeded();
-        return;
-    }
+    {% if attribute.is_check_security_for_return_value %}
+#error Attribute setter with the security check for the return value is not supported.
     {% endif %}
     {% endif %}{# not attribute.is_replaceable and
                   not attribute.constructor_type #}
@@ -378,16 +347,14 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
     exceptionState.throwIfNeeded();
     {% endif %}
     {% if attribute.cached_attribute_validation_method %}
-    V8HiddenValue::deleteHiddenValue(info.GetIsolate(), holder, v8AtomicString(info.GetIsolate(), "{{attribute.name}}")); // Invalidate the cached value.
+    V8HiddenValue::deleteHiddenValue(ScriptState::current(info.GetIsolate()), holder, v8AtomicString(info.GetIsolate(), "{{attribute.name}}")); // Invalidate the cached value.
     {% endif %}
 }
-{% endfilter %}
 {% endmacro %}
 
 
 {##############################################################################}
 {% macro attribute_setter_callback(attribute, world_suffix) %}
-{% filter conditional(attribute.conditional_string) %}
 static void {{attribute.name}}AttributeSetterCallback{{world_suffix}}(
 {%- if attribute.is_data_type_property %}
 v8::Local<v8::Name>, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info
@@ -400,10 +367,10 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMSetter");
     {% if attribute.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
+    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
     {% endif %}
     {% if attribute.measure_as %}
-    UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('AttributeSetter')}});
+    UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as('AttributeSetter')}});
     {% endif %}
     {% if world_suffix in attribute.activity_logging_world_list_for_setter %}
     ScriptState* scriptState = ScriptState::from(info.GetIsolate()->GetCurrentContext());
@@ -426,7 +393,6 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
-{% endfilter %}
 {% endmacro %}
 
 
@@ -439,16 +405,20 @@ bool {{v8_class}}::PrivateScript::{{attribute.name}}AttributeGetter(LocalFrame* 
     v8::HandleScope handleScope(toIsolate(frame));
     ScriptForbiddenScope::AllowUserAgentScript script;
     ScriptState* scriptState = ScriptState::forWorld(frame, DOMWrapperWorld::privateScriptIsolatedWorld());
-    if (!scriptState->contextIsValid())
+    if (!scriptState)
         return false;
     ScriptState* scriptStateInUserScript = ScriptState::forMainWorld(frame);
-    if (!scriptState->contextIsValid())
+    if (!scriptStateInUserScript)
         return false;
 
     ScriptState::Scope scope(scriptState);
     v8::Local<v8::Value> holder = toV8(holderImpl, scriptState->context()->Global(), scriptState->isolate());
     if (holder.IsEmpty())
         return false;
+
+    {% if attribute.is_api_experiment_enabled %}
+    {{check_api_experiment(attribute, "scriptState->isolate()") | indent}}
+    {% endif %}
 
     ExceptionState exceptionState(ExceptionState::GetterContext, "{{attribute.name}}", "{{cpp_class}}", scriptState->context()->Global(), scriptState->isolate());
     v8::Local<v8::Value> v8Value = PrivateScriptRunner::runDOMAttributeGetter(scriptState, scriptStateInUserScript, "{{cpp_class}}", "{{attribute.name}}", holder);
@@ -470,10 +440,10 @@ bool {{v8_class}}::PrivateScript::{{attribute.name}}AttributeSetter(LocalFrame* 
     v8::HandleScope handleScope(toIsolate(frame));
     ScriptForbiddenScope::AllowUserAgentScript script;
     ScriptState* scriptState = ScriptState::forWorld(frame, DOMWrapperWorld::privateScriptIsolatedWorld());
-    if (!scriptState->contextIsValid())
+    if (!scriptState)
         return false;
     ScriptState* scriptStateInUserScript = ScriptState::forMainWorld(frame);
-    if (!scriptState->contextIsValid())
+    if (!scriptStateInUserScript)
         return false;
 
     ScriptState::Scope scope(scriptState);
@@ -489,7 +459,7 @@ bool {{v8_class}}::PrivateScript::{{attribute.name}}AttributeSetter(LocalFrame* 
 
 {##############################################################################}
 {% macro attribute_configuration(attribute) %}
-{% from 'conversions.cpp' import property_location %}
+{% from 'utilities.cpp' import property_location %}
 {% if attribute.constructor_type %}
 {% set getter_callback =
        '%sV8Internal::%sConstructorGetterCallback' % (cpp_class_or_partial, attribute.name)

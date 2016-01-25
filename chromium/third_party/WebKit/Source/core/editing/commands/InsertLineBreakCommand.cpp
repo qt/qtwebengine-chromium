@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/InsertLineBreakCommand.h"
 
 #include "core/HTMLNames.h"
@@ -85,7 +84,7 @@ void InsertLineBreakCommand::doApply()
 
     RefPtrWillBeRawPtr<Node> nodeToInsert = nullptr;
     if (shouldUseBreakElement(pos))
-        nodeToInsert = createBreakElement(document());
+        nodeToInsert = HTMLBRElement::create(document());
     else
         nodeToInsert = document().createTextNode("\n");
 

@@ -32,8 +32,8 @@
 namespace blink {
 
 class CORE_EXPORT CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue> {
-public:
 #if ENABLE(OILPAN)
+public:
     // Override operator new to allocate CSSValue subtype objects onto
     // a dedicated heap.
     GC_PLUGIN_IGNORE("crbug.com/443854")
@@ -44,9 +44,11 @@ public:
     static void* allocateObject(size_t size, bool isEager)
     {
         ThreadState* state = ThreadStateFor<ThreadingTrait<CSSValue>::Affinity>::state();
-        return Heap::allocateOnHeapIndex(state, size, isEager ? ThreadState::EagerSweepHeapIndex : ThreadState::CSSValueHeapIndex, GCInfoTrait<CSSValue>::index());
+        return Heap::allocateOnHeapIndex(state, size, isEager ? BlinkGC::EagerSweepHeapIndex : BlinkGC::CSSValueHeapIndex, GCInfoTrait<CSSValue>::index());
     }
 #else
+    USING_FAST_MALLOC_WITH_TYPE_NAME(blink::CSSValue);
+public:
     // Override RefCounted's deref() to ensure operator delete is called on
     // the appropriate subclass type.
     void deref()
@@ -71,14 +73,15 @@ public:
     bool isBasicShapeInsetValue() const { return m_classType == BasicShapeInsetClass; }
 
     bool isBorderImageSliceValue() const { return m_classType == BorderImageSliceClass; }
-    bool isCanvasValue() const { return m_classType == CanvasClass; }
+    bool isColorValue() const { return m_classType == ColorClass; }
     bool isCounterValue() const { return m_classType == CounterClass; }
     bool isCursorImageValue() const { return m_classType == CursorImageClass; }
     bool isCrossfadeValue() const { return m_classType == CrossfadeClass; }
     bool isFontFeatureValue() const { return m_classType == FontFeatureClass; }
     bool isFontFaceSrcValue() const { return m_classType == FontFaceSrcClass; }
     bool isFunctionValue() const { return m_classType == FunctionClass; }
-    bool isImageGeneratorValue() const { return m_classType >= CanvasClass && m_classType <= RadialGradientClass; }
+    bool isCustomIdentValue() const { return m_classType == CustomIdentClass; }
+    bool isImageGeneratorValue() const { return m_classType >= CrossfadeClass && m_classType <= RadialGradientClass; }
     bool isGradientValue() const { return m_classType >= LinearGradientClass && m_classType <= RadialGradientClass; }
     bool isImageSetValue() const { return m_classType == ImageSetClass; }
     bool isImageValue() const { return m_classType == ImageClass; }
@@ -93,6 +96,8 @@ public:
     bool isRadialGradientValue() const { return m_classType == RadialGradientClass; }
     bool isReflectValue() const { return m_classType == ReflectClass; }
     bool isShadowValue() const { return m_classType == ShadowClass; }
+    bool isStringValue() const { return m_classType == StringClass; }
+    bool isURIValue() const { return m_classType == URIClass; }
     bool isCubicBezierTimingFunctionValue() const { return m_classType == CubicBezierTimingFunctionClass; }
     bool isStepsTimingFunctionValue() const { return m_classType == StepsTimingFunctionClass; }
     bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
@@ -100,6 +105,8 @@ public:
     bool isContentDistributionValue() const { return m_classType == CSSContentDistributionClass; }
     bool isUnicodeRangeValue() const { return m_classType == UnicodeRangeClass; }
     bool isGridLineNamesValue() const { return m_classType == GridLineNamesClass; }
+    bool isCustomPropertyDeclaration() const { return m_classType == CustomPropertyDeclarationClass; }
+    bool isVariableReferenceValue() const { return m_classType == VariableReferenceClass; }
 
     bool hasFailedOrCanceledSubresources() const;
 
@@ -116,12 +123,15 @@ public:
     ~CSSValue() { }
 
 protected:
-
     static const size_t ClassTypeBits = 6;
     enum ClassType {
         PrimitiveClass,
+        ColorClass,
         CounterClass,
         QuadClass,
+        CustomIdentClass,
+        StringClass,
+        URIClass,
         ValuePairClass,
 
         // Basic shape classes.
@@ -136,7 +146,6 @@ protected:
         CursorImageClass,
 
         // Image generator classes.
-        CanvasClass,
         CrossfadeClass,
         LinearGradientClass,
         RadialGradientClass,
@@ -159,6 +168,8 @@ protected:
         UnicodeRangeClass,
         GridTemplateAreasClass,
         PathClass,
+        VariableReferenceClass,
+        CustomPropertyDeclarationClass,
 
         // SVG classes.
         CSSSVGDocumentClass,

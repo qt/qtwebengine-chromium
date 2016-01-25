@@ -108,8 +108,7 @@ TEST(HpackFuzzUtilTest, PassValidInputThroughAllStages) {
   expect[":scheme"] = "http";
   expect[":path"] = "/";
   expect[":authority"] = "www.example.com";
-  EXPECT_TRUE(
-      CompareSpdyHeaderBlocks(expect, context.third_stage->decoded_block()));
+  EXPECT_EQ(expect, context.third_stage->decoded_block());
 }
 
 TEST(HpackFuzzUtilTest, ValidFuzzExamplesRegressionTest) {
@@ -141,9 +140,8 @@ TEST(HpackFuzzUtilTest, FlipBitsMutatesBuffer) {
   string unmodified(buffer, arraysize(buffer) - 1);
 
   EXPECT_EQ(unmodified, buffer);
-  HpackFuzzUtil::FlipBits(reinterpret_cast<uint8*>(buffer),
-                          arraysize(buffer) - 1,
-                          1);
+  HpackFuzzUtil::FlipBits(reinterpret_cast<uint8_t*>(buffer),
+                          arraysize(buffer) - 1, 1);
   EXPECT_NE(unmodified, buffer);
 }
 

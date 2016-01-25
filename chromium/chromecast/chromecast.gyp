@@ -28,6 +28,18 @@
         'defines': ['DISABLE_DISPLAY'],
       }],
     ],
+    'target_conditions': [
+      ['_type=="executable"', {
+        'ldflags': [
+          # Allow  OEMs to override default libraries that are shipped with
+          # cast receiver package by installed OEM-specific libraries in
+          # /oem_cast_shlib.
+          '-Wl,-rpath=/oem_cast_shlib',
+          # Some shlibs are built in same directory of executables.
+          '-Wl,-rpath=\$$ORIGIN',
+        ],
+      }],
+    ],
   },
   'targets': [
     # Public API target for OEM partners to replace shlibs.
@@ -35,6 +47,7 @@
       'target_name': 'cast_public_api',
       'type': '<(component)',
       'sources': [
+        'public/avsettings.h',
         'public/cast_egl_platform.h',
         'public/cast_egl_platform_shlib.h',
         'public/cast_media_shlib.h',
@@ -43,18 +56,14 @@
         'public/graphics_properties_shlib.h',
         'public/graphics_types.h',
         'public/media_codec_support.h',
-        'public/media/audio_pipeline_device.h',
         'public/media/cast_decoder_buffer.h',
         'public/media/cast_decrypt_config.h',
         'public/media/cast_key_system.h',
         'public/media/decoder_config.h',
         'public/media/decrypt_context.h',
-        'public/media/media_clock_device.h',
-        'public/media/media_component_device.h',
         'public/media/media_pipeline_backend.h',
         'public/media/media_pipeline_device_params.h',
         'public/media/stream_id.h',
-        'public/media/video_pipeline_device.h',
         'public/osd_plane.h',
         'public/osd_plane_shlib.h',
         'public/osd_surface.h',
@@ -78,6 +87,9 @@
         'base/android/dumpstate_writer.h',
         'base/android/system_time_change_notifier_android.cc',
         'base/android/system_time_change_notifier_android.h',
+        'base/bind_to_task_runner.h',
+        'base/cast_constants.cc',
+        'base/cast_constants.h',
         'base/cast_paths.cc',
         'base/cast_paths.h',
         'base/cast_resource.h',
@@ -86,6 +98,9 @@
         'base/chromecast_config_android.h',
         'base/chromecast_switches.cc',
         'base/chromecast_switches.h',
+        'base/device_capabilities.h',
+        'base/device_capabilities_impl.cc',
+        'base/device_capabilities_impl.h',
         'base/error_codes.cc',
         'base/error_codes.h',
         'base/metrics/cast_histograms.h',
@@ -99,6 +114,8 @@
         'base/pref_names.h',
         'base/process_utils.cc',
         'base/process_utils.h',
+        'base/scoped_temp_file.cc',
+        'base/scoped_temp_file.h',
         'base/serializers.cc',
         'base/serializers.h',
         'base/system_time_change_notifier.cc',
@@ -322,6 +339,10 @@
         '../components/components.gyp:metrics_gpu',
         '../components/components.gyp:metrics_net',
         '../components/components.gyp:metrics_profiler',
+
+        # TODO(gfhuang): Eliminate this dependency if ScreenInfoMetricsProvider
+        # isn't needed. crbug.com/541577
+        '../components/components.gyp:metrics_ui',
         '../content/content.gyp:content',
         '../content/content.gyp:content_app_both',
         '../skia/skia.gyp:skia',
@@ -522,6 +543,10 @@
   # Targets for Android receiver.
   'conditions': [
     ['OS=="android"', {
+      'includes': ['../build/android/v8_external_startup_data_arch_suffix.gypi',],
+      'variables': {
+         'cast_shell_assets_path': '<(PRODUCT_DIR)/assets/cast_shell_apk',
+      },
       'targets': [
         {
           'target_name': 'cast_shell_icudata',
@@ -530,14 +555,23 @@
             '../third_party/icu/icu.gyp:icudata',
             '../v8/tools/gyp/v8.gyp:v8_external_snapshot',
           ],
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)/assets',
-            'files': [
+          'variables': {
+            'dest_path': '<(cast_shell_assets_path)',
+            'src_files': [
               '<(PRODUCT_DIR)/icudtl.dat',
+              '<(PRODUCT_DIR)/assets/cast_shell.pak',
+            ],
+            'renaming_sources': [
               '<(PRODUCT_DIR)/natives_blob.bin',
               '<(PRODUCT_DIR)/snapshot_blob.bin',
             ],
-          }],
+            'renaming_destinations': [
+              'natives_blob_<(arch_suffix).bin',
+              'snapshot_blob_<(arch_suffix).bin',
+            ],
+            'clear': 1,
+          },
+          'includes': ['../build/android/copy_ex.gypi'],
         },
         {
           'target_name': 'libcast_shell_android',
@@ -639,8 +673,13 @@
             'android_manifest_path': '<(SHARED_INTERMEDIATE_DIR)/cast_shell_manifest/AndroidManifest.xml',
             'package_name': 'org.chromium.chromecast.shell',
             'native_lib_target': 'libcast_shell_android',
-            'asset_location': '<(PRODUCT_DIR)/assets',
-            'additional_input_paths': ['<(PRODUCT_DIR)/assets/cast_shell.pak'],
+            'asset_location': '<(cast_shell_assets_path)',
+            'additional_input_paths': [
+               '<(asset_location)/cast_shell.pak',
+               '<(asset_location)/icudtl.dat',
+               '<(asset_location)/natives_blob_<(arch_suffix).bin',
+               '<(asset_location)/snapshot_blob_<(arch_suffix).bin',
+            ],
           },
           'includes': [ '../build/java_apk.gypi' ],
         },
@@ -703,6 +742,12 @@
             'renderer/media/chromecast_media_renderer_factory.h',
             'renderer/media/cma_message_filter_proxy.cc',
             'renderer/media/cma_message_filter_proxy.h',
+            'renderer/media/cma_renderer.cc',
+            'renderer/media/cma_renderer.h',
+            'renderer/media/demuxer_stream_adapter.cc',
+            'renderer/media/demuxer_stream_adapter.h',
+            'renderer/media/hole_frame_factory.cc',
+            'renderer/media/hole_frame_factory.h',
             'renderer/media/media_channel_proxy.cc',
             'renderer/media/media_channel_proxy.h',
             'renderer/media/media_pipeline_proxy.cc',
@@ -738,16 +783,6 @@
           ],
           'sources': [
             'app/cast_main.cc',
-          ],
-          'ldflags': [
-            # Allow  OEMs to override default libraries that are shipped with
-            # cast receiver package by installed OEM-specific libraries in
-            # /oem_cast_shlib.
-            '-Wl,-rpath=/oem_cast_shlib',
-            # TODO(dougsteed): remove when Chromecast moves to boringssl.
-            # Allow the cast shell to find the NSS module in the same
-            # directory.
-            '-Wl,-rpath=\$$ORIGIN'
           ],
         },
       ],  # end of targets

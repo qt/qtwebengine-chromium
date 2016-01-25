@@ -23,7 +23,7 @@ public:
     // insertion order, so the local child version takes a previous sibling to
     // ensure that it is inserted into the correct location in the list of
     // children.
-    virtual WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling) = 0;
+    virtual WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling, const WebFrameOwnerProperties&) = 0;
 
     virtual WebRemoteFrame* createRemoteChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebRemoteFrameClient*) = 0;
 
@@ -38,6 +38,9 @@ public:
 
     // Set frame name replicated from another process.
     virtual void setReplicatedName(const WebString&) const = 0;
+
+    // Set frame enforcement of strict mixed content checking replicated from another process.
+    virtual void setReplicatedShouldEnforceStrictMixedContentChecking(bool) const = 0;
 
     virtual void DispatchLoadEventForFrameOwner() const = 0;
 

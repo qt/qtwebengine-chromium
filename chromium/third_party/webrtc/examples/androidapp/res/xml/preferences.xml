@@ -60,6 +60,12 @@
             android:title="@string/pref_hwcodec_title"
             android:dialogTitle="@string/pref_hwcodec_dlg"
             android:defaultValue="@string/pref_hwcodec_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_capturetotexture_key"
+            android:title="@string/pref_capturetotexture_title"
+            android:dialogTitle="@string/pref_capturetotexture_dlg"
+            android:defaultValue="@string/pref_capturetotexture_default" />
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -94,17 +100,23 @@
             android:title="@string/pref_noaudioprocessing_title"
             android:dialogTitle="@string/pref_noaudioprocessing_dlg"
             android:defaultValue="@string/pref_noaudioprocessing_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_aecdump_key"
+            android:title="@string/pref_aecdump_title"
+            android:dialogTitle="@string/pref_aecdump_dlg"
+            android:defaultValue="@string/pref_aecdump_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_opensles_key"
+            android:title="@string/pref_opensles_title"
+            android:dialogTitle="@string/pref_opensles_dlg"
+            android:defaultValue="@string/pref_opensles_default" />
     </PreferenceCategory>
 
     <PreferenceCategory
         android:key="@string/pref_miscsettings_key"
         android:title="@string/pref_miscsettings_title">
-
-        <CheckBoxPreference
-            android:key="@string/pref_cpu_usage_detection_key"
-            android:title="@string/pref_cpu_usage_detection_title"
-            android:dialogTitle="@string/pref_cpu_usage_detection_dlg"
-            android:defaultValue="@string/pref_cpu_usage_detection_default" />
 
         <EditTextPreference
             android:key="@string/pref_room_server_url_key"
@@ -118,6 +130,12 @@
             android:title="@string/pref_displayhud_title"
             android:dialogTitle="@string/pref_displayhud_dlg"
            android:defaultValue="@string/pref_displayhud_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_tracing_key"
+            android:title="@string/pref_tracing_title"
+            android:dialogTitle="@string/pref_tracing_dlg"
+           android:defaultValue="@string/pref_tracing_default" />
     </PreferenceCategory>
 
 </PreferenceScreen>

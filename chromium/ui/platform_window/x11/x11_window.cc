@@ -9,6 +9,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#include "base/strings/utf_string_conversions.h"
 #include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
@@ -25,9 +26,11 @@ namespace ui {
 namespace {
 
 const char* kAtomsToCache[] = {
+  "UTF8_STRING",
   "WM_DELETE_WINDOW",
-  "_NET_WM_PING",
+  "_NET_WM_NAME",
   "_NET_WM_PID",
+  "_NET_WM_PING",
   NULL
 };
 
@@ -126,6 +129,7 @@ void X11Window::Show() {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
+  swa.bit_gravity = NorthWestGravity;
   swa.override_redirect = g_override_redirect;
   xwindow_ = XCreateWindow(xdisplay_,
                            xroot_window_,
@@ -137,7 +141,7 @@ void X11Window::Show() {
                            CopyFromParent,  // depth
                            InputOutput,
                            CopyFromParent,  // visual
-                           CWBackPixmap | CWOverrideRedirect,
+                           CWBackPixmap | CWBitGravity | CWOverrideRedirect,
                            &swa);
 
   long event_mask = ButtonPressMask | ButtonReleaseMask | FocusChangeMask |
@@ -242,7 +246,27 @@ gfx::Rect X11Window::GetBounds() {
   return confirmed_bounds_;
 }
 
-void X11Window::SetTitle(const base::string16& title) {}
+void X11Window::SetTitle(const base::string16& title) {
+  if (window_title_ == title)
+    return;
+  window_title_ = title;
+  std::string utf8str = base::UTF16ToUTF8(title);
+  XChangeProperty(xdisplay_,
+                  xwindow_,
+                  atom_cache_.GetAtom("_NET_WM_NAME"),
+                  atom_cache_.GetAtom("UTF8_STRING"),
+                  8,
+                  PropModeReplace,
+                  reinterpret_cast<const unsigned char*>(utf8str.c_str()),
+                  utf8str.size());
+  XTextProperty xtp;
+  char *c_utf8_str = const_cast<char *>(utf8str.c_str());
+  if (Xutf8TextListToTextProperty(xdisplay_, &c_utf8_str, 1,
+                                  XUTF8StringStyle, &xtp) == Success) {
+    XSetWMName(xdisplay_, xwindow_, &xtp);
+    XFree(xtp.value);
+  }
+}
 
 void X11Window::SetCapture() {}
 
@@ -256,7 +280,9 @@ void X11Window::Minimize() {}
 
 void X11Window::Restore() {}
 
-void X11Window::SetCursor(PlatformCursor cursor) {}
+void X11Window::SetCursor(PlatformCursor cursor) {
+  XDefineCursor(xdisplay_, xwindow_, cursor);
+}
 
 void X11Window::MoveCursorTo(const gfx::Point& location) {}
 

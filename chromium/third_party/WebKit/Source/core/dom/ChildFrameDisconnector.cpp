@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/ChildFrameDisconnector.h"
 
 #include "core/dom/shadow/ElementShadow.h"
@@ -68,7 +67,7 @@ void ChildFrameDisconnector::disconnectCollectedFrameOwners()
 
 void ChildFrameDisconnector::collectFrameOwners(ElementShadow& shadow)
 {
-    for (ShadowRoot* root = shadow.youngestShadowRoot(); root; root = root->olderShadowRoot())
+    for (ShadowRoot* root = &shadow.youngestShadowRoot(); root; root = root->olderShadowRoot())
         collectFrameOwners(*root);
 }
 
@@ -82,7 +81,7 @@ static unsigned checkConnectedSubframeCountIsConsistent(Node& node)
             count++;
 
         if (ElementShadow* shadow = toElement(node).shadow()) {
-            for (ShadowRoot* root = shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
+            for (ShadowRoot* root = &shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
                 count += checkConnectedSubframeCountIsConsistent(*root);
         }
     }

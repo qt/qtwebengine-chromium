@@ -70,8 +70,8 @@ static void clear_buffer(SSL3_BUFFER *buf) {
   memset(buf, 0, sizeof(SSL3_BUFFER));
 }
 
-OPENSSL_COMPILE_ASSERT(DTLS1_RT_HEADER_LENGTH + SSL3_RT_MAX_ENCRYPTED_LENGTH +
-                           SSL3_RT_MAX_EXTRA <= 0xffff,
+OPENSSL_COMPILE_ASSERT(DTLS1_RT_HEADER_LENGTH + SSL3_RT_MAX_ENCRYPTED_LENGTH <=
+                           0xffff,
                        maximum_read_buffer_too_large);
 
 /* setup_read_buffer initializes the read buffer if not already initialized. It
@@ -89,9 +89,6 @@ static int setup_read_buffer(SSL *ssl) {
     cap += DTLS1_RT_HEADER_LENGTH;
   } else {
     cap += SSL3_RT_HEADER_LENGTH;
-  }
-  if (ssl->options & SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER) {
-    cap += SSL3_RT_MAX_EXTRA;
   }
 
   return setup_buffer(buf, header_len, cap);
@@ -131,9 +128,6 @@ static int tls_read_buffer_extend_to(SSL *ssl, size_t len) {
   SSL3_BUFFER *buf = &ssl->s3->read_buffer;
 
   if (len > buf->cap) {
-    /* This may occur if |SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER| was toggled after
-     * |setup_read_buffer| was called. Stay within bounds, but do not attempt to
-     * recover. */
     OPENSSL_PUT_ERROR(SSL, SSL_R_BUFFER_TOO_SMALL);
     return -1;
   }
@@ -292,11 +286,18 @@ static int dtls_write_buffer_flush(SSL *ssl) {
     return 1;
   }
 
+  ssl->rwstate = SSL_WRITING;
   int ret = BIO_write(ssl->wbio, buf->buf + buf->offset, buf->len);
-  /* Drop the write buffer whether or not the write succeeded synchronously.
-   * TODO(davidben): How does this interact with the retry flag? */
+  if (ret <= 0) {
+    /* If the write failed, drop the write buffer anyway. Datagram transports
+     * can't write half a packet, so the caller is expected to retry from the
+     * top. */
+    ssl_write_buffer_clear(ssl);
+    return ret;
+  }
+  ssl->rwstate = SSL_NOTHING;
   ssl_write_buffer_clear(ssl);
-  return (ret <= 0) ? ret : 1;
+  return 1;
 }
 
 int ssl_write_buffer_flush(SSL *ssl) {

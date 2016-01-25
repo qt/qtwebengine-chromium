@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/forms/ColorInputType.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -38,6 +37,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/ScopedEventQueue.h"
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
@@ -195,10 +195,17 @@ void ColorInputType::warnIfValueIsInvalid(const String& value) const
     }
 }
 
+void ColorInputType::valueAttributeChanged()
+{
+    if (!element().hasDirtyValue())
+        element().updateView();
+}
+
 void ColorInputType::didChooseColor(const Color& color)
 {
     if (element().isDisabledFormControl() || color == valueAsColor())
         return;
+    EventQueueScope scope;
     element().setValueFromRenderer(color.serialized());
     element().updateView();
     if (!LayoutTheme::theme().isModalColorChooser())

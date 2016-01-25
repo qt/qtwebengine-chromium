@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webdatabase/QuotaTracker.h"
 
 #include "public/platform/Platform.h"
@@ -39,7 +38,7 @@ namespace blink {
 
 QuotaTracker& QuotaTracker::instance()
 {
-    AtomicallyInitializedStaticReference(QuotaTracker, tracker, new QuotaTracker);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(QuotaTracker, tracker, new QuotaTracker);
     return tracker;
 }
 

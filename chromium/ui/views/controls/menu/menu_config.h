@@ -9,19 +9,15 @@
 #include "ui/gfx/font_list.h"
 #include "ui/views/views_export.h"
 
-namespace ui {
-class NativeTheme;
-}
-
 namespace views {
 
 // Layout type information for menu items. Use the instance() method to obtain
 // the MenuConfig for the current platform.
 struct VIEWS_EXPORT MenuConfig {
-  explicit MenuConfig(const ui::NativeTheme* theme);
+  MenuConfig();
   ~MenuConfig();
 
-  static const MenuConfig& instance(const ui::NativeTheme* theme);
+  static const MenuConfig& instance();
 
   // Font list used by menus.
   gfx::FontList font_list;
@@ -60,14 +56,13 @@ struct VIEWS_EXPORT MenuConfig {
   // Padding between the icon and label.
   int icon_to_label_padding;
 
-  // Size of the check.
+  // The space reserved for the check. The actual size of the image may be
+  // different.
   int check_width;
   int check_height;
 
-  // Width of the radio bullet.
-  int radio_width;
-
-  // Width of the submenu arrow.
+  // The horizontal space reserved for submenu arrow. The actual width of the
+  // image may be different.
   int arrow_width;
 
   // Height of a normal separator (ui::NORMAL_SEPARATOR).
@@ -116,8 +111,6 @@ struct VIEWS_EXPORT MenuConfig {
   // True if a combobox menu should put a checkmark next to the selected item.
   bool check_selected_combobox_item;
 
-  const ui::NativeTheme* native_theme;
-
   // Delay, in ms, between when menus are selected or moused over and the menu
   // appears.
   int show_delay;
@@ -127,10 +120,7 @@ struct VIEWS_EXPORT MenuConfig {
 
  private:
   // Configures a MenuConfig as appropriate for the current platform.
-  void Init(const ui::NativeTheme* theme);
-
-  // TODO: temporary until we standardize.
-  void InitAura(const ui::NativeTheme* theme);
+  void Init();
 };
 
 }  // namespace views

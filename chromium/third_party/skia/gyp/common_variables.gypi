@@ -125,7 +125,6 @@
       'skia_embedded_fonts%': '0',
 
       'skia_sanitizer%': '',
-      'skia_scalar%': 'float',
       'skia_mesa%': 0,
       'skia_gpu_extra_dependency_path%': '',
       'skia_gpu_extra_tests_path%': '',
@@ -143,8 +142,8 @@
       'skia_vulkan%': 0,
       'skia_win_debuggers_path%': '',
       'skia_shared_lib%': 0,
-      'skia_opencl%': 0,
       'skia_force_distance_field_text%': 0,
+      'skia_is_bot%': '<!(python -c "import os; print os.environ.get(\'CHROME_HEADLESS\', 0)")',
 
       # These variables determine the default optimization level for different
       # compilers.
@@ -181,7 +180,7 @@
         'skia_clang_build%': 0,
         'skia_keep_frame_pointer%': 0,
       }],
-      [ 'skia_shared_lib or skia_sanitizer or skia_os == "android" or (skia_os == "linux" and skia_angle == 1)', {
+      [ 'skia_shared_lib or skia_sanitizer or skia_os == "android" or (skia_os == "linux" and (skia_angle == 1 or skia_command_buffer == 1))', {
           'skia_pic%' : 1,
         }, {
           'skia_pic%' : 0,
@@ -203,7 +202,8 @@
     'skia_no_fontconfig%': '<(skia_no_fontconfig)',
     'skia_embedded_fonts%': '<(skia_embedded_fonts)',
     'skia_sanitizer%': '<(skia_sanitizer)',
-    'skia_scalar%': '<(skia_scalar)',
+    'skia_sanitizer_blacklist%':
+      '<!(python -c "import sys; import os; print os.path.abspath(sys.argv[1])" ../tools/xsan.blacklist)',
     'skia_mesa%': '<(skia_mesa)',
     'skia_gpu_extra_dependency_path%': '<(skia_gpu_extra_dependency_path)',
     'skia_gpu_extra_tests_path%': '<(skia_gpu_extra_tests_path)',
@@ -222,21 +222,23 @@
     'skia_gpu%': '<(skia_gpu)',
     'skia_vulkan%': '<(skia_vulkan)',
     'skia_win_exceptions%': 0,
-    'skia_win_ltcg%': 1,
+    'skia_win_ltcg%': '<(skia_is_bot)',
     'skia_osx_deployment_target%': '<(skia_osx_deployment_target)',
     'skia_pdf%': '<(skia_pdf)',
+    'skia_pdf_generate_pdfa%': 0,  # emit larger PDF/A-2b file
     'skia_profile_enabled%': '<(skia_profile_enabled)',
     'skia_shared_lib%': '<(skia_shared_lib)',
-    'skia_opencl%': '<(skia_opencl)',
     'skia_force_distance_field_text%': '<(skia_force_distance_field_text)',
     'skia_static_initializers%': '<(skia_static_initializers)',
     'ios_sdk_version%': '6.0',
     'skia_win_debuggers_path%': '<(skia_win_debuggers_path)',
     'skia_disable_inlining%': 0,
     'skia_moz2d%': 0,
-    'skia_is_bot%': '<!(python -c "import os; print os.environ.get(\'CHROME_HEADLESS\', 0)")',
+    'skia_is_bot%': '<(skia_is_bot)',
     'skia_egl%': '<(skia_egl)',
+    'skia_use_sdl%': 0,
     'skia_fast%': 0,
+    'skia_dump_stats%': 0,
     'skia_fast_flags': [
         '-O3',                   # Even for Debug builds.
         '-march=native',         # Use all features of and optimize for THIS machine.

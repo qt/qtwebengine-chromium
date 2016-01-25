@@ -23,18 +23,13 @@
 
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/svg/SVGLengthContext.h"
+#include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGProperty.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-class ExceptionState;
 class QualifiedName;
-
-enum SVGLengthNegativeValuesMode {
-    AllowNegativeLengths,
-    ForbidNegativeLengths
-};
 
 class SVGLengthTearOff;
 
@@ -47,23 +42,13 @@ public:
         return adoptRefWillBeNoop(new SVGLength(mode));
     }
 
+    DECLARE_VIRTUAL_TRACE();
+
     PassRefPtrWillBeRawPtr<SVGLength> clone() const;
     PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
-    SVGLengthType unitType() const { return static_cast<SVGLengthType>(m_unitType); }
-    CSSPrimitiveValue::UnitType cssUnitTypeQuirk() const
-    {
-        if (m_unitType == LengthTypeNumber)
-            return CSSPrimitiveValue::UnitType::Pixels;
-
-        if (m_unitType == LengthTypeREMS)
-            return CSSPrimitiveValue::UnitType::Rems;
-        if (m_unitType == LengthTypeCHS)
-            return CSSPrimitiveValue::UnitType::Chs;
-
-        return static_cast<CSSPrimitiveValue::UnitType>(m_unitType);
-    }
-    void setUnitType(SVGLengthType);
+    CSSPrimitiveValue::UnitType typeWithCalcResolved() const { return m_value->typeWithCalcResolved(); }
+    void setUnitType(CSSPrimitiveValue::UnitType);
     SVGLengthMode unitMode() const { return static_cast<SVGLengthMode>(m_unitMode); }
 
     bool operator==(const SVGLength&) const;
@@ -72,8 +57,13 @@ public:
     float value(const SVGLengthContext&) const;
     void setValue(float, const SVGLengthContext&);
 
-    float valueInSpecifiedUnits() const { return m_valueInSpecifiedUnits; }
-    void setValueInSpecifiedUnits(float value) { m_valueInSpecifiedUnits = value; }
+    float valueInSpecifiedUnits() const { return m_value->getFloatValue(); }
+    void setValueInSpecifiedUnits(float value)
+    {
+        m_value = CSSPrimitiveValue::create(value, m_value->typeWithCalcResolved());
+    }
+
+    CSSPrimitiveValue* asCSSPrimitiveValue() const { return m_value.get(); }
 
     // Resolves LengthTypePercentage into a normalized floating point number (full value is 1.0).
     float valueAsPercentage() const;
@@ -85,30 +75,30 @@ public:
     float scaleByPercentage(float) const;
 
     String valueAsString() const override;
-    void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
 
-    void newValueSpecifiedUnits(SVGLengthType, float valueInSpecifiedUnits);
-    void convertToSpecifiedUnits(SVGLengthType, const SVGLengthContext&);
+    void newValueSpecifiedUnits(CSSPrimitiveValue::UnitType, float valueInSpecifiedUnits);
+    void convertToSpecifiedUnits(CSSPrimitiveValue::UnitType, const SVGLengthContext&);
 
     // Helper functions
-    static inline bool isRelativeUnit(SVGLengthType unitType)
+    static inline bool isRelativeUnit(CSSPrimitiveValue::UnitType unitType)
     {
-        return unitType == LengthTypePercentage
-            || unitType == LengthTypeEMS
-            || unitType == LengthTypeEXS
-            || unitType == LengthTypeREMS
-            || unitType == LengthTypeCHS;
+        return unitType == CSSPrimitiveValue::UnitType::Percentage
+            || unitType == CSSPrimitiveValue::UnitType::Ems
+            || unitType == CSSPrimitiveValue::UnitType::Exs
+            || unitType == CSSPrimitiveValue::UnitType::Rems
+            || unitType == CSSPrimitiveValue::UnitType::Chs
+            || (unitType >= CSSPrimitiveValue::UnitType::ViewportWidth && unitType <= CSSPrimitiveValue::UnitType::ViewportMax);
     }
-    inline bool isRelative() const { return isRelativeUnit(unitType()); }
+    inline bool isRelative() const { return isRelativeUnit(m_value->typeWithCalcResolved()); }
 
     bool isZero() const
     {
-        return !m_valueInSpecifiedUnits;
+        return m_value->getFloatValue() == 0;
     }
 
     static SVGLengthMode lengthModeForAnimatedLengthAttribute(const QualifiedName&);
-
-    PassRefPtrWillBeRawPtr<SVGLength> blend(PassRefPtrWillBeRawPtr<SVGLength> from, float progress) const;
+    static bool negativeValuesForbiddenForAnimatedLengthAttribute(const QualifiedName&);
 
     void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
     void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
@@ -120,17 +110,11 @@ private:
     SVGLength(SVGLengthMode);
     SVGLength(const SVGLength&);
 
-    float m_valueInSpecifiedUnits;
+    RefPtrWillBeMember<CSSPrimitiveValue> m_value;
     unsigned m_unitMode : 2;
-    unsigned m_unitType : 4;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGLength> toSVGLength(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGLength::classType());
-    return static_pointer_cast<SVGLength>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGLength);
 
 } // namespace blink
 

@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/LayoutTheme.h"
 
 #include "core/CSSValueKeywords.h"
@@ -421,7 +420,7 @@ void LayoutTheme::addVisualOverflow(const LayoutObject& object, IntRect& borderB
 
 bool LayoutTheme::shouldDrawDefaultFocusRing(const LayoutObject& layoutObject) const
 {
-    if (supportsFocusRing(layoutObject.styleRef()))
+    if (themeDrawsFocusRing(layoutObject.styleRef()))
         return false;
     Node* node = layoutObject.node();
     if (!node)
@@ -448,8 +447,7 @@ bool LayoutTheme::controlStateChanged(LayoutObject& o, ControlState state) const
     if (state == PressedControlState && !isEnabled(o))
         return false;
 
-    o.setShouldDoFullPaintInvalidation();
-    o.invalidateDisplayItemClientForNonCompositingDescendants();
+    o.setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
     return true;
 }
 
@@ -816,14 +814,16 @@ Color LayoutTheme::systemColor(CSSValueID cssValueId) const
     return Color();
 }
 
-Color LayoutTheme::platformActiveTextSearchHighlightColor() const
+Color LayoutTheme::platformTextSearchHighlightColor(bool activeMatch) const
 {
-    return Color(255, 150, 50); // Orange.
+    if (activeMatch)
+        return Color(255, 150, 50); // Orange.
+    return Color(255, 255, 0); // Yellow.
 }
 
-Color LayoutTheme::platformInactiveTextSearchHighlightColor() const
+Color LayoutTheme::platformTextSearchColor(bool activeMatch) const
 {
-    return Color(255, 255, 0); // Yellow.
+    return Color::black;
 }
 
 Color LayoutTheme::tapHighlightColor()

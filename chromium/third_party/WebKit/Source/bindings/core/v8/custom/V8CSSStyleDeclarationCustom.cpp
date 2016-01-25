@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8CSSStyleDeclaration.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -48,6 +47,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringConcatenate.h"
+#include <algorithm>
 
 using namespace WTF;
 
@@ -96,7 +96,7 @@ static CSSPropertyID parseCSSPropertyID(v8::Isolate* isolate, const String& prop
         i += 3;
         // getComputedStyle(elem).cssX is a non-standard behaviour
         // Measure this behaviour as CSSXGetComputedStyleQueries.
-        UseCounter::countIfNotPrivateScript(isolate, callingExecutionContext(isolate), UseCounter::CSSXGetComputedStyleQueries);
+        UseCounter::countDeprecationIfNotPrivateScript(isolate, currentExecutionContext(isolate), UseCounter::CSSXGetComputedStyleQueries);
     } else if (hasCSSPropertyNamePrefix(propertyName, "webkit"))
         builder.append('-');
     else if (isASCIIUpper(propertyName[0]))
@@ -203,6 +203,7 @@ void V8CSSStyleDeclaration::namedPropertyGetterCustom(v8::Local<v8::Name> name, 
     CSSPropertyID resolvedProperty = resolveCSSPropertyID(unresolvedProperty);
 
     CSSStyleDeclaration* impl = V8CSSStyleDeclaration::toImpl(info.Holder());
+    // TODO(leviw): This API doesn't support custom properties.
     RefPtrWillBeRawPtr<CSSValue> cssValue = impl->getPropertyCSSValueInternal(resolvedProperty);
     if (cssValue) {
         v8SetReturnValueStringOrNull(info, cssValue->cssText(), info.GetIsolate());
@@ -224,7 +225,8 @@ void V8CSSStyleDeclaration::namedPropertySetterCustom(v8::Local<v8::Name> name, 
 
     TOSTRING_VOID(V8StringResource<TreatNullAsNullString>, propertyValue, value);
     ExceptionState exceptionState(ExceptionState::SetterContext, getPropertyName(resolveCSSPropertyID(unresolvedProperty)), "CSSStyleDeclaration", info.Holder(), info.GetIsolate());
-    impl->setPropertyInternal(unresolvedProperty, propertyValue, false, exceptionState);
+    // TODO(leviw): This API doesn't support custom properties.
+    impl->setPropertyInternal(unresolvedProperty, String(), propertyValue, false, exceptionState);
 
     if (exceptionState.throwIfNeeded())
         return;

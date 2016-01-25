@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8Window.h"
 
 #include "bindings/core/v8/BindingSecurity.h"
@@ -48,6 +47,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessagePort.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/ImageBitmap.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -67,20 +67,21 @@ namespace blink {
 
 void V8Window::eventAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    LocalFrame* frame = toLocalDOMWindow(V8Window::toImpl(info.Holder()))->frame();
+    LocalDOMWindow* impl = toLocalDOMWindow(V8Window::toImpl(info.Holder()));
     ExceptionState exceptionState(ExceptionState::GetterContext, "event", "Window", info.Holder(), info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), frame, exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         exceptionState.throwIfNeeded();
         return;
     }
 
+    LocalFrame* frame = impl->frame();
     ASSERT(frame);
     // This is a fast path to retrieve info.Holder()->CreationContext().
     v8::Local<v8::Context> context = toV8Context(frame, DOMWrapperWorld::current(info.GetIsolate()));
     if (context.IsEmpty())
         return;
 
-    v8::Local<v8::Value> jsEvent = V8HiddenValue::getHiddenValue(info.GetIsolate(), context->Global(), V8HiddenValue::event(info.GetIsolate()));
+    v8::Local<v8::Value> jsEvent = V8HiddenValue::getHiddenValue(ScriptState::current(info.GetIsolate()), context->Global(), V8HiddenValue::event(info.GetIsolate()));
     if (jsEvent.IsEmpty())
         return;
     v8SetReturnValue(info, jsEvent);
@@ -88,35 +89,29 @@ void V8Window::eventAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Val
 
 void V8Window::eventAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
-    LocalFrame* frame = toLocalDOMWindow(V8Window::toImpl(info.Holder()))->frame();
+    LocalDOMWindow* impl = toLocalDOMWindow(V8Window::toImpl(info.Holder()));
     ExceptionState exceptionState(ExceptionState::SetterContext, "event", "Window", info.Holder(), info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), frame, exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         exceptionState.throwIfNeeded();
         return;
     }
 
+    LocalFrame* frame = impl->frame();
     ASSERT(frame);
     // This is a fast path to retrieve info.Holder()->CreationContext().
     v8::Local<v8::Context> context = toV8Context(frame, DOMWrapperWorld::current(info.GetIsolate()));
     if (context.IsEmpty())
         return;
 
-    V8HiddenValue::setHiddenValue(info.GetIsolate(), context->Global(), V8HiddenValue::event(info.GetIsolate()), value);
+    V8HiddenValue::setHiddenValue(ScriptState::current(info.GetIsolate()), context->Global(), V8HiddenValue::event(info.GetIsolate()), value);
 }
 
 void V8Window::frameElementAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     LocalDOMWindow* impl = toLocalDOMWindow(V8Window::toImpl(info.Holder()));
-    ExceptionState exceptionState(ExceptionState::GetterContext, "frame", "Window", info.Holder(), info.GetIsolate());
 
-    // Do the security check against the parent frame rather than
-    // frameElement() itself, so that a remote parent frame can be handled
-    // properly. In that case, there's no frameElement(), yet we should still
-    // throw a proper exception and deny access.
-    Frame* target = impl->frame() ? impl->frame()->tree().parent() : nullptr;
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), target, exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl->frameElement(), DoNotReportSecurityError)) {
         v8SetReturnValueNull(info);
-        exceptionState.throwIfNeeded();
         return;
     }
 
@@ -133,7 +128,7 @@ void V8Window::openerAttributeSetterCustom(v8::Local<v8::Value> value, const v8:
     v8::Isolate* isolate = info.GetIsolate();
     DOMWindow* impl = V8Window::toImpl(info.Holder());
     ExceptionState exceptionState(ExceptionState::SetterContext, "opener", "Window", info.Holder(), isolate);
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         exceptionState.throwIfNeeded();
         return;
     }
@@ -198,6 +193,7 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
     //   postMessage(message, {sequence of transferrables}, targetOrigin);
     OwnPtrWillBeRawPtr<MessagePortArray> portArray = adoptPtrWillBeNoop(new MessagePortArray);
     ArrayBufferArray arrayBufferArray;
+    ImageBitmapArray imageBitmapArray;
     int targetOriginArgIndex = 1;
     if (info.Length() > 2) {
         int transferablesArgIndex = 2;
@@ -206,14 +202,14 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
             targetOriginArgIndex = 2;
             transferablesArgIndex = 1;
         }
-        if (!SerializedScriptValue::extractTransferables(info.GetIsolate(), info[transferablesArgIndex], transferablesArgIndex, *portArray, arrayBufferArray, exceptionState)) {
+        if (!SerializedScriptValue::extractTransferables(info.GetIsolate(), info[transferablesArgIndex], transferablesArgIndex, *portArray, arrayBufferArray, imageBitmapArray, exceptionState)) {
             exceptionState.throwIfNeeded();
             return;
         }
     }
     TOSTRING_VOID(V8StringResource<TreatNullAndUndefinedAsNullString>, targetOrigin, info[targetOriginArgIndex]);
 
-    RefPtr<SerializedScriptValue> message = SerializedScriptValueFactory::instance().create(info.GetIsolate(), info[0], portArray.get(), &arrayBufferArray, exceptionState);
+    RefPtr<SerializedScriptValue> message = SerializedScriptValueFactory::instance().create(info.GetIsolate(), info[0], portArray.get(), &arrayBufferArray, &imageBitmapArray, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
 
@@ -238,7 +234,7 @@ void V8Window::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     DOMWindow* impl = V8Window::toImpl(info.Holder());
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "open", "Window", info.Holder(), info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         exceptionState.throwIfNeeded();
         return;
     }
@@ -275,10 +271,11 @@ static bool installTestInterfaceIfNeeded(LocalFrame& frame, v8::Local<v8::String
     v8::Local<v8::Context> context = isolate->GetCurrentContext();
     AtomicString propName = toCoreAtomicString(name);
 
-    v8::Local<v8::Value> interfaces = V8HiddenValue::getHiddenValue(isolate, info.Holder(), V8HiddenValue::testInterfaces(isolate));
+    ScriptState* scriptState = ScriptState::from(context);
+    v8::Local<v8::Value> interfaces = V8HiddenValue::getHiddenValue(scriptState, info.Holder(), V8HiddenValue::testInterfaces(isolate));
     if (interfaces.IsEmpty()) {
         interfaces = v8::Map::New(isolate);
-        V8HiddenValue::setHiddenValue(isolate, info.Holder(), V8HiddenValue::testInterfaces(isolate), interfaces);
+        V8HiddenValue::setHiddenValue(scriptState, info.Holder(), V8HiddenValue::testInterfaces(isolate), interfaces);
     }
 
     v8::Local<v8::Map> interfacesMap = interfaces.As<v8::Map>();
@@ -334,7 +331,7 @@ void V8Window::namedPropertyGetterCustom(v8::Local<v8::Name> name, const v8::Pro
         return;
 
     // This is an AllCanRead interceptor.  Check that the caller has access to the named results.
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), frame, DoNotReportSecurityError))
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), window, DoNotReportSecurityError))
         return;
 
     bool hasNamedItem = toHTMLDocument(doc)->hasNamedItem(propName);
@@ -382,17 +379,13 @@ static bool securityCheck(v8::Local<v8::Object> host)
     if (target->loader().stateMachine()->isDisplayingInitialEmptyDocument())
         target->loader().didAccessInitialDocument();
 
-    return BindingSecurity::shouldAllowAccessToFrame(isolate, target, DoNotReportSecurityError);
+    return BindingSecurity::shouldAllowAccessTo(isolate, callingDOMWindow(isolate), targetWindow, DoNotReportSecurityError);
 }
 
-bool V8Window::namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value>)
+bool V8Window::securityCheckCustom(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject)
 {
-    return securityCheck(host);
-}
-
-bool V8Window::indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value>)
-{
-    return securityCheck(host);
+    // TODO(jochen): Take accessingContext into account.
+    return securityCheck(accessedObject);
 }
 
 } // namespace blink

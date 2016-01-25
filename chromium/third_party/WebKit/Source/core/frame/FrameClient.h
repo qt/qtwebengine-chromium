@@ -17,7 +17,7 @@ class SecurityOrigin;
 enum class FrameDetachType;
 
 class CORE_EXPORT FrameClient : public NoBaseWillBeGarbageCollectedFinalized<FrameClient> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FrameClient);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FrameClient);
 public:
     virtual bool inShadowTree() const = 0;
 
@@ -40,6 +40,8 @@ public:
 
     // Returns true if the embedder intercepted the postMessage call
     virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin* /*target*/, MessageEvent*, LocalFrame* /*sourceFrame*/) const { return false; }
+
+    virtual void frameFocused() const = 0;
 
     virtual ~FrameClient() { }
 

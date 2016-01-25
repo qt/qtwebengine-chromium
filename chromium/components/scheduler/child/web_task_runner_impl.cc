@@ -40,6 +40,10 @@ void WebTaskRunnerImpl::postDelayedTask(
       base::TimeDelta::FromMillisecondsD(delayMs));
 }
 
+blink::WebTaskRunner* WebTaskRunnerImpl::clone() {
+  return new WebTaskRunnerImpl(task_runner_);
+}
+
 void WebTaskRunnerImpl::runTask(scoped_ptr<blink::WebTaskRunner::Task> task)
 {
   task->run();

@@ -19,7 +19,7 @@ ImageFactory::~ImageFactory() {
 gfx::BufferFormat ImageFactory::DefaultBufferFormatForImageFormat(
     unsigned internalformat) {
   switch (internalformat) {
-    case GL_R8:
+    case GL_RED:
       return gfx::BufferFormat::R_8;
     case GL_RGB:
       return gfx::BufferFormat::BGRX_8888;
@@ -48,20 +48,6 @@ gfx::BufferFormat ImageFactory::DefaultBufferFormatForImageFormat(
 }
 
 // static
-gfx::BufferUsage ImageFactory::ImageUsageToGpuMemoryBufferUsage(
-    unsigned usage) {
-  switch (usage) {
-    case GL_MAP_CHROMIUM:
-      return gfx::BufferUsage::MAP;
-    case GL_SCANOUT_CHROMIUM:
-      return gfx::BufferUsage::SCANOUT;
-    default:
-      NOTREACHED();
-      return gfx::BufferUsage::MAP;
-  }
-}
-
-// static
 bool ImageFactory::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
     unsigned internalformat,
     gfx::BufferFormat format) {
@@ -75,6 +61,7 @@ bool ImageFactory::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
     case gfx::BufferFormat::ETC1:
     case gfx::BufferFormat::R_8:
     case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::RGBX_8888:
     case gfx::BufferFormat::YUV_420:
     case gfx::BufferFormat::YUV_420_BIPLANAR:
     case gfx::BufferFormat::UYVY_422:
@@ -96,6 +83,7 @@ bool ImageFactory::IsGpuMemoryBufferFormatSupported(
     case gfx::BufferFormat::ATCIA:
       return capabilities.texture_format_atc;
     case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:
       return capabilities.texture_format_bgra8888;
     case gfx::BufferFormat::DXT1:
       return capabilities.texture_format_dxt1;
@@ -109,7 +97,7 @@ bool ImageFactory::IsGpuMemoryBufferFormatSupported(
       return capabilities.image_ycbcr_422;
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBA_8888:
-    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::RGBX_8888:
     case gfx::BufferFormat::YUV_420:
       return true;
     case gfx::BufferFormat::YUV_420_BIPLANAR:
@@ -136,6 +124,7 @@ bool ImageFactory::IsImageSizeValidForGpuMemoryBufferFormat(
     case gfx::BufferFormat::R_8:
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::RGBX_8888:
     case gfx::BufferFormat::BGRA_8888:
     case gfx::BufferFormat::BGRX_8888:
       return true;

@@ -5,10 +5,12 @@
 #include "media/filters/ffmpeg_demuxer.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
@@ -33,8 +35,9 @@
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
 #include "media/filters/webvtt_util.h"
 #include "media/formats/webm/webm_crypto_helpers.h"
+#include "media/media_features.h"
 
-#if defined(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
 #include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
 #endif
 
@@ -174,7 +177,8 @@ static int32_t GetCodecHash(const AVCodecContext* context) {
 
 scoped_ptr<FFmpegDemuxerStream> FFmpegDemuxerStream::Create(
     FFmpegDemuxer* demuxer,
-    AVStream* stream) {
+    AVStream* stream,
+    const scoped_refptr<MediaLog>& media_log) {
   if (!demuxer || !stream)
     return nullptr;
 
@@ -191,9 +195,14 @@ scoped_ptr<FFmpegDemuxerStream> FFmpegDemuxerStream::Create(
     // TODO(chcunningham): Change AVStreamToAudioDecoderConfig to check
     // IsValidConfig internally and return a null scoped_ptr if not valid.
     if (!AVStreamToAudioDecoderConfig(stream, audio_config.get()) ||
-        !audio_config->IsValidConfig())
+        !audio_config->IsValidConfig()) {
+      MEDIA_LOG(ERROR, media_log)
+          << "FFmpegDemuxer: failed creating audio stream";
       return nullptr;
+    }
 
+    MEDIA_LOG(INFO, media_log) << "FFmpegDemuxer: created audio stream, config "
+                               << audio_config->AsHumanReadableString();
   } else if (stream->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
     video_config.reset(new VideoDecoderConfig());
 
@@ -203,12 +212,18 @@ scoped_ptr<FFmpegDemuxerStream> FFmpegDemuxerStream::Create(
     // TODO(chcunningham): Change AVStreamToVideoDecoderConfig to check
     // IsValidConfig internally and return a null scoped_ptr if not valid.
     if (!AVStreamToVideoDecoderConfig(stream, video_config.get()) ||
-        !video_config->IsValidConfig())
+        !video_config->IsValidConfig()) {
+      MEDIA_LOG(ERROR, media_log)
+          << "FFmpegDemuxer: failed creating video stream";
       return nullptr;
+    }
+
+    MEDIA_LOG(INFO, media_log) << "FFmpegDemuxer: created video stream, config "
+                               << video_config->AsHumanReadableString();
   }
 
   return make_scoped_ptr(new FFmpegDemuxerStream(
-      demuxer, stream, audio_config.Pass(), video_config.Pass()));
+      demuxer, stream, std::move(audio_config), std::move(video_config)));
 }
 
 //
@@ -333,18 +348,14 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
   if (type() == DemuxerStream::TEXT) {
     int id_size = 0;
-    uint8* id_data = av_packet_get_side_data(
-        packet.get(),
-        AV_PKT_DATA_WEBVTT_IDENTIFIER,
-        &id_size);
+    uint8_t* id_data = av_packet_get_side_data(
+        packet.get(), AV_PKT_DATA_WEBVTT_IDENTIFIER, &id_size);
 
     int settings_size = 0;
-    uint8* settings_data = av_packet_get_side_data(
-        packet.get(),
-        AV_PKT_DATA_WEBVTT_SETTINGS,
-        &settings_size);
+    uint8_t* settings_data = av_packet_get_side_data(
+        packet.get(), AV_PKT_DATA_WEBVTT_SETTINGS, &settings_size);
 
-    std::vector<uint8> side_data;
+    std::vector<uint8_t> side_data;
     MakeSideData(id_data, id_data + id_size,
                  settings_data, settings_data + settings_size,
                  &side_data);
@@ -353,21 +364,17 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                                      side_data.data(), side_data.size());
   } else {
     int side_data_size = 0;
-    uint8* side_data = av_packet_get_side_data(
-        packet.get(),
-        AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
-        &side_data_size);
+    uint8_t* side_data = av_packet_get_side_data(
+        packet.get(), AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL, &side_data_size);
 
     scoped_ptr<DecryptConfig> decrypt_config;
     int data_offset = 0;
     if ((type() == DemuxerStream::AUDIO && audio_config_->is_encrypted()) ||
         (type() == DemuxerStream::VIDEO && video_config_->is_encrypted())) {
       if (!WebMCreateDecryptConfig(
-          packet->data, packet->size,
-          reinterpret_cast<const uint8*>(encryption_key_id_.data()),
-          encryption_key_id_.size(),
-          &decrypt_config,
-          &data_offset)) {
+              packet->data, packet->size,
+              reinterpret_cast<const uint8_t*>(encryption_key_id_.data()),
+              encryption_key_id_.size(), &decrypt_config, &data_offset)) {
         LOG(ERROR) << "Creation of DecryptConfig failed.";
       }
     }
@@ -385,8 +392,8 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     }
 
     int skip_samples_size = 0;
-    const uint32* skip_samples_ptr =
-        reinterpret_cast<const uint32*>(av_packet_get_side_data(
+    const uint32_t* skip_samples_ptr =
+        reinterpret_cast<const uint32_t*>(av_packet_get_side_data(
             packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
     const int kSkipSamplesValidSize = 10;
     const int kSkipEndSamplesOffset = 1;
@@ -410,7 +417,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     }
 
     if (decrypt_config)
-      buffer->set_decrypt_config(decrypt_config.Pass());
+      buffer->set_decrypt_config(std::move(decrypt_config));
   }
 
   if (packet->duration >= 0) {
@@ -606,17 +613,23 @@ void FFmpegDemuxerStream::ResetBitstreamConverter() {
 
 void FFmpegDemuxerStream::InitBitstreamConverter() {
 #if defined(USE_PROPRIETARY_CODECS)
-  if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
-    bitstream_converter_.reset(
-        new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
-#if defined(ENABLE_HEVC_DEMUXING)
-  } else if (stream_->codec->codec_id == AV_CODEC_ID_HEVC) {
-    bitstream_converter_.reset(
-        new FFmpegH265ToAnnexBBitstreamConverter(stream_->codec));
+  switch (stream_->codec->codec_id) {
+    case AV_CODEC_ID_H264:
+      bitstream_converter_.reset(
+          new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
+      break;
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
+    case AV_CODEC_ID_HEVC:
+      bitstream_converter_.reset(
+          new FFmpegH265ToAnnexBBitstreamConverter(stream_->codec));
+      break;
 #endif
-  } else if (stream_->codec->codec_id == AV_CODEC_ID_AAC) {
-    bitstream_converter_.reset(
-        new FFmpegAACBitstreamConverter(stream_->codec));
+    case AV_CODEC_ID_AAC:
+      bitstream_converter_.reset(
+          new FFmpegAACBitstreamConverter(stream_->codec));
+      break;
+    default:
+      break;
   }
 #endif  // defined(USE_PROPRIETARY_CODECS)
 }
@@ -713,8 +726,9 @@ std::string FFmpegDemuxerStream::GetMetadata(const char* key) const {
 
 // static
 base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
-    const AVRational& time_base, int64 timestamp) {
-  if (timestamp == static_cast<int64>(AV_NOPTS_VALUE))
+    const AVRational& time_base,
+    int64_t timestamp) {
+  if (timestamp == static_cast<int64_t>(AV_NOPTS_VALUE))
     return kNoTimestamp();
 
   return ConvertFromTimeBase(time_base, timestamp);
@@ -861,7 +875,7 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
   // this does not increase the amount of data downloaded.  The default value
   // is 5 AV_TIME_BASE units (1 second each), which prevents some oddly muxed
   // streams from being detected properly; this value was chosen arbitrarily.
-  format_context->max_analyze_duration2 = 60 * AV_TIME_BASE;
+  format_context->max_analyze_duration = 60 * AV_TIME_BASE;
 
   // Open the AVFormatContext using our glue layer.
   CHECK(blocking_thread_.Start());
@@ -917,14 +931,22 @@ void FFmpegDemuxer::AddTextStreams() {
   }
 }
 
+int64_t FFmpegDemuxer::GetMemoryUsage() const {
+  int64_t allocation_size = 0;
+  for (const auto& stream : streams_) {
+    if (stream)
+      allocation_size += stream->MemoryUsage();
+  }
+  return allocation_size;
+}
+
 // Helper for calculating the bitrate of the media based on information stored
 // in |format_context| or failing that the size and duration of the media.
 //
 // Returns 0 if a bitrate could not be determined.
-static int CalculateBitrate(
-    AVFormatContext* format_context,
-    const base::TimeDelta& duration,
-    int64 filesize_in_bytes) {
+static int CalculateBitrate(AVFormatContext* format_context,
+                            const base::TimeDelta& duration,
+                            int64_t filesize_in_bytes) {
   // If there is a bitrate set on the container, use it.
   if (format_context->bit_rate > 0)
     return format_context->bit_rate;
@@ -946,7 +968,7 @@ static int CalculateBitrate(
     return 0;
   }
 
-  // Do math in floating point as we'd overflow an int64 if the filesize was
+  // Do math in floating point as we'd overflow an int64_t if the filesize was
   // larger than ~1073GB.
   double bytes = filesize_in_bytes;
   double duration_us = duration.InMicroseconds();
@@ -1015,14 +1037,14 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
                                                     kInfiniteDuration());
   const AVFormatInternal* internal = format_context->internal;
   if (internal && internal->packet_buffer &&
-      format_context->start_time != static_cast<int64>(AV_NOPTS_VALUE)) {
+      format_context->start_time != static_cast<int64_t>(AV_NOPTS_VALUE)) {
     struct AVPacketList* packet_buffer = internal->packet_buffer;
     while (packet_buffer != internal->packet_buffer_end) {
       DCHECK_LT(static_cast<size_t>(packet_buffer->pkt.stream_index),
                 start_time_estimates.size());
       const AVStream* stream =
           format_context->streams[packet_buffer->pkt.stream_index];
-      if (packet_buffer->pkt.pts != static_cast<int64>(AV_NOPTS_VALUE)) {
+      if (packet_buffer->pkt.pts != static_cast<int64_t>(AV_NOPTS_VALUE)) {
         const base::TimeDelta packet_pts =
             ConvertFromTimeBase(stream->time_base, packet_buffer->pkt.pts);
         if (packet_pts < start_time_estimates[stream->index])
@@ -1057,7 +1079,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       if (video_stream)
         continue;
 
-#if defined(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
       if (stream->codec->codec_id == AV_CODEC_ID_HEVC) {
         // If ffmpeg is built without HEVC parser/decoder support, it will be
         // able to demux HEVC based solely on container-provided information,
@@ -1093,7 +1115,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     // return nullptr if the AVStream is invalid. Validity checks will verify
     // things like: codec, channel layout, sample/pixel format, etc...
     scoped_ptr<FFmpegDemuxerStream> demuxer_stream =
-        FFmpegDemuxerStream::Create(this, stream);
+        FFmpegDemuxerStream::Create(this, stream, media_log_);
     if (demuxer_stream.get()) {
       streams_[i] = demuxer_stream.release();
     } else {
@@ -1233,7 +1255,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   host_->SetDuration(max_duration);
   duration_known_ = (max_duration != kInfiniteDuration());
 
-  int64 filesize_in_bytes = 0;
+  int64_t filesize_in_bytes = 0;
   url_protocol_->GetSize(&filesize_in_bytes);
   bitrate_ = CalculateBitrate(format_context, max_duration, filesize_in_bytes);
   if (bitrate_ > 0)
@@ -1418,7 +1440,7 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
     }
 
     FFmpegDemuxerStream* demuxer_stream = streams_[packet->stream_index];
-    demuxer_stream->EnqueuePacket(packet.Pass());
+    demuxer_stream->EnqueuePacket(std::move(packet));
   }
 
   // Keep reading until we've reached capacity.
@@ -1469,8 +1491,8 @@ void FFmpegDemuxer::StreamHasEnded() {
 void FFmpegDemuxer::OnEncryptedMediaInitData(
     EmeInitDataType init_data_type,
     const std::string& encryption_key_id) {
-  std::vector<uint8> key_id_local(encryption_key_id.begin(),
-                                  encryption_key_id.end());
+  std::vector<uint8_t> key_id_local(encryption_key_id.begin(),
+                                    encryption_key_id.end());
   encrypted_media_init_data_cb_.Run(init_data_type, key_id_local);
 }
 
@@ -1492,8 +1514,7 @@ void FFmpegDemuxer::NotifyBufferingChanged() {
   } else if (video) {
     buffered = video->GetBufferedRanges();
   }
-  for (size_t i = 0; i < buffered.size(); ++i)
-    host_->AddBufferedTimeRange(buffered.start(i), buffered.end(i));
+  host_->OnBufferedTimeRangesChanged(buffered);
 }
 
 void FFmpegDemuxer::OnDataSourceError() {

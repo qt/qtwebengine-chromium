@@ -50,6 +50,7 @@ static size_t GetImageDescIndex(GLenum target, size_t level)
 Texture::Texture(rx::TextureImpl *impl, GLuint id, GLenum target)
     : egl::ImageSibling(id),
       mTexture(impl),
+      mLabel(),
       mTextureState(),
       mTarget(target),
       mImageDescs(IMPLEMENTATION_MAX_TEXTURE_LEVELS * (target == GL_TEXTURE_CUBE_MAP ? 6 : 1)),
@@ -66,6 +67,16 @@ Texture::~Texture()
         mBoundSurface = NULL;
     }
     SafeDelete(mTexture);
+}
+
+void Texture::setLabel(const std::string &label)
+{
+    mLabel = label;
+}
+
+const std::string &Texture::getLabel() const
+{
+    return mLabel;
 }
 
 GLenum Texture::getTarget() const
@@ -839,16 +850,9 @@ Texture::SamplerCompletenessCache::SamplerCompletenessCache()
 {
 }
 
-GLsizei Texture::getAttachmentWidth(const gl::FramebufferAttachment::Target &target) const
+Extents Texture::getAttachmentSize(const gl::FramebufferAttachment::Target &target) const
 {
-    return static_cast<GLsizei>(
-        getWidth(target.textureIndex().type, target.textureIndex().mipIndex));
-}
-
-GLsizei Texture::getAttachmentHeight(const gl::FramebufferAttachment::Target &target) const
-{
-    return static_cast<GLsizei>(
-        getHeight(target.textureIndex().type, target.textureIndex().mipIndex));
+    return getImageDesc(target.textureIndex().type, target.textureIndex().mipIndex).size;
 }
 
 GLenum Texture::getAttachmentInternalFormat(const gl::FramebufferAttachment::Target &target) const

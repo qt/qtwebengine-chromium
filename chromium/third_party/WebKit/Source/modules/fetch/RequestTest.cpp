@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/Request.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -12,9 +11,9 @@
 #include "core/testing/DummyPageHolder.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 namespace {
@@ -69,10 +68,12 @@ TEST_F(ServiceWorkerRequestTest, FromAndToWebRequest)
     const String referrer = "http://www.referrer.com/";
     const WebReferrerPolicy referrerPolicy = WebReferrerPolicyAlways;
     const WebURLRequest::RequestContext context = WebURLRequest::RequestContextAudio;
+    const WebURLRequest::FetchRequestMode mode = WebURLRequest::FetchRequestModeNavigate;
 
     webRequest.setURL(url);
     webRequest.setMethod(method);
     webRequest.setRequestContext(context);
+    webRequest.setMode(mode);
     for (int i = 0; headers[i].key; ++i)
         webRequest.setHeader(WebString::fromUTF8(headers[i].key), WebString::fromUTF8(headers[i].value));
     webRequest.setReferrer(referrer, referrerPolicy);
@@ -83,6 +84,7 @@ TEST_F(ServiceWorkerRequestTest, FromAndToWebRequest)
     EXPECT_EQ(method, request->method());
     EXPECT_EQ("audio", request->context());
     EXPECT_EQ(referrer, request->referrer());
+    EXPECT_EQ("navigate", request->mode());
 
     Headers* requestHeaders = request->headers();
 
@@ -104,6 +106,7 @@ TEST_F(ServiceWorkerRequestTest, FromAndToWebRequest)
     EXPECT_EQ(referrer, KURL(secondWebRequest.referrerUrl()));
     EXPECT_EQ(WebReferrerPolicyDefault, secondWebRequest.referrerPolicy());
     EXPECT_EQ(webRequest.headers(), secondWebRequest.headers());
+    EXPECT_EQ(WebURLRequest::FetchRequestModeNoCORS, secondWebRequest.mode());
 }
 
 TEST_F(ServiceWorkerRequestTest, ToWebRequestStripsURLFragment)

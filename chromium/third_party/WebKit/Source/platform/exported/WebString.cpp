@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebString.h"
 
 #include "public/platform/WebCString.h"
@@ -57,12 +56,6 @@ void WebString::assign(const WebUChar* data, size_t length)
 size_t WebString::length() const
 {
     return m_private.isNull() ? 0 : m_private->length();
-}
-
-WebUChar WebString::at(unsigned i) const
-{
-    ASSERT(!m_private.isNull());
-    return (*m_private.get())[i];
 }
 
 bool WebString::is8Bit() const
@@ -118,6 +111,11 @@ WebString WebString::fromLatin1(const WebLChar* data, size_t length)
 bool WebString::equals(const WebString& s) const
 {
     return equal(m_private.get(), s.m_private.get());
+}
+
+bool WebString::equals(const char* characters) const
+{
+    return equal(m_private.get(), reinterpret_cast<const LChar*>(characters));
 }
 
 WebString::WebString(const WTF::String& s)

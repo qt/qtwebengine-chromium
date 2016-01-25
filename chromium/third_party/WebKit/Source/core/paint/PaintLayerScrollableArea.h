@@ -46,9 +46,9 @@
 
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBox.h"
+#include "core/paint/PaintInvalidationCapableScrollableArea.h"
 #include "core/paint/PaintLayerFragment.h"
 #include "platform/heap/Handle.h"
-#include "platform/scroll/ScrollableArea.h"
 
 namespace blink {
 
@@ -62,14 +62,49 @@ class LayoutBox;
 class PaintLayer;
 class LayoutScrollbarPart;
 
-class CORE_EXPORT PaintLayerScrollableArea final : public NoBaseWillBeGarbageCollectedFinalized<PaintLayerScrollableArea>, public ScrollableArea {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PaintLayerScrollableArea);
+// PaintLayerScrollableArea represents the scrollable area of a LayoutBox.
+//
+// To be scrollable, an element requires ‘overflow’ != visible. Note that this
+// doesn’t imply having scrollbars as you can always programmatically scroll
+// when ‘overflow’ is hidden (using JavaScript's element.scrollTo or
+// scrollLeft).
+//
+// The size and scroll origin of the scrollable area are based on layout
+// dimensions. They are recomputed after layout in updateScrollDimensions.
+//
+// updateScrollDimensions also determines if scrollbars need to be allocated,
+// destroyed or updated as a result of layout. This is based on the value of the
+// 'overflow' property. Having non-overlay scrollbars automatically allocates a
+// scrollcorner (m_scrollCorner), which is used to style the intersection of the
+// two scrollbars.
+//
+// Note that scrollbars are placed based on the LayoutBox's computed
+// 'direction'. See https://webkit.org/b/54623 for some context.
+//
+// The ‘resize' property allocates a resizer (m_resizer), which is overlaid on
+// top of the scroll corner. It is used to resize an element using the mouse.
+//
+// The scrollbars and scroll corner can also be hardware accelerated
+// and thus get their own GraphicsLayer (see the layerFor* functions).
+// This only happens if the associated PaintLayer is itself composited.
+//
+//
+// ***** OVERLAY SCROLLBARS *****
+// Overlay scrollbars are painted on top of the box's content. As such they
+// don't use any space in the box. Software overlay scrollbars are painted by
+// PaintLayerPainter::paintOverlayScrollbars after all content as part of a
+// separate tree traversal. The reason for this 2nd traversal is that they need
+// to be painted on top of everything. Hardware accelerated overlay scrollbars
+// are painted by their associated GraphicsLayer that sets the paint flag
+// PaintLayerPaintingOverlayScrollbars.
+class CORE_EXPORT PaintLayerScrollableArea final : public NoBaseWillBeGarbageCollectedFinalized<PaintLayerScrollableArea>, public PaintInvalidationCapableScrollableArea {
+    USING_FAST_MALLOC_WILL_BE_REMOVED(PaintLayerScrollableArea);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PaintLayerScrollableArea);
     friend class Internals;
 
 private:
     class ScrollbarManager {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
 
         // Helper class to manage the life cycle of Scrollbar objects.  Some layout containers
         // (e.g., flexbox, table) run multi-pass layout on their children, applying different
@@ -105,12 +140,15 @@ private:
 
     private:
         PassRefPtrWillBeRawPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
-        void destroyScrollbar(ScrollbarOrientation, bool invalidate = false);
+        void destroyScrollbar(ScrollbarOrientation);
 
     private:
         RawPtrWillBeMember<PaintLayerScrollableArea> m_scrollableArea;
+
+        // The scrollbars associated with m_scrollableArea. Both can nullptr.
         RefPtrWillBeMember<Scrollbar> m_hBar;
         RefPtrWillBeMember<Scrollbar> m_vBar;
+
         unsigned m_canDetachScrollbars: 1;
         unsigned m_hBarIsAttached: 1;
         unsigned m_vBarIsAttached: 1;
@@ -135,21 +173,31 @@ public:
 
     HostWindow* hostWindow() const override;
 
+    // For composited scrolling, we allocate an extra GraphicsLayer to hold
+    // onto the scrolling content. The layer can be shifted on the GPU and
+    // composited at little cost.
+    // Note that this is done in CompositedLayerMapping, this function being
+    // only a helper.
     GraphicsLayer* layerForScrolling() const override;
+
+    // GraphicsLayers for the scrolling components.
+    //
+    // Any function can return nullptr if they are not accelerated.
     GraphicsLayer* layerForHorizontalScrollbar() const override;
     GraphicsLayer* layerForVerticalScrollbar() const override;
     GraphicsLayer* layerForScrollCorner() const override;
+
     bool usesCompositedScrolling() const override;
-    void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
-    void invalidateScrollCornerRect(const IntRect&) override;
+    bool shouldScrollOnMainThread() const override;
+    void scrollControlWasSetNeedsPaintInvalidation() override;
     bool shouldUseIntegerScrollOffset() const override;
     bool isActive() const override;
     bool isScrollCornerVisible() const override;
     IntRect scrollCornerRect() const override;
-    IntRect convertFromScrollbarToContainingView(const Scrollbar*, const IntRect&) const override;
-    IntRect convertFromContainingViewToScrollbar(const Scrollbar*, const IntRect&) const override;
-    IntPoint convertFromScrollbarToContainingView(const Scrollbar*, const IntPoint&) const override;
-    IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const override;
+    IntRect convertFromScrollbarToContainingWidget(const Scrollbar&, const IntRect&) const override;
+    IntRect convertFromContainingWidgetToScrollbar(const Scrollbar&, const IntRect&) const override;
+    IntPoint convertFromScrollbarToContainingWidget(const Scrollbar&, const IntPoint&) const override;
+    IntPoint convertFromContainingWidgetToScrollbar(const Scrollbar&, const IntPoint&) const override;
     int scrollSize(ScrollbarOrientation) const override;
     IntPoint scrollPosition() const override;
     DoublePoint scrollPositionDouble() const override;
@@ -180,7 +228,7 @@ public:
     // FIXME: We shouldn't allow access to m_overflowRect outside this class.
     LayoutRect overflowRect() const { return m_overflowRect; }
 
-    void scrollToPosition(const DoublePoint& scrollPosition, ScrollOffsetClamping = ScrollOffsetUnclamped, ScrollBehavior = ScrollBehaviorInstant);
+    void scrollToPosition(const DoublePoint& scrollPosition, ScrollOffsetClamping = ScrollOffsetUnclamped, ScrollBehavior = ScrollBehaviorInstant, ScrollType = ProgrammaticScroll);
 
     void scrollToOffset(const DoubleSize& scrollOffset, ScrollOffsetClamping clamp = ScrollOffsetUnclamped, ScrollBehavior scrollBehavior = ScrollBehaviorInstant)
     {
@@ -213,7 +261,7 @@ public:
 
     bool hasScrollbar() const { return hasHorizontalScrollbar() || hasVerticalScrollbar(); }
 
-    LayoutScrollbarPart* scrollCorner() const { return m_scrollCorner; }
+    LayoutScrollbarPart* scrollCorner() const override { return m_scrollCorner; }
 
     void resize(const PlatformEvent&, const LayoutSize&);
     IntSize offsetFromResizeCorner(const IntPoint& absolutePoint) const;
@@ -245,7 +293,7 @@ public:
 
     bool hitTestResizerInFragments(const PaintLayerFragments&, const HitTestLocation&) const;
 
-    LayoutRect scrollIntoView(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY) override;
+    LayoutRect scrollIntoView(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY, ScrollType = ProgrammaticScroll) override;
 
     // Returns true if scrollable area is in the FrameView's collection of scrollable areas. This can
     // only happen if we're scrollable, visible to hit test, and do in fact overflow. This means that
@@ -273,13 +321,15 @@ public:
     LayoutBox& box() const;
     PaintLayer* layer() const;
 
-    LayoutScrollbarPart* resizer() { return m_resizer; }
+    LayoutScrollbarPart* resizer() const override { return m_resizer; }
 
     const IntPoint& cachedOverlayScrollbarOffset() { return m_cachedOverlayScrollbarOffset; }
     void setCachedOverlayScrollbarOffset(const IntPoint& offset) { m_cachedOverlayScrollbarOffset = offset; }
 
     IntRect rectForHorizontalScrollbar(const IntRect& borderBoxRect) const;
     IntRect rectForVerticalScrollbar(const IntRect& borderBoxRect) const;
+
+    Widget* widget() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -301,7 +351,7 @@ private:
 
     LayoutUnit verticalScrollbarStart(int minX, int maxX) const;
     LayoutUnit horizontalScrollbarStart(int minX) const;
-    IntSize scrollbarOffset(const Scrollbar*) const;
+    IntSize scrollbarOffset(const Scrollbar&) const;
 
     void setHasHorizontalScrollbar(bool hasScrollbar);
     void setHasVerticalScrollbar(bool hasScrollbar);
@@ -316,6 +366,9 @@ private:
     void updateScrollableAreaSet(bool hasOverflow);
 
     void updateCompositingLayersAfterScroll();
+
+    // PaintInvalidationCapableScrollableArea
+    LayoutBox& boxForScrollControlPaintInvalidation() const { return box(); }
 
     PaintLayer& m_layer;
 
@@ -333,6 +386,9 @@ private:
     unsigned m_needsCompositedScrolling : 1;
 
     // The width/height of our scrolled area.
+    // This is OverflowModel's layout overflow translated to physical
+    // coordinates. See OverflowModel for the different overflow and
+    // LayoutBoxModelObject for the coordinate systems.
     LayoutRect m_overflowRect;
 
     // ScrollbarManager holds the Scrollbar instances.

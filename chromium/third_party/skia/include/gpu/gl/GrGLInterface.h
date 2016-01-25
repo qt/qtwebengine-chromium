@@ -128,8 +128,6 @@ private:
     typedef SkRefCnt INHERITED;
 
 public:
-    
-
     GrGLInterface();
 
     static GrGLInterface* NewClone(const GrGLInterface*);
@@ -181,7 +179,6 @@ public:
         GLPtr<GrGLCompressedTexImage2DProc> fCompressedTexImage2D;
         GLPtr<GrGLCompressedTexSubImage2DProc> fCompressedTexSubImage2D;
         GLPtr<GrGLCopyTexSubImage2DProc> fCopyTexSubImage2D;
-        GLPtr<GrGLCopyTextureCHROMIUMProc> fCopyTextureCHROMIUM;
         GLPtr<GrGLCreateProgramProc> fCreateProgram;
         GLPtr<GrGLCreateShaderProc> fCreateShader;
         GLPtr<GrGLCullFaceProc> fCullFace;
@@ -283,7 +280,7 @@ public:
         GLPtr<GrGLRenderbufferStorageMultisampleProc> fRenderbufferStorageMultisample;
 
         // Pointer to BindUniformLocationCHROMIUM from the GL_CHROMIUM_bind_uniform_location extension.
-        GLPtr<GrGLBindUniformLocation> fBindUniformLocation;
+        GLPtr<GrGLBindUniformLocationProc> fBindUniformLocation;
 
         GLPtr<GrGLResolveMultisampleFramebufferProc> fResolveMultisampleFramebuffer;
         GLPtr<GrGLScissorProc> fScissor;
@@ -490,8 +487,6 @@ public:
         GLPtr<GrGLGetVertexArrayPointeri_vProc> fGetVertexArrayPointeri_v;
         GLPtr<GrGLMapNamedBufferRangeProc> fMapNamedBufferRange;
         GLPtr<GrGLFlushMappedNamedBufferRangeProc> fFlushMappedNamedBufferRange;
-        // OpenGL 4.5
-        GLPtr<GrGLNamedFramebufferParameteriProc> fNamedFramebufferParameteri;
 
         /* KHR_debug */
         GLPtr<GrGLDebugMessageControlProc> fDebugMessageControl;
@@ -501,6 +496,10 @@ public:
         GLPtr<GrGLPushDebugGroupProc> fPushDebugGroup;
         GLPtr<GrGLPopDebugGroupProc> fPopDebugGroup;
         GLPtr<GrGLObjectLabelProc> fObjectLabel;
+
+        /* EGL functions */
+        GLPtr<GrEGLCreateImageProc> fEGLCreateImage;
+        GLPtr<GrEGLDestroyImageProc> fEGLDestroyImage;
     } fFunctions;
 
     // Per-GL func callback

@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/DevToolsHost.h"
 
 #include "bindings/core/v8/ScriptFunctionCall.h"
@@ -37,6 +36,7 @@
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/parser/TextResourceDecoder.h"
@@ -48,6 +48,8 @@
 #include "core/page/Page.h"
 #include "platform/ContextMenu.h"
 #include "platform/ContextMenuItem.h"
+#include "platform/HostWindow.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/network/ResourceError.h"
@@ -84,9 +86,10 @@ public:
     void contextMenuCleared() override
     {
         if (m_devtoolsHost) {
-            ScriptFunctionCall function(m_devtoolsApiObject, "contextMenuCleared");
-            function.call();
-
+            if (!ScriptForbiddenScope::isScriptForbidden()) {
+                ScriptFunctionCall function(m_devtoolsApiObject, "contextMenuCleared");
+                function.call();
+            }
             m_devtoolsHost->clearMenuProvider();
             m_devtoolsHost = nullptr;
         }
@@ -107,9 +110,11 @@ public:
         UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
         int itemNumber = item->action() - ContextMenuItemBaseCustomTag;
 
-        ScriptFunctionCall function(m_devtoolsApiObject, "contextMenuItemSelected");
-        function.appendArgument(itemNumber);
-        function.call();
+        if (!ScriptForbiddenScope::isScriptForbidden()) {
+            ScriptFunctionCall function(m_devtoolsApiObject, "contextMenuItemSelected");
+            function.appendArgument(itemNumber);
+            function.call();
+        }
     }
 
 private:
@@ -159,6 +164,15 @@ float DevToolsHost::zoomFactor()
     return m_frontendFrame ? m_frontendFrame->pageZoomFactor() : 1;
 }
 
+float DevToolsHost::convertLengthForEmbedder(float length)
+{
+    if (!m_frontendFrame)
+        return length;
+    const HostWindow* hostWindow = m_frontendFrame->view()->hostWindow();
+    IntRect screen = hostWindow->viewportToScreen(IntRect(0, 0, length, 0));
+    return screen.width();
+}
+
 void DevToolsHost::setInjectedScriptForOrigin(const String& origin, const String& script)
 {
     if (m_client)
@@ -195,12 +209,6 @@ static String escapeUnicodeNonCharacters(const String& str)
     return dst.toString();
 }
 
-void DevToolsHost::sendMessageToBackend(const String& message)
-{
-    if (m_client)
-        m_client->sendMessageToBackend(escapeUnicodeNonCharacters(message));
-}
-
 void DevToolsHost::sendMessageToEmbedder(const String& message)
 {
     if (m_client)
@@ -211,6 +219,8 @@ void DevToolsHost::showContextMenu(LocalFrame* targetFrame, float x, float y, co
 {
     ASSERT(m_frontendFrame);
     ScriptState* frontendScriptState = ScriptState::forMainWorld(m_frontendFrame);
+    if (!frontendScriptState)
+        return;
     ScriptValue devtoolsApiObject = frontendScriptState->getFromGlobalObject("DevToolsAPI");
     ASSERT(devtoolsApiObject.isObject());
 
@@ -219,28 +229,6 @@ void DevToolsHost::showContextMenu(LocalFrame* targetFrame, float x, float y, co
     float zoom = targetFrame->pageZoomFactor();
     if (m_client)
         m_client->showContextMenu(targetFrame, x * zoom, y * zoom, menuProvider);
-}
-
-void DevToolsHost::showContextMenu(Event* event, const Vector<ContextMenuItem>& items)
-{
-    if (!event)
-        return;
-
-    ASSERT(m_frontendFrame);
-    ScriptState* frontendScriptState = ScriptState::forMainWorld(m_frontendFrame);
-    ScriptValue devtoolsApiObject = frontendScriptState->getFromGlobalObject("DevToolsAPI");
-    ASSERT(devtoolsApiObject.isObject());
-
-    Page* targetPage = m_frontendFrame->page();
-    if (event->target() && event->target()->executionContext() && event->target()->executionContext()->executingWindow()) {
-        LocalDOMWindow* window = event->target()->executionContext()->executingWindow();
-        if (window->document() && window->document()->page())
-            targetPage = window->document()->page();
-    }
-
-    RefPtrWillBeRawPtr<FrontendMenuProvider> menuProvider = FrontendMenuProvider::create(this, devtoolsApiObject, items);
-    targetPage->contextMenuController().showContextMenu(event, menuProvider);
-    m_menuProvider = menuProvider.get();
 }
 
 String DevToolsHost::getSelectionBackgroundColor()

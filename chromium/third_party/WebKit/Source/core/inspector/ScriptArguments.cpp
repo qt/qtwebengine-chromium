@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/ScriptArguments.h"
 
 #include "bindings/core/v8/ScriptValue.h"
@@ -62,6 +61,7 @@ private:
     V8ValueStringBuilder(v8::Isolate* isolate)
         : m_arrayLimit(maxArrayItemsLimit)
         , m_isolate(isolate)
+        , m_tryCatch(isolate)
     {
     }
 

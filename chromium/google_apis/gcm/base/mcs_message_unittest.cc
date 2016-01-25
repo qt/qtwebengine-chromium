@@ -4,6 +4,9 @@
 
 #include "google_apis/gcm/base/mcs_message.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/logging.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/thread_task_runner_handle.h"
@@ -13,8 +16,8 @@
 
 namespace gcm {
 
-const uint64 kAndroidId = 12345;
-const uint64 kSecret = 54321;
+const uint64_t kAndroidId = 12345;
+const uint64_t kSecret = 54321;
 
 class MCSMessageTest : public testing::Test {
  public:
@@ -80,7 +83,7 @@ TEST_F(MCSMessageTest, InitPassOwnership) {
       BuildLoginRequest(kAndroidId, kSecret, ""));
   scoped_ptr<google::protobuf::MessageLite> login_copy(
       new mcs_proto::LoginRequest(*login_request));
-  MCSMessage message(kLoginRequestTag, login_copy.Pass());
+  MCSMessage message(kLoginRequestTag, std::move(login_copy));
   EXPECT_FALSE(login_copy.get());
   ASSERT_TRUE(message.IsValid());
   EXPECT_EQ(kLoginRequestTag, message.tag());

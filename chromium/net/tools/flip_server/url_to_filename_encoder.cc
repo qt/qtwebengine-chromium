@@ -2,27 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "net/tools/flip_server/url_to_filename_encoder.h"
+
 #include <stdlib.h>
 
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "net/base/net_util.h"
-#include "net/tools/flip_server/url_to_filename_encoder.h"
 
 using std::string;
 
 namespace {
-
-// Returns 1 if buf is prefixed by "num_digits" of hex digits
-// Teturns 0 otherwise.
-// The function checks for '\0' for string termination.
-int HexDigitsPrefix(const char* buf, int num_digits) {
-  for (int i = 0; i < num_digits; i++) {
-    if (!base::IsHexDigit(buf[i]))
-      return 0;  // This also detects end of string as '\0' is not xdigit.
-  }
-  return 1;
-}
 
 #ifdef WIN32
 #define strtoull _strtoui64
@@ -31,12 +21,13 @@ int HexDigitsPrefix(const char* buf, int num_digits) {
 // A simple parser for long long values. Returns the parsed value if a
 // valid integer is found; else returns deflt
 // UInt64 and Int64 cannot handle decimal numbers with leading 0s.
-uint64 ParseLeadingHex64Value(const char* str, uint64 deflt) {
+uint64_t ParseLeadingHex64Value(const char* str, uint64_t deflt) {
   char* error = NULL;
-  const uint64 value = strtoull(str, &error, 16);
+  const uint64_t value = strtoull(str, &error, 16);
   return (error == str) ? deflt : value;
 }
-}
+
+}  // namespace
 
 namespace net {
 
@@ -185,7 +176,7 @@ bool UrlToFilenameEncoder::Decode(const string& encoded_filename,
         }
         break;
       case kEscape:
-        if (HexDigitsPrefix(&ch, 1) == 1) {
+        if (base::IsHexDigit(ch)) {
           hex_buffer[0] = ch;
           state = kFirstDigit;
         } else if (ch == kTruncationChar) {
@@ -203,9 +194,9 @@ bool UrlToFilenameEncoder::Decode(const string& encoded_filename,
         }
         break;
       case kFirstDigit:
-        if (HexDigitsPrefix(&ch, 1) == 1) {
+        if (base::IsHexDigit(ch)) {
           hex_buffer[1] = ch;
-          uint64 hex_value = ParseLeadingHex64Value(hex_buffer, 0);
+          uint64_t hex_value = ParseLeadingHex64Value(hex_buffer, 0);
           decoded_url->append(1, static_cast<char>(hex_value));
           state = kStart;
         } else {

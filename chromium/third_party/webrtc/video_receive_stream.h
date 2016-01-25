@@ -43,15 +43,6 @@ class VideoReceiveStream : public ReceiveStream {
     // Name of the decoded payload (such as VP8). Maps back to the depacketizer
     // used to unpack incoming packets.
     std::string payload_name;
-
-    // 'true' if the decoder handles rendering as well.
-    bool is_renderer = false;
-
-    // The expected delay for decoding and rendering, i.e. the frame will be
-    // delivered this many milliseconds, if possible, earlier than the ideal
-    // render time.
-    // Note: Ignored if 'renderer' is false.
-    int expected_delay_ms = 0;
   };
 
   struct Stats {
@@ -60,6 +51,7 @@ class VideoReceiveStream : public ReceiveStream {
     int render_frame_rate = 0;
 
     // Decoder stats.
+    std::string decoder_implementation_name = "unknown";
     FrameCounts frame_counts;
     int decode_ms = 0;
     int max_decode_ms = 0;
@@ -113,6 +105,9 @@ class VideoReceiveStream : public ReceiveStream {
       // See draft-alvestrand-rmcat-remb for information.
       bool remb = false;
 
+      // See draft-holmer-rmcat-transport-wide-cc-extensions for details.
+      bool transport_cc = false;
+
       // See NackConfig for description.
       NackConfig nack;
 
@@ -132,6 +127,11 @@ class VideoReceiveStream : public ReceiveStream {
       // Map from video RTP payload type -> RTX config.
       typedef std::map<int, Rtx> RtxMap;
       RtxMap rtx;
+
+      // If set to true, the RTX payload type mapping supplied in |rtx| will be
+      // used when restoring RTX packets. Without it, RTX packets will always be
+      // restored to the last non-RTX packet payload type received.
+      bool use_rtx_payload_mapping_on_restore = false;
 
       // RTP header extensions used for the received stream.
       std::vector<RtpExtension> extensions;

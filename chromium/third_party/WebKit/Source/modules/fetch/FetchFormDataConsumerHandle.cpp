@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchFormDataConsumerHandle.h"
 
 #include "modules/fetch/DataConsumerHandleUtil.h"
@@ -56,6 +55,18 @@ public:
         Mutex m;
         MutexLocker locker(m);
         return ReaderImpl::create(this, client);
+    }
+
+    PassRefPtr<BlobDataHandle> drainAsBlobDataHandle()
+    {
+        if (!m_formData)
+            return nullptr;
+        flatten();
+        OwnPtr<BlobData> blobData = BlobData::create();
+        blobData->appendBytes(m_flattenFormData.data(), m_flattenFormData.size());
+        m_flattenFormData.clear();
+        auto length = blobData->length();
+        return BlobDataHandle::create(blobData.release(), length);
     }
 
     PassRefPtr<EncodedFormData> drainFormData()
@@ -123,6 +134,11 @@ private:
         Result endRead(size_t read) override
         {
             return m_context->endRead(read);
+        }
+        PassRefPtr<BlobDataHandle> drainAsBlobDataHandle(BlobSizePolicy) override
+        {
+            // A "simple" FormData always has a finite known size.
+            return m_context->drainAsBlobDataHandle();
         }
         PassRefPtr<EncodedFormData> drainAsFormData() override
         {

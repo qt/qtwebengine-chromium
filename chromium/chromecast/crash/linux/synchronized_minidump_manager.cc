@@ -7,13 +7,17 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <utility>
 
+#include "base/files/dir_reader_posix.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
@@ -267,15 +271,15 @@ int SynchronizedMinidumpManager::ParseFiles() {
     scoped_ptr<base::Value> dump_info = DeserializeFromJson(line);
     DumpInfo info(dump_info.get());
     RCHECK(info.valid(), -1);
-    dumps->Append(dump_info.Pass());
+    dumps->Append(std::move(dump_info));
   }
 
   scoped_ptr<base::Value> metadata =
       DeserializeJsonFromFile(base::FilePath(metadata_path_));
   RCHECK(ValidateMetadata(metadata.get()), -1);
 
-  dumps_ = dumps.Pass();
-  metadata_ = metadata.Pass();
+  dumps_ = std::move(dumps);
+  metadata_ = std::move(metadata);
   return 0;
 }
 
@@ -360,7 +364,7 @@ ScopedVector<DumpInfo> SynchronizedMinidumpManager::GetDumps() {
     dumps.push_back(new DumpInfo(elem));
   }
 
-  return dumps.Pass();
+  return dumps;
 }
 
 int SynchronizedMinidumpManager::SetCurrentDumps(
@@ -401,6 +405,31 @@ bool SynchronizedMinidumpManager::CanUploadDump() {
   }
 
   return period_dumps_count < kRatelimitPeriodMaxDumps;
+}
+
+bool SynchronizedMinidumpManager::HasDumps() {
+  // Check if lockfile has entries.
+  int64_t size = 0;
+  if (GetFileSize(base::FilePath(lockfile_path_), &size) && size > 0)
+    return true;
+
+  // Check if any files are in minidump directory
+  base::DirReaderPosix reader(dump_path_.value().c_str());
+  if (!reader.IsValid()) {
+    DLOG(FATAL) << "Could not open minidump dir: " << dump_path_.value();
+    return false;
+  }
+
+  while (reader.Next()) {
+    if (strcmp(reader.name(), ".") == 0 || strcmp(reader.name(), "..") == 0)
+      continue;
+
+    const std::string file_path = dump_path_.Append(reader.name()).value();
+    if (file_path != lockfile_path_ && file_path != metadata_path_)
+      return true;
+  }
+
+  return false;
 }
 
 }  // namespace chromecast

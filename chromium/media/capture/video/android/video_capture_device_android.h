@@ -9,11 +9,16 @@
 #include <string>
 
 #include "base/android/scoped_java_ref.h"
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/capture/video/video_capture_device.h"
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_
 
 namespace media {
 
@@ -54,13 +59,15 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
 
   // Implement org.chromium.media.VideoCapture.nativeOnFrameAvailable.
   void OnFrameAvailable(JNIEnv* env,
-                        jobject obj,
-                        jbyteArray data,
+                        const base::android::JavaParamRef<jobject>& obj,
+                        const base::android::JavaParamRef<jbyteArray>& data,
                         jint length,
                         jint rotation);
 
   // Implement org.chromium.media.VideoCapture.nativeOnError.
-  void OnError(JNIEnv* env, jobject obj, jstring message);
+  void OnError(JNIEnv* env,
+               const base::android::JavaParamRef<jobject>& obj,
+               const base::android::JavaParamRef<jstring>& message);
 
  private:
   enum InternalState {
@@ -70,7 +77,8 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
   };
 
   VideoPixelFormat GetColorspace();
-  void SetErrorState(const std::string& reason);
+  void SetErrorState(const tracked_objects::Location& from_here,
+                     const std::string& reason);
 
   // Prevent racing on accessing |state_| and |client_| since both could be
   // accessed from different threads.

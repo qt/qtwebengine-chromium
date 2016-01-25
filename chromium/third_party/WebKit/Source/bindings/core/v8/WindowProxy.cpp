@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/WindowProxy.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
@@ -145,16 +144,22 @@ void WindowProxy::clearForNavigation()
     disposeContext(DetachGlobal);
 }
 
-void WindowProxy::takeGlobalFrom(WindowProxy* windowProxy)
+v8::Local<v8::Object> WindowProxy::releaseGlobal()
 {
-    v8::HandleScope handleScope(m_isolate);
-    ASSERT(!windowProxy->isContextInitialized());
+    ASSERT(!isContextInitialized());
     // If a ScriptState was created, the context was initialized at some point.
     // Make sure the global object was detached from the proxy by calling clearForNavigation().
-    if (windowProxy->m_scriptState)
-        ASSERT(windowProxy->m_scriptState->isGlobalObjectDetached());
-    m_global.set(m_isolate, windowProxy->m_global.newLocal(m_isolate));
-    windowProxy->m_global.clear();
+    if (m_scriptState)
+        ASSERT(m_scriptState->isGlobalObjectDetached());
+    v8::Local<v8::Object> global = m_global.newLocal(m_isolate);
+    m_global.clear();
+    return global;
+}
+
+void WindowProxy::setGlobal(v8::Local<v8::Object> global)
+{
+    m_global.set(m_isolate, global);
+
     // Initialize the window proxy now, to re-establish the connection between
     // the global object and the v8::Context. This is really only needed for a
     // RemoteDOMWindow, since it has no scripting environment of its own.
@@ -267,7 +272,7 @@ namespace {
 void configureInnerGlobalObjectTemplate(v8::Local<v8::ObjectTemplate> templ, v8::Isolate* isolate)
 {
     // Install a security handler with V8.
-    templ->SetAccessCheckCallbacks(V8Window::namedSecurityCheckCustom, V8Window::indexedSecurityCheckCustom, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&V8Window::wrapperTypeInfo)));
+    templ->SetAccessCheckCallback(V8Window::securityCheckCustom, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&V8Window::wrapperTypeInfo)));
     templ->SetInternalFieldCount(V8Window::internalFieldCount);
 }
 
@@ -352,7 +357,12 @@ bool WindowProxy::installDOMWindow()
         return false;
     windowWrapper = V8DOMWrapper::associateObjectWithWrapper(m_isolate, window, wrapperTypeInfo, windowWrapper);
 
-    V8DOMWrapper::setNativeInfo(v8::Local<v8::Object>::Cast(windowWrapper->GetPrototype()), wrapperTypeInfo, window);
+    v8::Local<v8::Object> windowPrototype = v8::Local<v8::Object>::Cast(windowWrapper->GetPrototype());
+    RELEASE_ASSERT(!windowPrototype.IsEmpty());
+    V8DOMWrapper::setNativeInfo(windowPrototype, wrapperTypeInfo, window);
+    v8::Local<v8::Object> windowProperties = v8::Local<v8::Object>::Cast(windowPrototype->GetPrototype());
+    RELEASE_ASSERT(!windowProperties.IsEmpty());
+    V8DOMWrapper::setNativeInfo(windowProperties, wrapperTypeInfo, window);
 
     // Install the windowWrapper as the prototype of the innerGlobalObject.
     // The full structure of the global object is as follows:
@@ -361,6 +371,7 @@ bool WindowProxy::installDOMWindow()
     //   -- has prototype --> innerGlobalObject (Holds global variables, changes during navigation)
     //   -- has prototype --> DOMWindow instance
     //   -- has prototype --> Window.prototype
+    //   -- has prototype --> WindowProperties (named properties object)
     //   -- has prototype --> EventTarget.prototype
     //   -- has prototype --> Object.prototype
     //
@@ -406,15 +417,13 @@ void WindowProxy::updateDocumentProperty()
     checkDocumentWrapper(m_document.newLocal(m_isolate), frame->document());
 
     ASSERT(documentWrapper->IsObject());
-    // TODO(bashi): Avoid using ForceSet(). When we use accessors to implement
-    // attributes, we may be able to remove updateDocumentProperty().
-    if (!v8CallBoolean(context->Global()->ForceSet(context, v8AtomicString(m_isolate, "document"), documentWrapper, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete))))
+    if (!v8CallBoolean(context->Global()->DefineOwnProperty(context, v8AtomicString(m_isolate, "document"), documentWrapper, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete))))
         return;
 
     // We also stash a reference to the document on the inner global object so that
     // LocalDOMWindow objects we obtain from JavaScript references are guaranteed to have
     // live Document objects.
-    V8HiddenValue::setHiddenValue(m_isolate, toInnerGlobalObject(context), V8HiddenValue::document(m_isolate), documentWrapper);
+    V8HiddenValue::setHiddenValue(m_scriptState.get(), toInnerGlobalObject(context), V8HiddenValue::document(m_isolate), documentWrapper);
 }
 
 void WindowProxy::updateActivityLogger()

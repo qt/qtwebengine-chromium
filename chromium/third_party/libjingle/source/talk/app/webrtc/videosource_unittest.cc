@@ -144,9 +144,9 @@ class VideoSourceTest : public testing::Test {
   void CreateVideoSource(
       const webrtc::MediaConstraintsInterface* constraints) {
     // VideoSource take ownership of |capturer_|
-    source_ = VideoSource::Create(channel_manager_.get(),
-                                  capturer_cleanup_.release(),
-                                  constraints);
+    source_ =
+        VideoSource::Create(channel_manager_.get(), capturer_cleanup_.release(),
+                            constraints, false);
 
     ASSERT_TRUE(source_.get() != NULL);
     EXPECT_EQ(capturer_, source_->GetVideoCapturer());
@@ -210,8 +210,7 @@ TEST_F(VideoSourceTest, StopRestart) {
 // RemoteVideoCapturer and takes video frames from FrameInput.
 TEST_F(VideoSourceTest, StartStopRemote) {
   source_ = VideoSource::Create(channel_manager_.get(),
-                                new webrtc::RemoteVideoCapturer(),
-                                NULL);
+                                new webrtc::RemoteVideoCapturer(), NULL, true);
 
   ASSERT_TRUE(source_.get() != NULL);
   EXPECT_TRUE(NULL != source_->GetVideoCapturer());
@@ -392,16 +391,14 @@ TEST_F(VideoSourceTest, SetValidOptionValues) {
 
   CreateVideoSource(&constraints);
 
-  bool value = true;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_FALSE(value);
+  EXPECT_EQ(rtc::Optional<bool>(false),
+            source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, OptionNotSet) {
   FakeConstraints constraints;
   CreateVideoSource(&constraints);
-  bool value;
-  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
+  EXPECT_EQ(rtc::Optional<bool>(), source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, MandatoryOptionOverridesOptional) {
@@ -413,9 +410,8 @@ TEST_F(VideoSourceTest, MandatoryOptionOverridesOptional) {
 
   CreateVideoSource(&constraints);
 
-  bool value = false;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_TRUE(value);
+  EXPECT_EQ(rtc::Optional<bool>(true),
+            source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, InvalidOptionKeyOptional) {
@@ -428,9 +424,8 @@ TEST_F(VideoSourceTest, InvalidOptionKeyOptional) {
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
       kMaxWaitMs);
-  bool value = true;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_FALSE(value);
+  EXPECT_EQ(rtc::Optional<bool>(false),
+            source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, InvalidOptionKeyMandatory) {
@@ -443,8 +438,7 @@ TEST_F(VideoSourceTest, InvalidOptionKeyMandatory) {
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kEnded, state_observer_->state(),
       kMaxWaitMs);
-  bool value;
-  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
+  EXPECT_EQ(rtc::Optional<bool>(), source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, InvalidOptionValueOptional) {
@@ -456,8 +450,7 @@ TEST_F(VideoSourceTest, InvalidOptionValueOptional) {
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
       kMaxWaitMs);
-  bool value = false;
-  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
+  EXPECT_EQ(rtc::Optional<bool>(), source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
@@ -473,8 +466,7 @@ TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kEnded, state_observer_->state(),
       kMaxWaitMs);
-  bool value;
-  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
+  EXPECT_EQ(rtc::Optional<bool>(), source_->options()->video_noise_reduction);
 }
 
 TEST_F(VideoSourceTest, MixedOptionsAndConstraints) {
@@ -497,9 +489,8 @@ TEST_F(VideoSourceTest, MixedOptionsAndConstraints) {
   EXPECT_EQ(288, format->height);
   EXPECT_EQ(30, format->framerate());
 
-  bool value = true;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_FALSE(value);
+  EXPECT_EQ(rtc::Optional<bool>(false),
+            source_->options()->video_noise_reduction);
 }
 
 // Tests that the source starts video with the default resolution for

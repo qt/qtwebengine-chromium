@@ -22,8 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioProcessingEvent.h"
 
 namespace blink {
@@ -68,4 +66,3 @@ DEFINE_TRACE(AudioProcessingEvent)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

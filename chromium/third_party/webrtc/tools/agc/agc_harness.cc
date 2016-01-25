@@ -12,10 +12,11 @@
 
 #include "gflags/gflags.h"
 #include "webrtc/base/checks.h"
+#include "webrtc/base/format_macros.h"
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
-#include "webrtc/system_wrappers/interface/trace.h"
-#include "webrtc/test/channel_transport/include/channel_transport.h"
+#include "webrtc/system_wrappers/include/sleep.h"
+#include "webrtc/system_wrappers/include/trace.h"
+#include "webrtc/test/channel_transport/channel_transport.h"
 #include "webrtc/test/testsupport/trace_to_stderr.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/voice_engine/include/voe_audio_processing.h"
@@ -176,8 +177,8 @@ class AgcVoiceEngine {
     printf("Codecs:\n");
     for (int i = 0; i < codec_->NumOfCodecs(); i++) {
       RTC_CHECK_EQ(0, codec_->GetCodec(i, params));
-      printf("%d %s/%d/%d\n", params.pltype, params.plname, params.plfreq,
-             params.channels);
+      printf("%d %s/%d/%" PRIuS "\n", params.pltype, params.plname,
+             params.plfreq, params.channels);
     }
   }
 

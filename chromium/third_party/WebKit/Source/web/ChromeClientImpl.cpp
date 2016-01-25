@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/ChromeClientImpl.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -65,8 +64,10 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCursorInfo.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/WebViewScheduler.h"
 #include "public/web/WebAXObject.h"
 #include "public/web/WebAutofillClient.h"
 #include "public/web/WebColorChooser.h"
@@ -120,6 +121,7 @@ static WebAXEvent toWebAXEvent(AXObjectCache::AXNotification notification)
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     : m_webView(webView)
     , m_cursorOverridden(false)
+    , m_didRequestNonEmptyToolTip(false)
 {
 }
 
@@ -205,13 +207,6 @@ void ChromeClientImpl::focusedNodeChanged(Node* fromNode, Node* toNode)
     if (toNode && toNode->isElementNode() && toElement(toNode)->isLiveLink() && toNode->shouldHaveFocusAppearance())
         focusURL = toElement(toNode)->hrefURL();
     m_webView->client()->setKeyboardFocusURL(focusURL);
-}
-
-void ChromeClientImpl::focusedFrameChanged(LocalFrame* frame)
-{
-    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
-    if (webframe && webframe->client())
-        webframe->client()->frameFocused();
 }
 
 bool ChromeClientImpl::hadFormInteraction() const
@@ -303,7 +298,7 @@ WebNavigationPolicy effectiveNavigationPolicy(NavigationPolicy navigationPolicy,
 } // namespace
 
 Page* ChromeClientImpl::createWindow(LocalFrame* frame, const FrameLoadRequest& r, const WindowFeatures& features,
-    NavigationPolicy navigationPolicy, ShouldSendReferrer shouldSendReferrer)
+    NavigationPolicy navigationPolicy, ShouldSetOpener shouldSetOpener)
 {
     if (!m_webView->client())
         return nullptr;
@@ -313,7 +308,7 @@ Page* ChromeClientImpl::createWindow(LocalFrame* frame, const FrameLoadRequest& 
     Fullscreen::fullyExitFullscreen(*frame->document());
 
     WebViewImpl* newView = toWebViewImpl(
-        m_webView->client()->createView(WebLocalFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSendReferrer == NeverSendReferrer));
+        m_webView->client()->createView(WebLocalFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSetOpener == NeverSetOpener));
     if (!newView)
         return nullptr;
     return newView->page();
@@ -403,23 +398,17 @@ bool ChromeClientImpl::canOpenBeforeUnloadConfirmPanel()
     return !!m_webView->client();
 }
 
-bool ChromeClientImpl::openBeforeUnloadConfirmPanelDelegate(LocalFrame* frame, const String& message)
+bool ChromeClientImpl::openBeforeUnloadConfirmPanelDelegate(LocalFrame* frame, const String& message, bool isReload)
 {
     notifyPopupOpeningObservers();
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
-
-    WebDataSource* ds = webframe->provisionalDataSource();
-    bool isReload = ds && (ds->navigationType() == WebNavigationTypeReload);
-
-    if (webframe->client())
-        return webframe->client()->runModalBeforeUnloadDialog(isReload, message);
-    return false;
+    return webframe->client() && webframe->client()->runModalBeforeUnloadDialog(isReload, message);
 }
 
 void ChromeClientImpl::closeWindowSoon()
 {
     // Make sure this Page can no longer be found by JS.
-    Page::ordinaryPages().remove(m_webView->page());
+    m_webView->page()->willBeClosed();
 
     // Make sure that all loading is stopped.  Ensures that JS stops executing!
     m_webView->mainFrame()->stopLoading();
@@ -497,31 +486,36 @@ void ChromeClientImpl::invalidateRect(const IntRect& updateRect)
         m_webView->invalidateRect(updateRect);
 }
 
-void ChromeClientImpl::scheduleAnimation()
+void ChromeClientImpl::scheduleAnimation(Widget* widget)
 {
-    m_webView->scheduleAnimation();
-}
+    ASSERT(widget->isFrameView());
+    FrameView* view = toFrameView(widget);
+    LocalFrame* frame = view->frame().localFrameRoot();
 
-void ChromeClientImpl::scheduleAnimationForFrame(LocalFrame* localRoot)
-{
-    ASSERT(WebLocalFrameImpl::fromFrame(localRoot));
     // If the frame is still being created, it might not yet have a WebWidget.
     // FIXME: Is this the right thing to do? Is there a way to avoid having
     // a local frame root that doesn't have a WebWidget? During initialization
     // there is no content to draw so this call serves no purpose.
-    if (WebLocalFrameImpl::fromFrame(localRoot)->frameWidget())
-        toWebFrameWidgetImpl(WebLocalFrameImpl::fromFrame(localRoot)->frameWidget())->scheduleAnimation();
+    if (WebLocalFrameImpl::fromFrame(frame) && WebLocalFrameImpl::fromFrame(frame)->frameWidget()) {
+        WebLocalFrameImpl::fromFrame(frame)->frameWidget()->scheduleAnimation();
+    } else {
+        // TODO(lfg): We need to keep this for now because we still have some
+        // WebViews who don't have a WebViewFrameWidget. This should be
+        // removed once the WebViewFrameWidget refactor is complete.
+        m_webView->scheduleAnimation();
+    }
 }
 
 IntRect ChromeClientImpl::viewportToScreen(const IntRect& rectInViewport) const
 {
-    IntRect screenRect(rectInViewport);
+    WebRect screenRect(rectInViewport);
 
     if (m_webView->client()) {
+        m_webView->client()->convertViewportToWindow(&screenRect);
         WebRect windowRect = m_webView->client()->windowRect();
-        screenRect.move(windowRect.x, windowRect.y);
+        screenRect.x += windowRect.x;
+        screenRect.y += windowRect.y;
     }
-
     return screenRect;
 }
 
@@ -580,8 +574,17 @@ void ChromeClientImpl::showMouseOverURL(const HitTestResult& result)
 
 void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
 {
-    if (m_webView->client())
+    if (!m_webView->client())
+        return;
+    if (!tooltipText.isEmpty()) {
         m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
+        m_didRequestNonEmptyToolTip = true;
+    } else if (m_didRequestNonEmptyToolTip) {
+        // WebViewClient::setToolTipText will send an IPC message.  We'd like to
+        // reduce the number of setToolTipText calls.
+        m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
+        m_didRequestNonEmptyToolTip = false;
+    }
 }
 
 void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportDescription& description) const
@@ -607,7 +610,7 @@ PassOwnPtrWillBeRawPtr<ColorChooser> ChromeClientImpl::openColorChooser(LocalFra
     return controller.release();
 }
 
-PassRefPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
 {
     notifyPopupOpeningObservers();
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -663,13 +666,13 @@ Cursor ChromeClientImpl::lastSetCursorForTesting() const
     return m_lastSetMouseCursorForTesting;
 }
 
-void ChromeClientImpl::setCursor(const Cursor& cursor)
+void ChromeClientImpl::setCursor(const Cursor& cursor, LocalFrame* localRoot)
 {
     m_lastSetMouseCursorForTesting = cursor;
-    setCursor(WebCursorInfo(cursor));
+    setCursor(WebCursorInfo(cursor), localRoot);
 }
 
-void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
+void ChromeClientImpl::setCursor(const WebCursorInfo& cursor, LocalFrame* localRoot)
 {
     if (m_cursorOverridden)
         return;
@@ -680,13 +683,25 @@ void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
     if (m_webView->hasOpenedPopup())
         return;
 #endif
-    if (m_webView->client())
+    if (!m_webView->client())
+        return;
+    // TODO(kenrb, dcheng): For top-level frames we still use the WebView as
+    // a WebWidget. This special case will be removed when top-level frames
+    // get WebFrameWidgets.
+    if (localRoot->isMainFrame()) {
         m_webView->client()->didChangeCursor(cursor);
+    } else {
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(localRoot);
+        ASSERT(webFrame);
+        ASSERT(webFrame->frameWidget());
+        if (toWebFrameWidgetImpl(webFrame->frameWidget())->client())
+            toWebFrameWidgetImpl(webFrame->frameWidget())->client()->didChangeCursor(cursor);
+    }
 }
 
-void ChromeClientImpl::setCursorForPlugin(const WebCursorInfo& cursor)
+void ChromeClientImpl::setCursorForPlugin(const WebCursorInfo& cursor, LocalFrame* localRoot)
 {
-    setCursor(cursor);
+    setCursor(cursor, localRoot);
 }
 
 void ChromeClientImpl::setCursorOverridden(bool overridden)
@@ -735,16 +750,11 @@ void ChromeClientImpl::attachRootGraphicsLayer(GraphicsLayer* rootLayer, LocalFr
     }
 }
 
-void ChromeClientImpl::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
+void ChromeClientImpl::didPaint(const PaintArtifact& paintArtifact)
 {
-    m_webView->setCompositedDisplayList(compositedDisplayList);
-}
-
-CompositedDisplayList* ChromeClientImpl::compositedDisplayListForTesting()
-{
-    if (WebCompositedDisplayList* compositedDisplayList = m_webView->compositedDisplayList())
-        return compositedDisplayList->compositedDisplayListForTesting();
-    return nullptr;
+    // TODO(jbroman): This doesn't handle OOPIF correctly. We probably need a
+    // branch for WebFrameWidget, like attachRootGraphicsLayer.
+    m_webView->paintArtifactCompositor().update(paintArtifact);
 }
 
 void ChromeClientImpl::attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* compositorTimeline, LocalFrame* localRoot)
@@ -842,14 +852,14 @@ bool ChromeClientImpl::shouldOpenModalDialogDuringPageDismissal(const DialogType
     const char* kDialogs[] = {"alert", "confirm", "prompt"};
     int dialog = static_cast<int>(dialogType);
     ASSERT_WITH_SECURITY_IMPLICATION(0 <= dialog);
-    ASSERT_WITH_SECURITY_IMPLICATION(dialog < static_cast<int>(arraysize(kDialogs)));
+    ASSERT_WITH_SECURITY_IMPLICATION(dialog < static_cast<int>(WTF_ARRAY_LENGTH(kDialogs)));
 
     const char* kDismissals[] = {"beforeunload", "pagehide", "unload"};
     int dismissal = static_cast<int>(dismissalType) - 1; // Exclude NoDismissal.
     ASSERT_WITH_SECURITY_IMPLICATION(0 <= dismissal);
-    ASSERT_WITH_SECURITY_IMPLICATION(dismissal < static_cast<int>(arraysize(kDismissals)));
+    ASSERT_WITH_SECURITY_IMPLICATION(dismissal < static_cast<int>(WTF_ARRAY_LENGTH(kDismissals)));
 
-    Platform::current()->histogramEnumeration("Renderer.ModalDialogsDuringPageDismissal", dismissal * arraysize(kDialogs) + dialog, arraysize(kDialogs) * arraysize(kDismissals));
+    Platform::current()->histogramEnumeration("Renderer.ModalDialogsDuringPageDismissal", dismissal * WTF_ARRAY_LENGTH(kDialogs) + dialog, WTF_ARRAY_LENGTH(kDialogs) * WTF_ARRAY_LENGTH(kDismissals));
 
     String message = String("Blocked ") + kDialogs[dialog] + "('" + dialogMessage + "') during " + kDismissals[dismissal] + ".";
     m_webView->mainFrame()->addMessageToConsole(WebConsoleMessage(WebConsoleMessage::LevelError, message));
@@ -1012,6 +1022,11 @@ void ChromeClientImpl::didObserveNonGetFetchFromScript() const
 {
     if (m_webView->pageImportanceSignals())
         m_webView->pageImportanceSignals()->setIssuedNonGetFetchFromScript();
+}
+
+PassOwnPtr<WebFrameScheduler> ChromeClientImpl::createFrameScheduler()
+{
+    return m_webView->scheduler()->createFrameScheduler().release();
 }
 
 } // namespace blink

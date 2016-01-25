@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLStyleElement.h"
 
 #include "core/HTMLNames.h"
@@ -37,8 +36,8 @@ using namespace HTMLNames;
 
 static StyleEventSender& styleLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(StyleEventSender, sharedLoadEventSender, (EventTypeNames::load));
-    return sharedLoadEventSender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<StyleEventSender>, sharedLoadEventSender, (StyleEventSender::create(EventTypeNames::load)));
+    return *sharedLoadEventSender;
 }
 
 inline HTMLStyleElement::HTMLStyleElement(Document& document, bool createdByParser)
@@ -53,9 +52,9 @@ HTMLStyleElement::~HTMLStyleElement()
 {
 #if !ENABLE(OILPAN)
     StyleElement::clearDocumentData(document(), this);
-#endif
 
     styleLoadEventSender().cancelEvent(this);
+#endif
 }
 
 PassRefPtrWillBeRawPtr<HTMLStyleElement> HTMLStyleElement::create(Document& document, bool createdByParser)
@@ -63,7 +62,7 @@ PassRefPtrWillBeRawPtr<HTMLStyleElement> HTMLStyleElement::create(Document& docu
     return adoptRefWillBeNoop(new HTMLStyleElement(document, createdByParser));
 }
 
-void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == titleAttr && m_sheet) {
         m_sheet->setTitle(value);
@@ -71,7 +70,7 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_sheet->setMediaQueries(MediaQuerySet::create(value));
         document().modifiedStyleSheet(m_sheet.get());
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -117,17 +116,6 @@ const AtomicString& HTMLStyleElement::media() const
 const AtomicString& HTMLStyleElement::type() const
 {
     return getAttribute(typeAttr);
-}
-
-ContainerNode* HTMLStyleElement::scopingNode()
-{
-    if (!inDocument())
-        return nullptr;
-
-    if (isInShadowTree())
-        return containingShadowRoot();
-
-    return &document();
 }
 
 void HTMLStyleElement::dispatchPendingLoadEvents()

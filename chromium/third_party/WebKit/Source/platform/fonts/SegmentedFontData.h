@@ -28,30 +28,10 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/fonts/FontData.h"
-#include "wtf/Vector.h"
+#include "platform/fonts/FontDataRange.h"
+#include "platform/fonts/SimpleFontData.h"
 
 namespace blink {
-
-class SimpleFontData;
-
-struct FontDataRange {
-    FontDataRange(UChar32 from, UChar32 to, PassRefPtr<SimpleFontData> fontData)
-        : m_from(from)
-        , m_to(to)
-        , m_fontData(fontData)
-    {
-    }
-
-    UChar32 from() const { return m_from; }
-    UChar32 to() const { return m_to; }
-    bool isEntireRange() const { return !m_from && m_to >= 0x10ffff; }
-    PassRefPtr<SimpleFontData> fontData() const { return m_fontData; }
-
-private:
-    UChar32 m_from;
-    UChar32 m_to;
-    RefPtr<SimpleFontData> m_fontData;
-};
 
 class PLATFORM_EXPORT SegmentedFontData : public FontData {
 public:

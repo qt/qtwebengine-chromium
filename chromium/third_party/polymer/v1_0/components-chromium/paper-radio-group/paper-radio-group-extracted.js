@@ -1,5 +1,4 @@
-
-  Polymer({
+Polymer({
     is: 'paper-radio-group',
 
     behaviors: [
@@ -13,6 +12,12 @@
     },
 
     properties: {
+      /**
+       * Fired when the radio group selection changes.
+       *
+       * @event paper-radio-group-changed
+       */
+
       /**
        * Overriden from Polymer.IronSelectableBehavior
        */
@@ -35,6 +40,14 @@
       selectable: {
         type: String,
         value: 'paper-radio-button'
+      },
+
+      /**
+       * If true, radio-buttons can be deselected
+       */
+      allowEmptySelection: {
+        type: Boolean,
+        value: false
       }
     },
 
@@ -50,10 +63,16 @@
       if (this.selected) {
         var oldItem = this._valueToItem(this.selected);
 
-        // Do not allow unchecking the selected item.
         if (this.selected == value) {
-          oldItem.checked = true;
-          return;
+          // If deselecting is allowed we'll have to apply an empty selection.
+          // Otherwise, we should force the selection to stay and make this
+          // action a no-op.
+          if (this.allowEmptySelection) {
+            value = '';
+          } else {
+            oldItem.checked = true;
+            return;
+          }
         }
 
         if (oldItem)
@@ -76,7 +95,7 @@
         newIndex = (newIndex - 1 + length) % length;
       } while (this.items[newIndex].disabled)
 
-      this.select(this._indexToValue(newIndex));
+      this._itemActivate(this._indexToValue(newIndex), this.items[newIndex]);
     },
 
     /**
@@ -91,6 +110,6 @@
         newIndex = (newIndex + 1 + length) % length;
       } while (this.items[newIndex].disabled)
 
-      this.select(this._indexToValue(newIndex));
+      this._itemActivate(this._indexToValue(newIndex), this.items[newIndex]);
     },
   });

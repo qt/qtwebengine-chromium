@@ -8,7 +8,12 @@
   'variables': {
     'component%': 'static_library',
     'clang%': 0,
+    'asan%': 0,
+    'sanitizer_coverage%': 0,
+    'use_goma%': 0,
+    'gomadir%': '',
     'msvs_multi_core_compile%': '1',
+    'pdf_enable_xfa%': 1,
     'variables': {
       'variables': {
         'variables': {
@@ -37,6 +42,7 @@
       'host_arch%': '<(host_arch)',
       'target_arch%': '<(target_arch)',
     },
+    'clang_dir%': 'third_party/llvm-build/Release+Asserts',
     # These two are needed by V8.
     'host_arch%': '<(host_arch)',
     'target_arch%': '<(target_arch)',
@@ -44,11 +50,25 @@
     'v8_optimized_debug%': 0,
     'v8_use_external_startup_data%': 0,
     'icu_gyp_path': '../v8/third_party/icu/icu.gyp',
+    'libjpeg_gyp_path': '../third_party/third_party.gyp',
     'conditions': [
       ['OS == "win"', {
         'os_posix%': 0,
       }, {
         'os_posix%': 1,
+      }],
+      ['OS=="linux" or OS=="mac"', {
+        'clang%': 1,
+        'host_clang%': 1,
+      }, {
+        'clang%': 0,
+        'host_clang%': 0,
+      }],
+      # Set default gomadir.
+      ['OS=="win"', {
+        'gomadir%': 'c:\\goma\\goma-win',
+      }, {
+        'gomadir%': '<!(/bin/echo -n ${HOME}/goma)',
       }],
     ],
   },
@@ -80,6 +100,12 @@
         'xcode_settings': {
           'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
         },
+        'conditions': [
+          ['OS=="linux"', {
+            # Enable libstdc++ debugging to help catch problems early.
+            'defines': ['_GLIBCXX_DEBUG=1',],
+          }],
+        ],
       },
       'Release': {
         'cflags': [
@@ -171,12 +197,98 @@
       'IntermediateDirectory': '$(OutDir)\\obj\\$(ProjectName)',
       'CharacterSet': '1',
     },
-    'msvs_disabled_warnings': [4800, 4996, 4456, 4457, 4458, 4459, 4091],
-    # 4456, 4457, 4458, 4459 are variable shadowing warnings that are new in
-    # VS2015.
-    # C4091: 'typedef ': ignored on left of 'X' when no variable is
-    #                    declared.
-    # This happens in a number of Windows headers with VS 2015.
+    'msvs_disabled_warnings': [
+      # ####
+      # This section is PDFium specific.
+      # ####
+
+      # C4800: forcing value to bool 'true' or 'false' (performance warning)
+      4800,
+
+      # ####
+      # This section should match Chromium's build/common.gypi.
+      # ####
+
+      # C4091: 'typedef ': ignored on left of 'X' when no variable is
+      #                    declared.
+      # This happens in a number of Windows headers. Dumb.
+      4091,
+
+      # C4127: conditional expression is constant
+      # This warning can in theory catch dead code and other problems, but
+      # triggers in far too many desirable cases where the conditional
+      # expression is either set by macros or corresponds some legitimate
+      # compile-time constant expression (due to constant template args,
+      # conditionals comparing the sizes of different types, etc.).  Some of
+      # these can be worked around, but it's not worth it.
+      4127,
+
+      # C4351: new behavior: elements of array 'array' will be default
+      #        initialized
+      # This is a silly "warning" that basically just alerts you that the
+      # compiler is going to actually follow the language spec like it's
+      # supposed to, instead of not following it like old buggy versions
+      # did.  There's absolutely no reason to turn this on.
+      4351,
+
+      # C4355: 'this': used in base member initializer list
+      # It's commonly useful to pass |this| to objects in a class'
+      # initializer list.  While this warning can catch real bugs, most of
+      # the time the constructors in question don't attempt to call methods
+      # on the passed-in pointer (until later), and annotating every legit
+      # usage of this is simply more hassle than the warning is worth.
+      4355,
+
+      # C4503: 'identifier': decorated name length exceeded, name was
+      #        truncated
+      # This only means that some long error messages might have truncated
+      # identifiers in the presence of lots of templates.  It has no effect
+      # on program correctness and there's no real reason to waste time
+      # trying to prevent it.
+      4503,
+
+      # Warning C4589 says: "Constructor of abstract class ignores
+      # initializer for virtual base class." Disable this warning because it
+      # is flaky in VS 2015 RTM. It triggers on compiler generated
+      # copy-constructors in some cases.
+      4589,
+
+      # C4611: interaction between 'function' and C++ object destruction is
+      #        non-portable
+      # This warning is unavoidable when using e.g. setjmp/longjmp.  MSDN
+      # suggests using exceptions instead of setjmp/longjmp for C++, but
+      # Chromium code compiles without exception support.  We therefore have
+      # to use setjmp/longjmp for e.g. JPEG decode error handling, which
+      # means we have to turn off this warning (and be careful about how
+      # object destruction happens in such cases).
+      4611,
+
+      # TODO(thestig): These warnings are level 4. They will be slowly
+      # removed as code is fixed.
+      4100, # Unreferenced formal parameter
+      4121, # Alignment of a member was sensitive to packing
+      4244, # Conversion from 'type1' to 'type2', possible loss of data
+      4505, # Unreferenced local function has been removed
+      4510, # Default constructor could not be generated
+      4512, # Assignment operator could not be generated
+      4610, # Object can never be instantiated
+      4838, # Narrowing conversion. Doesn't seem to be very useful.
+      4995, # 'X': name was marked as #pragma deprecated
+      4996, # 'X': was declared deprecated (for GetVersionEx).
+
+      # These are variable shadowing warnings that are new in VS2015. We
+      # should work through these at some point -- they may be removed from
+      # the RTM release in the /W4 set.
+      4456, 4457, 4458, 4459,
+
+      # TODO(brucedawson): http://crbug.com/554200 4312 is a VS
+      # 2015 64-bit warning for integer to larger pointer
+      4312,
+
+      # ####
+      # Do not add PDFium specific entries here. Add them to the top.
+      # ####
+    ],
     'msvs_settings': {
       'VCCLCompilerTool': {
         'MinimalRebuild': 'false',
@@ -243,15 +355,35 @@
         '-Wno-unused-parameter',
       ],
     },
-  },
-  'conditions': [
-    ['component=="shared_library"', {
-      'cflags': [
-        '-fPIC',
-      ],
-    }],
-    ['OS=="win"', {
-      'target_defaults': {
+    'variables': {
+      'clang_warning_flags': [],
+    },
+    'includes': [ 'set_clang_warning_flags.gypi', ],
+    'conditions': [
+      ['component=="shared_library"', {
+        'cflags': [
+          '-fPIC',
+        ],
+      }],
+      ['asan==1', {
+        'defines': [
+          'ADDRESS_SANITIZER',
+          'LEAK_SANITIZER',
+        ],
+        'cflags': [
+          '-fsanitize=address',
+          '-gline-tables-only',
+        ],
+        'ldflags': [
+          '-fsanitize=address',
+        ],
+      }],
+      ['sanitizer_coverage!=0', {
+        'cflags': [
+          '-fsanitize-coverage=<(sanitizer_coverage)',
+        ],
+      }],
+      ['OS=="win"', {
         'defines': [
           'NOMINMAX',
           '_CRT_SECURE_NO_DEPRECATE',
@@ -263,28 +395,61 @@
               '_HAS_EXCEPTIONS=0',
             ],
           }],
+          ['use_goma==1', {
+            # goma doesn't support PDB yet.
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'GenerateDebugInformation': 'true',
+              },
+              'VCCLCompilerTool': {
+                'DebugInformationFormat': '1',
+              },
+            },
+          }],
         ],
-      },
-    }],  # OS=="win"
-    ['OS=="mac"', {
-      'target_defaults': {
+      }],  # OS=="win"
+      ['OS=="mac"', {
         'target_conditions': [
           ['_type!="static_library"', {
             'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-search_paths_first']},
           }],
         ],  # target_conditions
-      },  # target_defaults
-    }],  # OS=="mac"
-    ['v8_use_external_startup_data==1', {
-      'target_defaults': {
+      }],  # OS=="mac"
+      ['v8_use_external_startup_data==1', {
         'defines': [
           'V8_USE_EXTERNAL_STARTUP_DATA',
         ],
-      },
-    }],  # v8_use_external_startup_data==1
-  ],
+      }],  # v8_use_external_startup_data==1
+      ['clang==1 or host_clang==1', {
+        # This is here so that all files get recompiled after a clang roll and
+        # when turning clang on or off.
+        # (defines are passed via the command line, and build systems rebuild
+        # things when their commandline changes). Nothing should ever read this
+        # define.
+        'defines': ['CR_CLANG_REVISION=<!(python <(DEPTH)/tools/clang/scripts/update.py --print-revision)'],
+      }],
+    ],
+  },
   'xcode_settings': {
     # See comment in Chromium's common.gypi for why this is needed.
     'SYMROOT': '<(DEPTH)/xcodebuild',
-  }
+  },
+  'conditions': [
+    ['OS=="linux" or OS=="mac"', {
+      'conditions': [
+        ['clang==1', {
+          'make_global_settings': [
+            ['CC', '<(clang_dir)/bin/clang'],
+            ['CXX', '<(clang_dir)/bin/clang++'],
+          ],
+        }],
+      ],
+    }],  # OS=="linux" or OS=="mac"
+    ["use_goma==1", {
+      'make_global_settings': [
+        ['CC_wrapper', '<(gomadir)/gomacc'],
+        ['CXX_wrapper', '<(gomadir)/gomacc'],
+      ],
+    }],  # use_goma==1
+  ],
 }

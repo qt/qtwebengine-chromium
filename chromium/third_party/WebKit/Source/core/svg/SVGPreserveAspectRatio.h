@@ -21,6 +21,7 @@
 #ifndef SVGPreserveAspectRatio_h
 #define SVGPreserveAspectRatio_h
 
+#include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyHelper.h"
 
 namespace blink {
@@ -76,7 +77,7 @@ public:
                            float physWidth, float physHeight) const;
 
     String valueAsString() const override;
-    virtual void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
     bool parse(const UChar*& ptr, const UChar* end, bool validate);
     bool parse(const LChar*& ptr, const LChar* end, bool validate);
 
@@ -97,12 +98,7 @@ private:
     SVGMeetOrSliceType m_meetOrSlice;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio> toSVGPreserveAspectRatio(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGPreserveAspectRatio::classType());
-    return static_pointer_cast<SVGPreserveAspectRatio>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGPreserveAspectRatio);
 
 } // namespace blink
 

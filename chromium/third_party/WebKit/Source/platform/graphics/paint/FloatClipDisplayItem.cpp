@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/FloatClipDisplayItem.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -11,25 +10,25 @@
 
 namespace blink {
 
-void FloatClipDisplayItem::replay(GraphicsContext& context)
+void FloatClipDisplayItem::replay(GraphicsContext& context) const
 {
     context.save();
     context.clip(m_clipRect);
 }
 
-void FloatClipDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void FloatClipDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendFloatClipItem(m_clipRect);
+    list->appendFloatClipItem(visualRect, m_clipRect);
 }
 
-void EndFloatClipDisplayItem::replay(GraphicsContext& context)
+void EndFloatClipDisplayItem::replay(GraphicsContext& context) const
 {
     context.restore();
 }
 
-void EndFloatClipDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndFloatClipDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndFloatClipItem();
+    list->appendEndFloatClipItem(visualRect);
 }
 
 #ifndef NDEBUG

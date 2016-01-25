@@ -7,8 +7,6 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
-#include "base/basictypes.h"
-#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/resources/ui_resource_bitmap.h"
@@ -35,22 +33,22 @@ scoped_refptr<PaintedScrollbarLayer> PaintedScrollbarLayer::Create(
     const LayerSettings& settings,
     scoped_ptr<Scrollbar> scrollbar,
     int scroll_layer_id) {
-  return make_scoped_refptr(
-      new PaintedScrollbarLayer(settings, scrollbar.Pass(), scroll_layer_id));
+  return make_scoped_refptr(new PaintedScrollbarLayer(
+      settings, std::move(scrollbar), scroll_layer_id));
 }
 
 PaintedScrollbarLayer::PaintedScrollbarLayer(const LayerSettings& settings,
                                              scoped_ptr<Scrollbar> scrollbar,
                                              int scroll_layer_id)
     : Layer(settings),
-      scrollbar_(scrollbar.Pass()),
+      scrollbar_(std::move(scrollbar)),
       scroll_layer_id_(scroll_layer_id),
-      clip_layer_id_(Layer::INVALID_ID),
       internal_contents_scale_(1.f),
       thumb_thickness_(scrollbar_->ThumbThickness()),
       thumb_length_(scrollbar_->ThumbLength()),
       is_overlay_(scrollbar_->IsOverlay()),
-      has_thumb_(scrollbar_->HasThumb()) {
+      has_thumb_(scrollbar_->HasThumb()),
+      thumb_opacity_(scrollbar_->ThumbOpacity()) {
   if (!scrollbar_->IsOverlay())
     SetShouldScrollOnMainThread(true);
 }
@@ -66,14 +64,6 @@ void PaintedScrollbarLayer::SetScrollLayer(int layer_id) {
     return;
 
   scroll_layer_id_ = layer_id;
-  SetNeedsFullTreeSync();
-}
-
-void PaintedScrollbarLayer::SetClipLayer(int layer_id) {
-  if (layer_id == clip_layer_id_)
-    return;
-
-  clip_layer_id_ = layer_id;
   SetNeedsFullTreeSync();
 }
 
@@ -108,11 +98,10 @@ float PaintedScrollbarLayer::ClampScaleToMaxTextureSize(float scale) {
 void PaintedScrollbarLayer::PushPropertiesTo(LayerImpl* layer) {
   Layer::PushPropertiesTo(layer);
 
-  PushScrollClipPropertiesTo(layer);
-
   PaintedScrollbarLayerImpl* scrollbar_layer =
       static_cast<PaintedScrollbarLayerImpl*>(layer);
 
+  scrollbar_layer->SetScrollLayerId(scroll_layer_id_);
   scrollbar_layer->set_internal_contents_scale_and_bounds(
       internal_contents_scale_, internal_content_bounds_);
 
@@ -137,19 +126,13 @@ void PaintedScrollbarLayer::PushPropertiesTo(LayerImpl* layer) {
   else
     scrollbar_layer->set_thumb_ui_resource_id(0);
 
+  scrollbar_layer->set_thumb_opacity(thumb_opacity_);
+
   scrollbar_layer->set_is_overlay_scrollbar(is_overlay_);
 }
 
 ScrollbarLayerInterface* PaintedScrollbarLayer::ToScrollbarLayer() {
   return this;
-}
-
-void PaintedScrollbarLayer::PushScrollClipPropertiesTo(LayerImpl* layer) {
-  PaintedScrollbarLayerImpl* scrollbar_layer =
-      static_cast<PaintedScrollbarLayerImpl*>(layer);
-
-  scrollbar_layer->SetScrollLayerAndClipLayerByIds(scroll_layer_id_,
-                                                   clip_layer_id_);
 }
 
 void PaintedScrollbarLayer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -262,17 +245,24 @@ bool PaintedScrollbarLayer::Update() {
   if (update_rect_.IsEmpty() && track_resource_)
     return updated;
 
-  track_resource_ = ScopedUIResource::Create(
-      layer_tree_host(),
-      RasterizeScrollbarPart(track_layer_rect, scaled_track_rect, TRACK));
+  if (!track_resource_ || scrollbar_->NeedsPaintPart(TRACK)) {
+    track_resource_ = ScopedUIResource::Create(
+        layer_tree_host(),
+        RasterizeScrollbarPart(track_layer_rect, scaled_track_rect, TRACK));
+  }
 
   gfx::Rect thumb_layer_rect = OriginThumbRect();
   gfx::Rect scaled_thumb_rect =
       ScrollbarLayerRectToContentRect(thumb_layer_rect);
   if (has_thumb_ && !scaled_thumb_rect.IsEmpty()) {
-    thumb_resource_ = ScopedUIResource::Create(
-        layer_tree_host(),
-        RasterizeScrollbarPart(thumb_layer_rect, scaled_thumb_rect, THUMB));
+    if (!thumb_resource_ || scrollbar_->NeedsPaintPart(THUMB) ||
+        scaled_thumb_rect.size() !=
+            thumb_resource_->GetBitmap(0, false).GetSize()) {
+      thumb_resource_ = ScopedUIResource::Create(
+          layer_tree_host(),
+          RasterizeScrollbarPart(thumb_layer_rect, scaled_thumb_rect, THUMB));
+    }
+    thumb_opacity_ = scrollbar_->ThumbOpacity();
   }
 
   // UI resources changed so push properties is needed.

@@ -10,6 +10,7 @@
 #include <shlguid.h>
 
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/utf_string_conversions.h"
@@ -29,7 +30,6 @@
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/win/dpi.h"
-#include "ui/gfx/win/metro_mode.h"
 #include "win8/delegate_execute/chrome_util.h"
 #include "win8/delegate_execute/delegate_execute_util.h"
 #include "win8/viewer/metro_viewer_constants.h"
@@ -486,26 +486,7 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
     return launch_mode;
   }
 
-  if (!gfx::win::ShouldUseMetroMode()) {
-    launch_mode = ECHUIM_DESKTOP;
-    launch_mode_determined = true;
-    return launch_mode;
-  }
-
-  // Use the previous mode if available. Else launch in desktop mode.
-  DWORD reg_value;
-  if (reg_key.ReadValueDW(chrome::kLaunchModeValue,
-                          &reg_value) != ERROR_SUCCESS) {
-    launch_mode = ECHUIM_DESKTOP;
-    AtlTrace("Can't read registry, defaulting to %s\n", modes[launch_mode]);
-  } else if (reg_value >= ECHUIM_SYSTEM_LAUNCHER) {
-    AtlTrace("Invalid registry launch mode value %u\n", reg_value);
-    launch_mode = ECHUIM_DESKTOP;
-  } else {
-    launch_mode = static_cast<EC_HOST_UI_MODE>(reg_value);
-    AtlTrace("Launch mode forced by registry to %s\n", modes[launch_mode]);
-  }
-
+  launch_mode = ECHUIM_DESKTOP;
   launch_mode_determined = true;
   return launch_mode;
 }

@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/mediastream/MediaStreamCenter.h"
 
 #include "platform/mediastream/MediaStreamDescriptor.h"
@@ -126,10 +125,8 @@ void MediaStreamCenter::didCreateMediaStreamTrack(MediaStreamComponent* track)
 PassOwnPtr<AudioSourceProvider> MediaStreamCenter::createWebAudioSourceFromMediaStreamTrack(MediaStreamComponent* track)
 {
     ASSERT_UNUSED(track, track);
-#if ENABLE(WEB_AUDIO)
     if (m_private)
         return MediaStreamWebAudioSource::create(adoptPtr(m_private->createWebAudioSourceFromMediaStreamTrack(track)));
-#endif
 
     return nullptr;
 }

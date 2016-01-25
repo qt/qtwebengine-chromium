@@ -554,8 +554,9 @@ gl::Error TextureStorage11::generateMipmap(const gl::ImageIndex &sourceIndex, co
     gl::Extents destSize(dest->getWidth(), dest->getHeight(), dest->getDepth());
 
     Blit11 *blitter = mRenderer->getBlitter();
-    return blitter->copyTexture(sourceSRV, sourceArea, sourceSize, destRTV, destArea, destSize, NULL,
-                                gl::GetInternalFormatInfo(source->getInternalFormat()).format, GL_LINEAR);
+    return blitter->copyTexture(sourceSRV, sourceArea, sourceSize, destRTV, destArea, destSize,
+                                NULL, gl::GetInternalFormatInfo(source->getInternalFormat()).format,
+                                GL_LINEAR, false);
 }
 
 void TextureStorage11::verifySwizzleExists(GLenum swizzleRed, GLenum swizzleGreen, GLenum swizzleBlue, GLenum swizzleAlpha)
@@ -649,7 +650,10 @@ gl::Error TextureStorage11::setData(const gl::ImageIndex &index, ImageD3D *image
     int height = destBox ? destBox->height : static_cast<int>(image->getHeight());
     int depth = destBox ? destBox->depth : static_cast<int>(image->getDepth());
     UINT srcRowPitch = internalFormatInfo.computeRowPitch(type, width, unpack.alignment, unpack.rowLength);
-    UINT srcDepthPitch = internalFormatInfo.computeDepthPitch(type, width, height, unpack.alignment, unpack.rowLength);
+    UINT srcDepthPitch = internalFormatInfo.computeDepthPitch(type, width, height, unpack.alignment,
+                                                              unpack.rowLength, unpack.imageHeight);
+    GLsizei srcSkipBytes = internalFormatInfo.computeSkipPixels(
+        srcRowPitch, srcDepthPitch, unpack.skipImages, unpack.skipRows, unpack.skipPixels);
 
     const d3d11::TextureFormat &d3d11Format = d3d11::GetTextureFormatInfo(image->getInternalFormat(), mRenderer->getRenderer11DeviceCaps());
     const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(d3d11Format.texFormat);
@@ -669,8 +673,7 @@ gl::Error TextureStorage11::setData(const gl::ImageIndex &index, ImageD3D *image
 
     // TODO: fast path
     LoadImageFunction loadFunction = d3d11Format.loadFunctions.at(type);
-    loadFunction(width, height, depth,
-                 pixelData, srcRowPitch, srcDepthPitch,
+    loadFunction(width, height, depth, pixelData + srcSkipBytes, srcRowPitch, srcDepthPitch,
                  conversionBuffer->data(), bufferRowPitch, bufferDepthPitch);
 
     ID3D11DeviceContext *immediateContext = mRenderer->getDeviceContext();
@@ -2223,7 +2226,7 @@ gl::Error TextureStorage11_Cube::createSRV(int baseLevel, int mipLevels, DXGI_FO
     {
         srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
         srvDesc.Texture2DArray.MostDetailedMip = mTopLevel + baseLevel;
-        srvDesc.Texture2DArray.MipLevels = 1;
+        srvDesc.Texture2DArray.MipLevels       = mipLevels;
         srvDesc.Texture2DArray.FirstArraySlice = 0;
         srvDesc.Texture2DArray.ArraySize = CUBE_FACE_COUNT;
     }

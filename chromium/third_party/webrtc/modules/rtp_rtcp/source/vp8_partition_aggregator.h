@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -132,6 +132,6 @@ class Vp8PartitionAggregator {
 
   RTC_DISALLOW_COPY_AND_ASSIGN(Vp8PartitionAggregator);
 };
-}  // namespace
+}  // namespace webrtc
 
 #endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_VP8_PARTITION_AGGREGATOR_H_

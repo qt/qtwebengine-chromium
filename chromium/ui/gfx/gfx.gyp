@@ -25,7 +25,6 @@
         'geometry/dip_util.h',
         'geometry/insets.cc',
         'geometry/insets.h',
-        'geometry/insets_base.h',
         'geometry/insets_f.cc',
         'geometry/insets_f.h',
         'geometry/matrix3_f.cc',
@@ -124,9 +123,9 @@
         'animation/throb_animation.h',
         'animation/tween.cc',
         'animation/tween.h',
-        'break_list.h',
         'blit.cc',
         'blit.h',
+        'break_list.h',
         'break_list.h',
         'buffer_format_util.cc',
         'buffer_format_util.h',
@@ -180,7 +179,6 @@
         'gfx_export.h',
         'gfx_paths.cc',
         'gfx_paths.h',
-        
         'harfbuzz_font_skia.cc',
         'harfbuzz_font_skia.h',
         'hud_font.cc',
@@ -219,6 +217,8 @@
         'linux_font_delegate.h',
         'mac/coordinate_conversion.h',
         'mac/coordinate_conversion.mm',
+        'mac/io_surface.cc',
+        'mac/io_surface.h',
         'mac/nswindow_frame_controls.h',
         'mac/nswindow_frame_controls.mm',
         'mac/scoped_cocoa_disable_screen_updates.h',
@@ -255,8 +255,8 @@
         'render_text.h',
         'render_text_harfbuzz.cc',
         'render_text_harfbuzz.h',
-        'render_text_mac.cc',
         'render_text_mac.h',
+        'render_text_mac.mm',
         'scoped_canvas.h',
         'scoped_cg_context_save_gstate_mac.h',
         'scoped_ns_graphics_context_save_gstate_mac.h',
@@ -310,8 +310,6 @@
         'win/dpi.h',
         'win/hwnd_util.cc',
         'win/hwnd_util.h',
-        'win/metro_mode.cc',
-        'win/metro_mode.h',
         'win/scoped_set_map_mode.h',
         'win/singleton_hwnd.cc',
         'win/singleton_hwnd.h',
@@ -375,6 +373,13 @@
           # C4324 is structure was padded due to __declspec(align()), which is
           # uninteresting.
           'msvs_disabled_warnings': [ 4267, 4324 ],
+        }],
+        ['OS=="mac"', {
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
+            ],
+          },
         }],
         ['OS=="android"', {
           'sources!': [
@@ -464,6 +469,7 @@
       'type': '<(component)',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:base_i18n',
         '<(DEPTH)/skia/skia.gyp:skia',
         'gfx',
         'gfx_geometry',
@@ -519,8 +525,8 @@
         'test/fontconfig_util_linux.h',
         'test/gfx_util.cc',
         'test/gfx_util.h',
-        'test/test_screen.h',
         'test/test_screen.cc',
+        'test/test_screen.h',
         'test/ui_cocoa_test_helper.h',
         'test/ui_cocoa_test_helper.mm',
       ],

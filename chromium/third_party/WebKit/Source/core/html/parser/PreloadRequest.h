@@ -7,7 +7,9 @@
 
 #include "core/fetch/ClientHintsPreferences.h"
 #include "core/fetch/FetchRequest.h"
+#include "core/fetch/IntegrityMetadata.h"
 #include "core/fetch/Resource.h"
+#include "platform/CrossOriginAttributeValue.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/Allocator.h"
 #include "wtf/text/TextPosition.h"
@@ -17,9 +19,9 @@ namespace blink {
 class Document;
 
 class PreloadRequest {
-    WTF_MAKE_FAST_ALLOCATED(PreloadRequest);
+    USING_FAST_MALLOC(PreloadRequest);
 public:
-    enum RequestType { RequestTypePreload, RequestTypePreconnect };
+    enum RequestType { RequestTypePreload, RequestTypePreconnect, RequestTypeLinkRelPreload };
 
     static PassOwnPtr<PreloadRequest> create(const String& initiatorName, const TextPosition& initiatorPosition, const String& resourceURL, const KURL& baseURL, Resource::Type resourceType, const ReferrerPolicy referrerPolicy, const FetchRequest::ResourceWidth& resourceWidth = FetchRequest::ResourceWidth(), const ClientHintsPreferences& clientHintsPreferences = ClientHintsPreferences(), RequestType requestType = RequestTypePreload)
     {
@@ -34,22 +36,30 @@ public:
     double discoveryTime() const { return m_discoveryTime; }
     void setDefer(FetchRequest::DeferOption defer) { m_defer = defer; }
     void setCharset(const String& charset) { m_charset = charset.isolatedCopy(); }
-    void setCrossOriginEnabled(StoredCredentials allowCredentials)
+    void setCrossOrigin(CrossOriginAttributeValue crossOrigin)
     {
-        m_isCORSEnabled = true;
-        m_allowCredentials = allowCredentials;
+        m_crossOrigin = crossOrigin;
     }
-
+    CrossOriginAttributeValue crossOrigin() const
+    {
+        return m_crossOrigin;
+    }
     Resource::Type resourceType() const { return m_resourceType; }
 
     const String& resourceURL() const { return m_resourceURL; }
     float resourceWidth() const { return m_resourceWidth.isSet ? m_resourceWidth.width : 0; }
     const KURL& baseURL() const { return m_baseURL; }
     bool isPreconnect() const { return m_requestType == RequestTypePreconnect; }
-    bool isCORS() const { return m_isCORSEnabled; }
-    bool isAllowCredentials() const { return m_allowCredentials == AllowStoredCredentials; }
     const ClientHintsPreferences& preferences() const { return m_clientHintsPreferences; }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
+    void setIntegrityMetadata(const IntegrityMetadataSet& metadataSet)
+    {
+        m_integrityMetadata = metadataSet;
+    }
+    const IntegrityMetadataSet& integrityMetadata() const
+    {
+        return m_integrityMetadata;
+    }
 
 private:
     PreloadRequest(const String& initiatorName,
@@ -66,8 +76,7 @@ private:
         , m_resourceURL(resourceURL.isolatedCopy())
         , m_baseURL(baseURL.copy())
         , m_resourceType(resourceType)
-        , m_isCORSEnabled(false)
-        , m_allowCredentials(DoNotAllowStoredCredentials)
+        , m_crossOrigin(CrossOriginAttributeNotSet)
         , m_discoveryTime(monotonicallyIncreasingTime())
         , m_defer(FetchRequest::NoDefer)
         , m_resourceWidth(resourceWidth)
@@ -85,14 +94,14 @@ private:
     KURL m_baseURL;
     String m_charset;
     Resource::Type m_resourceType;
-    bool m_isCORSEnabled;
-    StoredCredentials m_allowCredentials;
+    CrossOriginAttributeValue m_crossOrigin;
     double m_discoveryTime;
     FetchRequest::DeferOption m_defer;
     FetchRequest::ResourceWidth m_resourceWidth;
     ClientHintsPreferences m_clientHintsPreferences;
     RequestType m_requestType;
     ReferrerPolicy m_referrerPolicy;
+    IntegrityMetadataSet m_integrityMetadata;
 };
 
 typedef Vector<OwnPtr<PreloadRequest>> PreloadRequestStream;

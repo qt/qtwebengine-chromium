@@ -5,7 +5,6 @@
 #ifndef NET_SOCKET_SOCKET_POSIX_H_
 #define NET_SOCKET_SOCKET_POSIX_H_
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -13,13 +12,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_checker.h"
 #include "net/base/completion_callback.h"
-#include "net/base/net_util.h"
 #include "net/socket/socket_descriptor.h"
 
 namespace net {
 
 class IOBuffer;
 class IPEndPoint;
+struct SockaddrStorage;
 
 // Socket class to provide asynchronous read/write operations on top of the
 // posix socket api. It supports AF_INET, AF_INET6, and AF_UNIX addresses.
@@ -75,6 +74,11 @@ class NET_EXPORT_PRIVATE SocketPosix : public base::MessageLoopForIO::Watcher {
   bool HasPeerAddress() const;
 
   void Close();
+
+  // Detachs from the current thread, to allow the socket to be transferred to
+  // a new thread. Should only be called when the object is no longer used by
+  // the old thread.
+  void DetachFromThread();
 
   SocketDescriptor socket_fd() const { return socket_fd_; }
 

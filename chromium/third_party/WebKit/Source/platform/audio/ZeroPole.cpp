@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/ZeroPole.h"
-
 #include "platform/audio/DenormalDisabler.h"
 
 namespace blink {
@@ -71,4 +66,3 @@ void ZeroPole::process(const float *source, float *destination, unsigned framesT
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -4,9 +4,11 @@
 
 #include "components/devtools_service/devtools_service.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "components/devtools_service/devtools_http_server.h"
-#include "mojo/application/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/application_impl.h"
 
 namespace devtools_service {
 
@@ -20,7 +22,7 @@ DevToolsService::~DevToolsService() {
 
 void DevToolsService::BindToCoordinatorRequest(
     mojo::InterfaceRequest<DevToolsCoordinator> request) {
-  coordinator_bindings_.AddBinding(this, request.Pass());
+  coordinator_bindings_.AddBinding(this, std::move(request));
 }
 
 void DevToolsService::Initialize(uint16_t remote_debugging_port) {

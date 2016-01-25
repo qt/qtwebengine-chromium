@@ -4,6 +4,8 @@
 
 #include "content/browser/service_worker/service_worker_register_job.h"
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/location.h"
@@ -274,8 +276,14 @@ void ServiceWorkerRegisterJob::ContinueWithUpdate(
 void ServiceWorkerRegisterJob::RegisterAndContinue() {
   SetPhase(REGISTER);
 
-  set_registration(new ServiceWorkerRegistration(
-      pattern_, context_->storage()->NewRegistrationId(), context_));
+  int64_t registration_id = context_->storage()->NewRegistrationId();
+  if (registration_id == kInvalidServiceWorkerRegistrationId) {
+    Complete(SERVICE_WORKER_ERROR_ABORT);
+    return;
+  }
+
+  set_registration(
+      new ServiceWorkerRegistration(pattern_, registration_id, context_));
   AddRegistrationToMatchingProviderHosts(registration());
   UpdateAndContinue();
 }
@@ -325,12 +333,16 @@ void ServiceWorkerRegisterJob::UpdateAndContinue() {
   SetPhase(UPDATE);
   context_->storage()->NotifyInstallingRegistration(registration());
 
+  int64_t version_id = context_->storage()->NewVersionId();
+  if (version_id == kInvalidServiceWorkerVersionId) {
+    Complete(SERVICE_WORKER_ERROR_ABORT);
+    return;
+  }
+
   // "Let worker be a new ServiceWorker object..." and start
   // the worker.
-  set_new_version(new ServiceWorkerVersion(registration(),
-                                           script_url_,
-                                           context_->storage()->NewVersionId(),
-                                           context_));
+  set_new_version(new ServiceWorkerVersion(registration(), script_url_,
+                                           version_id, context_));
   new_version()->set_force_bypass_cache_for_scripts(force_bypass_cache_);
   new_version()->set_skip_script_comparison(skip_script_comparison_);
   new_version()->StartWorker(

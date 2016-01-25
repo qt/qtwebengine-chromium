@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSSegmentedFontFace.h"
 
 #include "core/css/CSSFontFace.h"
@@ -72,12 +71,7 @@ bool CSSSegmentedFontFace::isValid() const
     return false;
 }
 
-void CSSSegmentedFontFace::fontLoaded(CSSFontFace*)
-{
-    pruneTable();
-}
-
-void CSSSegmentedFontFace::fontLoadWaitLimitExceeded(CSSFontFace*)
+void CSSSegmentedFontFace::fontFaceInvalidated()
 {
     pruneTable();
 }
@@ -165,6 +159,18 @@ void CSSSegmentedFontFace::willUseFontData(const FontDescription& fontDescriptio
         if ((*it)->loadStatus() != FontFace::Unloaded)
             break;
         if ((*it)->cssFontFace()->maybeScheduleFontLoad(fontDescription, character))
+            break;
+    }
+}
+
+void CSSSegmentedFontFace::willUseRange(const blink::FontDescription& fontDescription, const blink::FontDataRange& range)
+{
+    // Iterating backwards since later defined unicode-range faces override
+    // previously defined ones, according to the CSS3 fonts module.
+    // https://drafts.csswg.org/css-fonts/#composite-fonts
+    for (FontFaceList::reverse_iterator it = m_fontFaces.rbegin(); it != m_fontFaces.rend(); ++it) {
+        CSSFontFace* cssFontFace = (*it)->cssFontFace();
+        if (cssFontFace->maybeScheduleFontLoad(fontDescription, range))
             break;
     }
 }

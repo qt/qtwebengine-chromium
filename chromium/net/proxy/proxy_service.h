@@ -5,11 +5,14 @@
 #ifndef NET_PROXY_PROXY_SERVICE_H_
 #define NET_PROXY_PROXY_SERVICE_H_
 
+#include <stddef.h>
+
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/waitable_event.h"
@@ -285,8 +288,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   void set_quick_check_enabled(bool value) {
     quick_check_enabled_ = value;
   }
-
-  bool quick_check_enabled() const { return quick_check_enabled_; }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);

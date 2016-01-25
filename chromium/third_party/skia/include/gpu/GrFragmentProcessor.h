@@ -12,7 +12,7 @@
 
 class GrCoordTransform;
 class GrGLSLCaps;
-class GrGLFragmentProcessor;
+class GrGLSLFragmentProcessor;
 class GrInvariantOutput;
 class GrProcessorKeyBuilder;
 
@@ -63,12 +63,12 @@ public:
 
     ~GrFragmentProcessor() override;
 
-    GrGLFragmentProcessor* createGLInstance() const;
+    GrGLSLFragmentProcessor* createGLSLInstance() const;
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
-        this->onGetGLProcessorKey(caps, b);
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+        this->onGetGLSLProcessorKey(caps, b);
         for (int i = 0; i < fChildProcessors.count(); ++i) {
-            fChildProcessors[i]->getGLProcessorKey(caps, b);
+            fChildProcessors[i]->getGLSLProcessorKey(caps, b);
         }
     }
 
@@ -104,7 +104,8 @@ public:
         from getFactory()).
 
         A return value of true from isEqual() should not be used to test whether the processor would
-        generate the same shader code. To test for identical code generation use getGLProcessorKey*/
+        generate the same shader code. To test for identical code generation use getGLSLProcessorKey
+     */
     bool isEqual(const GrFragmentProcessor& that, bool ignoreCoordTransforms) const;
 
     /**
@@ -166,11 +167,11 @@ private:
     /** Returns a new instance of the appropriate *GL* implementation class
         for the given GrFragmentProcessor; caller is responsible for deleting
         the object. */
-    virtual GrGLFragmentProcessor* onCreateGLInstance() const = 0;
+    virtual GrGLSLFragmentProcessor* onCreateGLSLInstance() const = 0;
 
     /** Implemented using GLFragmentProcessor::GenKey as described in this class's comment. */
-    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
-                                     GrProcessorKeyBuilder* b) const = 0;
+    virtual void onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                                       GrProcessorKeyBuilder* b) const = 0;
 
     /**
      * Subclass implements this to support isEqual(). It will only be called if it is known that
@@ -182,7 +183,7 @@ private:
 
     bool hasSameTransforms(const GrFragmentProcessor&) const;
 
-    bool                                         fUsesLocalCoords;
+    bool                                            fUsesLocalCoords;
 
     /**
      * fCoordTransforms stores the transforms of this proc, followed by all the transforms of this
@@ -207,14 +208,10 @@ private:
      *
      * The same goes for fTextureAccesses with textures.
      */
-    SkSTArray<4, const GrCoordTransform*, true>  fCoordTransforms;
-
-    int                                          fNumTexturesExclChildren;
-    int                                          fNumTransformsExclChildren;
-
-    // TODO: These must convert their processors to pending-execution refs when the parent is
-    // converted (do this automatically in GrProgramElement?).
-    SkTArray<const GrFragmentProcessor*, true>   fChildProcessors;
+    SkSTArray<4, const GrCoordTransform*, true>     fCoordTransforms;
+    int                                             fNumTexturesExclChildren;
+    int                                             fNumTransformsExclChildren;
+    SkSTArray<1, const GrFragmentProcessor*, true>  fChildProcessors;
 
     typedef GrProcessor INHERITED;
 };

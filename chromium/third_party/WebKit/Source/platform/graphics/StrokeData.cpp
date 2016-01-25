@@ -26,7 +26,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "config.h"
 #include "platform/graphics/StrokeData.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -105,7 +104,7 @@ void StrokeData::setupPaintDashPathEffect(SkPaint* paint, int length) const
             }
             SkScalar dashLengthSk = SkIntToScalar(dashLength);
             SkScalar intervals[2] = { dashLengthSk, dashLengthSk };
-            RefPtr<SkDashPathEffect> pathEffect = adoptRef(SkDashPathEffect::Create(intervals, 2, SkIntToScalar(phase)));
+            RefPtr<SkPathEffect> pathEffect = adoptRef(SkDashPathEffect::Create(intervals, 2, SkIntToScalar(phase)));
             paint->setPathEffect(pathEffect.get());
         }
     }

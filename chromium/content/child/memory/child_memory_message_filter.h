@@ -5,6 +5,7 @@
 #ifndef CONTENT_CHILD_MEMORY_CHILD_MEMORY_MESSAGE_FILTER_H_
 #define CONTENT_CHILD_MEMORY_CHILD_MEMORY_MESSAGE_FILTER_H_
 
+#include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "ipc/message_filter.h"
 
@@ -25,6 +26,8 @@ class ChildMemoryMessageFilter : public IPC::MessageFilter {
  private:
   void OnSetPressureNotificationsSuppressed(bool suppressed);
   void OnSimulatePressureNotification(
+      base::MemoryPressureListener::MemoryPressureLevel level);
+  void OnPressureNotification(
       base::MemoryPressureListener::MemoryPressureLevel level);
 
   DISALLOW_COPY_AND_ASSIGN(ChildMemoryMessageFilter);

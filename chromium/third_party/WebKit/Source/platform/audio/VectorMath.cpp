@@ -22,13 +22,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/VectorMath.h"
 #include "wtf/Assertions.h"
 #include "wtf/CPU.h"
+#include "wtf/MathExtras.h"
 #include <stdint.h>
 
 #if OS(MACOSX)
@@ -675,7 +672,7 @@ void vclip(const float* sourceP, int sourceStride, const float* lowThresholdP, c
     }
 #endif
     while (n--) {
-        *destP = std::max(std::min(*sourceP, highThreshold), lowThreshold);
+        *destP = clampTo(*sourceP, lowThreshold, highThreshold);
         sourceP += sourceStride;
         destP += destStride;
     }
@@ -687,4 +684,3 @@ void vclip(const float* sourceP, int sourceStride, const float* lowThresholdP, c
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -4,11 +4,16 @@
 
 #include "cc/raster/tile_task_worker_pool.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <algorithm>
 #include <limits>
 #include <vector>
 
 #include "base/cancelable_callback.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "cc/base/unique_notifier.h"
@@ -17,6 +22,7 @@
 #include "cc/raster/gpu_tile_task_worker_pool.h"
 #include "cc/raster/one_copy_tile_task_worker_pool.h"
 #include "cc/raster/raster_buffer.h"
+#include "cc/raster/synchronous_task_graph_runner.h"
 #include "cc/raster/tile_task_runner.h"
 #include "cc/raster/zero_copy_tile_task_worker_pool.h"
 #include "cc/resources/resource_pool.h"
@@ -28,7 +34,6 @@
 #include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_gpu_memory_buffer_manager.h"
 #include "cc/test/test_shared_bitmap_manager.h"
-#include "cc/test/test_task_graph_runner.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -48,8 +53,7 @@ enum TileTaskWorkerPoolType {
 
 class TestRasterTaskImpl : public RasterTask {
  public:
-  typedef base::Callback<void(const RasterSource::SolidColorAnalysis& analysis,
-                              bool was_canceled)> Reply;
+  typedef base::Callback<void(bool was_canceled)> Reply;
 
   TestRasterTaskImpl(const Resource* resource,
                      const Reply& reply,
@@ -74,8 +78,8 @@ class TestRasterTaskImpl : public RasterTask {
     raster_buffer_ = client->AcquireBufferForRaster(resource_, 0, 0);
   }
   void CompleteOnOriginThread(TileTaskClient* client) override {
-    client->ReleaseBufferForRaster(raster_buffer_.Pass());
-    reply_.Run(RasterSource::SolidColorAnalysis(), !HasFinishedRunning());
+    client->ReleaseBufferForRaster(std::move(raster_buffer_));
+    reply_.Run(!HasFinishedRunning());
   }
 
  protected:
@@ -85,7 +89,7 @@ class TestRasterTaskImpl : public RasterTask {
   const Resource* resource_;
   const Reply reply_;
   scoped_ptr<RasterBuffer> raster_buffer_;
-  scoped_refptr<RasterSource> raster_source_;
+  scoped_refptr<DisplayListRasterSource> raster_source_;
 
   DISALLOW_COPY_AND_ASSIGN(TestRasterTaskImpl);
 };
@@ -114,8 +118,7 @@ class BlockingTestRasterTaskImpl : public TestRasterTaskImpl {
 };
 
 class TileTaskWorkerPoolTest
-    : public testing::TestWithParam<TileTaskWorkerPoolType>,
-      public TileTaskRunnerClient {
+    : public testing::TestWithParam<TileTaskWorkerPoolType> {
  public:
   struct RasterTaskResult {
     unsigned id;
@@ -168,7 +171,6 @@ class TileTaskWorkerPoolTest
     }
 
     DCHECK(tile_task_worker_pool_);
-    tile_task_worker_pool_->AsTileTaskRunner()->SetClient(this);
   }
 
   void TearDown() override {
@@ -178,49 +180,26 @@ class TileTaskWorkerPoolTest
 
   void AllTileTasksFinished() {
     tile_task_worker_pool_->AsTileTaskRunner()->CheckForCompletedTasks();
-    base::MessageLoop::current()->Quit();
-  }
-
-  // Overriden from TileTaskWorkerPoolClient:
-  void DidFinishRunningTileTasks(TaskSet task_set) override {
-    EXPECT_FALSE(completed_task_sets_[task_set]);
-    completed_task_sets_[task_set] = true;
-    if (task_set == ALL) {
-      EXPECT_TRUE((~completed_task_sets_).none());
-      all_tile_tasks_finished_.Schedule();
-    }
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   void RunMessageLoopUntilAllTasksHaveCompleted() {
-    if (timeout_seconds_) {
-      timeout_.Reset(base::Bind(&TileTaskWorkerPoolTest::OnTimeout,
-                                base::Unretained(this)));
-      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-          FROM_HERE, timeout_.callback(),
-          base::TimeDelta::FromSeconds(timeout_seconds_));
-    }
-
-    base::MessageLoop::current()->Run();
-
-    timeout_.Cancel();
-
-    ASSERT_FALSE(timed_out_) << "Test timed out";
+    task_graph_runner_.RunUntilIdle();
+    tile_task_worker_pool_->AsTileTaskRunner()->CheckForCompletedTasks();
   }
 
   void ScheduleTasks() {
-    TileTaskQueue queue;
+    graph_.Reset();
+
+    size_t priority = 0;
 
     for (RasterTaskVector::const_iterator it = tasks_.begin();
          it != tasks_.end(); ++it) {
-      TaskSetCollection task_sets;
-      task_sets[REQUIRED_FOR_ACTIVATION] = true;
-      task_sets[REQUIRED_FOR_DRAW] = true;
-      task_sets[ALL] = true;
-      queue.items.push_back(TileTaskQueue::Item(it->get(), task_sets));
+      graph_.nodes.emplace_back(it->get(), 0 /* group */, priority++,
+                                0 /* dependencies */);
     }
 
-    completed_task_sets_.reset();
-    tile_task_worker_pool_->AsTileTaskRunner()->ScheduleTasks(&queue);
+    tile_task_worker_pool_->AsTileTaskRunner()->ScheduleTasks(&graph_);
   }
 
   void AppendTask(unsigned id, const gfx::Size& size) {
@@ -288,10 +267,10 @@ class TileTaskWorkerPoolTest
         output_surface_.get(), &shared_bitmap_manager_, nullptr);
   }
 
-  void OnTaskCompleted(scoped_ptr<ScopedResource> resource,
-                       unsigned id,
-                       const RasterSource::SolidColorAnalysis& analysis,
-                       bool was_canceled) {
+  void OnTaskCompleted(
+      scoped_ptr<ScopedResource> resource,
+      unsigned id,
+      bool was_canceled) {
     RasterTaskResult result;
     result.id = id;
     result.canceled = was_canceled;
@@ -300,7 +279,7 @@ class TileTaskWorkerPoolTest
 
   void OnTimeout() {
     timed_out_ = true;
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
  protected:
@@ -312,14 +291,14 @@ class TileTaskWorkerPoolTest
   scoped_ptr<TileTaskWorkerPool> tile_task_worker_pool_;
   TestGpuMemoryBufferManager gpu_memory_buffer_manager_;
   TestSharedBitmapManager shared_bitmap_manager_;
-  TestTaskGraphRunner task_graph_runner_;
+  SynchronousTaskGraphRunner task_graph_runner_;
   base::CancelableClosure timeout_;
   UniqueNotifier all_tile_tasks_finished_;
   int timeout_seconds_;
   bool timed_out_;
   RasterTaskVector tasks_;
   std::vector<RasterTaskResult> completed_tasks_;
-  TaskSetCollection completed_task_sets_;
+  TaskGraph graph_;
 };
 
 TEST_P(TileTaskWorkerPoolTest, Basic) {
@@ -386,21 +365,6 @@ TEST_P(TileTaskWorkerPoolTest, LostContext) {
   ASSERT_EQ(2u, completed_tasks().size());
   EXPECT_FALSE(completed_tasks()[0].canceled);
   EXPECT_FALSE(completed_tasks()[1].canceled);
-}
-
-TEST_P(TileTaskWorkerPoolTest, ScheduleEmptyStillTriggersCallback) {
-  // Don't append any tasks, just call ScheduleTasks.
-  ScheduleTasks();
-
-  EXPECT_FALSE(completed_task_sets_[REQUIRED_FOR_ACTIVATION]);
-  EXPECT_FALSE(completed_task_sets_[REQUIRED_FOR_DRAW]);
-  EXPECT_FALSE(completed_task_sets_[ALL]);
-
-  RunMessageLoopUntilAllTasksHaveCompleted();
-
-  EXPECT_TRUE(completed_task_sets_[REQUIRED_FOR_ACTIVATION]);
-  EXPECT_TRUE(completed_task_sets_[REQUIRED_FOR_DRAW]);
-  EXPECT_TRUE(completed_task_sets_[ALL]);
 }
 
 INSTANTIATE_TEST_CASE_P(TileTaskWorkerPoolTests,

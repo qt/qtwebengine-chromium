@@ -8,6 +8,7 @@
 #include "SkMatrixConvolutionImageFilter.h"
 #include "SkBitmap.h"
 #include "SkColorPriv.h"
+#include "SkDevice.h"
 #include "SkReadBuffer.h"
 #include "SkWriteBuffer.h"
 #include "SkRect.h"
@@ -46,7 +47,7 @@ SkMatrixConvolutionImageFilter::SkMatrixConvolutionImageFilter(
     SkASSERT(kernelOffset.fY >= 0 && kernelOffset.fY < kernelSize.fHeight);
 }
 
-SkMatrixConvolutionImageFilter* SkMatrixConvolutionImageFilter::Create(
+SkImageFilter* SkMatrixConvolutionImageFilter::Create(
     const SkISize& kernelSize,
     const SkScalar* kernel,
     SkScalar gain,
@@ -241,16 +242,18 @@ void SkMatrixConvolutionImageFilter::filterBorderPixels(const SkBitmap& src,
 // FIXME:  This should be refactored to SkImageFilterUtils for
 // use by other filters.  For now, we assume the input is always
 // premultiplied and unpremultiply it
-static SkBitmap unpremultiplyBitmap(const SkBitmap& src)
+static SkBitmap unpremultiplyBitmap(SkImageFilter::Proxy* proxy, const SkBitmap& src)
 {
     SkAutoLockPixels alp(src);
     if (!src.getPixels()) {
         return SkBitmap();
     }
-    SkBitmap result;
-    if (!result.tryAllocPixels(src.info())) {
+    SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(src.width(), src.height()));
+    if (!device) {
         return SkBitmap();
     }
+    SkBitmap result = device->accessBitmap(false);
+    SkAutoLockPixels alp_result(result);
     for (int y = 0; y < src.height(); ++y) {
         const uint32_t* srcRow = src.getAddr32(0, y);
         uint32_t* dstRow = result.getAddr32(0, y);
@@ -268,7 +271,7 @@ bool SkMatrixConvolutionImageFilter::onFilterImage(Proxy* proxy,
                                                    SkIPoint* offset) const {
     SkBitmap src = source;
     SkIPoint srcOffset = SkIPoint::Make(0, 0);
-    if (getInput(0) && !getInput(0)->filterImage(proxy, source, ctx, &src, &srcOffset)) {
+    if (!this->filterInput(0, proxy, source, ctx, &src, &srcOffset)) {
         return false;
     }
 
@@ -277,12 +280,12 @@ bool SkMatrixConvolutionImageFilter::onFilterImage(Proxy* proxy,
     }
 
     SkIRect bounds;
-    if (!this->applyCropRect(ctx, proxy, src, &srcOffset, &bounds, &src)) {
+    if (!this->applyCropRect(this->mapContext(ctx), proxy, src, &srcOffset, &bounds, &src)) {
         return false;
     }
 
     if (!fConvolveAlpha && !src.isOpaque()) {
-        src = unpremultiplyBitmap(src);
+        src = unpremultiplyBitmap(proxy, src);
     }
 
     SkAutoLockPixels alp(src);
@@ -290,9 +293,12 @@ bool SkMatrixConvolutionImageFilter::onFilterImage(Proxy* proxy,
         return false;
     }
 
-    if (!result->tryAllocPixels(src.info().makeWH(bounds.width(), bounds.height()))) {
+    SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(bounds.width(), bounds.height()));
+    if (!device) {
         return false;
     }
+    *result = device->accessBitmap(false);
+    SkAutoLockPixels alp_result(*result);
 
     offset->fX = bounds.fLeft;
     offset->fY = bounds.fTop;
@@ -316,17 +322,23 @@ bool SkMatrixConvolutionImageFilter::onFilterImage(Proxy* proxy,
     return true;
 }
 
-bool SkMatrixConvolutionImageFilter::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
-                                                    SkIRect* dst) const {
-    SkIRect bounds = src;
-    bounds.fRight += fKernelSize.width() - 1;
-    bounds.fBottom += fKernelSize.height() - 1;
-    bounds.offset(-fKernelOffset);
-    if (getInput(0) && !getInput(0)->filterBounds(bounds, ctm, &bounds)) {
-        return false;
+void SkMatrixConvolutionImageFilter::onFilterNodeBounds(const SkIRect& src, const SkMatrix& ctm,
+                                                    SkIRect* dst, MapDirection direction) const {
+    *dst = src;
+    int w = fKernelSize.width() - 1, h = fKernelSize.height() - 1;
+    dst->fRight += w;
+    dst->fBottom += h;
+    if (kReverse_MapDirection == direction) {
+        dst->offset(-fKernelOffset);
+    } else {
+        dst->offset(fKernelOffset - SkIPoint::Make(w, h));
     }
-    *dst = bounds;
-    return true;
+}
+
+bool SkMatrixConvolutionImageFilter::canComputeFastBounds() const {
+    // Because the kernel is applied in device-space, we have no idea what
+    // pixels it will affect in object-space.
+    return false;
 }
 
 #if SK_SUPPORT_GPU
@@ -347,7 +359,6 @@ static GrTextureDomain::Mode convert_tilemodes(
 }
 
 bool SkMatrixConvolutionImageFilter::asFragmentProcessor(GrFragmentProcessor** fp,
-                                                         GrProcessorDataManager* procDataManager,
                                                          GrTexture* texture,
                                                          const SkMatrix&,
                                                          const SkIRect& bounds) const {
@@ -355,8 +366,7 @@ bool SkMatrixConvolutionImageFilter::asFragmentProcessor(GrFragmentProcessor** f
         return fKernelSize.width() * fKernelSize.height() <= MAX_KERNEL_SIZE;
     }
     SkASSERT(fKernelSize.width() * fKernelSize.height() <= MAX_KERNEL_SIZE);
-    *fp = GrMatrixConvolutionEffect::Create(procDataManager,
-                                            texture,
+    *fp = GrMatrixConvolutionEffect::Create(texture,
                                             bounds,
                                             fKernelSize,
                                             fKernel,

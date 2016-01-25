@@ -4,6 +4,8 @@
 
 #include "cc/quads/render_pass.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
 #include "base/numerics/safe_conversions.h"
@@ -88,15 +90,13 @@ scoped_ptr<RenderPass> RenderPass::Copy(RenderPassId new_id) const {
                     damage_rect,
                     transform_to_root_target,
                     has_transparent_background);
-  return copy_pass.Pass();
+  return copy_pass;
 }
 
 // static
-void RenderPass::CopyAll(const ScopedPtrVector<RenderPass>& in,
-                         ScopedPtrVector<RenderPass>* out) {
-  for (size_t i = 0; i < in.size(); ++i) {
-    RenderPass* source = in[i];
-
+void RenderPass::CopyAll(const std::vector<scoped_ptr<RenderPass>>& in,
+                         std::vector<scoped_ptr<RenderPass>>* out) {
+  for (const auto& source : in) {
     // Since we can't copy these, it's wrong to use CopyAll in a situation where
     // you may have copy_requests present.
     DCHECK_EQ(source->copy_requests.size(), 0u);
@@ -136,7 +136,7 @@ void RenderPass::CopyAll(const ScopedPtrVector<RenderPass>& in,
         copy_pass->CopyFromAndAppendDrawQuad(quad, copy_shared_quad_state);
       }
     }
-    out->push_back(copy_pass.Pass());
+    out->push_back(std::move(copy_pass));
   }
 }
 

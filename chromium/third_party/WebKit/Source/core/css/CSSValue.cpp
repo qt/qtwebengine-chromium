@@ -24,16 +24,17 @@
  *
  */
 
-#include "config.h"
 #include "core/css/CSSValue.h"
 
 #include "core/css/CSSBasicShapeValues.h"
 #include "core/css/CSSBorderImageSliceValue.h"
-#include "core/css/CSSCanvasValue.h"
+#include "core/css/CSSColorValue.h"
 #include "core/css/CSSContentDistributionValue.h"
 #include "core/css/CSSCounterValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSCursorImageValue.h"
+#include "core/css/CSSCustomIdentValue.h"
+#include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFontFeatureValue.h"
 #include "core/css/CSSFunctionValue.h"
@@ -50,11 +51,14 @@
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSShadowValue.h"
+#include "core/css/CSSStringValue.h"
 #include "core/css/CSSTimingFunctionValue.h"
+#include "core/css/CSSURIValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSUnsetValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/CSSValuePair.h"
+#include "core/css/CSSVariableReferenceValue.h"
 
 namespace blink {
 
@@ -105,8 +109,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSBasicShapeInsetValue>(*this, other);
         case BorderImageSliceClass:
             return compareCSSValues<CSSBorderImageSliceValue>(*this, other);
-        case CanvasClass:
-            return compareCSSValues<CSSCanvasValue>(*this, other);
+        case ColorClass:
+            return compareCSSValues<CSSColorValue>(*this, other);
         case CounterClass:
             return compareCSSValues<CSSCounterValue>(*this, other);
         case CursorImageClass:
@@ -123,6 +127,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSRadialGradientValue>(*this, other);
         case CrossfadeClass:
             return compareCSSValues<CSSCrossfadeValue>(*this, other);
+        case CustomIdentClass:
+            return compareCSSValues<CSSCustomIdentValue>(*this, other);
         case ImageClass:
             return compareCSSValues<CSSImageValue>(*this, other);
         case InheritedClass:
@@ -145,12 +151,16 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSReflectValue>(*this, other);
         case ShadowClass:
             return compareCSSValues<CSSShadowValue>(*this, other);
+        case StringClass:
+            return compareCSSValues<CSSStringValue>(*this, other);
         case CubicBezierTimingFunctionClass:
             return compareCSSValues<CSSCubicBezierTimingFunctionValue>(*this, other);
         case StepsTimingFunctionClass:
             return compareCSSValues<CSSStepsTimingFunctionValue>(*this, other);
         case UnicodeRangeClass:
             return compareCSSValues<CSSUnicodeRangeValue>(*this, other);
+        case URIClass:
+            return compareCSSValues<CSSURIValue>(*this, other);
         case ValueListClass:
             return compareCSSValues<CSSValueList>(*this, other);
         case ValuePairClass:
@@ -161,6 +171,10 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSSVGDocumentValue>(*this, other);
         case CSSContentDistributionClass:
             return compareCSSValues<CSSContentDistributionValue>(*this, other);
+        case CustomPropertyDeclarationClass:
+            return compareCSSValues<CSSCustomPropertyDeclaration>(*this, other);
+        case VariableReferenceClass:
+            return compareCSSValues<CSSVariableReferenceValue>(*this, other);
         }
         ASSERT_NOT_REACHED();
         return false;
@@ -181,8 +195,8 @@ String CSSValue::cssText() const
         return toCSSBasicShapeInsetValue(this)->customCSSText();
     case BorderImageSliceClass:
         return toCSSBorderImageSliceValue(this)->customCSSText();
-    case CanvasClass:
-        return toCSSCanvasValue(this)->customCSSText();
+    case ColorClass:
+        return toCSSColorValue(this)->customCSSText();
     case CounterClass:
         return toCSSCounterValue(this)->customCSSText();
     case CursorImageClass:
@@ -199,6 +213,8 @@ String CSSValue::cssText() const
         return toCSSRadialGradientValue(this)->customCSSText();
     case CrossfadeClass:
         return toCSSCrossfadeValue(this)->customCSSText();
+    case CustomIdentClass:
+        return toCSSCustomIdentValue(this)->customCSSText();
     case ImageClass:
         return toCSSImageValue(this)->customCSSText();
     case InheritedClass:
@@ -221,12 +237,16 @@ String CSSValue::cssText() const
         return toCSSReflectValue(this)->customCSSText();
     case ShadowClass:
         return toCSSShadowValue(this)->customCSSText();
+    case StringClass:
+        return toCSSStringValue(this)->customCSSText();
     case CubicBezierTimingFunctionClass:
         return toCSSCubicBezierTimingFunctionValue(this)->customCSSText();
     case StepsTimingFunctionClass:
         return toCSSStepsTimingFunctionValue(this)->customCSSText();
     case UnicodeRangeClass:
         return toCSSUnicodeRangeValue(this)->customCSSText();
+    case URIClass:
+        return toCSSURIValue(this)->customCSSText();
     case ValuePairClass:
         return toCSSValuePair(this)->customCSSText();
     case ValueListClass:
@@ -237,6 +257,10 @@ String CSSValue::cssText() const
         return toCSSSVGDocumentValue(this)->customCSSText();
     case CSSContentDistributionClass:
         return toCSSContentDistributionValue(this)->customCSSText();
+    case VariableReferenceClass:
+        return toCSSVariableReferenceValue(this)->customCSSText();
+    case CustomPropertyDeclarationClass:
+        return toCSSCustomPropertyDeclaration(this)->customCSSText();
     }
     ASSERT_NOT_REACHED();
     return String();
@@ -260,8 +284,8 @@ void CSSValue::destroy()
     case BorderImageSliceClass:
         delete toCSSBorderImageSliceValue(this);
         return;
-    case CanvasClass:
-        delete toCSSCanvasValue(this);
+    case ColorClass:
+        delete toCSSColorValue(this);
         return;
     case CounterClass:
         delete toCSSCounterValue(this);
@@ -286,6 +310,9 @@ void CSSValue::destroy()
         return;
     case CrossfadeClass:
         delete toCSSCrossfadeValue(this);
+        return;
+    case CustomIdentClass:
+        delete toCSSCustomIdentValue(this);
         return;
     case ImageClass:
         delete toCSSImageValue(this);
@@ -320,6 +347,9 @@ void CSSValue::destroy()
     case ShadowClass:
         delete toCSSShadowValue(this);
         return;
+    case StringClass:
+        delete toCSSStringValue(this);
+        return;
     case CubicBezierTimingFunctionClass:
         delete toCSSCubicBezierTimingFunctionValue(this);
         return;
@@ -328,6 +358,9 @@ void CSSValue::destroy()
         return;
     case UnicodeRangeClass:
         delete toCSSUnicodeRangeValue(this);
+        return;
+    case URIClass:
+        delete toCSSURIValue(this);
         return;
     case ValuePairClass:
         delete toCSSValuePair(this);
@@ -343,6 +376,12 @@ void CSSValue::destroy()
         return;
     case CSSContentDistributionClass:
         delete toCSSContentDistributionValue(this);
+        return;
+    case VariableReferenceClass:
+        delete toCSSVariableReferenceValue(this);
+        return;
+    case CustomPropertyDeclarationClass:
+        delete toCSSCustomPropertyDeclaration(this);
         return;
     }
     ASSERT_NOT_REACHED();
@@ -366,8 +405,8 @@ void CSSValue::finalizeGarbageCollectedObject()
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->~CSSBorderImageSliceValue();
         return;
-    case CanvasClass:
-        toCSSCanvasValue(this)->~CSSCanvasValue();
+    case ColorClass:
+        toCSSColorValue(this)->~CSSColorValue();
         return;
     case CounterClass:
         toCSSCounterValue(this)->~CSSCounterValue();
@@ -392,6 +431,9 @@ void CSSValue::finalizeGarbageCollectedObject()
         return;
     case CrossfadeClass:
         toCSSCrossfadeValue(this)->~CSSCrossfadeValue();
+        return;
+    case CustomIdentClass:
+        toCSSCustomIdentValue(this)->~CSSCustomIdentValue();
         return;
     case ImageClass:
         toCSSImageValue(this)->~CSSImageValue();
@@ -426,6 +468,9 @@ void CSSValue::finalizeGarbageCollectedObject()
     case ShadowClass:
         toCSSShadowValue(this)->~CSSShadowValue();
         return;
+    case StringClass:
+        toCSSStringValue(this)->~CSSStringValue();
+        return;
     case CubicBezierTimingFunctionClass:
         toCSSCubicBezierTimingFunctionValue(this)->~CSSCubicBezierTimingFunctionValue();
         return;
@@ -434,6 +479,9 @@ void CSSValue::finalizeGarbageCollectedObject()
         return;
     case UnicodeRangeClass:
         toCSSUnicodeRangeValue(this)->~CSSUnicodeRangeValue();
+        return;
+    case URIClass:
+        toCSSURIValue(this)->~CSSURIValue();
         return;
     case ValueListClass:
         toCSSValueList(this)->~CSSValueList();
@@ -449,6 +497,12 @@ void CSSValue::finalizeGarbageCollectedObject()
         return;
     case CSSContentDistributionClass:
         toCSSContentDistributionValue(this)->~CSSContentDistributionValue();
+        return;
+    case VariableReferenceClass:
+        toCSSVariableReferenceValue(this)->~CSSVariableReferenceValue();
+        return;
+    case CustomPropertyDeclarationClass:
+        toCSSCustomPropertyDeclaration(this)->~CSSCustomPropertyDeclaration();
         return;
     }
     ASSERT_NOT_REACHED();
@@ -472,8 +526,8 @@ DEFINE_TRACE(CSSValue)
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->traceAfterDispatch(visitor);
         return;
-    case CanvasClass:
-        toCSSCanvasValue(this)->traceAfterDispatch(visitor);
+    case ColorClass:
+        toCSSColorValue(this)->traceAfterDispatch(visitor);
         return;
     case CounterClass:
         toCSSCounterValue(this)->traceAfterDispatch(visitor);
@@ -498,6 +552,9 @@ DEFINE_TRACE(CSSValue)
         return;
     case CrossfadeClass:
         toCSSCrossfadeValue(this)->traceAfterDispatch(visitor);
+        return;
+    case CustomIdentClass:
+        toCSSCustomIdentValue(this)->traceAfterDispatch(visitor);
         return;
     case ImageClass:
         toCSSImageValue(this)->traceAfterDispatch(visitor);
@@ -532,6 +589,9 @@ DEFINE_TRACE(CSSValue)
     case ShadowClass:
         toCSSShadowValue(this)->traceAfterDispatch(visitor);
         return;
+    case StringClass:
+        toCSSStringValue(this)->traceAfterDispatch(visitor);
+        return;
     case CubicBezierTimingFunctionClass:
         toCSSCubicBezierTimingFunctionValue(this)->traceAfterDispatch(visitor);
         return;
@@ -540,6 +600,9 @@ DEFINE_TRACE(CSSValue)
         return;
     case UnicodeRangeClass:
         toCSSUnicodeRangeValue(this)->traceAfterDispatch(visitor);
+        return;
+    case URIClass:
+        toCSSURIValue(this)->traceAfterDispatch(visitor);
         return;
     case ValueListClass:
         toCSSValueList(this)->traceAfterDispatch(visitor);
@@ -555,6 +618,12 @@ DEFINE_TRACE(CSSValue)
         return;
     case CSSContentDistributionClass:
         toCSSContentDistributionValue(this)->traceAfterDispatch(visitor);
+        return;
+    case VariableReferenceClass:
+        toCSSVariableReferenceValue(this)->traceAfterDispatch(visitor);
+        return;
+    case CustomPropertyDeclarationClass:
+        toCSSCustomPropertyDeclaration(this)->traceAfterDispatch(visitor);
         return;
     }
     ASSERT_NOT_REACHED();

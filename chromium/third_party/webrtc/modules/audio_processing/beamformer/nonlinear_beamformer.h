@@ -11,12 +11,17 @@
 #ifndef WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_NONLINEAR_BEAMFORMER_H_
 #define WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_NONLINEAR_BEAMFORMER_H_
 
+// MSVC++ requires this to be set before any other includes to get M_PI.
+#define _USE_MATH_DEFINES
+
+#include <math.h>
 #include <vector>
 
 #include "webrtc/common_audio/lapped_transform.h"
 #include "webrtc/common_audio/channel_buffer.h"
 #include "webrtc/modules/audio_processing/beamformer/beamformer.h"
 #include "webrtc/modules/audio_processing/beamformer/complex_matrix.h"
+#include "webrtc/system_wrappers/include/scoped_vector.h"
 
 namespace webrtc {
 
@@ -26,15 +31,16 @@ namespace webrtc {
 //
 // The implemented nonlinear postfilter algorithm taken from "A Robust Nonlinear
 // Beamforming Postprocessor" by Bastiaan Kleijn.
-//
-// TODO(aluebs): Target angle assumed to be 0. Parameterize target angle.
 class NonlinearBeamformer
   : public Beamformer<float>,
     public LappedTransform::Callback {
  public:
-  // At the moment it only accepts uniform linear microphone arrays. Using the
-  // first microphone as a reference position [0, 0, 0] is a natural choice.
-  explicit NonlinearBeamformer(const std::vector<Point>& array_geometry);
+  static const float kHalfBeamWidthRadians;
+
+  explicit NonlinearBeamformer(
+      const std::vector<Point>& array_geometry,
+      SphericalPointf target_direction =
+          SphericalPointf(static_cast<float>(M_PI) / 2.f, 0.f, 1.f));
 
   // Sample rate corresponds to the lower band.
   // Needs to be called before the NonlinearBeamformer can be used.
@@ -46,6 +52,8 @@ class NonlinearBeamformer
   // ChannelBuffer can be passed in as |input| and |output|.
   void ProcessChunk(const ChannelBuffer<float>& input,
                     ChannelBuffer<float>* output) override;
+
+  void AimAt(const SphericalPointf& target_direction) override;
 
   bool IsInBeam(const SphericalPointf& spherical_point) override;
 
@@ -59,29 +67,34 @@ class NonlinearBeamformer
   // Process one frequency-domain block of audio. This is where the fun
   // happens. Implements LappedTransform::Callback.
   void ProcessAudioBlock(const complex<float>* const* input,
-                         int num_input_channels,
+                         size_t num_input_channels,
                          size_t num_freq_bins,
-                         int num_output_channels,
+                         size_t num_output_channels,
                          complex<float>* const* output) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(NonlinearBeamformerTest,
+                           InterfAnglesTakeAmbiguityIntoAccount);
+
   typedef Matrix<float> MatrixF;
   typedef ComplexMatrix<float> ComplexMatrixF;
   typedef complex<float> complex_f;
 
+  void InitLowFrequencyCorrectionRanges();
+  void InitHighFrequencyCorrectionRanges();
+  void InitInterfAngles();
   void InitDelaySumMasks();
-  void InitTargetCovMats();  // TODO(aluebs): Make this depend on target angle.
+  void InitTargetCovMats();
+  void InitDiffuseCovMats();
   void InitInterfCovMats();
+  void NormalizeCovMats();
 
-  // An implementation of equation 18, which calculates postfilter masks that,
-  // when applied, minimize the mean-square error of our estimation of the
-  // desired signal. A sub-task is to calculate lambda, which is solved via
-  // equation 13.
+  // Calculates postfilter masks that minimize the mean squared error of our
+  // estimation of the desired signal.
   float CalculatePostfilterMask(const ComplexMatrixF& interf_cov_mat,
                                 float rpsiw,
                                 float ratio_rxiw_rxim,
-                                float rmxi_r,
-                                float mask_threshold);
+                                float rmxi_r);
 
   // Prevents the postfilter masks from degenerating too quickly (a cause of
   // musical noise).
@@ -116,10 +129,15 @@ class NonlinearBeamformer
   float window_[kFftSize];
 
   // Parameters exposed to the user.
-  const int num_input_channels_;
+  const size_t num_input_channels_;
   int sample_rate_hz_;
 
   const std::vector<Point> array_geometry_;
+  // The normal direction of the array if it has one and it is in the xy-plane.
+  const rtc::Optional<Point> array_normal_;
+
+  // Minimum spacing between microphone pairs.
+  const float min_mic_spacing_;
 
   // Calculated based on user-input and constants in the .cc file.
   size_t low_mean_start_bin_;
@@ -134,28 +152,33 @@ class NonlinearBeamformer
   // Time and frequency smoothed mask.
   float final_mask_[kNumFreqBins];
 
+  float target_angle_radians_;
+  // Angles of the interferer scenarios.
+  std::vector<float> interf_angles_radians_;
+  // The angle between the target and the interferer scenarios.
+  const float away_radians_;
+
   // Array of length |kNumFreqBins|, Matrix of size |1| x |num_channels_|.
   ComplexMatrixF delay_sum_masks_[kNumFreqBins];
   ComplexMatrixF normalized_delay_sum_masks_[kNumFreqBins];
 
-  // Array of length |kNumFreqBins|, Matrix of size |num_input_channels_| x
+  // Arrays of length |kNumFreqBins|, Matrix of size |num_input_channels_| x
   // |num_input_channels_|.
   ComplexMatrixF target_cov_mats_[kNumFreqBins];
-
+  ComplexMatrixF uniform_cov_mat_[kNumFreqBins];
   // Array of length |kNumFreqBins|, Matrix of size |num_input_channels_| x
-  // |num_input_channels_|.
-  ComplexMatrixF interf_cov_mats_[kNumFreqBins];
-  ComplexMatrixF reflected_interf_cov_mats_[kNumFreqBins];
+  // |num_input_channels_|. ScopedVector has a size equal to the number of
+  // interferer scenarios.
+  ScopedVector<ComplexMatrixF> interf_cov_mats_[kNumFreqBins];
 
   // Of length |kNumFreqBins|.
-  float mask_thresholds_[kNumFreqBins];
   float wave_numbers_[kNumFreqBins];
 
   // Preallocated for ProcessAudioBlock()
   // Of length |kNumFreqBins|.
   float rxiws_[kNumFreqBins];
-  float rpsiws_[kNumFreqBins];
-  float reflected_rpsiws_[kNumFreqBins];
+  // The vector has a size equal to the number of interferer scenarios.
+  std::vector<float> rpsiws_[kNumFreqBins];
 
   // The microphone normalization factor.
   ComplexMatrixF eig_m_;

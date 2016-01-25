@@ -55,7 +55,9 @@ typedef struct {
   int nmvcosts[2][MV_VALS];
   int nmvcosts_hp[2][MV_VALS];
 
+#if !CONFIG_MISC_FIXES
   vpx_prob segment_pred_probs[PREDICTION_PROBS];
+#endif
 
   unsigned char *last_frame_seg_map_copy;
 
@@ -248,6 +250,8 @@ typedef struct RD_COUNTS {
   vp10_coeff_count coef_counts[TX_SIZES][PLANE_TYPES];
   int64_t comp_pred_diff[REFERENCE_MODES];
   int64_t filter_diff[SWITCHABLE_FILTER_CONTEXTS];
+  int m_search_count;
+  int ex_search_count;
 } RD_COUNTS;
 
 typedef struct ThreadData {
@@ -454,7 +458,7 @@ typedef struct VP10_COMP {
 
   int mbmode_cost[INTRA_MODES];
   unsigned int inter_mode_cost[INTER_MODE_CONTEXTS][INTER_MODES];
-  int intra_uv_mode_cost[FRAME_TYPES][INTRA_MODES];
+  int intra_uv_mode_cost[INTRA_MODES][INTRA_MODES];
   int y_mode_costs[INTRA_MODES][INTRA_MODES][INTRA_MODES];
   int switchable_interp_costs[SWITCHABLE_FILTER_CONTEXTS][SWITCHABLE_FILTERS];
   int partition_cost[PARTITION_CONTEXTS][PARTITION_TYPES];
@@ -572,8 +576,8 @@ static INLINE int get_token_alloc(int mb_rows, int mb_cols) {
   // 32x32 transform crossing a boundary at a multiple of 16.
   // mb_rows, cols are in units of 16 pixels. We assume 3 planes all at full
   // resolution. We assume up to 1 token per pixel, and then allow
-  // a head room of 4.
-  return mb_rows * mb_cols * (16 * 16 * 3 + 4);
+  // a head room of 1 EOSB token per 8x8 block per plane.
+  return mb_rows * mb_cols * (16 * 16 + 4) * 3;
 }
 
 // Get the allocated token size for a tile. It does the same calculation as in

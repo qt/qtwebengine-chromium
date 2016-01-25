@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/xml/XSLTProcessor.h"
 
 #include "core/dom/Document.h"
@@ -44,6 +43,7 @@
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
+#include "wtf/Partitions.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuffer.h"
 #include "wtf/text/UTF8.h"
@@ -188,17 +188,25 @@ static bool saveResultToString(xmlDocPtr resultDoc, xsltStylesheetPtr sheet, Str
     return true;
 }
 
+static char* allocateParameterArray(const char* data)
+{
+    size_t length = strlen(data) + 1;
+    char* parameterArray = static_cast<char*>(WTF::Partitions::fastMalloc(length, WTF_HEAP_PROFILER_TYPE_NAME(XSLTProcessor)));
+    memcpy(parameterArray, data, length);
+    return parameterArray;
+}
+
 static const char** xsltParamArrayFromParameterMap(XSLTProcessor::ParameterMap& parameters)
 {
     if (parameters.isEmpty())
         return nullptr;
 
-    const char** parameterArray = static_cast<const char**>(fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*)));
+    const char** parameterArray = static_cast<const char**>(WTF::Partitions::fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*), WTF_HEAP_PROFILER_TYPE_NAME(XSLTProcessor)));
 
     unsigned index = 0;
     for (auto& parameter : parameters) {
-        parameterArray[index++] = fastStrDup(parameter.key.utf8().data());
-        parameterArray[index++] = fastStrDup(parameter.value.utf8().data());
+        parameterArray[index++] = allocateParameterArray(parameter.key.utf8().data());
+        parameterArray[index++] = allocateParameterArray(parameter.value.utf8().data());
     }
     parameterArray[index] = 0;
 
@@ -212,10 +220,10 @@ static void freeXsltParamArray(const char** params)
         return;
 
     while (*temp) {
-        fastFree(const_cast<char*>(*(temp++)));
-        fastFree(const_cast<char*>(*(temp++)));
+        WTF::Partitions::fastFree(const_cast<char*>(*(temp++)));
+        WTF::Partitions::fastFree(const_cast<char*>(*(temp++)));
     }
-    fastFree(params);
+    WTF::Partitions::fastFree(params);
 }
 
 static xsltStylesheetPtr xsltStylesheetPointer(Document* document, RefPtrWillBeMember<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)

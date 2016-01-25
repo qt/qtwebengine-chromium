@@ -33,16 +33,18 @@
 #include "platform/graphics/Image.h"
 #include "platform/transforms/AffineTransform.h"
 
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
+class SkPaint;
 class SkPicture;
-class SkShader;
 
 namespace blink {
 
 class PLATFORM_EXPORT Pattern : public RefCounted<Pattern> {
+    WTF_MAKE_NONCOPYABLE(Pattern);
 public:
     enum RepeatMode {
         RepeatModeX    = 1 << 0,
@@ -57,7 +59,7 @@ public:
         RepeatMode = RepeatModeXY);
     virtual ~Pattern();
 
-    SkShader* shader();
+    void applyToPaint(SkPaint&);
 
     void setPatternSpaceTransform(const AffineTransform& patternSpaceTransformation);
     const AffineTransform& patternSpaceTransform() const { return m_patternSpaceTransformation; }

@@ -5,7 +5,10 @@
 #ifndef UI_OZONE_PUBLIC_SURFACE_FACTORY_OZONE_H_
 #define UI_OZONE_PUBLIC_SURFACE_FACTORY_OZONE_H_
 
+#include <stdint.h>
+
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/native_library.h"
 #include "ui/gfx/buffer_types.h"
@@ -13,6 +16,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/overlay_transform.h"
 #include "ui/ozone/ozone_base_export.h"
+#include "ui/ozone/public/native_pixmap.h"
 
 namespace ui {
 
@@ -94,7 +98,7 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // immediately followed by the corresponding desired value and array should be
   // terminated with EGL_NONE. Ownership of the array is not transferred to
   // caller. desired_list contains list of desired EGL properties and values.
-  virtual const int32* GetEGLSurfaceProperties(const int32* desired_list);
+  virtual const int32_t* GetEGLSurfaceProperties(const int32_t* desired_list);
 
   // Create a single native buffer to be used for overlay planes or zero copy
   // for |widget| representing a particular display controller or default
@@ -105,6 +109,11 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
       gfx::Size size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage);
+
+  // Create a single native buffer from an existing handle. Takes ownership of
+  // |handle| and can be called on any thread.
+  virtual scoped_refptr<NativePixmap> CreateNativePixmapFromHandle(
+      const gfx::NativePixmapHandle& handle);
 
  protected:
   SurfaceFactoryOzone();

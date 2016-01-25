@@ -106,13 +106,12 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe final : public ChannelEndpointClient {
                                UserPointer<uint32_t> num_bytes,
                                bool all_or_none);
   MojoResult ProducerBeginWriteData(UserPointer<void*> buffer,
-                                    UserPointer<uint32_t> buffer_num_bytes,
-                                    bool all_or_none);
+                                    UserPointer<uint32_t> buffer_num_bytes);
   MojoResult ProducerEndWriteData(uint32_t num_bytes_written);
   HandleSignalsState ProducerGetHandleSignalsState();
   MojoResult ProducerAddAwakable(Awakable* awakable,
                                  MojoHandleSignals signals,
-                                 uint32_t context,
+                                 uintptr_t context,
                                  HandleSignalsState* signals_state);
   void ProducerRemoveAwakable(Awakable* awakable,
                               HandleSignalsState* signals_state);
@@ -139,13 +138,12 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe final : public ChannelEndpointClient {
                                  bool all_or_none);
   MojoResult ConsumerQueryData(UserPointer<uint32_t> num_bytes);
   MojoResult ConsumerBeginReadData(UserPointer<const void*> buffer,
-                                   UserPointer<uint32_t> buffer_num_bytes,
-                                   bool all_or_none);
+                                   UserPointer<uint32_t> buffer_num_bytes);
   MojoResult ConsumerEndReadData(uint32_t num_bytes_read);
   HandleSignalsState ConsumerGetHandleSignalsState();
   MojoResult ConsumerAddAwakable(Awakable* awakable,
                                  MojoHandleSignals signals,
-                                 uint32_t context,
+                                 uintptr_t context,
                                  HandleSignalsState* signals_state);
   void ConsumerRemoveAwakable(Awakable* awakable,
                               HandleSignalsState* signals_state);

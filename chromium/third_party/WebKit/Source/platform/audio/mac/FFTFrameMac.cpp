@@ -28,9 +28,7 @@
 
 // Mac OS X - specific FFTFrame implementation
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
+#include "wtf/build_config.h"
 
 #if OS(MACOSX)
 
@@ -157,4 +155,3 @@ void FFTFrame::cleanup()
 
 #endif // #if OS(MACOSX)
 
-#endif // ENABLE(WEB_AUDIO)

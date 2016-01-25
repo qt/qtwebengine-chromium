@@ -36,15 +36,14 @@
 ] interface DevToolsHost {
     float zoomFactor();
 
+    float convertLengthForEmbedder(float length);
+
     void setInjectedScriptForOrigin(DOMString origin, DOMString script);
 
     void copyText(DOMString text);
 
     [Custom] DOMString platform();
-    // FIXME: showContextMenu is here only for old frontends. Remove in M43.
-    [Custom] void showContextMenu(MouseEvent event, any items);
     [Custom] void showContextMenuAtPoint(float x, float y, any items, optional Document document);
-    void sendMessageToBackend(DOMString message);
     void sendMessageToEmbedder(DOMString message);
 
     DOMString getSelectionBackgroundColor();

@@ -4,11 +4,14 @@
 
 #include "base/environment.h"
 
+#include <stddef.h>
+
 #include <vector>
 
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 
 #if defined(OS_POSIX)
 #include <stdlib.h>
@@ -228,7 +231,7 @@ scoped_ptr<char*[]> AlterEnvironment(const char* const* const env,
     result[i] = &storage_data[result_indices[i]];
   result[result_indices.size()] = 0;  // Null terminator.
 
-  return result.Pass();
+  return result;
 }
 
 #endif  // OS_POSIX

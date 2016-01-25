@@ -4,8 +4,9 @@
 
 #include "cc/quads/render_pass.h"
 
+#include <stddef.h>
+
 #include "cc/base/math_util.h"
-#include "cc/base/scoped_ptr_vector.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
@@ -27,16 +28,15 @@ struct RenderPassSize {
   gfx::Rect output_rect;
   gfx::Rect damage_rect;
   bool has_transparent_background;
-  std::vector<SurfaceId> referenced_surfaces;
-  ScopedPtrVector<CopyOutputRequest> copy_callbacks;
+  std::vector<scoped_ptr<CopyOutputRequest>> copy_callbacks;
 };
 
 static void CompareRenderPassLists(const RenderPassList& expected_list,
                                    const RenderPassList& actual_list) {
   EXPECT_EQ(expected_list.size(), actual_list.size());
   for (size_t i = 0; i < actual_list.size(); ++i) {
-    RenderPass* expected = expected_list[i];
-    RenderPass* actual = actual_list[i];
+    RenderPass* expected = expected_list[i].get();
+    RenderPass* actual = actual_list[i].get();
 
     EXPECT_EQ(expected->id, actual->id);
     EXPECT_EQ(expected->output_rect, actual->output_rect);
@@ -49,7 +49,6 @@ static void CompareRenderPassLists(const RenderPassList& expected_list,
     EXPECT_EQ(expected->shared_quad_state_list.size(),
               actual->shared_quad_state_list.size());
     EXPECT_EQ(expected->quad_list.size(), actual->quad_list.size());
-    EXPECT_EQ(expected->referenced_surfaces, actual->referenced_surfaces);
 
     for (auto exp_iter = expected->quad_list.cbegin(),
               act_iter = actual->quad_list.cbegin();
@@ -103,7 +102,6 @@ TEST(RenderPassTest, CopyShouldBeIdenticalExceptIdAndQuads) {
   EXPECT_EQ(pass->damage_rect, copy->damage_rect);
   EXPECT_EQ(pass->has_transparent_background, copy->has_transparent_background);
   EXPECT_EQ(0u, copy->quad_list.size());
-  EXPECT_EQ(0u, copy->referenced_surfaces.size());
 
   // The copy request should not be copied/duplicated.
   EXPECT_EQ(1u, pass->copy_requests.size());
@@ -221,8 +219,8 @@ TEST(RenderPassTest, CopyAllShouldBeIdentical) {
                     gfx::Vector2dF(),
                     FilterOperations());
 
-  pass_list.push_back(pass.Pass());
-  pass_list.push_back(contrib.Pass());
+  pass_list.push_back(std::move(pass));
+  pass_list.push_back(std::move(contrib));
 
   // Make a copy with CopyAll().
   RenderPassList copy_list;
@@ -304,7 +302,7 @@ TEST(RenderPassTest, CopyAllWithCulledQuads) {
                       gfx::Rect(3, 3, 3, 3), gfx::Rect(3, 3, 3, 3), SkColor(),
                       false);
 
-  pass_list.push_back(pass.Pass());
+  pass_list.push_back(std::move(pass));
 
   // Make a copy with CopyAll().
   RenderPassList copy_list;

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/ServiceWorkerGlobalScopeClientImpl.h"
 
 #include "modules/fetch/Response.h"
@@ -136,6 +135,11 @@ void ServiceWorkerGlobalScopeClientImpl::focus(const WebString& clientUUID, WebS
 void ServiceWorkerGlobalScopeClientImpl::navigate(const WebString& clientUUID, const WebURL& url, WebServiceWorkerClientCallbacks* callback)
 {
     m_client.navigate(clientUUID, url, callback);
+}
+
+void ServiceWorkerGlobalScopeClientImpl::registerForeignFetchScopes(const WebVector<WebURL>& subScopes)
+{
+    m_client.registerForeignFetchScopes(subScopes);
 }
 
 ServiceWorkerGlobalScopeClientImpl::ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient& client)

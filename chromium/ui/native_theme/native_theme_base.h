@@ -5,8 +5,8 @@
 #ifndef UI_NATIVE_THEME_NATIVE_THEME_BASE_H_
 #define UI_NATIVE_THEME_NATIVE_THEME_BASE_H_
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/native_theme/native_theme.h"
@@ -134,12 +134,13 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       const gfx::Rect& rect,
       const ProgressBarExtraParams& progress_bar) const;
 
-  virtual void PaintScrollbarThumbStateTransition(
-      SkCanvas* canvas,
-      State startState,
-      State endState,
-      double progress,
-      const gfx::Rect& rect) const {}
+  virtual void PaintScrollbarThumbStateTransition(SkCanvas* canvas,
+                                                  Part part,
+                                                  State startState,
+                                                  State endState,
+                                                  double progress,
+                                                  const gfx::Rect& rect) const {
+  }
 
   // Shrinks checkbox/radio button rect, if necessary, to make room for padding
   // and drop shadow.
@@ -152,9 +153,6 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
     scrollbar_button_length_ = length;
   }
   int scrollbar_button_length() const { return scrollbar_button_length_; }
-
-  bool IntersectsClipRectInt(SkCanvas* canvas,
-                             int x, int y, int w, int h) const;
 
   void DrawImageInt(SkCanvas* canvas, const gfx::ImageSkia& image,
                     int src_x, int src_y, int src_w, int src_h,

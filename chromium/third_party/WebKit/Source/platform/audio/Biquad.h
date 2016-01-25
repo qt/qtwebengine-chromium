@@ -31,6 +31,7 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/audio/AudioArray.h"
+#include "wtf/Allocator.h"
 #include <complex>
 #include <sys/types.h>
 
@@ -46,6 +47,7 @@ namespace blink {
 //    lowpass, highpass, shelving, parameteric, notch, allpass, ...
 
 class PLATFORM_EXPORT Biquad final {
+    DISALLOW_NEW();
 public:
     Biquad();
     ~Biquad();
@@ -62,14 +64,6 @@ public:
     void setPeakingParams(double frequency, double Q, double dbGain);
     void setAllpassParams(double frequency, double Q);
     void setNotchParams(double frequency, double Q);
-
-    // Set the biquad coefficients given a single zero (other zero will be conjugate)
-    // and a single pole (other pole will be conjugate)
-    void setZeroPolePairs(const std::complex<double>& zero, const std::complex<double>& pole);
-
-    // Set the biquad coefficients given a single pole (other pole will be conjugate)
-    // (The zeroes will be the inverse of the poles)
-    void setAllpassPole(const std::complex<double>&);
 
     // Resets filter state
     void reset();

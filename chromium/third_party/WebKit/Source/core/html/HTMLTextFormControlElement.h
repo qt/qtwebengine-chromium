@@ -89,6 +89,7 @@ public:
     void dispatchFormControlChangeEvent() final;
 
     virtual String value() const = 0;
+    virtual void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent) = 0;
 
     HTMLElement* innerEditorElement() const;
 
@@ -114,7 +115,7 @@ protected:
     bool isPlaceholderEmpty() const;
     virtual void updatePlaceholderText() = 0;
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {

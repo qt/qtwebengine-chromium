@@ -8,10 +8,11 @@
 
 namespace scheduler {
 
-TaskCostEstimator::TaskCostEstimator(int sample_count,
+TaskCostEstimator::TaskCostEstimator(base::TickClock* time_source,
+                                     int sample_count,
                                      double estimation_percentile)
     : rolling_time_delta_history_(sample_count),
-      time_source_(new base::DefaultTickClock),
+      time_source_(time_source),
       outstanding_task_count_(0),
       estimation_percentile_(estimation_percentile) {}
 
@@ -27,21 +28,16 @@ void TaskCostEstimator::DidProcessTask(const base::PendingTask& pending_task) {
   if (--outstanding_task_count_ == 0) {
     base::TimeDelta duration = time_source_->NowTicks() - task_start_time_;
     rolling_time_delta_history_.InsertSample(duration);
-
-    // TODO(skyostil): Should we do this less often?
-    expected_task_duration_ =
-        rolling_time_delta_history_.Percentile(estimation_percentile_);
   }
+}
+
+base::TimeDelta TaskCostEstimator::expected_task_duration() const {
+  return rolling_time_delta_history_.Percentile(estimation_percentile_);
 }
 
 void TaskCostEstimator::Clear() {
   rolling_time_delta_history_.Clear();
   expected_task_duration_ = base::TimeDelta();
-}
-
-void TaskCostEstimator::SetTimeSourceForTesting(
-    scoped_ptr<base::TickClock> time_source) {
-  time_source_ = time_source.Pass();
 }
 
 }  // namespace scheduler

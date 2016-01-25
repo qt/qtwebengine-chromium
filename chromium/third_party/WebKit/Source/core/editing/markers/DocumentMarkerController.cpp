@@ -24,7 +24,6 @@
  *
  */
 
-#include "config.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 
 #include "core/dom/Node.h"
@@ -35,6 +34,7 @@
 #include "core/editing/markers/RenderedDocumentMarker.h"
 #include "core/frame/FrameView.h"
 #include "core/layout/LayoutObject.h"
+#include <algorithm>
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -557,7 +557,7 @@ void DocumentMarkerController::removeMarkers(DocumentMarker::MarkerTypes markerT
         return;
     ASSERT(!m_markers.isEmpty());
 
-    Vector<const Node*> nodesWithMarkers;
+    WillBeHeapVector<RawPtrWillBeMember<const Node>> nodesWithMarkers;
     copyKeysToVector(m_markers, nodesWithMarkers);
     unsigned size = nodesWithMarkers.size();
     for (unsigned i = 0; i < size; ++i) {

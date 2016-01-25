@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/DataConsumerTee.h"
 
 #include "core/dom/ActiveDOMObject.h"
@@ -184,7 +183,7 @@ public:
             }
             ASSERT(m_readerThread);
             if (!m_readerThread->isCurrentThread()) {
-                m_readerThread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
+                m_readerThread->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
                 return;
             }
         }
@@ -271,28 +270,13 @@ public:
             // We need to use threadSafeBind here to retain the context. Note
             // |context()| return value is of type DestinationContext*, not
             // PassRefPtr<DestinationContext>.
-            Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
+            Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
         }
     }
     ~DestinationReader() override
     {
         MutexLocker locker(context()->mutex());
         context()->detachReader();
-    }
-
-    Result read(void* buffer, size_t size, Flags, size_t* readSize) override
-    {
-        MutexLocker locker(context()->mutex());
-        *readSize = 0;
-        if (context()->isEmpty())
-            return context()->result();
-
-        const OwnPtr<Vector<char>>& chunk = context()->top();
-        size_t sizeToCopy = std::min(size, chunk->size() - context()->offset());
-        std::copy(chunk->data() + context()->offset(), chunk->data() + context()->offset() + sizeToCopy, static_cast<char*>(buffer));
-        context()->consume(sizeToCopy);
-        *readSize = sizeToCopy;
-        return WebDataConsumerHandle::Ok;
     }
 
     Result beginRead(const void** buffer, Flags, size_t* available) override

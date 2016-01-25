@@ -5,8 +5,12 @@
 #ifndef UI_SURFACE_TRANSPORT_DIB_H_
 #define UI_SURFACE_TRANSPORT_DIB_H_
 
-#include "base/basictypes.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
+#include "build/build_config.h"
 #include "ui/surface/surface_export.h"
 
 #if defined(OS_WIN)
@@ -43,7 +47,7 @@ class SURFACE_EXPORT TransportDIB {
   // The sequence number is used to uniquely identify the transport DIB. It
   // should be unique for all transport DIBs ever created in the same
   // renderer.
-  static TransportDIB* Create(size_t size, uint32 sequence_num);
+  static TransportDIB* Create(size_t size, uint32_t sequence_num);
 
   // Map the referenced transport DIB.  The caller owns the returned object.
   // Returns NULL on failure.
@@ -58,7 +62,8 @@ class SURFACE_EXPORT TransportDIB {
 
   // Returns a canvas using the memory of this TransportDIB. The returned
   // pointer will be owned by the caller. The bitmap will be of the given size,
-  // which should fit inside this memory.
+  // which should fit inside this memory. Bitmaps returned will be either
+  // opaque or have premultiplied alpha.
   //
   // On POSIX, this |TransportDIB| will be mapped if not already. On Windows,
   // this |TransportDIB| will NOT be mapped and should not be mapped prior,
@@ -66,7 +71,7 @@ class SURFACE_EXPORT TransportDIB {
   //
   // Will return NULL on allocation failure. This could be because the image
   // is too large to map into the current process' address space.
-  SkCanvas* GetPlatformCanvas(int w, int h);
+  SkCanvas* GetPlatformCanvas(int w, int h, bool opaque);
 
   // Map the DIB into the current process if it is not already. This is used to
   // map a DIB that has already been created. Returns true if the DIB is mapped.
@@ -91,7 +96,7 @@ class SURFACE_EXPORT TransportDIB {
 
   explicit TransportDIB(base::SharedMemoryHandle dib);
   base::SharedMemory shared_memory_;
-  uint32 sequence_num_;
+  uint32_t sequence_num_;
   size_t size_;  // length, in bytes
 
   DISALLOW_COPY_AND_ASSIGN(TransportDIB);

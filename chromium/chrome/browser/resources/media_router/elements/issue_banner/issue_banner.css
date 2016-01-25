@@ -3,31 +3,35 @@
  * found in the LICENSE file. */
 
 .blocking {
+  background-color: white;
   overflow: hidden;
-  padding-bottom: 15px;
-  padding-top: 15px;
   position: relative;
   text-align: center;
 }
 
+.blocking > #buttons {
+  padding-bottom: 24px;
+  padding-top: 20px;
+}
+
 .blocking > div > #title {
-  color: rgb(150, 150, 150);
+  color: rgba(0, 0, 0, 0.87);
   line-height: 1.125em;
   padding: 10px;
   vertical-align: middle;
 }
 
 #blocking-icon {
+  color: rgb(219, 68, 55);
   height: 75px;
-  padding: 15px;
+  padding-top: 24px;
   width: 75px;
 }
 
 .non-blocking {
   background-color: rgb(66, 66, 66);
-  max-height: 65px;
   overflow: hidden;
-  padding: 6px;
+  padding: 16px;
 }
 
 .non-blocking > #buttons {
@@ -38,6 +42,9 @@
 }
 
 .non-blocking > div > #title {
-  color: white;
-  padding: 6px 6px 20px 6px;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+paper-button {
+  margin: 0;
 }

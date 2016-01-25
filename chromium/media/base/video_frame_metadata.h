@@ -5,7 +5,10 @@
 #ifndef MEDIA_BASE_VIDEO_FRAME_METADATA_H_
 #define MEDIA_BASE_VIDEO_FRAME_METADATA_H_
 
+#include <string>
+
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "media/base/media_export.h"
@@ -31,6 +34,12 @@ class MEDIA_EXPORT VideoFrameMetadata {
     // GetInteger()/SetInteger() and ColorSpace enumeration.
     COLOR_SPACE,
 
+    // Indicates that this frame must be copied to a new texture before use,
+    // rather than being used directly. Specifically this is required for
+    // WebView because of limitations about sharing surface textures between GL
+    // contexts.
+    COPY_REQUIRED,
+
     // Indicates if the current frame is the End of its current Stream. Use
     // Get/SetBoolean() for this Key.
     END_OF_STREAM,
@@ -49,6 +58,14 @@ class MEDIA_EXPORT VideoFrameMetadata {
     // same for all frames in the same session.  Use Get/SetDouble() for this
     // key.
     FRAME_RATE,
+
+    // This is a boolean that signals that the video capture engine detects
+    // interactive content. One possible optimization that this signal can help
+    // with is remote content: adjusting end-to-end latency down to help the
+    // user better coordinate their actions.
+    //
+    // Use Get/SetBoolean for this key.
+    INTERACTIVE_CONTENT,
 
     // This field represents the local time at which either: 1) the frame was
     // generated, if it was done so locally; or 2) the targeted play-out time

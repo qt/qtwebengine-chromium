@@ -5,12 +5,14 @@
 #ifndef COMPONENTS_DEVTOOLS_SERVICE_DEVTOOLS_AGENT_HOST_H_
 #define COMPONENTS_DEVTOOLS_SERVICE_DEVTOOLS_AGENT_HOST_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/macros.h"
 #include "components/devtools_service/public/interfaces/devtools_service.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/callback.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/callback.h"
 
 namespace devtools_service {
 

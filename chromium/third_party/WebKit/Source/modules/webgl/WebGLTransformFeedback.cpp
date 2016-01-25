@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "modules/webgl/WebGLTransformFeedback.h"
 
 #include "modules/webgl/WebGL2RenderingContextBase.h"
@@ -24,6 +22,9 @@ WebGLTransformFeedback::~WebGLTransformFeedback()
 WebGLTransformFeedback::WebGLTransformFeedback(WebGL2RenderingContextBase* ctx)
     : WebGLSharedPlatform3DObject(ctx)
     , m_target(0)
+    , m_active(false)
+    , m_paused(false)
+    , m_program(nullptr)
 {
     setObject(ctx->webContext()->createTransformFeedback());
 }
@@ -40,6 +41,27 @@ void WebGLTransformFeedback::setTarget(GLenum target)
         return;
     if (target == GL_TRANSFORM_FEEDBACK)
         m_target = target;
+}
+
+void WebGLTransformFeedback::setActive(bool active)
+{
+    m_active = active;
+}
+
+void WebGLTransformFeedback::setPaused(bool paused)
+{
+    m_paused = paused;
+}
+
+void WebGLTransformFeedback::setProgram(WebGLProgram* program)
+{
+    m_program = program;
+}
+
+DEFINE_TRACE(WebGLTransformFeedback)
+{
+    visitor->trace(m_program);
+    WebGLSharedPlatform3DObject::trace(visitor);
 }
 
 } // namespace blink

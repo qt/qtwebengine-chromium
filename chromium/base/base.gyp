@@ -21,8 +21,8 @@
         'optimize': 'max',
       },
       'dependencies': [
+        'base_debugging_flags#target',
         'base_static',
-        'allocator/allocator.gyp:allocator_extension_thunks',
         '../testing/gtest.gyp:gtest_prod',
         '../third_party/modp_b64/modp_b64.gyp:modp_b64',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
@@ -207,7 +207,7 @@
           },
         }],
         ['OS != "win" and (OS != "ios" or _toolset == "host")', {
-            'dependencies': ['../third_party/libevent/libevent.gyp:libevent'],
+            'dependencies': ['third_party/libevent/libevent.gyp:libevent'],
         },],
         ['component=="shared_library"', {
           'conditions': [
@@ -426,6 +426,7 @@
       'target_name': 'base_unittests',
       'type': '<(gtest_target_type)',
       'sources': [
+        'allocator/tcmalloc_unittest.cc',
         'android/application_status_listener_unittest.cc',
         'android/content_uri_utils_unittest.cc',
         'android/jni_android_unittest.cc',
@@ -439,6 +440,7 @@
         'atomicops_unittest.cc',
         'barrier_closure_unittest.cc',
         'base64_unittest.cc',
+        'base64url_unittest.cc',
         'big_endian_unittest.cc',
         'bind_unittest.cc',
         'bind_unittest.nc',
@@ -456,7 +458,6 @@
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
         'containers/scoped_ptr_hash_map_unittest.cc',
-        'containers/scoped_ptr_map_unittest.cc',
         'containers/small_map_unittest.cc',
         'containers/stack_container_unittest.cc',
         'cpu_unittest.cc',
@@ -471,6 +472,7 @@
         'feature_list_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
+        'files/file_locking_unittest.cc',
         'files/file_path_unittest.cc',
         'files/file_path_watcher_unittest.cc',
         'files/file_proxy_unittest.cc',
@@ -525,6 +527,7 @@
         'memory/memory_pressure_monitor_chromeos_unittest.cc',
         'memory/memory_pressure_monitor_mac_unittest.cc',
         'memory/memory_pressure_monitor_win_unittest.cc',
+        'memory/ptr_util_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
         'memory/scoped_ptr_unittest.cc',
@@ -547,11 +550,12 @@
         'metrics/histogram_macros_unittest.cc',
         'metrics/histogram_snapshot_manager_unittest.cc',
         'metrics/histogram_unittest.cc',
+        'metrics/metrics_hashes_unittest.cc',
         'metrics/sample_map_unittest.cc',
         'metrics/sample_vector_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
         'metrics/statistics_recorder_unittest.cc',
-        'move_unittest.cc',
+        'native_library_unittest.cc',
         'numerics/safe_numerics_unittest.cc',
         'observer_list_unittest.cc',
         'os_compat_android_unittest.cc',
@@ -623,6 +627,7 @@
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
         'threading/sequenced_worker_pool_unittest.cc',
+        'threading/sequenced_task_runner_handle_unittest.cc',
         'threading/simple_thread_unittest.cc',
         'threading/thread_checker_unittest.cc',
         'threading/thread_collision_warner_unittest.cc',
@@ -696,6 +701,8 @@
         }],
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
+            # This test needs multiple processes.
+            ['exclude', '^files/file_locking_unittest\\.cc$'],
             # iOS does not support FilePathWatcher.
             ['exclude', '^files/file_path_watcher_unittest\\.cc$'],
             # Only test the iOS-meaningful portion of memory and process_utils.
@@ -766,6 +773,9 @@
           'sources': [
             'profiler/win32_stack_frame_unwinder_unittest.cc',
           ],
+          'dependencies': [
+            'base_profiler_test_support_library',
+          ],
         }],
         ['OS == "win"', {
           'sources!': [
@@ -799,7 +809,7 @@
           ],
         }, {  # OS != "win"
           'dependencies': [
-            '../third_party/libevent/libevent.gyp:libevent'
+            'third_party/libevent/libevent.gyp:libevent'
           ],
         }],
       ],  # conditions
@@ -1071,6 +1081,21 @@
         }],
       ],
     },
+    {
+      # GN version: //base/debug:debugging_flags
+      # Since this generates a file, it most only be referenced in the target
+      # toolchain or there will be multiple rules that generate the header.
+      # When referenced from a target that might be compiled in the host
+      # toolchain, always refer to 'base_debugging_flags#target'.
+      'target_name': 'base_debugging_flags',
+      'includes': [ '../build/buildflag_header.gypi' ],
+      'variables': {
+        'buildflag_header_path': 'base/debug/debugging_flags.h',
+        'buildflag_flags': [
+          'ENABLE_PROFILING=<(profiling)',
+        ],
+      },
+    },
   ],
   'conditions': [
     ['OS=="ios" and "<(GENERATOR)"=="ninja"', {
@@ -1126,8 +1151,8 @@
             'base_target': 1,
           },
           'dependencies': [
+            'base_debugging_flags#target',
             'base_static_win64',
-            'allocator/allocator.gyp:allocator_extension_thunks_win64',
             '../third_party/modp_b64/modp_b64.gyp:modp_b64_win64',
             'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
             'trace_event/etw_manifest/etw_manifest.gyp:etw_manifest',
@@ -1271,6 +1296,21 @@
         },
       ],
     }],
+    ['OS == "win" and target_arch=="x64"', {
+      'targets': [
+        {
+          'target_name': 'base_profiler_test_support_library',
+          # Must be a shared library so that it can be unloaded during testing.
+          'type': 'shared_library',
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'profiler/test_support_library.cc',
+          ],
+        },
+      ]
+    }],
     ['os_posix==1 and OS!="mac" and OS!="ios"', {
       'targets': [
         {
@@ -1375,6 +1415,7 @@
             'android/java/src/org/chromium/base/BuildInfo.java',
             'android/java/src/org/chromium/base/CommandLine.java',
             'android/java/src/org/chromium/base/ContentUriUtils.java',
+            'android/java/src/org/chromium/base/ContextUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/EventLog.java',
             'android/java/src/org/chromium/base/FieldTrialList.java',
@@ -1413,7 +1454,7 @@
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
         {
-          # TODO(GN)
+          # GN: //base:base_unittests_jni_headers
           'target_name': 'base_unittests_jni_headers',
           'type': 'none',
           'sources': [
@@ -1439,6 +1480,19 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          # GN: //base:base_multidex_gen
+          'target_name': 'base_multidex_gen',
+          'type': 'none',
+          'sources': [
+            'android/java/templates/ChromiumMultiDex.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/base/multidex',
+            'template_deps': [],
+          },
+          'includes': ['../build/android/java_cpp_template.gypi'],
+        },
+        {
           # GN: //base:base_android_java_enums_srcjar
           'target_name': 'base_java_library_process_type',
           'type': 'none',
@@ -1453,17 +1507,26 @@
           'type': 'none',
           'variables': {
             'java_in_dir': 'android/java',
-            'jar_excluded_classes': [ '*/NativeLibraries.class' ],
+            'jar_excluded_classes': [
+              '*/ChromiumMultiDex.class',
+              '*/NativeLibraries.class',
+            ],
           },
           'dependencies': [
             'base_java_application_state',
             'base_java_library_load_from_apk_status_codes',
             'base_java_library_process_type',
             'base_java_memory_pressure_level',
+            'base_multidex_gen',
             'base_native_libraries_gen',
             '../third_party/android_tools/android_tools.gyp:android_support_multidex_javalib',
             '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
           ],
+          'all_dependent_settings': {
+            'variables': {
+              'generate_multidex_config': 1,
+            },
+          },
           'includes': [ '../build/java.gypi' ],
         },
         {
@@ -1525,12 +1588,13 @@
           'target_name': 'base_junit_test_support',
           'type': 'none',
           'dependencies': [
+            'base_multidex_gen',
             '../testing/android/junit/junit_test.gyp:junit_test_support',
             '../third_party/android_tools/android_tools.gyp:android_support_multidex_javalib',
           ],
           'variables': {
             'src_paths': [
-              '../base/test/android/junit/',
+              '../base/test/android/junit/src/org/chromium/base/test/shadows/ShadowMultiDex.java',
             ],
           },
           'includes': [ '../build/host_jar.gypi' ]
@@ -1549,6 +1613,7 @@
              'main_class': 'org.chromium.testing.local.JunitTestMain',
              'src_paths': [
                '../base/android/junit/',
+               '../base/test/android/junit/src/org/chromium/base/test/util/DisableIfTest.java',
              ],
            },
           'includes': [ '../build/host_jar.gypi' ],
@@ -1591,7 +1656,7 @@
           ],
         },
         {
-          # TODO(GN)
+          # GN: //base:base_perftests_apk
           'target_name': 'base_perftests_apk',
           'type': 'none',
           'dependencies': [

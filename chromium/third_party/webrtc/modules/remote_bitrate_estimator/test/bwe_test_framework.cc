@@ -92,41 +92,6 @@ double RateCounter::BitrateWindowS() const {
   return static_cast<double>(window_size_us_) / (1000 * 1000);
 }
 
-Random::Random(uint32_t seed) : a_(0x531FDB97 ^ seed), b_(0x6420ECA8 + seed) {
-}
-
-float Random::Rand() {
-  const float kScale = 1.0f / 0xffffffff;
-  float result = kScale * b_;
-  a_ ^= b_;
-  b_ += a_;
-  return result;
-}
-
-int Random::Rand(int low, int high) {
-  float uniform = Rand() * (high - low + 1) + low;
-  return static_cast<int>(uniform);
-}
-
-int Random::Gaussian(int mean, int standard_deviation) {
-  // Creating a Normal distribution variable from two independent uniform
-  // variables based on the Box-Muller transform, which is defined on the
-  // interval (0, 1], hence the mask+add below.
-  const double kPi = 3.14159265358979323846;
-  const double kScale = 1.0 / 0x80000000ul;
-  double u1 = kScale * ((a_ & 0x7ffffffful) + 1);
-  double u2 = kScale * ((b_ & 0x7ffffffful) + 1);
-  a_ ^= b_;
-  b_ += a_;
-  return static_cast<int>(
-      mean + standard_deviation * sqrt(-2 * log(u1)) * cos(2 * kPi * u2));
-}
-
-int Random::Exponential(float lambda) {
-  float uniform = Rand();
-  return static_cast<int>(-log(uniform) / lambda);
-}
-
 Packet::Packet()
     : flow_id_(0),
       creation_time_us_(-1),
@@ -358,7 +323,7 @@ void LossFilter::SetLoss(float loss_percent) {
 void LossFilter::RunFor(int64_t /*time_ms*/, Packets* in_out) {
   assert(in_out);
   for (PacketsIt it = in_out->begin(); it != in_out->end(); ) {
-    if (random_.Rand() < loss_fraction_) {
+    if (random_.Rand<float>() < loss_fraction_) {
       delete *it;
       it = in_out->erase(it);
     } else {
@@ -494,7 +459,7 @@ void ReorderFilter::RunFor(int64_t /*time_ms*/, Packets* in_out) {
     PacketsIt last_it = in_out->begin();
     PacketsIt it = last_it;
     while (++it != in_out->end()) {
-      if (random_.Rand() < reorder_fraction_) {
+      if (random_.Rand<float>() < reorder_fraction_) {
         int64_t t1 = (*last_it)->send_time_us();
         int64_t t2 = (*it)->send_time_us();
         std::swap(*last_it, *it);
@@ -621,7 +586,7 @@ bool TraceBasedDeliveryFilter::Init(const std::string& filename) {
     return false;
   }
   int64_t first_timestamp = -1;
-  while(!feof(trace_file)) {
+  while (!feof(trace_file)) {
     const size_t kMaxLineLength = 100;
     char line[kMaxLineLength];
     if (fgets(line, kMaxLineLength, trace_file)) {
@@ -715,6 +680,7 @@ VideoSource::VideoSource(int flow_id,
       frame_period_ms_(1000.0 / fps),
       bits_per_second_(1000 * kbps),
       frame_size_bytes_(bits_per_second_ / 8 / fps),
+      random_(0x12345678),
       flow_id_(flow_id),
       next_frame_ms_(first_frame_offset_ms),
       next_frame_rand_ms_(0),
@@ -748,9 +714,7 @@ void VideoSource::RunFor(int64_t time_ms, Packets* in_out) {
     const int64_t kRandAmplitude = 2;
     // A variance picked uniformly from {-1, 0, 1} ms is added to the frame
     // timestamp.
-    next_frame_rand_ms_ =
-        kRandAmplitude * static_cast<float>(rand()) / RAND_MAX -
-        kRandAmplitude / 2;
+    next_frame_rand_ms_ = kRandAmplitude * (random_.Rand<float>() - 0.5);
 
     // Ensure frame will not have a negative timestamp.
     int64_t next_frame_ms =

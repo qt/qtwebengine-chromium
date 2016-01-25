@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/modules/v8/V8SQLError.h"
@@ -66,7 +64,7 @@ bool V8SQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
         errorHandle
     };
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
     exceptionCatcher.SetVerbose(true);
 
     v8::Local<v8::Value> result;

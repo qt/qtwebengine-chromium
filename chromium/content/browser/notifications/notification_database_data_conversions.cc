@@ -4,6 +4,8 @@
 
 #include "content/browser/notifications/notification_database_data_conversions.h"
 
+#include <stddef.h>
+
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/notifications/notification_database_data.pb.h"
@@ -51,8 +53,7 @@ bool DeserializeNotificationDatabaseData(const std::string& input,
 
   if (payload.vibration_pattern().size() > 0) {
     notification_data->vibration_pattern.assign(
-        payload.vibration_pattern().begin(),
-        payload.vibration_pattern().end());
+        payload.vibration_pattern().begin(), payload.vibration_pattern().end());
   }
 
   notification_data->silent = payload.silent();

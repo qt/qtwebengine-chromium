@@ -156,24 +156,18 @@
       ],
       'sources': [
         # TODO(vtl): This is kind of ugly. (See TODO in logging.h.)
-        "../third_party/mojo/src/mojo/public/cpp/environment/async_waiter.h",
-        "../third_party/mojo/src/mojo/public/cpp/environment/lib/async_waiter.cc",
-        "../third_party/mojo/src/mojo/public/cpp/environment/lib/logging.cc",
-        "../third_party/mojo/src/mojo/public/cpp/environment/lib/scoped_task_tracking.cc",
-        "../third_party/mojo/src/mojo/public/cpp/environment/lib/scoped_task_tracking.cc",
-        "../third_party/mojo/src/mojo/public/cpp/environment/logging.h",
-        "../third_party/mojo/src/mojo/public/cpp/environment/task_tracker.h",
+        "../mojo/public/cpp/environment/async_waiter.h",
+        "../mojo/public/cpp/environment/lib/async_waiter.cc",
+        "../mojo/public/cpp/environment/lib/logging.cc",
+        "../mojo/public/cpp/environment/lib/scoped_task_tracking.cc",
+        "../mojo/public/cpp/environment/lib/scoped_task_tracking.cc",
+        "../mojo/public/cpp/environment/logging.h",
+        "../mojo/public/cpp/environment/task_tracker.h",
         'environment/environment.cc',
       ],
       'include_dirs': [
         '..',
-        '../third_party/mojo/src',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '../third_party/mojo/src',
-        ],
-      },
       'export_dependent_settings': [
         'mojo_environment_chromium_impl',
       ],
@@ -203,23 +197,18 @@
       ],
       'include_dirs': [
         '..',
-        '../third_party/mojo/src',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '../third_party/mojo/src',
-        ],
-      },
     },
     {
       'target_name': 'mojo_application_bindings_mojom',
       'type': 'none',
       'variables': {
         'mojom_files': [
-          'application/public/interfaces/application.mojom',
-          'application/public/interfaces/content_handler.mojom',
-          'application/public/interfaces/service_provider.mojom',
-          'application/public/interfaces/shell.mojom',
+          'shell/public/interfaces/application.mojom',
+          'shell/public/interfaces/application_manager.mojom',
+          'shell/public/interfaces/content_handler.mojom',
+          'shell/public/interfaces/service_provider.mojom',
+          'shell/public/interfaces/shell.mojom',
         ],
       },
       'dependencies': [
@@ -231,34 +220,38 @@
       'includes': [ '../third_party/mojo/mojom_bindings_generator_explicit.gypi' ],
     },
     {
-      # GN version: //mojo/application/public/cpp
+      # GN version: //mojo/shell/public/cpp
       'target_name': 'mojo_application_base',
       'type': 'static_library',
       'sources': [
-        'application/public/cpp/app_lifetime_helper.h',
-        'application/public/cpp/application_connection.h',
-        'application/public/cpp/application_delegate.h',
-        'application/public/cpp/application_impl.h',
-        'application/public/cpp/application_runner.h',
-        'application/public/cpp/connect.h',
-        'application/public/cpp/interface_factory.h',
-        'application/public/cpp/interface_factory_impl.h',
-        'application/public/cpp/lib/app_lifetime_helper.cc',
-        'application/public/cpp/lib/application_delegate.cc',
-        'application/public/cpp/lib/application_impl.cc',
-        'application/public/cpp/lib/application_runner.cc',
-        'application/public/cpp/lib/interface_factory_connector.h',
-        'application/public/cpp/lib/service_connector_registry.cc',
-        'application/public/cpp/lib/service_connector_registry.h',
-        'application/public/cpp/lib/service_provider_impl.cc',
-        'application/public/cpp/lib/service_registry.cc',
-        'application/public/cpp/lib/service_registry.h',
-        'application/public/cpp/service_connector.h',
-        'application/public/cpp/service_provider_impl.h',
+        'shell/public/cpp/app_lifetime_helper.h',
+        'shell/public/cpp/application_connection.h',
+        'shell/public/cpp/application_delegate.h',
+        'shell/public/cpp/application_impl.h',
+        'shell/public/cpp/application_runner.h',
+        'shell/public/cpp/connect.h',
+        'shell/public/cpp/initialize_base_and_icu.cc',
+        'shell/public/cpp/initialize_base_and_icu.h',
+        'shell/public/cpp/interface_factory.h',
+        'shell/public/cpp/interface_factory_impl.h',
+        'shell/public/cpp/lib/app_lifetime_helper.cc',
+        'shell/public/cpp/lib/application_delegate.cc',
+        'shell/public/cpp/lib/application_impl.cc',
+        'shell/public/cpp/lib/application_runner.cc',
+        'shell/public/cpp/lib/interface_factory_connector.h',
+        'shell/public/cpp/lib/service_connector_registry.cc',
+        'shell/public/cpp/lib/service_connector_registry.h',
+        'shell/public/cpp/lib/service_provider_impl.cc',
+        'shell/public/cpp/lib/service_registry.cc',
+        'shell/public/cpp/lib/service_registry.h',
+        'shell/public/cpp/service_connector.h',
+        'shell/public/cpp/service_provider_impl.h',
       ],
       'dependencies': [
+        '../base/base.gyp:base_i18n',
         'mojo_application_bindings',
         'mojo_message_pump_lib',
+        'mojo_services.gyp:network_type_converters',
       ],
     },
     {
@@ -288,7 +281,7 @@
       ],
     },
     {
-      # GN version: //mojo/application/public/cpp/tests
+      # GN version: //mojo/shell/public/cpp/tests
       'target_name': 'mojo_public_application_unittests',
       'type': 'executable',
       'dependencies': [
@@ -300,7 +293,7 @@
         '../third_party/mojo/mojo_public.gyp:mojo_environment_standalone',
       ],
       'sources': [
-        'application/public/cpp/tests/service_registry_unittest.cc',
+        'shell/public/cpp/tests/service_registry_unittest.cc',
       ],
     },
   ],

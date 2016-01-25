@@ -26,10 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioPullFIFO.h"
 
 namespace blink {
@@ -72,4 +68,3 @@ void AudioPullFIFO::fillBuffer(size_t numberOfFrames)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -29,6 +29,8 @@
 #include "wtf/Assertions.h"
 #include "wtf/CPU.h"
 #include "wtf/CheckedArithmetic.h"
+#include "wtf/LeakAnnotations.h"
+#include <cstddef>
 
 #if ENABLE(ASSERT)
 #include "wtf/Noncopyable.h"
@@ -57,55 +59,40 @@ private:
 };
 #endif
 
-// Use this to declare and define a static local variable (static T;) so that
-//  it is leaked so that its destructors are not called at exit.
-#ifndef DEFINE_STATIC_LOCAL
+// A direct static local to a Blink garbage collected objects isn't allowed;
+// must be wrapped up with a persistent reference.
+#define STATIC_ASSERT_FOR_LOCAL_WITH_GARBAGE_COLLECTED_TYPE(Name, Type) \
+    using Name##NoConstType = std::remove_const<Type>::type; \
+    using Name##NoPointerType = std::remove_pointer<Name##NoConstType>::type; \
+    using Name##NoReferenceType = std::remove_reference<Name##NoPointerType>::type; \
+    static_assert(!WTF::IsGarbageCollectedType<Name##NoReferenceType>::value || WTF::IsPersistentReferenceType<Name##NoReferenceType>::value, "Garbage collected static local needs to be wrapped up with a persistent reference")
 
+// Use DEFINE_STATIC_LOCAL() to declare and define a static local variable (static T;)
+// so that it is leaked and its destructors are not called at exit.
+//
+// To cooperate with leak detection, the objects held onto by these local statics
+// will in some cases have to be finalized prior to leak checking. This only applies
+// to static references to Oilpan heap objects and what they transitively hold on to.
+// LEAK_SANITIZER_REGISTER_STATIC_LOCAL() takes care of the details.
+//
 #if ENABLE(ASSERT)
-#define DEFINE_STATIC_LOCAL(type, name, arguments)        \
-    static StaticLocalVerifier name##StaticLocalVerifier; \
-    ASSERT(name##StaticLocalVerifier.isNotRacy()); \
-    static type& name = *new type arguments
+#define DEFINE_STATIC_LOCAL(Type, Name, Arguments)        \
+    STATIC_ASSERT_FOR_LOCAL_WITH_GARBAGE_COLLECTED_TYPE(Name, Type); \
+    static StaticLocalVerifier Name##StaticLocalVerifier; \
+    ASSERT(Name##StaticLocalVerifier.isNotRacy());        \
+    static Type& Name = *LEAK_SANITIZER_REGISTER_STATIC_LOCAL(Type, new Type Arguments)
 #else
-#define DEFINE_STATIC_LOCAL(type, name, arguments) \
-    static type& name = *new type arguments
+#define DEFINE_STATIC_LOCAL(Type, Name, Arguments) \
+    STATIC_ASSERT_FOR_LOCAL_WITH_GARBAGE_COLLECTED_TYPE(Name, Type); \
+    static Type& Name = *LEAK_SANITIZER_REGISTER_STATIC_LOCAL(Type, new Type Arguments)
 #endif
-
-// Does the same as DEFINE_STATIC_LOCAL but without assertions.
-// Use this when you are absolutely sure that it is safe but above
-// assertions fail (e.g. called on multiple thread with a local lock).
-#define DEFINE_STATIC_LOCAL_NOASSERT(type, name, arguments) \
-    static type& name = *new type arguments
-#endif
-
 
 // Use this to declare and define a static local pointer to a ref-counted object so that
 // it is leaked so that the object's destructors are not called at exit.
 // This macro should be used with ref-counted objects rather than DEFINE_STATIC_LOCAL macro,
 // as this macro does not lead to an extra memory allocation.
-#ifndef DEFINE_STATIC_REF
 #define DEFINE_STATIC_REF(type, name, arguments) \
     static type* name = PassRefPtr<type>(arguments).leakRef();
-#endif
-
-// Use this macro to declare and define a debug-only global variable that may have a
-// non-trivial constructor and destructor. When building with clang, this will suppress
-// warnings about global constructors and exit-time destructors.
-#ifndef NDEBUG
-#if COMPILER(CLANG)
-#define DEFINE_DEBUG_ONLY_GLOBAL(type, name, arguments) \
-    _Pragma("clang diagnostic push") \
-    _Pragma("clang diagnostic ignored \"-Wglobal-constructors\"") \
-    _Pragma("clang diagnostic ignored \"-Wexit-time-destructors\"") \
-    static type name arguments; \
-    _Pragma("clang diagnostic pop")
-#else
-#define DEFINE_DEBUG_ONLY_GLOBAL(type, name, arguments) \
-    static type name arguments;
-#endif // COMPILER(CLANG)
-#else
-#define DEFINE_DEBUG_ONLY_GLOBAL(type, name, arguments)
-#endif // NDEBUG
 
 /*
  * The reinterpret_cast<Type1*>([pointer to Type2]) expressions - where
@@ -166,9 +153,39 @@ inline TO bitwise_cast(FROM from)
 template<typename To, typename From>
 inline To safeCast(From value)
 {
-    ASSERT(isInBounds<To>(value));
+    RELEASE_ASSERT(isInBounds<To>(value));
     return static_cast<To>(value);
 }
+
+// Use the following macros to prevent errors caused by accidental
+// implicit casting of function arguments.  For example, this can
+// be used to prevent overflows from non-promoting conversions.
+//
+// Example:
+//
+// HAS_STRICTLY_TYPED_ARG
+// void sendData(void* data, STRICTLY_TYPED_ARG(size))
+// {
+//    ALLOW_NUMERIC_ARG_TYPES_PROMOTABLE_TO(size_t);
+//    ...
+// }
+//
+// The previous example will prevent callers from passing, for example, an
+// 'int'. On a 32-bit build, it will prevent use of an 'unsigned long long'.
+#define HAS_STRICTLY_TYPED_ARG template<typename ActualArgType>
+#define STRICTLY_TYPED_ARG(argName) ActualArgType argName
+#define STRICT_ARG_TYPE(ExpectedArgType) \
+    static_assert(std::is_same<ActualArgType, ExpectedArgType>::value, \
+        "Strictly typed argument must be of type '" #ExpectedArgType "'." )
+#define ALLOW_NUMERIC_ARG_TYPES_PROMOTABLE_TO(ExpectedArgType) \
+    static_assert(std::numeric_limits<ExpectedArgType>::is_integer == std::numeric_limits<ActualArgType>::is_integer, \
+        "Conversion between integer and non-integer types not allowed."); \
+    static_assert(sizeof(ExpectedArgType) >= sizeof(ActualArgType), \
+        "Truncating conversions not allowed."); \
+    static_assert(!std::numeric_limits<ActualArgType>::is_signed || std::numeric_limits<ExpectedArgType>::is_signed, \
+        "Signed to unsigned conversion not allowed."); \
+    static_assert((sizeof(ExpectedArgType) != sizeof(ActualArgType)) || (std::numeric_limits<ActualArgType>::is_signed == std::numeric_limits<ExpectedArgType>::is_signed), \
+        "Unsigned to signed conversion not allowed for types with identical size (could overflow).");
 
 // Macro that returns a compile time constant with the length of an array, but gives an error if passed a non-array.
 template<typename T, size_t Size> char (&ArrayLengthHelperFunction(T (&)[Size]))[Size];

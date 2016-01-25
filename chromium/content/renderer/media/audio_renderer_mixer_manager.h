@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "media/audio/audio_parameters.h"
@@ -41,15 +42,6 @@ class CONTENT_EXPORT AudioRendererMixerManager {
  public:
   AudioRendererMixerManager();
   ~AudioRendererMixerManager();
-
-  // Creates an AudioRendererMixerInput with the proper callbacks necessary to
-  // retrieve an AudioRendererMixer instance from AudioRendererMixerManager.
-  // |source_render_frame_id| refers to the RenderFrame containing the entity
-  // rendering the audio.  Caller must ensure AudioRendererMixerManager outlives
-  // the returned input. The default output device is used.
-  // TODO(guidou): Remove this method once upper layers make use of the
-  // output device functionality. See http://crbug.com/534306
-  media::AudioRendererMixerInput* CreateInput(int source_render_frame_id);
 
   // Creates an AudioRendererMixerInput with the proper callbacks necessary to
   // retrieve an AudioRendererMixer instance from AudioRendererMixerManager.
@@ -100,8 +92,6 @@ class CONTENT_EXPORT AudioRendererMixerManager {
     bool operator()(const MixerKey& a, const MixerKey& b) const {
       if (a.source_render_frame_id != b.source_render_frame_id)
         return a.source_render_frame_id < b.source_render_frame_id;
-      if (a.params.sample_rate() != b.params.sample_rate())
-        return a.params.sample_rate() < b.params.sample_rate();
       if (a.params.channels() != b.params.channels())
         return a.params.channels() < b.params.channels();
 

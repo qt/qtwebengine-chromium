@@ -5,9 +5,10 @@
 #ifndef CONTENT_PUBLIC_COMMON_RESOURCE_RESPONSE_INFO_H_
 #define CONTENT_PUBLIC_COMMON_RESOURCE_RESPONSE_INFO_H_
 
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
@@ -50,15 +51,18 @@ struct ResourceResponseInfo {
   // response.  This may include information about the SSL connection used.
   std::string security_info;
 
+  // True if the resource was loaded in spite of certificate errors.
+  bool has_major_certificate_errors;
+
   // Content length if available. -1 if not available
-  int64 content_length;
+  int64_t content_length;
 
   // Length of the encoded data transferred over the network. In case there is
   // no data, contains -1.
-  int64 encoded_data_length;
+  int64_t encoded_data_length;
 
   // The appcache this response was loaded from, or kAppCacheNoCacheId.
-  int64 appcache_id;
+  int64_t appcache_id;
 
   // The manifest url of the appcache this response was loaded from.
   // Note: this value is only populated for main resource requests.
@@ -129,6 +133,9 @@ struct ResourceResponseInfo {
   // If the response is not provided by the ServiceWorker, kept empty.
   // TODO(ksakamoto): Move this to net::LoadTimingInfo.
   base::TimeTicks service_worker_ready_time;
+
+  // Whether or not the request was for a LoFi version of the resource.
+  bool is_using_lofi;
 };
 
 }  // namespace content

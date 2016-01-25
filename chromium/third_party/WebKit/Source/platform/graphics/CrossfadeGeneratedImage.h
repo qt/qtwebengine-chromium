@@ -34,14 +34,13 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT CrossfadeGeneratedImage : public GeneratedImage {
+class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
 public:
-    static PassRefPtr<CrossfadeGeneratedImage> create(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
+    static PassRefPtr<CrossfadeGeneratedImage> create(PassRefPtr<Image> fromImage, PassRefPtr<Image> toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
     {
         return adoptRef(new CrossfadeGeneratedImage(fromImage, toImage, percentage, crossfadeSize, size));
     }
 
-    void setContainerSize(const IntSize&) override { }
     bool usesContainerSize() const override { return false; }
     bool hasRelativeWidth() const override { return false; }
     bool hasRelativeHeight() const override { return false; }
@@ -50,15 +49,15 @@ public:
 
 protected:
     void draw(SkCanvas*, const SkPaint&, const FloatRect&, const FloatRect&, RespectImageOrientationEnum, ImageClampingMode) override;
-    void drawTile(GraphicsContext*, const FloatRect&) final;
+    void drawTile(GraphicsContext&, const FloatRect&) final;
 
-    CrossfadeGeneratedImage(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize&);
+    CrossfadeGeneratedImage(PassRefPtr<Image> fromImage, PassRefPtr<Image> toImage, float percentage, IntSize crossfadeSize, const IntSize&);
 
 private:
     void drawCrossfade(SkCanvas*, const SkPaint&, ImageClampingMode);
 
-    Image* m_fromImage;
-    Image* m_toImage;
+    RefPtr<Image> m_fromImage;
+    RefPtr<Image> m_toImage;
 
     float m_percentage;
     IntSize m_crossfadeSize;

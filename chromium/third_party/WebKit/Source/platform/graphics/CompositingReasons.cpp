@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/CompositingReasons.h"
 
 #include "wtf/StdLibExtras.h"
@@ -112,6 +111,9 @@ const CompositingReasonStringMap kCompositingReasonStringMap[] = {
     { CompositingReasonScrollChildWithCompositedDescendants,
         "scrollChildWithCompositedDescendants",
         "Squashing a scroll child with composited descendants is not supported." },
+    { CompositingReasonSquashingLayerIsAnimating,
+        "squashingLayerIsAnimating",
+        "Cannot squash into a layer that is animating." },
     { CompositingReasonTransformWithCompositedDescendants,
         "transformWithCompositedDescendants",
         "Has a transform that needs to be known by compositor because of composited descendants" },
@@ -145,6 +147,9 @@ const CompositingReasonStringMap kCompositingReasonStringMap[] = {
     { CompositingReasonIsolateCompositedDescendants,
         "isolateCompositedDescendants",
         "Should isolate descendants to apply a blend effect" },
+    { CompositingReasonPositionFixedWithCompositedDescendants,
+        "positionFixedWithCompositedDescendants"
+        "Is a position:fixed element with composited descendants" },
     { CompositingReasonRoot,
         "root",
         "Is the root layer" },

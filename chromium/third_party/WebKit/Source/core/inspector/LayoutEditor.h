@@ -25,7 +25,7 @@ class JSONObject;
 class ScriptController;
 
 class CORE_EXPORT LayoutEditor final : public NoBaseWillBeGarbageCollectedFinalized<LayoutEditor> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(LayoutEditor);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(LayoutEditor);
 public:
     static PassOwnPtrWillBeRawPtr<LayoutEditor> create(Element* element, InspectorCSSAgent* cssAgent, InspectorDOMAgent* domAgent, ScriptController* scriptController)
     {
@@ -42,19 +42,19 @@ public:
     void commitChanges();
     void nextSelector();
     void previousSelector();
-    void rebuild() const;
+    void rebuild();
     DECLARE_TRACE();
 
 private:
     LayoutEditor(Element*, InspectorCSSAgent*, InspectorDOMAgent*, ScriptController*);
     RefPtrWillBeRawPtr<CSSPrimitiveValue> getPropertyCSSValue(CSSPropertyID) const;
-    PassRefPtr<JSONObject> createValueDescription(const String&) const;
-    void appendAnchorFor(JSONArray*, const String&, const String&, const FloatPoint&, const FloatPoint&) const;
+    PassRefPtr<JSONObject> createValueDescription(const String&);
+    void appendAnchorFor(JSONArray*, const String&, const String&);
     bool setCSSPropertyValueInCurrentRule(const String&);
-    bool currentStyleIsInline() const;
-    void pushSelectorInfoInOverlay() const;
+    void editableSelectorUpdated(bool hasChanged) const;
     void evaluateInOverlay(const String&, PassRefPtr<JSONValue>) const;
-    PassRefPtr<JSONObject> currentSelectorInfo() const;
+    PassRefPtr<JSONObject> currentSelectorInfo(CSSStyleDeclaration*) const;
+    bool growInside(String propertyName, CSSPrimitiveValue*);
 
     RefPtrWillBeMember<Element> m_element;
     RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
@@ -66,8 +66,8 @@ private:
     CSSPrimitiveValue::UnitType m_valueUnitType;
     bool m_isDirty;
 
-    RefPtrWillBeMember<CSSRuleList> m_matchedRules;
-    // When m_currentRuleIndex == m_matchedRules.length(), current style is inline style.
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleDeclaration>> m_matchedStyles;
+    HashMap<String, bool> m_growsInside;
     unsigned m_currentRuleIndex;
 };
 

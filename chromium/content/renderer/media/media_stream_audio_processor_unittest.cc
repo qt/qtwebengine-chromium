@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/aligned_memory.h"
 #include "base/path_service.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
@@ -60,7 +65,7 @@ void ReadDataFromSpeechFile(char* data, int length) {
              .Append(FILE_PATH_LITERAL("data"))
              .Append(FILE_PATH_LITERAL("speech_16b_stereo_48kHz.raw"));
   DCHECK(base::PathExists(file));
-  int64 data_file_size64 = 0;
+  int64_t data_file_size64 = 0;
   DCHECK(base::GetFileSize(file, &data_file_size64));
   EXPECT_EQ(length, base::ReadFile(file, data, length));
   DCHECK(data_file_size64 > length);
@@ -88,7 +93,8 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
     const size_t length = packet_size * kNumberOfPacketsForTest;
     scoped_ptr<char[]> capture_data(new char[length]);
     ReadDataFromSpeechFile(capture_data.get(), length);
-    const int16* data_ptr = reinterpret_cast<const int16*>(capture_data.get());
+    const int16_t* data_ptr =
+        reinterpret_cast<const int16_t*>(capture_data.get());
     scoped_ptr<media::AudioBus> data_bus = media::AudioBus::Create(
         params.channels(), params.frames_per_buffer());
 
@@ -456,7 +462,7 @@ TEST_F(MediaStreamAudioProcessorTest, MAYBE_TestAllSampleRates) {
   EXPECT_TRUE(audio_processor->has_audio_processing());
 
   static const int kSupportedSampleRates[] =
-      { 8000, 16000, 22050, 32000, 44100, 48000, 88200, 96000 };
+      { 8000, 16000, 22050, 32000, 44100, 48000 };
   for (size_t i = 0; i < arraysize(kSupportedSampleRates); ++i) {
     int buffer_size = (kSupportedSampleRates[i] / 100)  < 128 ?
         kSupportedSampleRates[i] / 100 : 128;
@@ -485,7 +491,7 @@ TEST_F(MediaStreamAudioProcessorTest, GetAecDumpMessageFilter) {
   base::MessageLoopForUI message_loop;
   scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_(
       new AecDumpMessageFilter(message_loop.task_runner(),
-                               message_loop.task_runner()));
+                               message_loop.task_runner(), nullptr));
 
   MockMediaConstraintFactory constraint_factory;
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(

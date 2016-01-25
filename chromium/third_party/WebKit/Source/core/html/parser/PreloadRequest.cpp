@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/parser/PreloadRequest.h"
 
 #include "core/dom/Document.h"
 #include "core/fetch/FetchInitiatorInfo.h"
+#include "core/fetch/ResourceFetcher.h"
+#include "platform/CrossOriginAttributeValue.h"
 
 namespace blink {
 
@@ -20,7 +21,9 @@ bool PreloadRequest::isSafeToSendToAnotherThread() const
 
 KURL PreloadRequest::completeURL(Document* document)
 {
-    return document->completeURLWithOverride(m_resourceURL, m_baseURL.isEmpty() ? document->url() : m_baseURL);
+    if (!m_baseURL.isEmpty())
+        return document->completeURLWithOverride(m_resourceURL, m_baseURL);
+    return document->completeURL(m_resourceURL);
 }
 
 FetchRequest PreloadRequest::resourceRequest(Document* document)
@@ -31,23 +34,22 @@ FetchRequest PreloadRequest::resourceRequest(Document* document)
     initiatorInfo.position = m_initiatorPosition;
     ResourceRequest resourceRequest(completeURL(document));
     resourceRequest.setHTTPReferrer(SecurityPolicy::generateReferrer(m_referrerPolicy, resourceRequest.url(), document->outgoingReferrer()));
+    ResourceFetcher::determineRequestContext(resourceRequest, m_resourceType, false);
     FetchRequest request(resourceRequest, initiatorInfo);
 
     if (m_resourceType == Resource::ImportResource) {
         SecurityOrigin* securityOrigin = document->contextDocument()->securityOrigin();
-        bool sameOrigin = securityOrigin->canRequest(request.url());
-        request.setCrossOriginAccessControl(securityOrigin,
-            sameOrigin ? AllowStoredCredentials : DoNotAllowStoredCredentials,
-            ClientDidNotRequestCredentials);
+        request.setCrossOriginAccessControl(securityOrigin, CrossOriginAttributeAnonymous);
     }
-
-    if (m_isCORSEnabled)
-        request.setCrossOriginAccessControl(document->securityOrigin(), m_allowCredentials);
-
+    if (m_crossOrigin != CrossOriginAttributeNotSet)
+        request.setCrossOriginAccessControl(document->securityOrigin(), m_crossOrigin);
     request.setDefer(m_defer);
     request.setResourceWidth(m_resourceWidth);
     request.clientHintsPreferences().updateFrom(m_clientHintsPreferences);
+    request.setIntegrityMetadata(m_integrityMetadata);
 
+    if (m_requestType == RequestTypeLinkRelPreload)
+        request.setAvoidBlockingOnLoad(true);
     return request;
 }
 

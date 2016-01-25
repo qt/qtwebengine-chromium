@@ -5,8 +5,9 @@
 #ifndef DevToolsEmulator_h
 #define DevToolsEmulator_h
 
-#include "core/css/PointerProperties.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/PointerProperties.h"
+#include "public/web/WebDeviceEmulationParams.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
@@ -16,8 +17,6 @@ class InspectorEmulationAgent;
 class IntPoint;
 class WebInputEvent;
 class WebViewImpl;
-
-struct WebDeviceEmulationParams;
 
 class DevToolsEmulator final : public NoBaseWillBeGarbageCollectedFinalized<DevToolsEmulator> {
 public:
@@ -37,7 +36,6 @@ public:
     void setScriptEnabled(bool);
     void setDoubleTapToZoomEnabled(bool);
     bool doubleTapToZoomEnabled() const;
-    void setHidePinchScrollbarsNearMinScale(bool);
     void setAvailablePointerTypes(int);
     void setPrimaryPointerType(PointerType);
     void setAvailableHoverTypes(int);
@@ -47,6 +45,7 @@ public:
     void enableDeviceEmulation(const WebDeviceEmulationParams&);
     void disableDeviceEmulation();
     bool deviceEmulationEnabled() { return m_deviceMetricsEnabled; }
+    bool resizeIsDeviceSizeChange();
     void setTouchEventEmulationEnabled(bool);
     bool handleInputEvent(const WebInputEvent&);
     void setScriptExecutionDisabled(bool);
@@ -62,6 +61,8 @@ private:
 
     bool m_deviceMetricsEnabled;
     bool m_emulateMobileEnabled;
+    WebDeviceEmulationParams m_emulationParams;
+
     bool m_isOverlayScrollbarsEnabled;
     float m_originalDefaultMinimumPageScaleFactor;
     float m_originalDefaultMaximumPageScaleFactor;
@@ -86,7 +87,6 @@ private:
 
     bool m_embedderScriptEnabled;
     bool m_scriptExecutionDisabled;
-    bool m_hidePinchScrollbarsNearMinScale;
 };
 
 } // namespace blink

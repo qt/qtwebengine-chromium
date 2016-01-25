@@ -90,17 +90,9 @@ static size_t ec_GFp_simple_point2oct(const EC_GROUP *group,
   }
 
   if (EC_POINT_is_at_infinity(group, point)) {
-    /* encodes to a single 0 octet */
-    if (buf != NULL) {
-      if (len < 1) {
-        OPENSSL_PUT_ERROR(EC, EC_R_BUFFER_TOO_SMALL);
-        return 0;
-      }
-      buf[0] = 0;
-    }
-    return 1;
+    OPENSSL_PUT_ERROR(EC, EC_R_POINT_AT_INFINITY);
+    goto err;
   }
-
 
   /* ret := required output buffer length */
   field_len = BN_num_bytes(&group->field);
@@ -117,7 +109,7 @@ static size_t ec_GFp_simple_point2oct(const EC_GROUP *group,
     if (ctx == NULL) {
       ctx = new_ctx = BN_CTX_new();
       if (ctx == NULL) {
-        return 0;
+        goto err;
       }
     }
 
@@ -193,23 +185,11 @@ static int ec_GFp_simple_oct2point(const EC_GROUP *group, EC_POINT *point,
   form = buf[0];
   y_bit = form & 1;
   form = form & ~1U;
-  if ((form != 0) && (form != POINT_CONVERSION_COMPRESSED) &&
-      (form != POINT_CONVERSION_UNCOMPRESSED)) {
+  if ((form != POINT_CONVERSION_COMPRESSED &&
+       form != POINT_CONVERSION_UNCOMPRESSED) ||
+      (form == POINT_CONVERSION_UNCOMPRESSED && y_bit)) {
     OPENSSL_PUT_ERROR(EC, EC_R_INVALID_ENCODING);
     return 0;
-  }
-  if ((form == 0 || form == POINT_CONVERSION_UNCOMPRESSED) && y_bit) {
-    OPENSSL_PUT_ERROR(EC, EC_R_INVALID_ENCODING);
-    return 0;
-  }
-
-  if (form == 0) {
-    if (len != 1) {
-      OPENSSL_PUT_ERROR(EC, EC_R_INVALID_ENCODING);
-      return 0;
-    }
-
-    return EC_POINT_set_to_infinity(group, point);
   }
 
   field_len = BN_num_bytes(&group->field);
@@ -261,12 +241,6 @@ static int ec_GFp_simple_oct2point(const EC_GROUP *group, EC_POINT *point,
     }
   }
 
-  /* test required by X9.62 */
-  if (!EC_POINT_is_on_curve(group, point, ctx)) {
-    OPENSSL_PUT_ERROR(EC, EC_R_POINT_IS_NOT_ON_CURVE);
-    goto err;
-  }
-
   ret = 1;
 
 err:
@@ -277,39 +251,21 @@ err:
 
 int EC_POINT_oct2point(const EC_GROUP *group, EC_POINT *point,
                        const uint8_t *buf, size_t len, BN_CTX *ctx) {
-  if (group->meth->oct2point == 0 &&
-      !(group->meth->flags & EC_FLAGS_DEFAULT_OCT)) {
-    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-    return 0;
-  }
   if (group->meth != point->meth) {
     OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
-  if (group->meth->flags & EC_FLAGS_DEFAULT_OCT) {
-    return ec_GFp_simple_oct2point(group, point, buf, len, ctx);
-  }
-
-  return group->meth->oct2point(group, point, buf, len, ctx);
+  return ec_GFp_simple_oct2point(group, point, buf, len, ctx);
 }
 
 size_t EC_POINT_point2oct(const EC_GROUP *group, const EC_POINT *point,
                           point_conversion_form_t form, uint8_t *buf,
                           size_t len, BN_CTX *ctx) {
-  if (group->meth->point2oct == 0 &&
-      !(group->meth->flags & EC_FLAGS_DEFAULT_OCT)) {
-    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-    return 0;
-  }
   if (group->meth != point->meth) {
     OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
-  if (group->meth->flags & EC_FLAGS_DEFAULT_OCT) {
-    return ec_GFp_simple_point2oct(group, point, form, buf, len, ctx);
-  }
-
-  return group->meth->point2oct(group, point, form, buf, len, ctx);
+  return ec_GFp_simple_point2oct(group, point, form, buf, len, ctx);
 }
 
 int ec_GFp_simple_set_compressed_coordinates(const EC_GROUP *group,
@@ -452,19 +408,9 @@ err:
 int EC_POINT_set_compressed_coordinates_GFp(const EC_GROUP *group,
                                             EC_POINT *point, const BIGNUM *x,
                                             int y_bit, BN_CTX *ctx) {
-  if (group->meth->point_set_compressed_coordinates == 0 &&
-      !(group->meth->flags & EC_FLAGS_DEFAULT_OCT)) {
-    OPENSSL_PUT_ERROR(EC, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
-    return 0;
-  }
   if (group->meth != point->meth) {
     OPENSSL_PUT_ERROR(EC, EC_R_INCOMPATIBLE_OBJECTS);
     return 0;
   }
-  if (group->meth->flags & EC_FLAGS_DEFAULT_OCT) {
-    return ec_GFp_simple_set_compressed_coordinates(group, point, x, y_bit,
-                                                    ctx);
-  }
-  return group->meth->point_set_compressed_coordinates(group, point, x, y_bit,
-                                                       ctx);
+  return ec_GFp_simple_set_compressed_coordinates(group, point, x, y_bit, ctx);
 }

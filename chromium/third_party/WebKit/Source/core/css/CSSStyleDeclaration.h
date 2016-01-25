@@ -37,7 +37,7 @@ class MutableStylePropertySet;
 
 class CORE_EXPORT CSSStyleDeclaration : public NoBaseWillBeGarbageCollectedFinalized<CSSStyleDeclaration>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSStyleDeclaration);
+    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); USING_FAST_MALLOC_WILL_BE_REMOVED(CSSStyleDeclaration);
 public:
     virtual ~CSSStyleDeclaration() { }
 
@@ -53,7 +53,7 @@ public:
     }
     void setCSSFloat(const String& value, ExceptionState& exceptionState)
     {
-        setPropertyInternal(CSSPropertyFloat, value, false, exceptionState);
+        setPropertyInternal(CSSPropertyFloat, String(), value, false, exceptionState);
     }
     virtual String cssText() const = 0;
     virtual void setCSSText(const String&, ExceptionState&) = 0;
@@ -71,7 +71,7 @@ public:
     // The CSSValue returned by this function should not be exposed to the web as it may be used by multiple documents at the same time.
     virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) = 0;
     virtual String getPropertyValueInternal(CSSPropertyID) = 0;
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) = 0;
+    virtual void setPropertyInternal(CSSPropertyID, const String& propertyValue, const String& value, bool important, ExceptionState&) = 0;
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const = 0;
     virtual CSSStyleSheet* parentStyleSheet() const { return 0; }

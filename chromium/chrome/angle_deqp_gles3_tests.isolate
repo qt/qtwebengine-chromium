@@ -15,9 +15,8 @@
           '--test-launcher-batch-limit=400',
         ],
         'files': [
-          '<(PRODUCT_DIR)/angle_deqp_gles3_tests<(EXECUTABLE_SUFFIX)',
-          '<(PRODUCT_DIR)/deqp_support/deqp_gles3_test_expectations.txt',
-          '<(PRODUCT_DIR)/deqp_support/dEQP-GLES3-cases.txt.gz',
+          '../third_party/angle/src/tests/deqp_support/deqp_gles3_test_expectations.txt',
+          '../third_party/deqp/src/android/cts/master/gles3-master.txt',
           '../third_party/deqp/src/data/',
         ],
       },

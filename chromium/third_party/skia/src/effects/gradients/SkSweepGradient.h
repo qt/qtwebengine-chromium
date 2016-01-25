@@ -22,7 +22,6 @@ public:
         SweepGradientContext(const SkSweepGradient& shader, const ContextRec&);
 
         void shadeSpan(int x, int y, SkPMColor dstC[], int count) override;
-        void shadeSpan16(int x, int y, uint16_t dstC[], int count) override;
 
     private:
         typedef SkGradientShaderBase::GradientShaderBaseContext INHERITED;
@@ -34,8 +33,7 @@ public:
     const GrFragmentProcessor* asFragmentProcessor(GrContext*,
                                                    const SkMatrix& viewM,
                                                    const SkMatrix*,
-                                                   SkFilterQuality,
-                                                   GrProcessorDataManager*) const override;
+                                                   SkFilterQuality) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()

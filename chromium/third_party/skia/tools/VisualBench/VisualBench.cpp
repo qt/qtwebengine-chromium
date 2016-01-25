@@ -8,6 +8,7 @@
 
 #include "VisualBench.h"
 
+#include "GrContext.h"
 #include "ProcStats.h"
 #include "SkApplication.h"
 #include "SkCanvas.h"
@@ -17,21 +18,48 @@
 #include "SkOSFile.h"
 #include "SkStream.h"
 #include "Stats.h"
+#include "VisualDebugModule.h"
 #include "VisualLightweightBenchModule.h"
 #include "VisualInteractiveModule.h"
 #include "gl/GrGLInterface.h"
 
+#include <stdlib.h>
+
 DEFINE_bool2(fullscreen, f, true, "Run fullscreen.");
-DEFINE_bool2(interactive, n, false, "Run in interactive mode.");
+DEFINE_string(mode, "classic", "one of: classic interactive debugger");
+DEFINE_bool2(dif, d, false, "Use device-independent fonts.");
 
 VisualBench::VisualBench(void* hwnd, int argc, char** argv)
     : INHERITED(hwnd) {
+    SkDebugf("Command line arguments: ");
+    for (int i = 1; i < argc; ++i) {
+        SkDebugf("%s ", argv[i]);
+    }
+    SkDebugf("\n");
+
     SkCommandLineFlags::Parse(argc, argv);
 
-    // this has to happen after commandline parsing
+    if (FLAGS_nvpr && !FLAGS_msaa) {
+        SkDebugf("Got nvpr without msaa. Exiting.\n");
+        exit(-1);
+    }
+
+    // these have to happen after commandline parsing
+    if (FLAGS_dif) {
+        const SkSurfaceProps& props(INHERITED::getSurfaceProps());
+        uint32_t flags = SkSurfaceProps::kUseDeviceIndependentFonts_Flag | props.flags();
+        INHERITED::setSurfaceProps(SkSurfaceProps(flags, props.pixelGeometry()));
+    }
     fModule.reset(new VisualLightweightBenchModule(this));
-    if (FLAGS_interactive) {
-        fModule.reset(new VisualInteractiveModule(this));
+
+    if (FLAGS_mode.count()) {
+        SkASSERT(FLAGS_mode.count() == 1);
+        SkString mode(FLAGS_mode[0]);
+        if (mode == SkString("interactive")) {
+            fModule.reset(new VisualInteractiveModule(this));
+        } else if (mode == SkString("debugger")) {
+            fModule.reset(new VisualDebugModule(this));
+        }
     }
 
     this->setTitle();
@@ -39,7 +67,7 @@ VisualBench::VisualBench(void* hwnd, int argc, char** argv)
 }
 
 VisualBench::~VisualBench() {
-    INHERITED::detach();
+    this->tearDownContext();
 }
 
 void VisualBench::setTitle() {
@@ -67,21 +95,34 @@ bool VisualBench::setupBackend() {
             SkDebugf("Could not go fullscreen!");
         }
     }
-    if (!this->attach(kNativeGL_BackEndType, FLAGS_msaa, &fAttachmentInfo)) {
-        SkDebugf("Not possible to create backend.\n");
-        INHERITED::detach();
-        return false;
-    }
 
-    this->setVsync(false);
     this->resetContext();
     return true;
 }
 
 void VisualBench::resetContext() {
+    this->tearDownContext();
+    this->setupContext();
+}
+
+void VisualBench::setupContext() {
+    int screenSamples = FLAGS_offscreen ? 0 : FLAGS_msaa;
+    if (!this->attach(kNativeGL_BackEndType, screenSamples, &fAttachmentInfo)) {
+        SkDebugf("Not possible to create backend.\n");
+        INHERITED::detach();
+        SkFAIL("Could not create backend\n");
+    }
+
+    this->setVsync(false);
+
     fSurface.reset(nullptr);
 
     fInterface.reset(GrGLCreateNativeInterface());
+
+    // TODO use the GLContext creation factories and also set this all up in configs
+    if (!FLAGS_nvpr) {
+        fInterface.reset(GrGLInterfaceRemoveNVPR(fInterface));
+    }
     SkASSERT(fInterface);
 
     // setup contexts
@@ -90,6 +131,17 @@ void VisualBench::resetContext() {
 
     // setup rendertargets
     this->setupRenderTarget();
+}
+
+void VisualBench::tearDownContext() {
+    if (fContext) {
+        // We abandon the context in case SkWindow has kept a ref to the surface
+        fContext->abandonContext();
+        fContext.reset();
+        fSurface.reset();
+        fInterface.reset();
+        this->detach();
+    }
 }
 
 void VisualBench::setupRenderTarget() {

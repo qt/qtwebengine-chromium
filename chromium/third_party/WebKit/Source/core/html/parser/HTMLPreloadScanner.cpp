@@ -25,7 +25,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLPreloadScanner.h"
 
 #include "core/HTMLNames.h"
@@ -35,13 +34,17 @@
 #include "core/css/MediaValuesCached.h"
 #include "core/css/parser/SizesAttributeParser.h"
 #include "core/dom/Document.h"
+#include "core/fetch/IntegrityMetadata.h"
 #include "core/frame/Settings.h"
+#include "core/frame/SubresourceIntegrity.h"
+#include "core/html/CrossOriginAttribute.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/html/parser/HTMLTokenizer.h"
+#include "core/loader/LinkLoader.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "wtf/MainThread.h"
@@ -114,14 +117,14 @@ public:
         : m_tagImpl(tagImpl)
         , m_linkIsStyleSheet(false)
         , m_linkIsPreconnect(false)
+        , m_linkIsPreload(false)
         , m_linkIsImport(false)
         , m_matchedMediaAttribute(true)
         , m_inputIsImage(false)
         , m_sourceSize(0)
         , m_sourceSizeSet(false)
-        , m_isCORSEnabled(false)
         , m_defer(FetchRequest::NoDefer)
-        , m_allowCredentials(DoNotAllowStoredCredentials)
+        , m_crossOrigin(CrossOriginAttributeNotSet)
         , m_mediaValues(mediaValues)
         , m_referrerPolicySet(false)
         , m_referrerPolicy(ReferrerPolicyDefault)
@@ -181,6 +184,8 @@ public:
         PreloadRequest::RequestType requestType = PreloadRequest::RequestTypePreload;
         if (shouldPreconnect())
             requestType = PreloadRequest::RequestTypePreconnect;
+        else if (isLinkRelPreload())
+            requestType = PreloadRequest::RequestTypeLinkRelPreload;
         else if (!shouldPreload() || !m_matchedMediaAttribute)
             return nullptr;
 
@@ -200,10 +205,10 @@ public:
         // The element's 'referrerpolicy' attribute (if present) takes precedence over the document's referrer policy.
         ReferrerPolicy referrerPolicy = (m_referrerPolicy != ReferrerPolicyDefault && RuntimeEnabledFeatures::referrerPolicyAttributeEnabled()) ? m_referrerPolicy : documentReferrerPolicy;
         OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), referrerPolicy, resourceWidth, clientHintsPreferences, requestType);
-        if (isCORSEnabled())
-            request->setCrossOriginEnabled(allowStoredCredentials());
+        request->setCrossOrigin(m_crossOrigin);
         request->setCharset(charset());
         request->setDefer(m_defer);
+        request->setIntegrityMetadata(m_integrityMetadata);
         return request.release();
     }
 
@@ -215,11 +220,21 @@ private:
         if (match(attributeName, srcAttr))
             setUrlToLoad(attributeValue, DisallowURLReplacement);
         else if (match(attributeName, crossoriginAttr))
-            setCrossOriginAllowed(attributeValue);
+            setCrossOrigin(attributeValue);
         else if (match(attributeName, asyncAttr))
             setDefer(FetchRequest::LazyLoad);
         else if (match(attributeName, deferAttr))
             setDefer(FetchRequest::LazyLoad);
+        // Note that only scripts need to have the integrity metadata set on
+        // preloads. This is because script resources fetches, and only script
+        // resource fetches, need to re-request resources if a cached version
+        // has different metadata (including empty) from the metadata on the
+        // request. See the comment before the call to
+        // mustRefetchDueToIntegrityMismatch() in
+        // Source/core/fetch/ResourceFetcher.cpp for a more complete
+        // explanation.
+        else if (match(attributeName, integrityAttr))
+            SubresourceIntegrity::parseIntegrityAttribute(attributeValue, m_integrityMetadata);
     }
 
     template<typename NameType>
@@ -229,7 +244,7 @@ private:
             m_imgSrcUrl = attributeValue;
             setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue, m_srcsetImageCandidate), AllowURLReplacement);
         } else if (match(attributeName, crossoriginAttr)) {
-            setCrossOriginAllowed(attributeValue);
+            setCrossOrigin(attributeValue);
         } else if (match(attributeName, srcsetAttr) && m_srcsetImageCandidate.isEmpty()) {
             m_srcsetAttributeValue = attributeValue;
             m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
@@ -257,11 +272,14 @@ private:
             LinkRelAttribute rel(attributeValue);
             m_linkIsStyleSheet = rel.isStyleSheet() && !rel.isAlternate() && rel.iconType() == InvalidIcon && !rel.isDNSPrefetch();
             m_linkIsPreconnect = rel.isPreconnect();
+            m_linkIsPreload = rel.isLinkPreload();
             m_linkIsImport = rel.isImport();
         } else if (match(attributeName, mediaAttr)) {
             m_matchedMediaAttribute = mediaAttributeMatches(*m_mediaValues, attributeValue);
         } else if (match(attributeName, crossoriginAttr)) {
-            setCrossOriginAllowed(attributeValue);
+            setCrossOrigin(attributeValue);
+        } else if (match(attributeName, asAttr)) {
+            m_asAttributeValue = attributeValue;
         }
     }
 
@@ -350,6 +368,8 @@ private:
             return Resource::CSSStyleSheet;
         if (m_linkIsPreconnect)
             return Resource::Raw;
+        if (m_linkIsPreload)
+            return LinkLoader::getTypeFromAsAttribute(m_asAttributeValue, nullptr);
         if (match(m_tagImpl, linkTag) && m_linkIsImport)
             return Resource::ImportResource;
         ASSERT_NOT_REACHED();
@@ -361,34 +381,24 @@ private:
         return match(m_tagImpl, linkTag) && m_linkIsPreconnect && !m_urlToLoad.isEmpty();
     }
 
+    bool isLinkRelPreload() const
+    {
+        return match(m_tagImpl, linkTag) && m_linkIsPreload && !m_urlToLoad.isEmpty();
+    }
+
     bool shouldPreload() const
     {
         if (m_urlToLoad.isEmpty())
             return false;
-        if (match(m_tagImpl, linkTag) && !m_linkIsStyleSheet && !m_linkIsImport)
+        if (match(m_tagImpl, linkTag) && !m_linkIsStyleSheet && !m_linkIsImport && !m_linkIsPreload)
             return false;
         if (match(m_tagImpl, inputTag) && !m_inputIsImage)
             return false;
         return true;
     }
-
-    bool isCORSEnabled() const
+    void setCrossOrigin(const String& corsSetting)
     {
-        return m_isCORSEnabled;
-    }
-
-    StoredCredentials allowStoredCredentials() const
-    {
-        return m_allowCredentials;
-    }
-
-    void setCrossOriginAllowed(const String& corsSetting)
-    {
-        m_isCORSEnabled = true;
-        if (!corsSetting.isNull() && equalIgnoringCase(stripLeadingAndTrailingHTMLSpaces(corsSetting), "use-credentials"))
-            m_allowCredentials = AllowStoredCredentials;
-        else
-            m_allowCredentials = DoNotAllowStoredCredentials;
+        m_crossOrigin = crossOriginAttributeValue(corsSetting);
     }
 
     void setDefer(FetchRequest::DeferOption defer)
@@ -407,19 +417,21 @@ private:
     String m_charset;
     bool m_linkIsStyleSheet;
     bool m_linkIsPreconnect;
+    bool m_linkIsPreload;
     bool m_linkIsImport;
     bool m_matchedMediaAttribute;
     bool m_inputIsImage;
     String m_imgSrcUrl;
     String m_srcsetAttributeValue;
+    String m_asAttributeValue;
     float m_sourceSize;
     bool m_sourceSizeSet;
-    bool m_isCORSEnabled;
     FetchRequest::DeferOption m_defer;
-    StoredCredentials m_allowCredentials;
+    CrossOriginAttributeValue m_crossOrigin;
     RefPtrWillBeMember<MediaValues> m_mediaValues;
     bool m_referrerPolicySet;
     ReferrerPolicy m_referrerPolicy;
+    IntegrityMetadataSet m_integrityMetadata;
 };
 
 TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, PassOwnPtr<CachedDocumentParameters> documentParameters)
@@ -532,7 +544,7 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
     case HTMLToken::Character: {
         if (!m_inStyle)
             return;
-        m_cssScanner.scan(token.data(), source, requests);
+        m_cssScanner.scan(token.data(), source, requests, m_predictedBaseElementURL);
         return;
     }
     case HTMLToken::EndTag: {

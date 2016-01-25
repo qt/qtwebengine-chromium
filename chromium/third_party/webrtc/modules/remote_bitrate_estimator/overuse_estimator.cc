@@ -10,14 +10,15 @@
 
 #include "webrtc/modules/remote_bitrate_estimator/overuse_estimator.h"
 
-#include <algorithm>
 #include <assert.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
+
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
-#include "webrtc/system_wrappers/interface/logging.h"
 
 namespace webrtc {
 

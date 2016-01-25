@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 
 #include "modules/indexeddb/IDBDatabase.h"
@@ -68,7 +67,7 @@ void IDBDatabaseCallbacks::connect(IDBDatabase* database)
     m_database = database;
 }
 
-void IDBDatabaseCallbacks::onAbort(int64_t transactionId, DOMError* error)
+void IDBDatabaseCallbacks::onAbort(int64_t transactionId, DOMException* error)
 {
     if (m_database)
         m_database->onAbort(transactionId, error);

@@ -32,21 +32,21 @@
 
 namespace cricket {
 
-static const uint32 kSsrc1 = 1001;
-static const uint32 kSsrc2 = 1002;
-static const uint32 kMinTimeBetweenSwitches = 10;
+static const uint32_t kSsrc1 = 1001;
+static const uint32_t kSsrc2 = 1002;
+static const uint32_t kMinTimeBetweenSwitches = 10;
 // Due to limited system clock resolution, the CurrentSpeakerMonitor may
 // actually require more or less time between switches than that specified
 // in the call to set_min_time_between_switches.  To be safe, we sleep for
 // 90 ms more than the min time between switches before checking for a switch.
 // I am assuming system clocks do not have a coarser resolution than 90 ms.
-static const uint32 kSleepTimeBetweenSwitches = 100;
+static const uint32_t kSleepTimeBetweenSwitches = 100;
 
 class CurrentSpeakerMonitorTest : public testing::Test,
     public sigslot::has_slots<> {
  public:
   CurrentSpeakerMonitorTest() {
-    monitor_ = new CurrentSpeakerMonitor(&source_, NULL);
+    monitor_ = new CurrentSpeakerMonitor(&source_);
     // Shrink the minimum time betweeen switches to 10 ms so we don't have to
     // slow down our tests.
     monitor_->set_min_time_between_switches(kMinTimeBetweenSwitches);
@@ -68,9 +68,9 @@ class CurrentSpeakerMonitorTest : public testing::Test,
   AudioSourceContext source_;
   CurrentSpeakerMonitor* monitor_;
   int num_changes_;
-  uint32 current_speaker_;
+  uint32_t current_speaker_;
 
-  void OnUpdate(CurrentSpeakerMonitor* monitor, uint32 current_speaker) {
+  void OnUpdate(CurrentSpeakerMonitor* monitor, uint32_t current_speaker) {
     current_speaker_ = current_speaker;
     num_changes_++;
   }

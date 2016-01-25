@@ -95,6 +95,7 @@
       'inputs': [
         '<(bindings_scripts_dir)/aggregate_generated_bindings.py',
         '<(modules_idl_files_list)',
+        '<@(modules_interface_idl_files)',
       ],
       'outputs': [
         '<@(bindings_modules_v8_generated_aggregate_files)',
@@ -280,6 +281,7 @@
         '<(bindings_scripts_dir)/generate_init_partial_interfaces.py',
         '--idl-files-list',
         '<(core_idl_with_modules_dependency_files_list)',
+        '--gyp-format-list',
         '--output',
         '<(bindings_modules_v8_output_dir)/initPartialInterfacesInModules.cpp',
         '--write-file-only-if-changed',

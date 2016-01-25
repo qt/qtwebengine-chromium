@@ -19,8 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGGraphicsElement.h"
 
 #include "core/SVGNames.h"
@@ -48,22 +46,6 @@ DEFINE_TRACE(SVGGraphicsElement)
     visitor->trace(m_transform);
     SVGElement::trace(visitor);
     SVGTests::trace(visitor);
-}
-
-PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getTransformToElement(SVGElement* target, ExceptionState& exceptionState)
-{
-    AffineTransform ctm = getCTM(AllowStyleUpdate);
-
-    if (target && target->isSVGGraphicsElement()) {
-        AffineTransform targetCTM = toSVGGraphicsElement(target)->getCTM(AllowStyleUpdate);
-        if (!targetCTM.isInvertible()) {
-            exceptionState.throwDOMException(InvalidStateError, "The target transformation is not invertable.");
-            return nullptr;
-        }
-        ctm = targetCTM.inverse() * ctm;
-    }
-
-    return SVGMatrixTearOff::create(ctm);
 }
 
 static bool isViewportElement(const Element& element)

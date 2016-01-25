@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorHeapProfilerAgent.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -231,7 +230,7 @@ void InspectorHeapProfilerAgent::HeapStatsUpdateTask::onTimer(Timer<HeapStatsUpd
 void InspectorHeapProfilerAgent::HeapStatsUpdateTask::startTimer()
 {
     ASSERT(!m_timer.isActive());
-    m_timer.startRepeating(0.05, FROM_HERE);
+    m_timer.startRepeating(0.05, BLINK_FROM_HERE);
 }
 
 DEFINE_TRACE(InspectorHeapProfilerAgent::HeapStatsUpdateTask)

@@ -4,6 +4,9 @@
 
 #include "content/browser/accessibility/browser_accessibility_auralinux.h"
 
+#include <stdint.h>
+#include <string.h>
+
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_manager_auralinux.h"
 #include "content/common/accessibility_messages.h"
@@ -205,13 +208,13 @@ static const gchar* GetDocumentAttributeValue(
     BrowserAccessibilityAuraLinux* obj,
     const gchar* attribute) {
   if (!g_ascii_strcasecmp(attribute, "DocType"))
-    return obj->GetStringAttribute(ui::AX_ATTR_DOC_DOCTYPE).c_str();
+    return obj->manager()->GetTreeData().doctype.c_str();
   else if (!g_ascii_strcasecmp(attribute, "MimeType"))
-    return obj->GetStringAttribute(ui::AX_ATTR_DOC_MIMETYPE).c_str();
+    return obj->manager()->GetTreeData().mimetype.c_str();
   else if (!g_ascii_strcasecmp(attribute, "Title"))
-    return obj->GetStringAttribute(ui::AX_ATTR_DOC_TITLE).c_str();
+    return obj->manager()->GetTreeData().title.c_str();
   else if (!g_ascii_strcasecmp(attribute, "URI"))
-    return obj->GetStringAttribute(ui::AX_ATTR_DOC_URL).c_str();
+    return obj->manager()->GetTreeData().url.c_str();
 
   return 0;
 }
@@ -532,7 +535,7 @@ static AtkStateSet* browser_accessibility_ref_state_set(AtkObject* atk_object) {
     return NULL;
   AtkStateSet* state_set = ATK_OBJECT_CLASS(browser_accessibility_parent_class)
                                ->ref_state_set(atk_object);
-  int32 state = obj->GetState();
+  int32_t state = obj->GetState();
 
   if (state & (1 << ui::AX_STATE_FOCUSABLE))
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSABLE);
@@ -707,6 +710,14 @@ static GType GetAccessibilityTypeFromObject(
 
 BrowserAccessibilityAtk* browser_accessibility_new(
     BrowserAccessibilityAuraLinux* obj) {
+  #if !GLIB_CHECK_VERSION(2, 36, 0)
+  static bool first_time = true;
+  if (first_time) {
+    g_type_init();
+    first_time = false;
+  }
+  #endif
+
   GType type = GetAccessibilityTypeFromObject(obj);
   AtkObject* atk_object = static_cast<AtkObject*>(g_object_new(type, 0));
 
@@ -722,6 +733,11 @@ void browser_accessibility_detach(BrowserAccessibilityAtk* atk_object) {
 // static
 BrowserAccessibility* BrowserAccessibility::Create() {
   return new BrowserAccessibilityAuraLinux();
+}
+
+const BrowserAccessibilityAuraLinux*
+BrowserAccessibility::ToBrowserAccessibilityAuraLinux() const {
+  return static_cast<const BrowserAccessibilityAuraLinux*>(this);
 }
 
 BrowserAccessibilityAuraLinux*

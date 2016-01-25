@@ -8,6 +8,7 @@
 #include <linux/input.h>
 
 #include "base/thread_task_runner_handle.h"
+#include "ui/events/devices/device_data_manager.h"
 #include "ui/events/ozone/evdev/input_device_factory_evdev_proxy.h"
 #include "ui/events/ozone/evdev/keyboard_evdev.h"
 #include "ui/events/ozone/evdev/mouse_button_map_evdev.h"
@@ -89,6 +90,16 @@ bool InputControllerEvdev::SetCurrentLayoutByName(
 
 void InputControllerEvdev::SetInternalTouchpadEnabled(bool enabled) {
   input_device_settings_.enable_internal_touchpad = enabled;
+  ScheduleUpdateDeviceSettings();
+}
+
+bool InputControllerEvdev::IsInternalTouchpadEnabled() const {
+  return input_device_settings_.enable_internal_touchpad;
+}
+
+void InputControllerEvdev::SetTouchscreensEnabled(bool enabled) {
+  input_device_settings_.enable_touch_screens = enabled;
+  ui::DeviceDataManager::GetInstance()->SetTouchscreensEnabled(enabled);
   ScheduleUpdateDeviceSettings();
 }
 

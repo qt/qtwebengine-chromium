@@ -32,12 +32,15 @@
 #define Shaper_h
 
 #include "platform/PlatformExport.h"
-#include "platform/fonts/Font.h"
+#include "platform/geometry/FloatPoint.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
 class FloatRect;
+class Font;
 class GlyphBuffer;
 class SimpleFontData;
 class TextRun;
@@ -45,6 +48,8 @@ class TextRun;
 struct GlyphData;
 
 class PLATFORM_EXPORT Shaper {
+    DISALLOW_NEW();
+    WTF_MAKE_NONCOPYABLE(Shaper);
 protected:
     Shaper(const Font*, const TextRun&, const GlyphData* emphasisData = nullptr,
         HashSet<const SimpleFontData*>* fallbackFonts = nullptr, FloatRect* = nullptr);
@@ -69,16 +74,6 @@ private:
     const GlyphData* m_emphasisSubstitutionData;
     FloatPoint m_emphasisGlyphCenter;
 };
-
-inline void Shaper::trackNonPrimaryFallbackFont(const SimpleFontData* fontData)
-{
-    ASSERT(m_fallbackFonts);
-
-    if (fontData == m_font->primaryFont())
-        return;
-
-    m_fallbackFonts->add(fontData);
-}
 
 } // namespace blink
 

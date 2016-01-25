@@ -23,7 +23,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/LayoutTableCol.h"
 
 #include "core/HTMLNames.h"
@@ -185,13 +184,13 @@ const BorderValue& LayoutTableCol::borderAdjoiningCellEndBorder(const LayoutTabl
 
 const BorderValue& LayoutTableCol::borderAdjoiningCellBefore(const LayoutTableCell* cell) const
 {
-    ASSERT_UNUSED(cell, table()->colElement(cell->col() + cell->colSpan()) == this);
+    ASSERT_UNUSED(cell, table()->colElement(cell->col() + cell->colSpan()).innermostColOrColGroup() == this);
     return style()->borderStart();
 }
 
 const BorderValue& LayoutTableCol::borderAdjoiningCellAfter(const LayoutTableCell* cell) const
 {
-    ASSERT_UNUSED(cell, table()->colElement(cell->col() - 1) == this);
+    ASSERT_UNUSED(cell, table()->colElement(cell->col() - 1).innermostColOrColGroup() == this);
     return style()->borderEnd();
 }
 

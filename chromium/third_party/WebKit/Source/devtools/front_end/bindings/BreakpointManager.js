@@ -86,7 +86,7 @@ WebInspector.BreakpointManager.prototype = {
         var networkURL = this._networkMapping.networkURL(uiSourceCode)
         if (!networkURL)
             return "";
-        return uiSourceCode.uri();
+        return uiSourceCode.url();
     },
 
     /**
@@ -163,7 +163,7 @@ WebInspector.BreakpointManager.prototype = {
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         this._restoreBreakpoints(uiSourceCode);
-        if (uiSourceCode.contentType() === WebInspector.resourceTypes.Script || uiSourceCode.contentType() === WebInspector.resourceTypes.Document)
+        if (uiSourceCode.contentType().hasScripts())
             uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.SourceMappingChanged, this._uiSourceCodeMappingChanged, this);
     },
 
@@ -243,7 +243,7 @@ WebInspector.BreakpointManager.prototype = {
             return breakpoint;
         }
         var projectId = uiSourceCode.project().id();
-        var path = uiSourceCode.path();
+        var path = uiSourceCode.url();
         var sourceFileId = this._sourceFileId(uiSourceCode);
         breakpoint = new WebInspector.BreakpointManager.Breakpoint(this, projectId, path, sourceFileId, lineNumber, columnNumber, condition, enabled);
         if (!this._breakpointsForPrimaryUISourceCode.get(uiSourceCode))
@@ -799,7 +799,6 @@ WebInspector.BreakpointManager.TargetBreakpoint.prototype = {
             return false;
         var scriptFile = this._debuggerWorkspaceBinding.scriptFile(uiSourceCode, this.target());
         return !!scriptFile && scriptFile.hasDivergedFromVM();
-
     },
 
     /**

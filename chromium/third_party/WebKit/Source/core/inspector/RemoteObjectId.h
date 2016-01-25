@@ -5,7 +5,7 @@
 #ifndef RemoteObjectId_h
 #define RemoteObjectId_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -13,7 +13,7 @@ namespace blink {
 class JSONObject;
 
 class RemoteObjectIdBase {
-    WTF_MAKE_FAST_ALLOCATED(RemoteObjectIdBase);
+    USING_FAST_MALLOC(RemoteObjectIdBase);
 public:
     int contextId() const { return m_injectedScriptId; }
 

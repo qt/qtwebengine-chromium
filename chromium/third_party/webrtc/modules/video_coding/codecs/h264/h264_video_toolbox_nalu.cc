@@ -123,7 +123,7 @@ bool H264CMSampleBufferToAnnexBBuffer(
     // Read the length of the next packet of data. Must convert from big endian
     // to host endian.
     RTC_DCHECK_GE(bytes_remaining, (size_t)nalu_header_size);
-    uint32_t* uint32_data_ptr = reinterpret_cast<uint32*>(data_ptr);
+    uint32_t* uint32_data_ptr = reinterpret_cast<uint32_t*>(data_ptr);
     uint32_t packet_size = CFSwapInt32BigToHost(*uint32_data_ptr);
     // Update buffer.
     annexb_buffer->AppendData(kAnnexBHeaderBytes, sizeof(kAnnexBHeaderBytes));
@@ -154,11 +154,10 @@ bool H264CMSampleBufferToAnnexBBuffer(
   return true;
 }
 
-bool H264AnnexBBufferToCMSampleBuffer(
-    const uint8_t* annexb_buffer,
-    size_t annexb_buffer_size,
-    CMVideoFormatDescriptionRef video_format,
-    CMSampleBufferRef* out_sample_buffer) {
+bool H264AnnexBBufferToCMSampleBuffer(const uint8_t* annexb_buffer,
+                                      size_t annexb_buffer_size,
+                                      CMVideoFormatDescriptionRef video_format,
+                                      CMSampleBufferRef* out_sample_buffer) {
   RTC_DCHECK(annexb_buffer);
   RTC_DCHECK(out_sample_buffer);
   *out_sample_buffer = nullptr;

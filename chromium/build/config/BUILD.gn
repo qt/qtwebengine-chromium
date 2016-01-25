@@ -4,11 +4,11 @@
 
 import("//build/config/allocator.gni")
 import("//build/config/chrome_build.gni")
+import("//build/config/chromecast_build.gni")
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
-import("//build/module_args/v8.gni")
 import("//build/toolchain/goma.gni")
 
 declare_args() {
@@ -168,14 +168,11 @@ config("feature_flags") {
   if (is_msan) {
     defines += [ "MEMORY_SANITIZER" ]
   }
-  if (is_ubsan) {
+  if (is_ubsan || is_ubsan_vptr) {
     defines += [ "UNDEFINED_SANITIZER" ]
   }
   if (enable_webrtc) {
     defines += [ "ENABLE_WEBRTC=1" ]
-  }
-  if (disable_ftp_support) {
-    defines += [ "DISABLE_FTP_SUPPORT=1" ]
   }
   if (!enable_nacl) {
     defines += [ "DISABLE_NACL" ]
@@ -219,14 +216,8 @@ config("feature_flags") {
   if (enable_autofill_dialog) {
     defines += [ "ENABLE_AUTOFILL_DIALOG=1" ]
   }
-  if (enable_wifi_bootstrapping) {
-    defines += [ "ENABLE_WIFI_BOOTSTRAPPING=1" ]
-  }
   if (enable_image_loader_extension) {
     defines += [ "IMAGE_LOADER_EXTENSION=1" ]
-  }
-  if (enable_google_now) {
-    defines += [ "ENABLE_GOOGLE_NOW=1" ]
   }
   if (enable_one_click_signin) {
     defines += [ "ENABLE_ONE_CLICK_SIGNIN" ]
@@ -237,20 +228,20 @@ config("feature_flags") {
   if (enable_topchrome_md) {
     defines += [ "ENABLE_TOPCHROME_MD=1" ]
   }
+  if (enable_wayland_server) {
+    defines += [ "ENABLE_WAYLAND_SERVER=1" ]
+  }
+  if (enable_wifi_display) {
+    defines += [ "ENABLE_WIFI_DISPLAY=1" ]
+  }
   if (proprietary_codecs) {
     defines += [ "USE_PROPRIETARY_CODECS" ]
   }
   if (enable_hangout_services_extension) {
     defines += [ "ENABLE_HANGOUT_SERVICES_EXTENSION=1" ]
   }
-  if (v8_use_external_startup_data) {
-    defines += [ "V8_USE_EXTERNAL_STARTUP_DATA" ]
-  }
   if (enable_background) {
     defines += [ "ENABLE_BACKGROUND=1" ]
-  }
-  if (enable_pre_sync_backup) {
-    defines += [ "ENABLE_PRE_SYNC_BACKUP" ]
   }
   if (enable_video_hole) {
     defines += [ "VIDEO_HOLE=1" ]
@@ -259,14 +250,8 @@ config("feature_flags") {
     defines += [ "FULL_SAFE_BROWSING" ]
     defines += [ "SAFE_BROWSING_CSD" ]
     defines += [ "SAFE_BROWSING_DB_LOCAL" ]
-    defines += [ "SAFE_BROWSING_SERVICE" ]
   } else if (safe_browsing_mode == 2) {
-    defines += [ "MOBILE_SAFE_BROWSING" ]
-    defines += [ "SAFE_BROWSING_SERVICE" ]
-  } else if (safe_browsing_mode == 3) {
-    defines += [ "MOBILE_SAFE_BROWSING" ]
     defines += [ "SAFE_BROWSING_DB_REMOTE" ]
-    defines += [ "SAFE_BROWSING_SERVICE" ]
   }
   if (is_official_build) {
     defines += [ "OFFICIAL_BUILD" ]
@@ -381,15 +366,7 @@ config("default_libs") {
       # target that needs it.
     ]
   } else if (is_android) {
-    # Android uses -nostdlib so we need to add even libc here.
     libs = [
-      # TODO(brettw) write a version of this, hopefully we can express this
-      # without forking out to GCC just to get the library name. The android
-      # toolchain directory should probably be extracted into a .gni file that
-      # this file and the android toolchain .gn file can share.
-      #   # Manually link the libgcc.a that the cross compiler uses.
-      #   '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
-      "c",
       "dl",
       "m",
     ]
@@ -414,7 +391,56 @@ config("default_libs") {
       "Foundation.framework",
     ]
   } else if (is_linux) {
-    libs = [ "dl" ]
+    libs = [
+      "dl",
+      "rt",
+    ]
+  }
+}
+
+# Executable configs -----------------------------------------------------------
+
+# Windows linker setup for EXEs and DLLs.
+if (is_win) {
+  _windows_linker_configs = [
+    "//build/config/win:sdk_link",
+    "//build/config/win:common_linker_setup",
+  ]
+}
+
+# This config defines the configs applied to all executables.
+config("executable_config") {
+  configs = []
+
+  if (is_win) {
+    configs += _windows_linker_configs
+  } else if (is_mac) {
+    configs += [
+      "//build/config/mac:mac_dynamic_flags",
+      "//build/config/mac:mac_executable_flags",
+    ]
+  } else if (is_linux || is_android) {
+    configs += [ "//build/config/gcc:executable_ldconfig" ]
+    if (is_android) {
+      configs += [ "//build/config/android:executable_config" ]
+    } else if (is_chromecast) {
+      configs += [ "//build/config/chromecast:executable_config" ]
+    }
+  }
+}
+
+# Shared library configs -------------------------------------------------------
+
+# This config defines the configs applied to all shared libraries.
+config("shared_library_config") {
+  configs = []
+
+  if (is_win) {
+    configs += _windows_linker_configs
+  } else if (is_mac) {
+    configs += [ "//build/config/mac:mac_dynamic_flags" ]
+  } else if (is_chromecast) {
+    configs += [ "//build/config/chromecast:shared_library_config" ]
   }
 }
 

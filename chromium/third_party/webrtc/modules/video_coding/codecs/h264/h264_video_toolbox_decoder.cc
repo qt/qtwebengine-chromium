@@ -16,7 +16,7 @@
 #include "libyuv/convert.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/common_video/interface/video_frame_buffer.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_nalu.h"
 #include "webrtc/video_frame.h"
 
@@ -56,10 +56,10 @@ rtc::scoped_refptr<webrtc::VideoFrameBuffer> VideoFrameBufferForPixelBuffer(
   rtc::scoped_refptr<webrtc::VideoFrameBuffer> buffer =
       new rtc::RefCountedObject<webrtc::I420Buffer>(width, height);
   CVPixelBufferLockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
-  const uint8* src_y = reinterpret_cast<const uint8*>(
+  const uint8_t* src_y = reinterpret_cast<const uint8_t*>(
       CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0));
   int src_y_stride = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0);
-  const uint8* src_uv = reinterpret_cast<const uint8*>(
+  const uint8_t* src_uv = reinterpret_cast<const uint8_t*>(
       CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1));
   int src_uv_stride = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1);
   int ret = libyuv::NV12ToI420(
@@ -106,8 +106,7 @@ namespace webrtc {
 H264VideoToolboxDecoder::H264VideoToolboxDecoder()
     : callback_(nullptr),
       video_format_(nullptr),
-      decompression_session_(nullptr) {
-}
+      decompression_session_(nullptr) {}
 
 H264VideoToolboxDecoder::~H264VideoToolboxDecoder() {
   DestroyDecompressionSession();
@@ -129,8 +128,7 @@ int H264VideoToolboxDecoder::Decode(
 
   CMSampleBufferRef sample_buffer = nullptr;
   if (!H264AnnexBBufferToCMSampleBuffer(input_image._buffer,
-                                        input_image._length,
-                                        video_format_,
+                                        input_image._length, video_format_,
                                         &sample_buffer)) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
@@ -206,11 +204,8 @@ int H264VideoToolboxDecoder::ResetDecompressionSession() {
   int64_t nv12type = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
   CFNumberRef pixel_format =
       CFNumberCreate(nullptr, kCFNumberLongType, &nv12type);
-  CFTypeRef values[attributes_size] = {
-    kCFBooleanTrue,
-    io_surface_value,
-    pixel_format
-  };
+  CFTypeRef values[attributes_size] = {kCFBooleanTrue, io_surface_value,
+                                       pixel_format};
   CFDictionaryRef attributes =
       internal::CreateCFDictionary(keys, values, attributes_size);
   if (io_surface_value) {
@@ -264,6 +259,10 @@ void H264VideoToolboxDecoder::SetVideoFormat(
   if (video_format_) {
     CFRetain(video_format_);
   }
+}
+
+const char* H264VideoToolboxDecoder::ImplementationName() const {
+  return "VideoToolbox";
 }
 
 }  // namespace webrtc

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "InitModules.h"
 
 #include "bindings/modules/v8/ModuleBindingsInitializer.h"
@@ -15,7 +14,6 @@
 #include "modules/IndexedDBNames.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "modules/canvas2d/CanvasRenderingContext2D.h"
-#include "modules/compositorworker/CompositorWorkerManager.h"
 #include "modules/filesystem/DraggedIsolatedFileSystemImpl.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webgl/WebGL2RenderingContext.h"
@@ -43,9 +41,6 @@ void ModulesInitializer::init()
 
     CoreInitializer::init();
 
-    if (RuntimeEnabledFeatures::compositorWorkerEnabled())
-        CompositorWorkerManager::initialize();
-
     // Canvas context types must be registered with the HTMLCanvasElement.
     HTMLCanvasElement::registerRenderingContextFactory(adoptPtr(new CanvasRenderingContext2D::Factory()));
     HTMLCanvasElement::registerRenderingContextFactory(adoptPtr(new WebGLRenderingContext::Factory()));
@@ -56,8 +51,6 @@ void ModulesInitializer::init()
 
 void ModulesInitializer::terminateThreads()
 {
-    if (RuntimeEnabledFeatures::compositorWorkerEnabled())
-        CompositorWorkerManager::shutdown();
     DatabaseManager::terminateDatabaseThread();
 }
 

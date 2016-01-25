@@ -1,5 +1,5 @@
 <blink>Hello     world!</blink>
- 
+
 She blinked slowly back at him.
 
 Then, backed away.
@@ -9,3 +9,9 @@ Then, backed away.
 <git> C-C-C-C-COMBO BREAKER </git>
 
 And now, we see for which the merger merges.
+
+ "How eerie!" said the girl, advancing cautiously. "- And what a heavy door!"
+She touched it as she spoke and it suddenly swung to with a click. "Good Lord!"
+said the man. "I don't believe there's a handle inside. Why, you've locked us
+both in!" "Not both of us. Only one of us," said the girl, and before his eyes
+she passed straight through the door, and vanished.

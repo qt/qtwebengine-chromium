@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/inspector/WorkerRuntimeAgent.h"
 
 #include "bindings/core/v8/ScriptState.h"
@@ -61,19 +59,12 @@ void WorkerRuntimeAgent::enable(ErrorString* errorString)
 
     InspectorRuntimeAgent::enable(errorString);
     ScriptState* scriptState = m_workerGlobalScope->script()->scriptState();
-    int executionContextId = injectedScriptManager()->injectedScriptIdFor(scriptState);
-    addExecutionContextToFrontend(executionContextId, "", m_workerGlobalScope->url(), "", "");
+    reportExecutionContextCreated(scriptState, "", m_workerGlobalScope->url(), "", "");
 }
 
-InjectedScript WorkerRuntimeAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
+ScriptState* WorkerRuntimeAgent::defaultScriptState()
 {
-    if (!executionContextId)
-        return injectedScriptManager()->injectedScriptFor(m_workerGlobalScope->script()->scriptState());
-
-    InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
-    if (injectedScript.isEmpty())
-        *error = "Execution context with given id not found.";
-    return injectedScript;
+    return m_workerGlobalScope->script()->scriptState();
 }
 
 void WorkerRuntimeAgent::muteConsole()

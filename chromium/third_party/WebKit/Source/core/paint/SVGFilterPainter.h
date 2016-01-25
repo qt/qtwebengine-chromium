@@ -6,7 +6,7 @@
 #define SVGFilterPainter_h
 
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "wtf/Allocator.h"
 #include "wtf/OwnPtr.h"
 
@@ -17,20 +17,20 @@ class LayoutObject;
 class LayoutSVGResourceFilter;
 
 class SVGFilterRecordingContext {
-    WTF_MAKE_FAST_ALLOCATED(SVGFilterRecordingContext);
+    USING_FAST_MALLOC(SVGFilterRecordingContext);
     WTF_MAKE_NONCOPYABLE(SVGFilterRecordingContext);
 public:
-    explicit SVGFilterRecordingContext(GraphicsContext* initialContext) : m_initialContext(initialContext) { }
+    explicit SVGFilterRecordingContext(GraphicsContext& initialContext) : m_initialContext(initialContext) { }
 
     GraphicsContext* beginContent(FilterData*);
     void endContent(FilterData*);
 
-    GraphicsContext* paintingContext() const { return m_initialContext; }
+    GraphicsContext& paintingContext() const { return m_initialContext; }
 
 private:
-    OwnPtr<DisplayItemList> m_displayItemList;
+    OwnPtr<PaintController> m_paintController;
     OwnPtr<GraphicsContext> m_context;
-    GraphicsContext* m_initialContext;
+    GraphicsContext& m_initialContext;
 };
 
 class SVGFilterPainter {

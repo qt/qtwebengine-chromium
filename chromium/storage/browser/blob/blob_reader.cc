@@ -4,8 +4,11 @@
 
 #include "storage/browser/blob/blob_reader.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/sequenced_task_runner.h"
@@ -41,12 +44,12 @@ BlobReader::BlobReader(
     const BlobDataHandle* blob_handle,
     scoped_ptr<FileStreamReaderProvider> file_stream_provider,
     base::SequencedTaskRunner* file_task_runner)
-    : file_stream_provider_(file_stream_provider.Pass()),
+    : file_stream_provider_(std::move(file_stream_provider)),
       file_task_runner_(file_task_runner),
       net_error_(net::OK),
       weak_factory_(this) {
   if (blob_handle) {
-    blob_data_ = blob_handle->CreateSnapshot().Pass();
+    blob_data_ = blob_handle->CreateSnapshot();
   }
 }
 
@@ -240,11 +243,11 @@ bool BlobReader::ResolveFileItemLength(const BlobDataItem& item,
     return false;
   }
 
-  uint64 max_length = file_length - item_offset;
+  uint64_t max_length = file_length - item_offset;
 
   // If item length is undefined, then we need to use the file size being
   // resolved in the real time.
-  if (item_length == std::numeric_limits<uint64>::max()) {
+  if (item_length == std::numeric_limits<uint64_t>::max()) {
     item_length = max_length;
   } else if (item_length > max_length) {
     return false;
@@ -524,21 +527,18 @@ scoped_ptr<FileStreamReader> BlobReader::CreateFileStreamReader(
   switch (item.type()) {
     case DataElement::TYPE_FILE:
       return file_stream_provider_->CreateForLocalFile(
-                                      file_task_runner_.get(), item.path(),
-                                      item.offset() + additional_offset,
-                                      item.expected_modification_time())
-          .Pass();
+          file_task_runner_.get(), item.path(),
+          item.offset() + additional_offset, item.expected_modification_time());
     case DataElement::TYPE_FILE_FILESYSTEM:
-      return file_stream_provider_
-          ->CreateFileStreamReader(
-              item.filesystem_url(), item.offset() + additional_offset,
-              item.length() == std::numeric_limits<uint64_t>::max()
-                  ? storage::kMaximumLength
-                  : item.length() - additional_offset,
-              item.expected_modification_time())
-          .Pass();
+      return file_stream_provider_->CreateFileStreamReader(
+          item.filesystem_url(), item.offset() + additional_offset,
+          item.length() == std::numeric_limits<uint64_t>::max()
+              ? storage::kMaximumLength
+              : item.length() - additional_offset,
+          item.expected_modification_time());
     case DataElement::TYPE_BLOB:
     case DataElement::TYPE_BYTES:
+    case DataElement::TYPE_BYTES_DESCRIPTION:
     case DataElement::TYPE_DISK_CACHE_ENTRY:
     case DataElement::TYPE_UNKNOWN:
       break;

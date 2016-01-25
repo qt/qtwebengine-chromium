@@ -34,16 +34,19 @@
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/transforms/AffineTransform.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
+class SkPaint;
 class SkShader;
 
 namespace blink {
 
 class PLATFORM_EXPORT Gradient : public RefCounted<Gradient> {
+    WTF_MAKE_NONCOPYABLE(Gradient);
 public:
     static PassRefPtr<Gradient> create(const FloatPoint& p0, const FloatPoint& p1)
     {
@@ -56,6 +59,7 @@ public:
     ~Gradient();
 
     struct ColorStop {
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         float stop;
         Color color;
 
@@ -109,7 +113,7 @@ public:
 
     float aspectRatio() const { return m_aspectRatio; }
 
-    SkShader* shader();
+    void applyToPaint(SkPaint&);
 
     void setDrawsInPMColorSpace(bool drawInPMColorSpace);
 
@@ -122,6 +126,7 @@ private:
     Gradient(const FloatPoint& p0, const FloatPoint& p1);
     Gradient(const FloatPoint& p0, float r0, const FloatPoint& p1, float r1, float aspectRatio);
 
+    SkShader* shader();
     void destroyShader();
 
     void sortStopsIfNecessary();

@@ -25,8 +25,8 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/animation/AnimationUtilities.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/MathExtras.h"
@@ -39,7 +39,6 @@ namespace blink {
 // appropriate for any given Length.
 enum LengthType {
     Auto, Percent, Fixed,
-    Intrinsic, MinIntrinsic,
     MinContent, MaxContent, FillAvailable, FitContent,
     Calculated,
     ExtendToZoom, DeviceWidth, DeviceHeight,
@@ -52,6 +51,7 @@ enum ValueRange {
 };
 
 struct PixelsAndPercent {
+    DISALLOW_NEW();
     PixelsAndPercent(float pixels, float percent)
         : pixels(pixels)
         , percent(percent)
@@ -64,7 +64,7 @@ struct PixelsAndPercent {
 class CalculationValue;
 
 class PLATFORM_EXPORT Length {
-    WTF_MAKE_FAST_ALLOCATED(Length);
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     Length()
         :  m_intValue(0), m_quirk(false), m_type(Auto), m_isFloat(false)
@@ -244,8 +244,7 @@ public:
 
     bool isAuto() const { return type() == Auto; }
     bool isFixed() const { return type() == Fixed; }
-    bool isIntrinsicOrAuto() const { return type() == Auto || isLegacyIntrinsic() || isIntrinsic(); }
-    bool isLegacyIntrinsic() const { return type() == Intrinsic || type() == MinIntrinsic; }
+    bool isIntrinsicOrAuto() const { return type() == Auto || isIntrinsic(); }
     bool isIntrinsic() const { return type() == MinContent || type() == MaxContent || type() == FillAvailable || type() == FitContent; }
     bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated; }
     bool isSpecifiedOrIntrinsic() const { return isSpecified() || isIntrinsic(); }

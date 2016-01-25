@@ -35,7 +35,7 @@
 #include "core/page/Page.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -46,6 +46,11 @@ class Document;
 class LocalFrame;
 class FrameView;
 class IntSize;
+class Settings;
+
+typedef void (*FrameSettingOverrideFunction)(Settings&);
+
+extern void RootLayerScrollsFrameSettingOverride(Settings&);
 
 // Creates a dummy Page, LocalFrame, and FrameView whose clients are all no-op.
 //
@@ -58,12 +63,13 @@ class IntSize;
 
 class DummyPageHolder {
     WTF_MAKE_NONCOPYABLE(DummyPageHolder);
-    WTF_MAKE_FAST_ALLOCATED(DummyPageHolder);
+    USING_FAST_MALLOC(DummyPageHolder);
 public:
     static PassOwnPtr<DummyPageHolder> create(
         const IntSize& initialViewSize = IntSize(),
         Page::PageClients* = 0,
-        PassOwnPtrWillBeRawPtr<FrameLoaderClient> = nullptr);
+        PassOwnPtrWillBeRawPtr<FrameLoaderClient> = nullptr,
+        FrameSettingOverrideFunction = nullptr);
     ~DummyPageHolder();
 
     Page& page() const;
@@ -72,7 +78,7 @@ public:
     Document& document() const;
 
 private:
-    DummyPageHolder(const IntSize& initialViewSize, Page::PageClients*, PassOwnPtrWillBeRawPtr<FrameLoaderClient>);
+    DummyPageHolder(const IntSize& initialViewSize, Page::PageClients*, PassOwnPtrWillBeRawPtr<FrameLoaderClient>, FrameSettingOverrideFunction settingOverrider);
 
     OwnPtrWillBePersistent<Page> m_page;
     RefPtrWillBePersistent<LocalFrame> m_frame;

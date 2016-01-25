@@ -4,11 +4,11 @@
 
 /**
  * @fileoverview
- * 'cr-settings-internet-detail' is the settings subpage containing details
+ * 'settings-internet-detail' is the settings subpage containing details
  * for a network.
  *
  * @group Chrome Settings Elements
- * @element cr-settings-internet-detail
+ * @element settings-internet-detail
  */
 (function() {
 'use strict';
@@ -16,7 +16,9 @@
 /** @const */ var CARRIER_VERIZON = 'Verizon Wireless';
 
 Polymer({
-  is: 'cr-settings-internet-detail-page',
+  is: 'settings-internet-detail-page',
+
+  behaviors: [CrPolicyNetworkBehavior],
 
   properties: {
     /**
@@ -64,6 +66,15 @@ Polymer({
     },
 
     /**
+     * Highest priority connected network or null.
+     * @type {?CrOnc.NetworkStateProperties}
+     */
+    defaultNetwork: {
+      type: Object,
+      value: null
+    },
+
+    /**
      * Object providing network type values for data binding.
      * @const
      */
@@ -78,6 +89,14 @@ Polymer({
       },
       readOnly: true
     },
+
+    /**
+     * Interface for networkingPrivate calls, passed from internet_page.
+     * @type {NetworkingPrivate}
+     */
+    networkingPrivate: {
+      type: Object,
+    },
   },
 
   /**
@@ -90,13 +109,13 @@ Polymer({
   /** @override */
   attached: function() {
     this.networksChangedListener_ = this.onNetworksChangedEvent_.bind(this);
-    chrome.networkingPrivate.onNetworksChanged.addListener(
+    this.networkingPrivate.onNetworksChanged.addListener(
         this.networksChangedListener_);
   },
 
   /** @override */
   detached: function() {
-    chrome.networkingPrivate.onNetworksChanged.removeListener(
+    this.networkingPrivate.onNetworksChanged.removeListener(
         this.networksChangedListener_);
   },
 
@@ -173,7 +192,7 @@ Polymer({
   getNetworkDetails_: function() {
     if (!this.guid)
       return;
-    chrome.networkingPrivate.getManagedProperties(
+    this.networkingPrivate.getManagedProperties(
         this.guid, this.getPropertiesCallback_.bind(this));
   },
 
@@ -199,7 +218,7 @@ Polymer({
   setNetworkProperties_: function(onc) {
     if (!this.guid)
       return;
-    chrome.networkingPrivate.setProperties(this.guid, onc, function() {
+    this.networkingPrivate.setProperties(this.guid, onc, function() {
       if (chrome.runtime.lastError) {
         // An error typically indicates invalid input; request the properties
         // to update any invalid fields.
@@ -244,8 +263,7 @@ Polymer({
    * @private
    */
   isConnectedState_: function(properties) {
-    return !!properties && properties.ConnectionState ==
-        CrOnc.ConnectionState.CONNECTED;
+    return properties.ConnectionState == CrOnc.ConnectionState.CONNECTED;
   },
 
   /**
@@ -254,7 +272,7 @@ Polymer({
    * @private
    */
   showConnect_: function(properties) {
-    return !!properties && properties.Type != CrOnc.Type.ETHERNET &&
+    return properties.Type != CrOnc.Type.ETHERNET &&
            properties.ConnectionState == CrOnc.ConnectionState.NOT_CONNECTED;
   },
 
@@ -309,15 +327,18 @@ Polymer({
   },
 
   /**
+   * @param {!CrOnc.NetworkProperties} properties
+   * @param {?CrOnc.NetworkStateProperties} defaultNetwork
    * @return {boolean} Whether or not to enable the network connect button.
    * @private
    */
-  enableConnect_: function(properties) {
+  enableConnect_: function(properties, defaultNetwork) {
     if (!properties || !this.showConnect_(properties))
       return false;
     if (properties.Type == CrOnc.Type.CELLULAR && CrOnc.isSimLocked(properties))
       return false;
-    // TODO(stevenjb): For VPN, check connected state of any network.
+    if (properties.Type == CrOnc.Type.VPN && !defaultNetwork)
+      return false;
     return true;
   },
 
@@ -327,41 +348,41 @@ Polymer({
    * @private
    */
   showDisconnect_: function(properties) {
-    return !!properties && properties.Type != CrOnc.Type.ETHERNET &&
+    return properties.Type != CrOnc.Type.ETHERNET &&
            properties.ConnectionState != CrOnc.ConnectionState.NOT_CONNECTED;
   },
 
   /**
-   * Callback when the Connect button is clicked.
+   * Callback when the Connect button is tapped.
    * @private
    */
-  onConnectClicked_: function() {
-    chrome.networkingPrivate.startConnect(this.guid);
+  onConnectTap_: function() {
+    this.networkingPrivate.startConnect(this.guid);
   },
 
   /**
-   * Callback when the Disconnect button is clicked.
+   * Callback when the Disconnect button is tapped.
    * @private
    */
-  onDisconnectClicked_: function() {
-    chrome.networkingPrivate.startDisconnect(this.guid);
+  onDisconnectTap_: function() {
+    this.networkingPrivate.startDisconnect(this.guid);
   },
 
   /**
-   * Callback when the Activate button is clicked.
+   * Callback when the Activate button is tapped.
    * @private
    */
-  onActivateClicked_: function() {
-    chrome.networkingPrivate.startActivate(this.guid);
+  onActivateTap_: function() {
+    this.networkingPrivate.startActivate(this.guid);
   },
 
   /**
-   * Callback when the View Account button is clicked.
+   * Callback when the View Account button is tapped.
    * @private
    */
-  onViewAccountClicked_: function() {
+  onViewAccountTap_: function() {
     // startActivate() will show the account page for activated networks.
-    chrome.networkingPrivate.startActivate(this.guid);
+    this.networkingPrivate.startActivate(this.guid);
   },
 
   /**
@@ -380,7 +401,7 @@ Polymer({
     } else if (field == 'SIMLockStatus') {
       CrOnc.setTypeProperty(onc, 'SIMLockStatus', value);
     } else {
-      console.error('Unexpected property change event: ', field);
+      console.error('Unexpected property change event: ' + field);
       return;
     }
     this.setNetworkProperties_(onc);
@@ -487,8 +508,7 @@ Polymer({
    * @private
    */
   showShared_: function(properties) {
-    return !!properties && (properties.Source == 'Device' ||
-                            properties.Source == 'DevicePolicy');
+    return properties.Source == 'Device' || properties.Source == 'DevicePolicy';
   },
 
   /**
@@ -497,8 +517,17 @@ Polymer({
    * @private
    */
   showAutoConnect_: function(properties) {
-    return !!properties && properties.Type != CrOnc.Type.ETHERNET &&
+    return properties.Type != CrOnc.Type.ETHERNET &&
            properties.Source != CrOnc.Source.NONE;
+  },
+
+  /**
+   * @param {!CrOnc.NetworkProperties} properties
+   * @return {!CrOnc.ManagedProperty|undefined} Managed AutoConnect property.
+   * @private
+   */
+  getManagedAutoConnect_: function(properties) {
+    return CrOnc.getManagedAutoConnect(properties);
   },
 
   /**
@@ -509,7 +538,7 @@ Polymer({
   showPreferNetwork_: function(properties) {
     // TODO(stevenjb): Resolve whether or not we want to allow "preferred" for
     // properties.Type == CrOnc.Type.ETHERNET.
-    return !!properties && properties.Source != CrOnc.Source.NONE;
+    return properties.Source != CrOnc.Source.NONE;
   },
 
   /**
@@ -637,7 +666,7 @@ Polymer({
    * @private
    */
   hasNetworkSection_: function(properties) {
-    return !!properties && properties.Type != CrOnc.Type.VPN;
+    return properties.Type != CrOnc.Type.VPN;
   },
 
   /**
@@ -647,7 +676,7 @@ Polymer({
    * @private
    */
   isType_: function(properties, type) {
-    return !!properties && properties.Type == type;
+    return properties.Type == type;
   },
 
   /**

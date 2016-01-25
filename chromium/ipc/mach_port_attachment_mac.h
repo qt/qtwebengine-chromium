@@ -8,6 +8,7 @@
 #include <mach/mach.h>
 #include <stdint.h>
 
+#include "base/macros.h"
 #include "base/process/process_handle.h"
 #include "ipc/brokerable_attachment.h"
 #include "ipc/ipc_export.h"
@@ -45,9 +46,15 @@ class IPC_EXPORT MachPortAttachmentMac : public BrokerableAttachment {
     AttachmentId attachment_id;
   };
 
+  // This constructor increments the ref count of |mach_port_| and takes
+  // ownership of the result. Should only be called by the sender of a Chrome
+  // IPC message.
   explicit MachPortAttachmentMac(mach_port_t mach_port);
+
+  // This constructor takes ownership of |wire_format.mach_port|, but does not
+  // modify its ref count. Should only be called by the receiver of a Chrome IPC
+  // message.
   explicit MachPortAttachmentMac(const WireFormat& wire_format);
-  explicit MachPortAttachmentMac(const BrokerableAttachment::AttachmentId& id);
 
   BrokerableType GetBrokerableType() const override;
 
@@ -56,9 +63,20 @@ class IPC_EXPORT MachPortAttachmentMac : public BrokerableAttachment {
 
   mach_port_t get_mach_port() const { return mach_port_; }
 
+  // The caller of this method has taken ownership of |mach_port_|.
+  void reset_mach_port_ownership() { owns_mach_port_ = false; }
+
  private:
   ~MachPortAttachmentMac() override;
-  mach_port_t mach_port_;
+  const mach_port_t mach_port_;
+
+  // In the sender process, the attachment owns the Mach port of a newly created
+  // message. The attachment broker will eventually take ownership of
+  // |mach_port_|.
+  // In the destination process, the attachment owns |mach_port_| until
+  // ParamTraits<MachPortMac>::Read() is called, which takes ownership.
+  bool owns_mach_port_;
+  DISALLOW_COPY_AND_ASSIGN(MachPortAttachmentMac);
 };
 
 }  // namespace internal

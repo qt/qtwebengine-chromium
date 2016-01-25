@@ -74,9 +74,17 @@ BLINK_EXPORT void shutdownWithoutV8();
 BLINK_EXPORT void setLayoutTestMode(bool);
 BLINK_EXPORT bool layoutTestMode();
 
+// Enables or disables the use of the mock theme for layout tests. This function
+// must be called only if setLayoutTestMode(true).
+BLINK_EXPORT void setMockThemeEnabledForTest(bool);
+
 // Alters the rendering of fonts for layout tests.
 BLINK_EXPORT void setFontAntialiasingEnabledForTest(bool);
 BLINK_EXPORT bool fontAntialiasingEnabledForTest();
+
+// Forces the use of the complex text path for layout tests.
+BLINK_EXPORT void setAlwaysUseComplexTextForTest(bool);
+BLINK_EXPORT bool alwaysUseComplexTextForTest();
 
 // Enables the named log channel. See WebCore/platform/Logging.h for details.
 BLINK_EXPORT void enableLogChannel(const char*);

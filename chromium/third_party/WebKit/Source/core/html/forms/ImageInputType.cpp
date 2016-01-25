@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/forms/ImageInputType.h"
 
 #include "core/HTMLNames.h"
@@ -206,7 +205,7 @@ unsigned ImageInputType::height() const
         // If the image is available, use its height.
         HTMLImageLoader* imageLoader = element->imageLoader();
         if (imageLoader && imageLoader->image())
-            return imageLoader->image()->imageSizeForLayoutObject(element->layoutObject(), 1).height();
+            return imageLoader->image()->imageSize(LayoutObject::shouldRespectImageOrientation(nullptr), 1).height();
     }
 
     element->document().updateLayout();
@@ -228,7 +227,7 @@ unsigned ImageInputType::width() const
         // If the image is available, use its width.
         HTMLImageLoader* imageLoader = element->imageLoader();
         if (imageLoader && imageLoader->image())
-            return imageLoader->image()->imageSizeForLayoutObject(element->layoutObject(), 1).width();
+            return imageLoader->image()->imageSize(LayoutObject::shouldRespectImageOrientation(nullptr), 1).width();
     }
 
     element->document().updateLayout();

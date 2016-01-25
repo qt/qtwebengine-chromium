@@ -49,10 +49,13 @@ WebInspector.JavaScriptCompiler.prototype = {
         var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
         if (!debuggerModel)
             return;
+        var currentExecutionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
+        if (!currentExecutionContext)
+            return;
 
         this._compiling = true;
         var code = this._sourceFrame.textEditor.text();
-        debuggerModel.compileScript(code, "", false, undefined, compileCallback.bind(this, target));
+        debuggerModel.compileScript(code, "", false, currentExecutionContext.id, compileCallback.bind(this, target));
 
         /**
          * @param {!WebInspector.Target} target
@@ -70,8 +73,7 @@ WebInspector.JavaScriptCompiler.prototype = {
             }
             if (!exceptionDetails)
                 return;
-            var message = new WebInspector.SourceFrameMessage(exceptionDetails.text, WebInspector.SourceFrameMessage.Level.Error, exceptionDetails.line - 1, exceptionDetails.column + 1);
-            this._sourceFrame.addMessageToSource(message);
+            this._sourceFrame.uiSourceCode().addLineMessage(WebInspector.UISourceCode.Message.Level.Error, exceptionDetails.text, exceptionDetails.line - 1, exceptionDetails.column + 1);
             this._compilationFinishedForTest();
         }
     },

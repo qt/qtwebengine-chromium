@@ -54,10 +54,10 @@ public:
     // be called before blink::initalize(). We can't create WebString objects
     // before blink::initialize().
     BLINK_EXPORT static void enableFeatureFromString(const std::string& name, bool enable);
-    // TODO(bashi): Remove.
-    BLINK_EXPORT static void enableFeatureFromString(const WebString& name, bool enable);
 
     BLINK_EXPORT static void enableApplicationCache(bool);
+
+    BLINK_EXPORT static void enableAudioOutputDevices(bool);
 
     BLINK_EXPORT static void enableDatabase(bool);
 
@@ -75,11 +75,12 @@ public:
     BLINK_EXPORT static void enablePrefixedEncryptedMedia(bool);
     BLINK_EXPORT static bool isPrefixedEncryptedMediaEnabled();
 
-    BLINK_EXPORT static void enableBleedingEdgeFastPaths(bool);
-
     BLINK_EXPORT static void enableCompositorAnimationTimelines(bool);
 
     BLINK_EXPORT static void enableExperimentalCanvasFeatures(bool);
+
+    BLINK_EXPORT static void enableExperimentalFramework(bool);
+    BLINK_EXPORT static bool isExperimentalFrameworkEnabled();
 
     BLINK_EXPORT static void enableFastMobileScrolling(bool);
 
@@ -113,23 +114,17 @@ public:
 
     BLINK_EXPORT static void enableRequestAutocomplete(bool);
 
-    BLINK_EXPORT static void enableScreenOrientation(bool);
-
     BLINK_EXPORT static void enableScriptedSpeech(bool);
 
     BLINK_EXPORT static void enableSlimmingPaintV2(bool);
 
     BLINK_EXPORT static void enableTouch(bool);
 
-    BLINK_EXPORT static void enableTouchIconLoading(bool);
-
     BLINK_EXPORT static void enableWebAudio(bool);
 
     BLINK_EXPORT static void enableWebGLDraftExtensions(bool);
 
     BLINK_EXPORT static void enableWebGLImageChromium(bool);
-
-    BLINK_EXPORT static void enableWebMIDI(bool);
 
     BLINK_EXPORT static void enableXSLT(bool);
 
@@ -149,8 +144,6 @@ public:
 
     BLINK_EXPORT static void enableV8IdleTasks(bool);
 
-    BLINK_EXPORT static void enableSVG1DOM(bool);
-
     BLINK_EXPORT static void enableReducedReferrerGranularity(bool);
 
     BLINK_EXPORT static void enablePushMessaging(bool);
@@ -166,6 +159,8 @@ public:
     BLINK_EXPORT static void enableNewMediaPlaybackUi(bool);
 
     BLINK_EXPORT static void enablePresentationAPI(bool);
+
+    BLINK_EXPORT static void enableWebFontsIntervention(bool);
 private:
     WebRuntimeFeatures();
 };

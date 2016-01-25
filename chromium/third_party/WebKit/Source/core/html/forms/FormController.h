@@ -38,7 +38,7 @@ class HTMLFormElement;
 class SavedFormState;
 
 class FormControlState {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     FormControlState() : m_type(TypeSkip) { }
     explicit FormControlState(const String& value) : m_type(TypeRestore) { m_values.append(value); }
@@ -91,7 +91,7 @@ private:
 };
 
 class FormController final : public NoBaseWillBeGarbageCollectedFinalized<FormController> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FormController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FormController);
 public:
     static PassOwnPtrWillBeRawPtr<FormController> create()
     {

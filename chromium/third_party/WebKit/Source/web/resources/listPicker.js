@@ -87,7 +87,25 @@ ListPicker.prototype._handleWindowMessage = function(event) {
     delete window.updateData;
 };
 
+// This should be matched to the border width of the internal listbox
+// SELECT. See listPicker.css and html.css.
+ListPicker.ListboxSelectBorder = 1;
+
 ListPicker.prototype._handleWindowMouseMove = function (event) {
+    var visibleTop = ListPicker.ListboxSelectBorder;
+    var visibleBottom = this._selectElement.offsetHeight - ListPicker.ListboxSelectBorder;
+    var optionBounds = event.target.getBoundingClientRect();
+    if (optionBounds.height >= 1.0) {
+        // If the height of the visible part of event.target is less than 1px,
+        // ignore this event because it may be an error by sub-pixel layout.
+        if (optionBounds.top < visibleTop) {
+            if (optionBounds.bottom - visibleTop < 1.0)
+                return;
+        } else if (optionBounds.bottom > visibleBottom) {
+            if (visibleBottom - optionBounds.top < 1.0)
+                return;
+        }
+    }
     this.lastMousePositionX = event.clientX;
     this.lastMousePositionY = event.clientY;
     this._highlightOption(event.target);
@@ -193,31 +211,31 @@ ListPicker.prototype._handleKeyDown = function(event) {
 
 ListPicker.prototype._fixWindowSize = function() {
     this._selectElement.style.height = "";
-    var maxHeight = this._selectElement.offsetHeight;
-    // heightOutsideOfContent should be matched to border widths of the listbox
-    // SELECT. See listPicker.css and html.css.
-    var heightOutsideOfContent = 2;
-    var noScrollHeight = Math.round(this._calculateScrollHeight() + heightOutsideOfContent);
+    var zoom = this._config.zoomFactor;
+    var maxHeight = this._selectElement.offsetHeight * zoom;
+    var noScrollHeight = (this._calculateScrollHeight() + ListPicker.ListboxSelectBorder * 2) * zoom;
+    var scrollbarWidth = getScrollbarWidth() * zoom;
+    var elementOffsetWidth = this._selectElement.offsetWidth * zoom;
     var desiredWindowHeight = noScrollHeight;
-    var desiredWindowWidth = this._selectElement.offsetWidth;
+    var desiredWindowWidth = elementOffsetWidth;
     var expectingScrollbar = false;
     if (desiredWindowHeight > maxHeight) {
         desiredWindowHeight = maxHeight;
         // Setting overflow to auto does not increase width for the scrollbar
         // so we need to do it manually.
-        desiredWindowWidth += getScrollbarWidth();
+        desiredWindowWidth += scrollbarWidth;
         expectingScrollbar = true;
     }
     desiredWindowWidth = Math.max(this._config.anchorRectInScreen.width, desiredWindowWidth);
-    var windowRect = adjustWindowRect(desiredWindowWidth, desiredWindowHeight, this._selectElement.offsetWidth, 0);
+    var windowRect = adjustWindowRect(desiredWindowWidth, desiredWindowHeight, elementOffsetWidth, 0);
     // If the available screen space is smaller than maxHeight, we will get an unexpected scrollbar.
     if (!expectingScrollbar && windowRect.height < noScrollHeight) {
-        desiredWindowWidth = windowRect.width + getScrollbarWidth();
+        desiredWindowWidth = windowRect.width + scrollbarWidth;
         windowRect = adjustWindowRect(desiredWindowWidth, windowRect.height, windowRect.width, windowRect.height);
     }
-    this._selectElement.style.width = windowRect.width + "px";
-    this._selectElement.style.height = windowRect.height + "px";
-    this._element.style.height = windowRect.height + "px";
+    this._selectElement.style.width = (windowRect.width / zoom) + "px";
+    this._selectElement.style.height = (windowRect.height / zoom) + "px";
+    this._element.style.height = (windowRect.height / zoom) + "px";
     setWindowRect(windowRect);
 };
 

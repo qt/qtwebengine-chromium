@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXTableColumn.h"
 
 #include "core/layout/LayoutTableCell.h"
@@ -66,7 +65,7 @@ LayoutRect AXTableColumn::elementRect() const
     return m_columnRect;
 }
 
-void AXTableColumn::headerObjectsForColumn(AccessibilityChildrenVector& headers)
+void AXTableColumn::headerObjectsForColumn(AXObjectVector& headers)
 {
     if (!m_parent)
         return;
@@ -113,7 +112,7 @@ void AXTableColumn::headerObjectsForColumn(AccessibilityChildrenVector& headers)
 
 AXObject* AXTableColumn::headerObject()
 {
-    AccessibilityChildrenVector headers;
+    AXObjectVector headers;
     headerObjectsForColumn(headers);
     if (!headers.size())
         return 0;
@@ -137,6 +136,7 @@ bool AXTableColumn::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReasons
 
 void AXTableColumn::addChildren()
 {
+    ASSERT(!isDetached());
     ASSERT(!m_haveChildren);
 
     m_haveChildren = true;

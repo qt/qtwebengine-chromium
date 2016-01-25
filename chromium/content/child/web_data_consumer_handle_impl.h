@@ -5,11 +5,13 @@
 #ifndef CONTENT_CHILD_WEB_DATA_CONSUMER_HANDLE_IMPL_H_
 #define CONTENT_CHILD_WEB_DATA_CONSUMER_HANDLE_IMPL_H_
 
+#include <stddef.h>
+
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "mojo/message_pump/handle_watcher.h"
+#include "mojo/public/cpp/system/data_pipe.h"
 #include "third_party/WebKit/public/platform/WebDataConsumerHandle.h"
-#include "third_party/mojo/src/mojo/public/cpp/system/data_pipe.h"
 
 namespace content {
 

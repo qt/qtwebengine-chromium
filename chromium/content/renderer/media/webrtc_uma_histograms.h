@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_MEDIA_WEBRTC_UMA_HISTOGRAMS_H_
 #define CONTENT_RENDERER_MEDIA_WEBRTC_UMA_HISTOGRAMS_H_
 
+#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
@@ -38,6 +39,7 @@ enum JavaScriptAPIName {
   WEBKIT_RTC_PEER_CONNECTION,
   WEBKIT_GET_MEDIA_DEVICES,
   WEBKIT_MEDIA_STREAM_RECORDER,
+  WEBKIT_CANVAS_CAPTURE_STREAM,
   INVALID_NAME
 };
 

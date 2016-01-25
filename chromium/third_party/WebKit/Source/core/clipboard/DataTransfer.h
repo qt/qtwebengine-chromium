@@ -43,7 +43,6 @@ class DataObject;
 class DataTransferItemList;
 class DragImage;
 class Element;
-class ExceptionState;
 class FileList;
 class FrameSelection;
 class LocalFrame;
@@ -53,7 +52,7 @@ class Range;
 // Used for drag and drop and copy/paste.
 // Drag and Drop: http://www.whatwg.org/specs/web-apps/current-work/multipage/dnd.html
 // Clipboard API (copy/paste): http://dev.w3.org/2006/webapi/clipops/clipops.html
-class CORE_EXPORT DataTransfer : public GarbageCollectedFinalized<DataTransfer>, public ScriptWrappable {
+class CORE_EXPORT DataTransfer final : public GarbageCollectedFinalized<DataTransfer>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // Whether this transfer is serving a drag-drop or copy-paste request.
@@ -83,7 +82,7 @@ public:
     FileList* files() const;
 
     IntPoint dragLocation() const { return m_dragLoc; }
-    void setDragImage(Element*, int x, int y, ExceptionState&);
+    void setDragImage(Element*, int x, int y);
     void clearDragImage();
     void setDragImageResource(ImageResource*, const IntPoint&);
     void setDragImageElement(Node*, const IntPoint&);

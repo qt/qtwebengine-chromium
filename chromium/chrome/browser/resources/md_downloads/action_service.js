@@ -12,7 +12,31 @@ cr.define('downloads', function() {
   }
 
   /** @constructor */
-  function ActionService() {}
+  function ActionService() {
+    /** @private {Array<string>} */
+    this.searchTerms_ = [];
+  }
+
+  /**
+   * @param {string} s
+   * @return {string} |s| without whitespace at the beginning or end.
+   */
+  function trim(s) { return s.trim(); }
+
+  /**
+   * @param {string|undefined} value
+   * @return {boolean} Whether |value| is truthy.
+   */
+  function truthy(value) { return !!value; }
+
+  /**
+   * @param {string} searchText Input typed by the user into a search box.
+   * @return {Array<string>} A list of terms extracted from |searchText|.
+   */
+  ActionService.splitTerms = function(searchText) {
+    // Split quoted terms (e.g., 'The "lazy" dog' => ['The', 'lazy', 'dog']).
+    return searchText.split(/"([^"]*)"/).map(trim).filter(truthy);
+  };
 
   ActionService.prototype = {
     /** @param {string} id ID of the download to cancel. */
@@ -40,12 +64,17 @@ cr.define('downloads', function() {
     /** @param {string} id ID of the download that the user started dragging. */
     drag: chromeSendWithId('drag'),
 
+    /** Loads more downloads with the current search terms. */
+    loadMore: function() {
+      chrome.send('getDownloads', this.searchTerms_);
+    },
+
     /**
      * @return {boolean} Whether the user is currently searching for downloads
      *     (i.e. has a non-empty search term).
      */
     isSearching: function() {
-      return this.searchText_.length > 0;
+      return this.searchTerms_.length > 0;
     },
 
     /** Opens the current local destination for downloads. */
@@ -73,14 +102,19 @@ cr.define('downloads', function() {
 
     /** @param {string} searchText What to search for. */
     search: function(searchText) {
-      if (this.searchText_ == searchText)
+      var searchTerms = ActionService.splitTerms(searchText);
+      var sameTerms = searchTerms.length == this.searchTerms_.length;
+
+      for (var i = 0; sameTerms && i < searchTerms.length; ++i) {
+        if (searchTerms[i] != this.searchTerms_[i])
+          sameTerms = false;
+      }
+
+      if (sameTerms)
         return;
 
-      this.searchText_ = searchText;
-
-      // Split quoted terms (e.g., 'The "lazy" dog' => ['The', 'lazy', 'dog']).
-      function trim(s) { return s.trim(); }
-      chrome.send('getDownloads', searchText.split(/"([^"]*)"/).map(trim));
+      this.searchTerms_ = searchTerms;
+      this.loadMore();
     },
 
     /**

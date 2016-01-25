@@ -63,6 +63,7 @@ class LocalDOMWindow;
 class LocalFrame;
 class NodeFilter;
 class WorkerGlobalScope;
+class WorkerOrWorkletGlobalScope;
 class XPathNSResolver;
 
 template <typename T>
@@ -242,7 +243,7 @@ inline void v8SetReturnValue(const CallbackInfo& callbackInfo, EventTarget* impl
 template<typename CallbackInfo>
 inline void v8SetReturnValue(const CallbackInfo& callbackInfo, WorkerGlobalScope* impl)
 {
-    v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
+    v8SetReturnValue(callbackInfo, toV8((WorkerOrWorkletGlobalScope*) impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
 }
 
 template<typename CallbackInfo, typename T>
@@ -312,7 +313,7 @@ inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, Event
 template<typename CallbackInfo>
 inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, WorkerGlobalScope* impl)
 {
-    v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
+    v8SetReturnValue(callbackInfo, toV8((WorkerOrWorkletGlobalScope*) impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
 }
 
 template<typename CallbackInfo, typename T>
@@ -370,7 +371,7 @@ inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, EventTarget* 
 template<typename CallbackInfo>
 inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, WorkerGlobalScope* impl, const ScriptWrappable*)
 {
-    v8SetReturnValue(callbackInfo, toV8(impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
+    v8SetReturnValue(callbackInfo, toV8((WorkerOrWorkletGlobalScope*) impl, callbackInfo.Holder(), callbackInfo.GetIsolate()));
 }
 
 template<typename CallbackInfo, typename T, typename Wrappable>
@@ -608,7 +609,7 @@ Vector<RefPtr<T>> toRefPtrNativeArrayUnchecked(v8::Local<v8::Value> v8Value, uin
     Vector<RefPtr<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     for (uint32_t i = 0; i < length; ++i) {
         v8::Local<v8::Value> element;
         if (!v8Call(object->Get(isolate->GetCurrentContext(), i), element, block)) {
@@ -672,7 +673,7 @@ WillBeHeapVector<RefPtrWillBeMember<T>> toRefPtrWillBeMemberNativeArray(v8::Loca
     WillBeHeapVector<RefPtrWillBeMember<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     for (uint32_t i = 0; i < length; ++i) {
         v8::Local<v8::Value> element;
         if (!v8Call(object->Get(isolate->GetCurrentContext(), i), element, block)) {
@@ -706,7 +707,7 @@ WillBeHeapVector<RefPtrWillBeMember<T>> toRefPtrWillBeMemberNativeArray(v8::Loca
     WillBeHeapVector<RefPtrWillBeMember<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     for (uint32_t i = 0; i < length; ++i) {
         v8::Local<v8::Value> element;
         if (!v8Call(object->Get(isolate->GetCurrentContext(), i), element, block)) {
@@ -740,7 +741,7 @@ HeapVector<Member<T>> toMemberNativeArray(v8::Local<v8::Value> value, int argume
     HeapVector<Member<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     for (uint32_t i = 0; i < length; ++i) {
         v8::Local<v8::Value> element;
         if (!v8Call(object->Get(isolate->GetCurrentContext(), i), element, block)) {
@@ -783,7 +784,7 @@ VectorType toImplArray(v8::Local<v8::Value> value, int argumentIndex, v8::Isolat
     VectorType result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(value);
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     for (uint32_t i = 0; i < length; ++i) {
         v8::Local<v8::Value> element;
         if (!v8Call(object->Get(isolate->GetCurrentContext(), i), element, block)) {
@@ -851,7 +852,7 @@ inline bool toV8Sequence(v8::Local<v8::Value> value, uint32_t& length, v8::Isola
     // FIXME: The specification states that the length property should be used as fallback, if value
     // is not a platform object that supports indexed properties. If it supports indexed properties,
     // length should actually be one greater than value's maximum indexed property index.
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     v8::Local<v8::Value> lengthValue;
     if (!v8Call(object->Get(isolate->GetCurrentContext(), lengthSymbol), lengthValue, block)) {
         exceptionState.rethrowV8Exception(block.Exception());
@@ -955,10 +956,11 @@ DOMWindow* toDOMWindow(v8::Isolate*, v8::Local<v8::Value>);
 DOMWindow* toDOMWindow(v8::Local<v8::Context>);
 LocalDOMWindow* enteredDOMWindow(v8::Isolate*);
 CORE_EXPORT LocalDOMWindow* currentDOMWindow(v8::Isolate*);
-LocalDOMWindow* callingDOMWindow(v8::Isolate*);
+CORE_EXPORT LocalDOMWindow* callingDOMWindow(v8::Isolate*);
 CORE_EXPORT ExecutionContext* toExecutionContext(v8::Local<v8::Context>);
+CORE_EXPORT void registerToExecutionContextForModules(ExecutionContext* (*toExecutionContextForModules)(v8::Local<v8::Context>));
 CORE_EXPORT ExecutionContext* currentExecutionContext(v8::Isolate*);
-CORE_EXPORT ExecutionContext* callingExecutionContext(v8::Isolate*);
+CORE_EXPORT ExecutionContext* enteredExecutionContext(v8::Isolate*);
 
 // Returns a V8 context associated with a ExecutionContext and a DOMWrapperWorld.
 // This method returns an empty context if there is no frame or the frame is already detached.
@@ -983,7 +985,7 @@ CORE_EXPORT void toFlexibleArrayBufferView(v8::Isolate*, v8::Local<v8::Value>, F
 // If the current context causes out of memory, JavaScript setting
 // is disabled and it returns true.
 bool handleOutOfMemory();
-void crashIfV8IsDead();
+void crashIfIsolateIsDead(v8::Isolate*);
 
 inline bool isUndefinedOrNull(v8::Local<v8::Value> value)
 {
@@ -1027,8 +1029,8 @@ enum DeleteResult {
     DeleteUnknownProperty
 };
 
-class V8IsolateInterruptor : public ThreadState::Interruptor {
-    WTF_MAKE_FAST_ALLOCATED(V8IsolateInterruptor);
+class V8IsolateInterruptor : public BlinkGCInterruptor {
+    USING_FAST_MALLOC(V8IsolateInterruptor);
 public:
     explicit V8IsolateInterruptor(v8::Isolate* isolate)
         : m_isolate(isolate)

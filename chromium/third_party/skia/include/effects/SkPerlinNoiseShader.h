@@ -80,7 +80,6 @@ public:
         virtual ~PerlinNoiseShaderContext();
 
         void shadeSpan(int x, int y, SkPMColor[], int count) override;
-        void shadeSpan16(int x, int y, uint16_t[], int count) override;
 
     private:
         SkPMColor shade(const SkPoint& point, StitchData& stitchData) const;
@@ -98,8 +97,7 @@ public:
 
 #if SK_SUPPORT_GPU
     const GrFragmentProcessor* asFragmentProcessor(GrContext* context, const SkMatrix& viewM,
-                                                   const SkMatrix*, SkFilterQuality,
-                                                   GrProcessorDataManager*) const override;
+                                                   const SkMatrix*, SkFilterQuality) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()

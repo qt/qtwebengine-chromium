@@ -44,9 +44,6 @@ class HpackEncoderPeer {
   }
   void EmitString(StringPiece str) { encoder_->EmitString(str); }
   void TakeString(string* out) { encoder_->output_stream_.TakeString(out); }
-  void UpdateCharacterCounts(StringPiece str) {
-    encoder_->UpdateCharacterCounts(str);
-  }
   static void CookieToCrumbs(StringPiece cookie,
                              std::vector<StringPiece>* out) {
     Representations tmp;
@@ -134,6 +131,10 @@ class HpackEncoderTest : public ::testing::Test {
     expected_.AppendPrefix(kStringLiteralIdentityEncoded);
     expected_.AppendUint32(value.size());
     expected_.AppendBytes(value);
+  }
+  void ExpectHeaderTableSizeUpdate(uint32_t size) {
+    expected_.AppendPrefix(kHeaderTableSizeUpdateOpcode);
+    expected_.AppendUint32(size);
   }
   void CompareWithExpectedEncoding(const SpdyHeaderBlock& header_set) {
     string expected_out, actual_out;
@@ -397,29 +398,6 @@ TEST_F(HpackEncoderTest, CookieToCrumbs) {
   EXPECT_THAT(out, ElementsAre("foo=1", "bar=2 ", "bar=3"));
 }
 
-TEST_F(HpackEncoderTest, UpdateCharacterCounts) {
-  std::vector<size_t> counts(256, 0);
-  size_t total_counts = 0;
-  encoder_.SetCharCountsStorage(&counts, &total_counts);
-
-  char kTestString[] =
-      "foo\0\1\xff"
-      "boo";
-  peer_.UpdateCharacterCounts(
-      StringPiece(kTestString, arraysize(kTestString) - 1));
-
-  std::vector<size_t> expect(256, 0);
-  expect[static_cast<uint8>('f')] = 1;
-  expect[static_cast<uint8>('o')] = 4;
-  expect[static_cast<uint8>('\0')] = 1;
-  expect[static_cast<uint8>('\1')] = 1;
-  expect[static_cast<uint8>('\xff')] = 1;
-  expect[static_cast<uint8>('b')] = 1;
-
-  EXPECT_EQ(expect, counts);
-  EXPECT_EQ(9u, total_counts);
-}
-
 TEST_F(HpackEncoderTest, DecomposeRepresentation) {
   test::HpackEncoderPeer peer(NULL);
   std::vector<StringPiece> out;
@@ -457,6 +435,70 @@ TEST_F(HpackEncoderTest, CrumbleNullByteDelimitedValue) {
   expected_.AppendUint32(3);
   expected_.AppendBytes("bar");
   CompareWithExpectedEncoding(headers);
+}
+
+TEST_F(HpackEncoderTest, HeaderTableSizeUpdate) {
+  encoder_.ApplyHeaderTableSizeSetting(1024);
+  ExpectHeaderTableSizeUpdate(1024);
+  ExpectIndexedLiteral("key3", "value3");
+
+  SpdyHeaderBlock headers;
+  headers["key3"] = "value3";
+  CompareWithExpectedEncoding(headers);
+
+  HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
+  EXPECT_EQ(new_entry->name(), "key3");
+  EXPECT_EQ(new_entry->value(), "value3");
+}
+
+TEST_F(HpackEncoderTest, HeaderTableSizeUpdateWithMin) {
+  const size_t starting_size = peer_.table()->settings_size_bound();
+  encoder_.ApplyHeaderTableSizeSetting(starting_size - 2);
+  encoder_.ApplyHeaderTableSizeSetting(starting_size - 1);
+  // We must encode the low watermark, so the peer knows to evict entries
+  // if necessary.
+  ExpectHeaderTableSizeUpdate(starting_size - 2);
+  ExpectHeaderTableSizeUpdate(starting_size - 1);
+  ExpectIndexedLiteral("key3", "value3");
+
+  SpdyHeaderBlock headers;
+  headers["key3"] = "value3";
+  CompareWithExpectedEncoding(headers);
+
+  HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
+  EXPECT_EQ(new_entry->name(), "key3");
+  EXPECT_EQ(new_entry->value(), "value3");
+}
+
+TEST_F(HpackEncoderTest, HeaderTableSizeUpdateWithExistingSize) {
+  encoder_.ApplyHeaderTableSizeSetting(peer_.table()->settings_size_bound());
+  // No encoded size update.
+  ExpectIndexedLiteral("key3", "value3");
+
+  SpdyHeaderBlock headers;
+  headers["key3"] = "value3";
+  CompareWithExpectedEncoding(headers);
+
+  HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
+  EXPECT_EQ(new_entry->name(), "key3");
+  EXPECT_EQ(new_entry->value(), "value3");
+}
+
+TEST_F(HpackEncoderTest, HeaderTableSizeUpdatesWithGreaterSize) {
+  const size_t starting_size = peer_.table()->settings_size_bound();
+  encoder_.ApplyHeaderTableSizeSetting(starting_size + 1);
+  encoder_.ApplyHeaderTableSizeSetting(starting_size + 2);
+  // Only a single size update to the final size.
+  ExpectHeaderTableSizeUpdate(starting_size + 2);
+  ExpectIndexedLiteral("key3", "value3");
+
+  SpdyHeaderBlock headers;
+  headers["key3"] = "value3";
+  CompareWithExpectedEncoding(headers);
+
+  HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
+  EXPECT_EQ(new_entry->name(), "key3");
+  EXPECT_EQ(new_entry->value(), "value3");
 }
 
 }  // namespace

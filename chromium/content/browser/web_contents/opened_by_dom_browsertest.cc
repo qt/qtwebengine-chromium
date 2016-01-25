@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -82,12 +83,12 @@ class OpenedByDOMTest : public ContentBrowserTest {
 // Tests that window.close() does not work on a normal window that has navigated
 // a few times.
 IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, NormalWindow) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
   // window.close is allowed if the window was opened by DOM OR the back/forward
   // list has only one element. Navigate a bit so the second condition is false.
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
+  GURL url2 = embedded_test_server()->GetURL("/site_isolation/blank.html?2");
   NavigateToURL(shell(), url1);
   NavigateToURL(shell(), url2);
 
@@ -99,11 +100,11 @@ IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, NormalWindow) {
 // Tests that window.close() works in a popup window that has navigated a few
 // times.
 IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, Popup) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
-  GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
+  GURL url2 = embedded_test_server()->GetURL("/site_isolation/blank.html?2");
+  GURL url3 = embedded_test_server()->GetURL("/site_isolation/blank.html?3");
   NavigateToURL(shell(), url1);
 
   Shell* popup = OpenWindowFromJavaScript(shell(), url2);
@@ -115,16 +116,16 @@ IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, Popup) {
 // times and swapped processes.
 IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, CrossProcessPopup) {
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
 
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
+  GURL url2 = embedded_test_server()->GetURL("/site_isolation/blank.html?2");
   GURL::Replacements replace_host;
   replace_host.SetHostStr("foo.com");
   url2 = url2.ReplaceComponents(replace_host);
 
-  GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
+  GURL url3 = embedded_test_server()->GetURL("/site_isolation/blank.html?3");
   url3 = url3.ReplaceComponents(replace_host);
 
   NavigateToURL(shell(), url1);

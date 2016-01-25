@@ -279,7 +279,7 @@ static int set_volume(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_VERBOSE, "volume_i:%d/255 ", vol->volume_i);
     }
     av_log(ctx, AV_LOG_VERBOSE, "volume:%f volume_dB:%f\n",
-           vol->volume, 20.0*log(vol->volume)/M_LN10);
+           vol->volume, 20.0*log10(vol->volume));
 
     volume_init(vol);
     return 0;
@@ -376,7 +376,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
             av_log(inlink->dst, AV_LOG_VERBOSE,
                    "Using gain %f dB from replaygain side data.\n", g);
 
-            vol->volume   = pow(10, (g + vol->replaygain_preamp) / 20);
+            vol->volume   = ff_exp10((g + vol->replaygain_preamp) / 20);
             if (vol->replaygain_noclip)
                 vol->volume = FFMIN(vol->volume, 1.0 / p);
             vol->volume_i = (int)(vol->volume * 256 + 0.5);

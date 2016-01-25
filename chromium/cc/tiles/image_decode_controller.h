@@ -5,6 +5,8 @@
 #ifndef CC_TILES_IMAGE_DECODE_CONTROLLER_H_
 #define CC_TILES_IMAGE_DECODE_CONTROLLER_H_
 
+#include <stdint.h>
+
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
@@ -19,7 +21,7 @@ class ImageDecodeController {
   ImageDecodeController();
   ~ImageDecodeController();
 
-  scoped_refptr<ImageDecodeTask> GetTaskForImage(const PositionImage& image,
+  scoped_refptr<ImageDecodeTask> GetTaskForImage(const DrawImage& image,
                                                  int layer_id,
                                                  uint64_t prepare_tiles_id);
 

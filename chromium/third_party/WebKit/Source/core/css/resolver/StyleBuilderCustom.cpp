@@ -36,8 +36,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/StyleBuilderFunctions.h"
@@ -46,6 +44,7 @@
 #include "core/css/CSSBasicShapeValues.h"
 #include "core/css/CSSCounterValue.h"
 #include "core/css/CSSCursorImageValue.h"
+#include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSGridTemplateAreasValue.h"
@@ -54,9 +53,12 @@
 #include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSPropertyMetadata.h"
+#include "core/css/CSSURIValue.h"
 #include "core/css/CSSValuePair.h"
+#include "core/css/CSSVariableReferenceValue.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
+#include "core/css/resolver/CSSVariableResolver.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/css/resolver/FilterOperationResolver.h"
 #include "core/css/resolver/FontBuilder.h"
@@ -107,6 +109,13 @@ static inline bool isValidVisitedLinkProperty(CSSPropertyID id)
 
 void StyleBuilder::applyProperty(CSSPropertyID id, StyleResolverState& state, CSSValue* value)
 {
+    if (RuntimeEnabledFeatures::cssVariablesEnabled() && id != CSSPropertyVariable && value->isVariableReferenceValue()) {
+        CSSVariableResolver::resolveAndApplyVariableReferences(state, id, *toCSSVariableReferenceValue(value));
+        if (!state.style()->hasVariableReferenceFromNonInheritedProperty() && !CSSPropertyMetadata::isInheritedProperty(id))
+            state.style()->setHasVariableReferenceFromNonInheritedProperty();
+        return;
+    }
+
     ASSERT_WITH_MESSAGE(!isShorthandProperty(id), "Shorthand property id = %d wasn't expanded at parsing time", id);
 
     bool isInherit = state.parentNode() && value->isInheritedValue();
@@ -153,17 +162,16 @@ void StyleBuilderFunctions::applyInheritCSSPropertyColor(StyleResolverState& sta
 
 void StyleBuilderFunctions::applyValueCSSPropertyColor(StyleResolverState& state, CSSValue* value)
 {
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     // As per the spec, 'color: currentColor' is treated as 'color: inherit'
-    if (primitiveValue->getValueID() == CSSValueCurrentcolor) {
+    if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueCurrentcolor) {
         applyInheritCSSPropertyColor(state);
         return;
     }
 
     if (state.applyPropertyToRegularStyle())
-        state.style()->setColor(StyleBuilderConverter::convertColor(state, value));
+        state.style()->setColor(StyleBuilderConverter::convertColor(state, *value));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->setVisitedLinkColor(StyleBuilderConverter::convertColor(state, value, true));
+        state.style()->setVisitedLinkColor(StyleBuilderConverter::convertColor(state, *value, true));
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyCursor(StyleResolverState& state)
@@ -191,27 +199,19 @@ void StyleBuilderFunctions::applyValueCSSPropertyCursor(StyleResolverState& stat
                 CSSCursorImageValue* image = toCSSCursorImageValue(item);
                 if (image->updateIfSVGCursorIsUsed(state.element())) // Elements with SVG cursors are not allowed to share style.
                     state.style()->setUnique();
-                state.style()->addCursor(state.styleImage(CSSPropertyCursor, image), image->hotSpotSpecified(), image->hotSpot());
+                state.style()->addCursor(state.styleImage(CSSPropertyCursor, *image), image->hotSpotSpecified(), image->hotSpot());
             } else {
-                state.style()->setCursor(*toCSSPrimitiveValue(item));
+                state.style()->setCursor(toCSSPrimitiveValue(item)->convertTo<ECursor>());
             }
         }
     } else {
-        state.style()->setCursor(*toCSSPrimitiveValue(value));
+        state.style()->setCursor(toCSSPrimitiveValue(value)->convertTo<ECursor>());
     }
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyDirection(StyleResolverState& state, CSSValue* value)
 {
-    state.style()->setDirection(*toCSSPrimitiveValue(value));
-}
-
-void StyleBuilderFunctions::applyValueCSSPropertyGlyphOrientationVertical(StyleResolverState& state, CSSValue* value)
-{
-    if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueAuto)
-        state.style()->accessSVGStyle().setGlyphOrientationVertical(GO_AUTO);
-    else
-        state.style()->accessSVGStyle().setGlyphOrientationVertical(StyleBuilderConverter::convertGlyphOrientation(state, value));
+    state.style()->setDirection(toCSSPrimitiveValue(value)->convertTo<TextDirection>());
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyGridTemplateAreas(StyleResolverState& state)
@@ -255,7 +255,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyGridTemplateAreas(StyleResolver
 
 void StyleBuilderFunctions::applyValueCSSPropertyListStyleImage(StyleResolverState& state, CSSValue* value)
 {
-    state.style()->setListStyleImage(state.styleImage(CSSPropertyListStyleImage, value));
+    state.style()->setListStyleImage(state.styleImage(CSSPropertyListStyleImage, *value));
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyOutlineStyle(StyleResolverState& state)
@@ -273,8 +273,8 @@ void StyleBuilderFunctions::applyInheritCSSPropertyOutlineStyle(StyleResolverSta
 void StyleBuilderFunctions::applyValueCSSPropertyOutlineStyle(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    state.style()->setOutlineStyleIsAuto(*primitiveValue);
-    state.style()->setOutlineStyle(*primitiveValue);
+    state.style()->setOutlineStyleIsAuto(primitiveValue->convertTo<OutlineIsAuto>());
+    state.style()->setOutlineStyle(primitiveValue->convertTo<EBorderStyle>());
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyResize(StyleResolverState& state, CSSValue* value)
@@ -286,7 +286,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyResize(StyleResolverState& stat
         if (Settings* settings = state.document().settings())
             r = settings->textAreasAreResizable() ? RESIZE_BOTH : RESIZE_NONE;
     } else {
-        r = *primitiveValue;
+        r = primitiveValue->convertTo<EResize>();
     }
     state.style()->setResize(r);
 }
@@ -378,7 +378,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyTextAlign(StyleResolverState& s
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->isValueID() && primitiveValue->getValueID() != CSSValueWebkitMatchParent)
-        state.style()->setTextAlign(*primitiveValue);
+        state.style()->setTextAlign(primitiveValue->convertTo<ETextAlign>());
     else if (state.parentStyle()->textAlign() == TASTART)
         state.style()->setTextAlign(state.parentStyle()->isLeftToRightDirection() ? LEFT : RIGHT);
     else if (state.parentStyle()->textAlign() == TAEND)
@@ -508,7 +508,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyVerticalAlign(StyleResolverStat
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     if (primitiveValue->getValueID())
-        state.style()->setVerticalAlign(*primitiveValue);
+        state.style()->setVerticalAlign(primitiveValue->convertTo<EVerticalAlign>());
     else
         state.style()->setVerticalAlignLength(primitiveValue->convertToLength(state.cssToLengthConversionData()));
 }
@@ -560,7 +560,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyZoom(StyleResolverState& state,
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitBorderImage(StyleResolverState& state, CSSValue* value)
 {
     NinePieceImage image;
-    CSSToStyleMap::mapNinePieceImage(state, CSSPropertyWebkitBorderImage, value, image);
+    CSSToStyleMap::mapNinePieceImage(state, CSSPropertyWebkitBorderImage, *value, image);
     state.style()->setBorderImage(image);
 }
 
@@ -569,33 +569,15 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitClipPath(StyleResolverSta
     if (value->isBasicShapeValue()) {
         state.style()->setClipPath(ShapeClipPathOperation::create(basicShapeForValue(state, *value)));
     }
-    if (value->isPrimitiveValue()) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-        if (primitiveValue->getValueID() == CSSValueNone) {
-            state.style()->setClipPath(nullptr);
-        } else if (primitiveValue->isURI()) {
-            String cssURLValue = primitiveValue->getStringValue();
-            KURL url = state.document().completeURL(cssURLValue);
-            // FIXME: It doesn't work with forward or external SVG references (see https://bugs.webkit.org/show_bug.cgi?id=90405)
-            state.style()->setClipPath(ReferenceClipPathOperation::create(cssURLValue, AtomicString(url.fragmentIdentifier())));
-        }
+    if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone) {
+        state.style()->setClipPath(nullptr);
     }
-}
-
-void StyleBuilderFunctions::applyValueCSSPropertyWebkitFilter(StyleResolverState& state, CSSValue* value)
-{
-    // FIXME: We should just make this a converter
-    FilterOperations operations;
-    FilterOperationResolver::createFilterOperations(*value, state.cssToLengthConversionData(), operations, state);
-    state.style()->setFilter(operations);
-}
-
-void StyleBuilderFunctions::applyValueCSSPropertyBackdropFilter(StyleResolverState& state, CSSValue* value)
-{
-    // FIXME: We should just make this a converter
-    FilterOperations operations;
-    FilterOperationResolver::createFilterOperations(*value, state.cssToLengthConversionData(), operations, state);
-    state.style()->setBackdropFilter(operations);
+    if (value->isURIValue()) {
+        String cssURLValue = toCSSURIValue(value)->value();
+        KURL url = state.document().completeURL(cssURLValue);
+        // FIXME: It doesn't work with forward or external SVG references (see https://bugs.webkit.org/show_bug.cgi?id=90405)
+        state.style()->setClipPath(ReferenceClipPathOperation::create(cssURLValue, AtomicString(url.fragmentIdentifier())));
+    }
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyWebkitTextEmphasisStyle(StyleResolverState& state)
@@ -620,31 +602,31 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextEmphasisStyle(StyleRe
         for (unsigned i = 0; i < 2; ++i) {
             CSSPrimitiveValue* value = toCSSPrimitiveValue(list->item(i));
             if (value->getValueID() == CSSValueFilled || value->getValueID() == CSSValueOpen)
-                state.style()->setTextEmphasisFill(*value);
+                state.style()->setTextEmphasisFill(value->convertTo<TextEmphasisFill>());
             else
-                state.style()->setTextEmphasisMark(*value);
+                state.style()->setTextEmphasisMark(value->convertTo<TextEmphasisMark>());
         }
         state.style()->setTextEmphasisCustomMark(nullAtom);
         return;
     }
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-
-    if (primitiveValue->isString()) {
+    if (value->isStringValue()) {
         state.style()->setTextEmphasisFill(TextEmphasisFillFilled);
         state.style()->setTextEmphasisMark(TextEmphasisMarkCustom);
-        state.style()->setTextEmphasisCustomMark(AtomicString(primitiveValue->getStringValue()));
+        state.style()->setTextEmphasisCustomMark(AtomicString(toCSSStringValue(value)->value()));
         return;
     }
+
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     state.style()->setTextEmphasisCustomMark(nullAtom);
 
     if (primitiveValue->getValueID() == CSSValueFilled || primitiveValue->getValueID() == CSSValueOpen) {
-        state.style()->setTextEmphasisFill(*primitiveValue);
+        state.style()->setTextEmphasisFill(primitiveValue->convertTo<TextEmphasisFill>());
         state.style()->setTextEmphasisMark(TextEmphasisMarkAuto);
     } else {
         state.style()->setTextEmphasisFill(TextEmphasisFillFilled);
-        state.style()->setTextEmphasisMark(*primitiveValue);
+        state.style()->setTextEmphasisMark(primitiveValue->convertTo<TextEmphasisMark>());
     }
 }
 
@@ -666,21 +648,24 @@ void StyleBuilderFunctions::applyInheritCSSPropertyWillChange(StyleResolverState
 
 void StyleBuilderFunctions::applyValueCSSPropertyWillChange(StyleResolverState& state, CSSValue* value)
 {
-    ASSERT(value->isValueList());
     bool willChangeContents = false;
     bool willChangeScrollPosition = false;
     Vector<CSSPropertyID> willChangeProperties;
 
-    for (auto& willChangeValue : toCSSValueList(*value)) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(willChangeValue.get());
-        if (primitiveValue->isPropertyID())
-            willChangeProperties.append(primitiveValue->getPropertyID());
-        else if (primitiveValue->getValueID() == CSSValueContents)
-            willChangeContents = true;
-        else if (primitiveValue->getValueID() == CSSValueScrollPosition)
-            willChangeScrollPosition = true;
-        else
-            ASSERT_NOT_REACHED();
+    if (value->isPrimitiveValue()) {
+        ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueAuto);
+    } else {
+        ASSERT(value->isValueList());
+        for (auto& willChangeValue : toCSSValueList(*value)) {
+            if (willChangeValue->isCustomIdentValue())
+                willChangeProperties.append(toCSSCustomIdentValue(*willChangeValue).valueAsPropertyID());
+            else if (toCSSPrimitiveValue(*willChangeValue).getValueID() == CSSValueContents)
+                willChangeContents = true;
+            else if (toCSSPrimitiveValue(*willChangeValue).getValueID() == CSSValueScrollPosition)
+                willChangeScrollPosition = true;
+            else
+                ASSERT_NOT_REACHED();
+        }
     }
     state.style()->setWillChangeContents(willChangeContents);
     state.style()->setWillChangeScrollPosition(willChangeScrollPosition);
@@ -706,15 +691,15 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
     bool didSet = false;
     for (auto& item : toCSSValueList(*value)) {
         if (item->isImageGeneratorValue()) {
-            state.style()->setContent(StyleGeneratedImage::create(toCSSImageGeneratorValue(item.get())), didSet);
+            state.style()->setContent(StyleGeneratedImage::create(toCSSImageGeneratorValue(*item)), didSet);
             didSet = true;
         } else if (item->isImageSetValue()) {
-            state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, toCSSImageSetValue(item.get())), didSet);
+            state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, toCSSImageSetValue(*item)), didSet);
             didSet = true;
         }
 
         if (item->isImageValue()) {
-            state.style()->setContent(state.elementStyleResources().cachedOrPendingFromValue(state.document(), CSSPropertyContent, toCSSImageValue(item.get())), didSet);
+            state.style()->setContent(state.elementStyleResources().cachedOrPendingFromValue(CSSPropertyContent, toCSSImageValue(*item)), didSet);
             didSet = true;
             continue;
         }
@@ -738,22 +723,20 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
                 state.style()->setUnique();
             else
                 state.parentStyle()->setUnique();
-            QualifiedName attr(nullAtom, AtomicString(toCSSPrimitiveValue(functionValue->item(0))->getStringValue()), nullAtom);
+            QualifiedName attr(nullAtom, AtomicString(toCSSCustomIdentValue(functionValue->item(0))->value()), nullAtom);
             const AtomicString& value = state.element()->getAttribute(attr);
             state.style()->setContent(value.isNull() ? emptyString() : value.string(), didSet);
             didSet = true;
         }
 
-        if (!item->isPrimitiveValue())
+        if (!item->isPrimitiveValue() && !item->isStringValue())
             continue;
 
-        CSSPrimitiveValue* contentValue = toCSSPrimitiveValue(item.get());
-
-        if (contentValue->isString()) {
-            state.style()->setContent(contentValue->getStringValue().impl(), didSet);
+        if (item->isStringValue()) {
+            state.style()->setContent(toCSSStringValue(*item).value().impl(), didSet);
             didSet = true;
         } else {
-            switch (contentValue->getValueID()) {
+            switch (toCSSPrimitiveValue(*item).getValueID()) {
             case CSSValueOpenQuote:
                 state.style()->setContent(OPEN_QUOTE, didSet);
                 didSet = true;
@@ -782,14 +765,12 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitLocale(StyleResolverState& state, CSSValue* value)
 {
-    const CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == CSSValueAuto) {
-        state.style()->setLocale(nullAtom);
+    if (value->isPrimitiveValue()) {
+        ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueAuto);
+        state.fontBuilder().setLocale(nullAtom);
     } else {
-        ASSERT(primitiveValue->isString());
-        state.style()->setLocale(AtomicString(primitiveValue->getStringValue()));
+        state.fontBuilder().setLocale(AtomicString(toCSSStringValue(value)->value()));
     }
-    state.fontBuilder().setScript(state.style()->locale());
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyWebkitAppRegion(StyleResolverState&)
@@ -807,14 +788,52 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitAppRegion(StyleResolverSt
     state.document().setHasAnnotatedRegions(true);
 }
 
+void StyleBuilderFunctions::applyValueCSSPropertyWritingMode(StyleResolverState& state, CSSValue* value)
+{
+    state.setWritingMode(toCSSPrimitiveValue(value)->convertTo<WritingMode>());
+}
+
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitWritingMode(StyleResolverState& state, CSSValue* value)
 {
-    state.setWritingMode(*toCSSPrimitiveValue(value));
+    state.setWritingMode(toCSSPrimitiveValue(value)->convertTo<WritingMode>());
+}
+
+void StyleBuilderFunctions::applyValueCSSPropertyTextOrientation(StyleResolverState& state, CSSValue* value)
+{
+    state.setTextOrientation(toCSSPrimitiveValue(value)->convertTo<TextOrientation>());
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextOrientation(StyleResolverState& state, CSSValue* value)
 {
-    state.setTextOrientation(*toCSSPrimitiveValue(value));
+    state.setTextOrientation(toCSSPrimitiveValue(value)->convertTo<TextOrientation>());
+}
+
+void StyleBuilderFunctions::applyValueCSSPropertyVariable(StyleResolverState& state, CSSValue* value)
+{
+    CSSCustomPropertyDeclaration* declaration = toCSSCustomPropertyDeclaration(value);
+    switch (declaration->id()) {
+    case CSSValueInitial:
+        state.style()->removeVariable(declaration->name());
+        break;
+
+    case CSSValueUnset:
+    case CSSValueInherit: {
+        state.style()->removeVariable(declaration->name());
+        StyleVariableData* parentVariables = state.parentStyle()->variables();
+        if (!parentVariables)
+            return;
+        CSSVariableData* value = parentVariables->getVariable(declaration->name());
+        if (!value)
+            return;
+        state.style()->setVariable(declaration->name(), value);
+        break;
+    }
+    case CSSValueInternalVariableValue:
+        state.style()->setVariable(declaration->name(), declaration->value());
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyBaselineShift(StyleResolverState& state)
@@ -833,7 +852,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyBaselineShift(StyleResolverStat
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (!primitiveValue->isValueID()) {
         svgStyle.setBaselineShift(BS_LENGTH);
-        svgStyle.setBaselineShiftValue(StyleBuilderConverter::convertLength(state, primitiveValue));
+        svgStyle.setBaselineShiftValue(StyleBuilderConverter::convertLength(state, *primitiveValue));
         return;
     }
     switch (primitiveValue->getValueID()) {

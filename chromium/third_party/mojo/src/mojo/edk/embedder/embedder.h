@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process/process_handle.h"
 #include "base/task_runner.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "third_party/mojo/src/mojo/edk/embedder/channel_info_forward.h"
@@ -19,9 +20,19 @@
 #include "third_party/mojo/src/mojo/edk/system/system_impl_export.h"
 
 namespace mojo {
+
 namespace embedder {
 
 class ProcessDelegate;
+
+// Wrapper functions around the ones in src/mojo/edk for component builds.
+MOJO_SYSTEM_IMPL_EXPORT void PreInitializeParentProcess();
+MOJO_SYSTEM_IMPL_EXPORT void PreInitializeChildProcess();
+MOJO_SYSTEM_IMPL_EXPORT ScopedPlatformHandle ChildProcessLaunched(
+    base::ProcessHandle child_process);
+MOJO_SYSTEM_IMPL_EXPORT void ChildProcessLaunched(
+    base::ProcessHandle child_process, ScopedPlatformHandle server_pipe);
+MOJO_SYSTEM_IMPL_EXPORT void SetParentPipeHandle(ScopedPlatformHandle pipe);
 
 // Basic configuration/initialization ------------------------------------------
 
@@ -77,11 +88,10 @@ PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 
 // Initializes a process of the given type; to be called after |Init()|.
 //   - |process_delegate| must be a process delegate of the appropriate type
-//     corresponding to |process_type|; its methods will be called on
-//     |delegate_thread_task_runner|.
-//   - |delegate_thread_task_runner|, |process_delegate|, and
-//     |io_thread_task_runner| should live at least until
-//     |ShutdownIPCSupport()|'s callback has been run or
+//     corresponding to |process_type|; its methods will be called on the same
+//     thread as Shutdown.
+//   - |process_delegate|, and |io_thread_task_runner| should live at least
+//     until |ShutdownIPCSupport()|'s callback has been run or
 //     |ShutdownIPCSupportOnIOThread()| has completed.
 //   - For slave processes (i.e., |process_type| is |ProcessType::SLAVE|),
 //     |platform_handle| should be connected to the handle passed to
@@ -89,7 +99,6 @@ PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 //     |platform_handle| is ignored (and should not be valid).
 MOJO_SYSTEM_IMPL_EXPORT void InitIPCSupport(
     ProcessType process_type,
-    scoped_refptr<base::TaskRunner> delegate_thread_task_runner,
     ProcessDelegate* process_delegate,
     scoped_refptr<base::TaskRunner> io_thread_task_runner,
     ScopedPlatformHandle platform_handle);

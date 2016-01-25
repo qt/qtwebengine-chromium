@@ -18,7 +18,7 @@ class StyleResolverState;
 // Represents a conversion from a pair of keyframes to something compatible with interpolation.
 // This is agnostic to whether the keyframes are compatible with each other or not.
 class PrimitiveInterpolation {
-    WTF_MAKE_FAST_ALLOCATED(PrimitiveInterpolation);
+    USING_FAST_MALLOC(PrimitiveInterpolation);
     WTF_MAKE_NONCOPYABLE(PrimitiveInterpolation);
 public:
     virtual ~PrimitiveInterpolation() { }
@@ -36,10 +36,17 @@ class PairwisePrimitiveInterpolation : public PrimitiveInterpolation {
 public:
     ~PairwisePrimitiveInterpolation() override { }
 
-    static PassOwnPtr<PairwisePrimitiveInterpolation> create(const InterpolationType& type, PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<NonInterpolableValue> nonInterpolableValue)
+    static PassOwnPtr<PairwisePrimitiveInterpolation> create(const InterpolationType& type, PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtr<NonInterpolableValue> nonInterpolableValue)
     {
         return adoptPtr(new PairwisePrimitiveInterpolation(type, start, end, nonInterpolableValue));
     }
+
+    static PassOwnPtr<PairwisePrimitiveInterpolation> create(const InterpolationType& type, PairwiseInterpolationComponent& component)
+    {
+        return adoptPtr(new PairwisePrimitiveInterpolation(type, component.startInterpolableValue.release(), component.endInterpolableValue.release(), component.nonInterpolableValue.release()));
+    }
+
+    const InterpolationType& type() const { return m_type; }
 
     PassOwnPtr<InterpolationValue> initialValue() const
     {
@@ -47,12 +54,15 @@ public:
     }
 
 private:
-    PairwisePrimitiveInterpolation(const InterpolationType& type, PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtrWillBeRawPtr<NonInterpolableValue> nonInterpolableValue)
+    PairwisePrimitiveInterpolation(const InterpolationType& type, PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, PassRefPtr<NonInterpolableValue> nonInterpolableValue)
         : m_type(type)
         , m_start(start)
         , m_end(end)
         , m_nonInterpolableValue(nonInterpolableValue)
-    { }
+    {
+        ASSERT(m_start);
+        ASSERT(m_end);
+    }
 
     void interpolateValue(double fraction, OwnPtr<InterpolationValue>& result) const final
     {
@@ -67,7 +77,7 @@ private:
     const InterpolationType& m_type;
     OwnPtr<InterpolableValue> m_start;
     OwnPtr<InterpolableValue> m_end;
-    RefPtrWillBePersistent<NonInterpolableValue> m_nonInterpolableValue;
+    RefPtr<NonInterpolableValue> m_nonInterpolableValue;
 };
 
 // Represents a pair of incompatible keyframes that fall back to 50% flip behaviour eg. "auto" and "0px".

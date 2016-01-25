@@ -5,8 +5,11 @@
 #ifndef MEDIA_BASE_FAKE_AUDIO_RENDERER_SINK_H_
 #define MEDIA_BASE_FAKE_AUDIO_RENDERER_SINK_H_
 
+#include <stdint.h>
+
 #include <string>
 
+#include "base/macros.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_renderer_sink.h"
 
@@ -43,7 +46,8 @@ class FakeAudioRendererSink : public AudioRendererSink {
   // Returns false if this object is in a state where calling Render()
   // should not occur. (i.e., in the kPaused or kStopped state.) The
   // value of |frames_written| is undefined if false is returned.
-  bool Render(AudioBus* dest, int audio_delay_milliseconds,
+  bool Render(AudioBus* dest,
+              uint32_t audio_delay_milliseconds,
               int* frames_written);
   void OnRenderError();
 

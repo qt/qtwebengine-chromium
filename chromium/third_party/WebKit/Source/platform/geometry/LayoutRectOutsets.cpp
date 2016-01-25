@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/geometry/LayoutRectOutsets.h"
 
 #include "wtf/Assertions.h"
@@ -76,8 +75,6 @@ LayoutUnit LayoutRectOutsets::before(WritingMode writingMode) const
     switch (writingMode) {
     case TopToBottomWritingMode:
         return m_top;
-    case BottomToTopWritingMode:
-        return m_bottom;
     case LeftToRightWritingMode:
         return m_left;
     case RightToLeftWritingMode:
@@ -92,8 +89,6 @@ LayoutUnit LayoutRectOutsets::after(WritingMode writingMode) const
     switch (writingMode) {
     case TopToBottomWritingMode:
         return m_bottom;
-    case BottomToTopWritingMode:
-        return m_top;
     case LeftToRightWritingMode:
         return m_right;
     case RightToLeftWritingMode:
@@ -117,14 +112,21 @@ LayoutUnit LayoutRectOutsets::end(WritingMode writingMode, TextDirection directi
     return isLeftToRightDirection(direction) ? m_bottom : m_top;
 }
 
+LayoutUnit LayoutRectOutsets::over(WritingMode writingMode) const
+{
+    return isHorizontalWritingMode(writingMode) ? m_top : m_right;
+}
+
+LayoutUnit LayoutRectOutsets::under(WritingMode writingMode) const
+{
+    return isHorizontalWritingMode(writingMode) ? m_bottom : m_left;
+}
+
 void LayoutRectOutsets::setBefore(WritingMode writingMode, LayoutUnit value)
 {
     switch (writingMode) {
     case TopToBottomWritingMode:
         m_top = value;
-        break;
-    case BottomToTopWritingMode:
-        m_bottom = value;
         break;
     case LeftToRightWritingMode:
         m_left = value;
@@ -143,9 +145,6 @@ void LayoutRectOutsets::setAfter(WritingMode writingMode, LayoutUnit value)
     switch (writingMode) {
     case TopToBottomWritingMode:
         m_bottom = value;
-        break;
-    case BottomToTopWritingMode:
-        m_top = value;
         break;
     case LeftToRightWritingMode:
         m_right = value;

@@ -11,18 +11,20 @@
 #ifndef WEBRTC_VIDEO_SEND_STATISTICS_PROXY_H_
 #define WEBRTC_VIDEO_SEND_STATISTICS_PROXY_H_
 
+#include <map>
 #include <string>
 
 #include "webrtc/base/criticalsection.h"
+#include "webrtc/base/exp_filter.h"
 #include "webrtc/base/ratetracker.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
-#include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/video_engine/overuse_frame_detector.h"
-#include "webrtc/video_engine/vie_encoder.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/modules/video_coding/include/video_coding_defines.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/video/overuse_frame_detector.h"
+#include "webrtc/video/vie_encoder.h"
 #include "webrtc/video_send_stream.h"
 
 namespace webrtc {
@@ -38,7 +40,9 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
  public:
   static const int kStatsTimeoutMs;
 
-  SendStatisticsProxy(Clock* clock, const VideoSendStream::Config& config);
+  SendStatisticsProxy(Clock* clock,
+                      const VideoSendStream::Config& config,
+                      VideoEncoderConfig::ContentType content_type);
   virtual ~SendStatisticsProxy();
 
   VideoSendStream::Stats GetStats();
@@ -54,9 +58,14 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   // From VideoEncoderRateObserver.
   void OnSetRates(uint32_t bitrate_bps, int framerate) override;
 
+  void OnEncoderImplementationName(const char* implementation_name);
   void OnOutgoingRate(uint32_t framerate, uint32_t bitrate);
   void OnSuspendChange(bool is_suspended);
   void OnInactiveSsrc(uint32_t ssrc);
+
+  // Used to indicate change in content type, which may require a change in
+  // how stats are collected.
+  void SetContentType(VideoEncoderConfig::ContentType content_type);
 
  protected:
   // From CpuOveruseMetricsObserver.
@@ -87,8 +96,10 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                             uint32_t ssrc) override;
 
  private:
-  struct SampleCounter {
+  class SampleCounter {
+   public:
     SampleCounter() : sum(0), num_samples(0) {}
+    ~SampleCounter() {}
     void Add(int sample);
     int Avg(int min_required_samples) const;
 
@@ -96,32 +107,66 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
     int sum;
     int num_samples;
   };
+  class BoolSampleCounter {
+   public:
+    BoolSampleCounter() : sum(0), num_samples(0) {}
+    ~BoolSampleCounter() {}
+    void Add(bool sample);
+    int Percent(int min_required_samples) const;
+    int Permille(int min_required_samples) const;
+
+   private:
+    int Fraction(int min_required_samples, float multiplier) const;
+    int sum;
+    int num_samples;
+  };
   struct StatsUpdateTimes {
-    StatsUpdateTimes() : resolution_update_ms(0) {}
+    StatsUpdateTimes() : resolution_update_ms(0), bitrate_update_ms(0) {}
     int64_t resolution_update_ms;
     int64_t bitrate_update_ms;
   };
   void PurgeOldStats() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   VideoSendStream::StreamStats* GetStatsEntry(uint32_t ssrc)
       EXCLUSIVE_LOCKS_REQUIRED(crit_);
-  void UpdateHistograms() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   Clock* const clock_;
   const VideoSendStream::Config config_;
   mutable rtc::CriticalSection crit_;
+  VideoEncoderConfig::ContentType content_type_ GUARDED_BY(crit_);
   VideoSendStream::Stats stats_ GUARDED_BY(crit_);
-  rtc::RateTracker input_frame_rate_tracker_ GUARDED_BY(crit_);
-  rtc::RateTracker sent_frame_rate_tracker_ GUARDED_BY(crit_);
   uint32_t last_sent_frame_timestamp_ GUARDED_BY(crit_);
   std::map<uint32_t, StatsUpdateTimes> update_times_ GUARDED_BY(crit_);
+  rtc::ExpFilter encode_time_ GUARDED_BY(crit_);
 
-  int max_sent_width_per_timestamp_ GUARDED_BY(crit_);
-  int max_sent_height_per_timestamp_ GUARDED_BY(crit_);
-  SampleCounter input_width_counter_ GUARDED_BY(crit_);
-  SampleCounter input_height_counter_ GUARDED_BY(crit_);
-  SampleCounter sent_width_counter_ GUARDED_BY(crit_);
-  SampleCounter sent_height_counter_ GUARDED_BY(crit_);
-  SampleCounter encode_time_counter_ GUARDED_BY(crit_);
+  // Contains stats used for UMA histograms. These stats will be reset if
+  // content type changes between real-time video and screenshare, since these
+  // will be reported separately.
+  struct UmaSamplesContainer {
+    explicit UmaSamplesContainer(const char* prefix);
+    ~UmaSamplesContainer();
+
+    void UpdateHistograms();
+
+    const std::string uma_prefix_;
+    int max_sent_width_per_timestamp_;
+    int max_sent_height_per_timestamp_;
+    SampleCounter input_width_counter_;
+    SampleCounter input_height_counter_;
+    SampleCounter sent_width_counter_;
+    SampleCounter sent_height_counter_;
+    SampleCounter encode_time_counter_;
+    BoolSampleCounter key_frame_counter_;
+    BoolSampleCounter quality_limited_frame_counter_;
+    SampleCounter quality_downscales_counter_;
+    BoolSampleCounter bw_limited_frame_counter_;
+    SampleCounter bw_resolutions_disabled_counter_;
+    SampleCounter delay_counter_;
+    SampleCounter max_delay_counter_;
+    rtc::RateTracker input_frame_rate_tracker_;
+    rtc::RateTracker sent_frame_rate_tracker_;
+  };
+
+  rtc::scoped_ptr<UmaSamplesContainer> uma_container_ GUARDED_BY(crit_);
 };
 
 }  // namespace webrtc

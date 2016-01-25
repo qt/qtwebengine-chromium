@@ -4,6 +4,8 @@
 
 #include "gin/v8_isolate_memory_dump_provider.h"
 
+#include <stddef.h>
+
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
@@ -17,7 +19,7 @@ V8IsolateMemoryDumpProvider::V8IsolateMemoryDumpProvider(
     IsolateHolder* isolate_holder)
     : isolate_holder_(isolate_holder) {
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-      this, base::ThreadTaskRunnerHandle::Get());
+      this, "V8Isolate", base::ThreadTaskRunnerHandle::Get());
 }
 
 V8IsolateMemoryDumpProvider::~V8IsolateMemoryDumpProvider() {
@@ -102,6 +104,18 @@ void V8IsolateMemoryDumpProvider::DumpHeapStatistics(
   other_dump->AddScalar("virtual_size",
                         base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                         heap_statistics.total_heap_size() - known_spaces_size);
+
+  // If V8 zaps garbage, all the memory mapped regions become resident,
+  // so we add an extra dump to avoid mismatches w.r.t. the total
+  // resident values.
+  if (heap_statistics.does_zap_garbage()) {
+    auto zap_dump = process_memory_dump->CreateAllocatorDump(
+        dump_base_name + "/zapped_for_debug");
+    zap_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                        base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                        heap_statistics.total_heap_size() -
+                            heap_statistics.total_physical_size());
+  }
 
   // If light dump is requested, then object statistics are not dumped
   if (args.level_of_detail == base::trace_event::MemoryDumpLevelOfDetail::LIGHT)

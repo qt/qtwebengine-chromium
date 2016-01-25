@@ -1,6 +1,4 @@
-
-
-  /** @polymerBehavior */
+/** @polymerBehavior */
   Polymer.IronSelectableBehavior = {
 
       /**
@@ -52,6 +50,8 @@
 
       /**
        * Returns the currently selected item.
+       *
+       * @type {?Object}
        */
       selectedItem: {
         type: Object,
@@ -93,13 +93,23 @@
       },
 
       /**
+       * The list of items from which a selection can be made.
+       */
+      items: {
+        type: Array,
+        readOnly: true,
+        value: function() {
+          return [];
+        }
+      },
+
+      /**
        * The set of excluded elements where the key is the `localName`
        * of the element that will be ignored from the item list.
        *
-       * @type {object}
        * @default {template: 1}
        */
-      excludedLocalNames: {
+      _excludedLocalNames: {
         type: Object,
         value: function() {
           return {
@@ -120,31 +130,18 @@
 
     attached: function() {
       this._observer = this._observeItems(this);
-      this._contentObserver = this._observeContent(this);
-      if (!this.selectedItem && this.selected) {
+      this._updateItems();
+      if (!this._shouldUpdateSelection) {
         this._updateSelected(this.attrForSelected,this.selected)
       }
+      this._addListener(this.activateEvent);
     },
 
     detached: function() {
       if (this._observer) {
-        this._observer.disconnect();
-      }
-      if (this._contentObserver) {
-        this._contentObserver.disconnect();
+        Polymer.dom(this).unobserveNodes(this._observer);
       }
       this._removeListener(this.activateEvent);
-    },
-
-    /**
-     * Returns an array of selectable items.
-     *
-     * @property items
-     * @type Array
-     */
-    get items() {
-      var nodes = Polymer.dom(this).queryDistributedElements(this.selectable || '*');
-      return Array.prototype.filter.call(nodes, this._bindFilterItem);
     },
 
     /**
@@ -189,6 +186,10 @@
       this.selected = this._indexToValue(index);
     },
 
+    get _shouldUpdateSelection() {
+      return this.selected != null;
+    },
+
     _addListener: function(eventName) {
       this.listen(this, eventName, '_activateHandler');
     },
@@ -202,6 +203,12 @@
       this._addListener(eventName);
     },
 
+    _updateItems: function() {
+      var nodes = Polymer.dom(this).queryDistributedElements(this.selectable || '*');
+      nodes = Array.prototype.filter.call(nodes, this._bindFilterItem);
+      this._setItems(nodes);
+    },
+
     _updateSelected: function() {
       this._selectSelected(this.selected);
     },
@@ -211,7 +218,7 @@
     },
 
     _filterItem: function(node) {
-      return !this.excludedLocalNames[node.localName];
+      return !this._excludedLocalNames[node.localName];
     },
 
     _valueToItem: function(value) {
@@ -260,18 +267,9 @@
       this._setSelectedItem(this._selection.get());
     },
 
-    // observe content changes under the given node.
-    _observeContent: function(node) {
-      var content = node.querySelector('content');
-      if (content && content.parentElement === node) {
-        return this._observeItems(node.domHost);
-      }
-    },
-
     // observe items change under the given node.
     _observeItems: function(node) {
-      // TODO(cdata): Update this when we get distributed children changed.
-      var observer = new MutationObserver(function(mutations) {
+      return Polymer.dom(node).observeNodes(function(mutations) {
         // Let other interested parties know about the change so that
         // we don't have to recreate mutation observers everywher.
         this.fire('iron-items-changed', mutations, {
@@ -279,15 +277,12 @@
           cancelable: false
         });
 
-        if (this.selected != null) {
+        this._updateItems();
+
+        if (this._shouldUpdateSelection) {
           this._updateSelected();
         }
-      }.bind(this));
-      observer.observe(node, {
-        childList: true,
-        subtree: true
       });
-      return observer;
     },
 
     _activateHandler: function(e) {
@@ -312,4 +307,3 @@
     }
 
   };
-

@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//mojo/public/mojo_application.gni")
-import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
 
 mojo_native_application("phone_ui") {
   sources = [
@@ -12,8 +12,8 @@ mojo_native_application("phone_ui") {
 
   deps = [
     ":lib",
-    "//mojo/application/public/cpp",
     "//components/web_view:web_view",
+    "//mojo/shell/public/cpp",
   ]
 }
 
@@ -30,10 +30,10 @@ source_set("lib") {
     "//components/web_view/public/cpp",
     "//components/web_view/public/interfaces",
     "//mandoline/ui/desktop_ui/public/interfaces",
-    "//mojo/application/public/cpp",
     "//mojo/common",
     "//mojo/converters/geometry",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//mojo/public/cpp/bindings",
+    "//mojo/shell/public/cpp",
     "//ui/gfx/geometry",
     "//url",
   ]

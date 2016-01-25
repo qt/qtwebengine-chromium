@@ -28,31 +28,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGAnimatedLength.h"
 
-#include "core/svg/SVGElement.h"
+#include "core/svg/SVGLength.h"
 
 namespace blink {
 
 void SVGAnimatedLength::setDefaultValueAsString(const String& value)
 {
-    baseValue()->setValueAsString(value, ASSERT_NO_EXCEPTION);
+    baseValue()->setValueAsString(value);
 }
 
-void SVGAnimatedLength::setBaseValueAsString(const String& value, SVGParsingError& parseError)
+SVGParsingError SVGAnimatedLength::setBaseValueAsString(const String& value)
 {
-    TrackExceptionState es;
+    SVGParsingError parseStatus = baseValue()->setValueAsString(value);
 
-    baseValue()->setValueAsString(value, es);
+    if (parseStatus != NoError)
+        baseValue()->newValueSpecifiedUnits(CSSPrimitiveValue::UnitType::UserUnits, 0);
+    else if (SVGLength::negativeValuesForbiddenForAnimatedLengthAttribute(attributeName()) && baseValue()->valueInSpecifiedUnits() < 0)
+        parseStatus = NegativeValueForbiddenError;
 
-    if (es.hadException()) {
-        parseError = ParsingAttributeFailedError;
-        baseValue()->newValueSpecifiedUnits(LengthTypeNumber, 0);
-    } else if (m_negativeValuesMode == ForbidNegativeLengths && baseValue()->valueInSpecifiedUnits() < 0) {
-        parseError = NegativeValueForbiddenError;
-    }
+    return parseStatus;
 }
 
 }

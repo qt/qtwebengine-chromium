@@ -27,10 +27,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/frame/Frame.h"
 
-#include "bindings/core/v8/WindowProxyManager.h"
 #include "core/dom/DocumentType.h"
 #include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -62,16 +60,22 @@ int64_t generateFrameID()
     return ++next;
 }
 
-} // namespace
+#ifndef NDEBUG
+WTF::RefCountedLeakCounter& frameCounter()
+{
+    DEFINE_STATIC_LOCAL(WTF::RefCountedLeakCounter, staticFrameCounter, ("Frame"));
+    return staticFrameCounter;
+}
+#endif
 
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
+} // namespace
 
 Frame::~Frame()
 {
     InstanceCounters::decrementCounter(InstanceCounters::FrameCounter);
     ASSERT(!m_owner);
 #ifndef NDEBUG
-    frameCounter.decrement();
+    frameCounter().decrement();
 #endif
 }
 
@@ -80,6 +84,7 @@ DEFINE_TRACE(Frame)
     visitor->trace(m_treeNode);
     visitor->trace(m_host);
     visitor->trace(m_owner);
+    visitor->trace(m_client);
 }
 
 void Frame::detach(FrameDetachType type)
@@ -161,13 +166,6 @@ ChromeClient& Frame::chromeClient() const
     return emptyChromeClient();
 }
 
-void Frame::finishSwapFrom(Frame* old)
-{
-    WindowProxyManager* oldManager = old->windowProxyManager();
-    oldManager->clearForNavigation();
-    windowProxyManager()->takeGlobalFrom(oldManager);
-}
-
 Frame* Frame::findFrameForNavigation(const AtomicString& name, Frame& activeFrame)
 {
     Frame* frame = tree().find(name);
@@ -206,9 +204,15 @@ bool Frame::canNavigate(const Frame& targetFrame)
         return true;
 
     if (securityContext()->isSandboxed(SandboxNavigation)) {
+        // Sandboxed frames can navigate their own children.
         if (targetFrame.tree().isDescendantOf(this))
             return true;
 
+        // They can also navigate popups, if the 'allow-sandbox-escape-via-popup' flag is specified.
+        if (targetFrame == targetFrame.tree().top() && targetFrame.tree().top() != tree().top() && !securityContext()->isSandboxed(SandboxPropagatesToAuxiliaryBrowsingContexts))
+            return true;
+
+        // Otherwise, block the navigation.
         const char* reason = "The frame attempting navigation is sandboxed, and is therefore disallowed from navigating its ancestors.";
         if (securityContext()->isSandboxed(SandboxTopNavigation) && targetFrame == tree().top())
             reason = "The frame attempting navigation of the top-level window is sandboxed, but the 'allow-top-navigation' flag is not set.";
@@ -302,7 +306,7 @@ Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
     ASSERT(page());
 
 #ifndef NDEBUG
-    frameCounter.increment();
+    frameCounter().increment();
 #endif
 
     if (m_owner) {

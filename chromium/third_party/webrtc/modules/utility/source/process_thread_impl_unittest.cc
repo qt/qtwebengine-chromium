@@ -8,11 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <utility>
+
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/interface/module.h"
+#include "webrtc/modules/include/module.h"
 #include "webrtc/modules/utility/source/process_thread_impl.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -251,8 +253,9 @@ TEST(ProcessThreadImpl, WakeUp) {
   rtc::scoped_ptr<EventWrapper> called(EventWrapper::Create());
 
   MockModule module;
-  int64_t start_time = 0;
-  int64_t called_time = 0;
+  int64_t start_time;
+  int64_t called_time;
+
   // Ask for a callback after 1000ms.
   // TimeUntilNextProcess will be called twice.
   // The first time we use it to get the thread into a waiting state.
@@ -281,8 +284,6 @@ TEST(ProcessThreadImpl, WakeUp) {
   EXPECT_CALL(module, ProcessThreadAttached(nullptr)).Times(1);
   thread.Stop();
 
-  ASSERT_GT(start_time, 0);
-  ASSERT_GT(called_time, 0);
   EXPECT_GE(called_time, start_time);
   uint32_t diff = called_time - start_time;
   // We should have been called back much quicker than 1sec.
@@ -296,7 +297,7 @@ TEST(ProcessThreadImpl, PostTask) {
   rtc::scoped_ptr<EventWrapper> task_ran(EventWrapper::Create());
   rtc::scoped_ptr<RaiseEventTask> task(new RaiseEventTask(task_ran.get()));
   thread.Start();
-  thread.PostTask(task.Pass());
+  thread.PostTask(std::move(task));
   EXPECT_EQ(kEventSignaled, task_ran->Wait(100));
   thread.Stop();
 }

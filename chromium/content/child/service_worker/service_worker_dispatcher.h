@@ -5,10 +5,13 @@
 #ifndef CONTENT_CHILD_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_H_
 #define CONTENT_CHILD_SERVICE_WORKER_SERVICE_WORKER_DISPATCHER_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "content/public/child/worker_thread.h"
@@ -23,10 +26,6 @@ namespace base {
 class SingleThreadTaskRunner;
 }
 
-namespace blink {
-class WebURL;
-}
-
 namespace IPC {
 class Message;
 }
@@ -35,6 +34,7 @@ struct ServiceWorkerMsg_MessageToDocument_Params;
 
 namespace content {
 
+class ServiceWorkerHandleReference;
 class ServiceWorkerMessageFilter;
 class ServiceWorkerProviderContext;
 class ServiceWorkerRegistrationHandleReference;
@@ -73,7 +73,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
   ~ServiceWorkerDispatcher() override;
 
   void OnMessageReceived(const IPC::Message& msg);
-  bool Send(IPC::Message* msg);
 
   // Corresponds to navigator.serviceWorker.register().
   void RegisterServiceWorker(
@@ -83,12 +82,12 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
       WebServiceWorkerRegistrationCallbacks* callbacks);
   // Corresponds to ServiceWorkerRegistration.update().
   void UpdateServiceWorker(int provider_id,
-                           int64 registration_id,
+                           int64_t registration_id,
                            WebServiceWorkerUpdateCallbacks* callbacks);
   // Corresponds to ServiceWorkerRegistration.unregister().
   void UnregisterServiceWorker(
       int provider_id,
-      int64 registration_id,
+      int64_t registration_id,
       WebServiceWorkerUnregistrationCallbacks* callbacks);
   // Corresponds to navigator.serviceWorker.getRegistration().
   void GetRegistration(int provider_id,
@@ -116,22 +115,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
                          blink::WebServiceWorkerProviderClient* client);
   void RemoveProviderClient(int provider_id);
 
-  // If an existing WebServiceWorkerImpl exists for the Service
-  // Worker, it is returned; otherwise a WebServiceWorkerImpl is
-  // created and its ownership is transferred to the caller. If
-  // |adopt_handle| is true, a ServiceWorkerHandleReference will be
-  // adopted for the specified Service Worker.
-  //
-  // TODO(dominicc): The lifetime of WebServiceWorkerImpl is too tricky; this
-  // method can return an existing WebServiceWorkerImpl, in which case
-  // it is owned by a WebCore::ServiceWorker and the lifetime is not
-  // being transferred to the owner; or it can create a
-  // WebServiceWorkerImpl, in which case ownership is transferred to
-  // the caller who must bounce it to a method that will associate it
-  // with a WebCore::ServiceWorker.
-  WebServiceWorkerImpl* GetServiceWorker(
-      const ServiceWorkerObjectInfo& info,
-      bool adopt_handle);
+  // Returns the existing service worker or a newly created one with the given
+  // handle reference. Returns nullptr if the given reference is invalid.
+  scoped_refptr<WebServiceWorkerImpl> GetOrCreateServiceWorker(
+      scoped_ptr<ServiceWorkerHandleReference> handle_ref);
 
   // Returns the existing registration or a newly created one. When a new one is
   // created, increments interprocess references to the registration and its
@@ -188,11 +175,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
   // WorkerThread::Observer implementation.
   void WillStopCurrentWorkerThread() override;
 
-  void OnAssociateRegistrationWithServiceWorker(
-      int thread_id,
-      int provider_id,
-      const ServiceWorkerRegistrationObjectInfo& info,
-      const ServiceWorkerVersionAttributes& attrs);
   void OnAssociateRegistration(int thread_id,
                                int provider_id,
                                const ServiceWorkerRegistrationObjectInfo& info,
@@ -247,7 +229,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
                                    int handle_id,
                                    blink::WebServiceWorkerState state);
   void OnSetVersionAttributes(int thread_id,
-                              int provider_id,
                               int registration_handle_id,
                               int changed_mask,
                               const ServiceWorkerVersionAttributes& attributes);
@@ -269,6 +250,13 @@ class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
       WebServiceWorkerRegistrationImpl* registration);
   void RemoveServiceWorkerRegistration(
       int registration_handle_id);
+
+  // Assumes that the given object information retains an interprocess handle
+  // reference passed from the browser process, and adopts it.
+  scoped_ptr<ServiceWorkerRegistrationHandleReference> Adopt(
+      const ServiceWorkerRegistrationObjectInfo& info);
+  scoped_ptr<ServiceWorkerHandleReference> Adopt(
+      const ServiceWorkerObjectInfo& info);
 
   RegistrationCallbackMap pending_registration_callbacks_;
   UpdateCallbackMap pending_update_callbacks_;

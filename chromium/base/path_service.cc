@@ -16,6 +16,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/synchronization/lock.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -126,19 +127,9 @@ struct PathData {
     providers = &base_provider_posix;
 #endif
   }
-
-  ~PathData() {
-    Provider* p = providers;
-    while (p) {
-      Provider* next = p->next;
-      if (!p->is_static)
-        delete p;
-      p = next;
-    }
-  }
 };
 
-static LazyInstance<PathData> g_path_data = LAZY_INSTANCE_INITIALIZER;
+static LazyInstance<PathData>::Leaky g_path_data = LAZY_INSTANCE_INITIALIZER;
 
 static PathData* GetPathData() {
   return g_path_data.Pointer();

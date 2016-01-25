@@ -55,10 +55,13 @@ egl::Error CreateRendererD3D(egl::Display *display, RendererD3D **outRenderer)
 
     std::vector<CreateRendererD3DFunction> rendererCreationFunctions;
 
-    const auto &attribMap = display->getAttributeMap();
-    EGLNativeDisplayType nativeDisplay = display->getNativeDisplayId();
+    if (display->getPlatform() == EGL_PLATFORM_ANGLE_ANGLE)
+    {
+        const auto &attribMap              = display->getAttributeMap();
+        EGLNativeDisplayType nativeDisplay = display->getNativeDisplayId();
 
-    EGLint requestedDisplayType = attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+        EGLint requestedDisplayType =
+            attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
 
 #   if defined(ANGLE_ENABLE_D3D11)
         if (nativeDisplay == EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE ||
@@ -77,27 +80,41 @@ egl::Error CreateRendererD3D(egl::Display *display, RendererD3D **outRenderer)
         }
 #   endif
 
-    if (nativeDisplay != EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE &&
-        nativeDisplay != EGL_D3D11_ONLY_DISPLAY_ANGLE &&
-        requestedDisplayType == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)
-    {
+        if (nativeDisplay != EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE &&
+            nativeDisplay != EGL_D3D11_ONLY_DISPLAY_ANGLE &&
+            requestedDisplayType == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)
+        {
         // The default display is requested, try the D3D9 and D3D11 renderers, order them using
         // the definition of ANGLE_DEFAULT_D3D11
 #       if ANGLE_DEFAULT_D3D11
 #           if defined(ANGLE_ENABLE_D3D11)
-                rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer11>);
+            rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer11>);
 #           endif
 #           if defined(ANGLE_ENABLE_D3D9)
-                rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer9>);
+            rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer9>);
 #           endif
 #       else
 #           if defined(ANGLE_ENABLE_D3D9)
-                rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer9>);
+            rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer9>);
 #           endif
 #           if defined(ANGLE_ENABLE_D3D11)
-                rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer11>);
+            rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer11>);
 #           endif
 #       endif
+        }
+    }
+    else if (display->getPlatform() == EGL_PLATFORM_DEVICE_EXT)
+    {
+#if defined(ANGLE_ENABLE_D3D11)
+        if (display->getDevice()->getType() == EGL_D3D11_DEVICE_ANGLE)
+        {
+            rendererCreationFunctions.push_back(CreateTypedRendererD3D<Renderer11>);
+        }
+#endif
+    }
+    else
+    {
+        UNIMPLEMENTED();
     }
 
     egl::Error result(EGL_NOT_INITIALIZED, "No available renderers.");
@@ -141,9 +158,7 @@ egl::Error CreateRendererD3D(egl::Display *display, RendererD3D **outRenderer)
     return result;
 }
 
-DisplayD3D::DisplayD3D()
-    : mRenderer(nullptr),
-      mDevice(nullptr)
+DisplayD3D::DisplayD3D() : mRenderer(nullptr)
 {
 }
 
@@ -157,6 +172,8 @@ SurfaceImpl *DisplayD3D::createWindowSurface(const egl::Config *configuration,
     EGLint width = attribs.get(EGL_WIDTH, 0);
     EGLint height = attribs.get(EGL_HEIGHT, 0);
     EGLint fixedSize = attribs.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE);
+    EGLint orientation = attribs.get(EGL_SURFACE_ORIENTATION_ANGLE, 0);
+    EGLint directComposition = attribs.get(EGL_DIRECT_COMPOSITION_ANGLE, EGL_FALSE);
 
     if (!fixedSize)
     {
@@ -164,8 +181,8 @@ SurfaceImpl *DisplayD3D::createWindowSurface(const egl::Config *configuration,
         height = -1;
     }
 
-    return SurfaceD3D::createFromWindow(
-        mRenderer, mDisplay, configuration, window, fixedSize, width, height);
+    return SurfaceD3D::createFromWindow(mRenderer, mDisplay, configuration, window, fixedSize,
+                                        directComposition, width, height, orientation);
 }
 
 SurfaceImpl *DisplayD3D::createPbufferSurface(const egl::Config *configuration,
@@ -209,9 +226,7 @@ ImageImpl *DisplayD3D::createImage(EGLenum target,
 
 egl::Error DisplayD3D::getDevice(DeviceImpl **device)
 {
-    *device = reinterpret_cast<DeviceImpl*>(mDevice);
-    ASSERT(*device != nullptr);
-    return egl::Error(EGL_SUCCESS);
+    return mRenderer->getEGLDevice(device);
 }
 
 egl::Error DisplayD3D::createContext(const egl::Config *config, const gl::Context *shareContext, const egl::AttributeMap &attribs,
@@ -222,8 +237,10 @@ egl::Error DisplayD3D::createContext(const egl::Config *config, const gl::Contex
     EGLint clientVersion = attribs.get(EGL_CONTEXT_CLIENT_VERSION, 1);
     bool notifyResets = (attribs.get(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT, EGL_NO_RESET_NOTIFICATION_EXT) == EGL_LOSE_CONTEXT_ON_RESET_EXT);
     bool robustAccess = (attribs.get(EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT, EGL_FALSE) == EGL_TRUE);
+    bool debug           = (attribs.get(EGL_CONTEXT_OPENGL_DEBUG, EGL_FALSE) == EGL_TRUE);
 
-    *outContext = new gl::Context(config, clientVersion, shareContext, mRenderer, notifyResets, robustAccess);
+    *outContext = new gl::Context(config, clientVersion, shareContext, mRenderer, notifyResets,
+                                  robustAccess, debug);
     return egl::Error(EGL_SUCCESS);
 }
 
@@ -242,15 +259,11 @@ egl::Error DisplayD3D::initialize(egl::Display *display)
         return error;
     }
 
-    ASSERT(mDevice == nullptr);
-    mDevice = new DeviceD3D(mRenderer);
-
     return egl::Error(EGL_SUCCESS);
 }
 
 void DisplayD3D::terminate()
 {
-    SafeDelete(mDevice);
     SafeDelete(mRenderer);
 }
 

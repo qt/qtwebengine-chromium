@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/style/StyleGeneratedImage.h"
 
 #include "core/css/CSSImageGeneratorValue.h"
@@ -30,8 +29,8 @@
 
 namespace blink {
 
-StyleGeneratedImage::StyleGeneratedImage(PassRefPtrWillBeRawPtr<CSSImageGeneratorValue> value)
-    : m_imageGeneratorValue(value)
+StyleGeneratedImage::StyleGeneratedImage(const CSSImageGeneratorValue& value)
+    : m_imageGeneratorValue(const_cast<CSSImageGeneratorValue*>(&value))
     , m_fixedSize(m_imageGeneratorValue->isFixedSize())
 {
     m_isGeneratedImage = true;
@@ -67,7 +66,7 @@ LayoutSize StyleGeneratedImage::imageSize(const LayoutObject* layoutObject, floa
         return LayoutSize(width, height);
     }
 
-    return LayoutSize(m_containerSize);
+    return LayoutSize();
 }
 
 void StyleGeneratedImage::computeIntrinsicDimensions(const LayoutObject* layoutObject, Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
@@ -76,7 +75,7 @@ void StyleGeneratedImage::computeIntrinsicDimensions(const LayoutObject* layoutO
     IntSize size = flooredIntSize(imageSize(layoutObject, 1));
     intrinsicWidth = Length(size.width(), Fixed);
     intrinsicHeight = Length(size.height(), Fixed);
-    intrinsicRatio = size;
+    intrinsicRatio = FloatSize(size);
 }
 
 void StyleGeneratedImage::addClient(LayoutObject* layoutObject)
@@ -89,7 +88,7 @@ void StyleGeneratedImage::removeClient(LayoutObject* layoutObject)
     m_imageGeneratorValue->removeClient(layoutObject);
 }
 
-PassRefPtr<Image> StyleGeneratedImage::image(const LayoutObject* layoutObject, const IntSize& size) const
+PassRefPtr<Image> StyleGeneratedImage::image(const LayoutObject* layoutObject, const IntSize& size, float) const
 {
     return m_imageGeneratorValue->image(layoutObject, size);
 }

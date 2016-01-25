@@ -132,7 +132,7 @@
 
 int dtls1_accept(SSL *s) {
   BUF_MEM *buf = NULL;
-  void (*cb)(const SSL *ssl, int type, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
   uint32_t alg_a;
   int ret = -1;
   int new_state, state, skip = 0;
@@ -330,6 +330,7 @@ int dtls1_accept(SSL *s) {
 
       case SSL3_ST_SR_KEY_EXCH_A:
       case SSL3_ST_SR_KEY_EXCH_B:
+      case SSL3_ST_SR_KEY_EXCH_C:
         ret = ssl3_get_client_key_exchange(s);
         if (ret <= 0) {
           goto end;
@@ -344,13 +345,26 @@ int dtls1_accept(SSL *s) {
         if (ret <= 0) {
           goto end;
         }
-        s->state = SSL3_ST_SR_FINISHED_A;
+        s->state = SSL3_ST_SR_CHANGE;
         s->init_num = 0;
+        break;
+
+      case SSL3_ST_SR_CHANGE:
+        ret = s->method->ssl_read_change_cipher_spec(s);
+        if (ret <= 0) {
+          goto end;
+        }
+
+        if (!ssl3_do_change_cipher_spec(s)) {
+          ret = -1;
+          goto end;
+        }
+
+        s->state = SSL3_ST_SR_FINISHED_A;
         break;
 
       case SSL3_ST_SR_FINISHED_A:
       case SSL3_ST_SR_FINISHED_B:
-        s->d1->change_cipher_spec_ok = 1;
         ret =
             ssl3_get_finished(s, SSL3_ST_SR_FINISHED_A, SSL3_ST_SR_FINISHED_B);
         if (ret <= 0) {
@@ -400,8 +414,6 @@ int dtls1_accept(SSL *s) {
           ret = -1;
           goto end;
         }
-
-        dtls1_reset_seq_numbers(s, SSL3_CC_WRITE);
         break;
 
       case SSL3_ST_SW_FINISHED_A:
@@ -415,7 +427,7 @@ int dtls1_accept(SSL *s) {
         }
         s->state = SSL3_ST_SW_FLUSH;
         if (s->hit) {
-          s->s3->tmp.next_state = SSL3_ST_SR_FINISHED_A;
+          s->s3->tmp.next_state = SSL3_ST_SR_CHANGE;
         } else {
           s->s3->tmp.next_state = SSL_ST_OK;
         }

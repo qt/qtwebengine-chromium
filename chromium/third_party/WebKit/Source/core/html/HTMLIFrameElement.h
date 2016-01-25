@@ -24,8 +24,8 @@
 #ifndef HTMLIFrameElement_h
 #define HTMLIFrameElement_h
 
-#include "core/dom/DOMSettableTokenList.h"
 #include "core/html/HTMLFrameElementBase.h"
+#include "core/html/HTMLIFrameElementSandbox.h"
 
 namespace blink {
 
@@ -41,8 +41,7 @@ public:
 private:
     explicit HTMLIFrameElement(Document&);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
@@ -56,13 +55,13 @@ private:
     void didLoadNonEmptyDocument() override { m_didLoadNonEmptyDocument = true; }
     bool isInteractiveContent() const override;
 
-    void valueChanged() override;
+    void valueWasSet() override;
 
     ReferrerPolicy referrerPolicyAttribute() override;
 
     AtomicString m_name;
     bool m_didLoadNonEmptyDocument;
-    RefPtrWillBeMember<DOMSettableTokenList> m_sandbox;
+    RefPtrWillBeMember<HTMLIFrameElementSandbox> m_sandbox;
 
     ReferrerPolicy m_referrerPolicy;
 };

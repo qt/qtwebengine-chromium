@@ -25,7 +25,6 @@
     Constructor,
     ConstructorCallWith=Document,
     WillBeGarbageCollected,
-    TypeChecking=Interface,
 ] interface Range {
     readonly attribute Node startContainer;
     readonly attribute long startOffset;
@@ -57,7 +56,7 @@
     [RaisesException, CustomElementCallbacks] void surroundContents(Node newParent);
 
     [NewObject] Range cloneRange();
-    [DeprecateAs=RangeDetach] void detach();
+    [MeasureAs=RangeDetach] void detach();
 
     [RaisesException] boolean isPointInRange(Node node, long offset);
     [RaisesException] short comparePoint(Node node, long offset);

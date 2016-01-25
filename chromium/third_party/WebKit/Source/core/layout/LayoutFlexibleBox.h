@@ -83,6 +83,10 @@ private:
         NeverLayout
     };
 
+    enum class TransformedWritingMode {
+        TopToBottomWritingMode, RightToLeftWritingMode, LeftToRightWritingMode, BottomToTopWritingMode
+    };
+
     typedef HashMap<const LayoutBox*, LayoutUnit> InflexibleFlexItemSize;
     typedef Vector<LayoutBox*> OrderedFlexItemList;
 
@@ -107,7 +111,7 @@ private:
     LayoutUnit crossAxisContentExtent() const;
     LayoutUnit mainAxisContentExtent(LayoutUnit contentLogicalHeight);
     LayoutUnit computeMainAxisExtentForChild(const LayoutBox& child, SizeType, const Length& size);
-    WritingMode transformedWritingMode() const;
+    TransformedWritingMode transformedWritingMode() const;
     LayoutUnit flowAwareBorderStart() const;
     LayoutUnit flowAwareBorderEnd() const;
     LayoutUnit flowAwareBorderBefore() const;
@@ -123,7 +127,6 @@ private:
     LayoutUnit crossAxisScrollbarExtent() const;
     LayoutUnit crossAxisScrollbarExtentForChild(const LayoutBox& child) const;
     LayoutPoint flowAwareLocationForChild(const LayoutBox& child) const;
-    // FIXME: Supporting layout deltas.
     void setFlowAwareLocationForChild(LayoutBox& child, const LayoutPoint&);
     void adjustAlignmentForChild(LayoutBox& child, LayoutUnit);
     ItemPosition alignmentForChild(const LayoutBox& child) const;
@@ -150,12 +153,12 @@ private:
 
     LayoutUnit computeChildMarginValue(Length margin);
     void prepareOrderIteratorAndMargins();
-    LayoutUnit adjustChildSizeForMinAndMax(const LayoutBox& child, LayoutUnit childSize, bool childShrunk = false);
+    LayoutUnit adjustChildSizeForMinAndMax(const LayoutBox& child, LayoutUnit childSize);
     // The hypothetical main size of an item is the flex base size clamped according to its min and max main size properties
-    bool computeNextFlexLine(OrderedFlexItemList& orderedChildren, LayoutUnit& sumFlexBaseSize, double& totalFlexGrow, double& totalWeightedFlexShrink, LayoutUnit& sumHypotheticalMainSize, bool relayoutChildren);
+    bool computeNextFlexLine(OrderedFlexItemList& orderedChildren, LayoutUnit& sumFlexBaseSize, double& totalFlexGrow, double& totalFlexShrink, double& totalWeightedFlexShrink, LayoutUnit& sumHypotheticalMainSize, bool relayoutChildren);
 
-    bool resolveFlexibleLengths(FlexSign, const OrderedFlexItemList&, LayoutUnit& availableFreeSpace, double& totalFlexGrow, double& totalWeightedFlexShrink, InflexibleFlexItemSize&, Vector<LayoutUnit, 16>& childSizes);
-    void freezeViolations(const Vector<Violation>&, LayoutUnit& availableFreeSpace, double& totalFlexGrow, double& totalWeightedFlexShrink, InflexibleFlexItemSize&);
+    bool resolveFlexibleLengths(FlexSign, const OrderedFlexItemList&, LayoutUnit availableFreeSpace, LayoutUnit& remainingFreeSpace, double& totalFlexGrow, double& totalFlexShrink, double& totalWeightedFlexShrink, InflexibleFlexItemSize&, Vector<LayoutUnit, 16>& childSizes);
+    void freezeViolations(const Vector<Violation>&, LayoutUnit& availableFreeSpace, double& totalFlexGrow, double& totalFlexShrink, double& totalWeightedFlexShrink, InflexibleFlexItemSize&);
 
     void resetAutoMarginsAndLogicalTopInCrossAxis(LayoutBox& child);
     void setOverrideMainAxisSizeForChild(LayoutBox& child, LayoutUnit childPreferredSize);

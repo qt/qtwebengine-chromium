@@ -9,8 +9,8 @@
 #include <map>
 #include <set>
 #include <utility>
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/win/scoped_handle.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/job.h"
@@ -64,10 +64,8 @@ class BrokerServicesBase final : public BrokerServices,
   bool IsActiveTarget(DWORD process_id);
 
  private:
-  struct TokenPair;
   typedef std::list<JobTracker*> JobTrackerList;
   typedef std::map<DWORD, PeerTracker*> PeerTrackerMap;
-  typedef std::map<uint32_t, TokenPair*> TokenCacheMap;
 
   // The routine that the worker thread executes. It is in charge of
   // notifications and cleanup-related tasks.

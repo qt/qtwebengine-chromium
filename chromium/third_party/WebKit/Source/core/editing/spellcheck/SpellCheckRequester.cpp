@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/spellcheck/SpellCheckRequester.h"
 
 #include "core/dom/Document.h"
@@ -52,6 +51,11 @@ SpellCheckRequest::SpellCheckRequest(
     , m_requestData(unrequestedTextCheckingSequence, text, mask, processType, documentMarkersInRange, documentMarkerOffsets)
     , m_requestNumber(requestNumber)
 {
+    ASSERT(m_checkingRange);
+    ASSERT(m_checkingRange->inDocument());
+    ASSERT(m_paragraphRange);
+    ASSERT(m_paragraphRange->inDocument());
+    ASSERT(m_rootEditableElement);
 }
 
 SpellCheckRequest::~SpellCheckRequest()
@@ -78,6 +82,11 @@ void SpellCheckRequest::dispose()
 // static
 PassRefPtrWillBeRawPtr<SpellCheckRequest> SpellCheckRequest::create(TextCheckingTypeMask textCheckingOptions, TextCheckingProcessType processType, const EphemeralRange& checkingRange, const EphemeralRange& paragraphRange, int requestNumber)
 {
+    if (checkingRange.isNull())
+        return nullptr;
+    if (!checkingRange.startPosition().computeContainerNode()->rootEditableElement())
+        return nullptr;
+
     String text = plainText(checkingRange, TextIteratorEmitsObjectReplacementCharacter);
     if (text.isEmpty())
         return nullptr;
@@ -104,6 +113,11 @@ PassRefPtrWillBeRawPtr<SpellCheckRequest> SpellCheckRequest::create(TextChecking
 const TextCheckingRequestData& SpellCheckRequest::data() const
 {
     return m_requestData;
+}
+
+bool SpellCheckRequest::isValid() const
+{
+    return m_checkingRange->inDocument() && m_paragraphRange->inDocument() && m_rootEditableElement->inDocument();
 }
 
 void SpellCheckRequest::didSucceed(const Vector<TextCheckingResult>& results)
@@ -171,14 +185,9 @@ void SpellCheckRequester::timerFiredToProcessQueuedRequest(Timer<SpellCheckReque
     invokeRequest(m_requestQueue.takeFirst());
 }
 
-bool SpellCheckRequester::isAsynchronousEnabled() const
-{
-    return frame().settings() && frame().settings()->asynchronousSpellCheckingEnabled();
-}
-
 bool SpellCheckRequester::canCheckAsynchronously(Range* range) const
 {
-    return isCheckable(range) && isAsynchronousEnabled();
+    return isCheckable(range);
 }
 
 bool SpellCheckRequester::isCheckable(Range* range) const
@@ -275,7 +284,7 @@ void SpellCheckRequester::didCheck(int sequence, const Vector<TextCheckingResult
 
     clearProcessingRequest();
     if (!m_requestQueue.isEmpty())
-        m_timerToProcessQueuedRequest.startOneShot(0, FROM_HERE);
+        m_timerToProcessQueuedRequest.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void SpellCheckRequester::didCheckSucceed(int sequence, const Vector<TextCheckingResult>& results)
@@ -287,8 +296,10 @@ void SpellCheckRequester::didCheckSucceed(int sequence, const Vector<TextCheckin
             markers.remove(DocumentMarker::Spelling);
         if (!requestData.maskContains(TextCheckingTypeGrammar))
             markers.remove(DocumentMarker::Grammar);
-        RefPtrWillBeRawPtr<Range> checkingRange = m_processingRequest->checkingRange();
-        frame().document()->markers().removeMarkers(EphemeralRange(checkingRange.get()), markers);
+        if (m_processingRequest->isValid()) {
+            RefPtrWillBeRawPtr<Range> checkingRange = m_processingRequest->checkingRange();
+            frame().document()->markers().removeMarkers(EphemeralRange(checkingRange.get()), markers);
+        }
     }
     didCheck(sequence, results);
 }

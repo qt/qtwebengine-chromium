@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/MixedContentChecker.h"
 
 #include "core/dom/Document.h"
@@ -58,6 +57,11 @@ static void measureStricterVersionOfIsMixedContent(LocalFrame* frame, const KURL
     } else if (!SecurityOrigin::isSecure(url) && SchemeRegistry::shouldTreatURLSchemeAsSecure(origin->protocol())) {
         UseCounter::count(frame, UseCounter::MixedContentInSecureFrameThatDoesNotRestrictMixedContent);
     }
+}
+
+bool requestIsSubframeSubresource(LocalFrame* frame, WebURLRequest::FrameType frameType)
+{
+    return (frame && frame != frame->tree().top() && frameType != WebURLRequest::FrameTypeNested);
 }
 
 // static
@@ -307,7 +311,7 @@ bool MixedContentChecker::shouldBlockFetch(LocalFrame* frame, WebURLRequest::Req
 
     // If we're in strict mode, we'll automagically fail everything, and intentionally skip
     // the client checks in order to prevent degrading the site's security UI.
-    bool strictMode = mixedFrame->document()->shouldEnforceStrictMixedContentChecking() || settings->strictMixedContentChecking();
+    bool strictMode = mixedFrame->securityContext()->shouldEnforceStrictMixedContentChecking() || settings->strictMixedContentChecking();
 
     ContextType contextType = contextTypeFromContext(requestContext, mixedFrame);
 
@@ -322,12 +326,20 @@ bool MixedContentChecker::shouldBlockFetch(LocalFrame* frame, WebURLRequest::Req
 
     switch (contextType) {
     case ContextTypeOptionallyBlockable:
-        allowed = !strictMode && client->allowDisplayingInsecureContent(settings && settings->allowDisplayOfInsecureContent(), securityOrigin, url);
+        allowed = !strictMode && client->allowDisplayingInsecureContent(settings && settings->allowDisplayOfInsecureContent(), url);
         if (allowed)
             client->didDisplayInsecureContent();
         break;
 
     case ContextTypeBlockable: {
+        // Strictly block subresources in subframes, unless all insecure
+        // content is allowed.
+        if (!settings->allowRunningOfInsecureContent() && requestIsSubframeSubresource(frame, frameType)) {
+            UseCounter::count(mixedFrame, UseCounter::BlockableMixedContentInSubframeBlocked);
+            allowed = false;
+            break;
+        }
+
         bool shouldAskEmbedder = !strictMode && settings && (!settings->strictlyBlockBlockableMixedContent() || settings->allowRunningOfInsecureContent());
         allowed = shouldAskEmbedder && client->allowRunningInsecureContent(settings && settings->allowRunningOfInsecureContent(), securityOrigin, url);
         if (allowed) {
@@ -443,6 +455,27 @@ LocalFrame* MixedContentChecker::effectiveFrameForFrameType(LocalFrame* frame, W
             effectiveFrame = toLocalFrame(parentFrame);
     }
     return effectiveFrame;
+}
+
+void MixedContentChecker::handleCertificateError(LocalFrame* frame, const ResourceRequest& request, const ResourceResponse& response)
+{
+    WebURLRequest::FrameType frameType = request.frameType();
+    LocalFrame* effectiveFrame = effectiveFrameForFrameType(frame, frameType);
+    if (frameType == WebURLRequest::FrameTypeTopLevel || !effectiveFrame)
+        return;
+
+    FrameLoaderClient* client = effectiveFrame->loader().client();
+    WebURLRequest::RequestContext requestContext = request.requestContext();
+    ContextType contextType = MixedContentChecker::contextTypeFromContext(requestContext, frame);
+    if (contextType == ContextTypeBlockable) {
+        client->didRunContentWithCertificateErrors(response.url(), response.getSecurityInfo(), effectiveFrame->document()->url(), effectiveFrame->loader().documentLoader()->response().getSecurityInfo());
+    } else {
+        // contextTypeFromContext() never returns NotMixedContent (it
+        // computes the type of mixed content, given that the content is
+        // mixed).
+        ASSERT(contextType != ContextTypeNotMixedContent);
+        client->didDisplayContentWithCertificateErrors(response.url(), response.getSecurityInfo(), effectiveFrame->document()->url(), effectiveFrame->loader().documentLoader()->response().getSecurityInfo());
+    }
 }
 
 MixedContentChecker::ContextType MixedContentChecker::contextTypeForInspector(LocalFrame* frame, const ResourceRequest& request)

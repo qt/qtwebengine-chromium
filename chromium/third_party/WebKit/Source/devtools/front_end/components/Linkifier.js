@@ -113,7 +113,7 @@ WebInspector.Linkifier.linkifyUsingRevealer = function(revealable, text, fallbac
 }
 
 WebInspector.Linkifier._uiLocationSymbol = Symbol("uiLocation");
-WebInspector.Linkifier._fallbackAnchorSymbol = Symbol("fallbackAnchor");;
+WebInspector.Linkifier._fallbackAnchorSymbol = Symbol("fallbackAnchor");
 
 WebInspector.Linkifier.prototype = {
     /**
@@ -161,7 +161,7 @@ WebInspector.Linkifier.prototype = {
      */
     linkifyScriptLocation: function(target, scriptId, sourceURL, lineNumber, columnNumber, classes)
     {
-        var fallbackAnchor = WebInspector.linkifyResourceAsNode(sourceURL, lineNumber, classes);
+        var fallbackAnchor = WebInspector.linkifyResourceAsNode(sourceURL, lineNumber, columnNumber, classes);
         if (!target || target.isDetached())
             return fallbackAnchor;
         var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
@@ -225,20 +225,6 @@ WebInspector.Linkifier.prototype = {
         var liveLocation = WebInspector.cssWorkspaceBinding.createLiveLocation(rawLocation, this._updateAnchor.bind(this, anchor));
         this._liveLocationsByTarget.get(rawLocation.target()).set(anchor, liveLocation);
         return anchor;
-    },
-
-    /**
-     * @param {!WebInspector.CSSMedia} media
-     * @return {?Element}
-     */
-    linkifyMedia: function(media)
-    {
-        var location = media.rawLocation();
-        if (location)
-            return this.linkifyCSSLocation(location);
-
-        // The "linkedStylesheet" case.
-        return WebInspector.linkifyResourceAsNode(media.sourceURL, undefined, "subtitle", media.sourceURL);
     },
 
     /**
@@ -341,11 +327,12 @@ WebInspector.Linkifier.DefaultFormatter.prototype = {
     formatLiveAnchor: function(anchor, uiLocation)
     {
         var text = uiLocation.linkText();
+        text = text.replace(/([a-f0-9]{7})[a-f0-9]{13}[a-f0-9]*/g, "$1\u2026");
         if (this._maxLength)
             text = text.trimMiddle(this._maxLength);
         anchor.textContent = text;
 
-        var titleText = uiLocation.uiSourceCode.originURL();
+        var titleText = uiLocation.uiSourceCode.url();
         if (typeof uiLocation.lineNumber === "number")
             titleText += ":" + (uiLocation.lineNumber + 1);
         anchor.title = titleText;
@@ -432,7 +419,7 @@ WebInspector.linkifyStringAsFragmentWithCustomLinkifier = function(string, linki
     var container = createDocumentFragment();
     var linkStringRegEx = /(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\/\/|data:|www\.)[\w$\-_+*'=\|\/\\(){}[\]^%@&#~,:;.!?]{2,}[\w$\-_+*=\|\/\\({^%@&#~]/;
 
-    while (string) {
+    while (string && string.length < 10000) {
         var linkString = linkStringRegEx.exec(string);
         if (!linkString)
             break;
@@ -528,24 +515,26 @@ WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal, too
  */
 WebInspector.linkifyDocumentationURLAsNode = function(article, title)
 {
-    return WebInspector.linkifyURLAsNode("https://developers.google.com/web/tools/" + article, title, undefined, true);
+    return WebInspector.linkifyURLAsNode("https://developers.google.com/web/tools/chrome-devtools/" + article, title, undefined, true);
 }
 
 /**
  * @param {string} url
  * @param {number=} lineNumber
+ * @param {number=} columnNumber
  * @param {string=} classes
  * @param {string=} tooltipText
  * @param {string=} urlDisplayName
  * @return {!Element}
  */
-WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipText, urlDisplayName)
+WebInspector.linkifyResourceAsNode = function(url, lineNumber, columnNumber, classes, tooltipText, urlDisplayName)
 {
     var linkText = urlDisplayName ? urlDisplayName : url ? WebInspector.displayNameForURL(url) : WebInspector.UIString("(program)");
     if (typeof lineNumber === "number")
         linkText += ":" + (lineNumber + 1);
     var anchor = WebInspector.linkifyURLAsNode(url, linkText, classes, false, tooltipText);
     anchor.lineNumber = lineNumber;
+    anchor.columnNumber = columnNumber;
     return anchor;
 }
 

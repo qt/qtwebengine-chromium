@@ -5,9 +5,12 @@
 #ifndef CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_H_
 #define CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_H_
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "content/browser/accessibility/ax_tree_id_registry.h"
@@ -32,10 +35,8 @@ class BrowserAccessibilityManagerWin;
 class BrowserAccessibilityManagerAuraLinux;
 #endif
 
-using SimpleAXTreeUpdate = ui::AXTreeUpdate<ui::AXNodeData>;
-
 // For testing.
-CONTENT_EXPORT SimpleAXTreeUpdate MakeAXTreeUpdate(
+CONTENT_EXPORT ui::AXTreeUpdate MakeAXTreeUpdate(
     const ui::AXNodeData& node,
     const ui::AXNodeData& node2 = ui::AXNodeData(),
     const ui::AXNodeData& node3 = ui::AXNodeData(),
@@ -44,7 +45,10 @@ CONTENT_EXPORT SimpleAXTreeUpdate MakeAXTreeUpdate(
     const ui::AXNodeData& node6 = ui::AXNodeData(),
     const ui::AXNodeData& node7 = ui::AXNodeData(),
     const ui::AXNodeData& node8 = ui::AXNodeData(),
-    const ui::AXNodeData& node9 = ui::AXNodeData());
+    const ui::AXNodeData& node9 = ui::AXNodeData(),
+    const ui::AXNodeData& node10 = ui::AXNodeData(),
+    const ui::AXNodeData& node11 = ui::AXNodeData(),
+    const ui::AXNodeData& node12 = ui::AXNodeData());
 
 // Class that can perform actions on behalf of the BrowserAccessibilityManager.
 // Note: BrowserAccessibilityManager should never cache any of the return
@@ -65,8 +69,10 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
       int acc_obj_id, const gfx::Point& point) = 0;
   virtual void AccessibilitySetScrollOffset(
       int acc_obj_id, const gfx::Point& offset) = 0;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) = 0;
+  virtual void AccessibilitySetSelection(int anchor_obj_id,
+                                         int anchor_offset,
+                                         int focus_obj_id,
+                                         int focus_offset) = 0;
   virtual void AccessibilitySetValue(
       int acc_obj_id, const base::string16& value) = 0;
   virtual bool AccessibilityViewHasFocus() const = 0;
@@ -116,7 +122,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   // Creates the platform-specific BrowserAccessibilityManager, but
   // with no parent window pointer. Only useful for unit tests.
   static BrowserAccessibilityManager* Create(
-      const SimpleAXTreeUpdate& initial_tree,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
@@ -125,9 +131,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
 
   ~BrowserAccessibilityManager() override;
 
-  void Initialize(const SimpleAXTreeUpdate& initial_tree);
+  void Initialize(const ui::AXTreeUpdate& initial_tree);
 
-  static SimpleAXTreeUpdate GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   virtual void NotifyAccessibilityEvent(
       ui::AXEvent event_type, BrowserAccessibility* node) { }
@@ -136,14 +142,17 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   BrowserAccessibility* GetRoot();
 
   // Returns a pointer to the BrowserAccessibility object for a given AXNode.
-  BrowserAccessibility* GetFromAXNode(ui::AXNode* node);
+  BrowserAccessibility* GetFromAXNode(const ui::AXNode* node) const;
 
   // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
-  BrowserAccessibility* GetFromID(int32 id);
+  BrowserAccessibility* GetFromID(int32_t id) const;
 
   // If this tree has a parent tree, return the parent node in that tree.
   BrowserAccessibility* GetParentNodeFromParentTree();
+
+  // Get the AXTreeData for this frame.
+  const ui::AXTreeData& GetTreeData();
 
   // Called to notify the accessibility manager that its associated native
   // view got focused.
@@ -247,6 +256,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   // active descendant if it has one.
   BrowserAccessibility* GetActiveDescendantFocus(BrowserAccessibility* root);
 
+  // Returns true if native focus is anywhere in this WebContents or not.
+  bool NativeViewHasFocus();
+
   // True by default, but some platforms want to treat the root
   // scroll offsets separately.
   virtual bool UseRootScrollOffsetsWhenComputingBounds();
@@ -259,6 +271,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       BrowserAccessibility* node) const;
 
   // AXTreeDelegate implementation.
+  void OnTreeDataChanged(ui::AXTree* tree) override;
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnSubtreeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnNodeCreated(ui::AXTree* tree, ui::AXNode* node) override;
@@ -279,7 +292,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   BrowserAccessibilityDelegate* GetDelegateFromRootManager();
 
   // Get a snapshot of the current tree as an AXTreeUpdate.
-  SimpleAXTreeUpdate SnapshotAXTreeForTesting();
+  ui::AXTreeUpdate SnapshotAXTreeForTesting();
 
  protected:
   BrowserAccessibilityManager(
@@ -287,7 +300,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       BrowserAccessibilityFactory* factory);
 
   BrowserAccessibilityManager(
-      const SimpleAXTreeUpdate& initial_tree,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
 
@@ -328,7 +341,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   ui::AXNode* focus_;
 
   // A mapping from a node id to its wrapper of type BrowserAccessibility.
-  base::hash_map<int32, BrowserAccessibility*> id_wrapper_map_;
+  base::hash_map<int32_t, BrowserAccessibility*> id_wrapper_map_;
 
   // True if the user has initiated a navigation to another page.
   bool user_is_navigating_away_;

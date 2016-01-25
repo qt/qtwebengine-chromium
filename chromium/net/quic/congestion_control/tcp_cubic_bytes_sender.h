@@ -7,7 +7,9 @@
 #ifndef NET_QUIC_CONGESTION_CONTROL_TCP_CUBIC_BYTES_SENDER_H_
 #define NET_QUIC_CONGESTION_CONTROL_TCP_CUBIC_BYTES_SENDER_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "net/base/net_export.h"
 #include "net/quic/congestion_control/cubic_bytes.h"
 #include "net/quic/congestion_control/hybrid_slow_start.h"
@@ -54,6 +56,7 @@ class NET_EXPORT_PRIVATE TcpCubicBytesSender : public SendAlgorithmInterface {
                     QuicByteCount bytes,
                     HasRetransmittableData is_retransmittable) override;
   void OnRetransmissionTimeout(bool packets_retransmitted) override;
+  void OnConnectionMigration() override;
   QuicTime::Delta TimeUntilSend(
       QuicTime now,
       QuicByteCount bytes_in_flight,
@@ -96,10 +99,10 @@ class NET_EXPORT_PRIVATE TcpCubicBytesSender : public SendAlgorithmInterface {
   const bool reno_;
 
   // Number of connections to simulate.
-  uint32 num_connections_;
+  uint32_t num_connections_;
 
   // ACK counter for the Reno implementation.
-  uint64 num_acked_packets_;
+  uint64_t num_acked_packets_;
 
   // Track the largest packet that has been sent.
   QuicPacketNumber largest_sent_packet_number_;
@@ -129,7 +132,16 @@ class NET_EXPORT_PRIVATE TcpCubicBytesSender : public SendAlgorithmInterface {
   // collection of slowstart_packets_lost.
   bool last_cutback_exited_slowstart_;
 
-  const QuicClock* clock_;
+  // Initial TCP congestion window in bytes. This variable can only be set when
+  // this algorithm is created.
+  const QuicByteCount initial_tcp_congestion_window_;
+
+  // Initial maximum TCP congestion window in bytes. This variable can only be
+  // set when this algorithm is created.
+  const QuicByteCount initial_max_tcp_congestion_window_;
+
+  // When true, exit slow start with large cutback of congestion window.
+  bool slow_start_large_reduction_;
 
   DISALLOW_COPY_AND_ASSIGN(TcpCubicBytesSender);
 };

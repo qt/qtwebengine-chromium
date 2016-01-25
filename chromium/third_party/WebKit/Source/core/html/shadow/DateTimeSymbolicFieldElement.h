@@ -26,6 +26,8 @@
 #ifndef DateTimeSymbolicFieldElement_h
 #define DateTimeSymbolicFieldElement_h
 
+#include "wtf/build_config.h"
+
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/TypeAhead.h"
 #include "core/html/shadow/DateTimeFieldElement.h"
@@ -54,7 +56,7 @@ private:
 
     // DateTimeFieldElement functions.
     void handleKeyboardEvent(KeyboardEvent*) final;
-    float maximumWidth(const Font&) override;
+    float maximumWidth(const ComputedStyle&) override;
     void stepDown() final;
     void stepUp() final;
     String value() const final;

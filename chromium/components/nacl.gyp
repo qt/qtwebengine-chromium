@@ -63,6 +63,7 @@
     ['disable_nacl!=1', {
       'targets': [
         {
+          # GN version: //components/nacl/loader
           'target_name': 'nacl',
           'type': 'static_library',
           'variables': {
@@ -87,6 +88,7 @@
           ],
         },
         {
+          # GN version: //components/nacl/browser
           'target_name': 'nacl_browser',
           'type': 'static_library',
           'sources': [
@@ -140,6 +142,7 @@
           ],
         },
         {
+          # GN version: //components/nacl/renderer
           'target_name': 'nacl_renderer',
           'type': 'static_library',
           'sources': [
@@ -179,6 +182,7 @@
           ],
         },
         {
+          # GN version: //components/nacl/loader:nacl_loader_unittests
           'target_name': 'nacl_loader_unittests',
           'type': '<(gtest_target_type)',
           'sources': [
@@ -192,30 +196,13 @@
             '../ipc/ipc.gyp:test_support_ipc',
             '../testing/gtest.gyp:gtest',
           ],
-          'conditions': [
-            ['OS=="linux"', {
-              'sources': [
-                # TODO(mazda): Move this to browser_tests once we have
-                # established a way to run browser_tests on ARM Chrome OS
-                # devices (http://crbug.com/364729).
-                'nacl/loader/nonsfi/irt_icache_unittest.cc',
-                # TODO(hamaji): Currently, we build them twice. Stop building
-                # them for components_unittests. See crbug.com/364751
-                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
-                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
-              ],
-              'dependencies': [
-                'nacl_linux',
-                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
-              ],
-            }],
-          ],
         },
       ],
       'conditions': [
         ['OS=="linux"', {
           'targets': [
             {
+              # GN version: //components/nacl/loader:nacl_helper
               'target_name': 'nacl_helper',
               'type': 'executable',
               'include_dirs': [
@@ -239,6 +226,7 @@
                 'ldflags': ['-pie'],
               },
             }, {
+              # GN version: //components/nacl/loader/sandbox_linux
               'target_name': 'nacl_linux',
               'type': 'static_library',
               'include_dirs': [
@@ -250,39 +238,6 @@
                 'IN_NACL_HELPER=1',
               ],
               'sources': [
-                '../ppapi/nacl_irt/irt_manifest.h',
-                '../ppapi/nacl_irt/manifest_service.cc',
-                '../ppapi/nacl_irt/manifest_service.h',
-                '../ppapi/nacl_irt/plugin_main.cc',
-                '../ppapi/nacl_irt/plugin_main.h',
-                '../ppapi/nacl_irt/plugin_startup.cc',
-                '../ppapi/nacl_irt/plugin_startup.h',
-                '../ppapi/nacl_irt/ppapi_dispatcher.cc',
-                '../ppapi/nacl_irt/ppapi_dispatcher.h',
-                'nacl/loader/nonsfi/abi_conversion.cc',
-                'nacl/loader/nonsfi/abi_conversion.h',
-                'nacl/loader/nonsfi/elf_loader.cc',
-                'nacl/loader/nonsfi/elf_loader.h',
-                'nacl/loader/nonsfi/irt_basic.cc',
-                'nacl/loader/nonsfi/irt_clock.cc',
-                'nacl/loader/nonsfi/irt_exception_handling.cc',
-                'nacl/loader/nonsfi/irt_fdio.cc',
-                'nacl/loader/nonsfi/irt_futex.cc',
-                'nacl/loader/nonsfi/irt_icache.cc',
-                'nacl/loader/nonsfi/irt_interfaces.cc',
-                'nacl/loader/nonsfi/irt_interfaces.h',
-                'nacl/loader/nonsfi/irt_memory.cc',
-                'nacl/loader/nonsfi/irt_ppapi.cc',
-                'nacl/loader/nonsfi/irt_random.cc',
-                'nacl/loader/nonsfi/irt_resource_open.cc',
-                'nacl/loader/nonsfi/irt_thread.cc',
-                'nacl/loader/nonsfi/irt_util.h',
-                'nacl/loader/nonsfi/nonsfi_listener.cc',
-                'nacl/loader/nonsfi/nonsfi_listener.h',
-                'nacl/loader/nonsfi/nonsfi_main.cc',
-                'nacl/loader/nonsfi/nonsfi_main.h',
-                'nacl/loader/nonsfi/nonsfi_sandbox.cc',
-                'nacl/loader/nonsfi/nonsfi_sandbox.h',
                 'nacl/loader/sandbox_linux/nacl_bpf_sandbox_linux.cc',
                 'nacl/loader/sandbox_linux/nacl_sandbox_linux.cc',
               ],
@@ -290,10 +245,8 @@
                 'nacl',
                 'nacl_common',
                 'nacl_switches',
-                '../components/tracing.gyp:tracing',
                 '../crypto/crypto.gyp:crypto',
                 '../sandbox/sandbox.gyp:sandbox',
-                '../ppapi/ppapi_internal.gyp:ppapi_proxy',
               ],
               'conditions': [
                 ['use_glib == 1', {
@@ -361,6 +314,7 @@
               },
             },
             {
+              # GN version: //components/nacl/common:switches
               'target_name': 'nacl_switches_win64',
               'type': 'static_library',
               'sources': [
@@ -377,6 +331,7 @@
               },
             },
             {
+              # GN version: //components/nacl/common
               'target_name': 'nacl_common_win64',
               'type': 'static_library',
               'defines': [
@@ -469,6 +424,7 @@
   ],
   'targets': [
     {
+      # GN version: //components/nacl/common:switches
       'target_name': 'nacl_switches',
       'type': 'static_library',
       'sources': [
@@ -480,6 +436,7 @@
       ],
     },
     {
+      # GN version: //components/nacl/common
       'target_name': 'nacl_common',
       'type': 'static_library',
       'sources': [

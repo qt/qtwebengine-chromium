@@ -23,7 +23,7 @@ static const double kEarlyRetransmitLossDelayMultiplier = 1.25;
 }  // namespace
 
 TCPLossAlgorithm::TCPLossAlgorithm()
-    : loss_detection_timeout_(QuicTime::Zero()) { }
+    : loss_detection_timeout_(QuicTime::Zero()) {}
 
 LossDetectionType TCPLossAlgorithm::GetLossDetectionType() const {
   return kNack;
@@ -87,6 +87,14 @@ PacketNumberSet TCPLossAlgorithm::DetectLostPackets(
   }
 
   return lost_packets;
+}
+
+void TCPLossAlgorithm::DetectLosses(
+    const QuicUnackedPacketMap& unacked_packets,
+    const QuicTime& time,
+    const RttStats& rtt_stats,
+    SendAlgorithmInterface::CongestionVector* packets_lost) {
+  LOG(DFATAL) << "DetectLoss is unsupported by TCPLossAlgorithm.";
 }
 
 QuicTime TCPLossAlgorithm::GetLossTimeout() const {

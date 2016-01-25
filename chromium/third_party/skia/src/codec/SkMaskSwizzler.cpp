@@ -8,9 +8,8 @@
 #include "SkCodecPriv.h"
 #include "SkColorPriv.h"
 #include "SkMaskSwizzler.h"
-#include "SkScaledCodec.h"
 
-static SkSwizzler::ResultAlpha swizzle_mask16_to_n32_opaque(
+static void swizzle_mask16_to_n32_opaque(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
@@ -25,54 +24,47 @@ static SkSwizzler::ResultAlpha swizzle_mask16_to_n32_opaque(
         dstPtr[i] = SkPackARGB32NoCheck(0xFF, red, green, blue);
         srcPtr += sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask16_to_n32_unpremul(
+static void swizzle_mask16_to_n32_unpremul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPackARGB32NoCheck(alpha, red, green, blue);
         srcPtr += sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask16_to_n32_premul(
+static void swizzle_mask16_to_n32_premul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     uint16_t* srcPtr = ((uint16_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint16_t p = srcPtr[0];
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPreMultiplyARGB(alpha, red, green, blue);
         srcPtr += sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
 // TODO (msarett): We have promoted a two byte per pixel image to 8888, only to
 // convert it back to 565. Instead, we should swizzle to 565 directly.
-static SkSwizzler::ResultAlpha swizzle_mask16_to_565(
+static void swizzle_mask16_to_565(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
@@ -87,10 +79,9 @@ static SkSwizzler::ResultAlpha swizzle_mask16_to_565(
         dstPtr[i] = SkPack888ToRGB16(red, green, blue);
         srcPtr += sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask24_to_n32_opaque(
+static void swizzle_mask24_to_n32_opaque(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
@@ -105,52 +96,45 @@ static SkSwizzler::ResultAlpha swizzle_mask24_to_n32_opaque(
         dstPtr[i] = SkPackARGB32NoCheck(0xFF, red, green, blue);
         srcRow += 3 * sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask24_to_n32_unpremul(
+static void swizzle_mask24_to_n32_unpremul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     srcRow += 3 * startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcRow[0] | (srcRow[1] << 8) | srcRow[2] << 16;
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPackARGB32NoCheck(alpha, red, green, blue);
         srcRow += 3 * sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask24_to_n32_premul(
+static void swizzle_mask24_to_n32_premul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     srcRow += 3 * startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcRow[0] | (srcRow[1] << 8) | srcRow[2] << 16;
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPreMultiplyARGB(alpha, red, green, blue);
         srcRow += 3 * sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask24_to_565(
+static void swizzle_mask24_to_565(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
@@ -165,10 +149,9 @@ static SkSwizzler::ResultAlpha swizzle_mask24_to_565(
         dstPtr[i] = SkPack888ToRGB16(red, green, blue);
         srcRow += 3 * sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask32_to_n32_opaque(
+static void swizzle_mask32_to_n32_opaque(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
@@ -183,52 +166,45 @@ static SkSwizzler::ResultAlpha swizzle_mask32_to_n32_opaque(
         dstPtr[i] = SkPackARGB32NoCheck(0xFF, red, green, blue);
         srcPtr += sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask32_to_n32_unpremul(
+static void swizzle_mask32_to_n32_unpremul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPackARGB32NoCheck(alpha, red, green, blue);
         srcPtr += sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask32_to_n32_premul(
+static void swizzle_mask32_to_n32_premul(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
 
     // Use the masks to decode to the destination
     uint32_t* srcPtr = ((uint32_t*) srcRow) + startX;
     SkPMColor* dstPtr = (SkPMColor*) dstRow;
-    INIT_RESULT_ALPHA;
     for (int i = 0; i < width; i++) {
         uint32_t p = srcPtr[0];
         uint8_t red = masks->getRed(p);
         uint8_t green = masks->getGreen(p);
         uint8_t blue = masks->getBlue(p);
         uint8_t alpha = masks->getAlpha(p);
-        UPDATE_RESULT_ALPHA(alpha);
         dstPtr[i] = SkPreMultiplyARGB(alpha, red, green, blue);
         srcPtr += sampleX;
     }
-    return COMPUTE_RESULT_ALPHA;
 }
 
-static SkSwizzler::ResultAlpha swizzle_mask32_to_565(
+static void swizzle_mask32_to_565(
         void* dstRow, const uint8_t* srcRow, int width, SkMasks* masks,
         uint32_t startX, uint32_t sampleX) {
     // Use the masks to decode to the destination
@@ -242,7 +218,6 @@ static SkSwizzler::ResultAlpha swizzle_mask32_to_565(
         dstPtr[i] = SkPack888ToRGB16(red, green, blue);
         srcPtr += sampleX;
     }
-    return SkSwizzler::kOpaque_ResultAlpha;
 }
 
 /*
@@ -250,9 +225,9 @@ static SkSwizzler::ResultAlpha swizzle_mask32_to_565(
  * Create a new mask swizzler
  *
  */
-SkMaskSwizzler* SkMaskSwizzler::CreateMaskSwizzler(
-        const SkImageInfo& dstInfo, const SkImageInfo& srcInfo, SkMasks* masks,
-        uint32_t bitsPerPixel) {
+SkMaskSwizzler* SkMaskSwizzler::CreateMaskSwizzler(const SkImageInfo& dstInfo,
+        const SkImageInfo& srcInfo, SkMasks* masks, uint32_t bitsPerPixel,
+        const SkCodec::Options& options) {
 
     // Choose the appropriate row procedure
     RowProc proc = nullptr;
@@ -352,11 +327,14 @@ SkMaskSwizzler* SkMaskSwizzler::CreateMaskSwizzler(
             return nullptr;
     }
 
-    // Get the sample size
-    int sampleX;
-    SkScaledCodec::ComputeSampleSize(dstInfo, srcInfo, &sampleX, NULL);
+    int srcOffset = 0;
+    int srcWidth = dstInfo.width();
+    if (options.fSubset) {
+        srcOffset = options.fSubset->left();
+        srcWidth = options.fSubset->width();
+    }
 
-    return new SkMaskSwizzler(dstInfo, masks, proc, sampleX);
+    return new SkMaskSwizzler(masks, proc, srcOffset, srcWidth);
 }
 
 /*
@@ -364,21 +342,35 @@ SkMaskSwizzler* SkMaskSwizzler::CreateMaskSwizzler(
  * Constructor for mask swizzler
  *
  */
-SkMaskSwizzler::SkMaskSwizzler(const SkImageInfo& dstInfo, SkMasks* masks,
-                               RowProc proc, uint32_t sampleX)
-    : fDstInfo(dstInfo)
-    , fMasks(masks)
+SkMaskSwizzler::SkMaskSwizzler(SkMasks* masks, RowProc proc, int srcOffset, int subsetWidth)
+    : fMasks(masks)
     , fRowProc(proc)
-    , fSampleX(sampleX)
-    , fStartX(get_start_coord(sampleX))
+    , fSubsetWidth(subsetWidth)
+    , fDstWidth(subsetWidth)
+    , fSampleX(1)
+    , fSrcOffset(srcOffset)
+    , fX0(srcOffset)
 {}
+
+int SkMaskSwizzler::onSetSampleX(int sampleX) {
+    // FIXME: Share this function with SkSwizzler?
+    SkASSERT(sampleX > 0); // Surely there is an upper limit? Should there be
+                           // way to report failure?
+    fSampleX = sampleX;
+    fX0 = get_start_coord(sampleX) + fSrcOffset;
+    fDstWidth = get_scaled_dimension(fSubsetWidth, sampleX);
+
+    // check that fX0 is valid
+    SkASSERT(fX0 >= 0);
+    return fDstWidth;
+}
 
 /*
  *
  * Swizzle the specified row
  *
  */
-SkSwizzler::ResultAlpha SkMaskSwizzler::swizzle(void* dst, const uint8_t* SK_RESTRICT src) {
+void SkMaskSwizzler::swizzle(void* dst, const uint8_t* SK_RESTRICT src) {
     SkASSERT(nullptr != dst && nullptr != src);
-    return fRowProc(dst, src, fDstInfo.width(), fMasks, fStartX, fSampleX);
+    fRowProc(dst, src, fDstWidth, fMasks, fX0, fSampleX);
 }

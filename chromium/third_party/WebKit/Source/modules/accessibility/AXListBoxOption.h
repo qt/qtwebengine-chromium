@@ -54,8 +54,7 @@ public:
     bool isSelectedOptionActive() const override;
     void setSelected(bool) override;
     bool canSetSelectedAttribute() const override;
-    String stringValue() const override;
-    String deprecatedTitle(TextUnderElementMode) const override { return String(); }
+    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*) const override;
 
 private:
     bool canHaveChildren() const override { return false; }
@@ -63,11 +62,8 @@ private:
 
     HTMLSelectElement* listBoxOptionParentNode() const;
     int listBoxOptionIndex() const;
-    AXObject* listBoxOptionAXObject(HTMLElement*) const;
     bool isParentPresentationalRole() const;
 };
-
-DEFINE_AX_OBJECT_TYPE_CASTS(AXListBoxOption, isAXListBoxOption());
 
 } // namespace blink
 

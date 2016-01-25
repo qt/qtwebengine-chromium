@@ -99,10 +99,6 @@ SkSurface_Raster::SkSurface_Raster(SkPixelRef* pr, const SkSurfaceProps* props)
     fBitmap.setInfo(info, info.minRowBytes());
     fBitmap.setPixelRef(pr);
     fWeOwnThePixels = true;
-
-    if (!info.isOpaque()) {
-        fBitmap.eraseColor(SK_ColorTRANSPARENT);
-    }
 }
 
 SkCanvas* SkSurface_Raster::onNewCanvas() { return new SkCanvas(fBitmap, this->props()); }
@@ -126,7 +122,7 @@ SkImage* SkSurface_Raster::onNewImageSnapshot(Budgeted) {
     }
     // Our pixels are in memory, so read access on the snapshot SkImage could be cheap.
     // Lock the shared pixel ref to ensure peekPixels() is usable.
-    return SkNewImageFromRasterBitmap(fBitmap, &this->props(),
+    return SkNewImageFromRasterBitmap(fBitmap,
                                       fWeOwnThePixels ? kNo_ForceCopyMode : kYes_ForceCopyMode);
 }
 
@@ -185,7 +181,7 @@ SkSurface* SkSurface::NewRaster(const SkImageInfo& info, const SkSurfaceProps* p
         return nullptr;
     }
 
-    SkAutoTUnref<SkPixelRef> pr(SkMallocPixelRef::NewAllocate(info, 0, nullptr));
+    SkAutoTUnref<SkPixelRef> pr(SkMallocPixelRef::NewZeroed(info, 0, nullptr));
     if (nullptr == pr.get()) {
         return nullptr;
     }

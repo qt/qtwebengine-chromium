@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -51,8 +52,7 @@ void SSLManager::OnSSLCertificateError(
     const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
     const ResourceType resource_type,
     const GURL& url,
-    int render_process_id,
-    int render_frame_id,
+    const base::Callback<WebContents*(void)>& web_contents_getter,
     const net::SSLInfo& ssl_info,
     bool fatal) {
   DCHECK(delegate.get());
@@ -60,8 +60,6 @@ void SSLManager::OnSSLCertificateError(
            << net::MapCertStatusToNetError(ssl_info.cert_status)
            << " resource_type: " << resource_type
            << " url: " << url.spec()
-           << " render_process_id: " << render_process_id
-           << " render_frame_id: " << render_frame_id
            << " cert_status: " << std::hex << ssl_info.cert_status;
 
   // A certificate error occurred.  Construct a SSLCertErrorHandler object and
@@ -69,13 +67,23 @@ void SSLManager::OnSSLCertificateError(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&SSLCertErrorHandler::Dispatch,
-                 new SSLCertErrorHandler(delegate,
-                                         resource_type,
-                                         url,
-                                         render_process_id,
-                                         render_frame_id,
-                                         ssl_info,
-                                         fatal)));
+                 new SSLCertErrorHandler(delegate, resource_type, url, ssl_info,
+                                         fatal),
+                 web_contents_getter));
+}
+
+// static
+void SSLManager::OnSSLCertificateSubresourceError(
+    const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
+    const GURL& url,
+    int render_process_id,
+    int render_frame_id,
+    const net::SSLInfo& ssl_info,
+    bool fatal) {
+  OnSSLCertificateError(delegate, RESOURCE_TYPE_SUB_RESOURCE, url,
+                        base::Bind(&WebContentsImpl::FromRenderFrameHostID,
+                                   render_process_id, render_frame_id),
+                        ssl_info, fatal);
 }
 
 // static
@@ -127,11 +135,7 @@ void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
   NotifyDidChangeVisibleSSLState();
 }
 
-void SSLManager::DidDisplayInsecureContent() {
-  UpdateEntry(controller_->GetLastCommittedEntry());
-}
-
-void SSLManager::DidRunInsecureContent(const std::string& security_origin) {
+void SSLManager::DidRunInsecureContent(const GURL& security_origin) {
   NavigationEntryImpl* navigation_entry = controller_->GetLastCommittedEntry();
   policy()->DidRunInsecureContent(navigation_entry, security_origin);
   UpdateEntry(navigation_entry);
@@ -147,7 +151,6 @@ void SSLManager::DidLoadFromMemoryCache(
   scoped_refptr<SSLRequestInfo> info(new SSLRequestInfo(
       details.url,
       RESOURCE_TYPE_SUB_RESOURCE,
-      details.pid,
       details.cert_id,
       details.cert_status));
 
@@ -160,7 +163,6 @@ void SSLManager::DidStartResourceResponse(
   scoped_refptr<SSLRequestInfo> info(new SSLRequestInfo(
       details.url,
       details.resource_type,
-      details.origin_child_id,
       details.ssl_cert_id,
       details.ssl_cert_status));
 

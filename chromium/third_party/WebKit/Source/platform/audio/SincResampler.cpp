@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/SincResampler.h"
-
 #include "platform/audio/AudioBus.h"
 #include "wtf/CPU.h"
 #include "wtf/MathExtras.h"
@@ -470,4 +465,3 @@ void SincResampler::process(AudioSourceProvider* sourceProvider, float* destinat
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

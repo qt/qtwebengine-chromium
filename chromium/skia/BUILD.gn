@@ -278,9 +278,11 @@ config("skia_library_config") {
 component("skia") {
   sources = [
     # Chrome sources.
+    "config/SkUserConfig.h",
+    "config/sk_ref_cnt_ext_debug.h",
+    "config/sk_ref_cnt_ext_release.h",
     "ext/SkDiscardableMemory_chrome.cc",
     "ext/SkMemory_new_handler.cpp",
-    "ext/SkTraceMemoryDump_chrome.cc",
     "ext/analysis_canvas.cc",
     "ext/benchmarking_canvas.cc",
     "ext/convolver.cc",
@@ -295,6 +297,7 @@ component("skia") {
     "ext/platform_device_win.cc",
     "ext/recursive_gaussian_convolution.cc",
     "ext/skia_memory_dump_provider.cc",
+    "ext/skia_trace_memory_dump_impl.cc",
     "ext/skia_utils_base.cc",
     "ext/skia_utils_ios.mm",
     "ext/skia_utils_mac.mm",
@@ -334,8 +337,6 @@ component("skia") {
     "//third_party/skia/src/utils/SkBitmapHasher.cpp",
     "//third_party/skia/src/utils/SkBoundaryPatch.cpp",
     "//third_party/skia/src/utils/SkCamera.cpp",
-    "//third_party/skia/src/utils/SkCubicInterval.cpp",
-    "//third_party/skia/src/utils/SkCullPoints.cpp",
     "//third_party/skia/src/utils/SkDumpCanvas.cpp",
     "//third_party/skia/src/utils/SkFrontBufferedStream.cpp",
     "//third_party/skia/src/utils/SkInterpolator.cpp",
@@ -347,10 +348,6 @@ component("skia") {
     "//third_party/skia/src/utils/SkParsePath.cpp",
     "//third_party/skia/src/utils/SkSHA1.cpp",
 
-    # We don't currently need to change thread affinity, so leave out this complexity for now.
-    "//third_party/skia/src/utils/SkThreadUtils_pthread_linux.cpp",
-    "//third_party/skia/src/utils/SkThreadUtils_pthread_mach.cpp",
-
     #testing
     "//third_party/skia/src/fonts/SkGScalerContext.cpp",
   ]
@@ -359,11 +356,10 @@ component("skia") {
     sources -= [
       # Keeping _win.cpp
       "//third_party/skia/src/utils/SkThreadUtils_pthread.cpp",
-      "//third_party/skia/src/utils/SkThreadUtils_pthread_other.cpp",
     ]
   } else {
     sources -= [
-      # Keeping _pthread.cpp and _pthread_other.cpp.
+      # Keeping _pthread.cpp
       "//third_party/skia/src/utils/SkThreadUtils_win.cpp",
     ]
   }
@@ -416,6 +412,7 @@ component("skia") {
     sources -= [
       "//third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp",
       "//third_party/skia/src/ports/SkFontConfigInterface_direct.cpp",
+      "//third_party/skia/src/ports/SkFontConfigInterface_direct_factory.cpp",
       "//third_party/skia/src/ports/SkFontHost_fontconfig.cpp",
     ]
   }
@@ -447,8 +444,8 @@ component("skia") {
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
+    ":skia_config",
     ":skia_library_config",
-    "//build/config:precompiled_headers",
     "//build/config/compiler:no_chromium_code",
   ]
   public_configs = [ ":skia_config" ]
@@ -477,9 +474,9 @@ component("skia") {
     sources += [ "ext/platform_device_linux.cc" ]
     set_sources_assignment_filter(sources_assignment_filter)
     deps += [
+      "//third_party/android_tools:cpu_features",
       "//third_party/expat",
       "//third_party/freetype-android:freetype",
-      "//third_party/android_tools:cpu_features",
     ]
   }
 
@@ -526,13 +523,61 @@ if (current_cpu == "x86" || current_cpu == "x64") {
       "//build/config/compiler:no_chromium_code",
     ]
   }
-  source_set("skia_opts_sse4") {
+  source_set("skia_opts_sse41") {
     sources = gypi_skia_opts.sse41_sources
     if (!is_win || is_clang) {
       cflags = [ "-msse4.1" ]
     }
     if (is_win) {
       defines = [ "SK_CPU_SSE_LEVEL=41" ]
+    }
+    visibility = [ ":skia_opts" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":skia_config",
+      ":skia_library_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+  }
+  source_set("skia_opts_sse42") {
+    sources = gypi_skia_opts.sse42_sources
+    if (!is_win || is_clang) {
+      cflags = [ "-msse4.2" ]
+    }
+    if (is_win) {
+      defines = [ "SK_CPU_SSE_LEVEL=42" ]
+    }
+    visibility = [ ":skia_opts" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":skia_config",
+      ":skia_library_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+  }
+  source_set("skia_opts_avx") {
+    sources = gypi_skia_opts.avx_sources
+    if (!is_win) {
+      cflags = [ "-mavx" ]
+    }
+    if (is_win) {
+      cflags = [ "/arch:AVX" ]
+    }
+    visibility = [ ":skia_opts" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":skia_config",
+      ":skia_library_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+  }
+  source_set("skia_opts_avx2") {
+    sources = gypi_skia_opts.avx2_sources
+    if (!is_win) {
+      cflags = [ "-mavx2" ]
+    }
+    if (is_win) {
+      cflags = [ "/arch:AVX2" ]
     }
     visibility = [ ":skia_opts" ]
     configs -= [ "//build/config/compiler:chromium_code" ]
@@ -554,8 +599,11 @@ source_set("skia_opts") {
   if (current_cpu == "x86" || current_cpu == "x64") {
     sources = gypi_skia_opts.sse2_sources
     deps += [
+      ":skia_opts_avx",
+      ":skia_opts_avx2",
       ":skia_opts_sse3",
-      ":skia_opts_sse4",
+      ":skia_opts_sse41",
+      ":skia_opts_sse42",
     ]
   } else if (current_cpu == "arm") {
     # The assembly uses the frame pointer register (r7 in Thumb/r11 in
@@ -577,6 +625,8 @@ source_set("skia_opts") {
     } else {
       sources = gypi_skia_opts.none_sourcees
     }
+  } else if (current_cpu == "arm64") {
+    sources = gypi_skia_opts.arm64_sources
   } else if (current_cpu == "mipsel") {
     cflags += [ "-fomit-frame-pointer" ]
 
@@ -585,6 +635,9 @@ source_set("skia_opts") {
     } else {
       sources = gypi_skia_opts.none_sources
     }
+  } else if (current_cpu == "mips64el") {
+    cflags += [ "-fomit-frame-pointer" ]
+    sources = gypi_skia_opts.none_sources
   } else {
     assert(false, "Need to port cpu specific stuff from skia_library_opts.gyp")
   }

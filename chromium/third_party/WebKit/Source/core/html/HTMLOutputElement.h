@@ -36,10 +36,12 @@
 
 namespace blink {
 
-class HTMLOutputElement final : public HTMLFormControlElement {
+class CORE_EXPORT HTMLOutputElement final : public HTMLFormControlElement, private DOMSettableTokenListObserver {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLOutputElement);
 public:
     static PassRefPtrWillBeRawPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
+    ~HTMLOutputElement() override;
 
     bool willValidate() const override { return false; }
 
@@ -57,13 +59,15 @@ public:
 private:
     HTMLOutputElement(Document&, HTMLFormElement*);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     const AtomicString& formControlType() const override;
     bool isEnumeratable() const override { return true; }
     bool supportLabels() const override { return true; }
     bool supportsFocus() const override;
     void childrenChanged(const ChildrenChange&) override;
     void resetImpl() override;
+
+    void valueWasSet() final;
 
     bool m_isDefaultValueMode;
     String m_defaultValue;

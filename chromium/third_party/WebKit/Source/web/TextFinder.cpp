@@ -29,7 +29,6 @@
  */
 
 
-#include "config.h"
 #include "web/TextFinder.h"
 
 #include "core/dom/Range.h"
@@ -97,7 +96,7 @@ private:
         , m_options(options)
         , m_reset(reset)
     {
-        m_timer.startOneShot(0.0, FROM_HERE);
+        m_timer.startOneShot(0.0, BLINK_FROM_HERE);
     }
 
     void doTimeout(Timer<DeferredScopeStringMatches>*)
@@ -121,7 +120,7 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
     WebLocalFrameImpl* mainFrameImpl = ownerFrame().viewImpl()->mainFrameImpl();
 
     if (!options.findNext)
-        ownerFrame().frame()->page()->unmarkAllTextMatches();
+        unmarkAllTextMatches();
     else
         setMarkerActive(m_activeMatch.get(), false);
 
@@ -169,7 +168,7 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
     mainFrameImpl->ensureTextFinder().m_currentActiveMatchFrame = &ownerFrame();
 
     // Make sure no node is focused. See http://crbug.com/38700.
-    ownerFrame().frame()->document()->setFocusedElement(nullptr);
+    ownerFrame().frame()->document()->clearFocusedElement();
 
     if (!options.findNext || activeSelection) {
         // This is either a Find operation or a Find-next from a new start point
@@ -248,9 +247,7 @@ void TextFinder::scopeStringMatchesAlgorithm(int identifier, const WebString& se
         m_findRequestIdentifier = identifier;
 
         // Clear highlighting for this frame.
-        LocalFrame* frame = ownerFrame().frame();
-        if (frame && frame->page() && frame->editor().markedTextMatchesAreHighlighted())
-            frame->page()->unmarkAllTextMatches();
+        unmarkAllTextMatches();
 
         // Clear the tickmarks and results cache.
         clearFindMatchesCache();
@@ -261,6 +258,7 @@ void TextFinder::scopeStringMatchesAlgorithm(int identifier, const WebString& se
         m_resumeScopingFromRange = nullptr;
 
         // The view might be null on detached frames.
+        LocalFrame* frame = ownerFrame().frame();
         if (frame && frame->page())
             ownerFrame().viewImpl()->mainFrameImpl()->ensureTextFinder().m_framesScopingCount++;
 
@@ -374,6 +372,8 @@ void TextFinder::scopeStringMatchesAlgorithm(int identifier, const WebString& se
 
         m_lastMatchCount += matchCount;
 
+        ownerFrame().client()->reportFindInFrameMatchCount(identifier, m_lastMatchCount, false);
+
         // Let the mainframe know how much we found during this pass.
         mainFrameImpl->increaseMatchCount(matchCount, identifier);
     }
@@ -419,6 +419,8 @@ void TextFinder::finishCurrentScopingEffort(int identifier)
 
     m_scopingInProgress = false;
     m_lastFindRequestCompletedWithNoMatches = !m_lastMatchCount;
+
+    ownerFrame().client()->reportFindInFrameMatchCount(identifier, m_lastMatchCount, true);
 
     // This frame is done, so show any scrollbar tickmarks we haven't drawn yet.
     ownerFrame().frameView()->invalidatePaintForTickmarks();
@@ -627,7 +629,7 @@ int TextFinder::selectFindMatch(unsigned index, WebRect* selectionRect)
         ownerFrame().frame()->selection().clear();
 
         // Make sure no node is focused. See http://crbug.com/38700.
-        ownerFrame().frame()->document()->setFocusedElement(nullptr);
+        ownerFrame().frame()->document()->clearFocusedElement();
     }
 
     IntRect activeMatchRect;
@@ -636,7 +638,7 @@ int TextFinder::selectFindMatch(unsigned index, WebRect* selectionRect)
     if (!activeMatchBoundingBox.isEmpty()) {
         if (m_activeMatch->firstNode() && m_activeMatch->firstNode()->layoutObject()) {
             m_activeMatch->firstNode()->layoutObject()->scrollRectToVisible(
-                LayoutRect(activeMatchBoundingBox), ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
+                LayoutRect(activeMatchBoundingBox), ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded, UserScroll);
         }
 
         // Zoom to the active match.
@@ -690,6 +692,17 @@ void TextFinder::setMarkerActive(Range* range, bool active)
     if (!range || range->collapsed())
         return;
     ownerFrame().frame()->document()->markers().setMarkersActive(range, active);
+}
+
+void TextFinder::unmarkAllTextMatches()
+{
+    LocalFrame* frame = ownerFrame().frame();
+    if (frame && frame->page() && frame->editor().markedTextMatchesAreHighlighted()) {
+        if (ownerFrame().client() && ownerFrame().client()->shouldSearchSingleFrame())
+            frame->document()->markers().removeMarkers(DocumentMarker::TextMatch);
+        else
+            frame->page()->unmarkAllTextMatches();
+    }
 }
 
 int TextFinder::ordinalOfFirstMatchForFrame(WebLocalFrameImpl* frame) const

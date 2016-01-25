@@ -8,11 +8,13 @@
     position: absolute;
     border: 1px solid rgba(196, 196, 196, 0.9);
     border-top: 1px solid rgba(196, 196, 196, 0.5);
+    /* NOTE: Keep padding top in sync with topPadding in SoftContextMenu.js */
     padding: 4px 0 4px 0;
     border-radius: 4px;
     background-color: rgb(240, 240, 240);
     box-shadow: 0 5px 10px rgba(0, 0, 0, 0.25);
     overflow-y: auto;
+    min-width: 160px !important;
 }
 
 .soft-context-menu-item {
@@ -25,7 +27,11 @@
     padding: 2px 7px 2px 8px;
     margin: 0 13px 0 0;
     white-space: nowrap;
-    min-width: 160px;
+}
+
+.soft-context-menu-disabled {
+    color: #999;
+    pointer-events: none;
 }
 
 .soft-context-menu-separator {
@@ -40,14 +46,16 @@
     pointer-events: none;
 }
 
-.soft-context-menu-item-mouse-over {
+.soft-context-menu-item-mouse-over,
+.-theme-selection-color {
     border-top: 1px solid rgb(56, 121, 217);
     border-bottom: 1px solid rgb(56, 121, 217);
     background-color: rgb(56, 121, 217);
     color: white;
 }
 
-:host-context(.platform-mac) .soft-context-menu-item-mouse-over {
+:host-context(.platform-mac) .soft-context-menu-item-mouse-over,
+.-theme-selection-color {
     border-top: 1px solid transparent;
     border-bottom: 1px solid transparent;
     background-image: linear-gradient(to right, hsl(214, 81%, 60%), hsl(214, 100%, 56%));

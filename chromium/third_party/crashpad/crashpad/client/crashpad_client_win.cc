@@ -14,15 +14,23 @@
 
 #include "client/crashpad_client.h"
 
-#include <string.h>
 #include <windows.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "base/atomicops.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/scoped_generic.h"
 #include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "util/file/file_io.h"
+#include "util/win/command_line.h"
+#include "util/win/critical_section_with_debug_info.h"
+#include "util/win/get_function.h"
+#include "util/win/handle.h"
 #include "util/win/registration_protocol_win.h"
 #include "util/win/scoped_handle.h"
 
@@ -47,6 +55,13 @@ base::Lock* g_non_crash_dump_lock;
 // Where we store a pointer to the context information when taking a non-crash
 // dump.
 crashpad::ExceptionInformation g_non_crash_exception_information;
+
+// A CRITICAL_SECTION initialized with
+// RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO to force it to be allocated with a
+// valid .DebugInfo field. The address of this critical section is given to the
+// handler. All critical sections with debug info are linked in a doubly-linked
+// list, so this allows the handler to capture all of them.
+CRITICAL_SECTION g_critical_section_with_debug_info;
 
 LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* exception_pointers) {
   // Tracks whether a thread has already entered UnhandledExceptionHandler.
@@ -94,11 +109,70 @@ LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* exception_pointers) {
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
+std::wstring FormatArgumentString(const std::string& name,
+                                  const std::wstring& value) {
+  return std::wstring(L"--") + base::UTF8ToUTF16(name) + L"=" + value;
+}
+
+struct ScopedProcThreadAttributeListTraits {
+  static PPROC_THREAD_ATTRIBUTE_LIST InvalidValue() {
+    return nullptr;
+  }
+
+  static void Free(PPROC_THREAD_ATTRIBUTE_LIST proc_thread_attribute_list) {
+    // This is able to use GET_FUNCTION_REQUIRED() instead of GET_FUNCTION()
+    // because it will only be called if InitializeProcThreadAttributeList() and
+    // UpdateProcThreadAttribute() are present.
+    static const auto delete_proc_thread_attribute_list =
+        GET_FUNCTION_REQUIRED(L"kernel32.dll", ::DeleteProcThreadAttributeList);
+    delete_proc_thread_attribute_list(proc_thread_attribute_list);
+  }
+};
+
+using ScopedProcThreadAttributeList =
+    base::ScopedGeneric<PPROC_THREAD_ATTRIBUTE_LIST,
+                        ScopedProcThreadAttributeListTraits>;
+
+bool IsInheritableHandle(HANDLE handle) {
+  if (!handle || handle == INVALID_HANDLE_VALUE)
+    return false;
+
+  // File handles (FILE_TYPE_DISK) and pipe handles (FILE_TYPE_PIPE) are known
+  // to be inheritable. Console handles (FILE_TYPE_CHAR) are not inheritable via
+  // PROC_THREAD_ATTRIBUTE_HANDLE_LIST. See
+  // https://crashpad.chromium.org/bug/77.
+  DWORD handle_type = GetFileType(handle);
+  return handle_type == FILE_TYPE_DISK || handle_type == FILE_TYPE_PIPE;
+}
+
+// Adds |handle| to |handle_list| if it appears valid, and is not already in
+// |handle_list|.
+//
+// Invalid handles (including INVALID_HANDLE_VALUE and null handles) cannot be
+// added to a PPROC_THREAD_ATTRIBUTE_LIST’s PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
+// If INVALID_HANDLE_VALUE appears, CreateProcess() will fail with
+// ERROR_INVALID_PARAMETER. If a null handle appears, the child process will
+// silently not inherit any handles.
+//
+// Use this function to add handles with uncertain validities.
+void AddHandleToListIfValidAndInheritable(std::vector<HANDLE>* handle_list,
+                                          HANDLE handle) {
+  // There doesn't seem to be any documentation of this, but if there's a handle
+  // duplicated in this list, CreateProcess() fails with
+  // ERROR_INVALID_PARAMETER.
+  if (IsInheritableHandle(handle) &&
+      std::find(handle_list->begin(), handle_list->end(), handle) ==
+          handle_list->end()) {
+    handle_list->push_back(handle);
+  }
+}
+
 }  // namespace
 
 namespace crashpad {
 
-CrashpadClient::CrashpadClient() {
+CrashpadClient::CrashpadClient()
+    : ipc_pipe_() {
 }
 
 CrashpadClient::~CrashpadClient() {
@@ -109,15 +183,184 @@ bool CrashpadClient::StartHandler(
     const base::FilePath& database,
     const std::string& url,
     const std::map<std::string, std::string>& annotations,
-    const std::vector<std::string>& arguments) {
-  LOG(FATAL) << "SetHandler should be used on Windows";
-  return false;
+    const std::vector<std::string>& arguments,
+    bool restartable) {
+  DCHECK(ipc_pipe_.empty());
+
+  HANDLE pipe_read;
+  HANDLE pipe_write;
+  SECURITY_ATTRIBUTES security_attributes = {};
+  security_attributes.nLength = sizeof(security_attributes);
+  security_attributes.bInheritHandle = TRUE;
+  if (!CreatePipe(&pipe_read, &pipe_write, &security_attributes, 0)) {
+    PLOG(ERROR) << "CreatePipe";
+    return false;
+  }
+  ScopedFileHandle pipe_read_owner(pipe_read);
+  ScopedFileHandle pipe_write_owner(pipe_write);
+
+  // The new process only needs the write side of the pipe.
+  BOOL rv = SetHandleInformation(pipe_read, HANDLE_FLAG_INHERIT, 0);
+  PLOG_IF(WARNING, !rv) << "SetHandleInformation";
+
+  std::wstring command_line;
+  AppendCommandLineArgument(handler.value(), &command_line);
+  for (const std::string& argument : arguments) {
+    AppendCommandLineArgument(base::UTF8ToUTF16(argument), &command_line);
+  }
+  if (!database.value().empty()) {
+    AppendCommandLineArgument(FormatArgumentString("database",
+                                                   database.value()),
+                              &command_line);
+  }
+  if (!url.empty()) {
+    AppendCommandLineArgument(FormatArgumentString("url",
+                                                   base::UTF8ToUTF16(url)),
+                              &command_line);
+  }
+  for (const auto& kv : annotations) {
+    AppendCommandLineArgument(
+        FormatArgumentString("annotation",
+                             base::UTF8ToUTF16(kv.first + '=' + kv.second)),
+        &command_line);
+  }
+  AppendCommandLineArgument(
+      base::UTF8ToUTF16(base::StringPrintf("--handshake-handle=0x%x",
+                                           HandleToInt(pipe_write))),
+      &command_line);
+
+  DWORD creation_flags;
+  STARTUPINFOEX startup_info = {};
+  startup_info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+  startup_info.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  startup_info.StartupInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+  startup_info.StartupInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+  std::vector<HANDLE> handle_list;
+  scoped_ptr<uint8_t[]> proc_thread_attribute_list_storage;
+  ScopedProcThreadAttributeList proc_thread_attribute_list_owner;
+
+  static const auto initialize_proc_thread_attribute_list =
+      GET_FUNCTION(L"kernel32.dll", ::InitializeProcThreadAttributeList);
+  static const auto update_proc_thread_attribute =
+      initialize_proc_thread_attribute_list
+          ? GET_FUNCTION(L"kernel32.dll", ::UpdateProcThreadAttribute)
+          : nullptr;
+  if (!initialize_proc_thread_attribute_list || !update_proc_thread_attribute) {
+    // The OS doesn’t allow handle inheritance to be restricted, so the handler
+    // will inherit every inheritable handle.
+    creation_flags = 0;
+    startup_info.StartupInfo.cb = sizeof(startup_info.StartupInfo);
+  } else {
+    // Restrict handle inheritance to just those needed in the handler.
+
+    creation_flags = EXTENDED_STARTUPINFO_PRESENT;
+    startup_info.StartupInfo.cb = sizeof(startup_info);
+    SIZE_T size;
+    rv = initialize_proc_thread_attribute_list(nullptr, 1, 0, &size);
+    if (rv) {
+      LOG(ERROR) << "InitializeProcThreadAttributeList (size) succeeded, "
+                    "expected failure";
+      return false;
+    } else if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+      PLOG(ERROR) << "InitializeProcThreadAttributeList (size)";
+      return false;
+    }
+
+    proc_thread_attribute_list_storage.reset(new uint8_t[size]);
+    startup_info.lpAttributeList =
+        reinterpret_cast<PPROC_THREAD_ATTRIBUTE_LIST>(
+            proc_thread_attribute_list_storage.get());
+    rv = initialize_proc_thread_attribute_list(
+        startup_info.lpAttributeList, 1, 0, &size);
+    if (!rv) {
+      PLOG(ERROR) << "InitializeProcThreadAttributeList";
+      return false;
+    }
+    proc_thread_attribute_list_owner.reset(startup_info.lpAttributeList);
+
+    handle_list.reserve(4);
+    handle_list.push_back(pipe_write);
+    AddHandleToListIfValidAndInheritable(&handle_list,
+                                         startup_info.StartupInfo.hStdInput);
+    AddHandleToListIfValidAndInheritable(&handle_list,
+                                         startup_info.StartupInfo.hStdOutput);
+    AddHandleToListIfValidAndInheritable(&handle_list,
+                                         startup_info.StartupInfo.hStdError);
+    rv = update_proc_thread_attribute(
+        startup_info.lpAttributeList,
+        0,
+        PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+        &handle_list[0],
+        handle_list.size() * sizeof(handle_list[0]),
+        nullptr,
+        nullptr);
+    if (!rv) {
+      PLOG(ERROR) << "UpdateProcThreadAttribute";
+      return false;
+    }
+  }
+
+  PROCESS_INFORMATION process_info;
+  rv = CreateProcess(handler.value().c_str(),
+                     &command_line[0],
+                     nullptr,
+                     nullptr,
+                     true,
+                     creation_flags,
+                     nullptr,
+                     nullptr,
+                     &startup_info.StartupInfo,
+                     &process_info);
+  if (!rv) {
+    PLOG(ERROR) << "CreateProcess";
+    return false;
+  }
+
+  rv = CloseHandle(process_info.hThread);
+  PLOG_IF(WARNING, !rv) << "CloseHandle thread";
+
+  rv = CloseHandle(process_info.hProcess);
+  PLOG_IF(WARNING, !rv) << "CloseHandle process";
+
+  pipe_write_owner.reset();
+
+  uint32_t ipc_pipe_length;
+  if (!LoggingReadFile(pipe_read, &ipc_pipe_length, sizeof(ipc_pipe_length))) {
+    return false;
+  }
+
+  ipc_pipe_.resize(ipc_pipe_length);
+  if (ipc_pipe_length &&
+      !LoggingReadFile(
+          pipe_read, &ipc_pipe_[0], ipc_pipe_length * sizeof(ipc_pipe_[0]))) {
+    return false;
+  }
+
+  return true;
 }
 
-bool CrashpadClient::SetHandler(const std::string& ipc_port) {
+bool CrashpadClient::SetHandlerIPCPipe(const std::wstring& ipc_pipe) {
+  DCHECK(ipc_pipe_.empty());
+  DCHECK(!ipc_pipe.empty());
+
+  ipc_pipe_ = ipc_pipe;
+
+  return true;
+}
+
+std::wstring CrashpadClient::GetHandlerIPCPipe() const {
+  DCHECK(!ipc_pipe_.empty());
+  return ipc_pipe_;
+}
+
+bool CrashpadClient::UseHandler() {
+  DCHECK(!ipc_pipe_.empty());
   DCHECK_EQ(g_signal_exception, INVALID_HANDLE_VALUE);
   DCHECK_EQ(g_signal_non_crash_dump, INVALID_HANDLE_VALUE);
   DCHECK_EQ(g_non_crash_dump_done, INVALID_HANDLE_VALUE);
+  DCHECK(!g_critical_section_with_debug_info.DebugInfo);
+  DCHECK(!g_non_crash_dump_lock);
 
   ClientToServerMessage message;
   memset(&message, 0, sizeof(message));
@@ -129,32 +372,34 @@ bool CrashpadClient::SetHandler(const std::string& ipc_port) {
   message.registration.non_crash_exception_information =
       reinterpret_cast<WinVMAddress>(&g_non_crash_exception_information);
 
-  ServerToClientMessage response = {0};
+  // We create this dummy CRITICAL_SECTION with the
+  // RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO flag set to have an entry point
+  // into the doubly-linked list of RTL_CRITICAL_SECTION_DEBUG objects. This
+  // allows us to walk the list at crash time to gather data for !locks. A
+  // debugger would instead inspect ntdll!RtlCriticalSectionList to get the head
+  // of the list. But that is not an exported symbol, so on an arbitrary client
+  // machine, we don't have a way of getting that pointer.
+  if (InitializeCriticalSectionWithDebugInfoIfPossible(
+          &g_critical_section_with_debug_info)) {
+    message.registration.critical_section_address =
+        reinterpret_cast<WinVMAddress>(&g_critical_section_with_debug_info);
+  }
 
-  if (!SendToCrashHandlerServer(
-          base::UTF8ToUTF16(ipc_port), message, &response)) {
+  ServerToClientMessage response = {};
+
+  if (!SendToCrashHandlerServer(ipc_pipe_, message, &response)) {
     return false;
   }
 
   // The server returns these already duplicated to be valid in this process.
-  g_signal_exception = reinterpret_cast<HANDLE>(
-      static_cast<uintptr_t>(response.registration.request_crash_dump_event));
-  g_signal_non_crash_dump = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(
-      response.registration.request_non_crash_dump_event));
-  g_non_crash_dump_done = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(
-      response.registration.non_crash_dump_completed_event));
+  g_signal_exception =
+      IntToHandle(response.registration.request_crash_dump_event);
+  g_signal_non_crash_dump =
+      IntToHandle(response.registration.request_non_crash_dump_event);
+  g_non_crash_dump_done =
+      IntToHandle(response.registration.non_crash_dump_completed_event);
 
   g_non_crash_dump_lock = new base::Lock();
-
-  return true;
-}
-
-bool CrashpadClient::UseHandler() {
-  if (g_signal_exception == INVALID_HANDLE_VALUE ||
-      g_signal_non_crash_dump == INVALID_HANDLE_VALUE ||
-      g_non_crash_dump_done == INVALID_HANDLE_VALUE) {
-    return false;
-  }
 
   // In theory we could store the previous handler but it is not clear what
   // use we have for it.
@@ -166,7 +411,7 @@ bool CrashpadClient::UseHandler() {
 void CrashpadClient::DumpWithoutCrash(const CONTEXT& context) {
   if (g_signal_non_crash_dump == INVALID_HANDLE_VALUE ||
       g_non_crash_dump_done == INVALID_HANDLE_VALUE) {
-    LOG(ERROR) << "haven't called SetHandler()";
+    LOG(ERROR) << "haven't called UseHandler()";
     return;
   }
 
@@ -180,7 +425,7 @@ void CrashpadClient::DumpWithoutCrash(const CONTEXT& context) {
 
   // Create a fake EXCEPTION_POINTERS to give the handler something to work
   // with.
-  EXCEPTION_POINTERS exception_pointers = {0};
+  EXCEPTION_POINTERS exception_pointers = {};
 
   // This is logically const, but EXCEPTION_POINTERS does not declare it as
   // const, so we have to cast that away from the argument.
@@ -193,7 +438,7 @@ void CrashpadClient::DumpWithoutCrash(const CONTEXT& context) {
   // some of the top nibble set, so we make sure to pick a value that doesn't,
   // so as to be unlikely to conflict.
   const uint32_t kSimulatedExceptionCode = 0x517a7ed;
-  EXCEPTION_RECORD record = {0};
+  EXCEPTION_RECORD record = {};
   record.ExceptionCode = kSimulatedExceptionCode;
 #if defined(ARCH_CPU_64_BITS)
   record.ExceptionAddress = reinterpret_cast<void*>(context.Rip);
@@ -207,11 +452,16 @@ void CrashpadClient::DumpWithoutCrash(const CONTEXT& context) {
   g_non_crash_exception_information.exception_pointers =
       reinterpret_cast<crashpad::WinVMAddress>(&exception_pointers);
 
-  bool set_event_result = SetEvent(g_signal_non_crash_dump);
+  bool set_event_result = !!SetEvent(g_signal_non_crash_dump);
   PLOG_IF(ERROR, !set_event_result) << "SetEvent";
 
   DWORD wfso_result = WaitForSingleObject(g_non_crash_dump_done, INFINITE);
   PLOG_IF(ERROR, wfso_result != WAIT_OBJECT_0) << "WaitForSingleObject";
+}
+
+// static
+void CrashpadClient::DumpAndCrash(EXCEPTION_POINTERS* exception_pointers) {
+  UnhandledExceptionHandler(exception_pointers);
 }
 
 }  // namespace crashpad

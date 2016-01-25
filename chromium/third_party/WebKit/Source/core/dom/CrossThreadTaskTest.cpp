@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/CrossThreadTask.h"
 
 #include "platform/heap/Handle.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -37,7 +36,7 @@ protected:
     }
     void TearDown() override
     {
-        Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+        Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
         ASSERT_EQ(0, GCObject::s_counter);
     }
 };
@@ -46,7 +45,7 @@ TEST_F(CrossThreadTaskTest, CreateForGarbageCollectedMethod)
 {
     OwnPtr<ExecutionContextTask> task1 = createCrossThreadTask(&GCObject::run, new GCObject, new GCObject);
     OwnPtr<ExecutionContextTask> task2 = createCrossThreadTask(&GCObject::run, RawPtr<GCObject>(new GCObject), RawPtr<GCObject>(new GCObject));
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+    Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
     EXPECT_EQ(4, GCObject::s_counter);
 }
 
@@ -54,7 +53,7 @@ TEST_F(CrossThreadTaskTest, CreateForFunctionWithGarbageCollected)
 {
     OwnPtr<ExecutionContextTask> task1 = createCrossThreadTask(&functionWithGarbageCollected, new GCObject);
     OwnPtr<ExecutionContextTask> task2 = createCrossThreadTask(&functionWithGarbageCollected, RawPtr<GCObject>(new GCObject));
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+    Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
     EXPECT_EQ(2, GCObject::s_counter);
 }
 
@@ -62,7 +61,7 @@ TEST_F(CrossThreadTaskTest, CreateForFunctionWithExecutionContext)
 {
     OwnPtr<ExecutionContextTask> task1 = createCrossThreadTask(&functionWithExecutionContext, new GCObject);
     OwnPtr<ExecutionContextTask> task2 = createCrossThreadTask(&functionWithExecutionContext, RawPtr<GCObject>(new GCObject));
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+    Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
     EXPECT_EQ(2, GCObject::s_counter);
 }
 

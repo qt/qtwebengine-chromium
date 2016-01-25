@@ -21,7 +21,6 @@
  * 02110-1301  USA
  */
 
-#include "config.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -32,6 +31,7 @@
 #include "core/css/CSSValuePool.h"
 #include "core/css/ComputedStyleCSSValueMapping.h"
 #include "core/css/parser/CSSParser.h"
+#include "core/css/parser/CSSVariableParser.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -240,6 +240,8 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyGridTemplateRows,
     CSSPropertyGridRowEnd,
     CSSPropertyGridRowStart,
+    CSSPropertyGridColumnGap,
+    CSSPropertyGridRowGap,
     CSSPropertyWebkitHighlight,
     CSSPropertyWebkitHyphenateCharacter,
     CSSPropertyWebkitLineBreak,
@@ -322,10 +324,9 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyDominantBaseline,
     CSSPropertyTextAnchor,
     CSSPropertyWritingMode,
-    CSSPropertyGlyphOrientationHorizontal,
-    CSSPropertyGlyphOrientationVertical,
     CSSPropertyVectorEffect,
     CSSPropertyPaintOrder,
+    CSSPropertyD,
     CSSPropertyCx,
     CSSPropertyCy,
     CSSPropertyX,
@@ -528,6 +529,22 @@ Node* CSSComputedStyleDeclaration::styledNode() const
     return m_node.get();
 }
 
+PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(AtomicString customPropertyName) const
+{
+    const ComputedStyle* style = computeComputedStyle();
+    if (!style)
+        return nullptr;
+    return ComputedStyleCSSValueMapping::get(customPropertyName, *style);
+}
+
+const HashMap<AtomicString, RefPtr<CSSVariableData>>* CSSComputedStyleDeclaration::getVariables() const
+{
+    const ComputedStyle* style = computeComputedStyle();
+    if (!style)
+        return nullptr;
+    return ComputedStyleCSSValueMapping::getVariables(*style);
+}
+
 PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropertyID propertyID) const
 {
     Node* styledNode = this->styledNode();
@@ -634,8 +651,14 @@ CSSRule* CSSComputedStyleDeclaration::parentRule() const
 String CSSComputedStyleDeclaration::getPropertyValue(const String& propertyName)
 {
     CSSPropertyID propertyID = cssPropertyID(propertyName);
-    if (!propertyID)
+    if (!propertyID) {
+        if (RuntimeEnabledFeatures::cssVariablesEnabled() && CSSVariableParser::isValidVariableName(propertyName)) {
+            RefPtrWillBeRawPtr<CSSValue> value = getPropertyCSSValue(AtomicString(propertyName));
+            if (value)
+                return value->cssText();
+        }
         return String();
+    }
     ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID));
     return getPropertyValue(propertyID);
 }
@@ -677,8 +700,9 @@ String CSSComputedStyleDeclaration::getPropertyValueInternal(CSSPropertyID prope
     return getPropertyValue(propertyID);
 }
 
-void CSSComputedStyleDeclaration::setPropertyInternal(CSSPropertyID id, const String&, bool, ExceptionState& exceptionState)
+void CSSComputedStyleDeclaration::setPropertyInternal(CSSPropertyID id, const String&, const String&, bool, ExceptionState& exceptionState)
 {
+    // TODO(leviw): This code is currently unreachable, but shouldn't be.
     exceptionState.throwDOMException(NoModificationAllowedError, "These styles are computed, and therefore the '" + getPropertyNameString(id) + "' property is read-only.");
 }
 

@@ -20,7 +20,6 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include "config.h"
 #include "modules/mediastream/NavigatorMediaStream.h"
 
 #include "bindings/core/v8/Dictionary.h"
@@ -32,6 +31,7 @@
 #include "core/frame/Settings.h"
 #include "core/page/Page.h"
 #include "modules/mediastream/MediaDevicesRequest.h"
+#include "modules/mediastream/MediaErrorState.h"
 #include "modules/mediastream/MediaStreamConstraints.h"
 #include "modules/mediastream/NavigatorUserMediaErrorCallback.h"
 #include "modules/mediastream/NavigatorUserMediaSuccessCallback.h"
@@ -51,9 +51,15 @@ void NavigatorMediaStream::webkitGetUserMedia(Navigator& navigator, const MediaS
         return;
     }
 
-    UserMediaRequest* request = UserMediaRequest::create(navigator.frame()->document(), userMedia, options, successCallback, errorCallback, exceptionState);
+    MediaErrorState errorState;
+    UserMediaRequest* request = UserMediaRequest::create(navigator.frame()->document(), userMedia, options, successCallback, errorCallback, errorState);
     if (!request) {
-        ASSERT(exceptionState.hadException());
+        ASSERT(errorState.hadException());
+        if (errorState.canGenerateException()) {
+            errorState.raiseException(exceptionState);
+        } else {
+            errorCallback->handleEvent(errorState.createError());
+        }
         return;
     }
 

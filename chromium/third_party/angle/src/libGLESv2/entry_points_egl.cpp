@@ -41,7 +41,7 @@ EGLDisplay EGLAPIENTRY GetDisplay(EGLNativeDisplayType display_id)
 {
     EVENT("(EGLNativeDisplayType display_id = 0x%0.8p)", display_id);
 
-    return Display::getDisplay(display_id, AttributeMap());
+    return Display::GetDisplayFromAttribs(reinterpret_cast<void *>(display_id), AttributeMap());
 }
 
 EGLBoolean EGLAPIENTRY Initialize(EGLDisplay dpy, EGLint *major, EGLint *minor)
@@ -49,13 +49,12 @@ EGLBoolean EGLAPIENTRY Initialize(EGLDisplay dpy, EGLint *major, EGLint *minor)
     EVENT("(EGLDisplay dpy = 0x%0.8p, EGLint *major = 0x%0.8p, EGLint *minor = 0x%0.8p)",
           dpy, major, minor);
 
-    if (dpy == EGL_NO_DISPLAY)
+    Display *display = static_cast<Display *>(dpy);
+    if (dpy == EGL_NO_DISPLAY || !Display::isValidDisplay(display))
     {
         SetGlobalError(Error(EGL_BAD_DISPLAY));
         return EGL_FALSE;
     }
-
-    Display *display = static_cast<Display*>(dpy);
 
     Error error = display->initialize();
     if (error.isError())
@@ -75,13 +74,13 @@ EGLBoolean EGLAPIENTRY Terminate(EGLDisplay dpy)
 {
     EVENT("(EGLDisplay dpy = 0x%0.8p)", dpy);
 
-    if (dpy == EGL_NO_DISPLAY)
+    Display *display = static_cast<Display *>(dpy);
+    if (dpy == EGL_NO_DISPLAY || !Display::isValidDisplay(display))
     {
         SetGlobalError(Error(EGL_BAD_DISPLAY));
         return EGL_FALSE;
     }
 
-    Display *display = static_cast<Display*>(dpy);
     gl::Context *context = GetGlobalContext();
 
     if (display->isValidContext(context))
@@ -427,6 +426,37 @@ EGLBoolean EGLAPIENTRY QuerySurface(EGLDisplay dpy, EGLSurface surface, EGLint a
         }
         *value = eglSurface->isFixedSize();
         break;
+      case EGL_FLEXIBLE_SURFACE_COMPATIBILITY_SUPPORTED_ANGLE:
+          if (!display->getExtensions().flexibleSurfaceCompatibility)
+          {
+              SetGlobalError(
+                  Error(EGL_BAD_ATTRIBUTE,
+                        "EGL_FLEXIBLE_SURFACE_COMPATIBILITY_SUPPORTED_ANGLE cannot be used without "
+                        "EGL_ANGLE_flexible_surface_compatibility support."));
+              return EGL_FALSE;
+          }
+          *value = eglSurface->flexibleSurfaceCompatibilityRequested();
+          break;
+      case EGL_SURFACE_ORIENTATION_ANGLE:
+          if (!display->getExtensions().surfaceOrientation)
+          {
+              SetGlobalError(Error(EGL_BAD_ATTRIBUTE,
+                                   "EGL_SURFACE_ORIENTATION_ANGLE cannot be queried without "
+                                   "EGL_ANGLE_surface_orientation support."));
+              return EGL_FALSE;
+          }
+          *value = eglSurface->getOrientation();
+          break;
+      case EGL_DIRECT_COMPOSITION_ANGLE:
+          if (!display->getExtensions().directComposition)
+          {
+              SetGlobalError(Error(EGL_BAD_ATTRIBUTE,
+                                   "EGL_DIRECT_COMPOSITION_ANGLE cannot be used without "
+                                   "EGL_ANGLE_direct_composition support."));
+              return EGL_FALSE;
+          }
+          *value = eglSurface->directComposition();
+          break;
       default:
         SetGlobalError(Error(EGL_BAD_ATTRIBUTE));
         return EGL_FALSE;
@@ -505,15 +535,30 @@ EGLBoolean EGLAPIENTRY MakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface r
     Display *display = static_cast<Display*>(dpy);
     gl::Context *context = static_cast<gl::Context*>(ctx);
 
-    bool noContext = (ctx == EGL_NO_CONTEXT);
-    bool noSurface = (draw == EGL_NO_SURFACE || read == EGL_NO_SURFACE);
-    if (noContext != noSurface)
+    // If ctx is EGL_NO_CONTEXT and either draw or read are not EGL_NO_SURFACE, an EGL_BAD_MATCH
+    // error is generated.
+    if (ctx == EGL_NO_CONTEXT && (draw != EGL_NO_SURFACE || read != EGL_NO_SURFACE))
     {
         SetGlobalError(Error(EGL_BAD_MATCH));
         return EGL_FALSE;
     }
 
-    if (dpy == EGL_NO_DISPLAY)
+    if (ctx != EGL_NO_CONTEXT && draw == EGL_NO_SURFACE && read == EGL_NO_SURFACE)
+    {
+        SetGlobalError(Error(EGL_BAD_MATCH));
+        return EGL_FALSE;
+    }
+
+    // If either of draw or read is a valid surface and the other is EGL_NO_SURFACE, an
+    // EGL_BAD_MATCH error is generated.
+    if ((read == EGL_NO_SURFACE) != (draw == EGL_NO_SURFACE))
+    {
+        SetGlobalError(Error(
+            EGL_BAD_MATCH, "read and draw must both be valid surfaces, or both be EGL_NO_SURFACE"));
+        return EGL_FALSE;
+    }
+
+    if (dpy == EGL_NO_DISPLAY || !Display::isValidDisplay(display))
     {
         SetGlobalError(Error(EGL_BAD_DISPLAY, "'dpy' not a valid EGLDisplay handle"));
         return EGL_FALSE;
@@ -575,7 +620,9 @@ EGLBoolean EGLAPIENTRY MakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface r
 
     if (readSurface)
     {
-        Error readCompatError = ValidateCompatibleConfigs(readSurface->getConfig(), context->getConfig(), readSurface->getType());
+        Error readCompatError =
+            ValidateCompatibleConfigs(display, readSurface->getConfig(), readSurface,
+                                      context->getConfig(), readSurface->getType());
         if (readCompatError.isError())
         {
             SetGlobalError(readCompatError);
@@ -589,7 +636,9 @@ EGLBoolean EGLAPIENTRY MakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface r
 
         if (drawSurface)
         {
-            Error drawCompatError = ValidateCompatibleConfigs(drawSurface->getConfig(), context->getConfig(), drawSurface->getType());
+            Error drawCompatError =
+                ValidateCompatibleConfigs(display, drawSurface->getConfig(), drawSurface,
+                                          context->getConfig(), drawSurface->getType());
             if (drawCompatError.isError())
             {
                 SetGlobalError(drawCompatError);
@@ -1341,6 +1390,25 @@ __eglMustCastToProperFunctionPointerType EGLAPIENTRY GetProcAddress(const char *
         INSERT_PROC_ADDRESS(gl, EGLImageTargetTexture2DOES);
         INSERT_PROC_ADDRESS(gl, EGLImageTargetRenderbufferStorageOES);
 
+        // GL_OES_vertex_array_object
+        INSERT_PROC_ADDRESS(gl, BindVertexArrayOES);
+        INSERT_PROC_ADDRESS(gl, DeleteVertexArraysOES);
+        INSERT_PROC_ADDRESS(gl, GenVertexArraysOES);
+        INSERT_PROC_ADDRESS(gl, IsVertexArrayOES);
+
+        // GL_KHR_debug
+        INSERT_PROC_ADDRESS(gl, DebugMessageControlKHR);
+        INSERT_PROC_ADDRESS(gl, DebugMessageInsertKHR);
+        INSERT_PROC_ADDRESS(gl, DebugMessageCallbackKHR);
+        INSERT_PROC_ADDRESS(gl, GetDebugMessageLogKHR);
+        INSERT_PROC_ADDRESS(gl, PushDebugGroupKHR);
+        INSERT_PROC_ADDRESS(gl, PopDebugGroupKHR);
+        INSERT_PROC_ADDRESS(gl, ObjectLabelKHR);
+        INSERT_PROC_ADDRESS(gl, GetObjectLabelKHR);
+        INSERT_PROC_ADDRESS(gl, ObjectPtrLabelKHR);
+        INSERT_PROC_ADDRESS(gl, GetObjectPtrLabelKHR);
+        INSERT_PROC_ADDRESS(gl, GetPointervKHR);
+
         // GLES3 core
         INSERT_PROC_ADDRESS(gl, ReadBuffer);
         INSERT_PROC_ADDRESS(gl, DrawRangeElements);
@@ -1519,6 +1587,10 @@ __eglMustCastToProperFunctionPointerType EGLAPIENTRY GetProcAddress(const char *
         // EGL_KHR_image_base/EGL_KHR_image
         INSERT_PROC_ADDRESS(egl, CreateImageKHR);
         INSERT_PROC_ADDRESS(egl, DestroyImageKHR);
+
+        // EGL_EXT_device_creation
+        INSERT_PROC_ADDRESS(egl, CreateDeviceANGLE);
+        INSERT_PROC_ADDRESS(egl, ReleaseDeviceANGLE);
 
 #undef INSERT_PROC_ADDRESS
         return map;

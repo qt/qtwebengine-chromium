@@ -639,7 +639,23 @@ std::string ParseUniformName(const std::string &name, size_t *outSubscript)
     return name.substr(0, open);
 }
 
+unsigned int ParseAndStripArrayIndex(std::string *name)
+{
+    unsigned int subscript = GL_INVALID_INDEX;
+
+    // Strip any trailing array operator and retrieve the subscript
+    size_t open  = name->find_last_of('[');
+    size_t close = name->find_last_of(']');
+    if (open != std::string::npos && close == name->length() - 1)
+    {
+        subscript = atoi(name->c_str() + open + 1);
+        name->erase(open);
+    }
+
+    return subscript;
 }
+
+}  // namespace gl
 
 namespace egl
 {
@@ -781,32 +797,7 @@ void writeFile(const char* path, const void* content, size_t size)
 // to run, the function returns immediately, and the thread continues execution.
 void ScheduleYield()
 {
-#if defined(ANGLE_ENABLE_WINDOWS_STORE)
-    // This implementation of Sleep exists because it is not available prior to Update 4.
-    static HANDLE singletonEvent = nullptr;
-    HANDLE sleepEvent = singletonEvent;
-    if (!sleepEvent)
-    {
-        sleepEvent = CreateEventEx(nullptr, nullptr, CREATE_EVENT_MANUAL_RESET, EVENT_ALL_ACCESS);
-
-        if (!sleepEvent)
-            return;
-
-        HANDLE previousEvent = InterlockedCompareExchangePointerRelease(&singletonEvent, sleepEvent, nullptr);
-
-        if (previousEvent)
-        {
-            // Back out if multiple threads try to demand create at the same time.
-            CloseHandle(sleepEvent);
-            sleepEvent = previousEvent;
-        }
-    }
-
-    // Emulate sleep by waiting with timeout on an event that is never signalled.
-    WaitForSingleObjectEx(sleepEvent, 0, false);
-#else
     Sleep(0);
-#endif
 }
 
 #endif

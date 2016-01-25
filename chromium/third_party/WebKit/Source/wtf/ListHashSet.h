@@ -22,9 +22,9 @@
 #ifndef WTF_ListHashSet_h
 #define WTF_ListHashSet_h
 
-#include "wtf/DefaultAllocator.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/PartitionAllocator.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WTF {
@@ -226,8 +226,8 @@ public:
 
 // This allocator is only used for non-Heap ListHashSets.
 template <typename ValueArg, size_t inlineCapacity>
-struct ListHashSetAllocator : public DefaultAllocator {
-    typedef DefaultAllocator TableAllocator;
+struct ListHashSetAllocator : public PartitionAllocator {
+    typedef PartitionAllocator TableAllocator;
     typedef ListHashSetNode<ValueArg, ListHashSetAllocator> Node;
     typedef ListHashSetNodeBase<ValueArg> NodeBase;
 
@@ -281,7 +281,7 @@ struct ListHashSetAllocator : public DefaultAllocator {
         Node* result = m_freeList;
 
         if (!result)
-            return static_cast<Node*>(fastMalloc(sizeof(NodeBase)));
+            return static_cast<Node*>(WTF::Partitions::fastMalloc(sizeof(NodeBase), WTF_HEAP_PROFILER_TYPE_NAME(Node)));
 
         ASSERT(!result->m_isAllocated);
 
@@ -313,7 +313,7 @@ struct ListHashSetAllocator : public DefaultAllocator {
             return;
         }
 
-        fastFree(node);
+        WTF::Partitions::fastFree(node);
     }
 
     bool inPool(Node* node)
@@ -321,7 +321,7 @@ struct ListHashSetAllocator : public DefaultAllocator {
         return node >= pool() && node < pastPool();
     }
 
-    static void traceValue(typename DefaultAllocator::Visitor* visitor, Node* node) {}
+    static void traceValue(typename PartitionAllocator::Visitor* visitor, Node* node) {}
 
 private:
     Node* pool() { return reinterpret_cast_ptr<Node*>(m_pool.buffer); }

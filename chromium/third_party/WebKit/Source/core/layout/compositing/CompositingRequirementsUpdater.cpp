@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/compositing/CompositingRequirementsUpdater.h"
 
 #include "core/layout/LayoutView.h"
@@ -166,8 +165,11 @@ static CompositingReasons subtreeReasonsForCompositing(PaintLayer* layer, bool h
 
         // FIXME: This should move into CompositingReasonFinder::potentialCompositingReasonsFromStyle, but
         // theres a poor interaction with LayoutTextControlSingleLine, which sets this hasOverflowClip directly.
-        if (layer->layoutObject()->hasClipOrOverflowClip())
+        if (layer->layoutObject()->hasClipRelatedProperty())
             subtreeReasons |= CompositingReasonClipsCompositingDescendants;
+
+        if (layer->layoutObject()->style()->position() == FixedPosition)
+            subtreeReasons |= CompositingReasonPositionFixedWithCompositedDescendants;
     }
 
     // A layer with preserve-3d or perspective only needs to be composited if there are descendant layers that
@@ -250,7 +252,7 @@ void CompositingRequirementsUpdater::updateRecursive(PaintLayer* ancestorLayer, 
         }
     }
 
-    if (reasonsToComposite & CompositingReasonOverflowScrollingTouch)
+    if ((reasonsToComposite & CompositingReasonOverflowScrollingTouch) && !layer->isRootLayer())
         currentRecursionData.m_hasCompositedScrollingAncestor = true;
 
     // Next, accumulate reasons related to overlap.

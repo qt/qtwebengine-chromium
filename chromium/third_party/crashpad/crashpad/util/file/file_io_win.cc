@@ -37,12 +37,18 @@ namespace crashpad {
 
 namespace {
 
-FileHandle LoggingOpenFileForOutput(DWORD access,
-                                    const base::FilePath& path,
-                                    FileWriteMode mode,
-                                    FilePermissions permissions) {
+FileHandle OpenFileForOutput(DWORD access,
+                             const base::FilePath& path,
+                             FileWriteMode mode,
+                             FilePermissions permissions) {
+  DCHECK(access & GENERIC_WRITE);
+  DCHECK_EQ(access & ~(GENERIC_READ | GENERIC_WRITE), 0u);
+
   DWORD disposition = 0;
   switch (mode) {
+    case FileWriteMode::kReuseOrFail:
+      disposition = OPEN_EXISTING;
+      break;
     case FileWriteMode::kReuseOrCreate:
       disposition = OPEN_ALWAYS;
       break;
@@ -53,23 +59,20 @@ FileHandle LoggingOpenFileForOutput(DWORD access,
       disposition = CREATE_NEW;
       break;
   }
-  HANDLE file = CreateFile(path.value().c_str(),
-                           access,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           nullptr,
-                           disposition,
-                           FILE_ATTRIBUTE_NORMAL,
-                           nullptr);
-  PLOG_IF(ERROR, file == INVALID_HANDLE_VALUE)
-      << "CreateFile " << base::UTF16ToUTF8(path.value());
-  return file;
+  return CreateFile(path.value().c_str(),
+                    access,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    nullptr,
+                    disposition,
+                    FILE_ATTRIBUTE_NORMAL,
+                    nullptr);
 }
 
 }  // namespace
 
 // TODO(scottmg): Handle > DWORD sized writes if necessary.
 
-ssize_t ReadFile(FileHandle file, void* buffer, size_t size) {
+FileOperationResult ReadFile(FileHandle file, void* buffer, size_t size) {
   DCHECK(!IsSocketHandle(file));
   DWORD size_dword = base::checked_cast<DWORD>(size);
   DWORD total_read = 0;
@@ -100,7 +103,9 @@ ssize_t ReadFile(FileHandle file, void* buffer, size_t size) {
   return total_read;
 }
 
-ssize_t WriteFile(FileHandle file, const void* buffer, size_t size) {
+FileOperationResult WriteFile(FileHandle file,
+                              const void* buffer,
+                              size_t size) {
   // TODO(scottmg): This might need to handle the limit for pipes across a
   // network in the future.
   DWORD size_dword = base::checked_cast<DWORD>(size);
@@ -112,14 +117,31 @@ ssize_t WriteFile(FileHandle file, const void* buffer, size_t size) {
   return bytes_written;
 }
 
+FileHandle OpenFileForRead(const base::FilePath& path) {
+  return CreateFile(path.value().c_str(),
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    nullptr,
+                    OPEN_EXISTING,
+                    0,
+                    nullptr);
+}
+
+FileHandle OpenFileForWrite(const base::FilePath& path,
+                            FileWriteMode mode,
+                            FilePermissions permissions) {
+  return OpenFileForOutput(GENERIC_WRITE, path, mode, permissions);
+}
+
+FileHandle OpenFileForReadAndWrite(const base::FilePath& path,
+                                   FileWriteMode mode,
+                                   FilePermissions permissions) {
+  return OpenFileForOutput(
+      GENERIC_READ | GENERIC_WRITE, path, mode, permissions);
+}
+
 FileHandle LoggingOpenFileForRead(const base::FilePath& path) {
-  HANDLE file = CreateFile(path.value().c_str(),
-                           GENERIC_READ,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           nullptr,
-                           OPEN_EXISTING,
-                           0,
-                           nullptr);
+  FileHandle file = OpenFileForRead(path);
   PLOG_IF(ERROR, file == INVALID_HANDLE_VALUE)
       << "CreateFile " << base::UTF16ToUTF8(path.value());
   return file;
@@ -128,14 +150,19 @@ FileHandle LoggingOpenFileForRead(const base::FilePath& path) {
 FileHandle LoggingOpenFileForWrite(const base::FilePath& path,
                                    FileWriteMode mode,
                                    FilePermissions permissions) {
-  return LoggingOpenFileForOutput(GENERIC_WRITE, path, mode, permissions);
+  FileHandle file = OpenFileForWrite(path, mode, permissions);
+  PLOG_IF(ERROR, file == INVALID_HANDLE_VALUE)
+      << "CreateFile " << base::UTF16ToUTF8(path.value());
+  return file;
 }
 
 FileHandle LoggingOpenFileForReadAndWrite(const base::FilePath& path,
                                           FileWriteMode mode,
                                           FilePermissions permissions) {
-  return LoggingOpenFileForOutput(
-      GENERIC_READ | GENERIC_WRITE, path, mode, permissions);
+  FileHandle file = OpenFileForReadAndWrite(path, mode, permissions);
+  PLOG_IF(ERROR, file == INVALID_HANDLE_VALUE)
+      << "CreateFile " << base::UTF16ToUTF8(path.value());
+  return file;
 }
 
 bool LoggingLockFile(FileHandle file, FileLocking locking) {
@@ -206,7 +233,7 @@ bool LoggingTruncateFile(FileHandle file) {
 bool LoggingCloseFile(FileHandle file) {
   BOOL rv = CloseHandle(file);
   PLOG_IF(ERROR, !rv) << "CloseHandle";
-  return rv;
+  return !!rv;
 }
 
 }  // namespace crashpad

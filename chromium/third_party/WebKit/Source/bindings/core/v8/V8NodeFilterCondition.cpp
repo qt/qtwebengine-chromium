@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8NodeFilterCondition.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -36,6 +35,7 @@
 #include "bindings/core/v8/V8Node.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeFilter.h"
+#include "core/frame/UseCounter.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -47,7 +47,7 @@ V8NodeFilterCondition::V8NodeFilterCondition(v8::Local<v8::Value> filter, v8::Lo
     // We'll make sure m_filter is either usable by acceptNode or empty.
     // (See the fast/dom/node-filter-gc test for a case where 'empty' happens.)
     if (!filter.IsEmpty() && filter->IsObject()) {
-        V8HiddenValue::setHiddenValue(scriptState->isolate(), owner, V8HiddenValue::condition(scriptState->isolate()), filter);
+        V8HiddenValue::setHiddenValue(scriptState, owner, V8HiddenValue::condition(scriptState->isolate()), filter);
         m_filter.set(scriptState->isolate(), filter);
         m_filter.setWeak(this, &setWeakCallback);
     }
@@ -68,11 +68,12 @@ unsigned V8NodeFilterCondition::acceptNode(Node* node, ExceptionState& exception
     if (filter.IsEmpty())
         return NodeFilter::FILTER_ACCEPT;
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
 
     v8::Local<v8::Function> callback;
     v8::Local<v8::Value> receiver;
     if (filter->IsFunction()) {
+        UseCounter::countIfNotPrivateScript(isolate, currentExecutionContext(isolate), UseCounter::NodeFilterIsFunction);
         callback = v8::Local<v8::Function>::Cast(filter);
         receiver = v8::Undefined(isolate);
     } else {
@@ -86,6 +87,7 @@ unsigned V8NodeFilterCondition::acceptNode(Node* node, ExceptionState& exception
             exceptionState.throwTypeError("NodeFilter object does not have an acceptNode function");
             return NodeFilter::FILTER_REJECT;
         }
+        UseCounter::countIfNotPrivateScript(isolate, currentExecutionContext(isolate), UseCounter::NodeFilterIsObject);
         callback = v8::Local<v8::Function>::Cast(value);
         receiver = filter;
     }

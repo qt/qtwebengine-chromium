@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXMenuListPopup.h"
 
 #include "core/html/HTMLSelectElement.h"
@@ -102,6 +101,7 @@ bool AXMenuListPopup::press() const
 
 void AXMenuListPopup::addChildren()
 {
+    ASSERT(!isDetached());
     if (!m_parent)
         return;
 

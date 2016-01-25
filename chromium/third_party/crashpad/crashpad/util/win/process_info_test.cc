@@ -14,18 +14,26 @@
 
 #include "util/win/process_info.h"
 
-#include <imagehlp.h>
+#include <dbghelp.h>
 #include <intrin.h>
 #include <wchar.h>
 
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "gtest/gtest.h"
+#include "test/errors.h"
 #include "test/paths.h"
+#include "test/scoped_temp_dir.h"
 #include "test/win/child_launcher.h"
 #include "util/file/file_io.h"
+#include "util/misc/random_string.h"
 #include "util/misc/uuid.h"
+#include "util/win/command_line.h"
+#include "util/win/get_function.h"
+#include "util/win/handle.h"
 #include "util/win/scoped_handle.h"
 
 namespace crashpad {
@@ -34,19 +42,9 @@ namespace {
 
 const wchar_t kNtdllName[] = L"\\ntdll.dll";
 
-time_t GetTimestampForModule(HMODULE module) {
-  char filename[MAX_PATH];
-  // `char` and GetModuleFileNameA because ImageLoad is ANSI only.
-  if (!GetModuleFileNameA(module, filename, arraysize(filename)))
-    return 0;
-  LOADED_IMAGE* loaded_image = ImageLoad(filename, nullptr);
-  return loaded_image->FileHeader->FileHeader.TimeDateStamp;
-}
-
 bool IsProcessWow64(HANDLE process_handle) {
-  static decltype(IsWow64Process)* is_wow64_process =
-      reinterpret_cast<decltype(IsWow64Process)*>(
-          GetProcAddress(LoadLibrary(L"kernel32.dll"), "IsWow64Process"));
+  static const auto is_wow64_process =
+      GET_FUNCTION(L"kernel32.dll", ::IsWow64Process);
   if (!is_wow64_process)
     return false;
   BOOL is_wow64;
@@ -54,22 +52,22 @@ bool IsProcessWow64(HANDLE process_handle) {
     PLOG(ERROR) << "IsWow64Process";
     return false;
   }
-  return is_wow64;
+  return !!is_wow64;
 }
 
 void VerifyAddressInInCodePage(const ProcessInfo& process_info,
                                WinVMAddress code_address) {
   // Make sure the child code address is an code page address with the right
   // information.
-  const std::vector<ProcessInfo::MemoryInfo>& memory_info =
-      process_info.MemoryInformation();
+  const ProcessInfo::MemoryBasicInformation64Vector& memory_info =
+      process_info.MemoryInfo();
   bool found_region = false;
   for (const auto& mi : memory_info) {
-    if (mi.base_address <= code_address &&
-        mi.base_address + mi.region_size > code_address) {
-      EXPECT_EQ(MEM_COMMIT, mi.state);
-      EXPECT_EQ(PAGE_EXECUTE_READ, mi.protect);
-      EXPECT_EQ(MEM_IMAGE, mi.type);
+    if (mi.BaseAddress <= code_address &&
+        mi.BaseAddress + mi.RegionSize > code_address) {
+      EXPECT_EQ(MEM_COMMIT, mi.State);
+      EXPECT_EQ(PAGE_EXECUTE_READ, mi.Protect);
+      EXPECT_EQ(MEM_IMAGE, mi.Type);
       EXPECT_FALSE(found_region);
       found_region = true;
     }
@@ -110,16 +108,16 @@ TEST(ProcessInfo, Self) {
       kNtdllName,
       modules[1].name.substr(modules[1].name.size() - wcslen(kNtdllName)));
 
-  EXPECT_EQ(modules[0].dll_base,
-            reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr)));
-  EXPECT_EQ(modules[1].dll_base,
-            reinterpret_cast<uintptr_t>(GetModuleHandle(L"ntdll.dll")));
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr)),
+            modules[0].dll_base);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(GetModuleHandle(L"ntdll.dll")),
+            modules[1].dll_base);
 
   EXPECT_GT(modules[0].size, 0);
   EXPECT_GT(modules[1].size, 0);
 
-  EXPECT_EQ(modules[0].timestamp,
-            GetTimestampForModule(GetModuleHandle(nullptr)));
+  EXPECT_EQ(GetTimestampForLoadedLibrary(GetModuleHandle(nullptr)),
+            modules[0].timestamp);
   // System modules are forced to particular stamps and the file header values
   // don't match the on-disk times. Just make sure we got some data here.
   EXPECT_GT(modules[1].timestamp, 0);
@@ -201,13 +199,13 @@ TEST(ProcessInfo, OtherProcessWOW64) {
 #endif  // ARCH_CPU_64_BITS
 
 TEST(ProcessInfo, AccessibleRangesNone) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_FREE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(2, 4),
@@ -217,13 +215,13 @@ TEST(ProcessInfo, AccessibleRangesNone) {
 }
 
 TEST(ProcessInfo, AccessibleRangesOneInside) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(2, 4),
@@ -235,18 +233,18 @@ TEST(ProcessInfo, AccessibleRangesOneInside) {
 }
 
 TEST(ProcessInfo, AccessibleRangesOneTruncatedSize) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 20;
   mbi.State = MEM_FREE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -258,18 +256,18 @@ TEST(ProcessInfo, AccessibleRangesOneTruncatedSize) {
 }
 
 TEST(ProcessInfo, AccessibleRangesOneMovedStart) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_FREE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 20;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -281,18 +279,18 @@ TEST(ProcessInfo, AccessibleRangesOneMovedStart) {
 }
 
 TEST(ProcessInfo, ReserveIsInaccessible) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_RESERVE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 20;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -304,20 +302,20 @@ TEST(ProcessInfo, ReserveIsInaccessible) {
 }
 
 TEST(ProcessInfo, PageGuardIsInaccessible) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
   mbi.Protect = PAGE_GUARD;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 20;
   mbi.State = MEM_COMMIT;
   mbi.Protect = 0;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -329,20 +327,20 @@ TEST(ProcessInfo, PageGuardIsInaccessible) {
 }
 
 TEST(ProcessInfo, PageNoAccessIsInaccessible) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
   mbi.Protect = PAGE_NOACCESS;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 20;
   mbi.State = MEM_COMMIT;
   mbi.Protect = 0;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -354,23 +352,23 @@ TEST(ProcessInfo, PageNoAccessIsInaccessible) {
 }
 
 TEST(ProcessInfo, AccessibleRangesCoalesced) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_FREE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 2;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(12);
+  mbi.BaseAddress = 12;
   mbi.RegionSize = 5;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(11, 4),
@@ -382,23 +380,23 @@ TEST(ProcessInfo, AccessibleRangesCoalesced) {
 }
 
 TEST(ProcessInfo, AccessibleRangesMiddleUnavailable) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
   mbi.BaseAddress = 0;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 5;
   mbi.State = MEM_FREE;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
-  mbi.BaseAddress = reinterpret_cast<void*>(15);
+  mbi.BaseAddress = 15;
   mbi.RegionSize = 100;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 45),
@@ -412,13 +410,13 @@ TEST(ProcessInfo, AccessibleRangesMiddleUnavailable) {
 }
 
 TEST(ProcessInfo, RequestedBeforeMap) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(CheckedRange<WinVMAddress, WinVMSize>(5, 10),
@@ -430,13 +428,13 @@ TEST(ProcessInfo, RequestedBeforeMap) {
 }
 
 TEST(ProcessInfo, RequestedAfterMap) {
-  std::vector<ProcessInfo::MemoryInfo> memory_info;
-  MEMORY_BASIC_INFORMATION mbi = {0};
+  ProcessInfo::MemoryBasicInformation64Vector memory_info;
+  MEMORY_BASIC_INFORMATION64 mbi = {0};
 
-  mbi.BaseAddress = reinterpret_cast<void*>(10);
+  mbi.BaseAddress = 10;
   mbi.RegionSize = 10;
   mbi.State = MEM_COMMIT;
-  memory_info.push_back(ProcessInfo::MemoryInfo(mbi));
+  memory_info.push_back(mbi);
 
   std::vector<CheckedRange<WinVMAddress, WinVMSize>> result =
       GetReadableRangesOfMemoryMap(
@@ -517,6 +515,132 @@ TEST(ProcessInfo, ReadableRanges) {
                                  into.get(),
                                  kBlockSize * 6,
                                  &bytes_read));
+}
+
+struct ScopedRegistryKeyCloseTraits {
+  static HKEY InvalidValue() {
+    return nullptr;
+  }
+  static void Free(HKEY key) {
+    RegCloseKey(key);
+  }
+};
+
+using ScopedRegistryKey =
+    base::ScopedGeneric<HKEY, ScopedRegistryKeyCloseTraits>;
+
+TEST(ProcessInfo, Handles) {
+  ScopedTempDir temp_dir;
+
+  ScopedFileHandle file(LoggingOpenFileForWrite(
+      temp_dir.path().Append(FILE_PATH_LITERAL("test_file")),
+      FileWriteMode::kTruncateOrCreate,
+      FilePermissions::kWorldReadable));
+  ASSERT_TRUE(file.is_valid());
+
+  SECURITY_ATTRIBUTES security_attributes = {0};
+  security_attributes.nLength = sizeof(security_attributes);
+  security_attributes.bInheritHandle = true;
+  ScopedFileHandle inherited_file(CreateFile(
+      temp_dir.path().Append(FILE_PATH_LITERAL("inheritable")).value().c_str(),
+      GENERIC_WRITE,
+      0,
+      &security_attributes,
+      CREATE_NEW,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr));
+  ASSERT_TRUE(inherited_file.is_valid());
+
+  HKEY key;
+  ASSERT_EQ(ERROR_SUCCESS,
+            RegOpenKeyEx(
+                HKEY_CURRENT_USER, L"SOFTWARE\\Microsoft", 0, KEY_READ, &key));
+  ScopedRegistryKey scoped_key(key);
+  ASSERT_TRUE(scoped_key.is_valid());
+
+  std::wstring mapping_name =
+      base::UTF8ToUTF16(base::StringPrintf("Local\\test_mapping_%d_%s",
+                                           GetCurrentProcessId(),
+                                           RandomString().c_str()));
+  ScopedKernelHANDLE mapping(CreateFileMapping(INVALID_HANDLE_VALUE,
+                                               nullptr,
+                                               PAGE_READWRITE,
+                                               0,
+                                               1024,
+                                               mapping_name.c_str()));
+  ASSERT_TRUE(mapping.is_valid()) << ErrorMessage("CreateFileMapping");
+
+  ProcessInfo info;
+  info.Initialize(GetCurrentProcess());
+  bool found_file_handle = false;
+  bool found_inherited_file_handle = false;
+  bool found_key_handle = false;
+  bool found_mapping_handle = false;
+  for (auto handle : info.Handles()) {
+    if (handle.handle == HandleToInt(file.get())) {
+      EXPECT_FALSE(found_file_handle);
+      found_file_handle = true;
+      EXPECT_EQ(L"File", handle.type_name);
+      EXPECT_EQ(1, handle.handle_count);
+      EXPECT_NE(0u, handle.pointer_count);
+      EXPECT_EQ(STANDARD_RIGHTS_READ | STANDARD_RIGHTS_WRITE | SYNCHRONIZE,
+                handle.granted_access & STANDARD_RIGHTS_ALL);
+      EXPECT_EQ(0, handle.attributes);
+    }
+    if (handle.handle == HandleToInt(inherited_file.get())) {
+      EXPECT_FALSE(found_inherited_file_handle);
+      found_inherited_file_handle = true;
+      EXPECT_EQ(L"File", handle.type_name);
+      EXPECT_EQ(1, handle.handle_count);
+      EXPECT_NE(0u, handle.pointer_count);
+      EXPECT_EQ(STANDARD_RIGHTS_READ | STANDARD_RIGHTS_WRITE | SYNCHRONIZE,
+                handle.granted_access & STANDARD_RIGHTS_ALL);
+
+      // OBJ_INHERIT from ntdef.h, but including that conflicts with other
+      // headers.
+      const int kObjInherit = 0x2;
+      EXPECT_EQ(kObjInherit, handle.attributes);
+    }
+    if (handle.handle == HandleToInt(scoped_key.get())) {
+      EXPECT_FALSE(found_key_handle);
+      found_key_handle = true;
+      EXPECT_EQ(L"Key", handle.type_name);
+      EXPECT_EQ(1, handle.handle_count);
+      EXPECT_NE(0u, handle.pointer_count);
+      EXPECT_EQ(STANDARD_RIGHTS_READ,
+                handle.granted_access & STANDARD_RIGHTS_ALL);
+      EXPECT_EQ(0, handle.attributes);
+    }
+    if (handle.handle == HandleToInt(mapping.get())) {
+      EXPECT_FALSE(found_mapping_handle);
+      found_mapping_handle = true;
+      EXPECT_EQ(L"Section", handle.type_name);
+      EXPECT_EQ(1, handle.handle_count);
+      EXPECT_NE(0u, handle.pointer_count);
+      EXPECT_EQ(DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER |
+                    STANDARD_RIGHTS_READ | STANDARD_RIGHTS_WRITE,
+                handle.granted_access & STANDARD_RIGHTS_ALL);
+      EXPECT_EQ(0, handle.attributes);
+    }
+  }
+  EXPECT_TRUE(found_file_handle);
+  EXPECT_TRUE(found_inherited_file_handle);
+  EXPECT_TRUE(found_key_handle);
+  EXPECT_TRUE(found_mapping_handle);
+}
+
+TEST(ProcessInfo, OutOfRangeCheck) {
+  const size_t kAllocationSize = 12345;
+  scoped_ptr<char[]> safe_memory(new char[kAllocationSize]);
+
+  ProcessInfo info;
+  info.Initialize(GetCurrentProcess());
+
+  EXPECT_TRUE(
+      info.LoggingRangeIsFullyReadable(CheckedRange<WinVMAddress, WinVMSize>(
+          reinterpret_cast<WinVMAddress>(safe_memory.get()), kAllocationSize)));
+  EXPECT_FALSE(info.LoggingRangeIsFullyReadable(
+      CheckedRange<WinVMAddress, WinVMSize>(0, 1024)));
 }
 
 }  // namespace

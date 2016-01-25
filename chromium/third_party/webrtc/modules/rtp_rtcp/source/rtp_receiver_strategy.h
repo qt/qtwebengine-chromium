@@ -12,10 +12,10 @@
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_RECEIVER_STRATEGY_H_
 
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -95,7 +95,7 @@ class RTPReceiverStrategy {
   // Note: Implementations may call the callback for other reasons than calls
   // to ParseRtpPacket, for instance if the implementation somehow recovers a
   // packet.
-  RTPReceiverStrategy(RtpData* data_callback);
+  explicit RTPReceiverStrategy(RtpData* data_callback);
 
   rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
   PayloadUnion last_payload_;

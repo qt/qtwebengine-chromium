@@ -5,8 +5,11 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_READ_FROM_CACHE_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_READ_FROM_CACHE_JOB_H_
 
+#include <stdint.h>
+
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
@@ -33,10 +36,11 @@ class CONTENT_EXPORT ServiceWorkerReadFromCacheJob
       ResourceType resource_type,
       base::WeakPtr<ServiceWorkerContextCore> context,
       const scoped_refptr<ServiceWorkerVersion>& version,
-      int64 response_id);
+      int64_t resource_id);
+  ~ServiceWorkerReadFromCacheJob() override;
 
  private:
-  ~ServiceWorkerReadFromCacheJob() override;
+  friend class ServiceWorkerReadFromCacheJobTest;
 
   bool is_main_script() const {
     return resource_type_ == RESOURCE_TYPE_SERVICE_WORKER;
@@ -51,28 +55,31 @@ class CONTENT_EXPORT ServiceWorkerReadFromCacheJob
   void GetResponseInfo(net::HttpResponseInfo* info) override;
   int GetResponseCode() const override;
   void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override;
-  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
+  int ReadRawData(net::IOBuffer* buf, int buf_size) override;
 
   // Reader completion callbacks.
   void OnReadInfoComplete(int result);
   void OnReadComplete(int result);
 
   // Helpers
+  void StartAsync();
   const net::HttpResponseInfo* http_info() const;
   bool is_range_request() const { return range_requested_.IsValid(); }
   void SetupRangeResponse(int response_data_size);
   void Done(const net::URLRequestStatus& status);
 
-  ResourceType resource_type_;
+  const ResourceType resource_type_;
+  const int64_t resource_id_;
+
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<ServiceWorkerVersion> version_;
-  int64 response_id_;
   scoped_ptr<ServiceWorkerResponseReader> reader_;
   scoped_refptr<HttpResponseInfoIOBuffer> http_info_io_buffer_;
   scoped_ptr<net::HttpResponseInfo> http_info_;
   net::HttpByteRange range_requested_;
   scoped_ptr<net::HttpResponseInfo> range_response_info_;
-  bool has_been_killed_;
+  bool has_been_killed_ = false;
+
   base::WeakPtrFactory<ServiceWorkerReadFromCacheJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerReadFromCacheJob);

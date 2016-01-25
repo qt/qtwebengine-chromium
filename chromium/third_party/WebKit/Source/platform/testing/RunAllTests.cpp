@@ -28,16 +28,19 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/EventTracer.h"
-#include "platform/TestingPlatformSupport.h"
+#include "platform/HTTPNames.h"
 #include "platform/heap/Heap.h"
+#include "platform/testing/TestingPlatformSupport.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MainThread.h"
 #include "wtf/Partitions.h"
 #include "wtf/WTF.h"
+#include <base/bind.h>
+#include <base/bind_helpers.h>
+#include <base/test/launcher/unit_test_launcher.h>
 #include <base/test/test_suite.h>
+#include <cc/blink/web_compositor_support_impl.h>
 #include <string.h>
 
 static double CurrentTime()
@@ -45,24 +48,34 @@ static double CurrentTime()
     return 0.0;
 }
 
-static void AlwaysZeroNumberSource(unsigned char* buf, size_t len)
+static int runTestSuite(base::TestSuite* testSuite)
 {
-    memset(buf, '\0', len);
+    int result = testSuite->Run();
+    blink::Heap::collectAllGarbage();
+    return result;
 }
 
 int main(int argc, char** argv)
 {
-    WTF::setRandomSource(AlwaysZeroNumberSource);
-    WTF::initialize(CurrentTime, nullptr, nullptr, nullptr, nullptr);
+    WTF::setAlwaysZeroRandomSourceForTesting();
+    WTF::initialize(CurrentTime, CurrentTime, nullptr, nullptr);
     WTF::initializeMainThread(0);
 
     blink::TestingPlatformSupport::Config platformConfig;
+    cc_blink::WebCompositorSupportImpl compositorSupport;
+    platformConfig.compositorSupport = &compositorSupport;
     blink::TestingPlatformSupport platform(platformConfig);
 
     blink::Heap::init();
     blink::ThreadState::attachMainThread();
+    blink::ThreadState::current()->registerTraceDOMWrappers(nullptr, nullptr);
     blink::EventTracer::initialize();
-    int result = base::RunUnitTestsUsingBaseTestSuite(argc, argv);
+
+    blink::HTTPNames::init();
+
+    base::TestSuite testSuite(argc, argv);
+    int result = base::LaunchUnitTests(argc, argv, base::Bind(runTestSuite, base::Unretained(&testSuite)));
+
     blink::ThreadState::detachMainThread();
     blink::Heap::shutdown();
 

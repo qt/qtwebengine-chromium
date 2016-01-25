@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXScrollView.h"
 
 #include "core/frame/FrameView.h"
@@ -171,6 +170,7 @@ bool AXScrollView::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReasons)
 
 void AXScrollView::addChildren()
 {
+    ASSERT(!isDetached());
     ASSERT(!m_haveChildren);
     m_haveChildren = true;
 
@@ -225,6 +225,7 @@ FrameView* AXScrollView::documentFrameView() const
 
 AXObject* AXScrollView::computeParent() const
 {
+    ASSERT(!isDetached());
     if (!m_scrollView || !m_scrollView->isFrameView())
         return 0;
 

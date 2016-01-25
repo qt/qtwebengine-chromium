@@ -236,6 +236,17 @@
           ],
         },
         {
+          'postbuild_name:': 'Lipo KeystoneRegistration.framework',
+          'variables': {
+            'KEYSTONE_FILE':
+            '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/KeystoneRegistration.framework/KeystoneRegistration',
+          },
+          'action': [
+            'tools/mac_helpers/lipo_thin_x86_64.sh',
+            '<(KEYSTONE_FILE)',
+          ],
+        },
+        {
           'postbuild_name': 'Symlink Frameworks',
           'action': [
             'ln',
@@ -260,6 +271,16 @@
     ['enable_hidpi==1', {
       'mac_bundle_resources': [
         '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
+      ],
+    }],
+    ['enable_topchrome_md==1', {
+      'mac_bundle_resources': [
+      '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_material_100_percent.pak',
+      ],
+    }],
+    ['enable_topchrome_md==1 and enable_hidpi==1', {
+      'mac_bundle_resources': [
+        '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_material_200_percent.pak',
       ],
     }],
     ['icu_use_data_file_flag==1', {

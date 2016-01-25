@@ -6,18 +6,24 @@
 #define ScriptForbiddenScope_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/Assertions.h"
+#include "wtf/Allocator.h"
 #include "wtf/Optional.h"
 #include "wtf/TemporaryChange.h"
 
 namespace blink {
 
-class PLATFORM_EXPORT ScriptForbiddenScope {
+// Scoped disabling of script execution on the main thread,
+// and only to be used by the main thread.
+class PLATFORM_EXPORT ScriptForbiddenScope final {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(ScriptForbiddenScope);
 public:
     ScriptForbiddenScope();
     ~ScriptForbiddenScope();
 
-    class PLATFORM_EXPORT AllowUserAgentScript {
+    class PLATFORM_EXPORT AllowUserAgentScript final {
+        STACK_ALLOCATED();
+        WTF_MAKE_NONCOPYABLE(AllowUserAgentScript);
     public:
         AllowUserAgentScript();
         ~AllowUserAgentScript();
@@ -28,6 +34,21 @@ public:
     static void enter();
     static void exit();
     static bool isScriptForbidden();
+};
+
+// Scoped disabling of script execution on the main thread,
+// if called on the main thread.
+//
+// No effect when used by from other threads -- simplifies
+// call sites that might be used by multiple threads to have
+// this scope object perform the is-main-thread check on
+// its behalf.
+class PLATFORM_EXPORT ScriptForbiddenIfMainThreadScope final {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(ScriptForbiddenIfMainThreadScope);
+public:
+    ScriptForbiddenIfMainThreadScope();
+    ~ScriptForbiddenIfMainThreadScope();
 };
 
 } // namespace blink

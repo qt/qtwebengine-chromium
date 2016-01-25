@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/crypto.gni")
 import("//testing/test.gni")
 
 source_set("webcrypto") {
@@ -88,8 +87,8 @@ source_set("unit_tests") {
     "//components/test_runner:test_runner",
     "//crypto",
     "//crypto:platform",
-    "//testing/perf",
     "//testing/gtest",
+    "//testing/perf",
     "//third_party/WebKit/public:blink",
     "//third_party/re2",
   ]

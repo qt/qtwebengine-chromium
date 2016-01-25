@@ -5,7 +5,7 @@
 #ifndef UI_GL_GL_STATE_RESTORER_H_
 #define UI_GL_GL_STATE_RESTORER_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "ui/gl/gl_export.h"
 
 namespace gpu {
@@ -27,6 +27,7 @@ class GL_EXPORT GLStateRestorer {
   virtual void RestoreState(const GLStateRestorer* prev_state) = 0;
   virtual void RestoreAllTextureUnitBindings() = 0;
   virtual void RestoreActiveTextureUnitBinding(unsigned int target) = 0;
+  virtual void RestoreAllExternalTextureBindingsIfNeeded() = 0;
   virtual void RestoreFramebufferBindings() = 0;
   virtual void PauseQueries() = 0;
   virtual void ResumeQueries() = 0;

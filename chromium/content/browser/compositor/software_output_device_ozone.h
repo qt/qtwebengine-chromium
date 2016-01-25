@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_SOFTWARE_OUTPUT_DEVICE_OZONE_H_
 #define CONTENT_BROWSER_COMPOSITOR_SOFTWARE_OUTPUT_DEVICE_OZONE_H_
 
+#include "base/macros.h"
 #include "cc/output/software_output_device.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
@@ -22,7 +23,8 @@ namespace content {
 class CONTENT_EXPORT SoftwareOutputDeviceOzone
     : public cc::SoftwareOutputDevice {
  public:
-  explicit SoftwareOutputDeviceOzone(ui::Compositor* compositor);
+  static scoped_ptr<SoftwareOutputDeviceOzone> Create(
+      ui::Compositor* compositor);
   ~SoftwareOutputDeviceOzone() override;
 
   void Resize(const gfx::Size& viewport_pixel_size,
@@ -31,6 +33,7 @@ class CONTENT_EXPORT SoftwareOutputDeviceOzone
   void EndPaint() override;
 
  private:
+  explicit SoftwareOutputDeviceOzone(ui::Compositor* compositor);
   ui::Compositor* compositor_;
 
   scoped_ptr<ui::SurfaceOzoneCanvas> surface_ozone_;

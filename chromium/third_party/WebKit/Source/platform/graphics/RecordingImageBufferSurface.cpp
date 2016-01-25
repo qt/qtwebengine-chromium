@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "platform/graphics/RecordingImageBufferSurface.h"
 
+#include "platform/graphics/CanvasMetrics.h"
 #include "platform/graphics/ExpensiveCanvasHeuristicParameters.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -26,7 +25,7 @@ RecordingImageBufferSurface::RecordingImageBufferSurface(const IntSize& size, Pa
     , m_didRecordDrawCommandsInCurrentFrame(false)
     , m_currentFrameHasExpensiveOp(false)
     , m_previousFrameHasExpensiveOp(false)
-    , m_fallbackFactory(fallbackFactory)
+    , m_fallbackFactory(std::move(fallbackFactory))
 {
     initializeCurrentFrame();
 }
@@ -95,6 +94,7 @@ void RecordingImageBufferSurface::fallBackToRasterCanvas()
         m_imageBuffer->resetCanvas(m_fallbackSurface->canvas());
     }
 
+    CanvasMetrics::countCanvasContextUsage(CanvasMetrics::DisplayList2DCanvasFallbackToRaster);
 }
 
 PassRefPtr<SkImage> RecordingImageBufferSurface::newImageSnapshot(AccelerationHint hint)
@@ -203,7 +203,7 @@ bool RecordingImageBufferSurface::finalizeFrameInternal()
     return true;
 }
 
-void RecordingImageBufferSurface::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode op)
+void RecordingImageBufferSurface::draw(GraphicsContext& context, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode op)
 {
     if (m_fallbackSurface) {
         m_fallbackSurface->draw(context, destRect, srcRect, op);
@@ -212,7 +212,7 @@ void RecordingImageBufferSurface::draw(GraphicsContext* context, const FloatRect
 
     RefPtr<SkPicture> picture = getPicture();
     if (picture) {
-        context->compositePicture(picture.get(), destRect, srcRect, op);
+        context.compositePicture(picture.get(), destRect, srcRect, op);
     } else {
         ImageBufferSurface::draw(context, destRect, srcRect, op);
     }
@@ -243,15 +243,6 @@ bool RecordingImageBufferSurface::isExpensiveToPaint()
     }
 
     return false;
-}
-
-const SkBitmap& RecordingImageBufferSurface::deprecatedBitmapForOverwrite()
-{
-    if (!m_fallbackSurface) {
-        willOverwriteCanvas();
-        fallBackToRasterCanvas();
-    }
-    return m_fallbackSurface->deprecatedBitmapForOverwrite();
 }
 
 // Fallback passthroughs

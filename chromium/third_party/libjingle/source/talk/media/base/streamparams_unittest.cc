@@ -27,17 +27,20 @@
 
 #include "talk/media/base/streamparams.h"
 #include "talk/media/base/testutils.h"
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/gunit.h"
 
-static const uint32 kSsrcs1[] = {1};
-static const uint32 kSsrcs2[] = {1, 2};
-static const uint32 kSsrcs3[] = {1, 2, 3};
-static const uint32 kRtxSsrcs3[] = {4, 5, 6};
+static const uint32_t kSsrcs1[] = {1};
+static const uint32_t kSsrcs2[] = {1, 2};
+static const uint32_t kSsrcs3[] = {1, 2, 3};
+static const uint32_t kRtxSsrcs3[] = {4, 5, 6};
 
 static cricket::StreamParams CreateStreamParamsWithSsrcGroup(
-    const std::string& semantics, const uint32 ssrcs_in[], size_t len) {
+    const std::string& semantics,
+    const uint32_t ssrcs_in[],
+    size_t len) {
   cricket::StreamParams stream;
-  std::vector<uint32> ssrcs(ssrcs_in, ssrcs_in + len);
+  std::vector<uint32_t> ssrcs(ssrcs_in, ssrcs_in + len);
   cricket::SsrcGroup sg(semantics, ssrcs);
   stream.ssrcs = ssrcs;
   stream.ssrc_groups.push_back(sg);
@@ -52,8 +55,8 @@ TEST(SsrcGroup, EqualNotEqual) {
     cricket::SsrcGroup("abc", MAKE_VECTOR(kSsrcs2)),
   };
 
-  for (size_t i = 0; i < ARRAY_SIZE(ssrc_groups); ++i) {
-    for (size_t j = 0; j < ARRAY_SIZE(ssrc_groups); ++j) {
+  for (size_t i = 0; i < arraysize(ssrc_groups); ++i) {
+    for (size_t j = 0; j < arraysize(ssrc_groups); ++j) {
       EXPECT_EQ((ssrc_groups[i] == ssrc_groups[j]), (i == j));
       EXPECT_EQ((ssrc_groups[i] != ssrc_groups[j]), (i != j));
     }
@@ -77,7 +80,7 @@ TEST(SsrcGroup, ToString) {
 }
 
 TEST(StreamParams, CreateLegacy) {
-  const uint32 ssrc = 7;
+  const uint32_t ssrc = 7;
   cricket::StreamParams one_sp = cricket::StreamParams::CreateLegacy(ssrc);
   EXPECT_EQ(1U, one_sp.ssrcs.size());
   EXPECT_EQ(ssrc, one_sp.first_ssrc());
@@ -90,7 +93,7 @@ TEST(StreamParams, CreateLegacy) {
 
 TEST(StreamParams, HasSsrcGroup) {
   cricket::StreamParams sp =
-      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, arraysize(kSsrcs2));
   EXPECT_EQ(2U, sp.ssrcs.size());
   EXPECT_EQ(kSsrcs2[0], sp.first_ssrc());
   EXPECT_TRUE(sp.has_ssrcs());
@@ -105,7 +108,7 @@ TEST(StreamParams, HasSsrcGroup) {
 
 TEST(StreamParams, GetSsrcGroup) {
   cricket::StreamParams sp =
-      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, arraysize(kSsrcs2));
   EXPECT_EQ(NULL, sp.get_ssrc_group("xyz"));
   EXPECT_EQ(&sp.ssrc_groups[0], sp.get_ssrc_group("XYZ"));
 }
@@ -114,17 +117,17 @@ TEST(StreamParams, EqualNotEqual) {
   cricket::StreamParams l1 = cricket::StreamParams::CreateLegacy(1);
   cricket::StreamParams l2 = cricket::StreamParams::CreateLegacy(2);
   cricket::StreamParams sg1 =
-      CreateStreamParamsWithSsrcGroup("ABC", kSsrcs1, ARRAY_SIZE(kSsrcs1));
+      CreateStreamParamsWithSsrcGroup("ABC", kSsrcs1, arraysize(kSsrcs1));
   cricket::StreamParams sg2 =
-      CreateStreamParamsWithSsrcGroup("ABC", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("ABC", kSsrcs2, arraysize(kSsrcs2));
   cricket::StreamParams sg3 =
-      CreateStreamParamsWithSsrcGroup("Abc", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("Abc", kSsrcs2, arraysize(kSsrcs2));
   cricket::StreamParams sg4 =
-      CreateStreamParamsWithSsrcGroup("abc", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("abc", kSsrcs2, arraysize(kSsrcs2));
   cricket::StreamParams sps[] = {l1, l2, sg1, sg2, sg3, sg4};
 
-  for (size_t i = 0; i < ARRAY_SIZE(sps); ++i) {
-    for (size_t j = 0; j < ARRAY_SIZE(sps); ++j) {
+  for (size_t i = 0; i < arraysize(sps); ++i) {
+    for (size_t j = 0; j < arraysize(sps); ++j) {
       EXPECT_EQ((sps[i] == sps[j]), (i == j));
       EXPECT_EQ((sps[i] != sps[j]), (i != j));
     }
@@ -132,7 +135,7 @@ TEST(StreamParams, EqualNotEqual) {
 }
 
 TEST(StreamParams, FidFunctions) {
-  uint32 fid_ssrc;
+  uint32_t fid_ssrc;
 
   cricket::StreamParams sp = cricket::StreamParams::CreateLegacy(1);
   EXPECT_FALSE(sp.AddFidSsrc(10, 20));
@@ -149,7 +152,7 @@ TEST(StreamParams, FidFunctions) {
   // Manually create SsrcGroup to test bounds-checking
   // in GetSecondarySsrc. We construct an invalid StreamParams
   // for this.
-  std::vector<uint32> fid_vector;
+  std::vector<uint32_t> fid_vector;
   fid_vector.push_back(13);
   cricket::SsrcGroup invalid_fid_group(cricket::kFidSsrcGroupSemantics,
                                         fid_vector);
@@ -165,9 +168,9 @@ TEST(StreamParams, GetPrimaryAndFidSsrcs) {
   sp.ssrcs.push_back(2);
   sp.ssrcs.push_back(3);
 
-  std::vector<uint32> primary_ssrcs;
+  std::vector<uint32_t> primary_ssrcs;
   sp.GetPrimarySsrcs(&primary_ssrcs);
-  std::vector<uint32> fid_ssrcs;
+  std::vector<uint32_t> fid_ssrcs;
   sp.GetFidSsrcs(primary_ssrcs, &fid_ssrcs);
   ASSERT_EQ(1u, primary_ssrcs.size());
   EXPECT_EQ(1u, primary_ssrcs[0]);
@@ -193,7 +196,7 @@ TEST(StreamParams, GetPrimaryAndFidSsrcs) {
 
 TEST(StreamParams, ToString) {
   cricket::StreamParams sp =
-      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, ARRAY_SIZE(kSsrcs2));
+      CreateStreamParamsWithSsrcGroup("XYZ", kSsrcs2, arraysize(kSsrcs2));
   EXPECT_STREQ("{ssrcs:[1,2];ssrc_groups:{semantics:XYZ;ssrcs:[1,2]};}",
                sp.ToString().c_str());
 }
@@ -272,7 +275,7 @@ TEST(StreamParams, TestIsSimulcastStream_InvalidStreams) {
   // stream3 has two SIM groups.
   cricket::StreamParams stream3 =
       cricket::CreateSimStreamParams("cname", MAKE_VECTOR(kSsrcs2));
-  std::vector<uint32> sim_ssrcs = MAKE_VECTOR(kRtxSsrcs3);
+  std::vector<uint32_t> sim_ssrcs = MAKE_VECTOR(kRtxSsrcs3);
   cricket::SsrcGroup sg(cricket::kSimSsrcGroupSemantics, sim_ssrcs);
   for (size_t i = 0; i < sim_ssrcs.size(); i++) {
     stream3.add_ssrc(sim_ssrcs[i]);

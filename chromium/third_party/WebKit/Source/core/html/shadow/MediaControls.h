@@ -66,7 +66,7 @@ public:
     void startedCasting();
     void stoppedCasting();
     void refreshCastButtonVisibility();
-    void showOverlayCastButton();
+    void showOverlayCastButtonIfNeeded();
     // Update cast button visibility, but don't try to update our panel
     // button visibility for space.
     void refreshCastButtonVisibilityWithoutUpdate();
@@ -82,9 +82,14 @@ public:
     // Notify us that our controls enclosure has changed width.
     void notifyPanelWidthChanged(const LayoutUnit& newWidth);
 
+    // Notify us that the media element's network state has changed.
+    void networkStateChanged();
+
     DECLARE_VIRTUAL_TRACE();
 
 private:
+    void invalidate(Element*);
+
     class BatchedControlUpdate;
 
     explicit MediaControls(HTMLMediaElement&);

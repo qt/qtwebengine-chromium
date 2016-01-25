@@ -7,6 +7,7 @@
 
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/trace_event/memory_dump_request_args.h"
@@ -14,6 +15,7 @@
 #include "third_party/WebKit/public/platform/WebProcessMemoryDump.h"
 
 namespace base {
+class DiscardableMemory;
 namespace trace_event {
 class MemoryAllocatorDump;
 class ProcessMemoryDump;
@@ -21,7 +23,7 @@ class ProcessMemoryDump;
 }  // namespace trace_event
 
 namespace skia {
-class SkTraceMemoryDump_Chrome;
+class SkiaTraceMemoryDumpImpl;
 }  // namespace skia
 
 namespace content {
@@ -55,19 +57,23 @@ class CONTENT_EXPORT WebProcessMemoryDumpImpl final
       const blink::WebString& absolute_name) const override;
   void clear() override;
   void takeAllDumpsFrom(blink::WebProcessMemoryDump* other) override;
-  void AddOwnershipEdge(blink::WebMemoryAllocatorDumpGuid source,
+  void addOwnershipEdge(blink::WebMemoryAllocatorDumpGuid source,
                         blink::WebMemoryAllocatorDumpGuid target,
                         int importance) override;
-  void AddOwnershipEdge(blink::WebMemoryAllocatorDumpGuid source,
+  void addOwnershipEdge(blink::WebMemoryAllocatorDumpGuid source,
                         blink::WebMemoryAllocatorDumpGuid target) override;
-  void AddSuballocation(blink::WebMemoryAllocatorDumpGuid source,
-                        const blink::WebString& targetNodeName) override;
-  SkTraceMemoryDump* CreateDumpAdapterForSkia(
-      const blink::WebString& dumpNamePrefix) override;
+  void addSuballocation(blink::WebMemoryAllocatorDumpGuid source,
+                        const blink::WebString& target_node_name) override;
+  SkTraceMemoryDump* createDumpAdapterForSkia(
+      const blink::WebString& dump_name_prefix) override;
 
   const base::trace_event::ProcessMemoryDump* process_memory_dump() const {
     return process_memory_dump_;
   }
+
+  blink::WebMemoryAllocatorDump* CreateDiscardableMemoryAllocatorDump(
+      const std::string& name,
+      base::DiscardableMemory* discardable);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WebProcessMemoryDumpImplTest, IntegrationTest);
@@ -95,7 +101,7 @@ class CONTENT_EXPORT WebProcessMemoryDumpImpl final
       memory_allocator_dumps_;
 
   // Stores SkTraceMemoryDump for the current ProcessMemoryDump.
-  ScopedVector<skia::SkTraceMemoryDump_Chrome> sk_trace_dump_list_;
+  ScopedVector<skia::SkiaTraceMemoryDumpImpl> sk_trace_dump_list_;
 
   DISALLOW_COPY_AND_ASSIGN(WebProcessMemoryDumpImpl);
 };

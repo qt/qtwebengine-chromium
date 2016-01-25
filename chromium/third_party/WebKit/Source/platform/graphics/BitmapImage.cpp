@@ -24,13 +24,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/BitmapImage.h"
 
 #include "platform/PlatformInstrumentation.h"
 #include "platform/Timer.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
+#include "platform/graphics/BitmapImageMetrics.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/StaticBitmapImage.h"
@@ -327,24 +327,6 @@ size_t BitmapImage::frameCount()
     return m_frameCount;
 }
 
-enum DecodedImageType {
-    // These values are histogrammed over time; do not change their ordinal
-    // values.  When deleting an image type, replace it with a dummy value;
-    // when adding an image type, do so at the bottom (and update LastDecodedImageType
-    // so that it equals the last real image type).
-    // Also, this enum should be in sync with the 'DecodedImageType' enum in
-    // src/tools/metrics/histograms/histograms.xml
-    ImageUnknown = 0,
-    ImageJPEG,
-    ImagePNG,
-    ImageGIF,
-    ImageWebP,
-    ImageICO,
-    ImageBMP,
-
-    LastDecodedImageType = ImageBMP
-};
-
 static inline bool hasVisibleImageSize(IntSize size)
 {
     return (size.width() > 1 || size.height() > 1);
@@ -358,16 +340,8 @@ bool BitmapImage::isSizeAvailable()
     m_sizeAvailable = m_source.isSizeAvailable();
 
     if (m_sizeAvailable && hasVisibleImageSize(size())) {
-        String fileExtention = m_source.filenameExtension();
-        DecodedImageType type =
-            fileExtention == "jpg"  ? ImageJPEG :
-            fileExtention == "png"  ? ImagePNG :
-            fileExtention == "gif"  ? ImageGIF :
-            fileExtention == "webp" ? ImageWebP :
-            fileExtention == "ico"  ? ImageICO :
-            fileExtention == "bmp"  ? ImageBMP :
-            ImageUnknown;
-        Platform::current()->histogramEnumeration("Blink.DecodedImageType", type, LastDecodedImageType + 1);
+        BitmapImageMetrics::countDecodedImageType(m_source.filenameExtension());
+        BitmapImageMetrics::countImageOrientation(m_source.orientationAtIndex(0).orientation());
     }
 
     return m_sizeAvailable;
@@ -435,8 +409,13 @@ bool BitmapImage::frameHasAlphaAtIndex(size_t index)
     return m_source.frameHasAlphaAtIndex(index);
 }
 
-bool BitmapImage::currentFrameKnownToBeOpaque()
+bool BitmapImage::currentFrameKnownToBeOpaque(MetadataMode metadataMode)
 {
+    if (metadataMode == PreCacheMetadata) {
+        // frameHasAlphaAtIndex() conservatively returns false for uncached frames. To increase the
+        // chance of an accurate answer, pre-cache the current frame metadata.
+        frameAtIndex(currentFrame());
+    }
     return !frameHasAlphaAtIndex(currentFrame());
 }
 
@@ -541,7 +520,7 @@ void BitmapImage::startAnimation(CatchUpAnimation catchUpIfNecessary)
     if (catchUpIfNecessary == DoNotCatchUp || time < m_desiredFrameStartTime) {
         // Haven't yet reached time for next frame to start; delay until then.
         m_frameTimer = adoptPtr(new Timer<BitmapImage>(this, &BitmapImage::advanceAnimation));
-        m_frameTimer->startOneShot(std::max(m_desiredFrameStartTime - time, 0.), FROM_HERE);
+        m_frameTimer->startOneShot(std::max(m_desiredFrameStartTime - time, 0.), BLINK_FROM_HERE);
     } else {
         // We've already reached or passed the time for the next frame to start.
         // See if we've also passed the time for frames after that to start, in

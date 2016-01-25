@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/spellcheck/TextCheckingHelper.h"
 
 #include "core/dom/Document.h"
@@ -89,17 +88,11 @@ static void findMisspellings(TextCheckerClient& client, const UChar* text, int s
             misspelling.decoration = TextDecorationTypeSpelling;
             misspelling.location = start + wordStart + misspellingLocation;
             misspelling.length = misspellingLength;
-            misspelling.replacement = client.getAutoCorrectSuggestionForMisspelledWord(String(text + misspelling.location, misspelling.length));
             results.append(misspelling);
         }
 
         wordStart = wordEnd;
     }
-}
-
-EphemeralRange expandRangeToSentenceBoundary(const EphemeralRange& range)
-{
-    return EphemeralRange(startOfSentence(createVisiblePosition(range.startPosition())).deepEquivalent(), endOfSentence(createVisiblePosition(range.endPosition())).deepEquivalent());
 }
 
 static EphemeralRange expandToParagraphBoundary(const EphemeralRange& range)
@@ -296,7 +289,7 @@ String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, boo
     return firstMisspelling;
 }
 
-String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, bool& outIsSpelling, int& outFirstFoundOffset, GrammarDetail& outGrammarDetail)
+String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool& outIsSpelling, int& outFirstFoundOffset, GrammarDetail& outGrammarDetail)
 {
     if (!unifiedTextCheckerEnabled())
         return "";
@@ -347,7 +340,7 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
                 unsigned grammarDetailIndex = 0;
 
                 Vector<TextCheckingResult> results;
-                TextCheckingTypeMask checkingTypes = checkGrammar ? (TextCheckingTypeSpelling | TextCheckingTypeGrammar) : TextCheckingTypeSpelling;
+                TextCheckingTypeMask checkingTypes = TextCheckingTypeSpelling | TextCheckingTypeGrammar;
                 checkTextOfParagraph(m_client->textChecker(), paragraphString, checkingTypes, results);
 
                 for (unsigned i = 0; i < results.size(); i++) {
@@ -359,7 +352,7 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
                         ASSERT(misspelledWord.length());
                         break;
                     }
-                    if (checkGrammar && result->decoration == TextDecorationTypeGrammar && result->location < currentEndOffset && result->location + result->length > currentStartOffset) {
+                    if (result->decoration == TextDecorationTypeGrammar && result->location < currentEndOffset && result->location + result->length > currentStartOffset) {
                         ASSERT(result->length > 0 && result->location >= 0);
                         // We can't stop after the first grammar result, since there might still be a spelling result after
                         // it begins but before the first detail in it, but we can stop if we find a second grammar result.
@@ -383,7 +376,7 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
                     }
                 }
 
-                if (!misspelledWord.isEmpty() && (!checkGrammar || badGrammarPhrase.isEmpty() || spellingLocation <= grammarDetailLocation)) {
+                if (!misspelledWord.isEmpty() && (badGrammarPhrase.isEmpty() || spellingLocation <= grammarDetailLocation)) {
                     int spellingOffset = spellingLocation - currentStartOffset;
                     if (!firstIteration)
                         spellingOffset += TextIterator::rangeLength(m_start, paragraphStart);
@@ -392,7 +385,7 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
                     firstFoundItem = misspelledWord;
                     break;
                 }
-                if (checkGrammar && !badGrammarPhrase.isEmpty()) {
+                if (!badGrammarPhrase.isEmpty()) {
                     int grammarPhraseOffset = grammarPhraseLocation - currentStartOffset;
                     if (!firstIteration)
                         grammarPhraseOffset += TextIterator::rangeLength(m_start, paragraphStart);

@@ -22,8 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGUseElement.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -37,6 +35,7 @@
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/layout/svg/LayoutSVGTransformableContainer.h"
+#include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGGElement.h"
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/SVGSVGElement.h"
@@ -47,17 +46,17 @@ namespace blink {
 
 static SVGUseEventSender& svgUseLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(SVGUseEventSender, sharedLoadEventSender, (EventTypeNames::load));
-    return sharedLoadEventSender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<SVGUseEventSender>, sharedLoadEventSender, (SVGUseEventSender::create(EventTypeNames::load)));
+    return *sharedLoadEventSender;
 }
 
 inline SVGUseElement::SVGUseElement(Document& document)
     : SVGGraphicsElement(SVGNames::useTag, document)
     , SVGURIReference(this)
-    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
-    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
-    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(SVGLengthMode::Width), ForbidNegativeLengths))
-    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(SVGLengthMode::Height), ForbidNegativeLengths))
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(SVGLengthMode::Width)))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(SVGLengthMode::Height)))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(SVGLengthMode::Width)))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(SVGLengthMode::Height)))
     , m_haveFiredLoadEvent(false)
     , m_needsShadowTreeRecreation(false)
 {
@@ -83,8 +82,8 @@ SVGUseElement::~SVGUseElement()
 #if !ENABLE(OILPAN)
     clearShadowTree();
     cancelShadowTreeRecreation();
-#endif
     svgUseLoadEventSender().cancelEvent(this);
+#endif
 }
 
 DEFINE_TRACE(SVGUseElement)
@@ -188,11 +187,11 @@ bool SVGUseElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrN
 
 void SVGUseElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> property = propertyFromAttribute(name);
+    SVGAnimatedPropertyBase* property = propertyFromAttribute(name);
     if (property == m_x)
-        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyX, *m_x->currentValue());
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyX, m_x->currentValue()->asCSSPrimitiveValue());
     else if (property == m_y)
-        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyY, *m_y->currentValue());
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyY, m_y->currentValue()->asCSSPrimitiveValue());
     else
         SVGGraphicsElement::collectStyleForPresentationAttribute(name, value, style);
 }
@@ -797,19 +796,13 @@ void SVGUseElement::notifyFinished(Resource* resource)
 
 bool SVGUseElement::resourceIsStillLoading() const
 {
-    if (m_resource && m_resource->isLoading())
-        return true;
-    return false;
+    return m_resource && m_resource->isLoading();
 }
 
 bool SVGUseElement::instanceTreeIsLoading(const SVGElement* targetInstance)
 {
-    for (const SVGElement* element = Traversal<SVGElement>::firstChild(*targetInstance); element; element = Traversal<SVGElement>::nextSibling(*element)) {
-        if (const SVGUseElement* use = element->correspondingUseElement()) {
-            if (use->resourceIsStillLoading())
-                return true;
-        }
-        if (element->hasChildren() && instanceTreeIsLoading(element))
+    for (const SVGElement* element = targetInstance; element; element = Traversal<SVGElement>::next(*element, targetInstance)) {
+        if (isSVGUseElement(*element) && toSVGUseElement(*element).resourceIsStillLoading())
             return true;
     }
     return false;

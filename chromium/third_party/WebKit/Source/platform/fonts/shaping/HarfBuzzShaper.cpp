@@ -29,536 +29,34 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/shaping/HarfBuzzShaper.h"
 
-#include "hb.h"
-#include "platform/LayoutUnit.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/Logging.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
+#include "platform/fonts/FontFallbackIterator.h"
 #include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/UTF16TextIterator.h"
 #include "platform/fonts/shaping/HarfBuzzFace.h"
+#include "platform/fonts/shaping/RunSegmenter.h"
+#include "platform/fonts/shaping/ShapeResultInlineHeaders.h"
 #include "platform/text/TextBreakIterator.h"
 #include "wtf/Compiler.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/Unicode.h"
 
 #include <algorithm>
-#include <list>
-#include <map>
-#include <string>
+#include <hb.h>
 #include <unicode/normlzr.h>
 #include <unicode/uchar.h>
 #include <unicode/uscript.h>
 
 namespace blink {
 
-struct HarfBuzzRunGlyphData {
-    uint16_t glyph;
-    uint16_t characterIndex;
-    float advance;
-    FloatSize offset;
-};
-
-struct ShapeResult::RunInfo {
-    RunInfo(const SimpleFontData* font, hb_direction_t dir, hb_script_t script,
-        unsigned startIndex, unsigned numGlyphs, unsigned numCharacters)
-        : m_fontData(const_cast<SimpleFontData*>(font)), m_direction(dir), m_script(script)
-        , m_startIndex(startIndex), m_numCharacters(numCharacters)
-        , m_numGlyphs(numGlyphs), m_width(0.0f)
-    {
-        m_glyphData.resize(m_numGlyphs);
-    }
-
-    float xPositionForOffset(unsigned) const;
-    int characterIndexForXPosition(float) const;
-    void setGlyphAndPositions(unsigned index, uint16_t glyphId, float advance,
-        float offsetX, float offsetY);
-
-    void addAdvance(unsigned index, float advance)
-    {
-        m_glyphData[index].advance += advance;
-    }
-
-    size_t glyphToCharacterIndex(size_t i) const
-    {
-        return m_startIndex + m_glyphData[i].characterIndex;
-    }
-
-    RefPtr<SimpleFontData> m_fontData;
-    hb_direction_t m_direction;
-    hb_script_t m_script;
-    Vector<HarfBuzzRunGlyphData> m_glyphData;
-    unsigned m_startIndex;
-    unsigned m_numCharacters;
-    unsigned m_numGlyphs;
-    float m_width;
-};
-
-float ShapeResult::RunInfo::xPositionForOffset(unsigned offset) const
-{
-    ASSERT(offset < m_numCharacters);
-    unsigned glyphIndex = 0;
-    float position = 0;
-    if (m_direction == HB_DIRECTION_RTL) {
-        while (glyphIndex < m_numGlyphs && m_glyphData[glyphIndex].characterIndex > offset) {
-            position += m_glyphData[glyphIndex].advance;
-            ++glyphIndex;
-        }
-        // For RTL, we need to return the right side boundary of the character.
-        // Add advance of glyphs which are part of the character.
-        while (glyphIndex < m_numGlyphs - 1 && m_glyphData[glyphIndex].characterIndex == m_glyphData[glyphIndex + 1].characterIndex) {
-            position += m_glyphData[glyphIndex].advance;
-            ++glyphIndex;
-        }
-        position += m_glyphData[glyphIndex].advance;
-    } else {
-        while (glyphIndex < m_numGlyphs && m_glyphData[glyphIndex].characterIndex < offset) {
-            position += m_glyphData[glyphIndex].advance;
-            ++glyphIndex;
-        }
-    }
-    return position;
-}
-
-int ShapeResult::RunInfo::characterIndexForXPosition(float targetX) const
-{
-    ASSERT(targetX <= m_width);
-    float currentX = 0;
-    float currentAdvance = m_glyphData[0].advance;
-    unsigned glyphIndex = 0;
-
-    // Sum up advances that belong to the first character.
-    while (glyphIndex < m_numGlyphs - 1 && m_glyphData[glyphIndex].characterIndex == m_glyphData[glyphIndex + 1].characterIndex)
-        currentAdvance += m_glyphData[++glyphIndex].advance;
-    currentAdvance = currentAdvance / 2.0;
-    if (targetX <= currentAdvance)
-        return m_direction == HB_DIRECTION_RTL ? m_numCharacters : 0;
-
-    currentX = currentAdvance;
-    ++glyphIndex;
-    while (glyphIndex < m_numGlyphs) {
-        unsigned prevCharacterIndex = m_glyphData[glyphIndex - 1].characterIndex;
-        float prevAdvance = currentAdvance;
-        currentAdvance = m_glyphData[glyphIndex].advance;
-        while (glyphIndex < m_numGlyphs - 1 && m_glyphData[glyphIndex].characterIndex == m_glyphData[glyphIndex + 1].characterIndex)
-            currentAdvance += m_glyphData[++glyphIndex].advance;
-        currentAdvance = currentAdvance / 2.0;
-        float nextX = currentX + prevAdvance + currentAdvance;
-        if (currentX <= targetX && targetX <= nextX)
-            return m_direction == HB_DIRECTION_RTL ? prevCharacterIndex : m_glyphData[glyphIndex].characterIndex;
-        currentX = nextX;
-        ++glyphIndex;
-    }
-
-    return m_direction == HB_DIRECTION_RTL ? 0 : m_numCharacters;
-}
-
-void ShapeResult::RunInfo::setGlyphAndPositions(unsigned index,
-    uint16_t glyphId, float advance, float offsetX, float offsetY)
-{
-    HarfBuzzRunGlyphData& data = m_glyphData[index];
-    data.glyph = glyphId;
-    data.advance = advance;
-    data.offset = FloatSize(offsetX, offsetY);
-}
-
-ShapeResult::ShapeResult(const Font* font, unsigned numCharacters, TextDirection direction)
-    : m_width(0)
-    , m_primaryFont(const_cast<SimpleFontData*>(font->primaryFont()))
-    , m_numCharacters(numCharacters)
-    , m_numGlyphs(0)
-    , m_direction(direction)
-{
-}
-
-ShapeResult::~ShapeResult()
-{
-}
-
-static inline void addGlyphToBuffer(GlyphBuffer* glyphBuffer, float advance,
-    hb_direction_t direction, const SimpleFontData* fontData,
-    const HarfBuzzRunGlyphData& glyphData)
-{
-    FloatPoint startOffset = HB_DIRECTION_IS_HORIZONTAL(direction)
-        ? FloatPoint(advance, 0)
-        : FloatPoint(0, advance);
-    glyphBuffer->add(glyphData.glyph, fontData, startOffset + glyphData.offset);
-}
-
-template<TextDirection direction>
-float ShapeResult::fillGlyphBufferForRun(GlyphBuffer* glyphBuffer,
-    const RunInfo* run, float initialAdvance, unsigned from, unsigned to,
-    unsigned runOffset)
-{
-    if (!run)
-        return 0;
-    float advanceSoFar = initialAdvance;
-    unsigned numGlyphs = run->m_numGlyphs;
-    for (unsigned i = 0; i < numGlyphs; ++i) {
-        const HarfBuzzRunGlyphData& glyphData = run->m_glyphData[i];
-        uint16_t currentCharacterIndex = run->m_startIndex +
-            glyphData.characterIndex + runOffset;
-        if ((direction == RTL && currentCharacterIndex >= to)
-            || (direction == LTR && currentCharacterIndex < from)) {
-            advanceSoFar += glyphData.advance;
-        } else if ((direction == RTL && currentCharacterIndex >= from)
-            || (direction == LTR && currentCharacterIndex < to)) {
-            addGlyphToBuffer(glyphBuffer, advanceSoFar, run->m_direction,
-                run->m_fontData.get(), glyphData);
-            advanceSoFar += glyphData.advance;
-        }
-    }
-    return advanceSoFar - initialAdvance;
-}
-
-static inline unsigned countGraphemesInCluster(const UChar* str,
-    unsigned strLength, uint16_t startIndex, uint16_t endIndex)
-{
-    if (startIndex > endIndex) {
-        uint16_t tempIndex = startIndex;
-        startIndex = endIndex;
-        endIndex = tempIndex;
-    }
-    uint16_t length = endIndex - startIndex;
-    ASSERT(static_cast<unsigned>(startIndex + length) <= strLength);
-    TextBreakIterator* cursorPosIterator = cursorMovementIterator(&str[startIndex], length);
-
-    int cursorPos = cursorPosIterator->current();
-    int numGraphemes = -1;
-    while (0 <= cursorPos) {
-        cursorPos = cursorPosIterator->next();
-        numGraphemes++;
-    }
-    return std::max(0, numGraphemes);
-}
-
-static inline void addEmphasisMark(GlyphBuffer* buffer,
-    const GlyphData* emphasisData, FloatPoint glyphCenter,
-    float midGlyphOffset)
-{
-    ASSERT(buffer);
-    ASSERT(emphasisData);
-
-    const SimpleFontData* emphasisFontData = emphasisData->fontData;
-    ASSERT(emphasisFontData);
-
-    bool isVertical = emphasisFontData->platformData().isVerticalAnyUpright()
-        && emphasisFontData->verticalData();
-
-    if (!isVertical) {
-        buffer->add(emphasisData->glyph, emphasisFontData,
-            midGlyphOffset - glyphCenter.x());
-    } else {
-        buffer->add(emphasisData->glyph, emphasisFontData,
-            FloatPoint(-glyphCenter.x(), midGlyphOffset - glyphCenter.y()));
-    }
-}
-
-float ShapeResult::fillGlyphBufferForTextEmphasisRun(GlyphBuffer* glyphBuffer,
-    const RunInfo* run, const TextRun& textRun, const GlyphData* emphasisData,
-    float initialAdvance, unsigned from, unsigned to, unsigned runOffset)
-{
-    if (!run)
-        return 0;
-
-    unsigned graphemesInCluster = 1;
-    float clusterAdvance = 0;
-
-    FloatPoint glyphCenter = emphasisData->fontData->
-        boundsForGlyph(emphasisData->glyph).center();
-
-    TextDirection direction = textRun.direction();
-
-    // A "cluster" in this context means a cluster as it is used by HarfBuzz:
-    // The minimal group of characters and corresponding glyphs, that cannot be broken
-    // down further from a text shaping point of view.
-    // A cluster can contain multiple glyphs and grapheme clusters, with mutually
-    // overlapping boundaries. Below we count grapheme clusters per HarfBuzz clusters,
-    // then linearly split the sum of corresponding glyph advances by the number of
-    // grapheme clusters in order to find positions for emphasis mark drawing.
-    uint16_t clusterStart = direction == RTL
-        ? run->m_startIndex + run->m_numCharacters + runOffset
-        : run->glyphToCharacterIndex(0) + runOffset;
-
-    float advanceSoFar = initialAdvance;
-    unsigned numGlyphs = run->m_numGlyphs;
-    for (unsigned i = 0; i < numGlyphs; ++i) {
-        const HarfBuzzRunGlyphData& glyphData = run->m_glyphData[i];
-        uint16_t currentCharacterIndex = run->m_startIndex + glyphData.characterIndex + runOffset;
-        bool isRunEnd = (i + 1 == numGlyphs);
-        bool isClusterEnd =  isRunEnd || (run->glyphToCharacterIndex(i + 1) + runOffset != currentCharacterIndex);
-
-        if ((direction == RTL && currentCharacterIndex >= to) || (direction != RTL && currentCharacterIndex < from)) {
-            advanceSoFar += glyphData.advance;
-            direction == RTL ? --clusterStart : ++clusterStart;
-            continue;
-        }
-
-        clusterAdvance += glyphData.advance;
-
-        if (textRun.is8Bit()) {
-            float glyphAdvanceX = glyphData.advance;
-            if (Character::canReceiveTextEmphasis(textRun[currentCharacterIndex])) {
-                addEmphasisMark(glyphBuffer, emphasisData, glyphCenter, advanceSoFar + glyphAdvanceX / 2);
-            }
-            advanceSoFar += glyphAdvanceX;
-        } else if (isClusterEnd) {
-            uint16_t clusterEnd;
-            if (direction == RTL)
-                clusterEnd = currentCharacterIndex;
-            else
-                clusterEnd = isRunEnd ? run->m_startIndex + run->m_numCharacters + runOffset : run->glyphToCharacterIndex(i + 1) + runOffset;
-
-            graphemesInCluster = countGraphemesInCluster(textRun.characters16(), textRun.charactersLength(), clusterStart, clusterEnd);
-            if (!graphemesInCluster || !clusterAdvance)
-                continue;
-
-            float glyphAdvanceX = clusterAdvance / graphemesInCluster;
-            for (unsigned j = 0; j < graphemesInCluster; ++j) {
-                // Do not put emphasis marks on space, separator, and control characters.
-                if (Character::canReceiveTextEmphasis(textRun[currentCharacterIndex]))
-                    addEmphasisMark(glyphBuffer, emphasisData, glyphCenter, advanceSoFar + glyphAdvanceX / 2);
-                advanceSoFar += glyphAdvanceX;
-            }
-            clusterStart = clusterEnd;
-            clusterAdvance = 0;
-        }
-    }
-    return advanceSoFar - initialAdvance;
-}
-
-float ShapeResult::fillGlyphBuffer(Vector<RefPtr<ShapeResult>>& results,
-    GlyphBuffer* glyphBuffer, const TextRun& textRun,
-    unsigned from, unsigned to)
-{
-    float advance = 0;
-    if (textRun.rtl()) {
-        unsigned wordOffset = textRun.length();
-        for (unsigned j = 0; j < results.size(); j++) {
-            unsigned resolvedIndex = results.size() - 1 - j;
-            RefPtr<ShapeResult>& wordResult = results[resolvedIndex];
-            for (unsigned i = 0; i < wordResult->m_runs.size(); i++) {
-                advance += wordResult->fillGlyphBufferForRun<RTL>(glyphBuffer,
-                    wordResult->m_runs[i].get(), advance, from, to,
-                    wordOffset - wordResult->numCharacters());
-            }
-            wordOffset -= wordResult->numCharacters();
-        }
-    } else {
-        unsigned wordOffset = 0;
-        for (unsigned j = 0; j < results.size(); j++) {
-            RefPtr<ShapeResult>& wordResult = results[j];
-            for (unsigned i = 0; i < wordResult->m_runs.size(); i++) {
-                advance += wordResult->fillGlyphBufferForRun<LTR>(glyphBuffer,
-                    wordResult->m_runs[i].get(), advance, from, to, wordOffset);
-            }
-            wordOffset += wordResult->numCharacters();
-        }
-    }
-
-    return advance;
-}
-
-float ShapeResult::fillGlyphBufferForTextEmphasis(
-    Vector<RefPtr<ShapeResult>>& results, GlyphBuffer* glyphBuffer,
-    const TextRun& textRun, const GlyphData* emphasisData,
-    unsigned from, unsigned to)
-{
-    float advance = 0;
-    unsigned wordOffset = textRun.rtl() ? textRun.length() : 0;
-    for (unsigned j = 0; j < results.size(); j++) {
-        unsigned resolvedIndex = textRun.rtl() ? results.size() - 1 - j : j;
-        RefPtr<ShapeResult>& wordResult = results[resolvedIndex];
-        for (unsigned i = 0; i < wordResult->m_runs.size(); i++) {
-            unsigned resolvedOffset = wordOffset -
-                (textRun.rtl() ? wordResult->numCharacters() : 0);
-            advance += wordResult->fillGlyphBufferForTextEmphasisRun(
-                glyphBuffer, wordResult->m_runs[i].get(), textRun, emphasisData,
-                advance, from, to, resolvedOffset);
-        }
-        wordOffset += wordResult->numCharacters() * (textRun.rtl() ? -1 : 1);
-    }
-
-    return advance;
-}
-
-FloatRect ShapeResult::selectionRect(Vector<RefPtr<ShapeResult>>& results,
-    TextDirection direction, float totalWidth, const FloatPoint& point,
-    int height, unsigned absoluteFrom, unsigned absoluteTo)
-{
-    float currentX = 0;
-    float fromX = 0;
-    float toX = 0;
-    bool foundFromX = false;
-    bool foundToX = false;
-
-    if (direction == RTL)
-        currentX = totalWidth;
-
-    // The absoluteFrom and absoluteTo arguments represent the start/end offset
-    // for the entire run, from/to are continuously updated to be relative to
-    // the current word (ShapeResult instance).
-    int from = absoluteFrom;
-    int to = absoluteTo;
-
-    for (unsigned j = 0; j < results.size(); j++) {
-        RefPtr<ShapeResult> result = results[j];
-        for (unsigned i = 0; i < result->m_runs.size(); i++) {
-            if (!result->m_runs[i])
-                continue;
-            if (direction == RTL)
-                currentX -= result->m_runs[i]->m_width;
-            int numCharacters = result->m_runs[i]->m_numCharacters;
-            if (!foundFromX && from >= 0 && from < numCharacters) {
-                fromX = result->m_runs[i]->xPositionForOffset(from) + currentX;
-                foundFromX = true;
-            } else {
-                from -= numCharacters;
-            }
-
-            if (!foundToX && to >= 0 && to < numCharacters) {
-                toX = result->m_runs[i]->xPositionForOffset(to) + currentX;
-                foundToX = true;
-            } else {
-                to -= numCharacters;
-            }
-
-            if (foundFromX && foundToX)
-                break;
-            if (direction != RTL)
-                currentX += result->m_runs[i]->m_width;
-        }
-    }
-
-    // The position in question might be just after the text.
-    if (!foundFromX)
-        fromX = 0;
-    if (!foundToX)
-        toX = direction == RTL ? 0 : totalWidth;
-
-    // None of our runs is part of the selection, possibly invalid arguments.
-    if (!foundToX && !foundFromX)
-        fromX = toX = 0;
-    if (fromX < toX)
-        return FloatRect(point.x() + fromX, point.y(), toX - fromX, height);
-    return FloatRect(point.x() + toX, point.y(), fromX - toX, height);
-}
-
-int ShapeResult::offsetForPosition(Vector<RefPtr<ShapeResult>>& results,
-    const TextRun& run, float targetX)
-{
-    unsigned totalOffset;
-    if (run.rtl()) {
-        totalOffset = run.length();
-        for (unsigned i = results.size(); i; --i) {
-            const RefPtr<ShapeResult>& wordResult = results[i - 1];
-            if (!wordResult)
-                continue;
-            totalOffset -= wordResult->numCharacters();
-            if (targetX >= 0 && targetX <= wordResult->width()) {
-                int offsetForWord = wordResult->offsetForPosition(targetX);
-                return totalOffset + offsetForWord;
-            }
-            targetX -= wordResult->width();
-        }
-    } else {
-        totalOffset = 0;
-        for (auto& wordResult : results) {
-            if (!wordResult)
-                continue;
-            int offsetForWord = wordResult->offsetForPosition(targetX);
-            ASSERT(offsetForWord >= 0);
-            totalOffset += offsetForWord;
-            if (targetX >= 0 && targetX <= wordResult->width())
-                return totalOffset;
-            targetX -= wordResult->width();
-        }
-    }
-    return totalOffset;
-}
-
-int ShapeResult::offsetForPosition(float targetX)
-{
-    int charactersSoFar = 0;
-    float currentX = 0;
-
-    if (m_direction == RTL) {
-        charactersSoFar = m_numCharacters;
-        for (unsigned i = 0; i < m_runs.size(); ++i) {
-            if (!m_runs[i])
-                continue;
-            charactersSoFar -= m_runs[i]->m_numCharacters;
-            float nextX = currentX + m_runs[i]->m_width;
-            float offsetForRun = targetX - currentX;
-            if (offsetForRun >= 0 && offsetForRun <= m_runs[i]->m_width) {
-                // The x value in question is within this script run.
-                const unsigned index = m_runs[i]->characterIndexForXPosition(offsetForRun);
-                return charactersSoFar + index;
-            }
-            currentX = nextX;
-        }
-    } else {
-        for (unsigned i = 0; i < m_runs.size(); ++i) {
-            if (!m_runs[i])
-                continue;
-            float nextX = currentX + m_runs[i]->m_width;
-            float offsetForRun = targetX - currentX;
-            if (offsetForRun >= 0 && offsetForRun <= m_runs[i]->m_width) {
-                const unsigned index = m_runs[i]->characterIndexForXPosition(offsetForRun);
-                return charactersSoFar + index;
-            }
-            charactersSoFar += m_runs[i]->m_numCharacters;
-            currentX = nextX;
-        }
-    }
-
-    return charactersSoFar;
-}
-
-void ShapeResult::fallbackFonts(HashSet<const SimpleFontData*>* fallback) const
-{
-    ASSERT(fallback);
-    ASSERT(m_primaryFont);
-    for (unsigned i = 0; i < m_runs.size(); ++i) {
-        if (m_runs[i] && m_runs[i]->m_fontData != m_primaryFont
-            && !m_runs[i]->m_fontData->isTextOrientationFallbackOf(m_primaryFont.get())) {
-            fallback->add(m_runs[i]->m_fontData.get());
-        }
-    }
-}
-
-unsigned ShapeResult::numberOfRunsForTesting() const
-{
-    return m_runs.size();
-}
-
-bool ShapeResult::runInfoForTesting(unsigned runIndex, unsigned& startIndex,
-    unsigned& numGlyphs, hb_script_t& script)
-{
-    if (runIndex < m_runs.size() && m_runs[runIndex]) {
-        startIndex = m_runs[runIndex]->m_startIndex;
-        numGlyphs = m_runs[runIndex]->m_numGlyphs;
-        script = m_runs[runIndex]->m_script;
-        return true;
-    }
-    return false;
-}
-
-uint16_t ShapeResult::glyphForTesting(unsigned runIndex, size_t glyphIndex)
-{
-    return m_runs[runIndex]->m_glyphData[glyphIndex].glyph;
-}
-
-float ShapeResult::advanceForTesting(unsigned runIndex, size_t glyphIndex)
-{
-    return m_runs[runIndex]->m_glyphData[glyphIndex].advance;
-}
-
 template<typename T>
 class HarfBuzzScopedPtr {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(HarfBuzzScopedPtr);
 public:
     typedef void (*DestroyFunction)(T*);
 
@@ -771,203 +269,6 @@ void HarfBuzzShaper::setFontFeatures()
     }
 }
 
-PassRefPtr<ShapeResult> HarfBuzzShaper::shapeResult()
-{
-    if (!createHarfBuzzRuns())
-        return nullptr;
-    return shapeHarfBuzzRuns();
-}
-
-struct CandidateRun {
-    UChar32 character;
-    unsigned start;
-    unsigned end;
-    const SimpleFontData* fontData;
-    UScriptCode script;
-};
-
-static inline bool collectCandidateRuns(const UChar* normalizedBuffer,
-    size_t bufferLength, const Font* font, Vector<CandidateRun>* runs, bool isSpaceNormalize)
-{
-    UTF16TextIterator iterator(normalizedBuffer, bufferLength);
-    UChar32 character;
-    unsigned startIndexOfCurrentRun = 0;
-
-    if (!iterator.consume(character))
-        return false;
-
-    const SimpleFontData* nextFontData = font->glyphDataForCharacter(character, false, isSpaceNormalize).fontData;
-    UErrorCode errorCode = U_ZERO_ERROR;
-    UScriptCode nextScript = uscript_getScript(character, &errorCode);
-    if (U_FAILURE(errorCode))
-        return false;
-
-    do {
-        const UChar* currentCharacterPosition = iterator.characters();
-        const SimpleFontData* currentFontData = nextFontData;
-        UScriptCode currentScript = nextScript;
-
-        UChar32 lastCharacter = character;
-        for (iterator.advance(); iterator.consume(character); iterator.advance()) {
-            if (Character::treatAsZeroWidthSpace(character))
-                continue;
-            if ((U_GET_GC_MASK(character) & U_GC_M_MASK)
-                && (Character::isUnicodeVariationSelector(character)
-                    || currentFontData->canRenderCombiningCharacterSequence(
-                        currentCharacterPosition,
-                        iterator.glyphEnd() - currentCharacterPosition)))
-                continue;
-
-            nextFontData = font->glyphDataForCharacter(character, false, isSpaceNormalize).fontData;
-            nextScript = uscript_getScript(character, &errorCode);
-            if (U_FAILURE(errorCode))
-                return false;
-            if (lastCharacter == zeroWidthJoinerCharacter)
-                currentFontData = nextFontData;
-            if ((nextFontData != currentFontData) || ((currentScript != nextScript) && (nextScript != USCRIPT_INHERITED) && (!uscript_hasScript(character, currentScript))))
-                break;
-            currentCharacterPosition = iterator.characters();
-            lastCharacter = character;
-        }
-
-        CandidateRun run = { lastCharacter, startIndexOfCurrentRun, static_cast<unsigned>(iterator.offset()), currentFontData, currentScript };
-        runs->append(run);
-
-        startIndexOfCurrentRun = iterator.offset();
-    } while (iterator.consume(character));
-
-    return true;
-}
-
-static inline bool matchesAdjacentRun(UScriptCode* scriptExtensions, int length,
-    CandidateRun& adjacentRun)
-{
-    for (int i = 0; i < length; i++) {
-        if (scriptExtensions[i] == adjacentRun.script)
-            return true;
-    }
-    return false;
-}
-
-static inline void resolveRunBasedOnScriptExtensions(Vector<CandidateRun>& runs,
-    CandidateRun& run, size_t i, size_t length, UScriptCode* scriptExtensions,
-    int extensionsLength, size_t& nextResolvedRun)
-{
-    // If uscript_getScriptExtensions returns 1 it only contains the script value,
-    // we only care about ScriptExtensions which is indicated by a value >= 2.
-    if (extensionsLength <= 1)
-        return;
-
-    if (i > 0 && matchesAdjacentRun(scriptExtensions, extensionsLength, runs[i - 1])) {
-        run.script = runs[i - 1].script;
-        return;
-    }
-
-    for (size_t j = i + 1; j < length; j++) {
-        if (runs[j].script != USCRIPT_COMMON
-            && runs[j].script != USCRIPT_INHERITED
-            && matchesAdjacentRun(scriptExtensions, extensionsLength, runs[j])) {
-            nextResolvedRun = j;
-            break;
-        }
-    }
-}
-
-static inline void resolveRunBasedOnScriptValue(Vector<CandidateRun>& runs,
-    CandidateRun& run, size_t i, size_t length, size_t& nextResolvedRun)
-{
-    if (run.script != USCRIPT_COMMON)
-        return;
-
-    if (i > 0 && runs[i - 1].script != USCRIPT_COMMON) {
-        run.script = runs[i - 1].script;
-        return;
-    }
-
-    for (size_t j = i + 1; j < length; j++) {
-        if (runs[j].script != USCRIPT_COMMON
-            && runs[j].script != USCRIPT_INHERITED) {
-            nextResolvedRun = j;
-            break;
-        }
-    }
-}
-
-static inline bool resolveCandidateRuns(Vector<CandidateRun>& runs)
-{
-    UScriptCode scriptExtensions[USCRIPT_CODE_LIMIT];
-    UErrorCode errorCode = U_ZERO_ERROR;
-    size_t length = runs.size();
-    for (size_t i = 0; i < length; i++) {
-        CandidateRun& run = runs[i];
-        size_t nextResolvedRun = 0;
-
-        if (run.script == USCRIPT_INHERITED)
-            run.script = i > 0 ? runs[i - 1].script : USCRIPT_COMMON;
-
-        int extensionsLength = uscript_getScriptExtensions(run.character,
-            scriptExtensions, sizeof(scriptExtensions) / sizeof(scriptExtensions[0]),
-            &errorCode);
-        if (U_FAILURE(errorCode))
-            return false;
-
-        resolveRunBasedOnScriptExtensions(runs, run, i, length,
-            scriptExtensions, extensionsLength, nextResolvedRun);
-        resolveRunBasedOnScriptValue(runs, run, i, length,
-            nextResolvedRun);
-        for (size_t j = i; j < nextResolvedRun; j++)
-            runs[j].script = runs[nextResolvedRun].script;
-
-        i = std::max(i, nextResolvedRun);
-    }
-    return true;
-}
-
-// For ideographic (CJK) documents, 90-95% of calls from width() are one character length
-// because most characters have break opportunities both before and after.
-bool HarfBuzzShaper::createHarfBuzzRunsForSingleCharacter()
-{
-    ASSERT(m_normalizedBufferLength == 1);
-    UChar32 character = m_normalizedBuffer[0];
-    if (!U16_IS_SINGLE(character))
-        return false;
-    const SimpleFontData* fontData = m_font->glyphDataForCharacter(character, false, m_textRun.normalizeSpace()).fontData;
-    UErrorCode errorCode = U_ZERO_ERROR;
-    UScriptCode script = uscript_getScript(character, &errorCode);
-    if (U_FAILURE(errorCode))
-        return false;
-    addHarfBuzzRun(0, 1, fontData, script);
-    return true;
-}
-
-bool HarfBuzzShaper::createHarfBuzzRuns()
-{
-    if (m_normalizedBufferLength == 1)
-        return createHarfBuzzRunsForSingleCharacter();
-
-    Vector<CandidateRun> candidateRuns;
-    if (!collectCandidateRuns(m_normalizedBuffer.get(),
-        m_normalizedBufferLength, m_font, &candidateRuns, m_textRun.normalizeSpace()))
-        return false;
-
-    if (!resolveCandidateRuns(candidateRuns))
-        return false;
-
-    size_t length = candidateRuns.size();
-    for (size_t i = 0; i < length; ) {
-        CandidateRun& run = candidateRuns[i];
-        CandidateRun lastMatchingRun = run;
-        for (i++; i < length; i++) {
-            if (candidateRuns[i].script != run.script
-                || candidateRuns[i].fontData != run.fontData)
-                break;
-            lastMatchingRun = candidateRuns[i];
-        }
-        addHarfBuzzRun(run.start, lastMatchingRun.end, run.fontData, run.script);
-    }
-    return !m_harfBuzzRuns.isEmpty();
-}
-
 // A port of hb_icu_script_to_script because harfbuzz on CrOS is built
 // without hb-icu. See http://crbug.com/356929
 static inline hb_script_t ICUScriptToHBScript(UScriptCode script)
@@ -984,22 +285,6 @@ static inline hb_direction_t TextDirectionToHBDirection(TextDirection dir, FontO
     return dir == RTL ? HB_DIRECTION_REVERSE(harfBuzzDirection) : harfBuzzDirection;
 }
 
-void HarfBuzzShaper::addHarfBuzzRun(unsigned startCharacter,
-    unsigned endCharacter, const SimpleFontData* fontData,
-    UScriptCode script)
-{
-    ASSERT(endCharacter > startCharacter);
-    ASSERT(script != USCRIPT_INVALID_CODE);
-
-    hb_direction_t direction = TextDirectionToHBDirection(m_textRun.direction(),
-        m_font->fontDescription().orientation(), fontData);
-    HarfBuzzRun harfBuzzRun = {
-        fontData, startCharacter, endCharacter - startCharacter,
-        direction, ICUScriptToHBScript(script)
-    };
-    m_harfBuzzRuns.append(harfBuzzRun);
-}
-
 static const uint16_t* toUint16(const UChar* src)
 {
     // FIXME: This relies on undefined behavior however it works on the
@@ -1011,24 +296,231 @@ static const uint16_t* toUint16(const UChar* src)
 
 static inline void addToHarfBuzzBufferInternal(hb_buffer_t* buffer,
     const FontDescription& fontDescription, const UChar* normalizedBuffer,
-    unsigned startIndex, unsigned numCharacters)
+    unsigned normalizedBufferLength, unsigned startIndex, unsigned numCharacters)
 {
-    if (fontDescription.variant() == FontVariantSmallCaps
-        && u_islower(normalizedBuffer[startIndex])) {
-        String upperText = String(normalizedBuffer + startIndex, numCharacters)
+    // TODO: Revisit whether we can always fill the hb_buffer_t with the
+    // full run text, but only specify startIndex and numCharacters for the part
+    // to be shaped. Then simplify/change the complicated index computations in
+    // extractShapeResults().
+    if (fontDescription.variant() == FontVariantSmallCaps) {
+        String upperText = String(normalizedBuffer, normalizedBufferLength)
             .upper();
         // TextRun is 16 bit, therefore upperText is 16 bit, even after we call
         // makeUpper().
         ASSERT(!upperText.is8Bit());
         hb_buffer_add_utf16(buffer, toUint16(upperText.characters16()),
-            numCharacters, 0, numCharacters);
+            normalizedBufferLength, startIndex, numCharacters);
     } else {
-        hb_buffer_add_utf16(buffer, toUint16(normalizedBuffer + startIndex),
-            numCharacters, 0, numCharacters);
+        hb_buffer_add_utf16(buffer, toUint16(normalizedBuffer),
+            normalizedBufferLength, startIndex, numCharacters);
     }
 }
 
-PassRefPtr<ShapeResult> HarfBuzzShaper::shapeHarfBuzzRuns()
+inline bool HarfBuzzShaper::shapeRange(hb_buffer_t* harfBuzzBuffer,
+    unsigned startIndex,
+    unsigned numCharacters,
+    const SimpleFontData* currentFont,
+    unsigned currentFontRangeFrom,
+    unsigned currentFontRangeTo,
+    UScriptCode currentRunScript,
+    hb_language_t language)
+{
+    const FontPlatformData* platformData = &(currentFont->platformData());
+    HarfBuzzFace* face = platformData->harfBuzzFace();
+    if (!face) {
+        WTF_LOG_ERROR("Could not create HarfBuzzFace from FontPlatformData.");
+        return false;
+    }
+
+    hb_buffer_set_language(harfBuzzBuffer, language);
+    hb_buffer_set_script(harfBuzzBuffer, ICUScriptToHBScript(currentRunScript));
+    hb_buffer_set_direction(harfBuzzBuffer, TextDirectionToHBDirection(m_textRun.direction(),
+        m_font->fontDescription().orientation(), currentFont));
+
+    addToHarfBuzzBufferInternal(harfBuzzBuffer,
+        m_font->fontDescription(), m_normalizedBuffer.get(), m_normalizedBufferLength,
+        startIndex, numCharacters);
+
+    HarfBuzzScopedPtr<hb_font_t> harfBuzzFont(face->createFont(currentFontRangeFrom, currentFontRangeTo), hb_font_destroy);
+    hb_shape(harfBuzzFont.get(), harfBuzzBuffer, m_features.isEmpty() ? 0 : m_features.data(), m_features.size());
+
+    return true;
+}
+
+bool HarfBuzzShaper::extractShapeResults(hb_buffer_t* harfBuzzBuffer,
+    ShapeResult* shapeResult,
+    bool& fontCycleQueued, const HolesQueueItem& currentQueueItem,
+    const SimpleFontData* currentFont,
+    UScriptCode currentRunScript,
+    bool isLastResort)
+{
+    enum ClusterResult {
+        Shaped,
+        NotDef,
+        Unknown
+    };
+    ClusterResult currentClusterResult = Unknown;
+    ClusterResult previousClusterResult = Unknown;
+    unsigned previousCluster = 0;
+    unsigned currentCluster = 0;
+
+    // Find first notdef glyph in harfBuzzBuffer.
+    unsigned numGlyphs = hb_buffer_get_length(harfBuzzBuffer);
+    hb_glyph_info_t* glyphInfo = hb_buffer_get_glyph_infos(harfBuzzBuffer, 0);
+
+    unsigned lastChangePosition = 0;
+
+    if (!numGlyphs) {
+        WTF_LOG_ERROR("HarfBuzz returned empty glyph buffer after shaping.");
+        return false;
+    }
+
+    for (unsigned glyphIndex = 0; glyphIndex <= numGlyphs; ++glyphIndex) {
+        // Iterating by clusters, check for when the state switches from shaped
+        // to non-shaped and vice versa. Taking into account the edge cases of
+        // beginning of the run and end of the run.
+        previousCluster = currentCluster;
+        currentCluster = glyphInfo[glyphIndex].cluster;
+
+        if (glyphIndex < numGlyphs) {
+            // Still the same cluster, merge shaping status.
+            if (previousCluster == currentCluster && glyphIndex != 0) {
+                if (glyphInfo[glyphIndex].codepoint == 0) {
+                    currentClusterResult = NotDef;
+                } else {
+                    // We can only call the current cluster fully shapped, if
+                    // all characters that are part of it are shaped, so update
+                    // currentClusterResult to Shaped only if the previous
+                    // characters have been shaped, too.
+                    currentClusterResult = currentClusterResult == Shaped ? Shaped : NotDef;
+                }
+                continue;
+            }
+            // We've moved to a new cluster.
+            previousClusterResult = currentClusterResult;
+            currentClusterResult = glyphInfo[glyphIndex].codepoint == 0 ? NotDef : Shaped;
+        } else {
+            // The code below operates on the "flanks"/changes between NotDef
+            // and Shaped. In order to keep the code below from explictly
+            // dealing with character indices and run end, we explicitly
+            // terminate the cluster/run here by setting the result value to the
+            // opposite of what it was, leading to atChange turning true.
+            previousClusterResult = currentClusterResult;
+            currentClusterResult = currentClusterResult == NotDef ? Shaped : NotDef;
+        }
+
+        bool atChange = (previousClusterResult != currentClusterResult) && previousClusterResult != Unknown;
+        if (!atChange)
+            continue;
+
+        // Compute the range indices of consecutive shaped or .notdef glyphs.
+        // Cluster information for RTL runs becomes reversed, e.g. character 0
+        // has cluster index 5 in a run of 6 characters.
+        unsigned numCharacters = 0;
+        unsigned numGlyphsToInsert = 0;
+        unsigned startIndex = 0;
+        if (HB_DIRECTION_IS_FORWARD(hb_buffer_get_direction(harfBuzzBuffer))) {
+            startIndex = glyphInfo[lastChangePosition].cluster;
+            if (glyphIndex == numGlyphs) {
+                numCharacters = currentQueueItem.m_startIndex + currentQueueItem.m_numCharacters - glyphInfo[lastChangePosition].cluster;
+                numGlyphsToInsert = numGlyphs - lastChangePosition;
+            } else {
+                numCharacters = glyphInfo[glyphIndex].cluster - glyphInfo[lastChangePosition].cluster;
+                numGlyphsToInsert = glyphIndex - lastChangePosition;
+            }
+        } else {
+            // Direction Backwards
+            startIndex = glyphInfo[glyphIndex - 1].cluster;
+            if (lastChangePosition == 0) {
+                numCharacters = currentQueueItem.m_startIndex + currentQueueItem.m_numCharacters - glyphInfo[glyphIndex - 1].cluster;
+            } else {
+                numCharacters = glyphInfo[lastChangePosition - 1].cluster - glyphInfo[glyphIndex - 1].cluster;
+            }
+            numGlyphsToInsert = glyphIndex - lastChangePosition;
+        }
+
+        if (currentClusterResult == Shaped && !isLastResort) {
+            // Now it's clear that we need to continue processing.
+            if (!fontCycleQueued) {
+                appendToHolesQueue(HolesQueueNextFont, 0, 0);
+                fontCycleQueued = true;
+            }
+
+            // Here we need to put character positions.
+            ASSERT(numCharacters);
+            appendToHolesQueue(HolesQueueRange, startIndex, numCharacters);
+        }
+
+        // If numCharacters is 0, that means we hit a NotDef before shaping the
+        // whole grapheme. We do not append it here. For the next glyph we
+        // encounter, atChange will be true, and the characters corresponding to
+        // the grapheme will be added to the TODO queue again, attempting to
+        // shape the whole grapheme with the next font.
+        // When we're getting here with the last resort font, we have no other
+        // choice than adding boxes to the ShapeResult.
+        if ((currentClusterResult == NotDef && numCharacters) || isLastResort) {
+            // Here we need to specify glyph positions.
+            OwnPtr<ShapeResult::RunInfo> run = adoptPtr(new ShapeResult::RunInfo(currentFont,
+                TextDirectionToHBDirection(m_textRun.direction(),
+                m_font->fontDescription().orientation(), currentFont),
+                ICUScriptToHBScript(currentRunScript),
+                startIndex,
+                numGlyphsToInsert, numCharacters));
+            insertRunIntoShapeResult(shapeResult, run.release(), lastChangePosition, numGlyphsToInsert, harfBuzzBuffer);
+        }
+        lastChangePosition = glyphIndex;
+    }
+    return true;
+}
+
+static inline const SimpleFontData* fontDataAdjustedForOrientation(const SimpleFontData* originalFont,
+    FontOrientation runOrientation,
+    OrientationIterator::RenderOrientation renderOrientation)
+{
+    if (!isVerticalBaseline(runOrientation))
+        return originalFont;
+
+    if (runOrientation == FontOrientation::VerticalRotated
+        || (runOrientation == FontOrientation::VerticalMixed && renderOrientation == OrientationIterator::OrientationRotateSideways))
+        return originalFont->verticalRightOrientationFontData().get();
+
+    return originalFont;
+}
+
+bool HarfBuzzShaper::collectFallbackHintChars(Vector<UChar32>& hint, bool needsList)
+{
+    if (!m_holesQueue.size())
+        return false;
+
+    hint.clear();
+
+    size_t numCharsAdded = 0;
+    for (auto it = m_holesQueue.begin(); it != m_holesQueue.end(); ++it) {
+        if (it->m_action == HolesQueueNextFont)
+            break;
+
+        UChar32 hintChar;
+        RELEASE_ASSERT(it->m_startIndex + it->m_numCharacters <= m_normalizedBufferLength);
+        UTF16TextIterator iterator(m_normalizedBuffer.get() + it->m_startIndex, it->m_numCharacters);
+        while (iterator.consume(hintChar)) {
+            hint.append(hintChar);
+            numCharsAdded++;
+            if (!needsList)
+                break;
+            iterator.advance();
+        }
+    }
+    return numCharsAdded > 0;
+}
+
+void HarfBuzzShaper::appendToHolesQueue(HolesQueueItemAction action,
+    unsigned startIndex,
+    unsigned numCharacters)
+{
+    m_holesQueue.append(HolesQueueItem(action, startIndex, numCharacters));
+}
+
+PassRefPtr<ShapeResult> HarfBuzzShaper::shapeResult()
 {
     RefPtr<ShapeResult> result = ShapeResult::create(m_font,
         m_normalizedBufferLength, m_textRun.direction());
@@ -1039,93 +531,145 @@ PassRefPtr<ShapeResult> HarfBuzzShaper::shapeHarfBuzzRuns()
     CString locale = localeString.latin1();
     const hb_language_t language = hb_language_from_string(locale.data(), locale.length());
 
-    result->m_runs.resize(m_harfBuzzRuns.size());
-    for (unsigned i = 0; i < m_harfBuzzRuns.size(); ++i) {
-        unsigned runIndex = m_textRun.rtl() ? m_harfBuzzRuns.size() - i - 1 : i;
-        const HarfBuzzRun* currentRun = &m_harfBuzzRuns[runIndex];
+    RunSegmenter::RunSegmenterRange segmentRange = {
+        0,
+        0,
+        USCRIPT_INVALID_CODE,
+        OrientationIterator::OrientationInvalid,
+        SmallCapsIterator::SmallCapsSameCase };
+    RunSegmenter runSegmenter(
+        m_normalizedBuffer.get(),
+        m_normalizedBufferLength,
+        m_font->fontDescription().orientation(),
+        fontDescription.variant());
 
-        const SimpleFontData* currentFontData = currentRun->m_fontData;
-        FontPlatformData* platformData = const_cast<FontPlatformData*>(&currentFontData->platformData());
-        HarfBuzzFace* face = platformData->harfBuzzFace();
-        if (!face)
-            return nullptr;
+    Vector<UChar32> fallbackCharsHint;
 
-        hb_buffer_set_language(harfBuzzBuffer.get(), language);
-        hb_buffer_set_script(harfBuzzBuffer.get(), currentRun->m_script);
-        hb_buffer_set_direction(harfBuzzBuffer.get(), currentRun->m_direction);
+    // TODO: Check whether this treatAsZerowidthspace from the previous script
+    // segmentation plays a role here, does the new scriptRuniterator handle that correctly?
+    while (runSegmenter.consume(&segmentRange)) {
+        RefPtr<FontFallbackIterator> fallbackIterator = m_font->createFontFallbackIterator();
 
-        // Add a space as pre-context to the buffer. This prevents showing dotted-circle
-        // for combining marks at the beginning of runs.
-        static const uint16_t preContext = spaceCharacter;
-        hb_buffer_add_utf16(harfBuzzBuffer.get(), &preContext, 1, 1, 0);
+        appendToHolesQueue(HolesQueueNextFont, 0, 0);
+        appendToHolesQueue(HolesQueueRange, segmentRange.start, segmentRange.end - segmentRange.start);
 
-        addToHarfBuzzBufferInternal(harfBuzzBuffer.get(),
-            fontDescription, m_normalizedBuffer.get(), currentRun->m_startIndex,
-            currentRun->m_numCharacters);
+        const SimpleFontData* currentFont = nullptr;
+        unsigned currentFontRangeFrom = 0;
+        unsigned currentFontRangeTo = 0;
 
-        HarfBuzzScopedPtr<hb_font_t> harfBuzzFont(face->createFont(), hb_font_destroy);
-        hb_shape(harfBuzzFont.get(), harfBuzzBuffer.get(), m_features.isEmpty() ? 0 : m_features.data(), m_features.size());
-        shapeResult(result.get(), i, currentRun, harfBuzzBuffer.get());
+        bool fontCycleQueued = false;
+        while (m_holesQueue.size()) {
+            HolesQueueItem currentQueueItem = m_holesQueue.takeFirst();
 
-        hb_buffer_reset(harfBuzzBuffer.get());
+            if (currentQueueItem.m_action == HolesQueueNextFont) {
+                // For now, we're building a character list with which we probe
+                // for needed fonts depending on the declared unicode-range of a
+                // segmented CSS font. Alternatively, we can build a fake font
+                // for the shaper and check whether any glyphs were found, or
+                // define a new API on the shaper which will give us coverage
+                // information?
+                if (!collectFallbackHintChars(fallbackCharsHint, fallbackIterator->needsHintList())) {
+                    // Give up shaping since we cannot retrieve a font fallback
+                    // font without a hintlist.
+                    m_holesQueue.clear();
+                    break;
+                }
+
+                FontDataRange nextFontDataRange = fallbackIterator->next(fallbackCharsHint);
+                currentFont = nextFontDataRange.fontData().get();
+                currentFontRangeFrom = nextFontDataRange.from();
+                currentFontRangeTo = nextFontDataRange.to();
+                if (!currentFont) {
+                    ASSERT(!m_holesQueue.size());
+                    break;
+                }
+                fontCycleQueued = false;
+                continue;
+            }
+
+            // TODO crbug.com/522964: Only use smallCapsFontData when the font does not support true smcp.  The spec
+            // says: "To match the surrounding text, a font may provide alternate glyphs for caseless characters when
+            // these features are enabled but when a user agent simulates small capitals, it must not attempt to
+            // simulate alternates for codepoints which are considered caseless."
+            const SimpleFontData* smallcapsAdjustedFont = segmentRange.smallCapsBehavior == SmallCapsIterator::SmallCapsUppercaseNeeded
+                ? currentFont->smallCapsFontData(fontDescription).get()
+                : currentFont;
+
+            // Compatibility with SimpleFontData approach of keeping a flag for overriding drawing direction.
+            // TODO: crbug.com/506224 This should go away in favor of storing that information elsewhere, for example in
+            // ShapeResult.
+            const SimpleFontData* directionAndSmallCapsAdjustedFont = fontDataAdjustedForOrientation(smallcapsAdjustedFont,
+                m_font->fontDescription().orientation(),
+                segmentRange.renderOrientation);
+
+            if (!shapeRange(harfBuzzBuffer.get(),
+                currentQueueItem.m_startIndex,
+                currentQueueItem.m_numCharacters,
+                directionAndSmallCapsAdjustedFont,
+                currentFontRangeFrom,
+                currentFontRangeTo,
+                segmentRange.script,
+                language))
+                WTF_LOG_ERROR("Shaping range failed.");
+
+            if (!extractShapeResults(harfBuzzBuffer.get(),
+                result.get(),
+                fontCycleQueued,
+                currentQueueItem,
+                directionAndSmallCapsAdjustedFont,
+                segmentRange.script,
+                !fallbackIterator->hasNext()))
+                WTF_LOG_ERROR("Shape result extraction failed.");
+
+            hb_buffer_reset(harfBuzzBuffer.get());
+        }
     }
-
-    // We should have consumed all expansion opportunities.
-    // Failures here means that our logic does not match to the one in expansionOpportunityCount().
-    // FIXME: Ideally, we should ASSERT(!m_expansionOpportunityCount) here to ensure that,
-    // or unify the two logics (and the one in SimplePath too,) but there are some cases where our impl
-    // does not support justification very well yet such as U+3099, and it'll cause the ASSERT to fail.
-    // It's to be fixed because they're very rarely used, and a broken justification is still somewhat readable.
-
     return result.release();
 }
 
-void HarfBuzzShaper::shapeResult(ShapeResult* result, unsigned index,
-    const HarfBuzzRun* currentRun, hb_buffer_t* harfBuzzBuffer)
+// TODO crbug.com/542701: This should be a method on ShapeResult.
+void HarfBuzzShaper::insertRunIntoShapeResult(ShapeResult* result,
+    PassOwnPtr<ShapeResult::RunInfo> runToInsert, unsigned startGlyph, unsigned numGlyphs,
+    hb_buffer_t* harfBuzzBuffer)
 {
-    unsigned numGlyphs = hb_buffer_get_length(harfBuzzBuffer);
-    if (!numGlyphs) {
-        result->m_runs[index] = nullptr;
-        return;
-    }
+    ASSERT(numGlyphs > 0);
+    OwnPtr<ShapeResult::RunInfo> run(std::move(runToInsert));
+    ASSERT(numGlyphs == run->m_glyphData.size());
 
-    OwnPtr<ShapeResult::RunInfo> run = adoptPtr(new ShapeResult::RunInfo(currentRun->m_fontData,
-        currentRun->m_direction, currentRun->m_script, currentRun->m_startIndex,
-        numGlyphs, currentRun->m_numCharacters));
-
-    const SimpleFontData* currentFontData = currentRun->m_fontData;
-    hb_glyph_info_t* glyphInfos = hb_buffer_get_glyph_infos(harfBuzzBuffer, 0);
-    hb_glyph_position_t* glyphPositions = hb_buffer_get_glyph_positions(harfBuzzBuffer, 0);
+    const SimpleFontData* currentFontData = run->m_fontData.get();
+    const hb_glyph_info_t* glyphInfos = hb_buffer_get_glyph_infos(harfBuzzBuffer, 0);
+    const hb_glyph_position_t* glyphPositions = hb_buffer_get_glyph_positions(harfBuzzBuffer, 0);
+    const unsigned startCluster = HB_DIRECTION_IS_FORWARD(hb_buffer_get_direction(harfBuzzBuffer))
+        ? glyphInfos[startGlyph].cluster : glyphInfos[startGlyph + numGlyphs - 1].cluster;
 
     float totalAdvance = 0.0f;
     FloatPoint glyphOrigin;
     float offsetX, offsetY;
     float* directionOffset = m_font->fontDescription().isVerticalAnyUpright() ? &offsetY : &offsetX;
+    bool hasVerticalOffsets = !HB_DIRECTION_IS_HORIZONTAL(run->m_direction);
 
     // HarfBuzz returns result in visual order, no need to flip for RTL.
-    for (size_t i = 0; i < numGlyphs; ++i) {
+    for (unsigned i = 0; i < numGlyphs; ++i) {
         bool runEnd = i + 1 == numGlyphs;
-        uint16_t glyph = glyphInfos[i].codepoint;
-        offsetX = harfBuzzPositionToFloat(glyphPositions[i].x_offset);
-        offsetY = -harfBuzzPositionToFloat(glyphPositions[i].y_offset);
+        uint16_t glyph = glyphInfos[startGlyph + i].codepoint;
+        offsetX = harfBuzzPositionToFloat(glyphPositions[startGlyph + i].x_offset);
+        offsetY = -harfBuzzPositionToFloat(glyphPositions[startGlyph + i].y_offset);
 
         // One out of x_advance and y_advance is zero, depending on
         // whether the buffer direction is horizontal or vertical.
-        float advance = harfBuzzPositionToFloat(glyphPositions[i].x_advance - glyphPositions[i].y_advance);
-        unsigned currentCharacterIndex = currentRun->m_startIndex + glyphInfos[i].cluster;
+        float advance = harfBuzzPositionToFloat(glyphPositions[startGlyph + i].x_advance - glyphPositions[startGlyph + i].y_advance);
+        unsigned currentCharacterIndex = glyphInfos[startGlyph + i].cluster;
         RELEASE_ASSERT(m_normalizedBufferLength > currentCharacterIndex);
-        bool isClusterEnd = runEnd || glyphInfos[i].cluster != glyphInfos[i + 1].cluster;
+        bool isClusterEnd = runEnd || glyphInfos[startGlyph + i].cluster != glyphInfos[startGlyph + i + 1].cluster;
         float spacing = 0;
 
-        run->m_glyphData[i].characterIndex = glyphInfos[i].cluster;
+        // The characterIndex of one ShapeResult run is normalized to the run's
+        // startIndex and length.  TODO crbug.com/542703: Consider changing that
+        // and instead pass the whole run to hb_buffer_t each time.
+        run->m_glyphData[i].characterIndex = glyphInfos[startGlyph + i].cluster - startCluster;
 
         if (isClusterEnd)
             spacing += adjustSpacing(run.get(), i, currentCharacterIndex, *directionOffset, totalAdvance);
-
-        if (currentFontData->isZeroWidthSpaceGlyph(glyph)) {
-            run->setGlyphAndPositions(i, glyph, 0, 0, 0);
-            continue;
-        }
 
         advance += spacing;
         if (m_textRun.rtl()) {
@@ -1137,17 +681,42 @@ void HarfBuzzShaper::shapeResult(ShapeResult* result, unsigned index,
 
         run->setGlyphAndPositions(i, glyph, advance, offsetX, offsetY);
         totalAdvance += advance;
+        hasVerticalOffsets |= (offsetY != 0);
 
         FloatRect glyphBounds = currentFontData->boundsForGlyph(glyph);
         glyphBounds.move(glyphOrigin.x(), glyphOrigin.y());
         result->m_glyphBoundingBox.unite(glyphBounds);
         glyphOrigin += FloatSize(advance + offsetX, offsetY);
     }
-
     run->m_width = std::max(0.0f, totalAdvance);
     result->m_width += run->m_width;
     result->m_numGlyphs += numGlyphs;
-    result->m_runs[index] = run.release();
+    ASSERT(result->m_numGlyphs >= numGlyphs); // no overflow
+    result->m_hasVerticalOffsets |= hasVerticalOffsets;
+
+    // The runs are stored in result->m_runs in visual order. For LTR, we place
+    // the run to be inserted before the next run with a bigger character
+    // start index. For RTL, we place the run before the next run with a lower
+    // character index. Otherwise, for both directions, at the end.
+    if (HB_DIRECTION_IS_FORWARD(run->m_direction)) {
+        for (size_t pos = 0; pos < result->m_runs.size(); ++pos) {
+            if (result->m_runs.at(pos)->m_startIndex > run->m_startIndex) {
+                result->m_runs.insert(pos, run.release());
+                break;
+            }
+        }
+    } else {
+        for (size_t pos = 0; pos < result->m_runs.size(); ++pos) {
+            if (result->m_runs.at(pos)->m_startIndex < run->m_startIndex) {
+                result->m_runs.insert(pos, run.release());
+                break;
+            }
+        }
+    }
+    // If we didn't find an existing slot to place it, append.
+    if (run) {
+        result->m_runs.append(run.release());
+    }
 }
 
 PassRefPtr<ShapeResult> ShapeResult::createForTabulationCharacters(const Font* font,
@@ -1171,6 +740,7 @@ PassRefPtr<ShapeResult> ShapeResult::createForTabulationCharacters(const Font* f
     RefPtr<ShapeResult> result = ShapeResult::create(font, count, textRun.direction());
     result->m_width = run->m_width;
     result->m_numGlyphs = count;
+    ASSERT(result->m_numGlyphs == count); // no overflow
     result->m_runs.append(run.release());
     return result.release();
 }
@@ -1230,5 +800,6 @@ float HarfBuzzShaper::adjustSpacing(ShapeResult::RunInfo* run, size_t glyphIndex
     m_isAfterExpansion = true;
     return spacing;
 }
+
 
 } // namespace blink

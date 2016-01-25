@@ -20,6 +20,8 @@
 #include "GrVertexBuffer.h"
 #include "GrXferProcessor.h"
 
+#include "batches/GrDrawBatch.h"
+
 #include "SkClipStack.h"
 #include "SkMatrix.h"
 #include "SkPath.h"
@@ -30,21 +32,58 @@
 #include "SkTypes.h"
 #include "SkXfermode.h"
 
+//#define ENABLE_MDB 1
+
+class GrAuditTrail;
 class GrBatch;
 class GrClip;
 class GrCaps;
 class GrPath;
-class GrDrawBatch;
 class GrDrawPathBatchBase;
-class GrPathRangeDraw;
 
 class GrDrawTarget final : public SkRefCnt {
 public:
-    // The context may not be fully constructed and should not be used during GrDrawTarget
-    // construction.
-    GrDrawTarget(GrGpu* gpu, GrResourceProvider*);
+    /** Options for GrDrawTarget behavior. */
+    struct Options {
+        Options () : fClipBatchToBounds(false), fDrawBatchBounds(false), fMaxBatchLookback(-1) {}
+        bool fClipBatchToBounds;
+        bool fDrawBatchBounds;
+        int  fMaxBatchLookback;
+    };
+
+    GrDrawTarget(GrRenderTarget*, GrGpu*, GrResourceProvider*, GrAuditTrail*, const Options&);
 
     ~GrDrawTarget() override;
+
+    void makeClosed() {
+        // We only close drawTargets When MDB is enabled. When MDB is disabled there is only
+        // ever one drawTarget and all calls will be funnelled into it.
+#ifdef ENABLE_MDB
+        this->setFlag(kClosed_Flag);
+#endif
+    }
+    bool isClosed() const { return this->isSetFlag(kClosed_Flag); }
+
+    // TODO: this entry point is only needed in the non-MDB world. Remove when
+    // we make the switch to MDB
+    void clearRT() { fRenderTarget = nullptr; }
+
+    /*
+     * Notify this drawTarget that it relies on the contents of 'dependedOn'
+     */
+    void addDependency(GrSurface* dependedOn);
+
+    /*
+     * Does this drawTarget depend on 'dependedOn'?
+     */
+    bool dependsOn(GrDrawTarget* dependedOn) const {
+        return fDependencies.find(dependedOn) >= 0;
+    }
+
+    /*
+     * Dump out the drawTarget dependency DAG
+     */
+    SkDEBUGCODE(void dump() const;)
 
     /**
      * Empties the draw buffer of any queued up draws.
@@ -52,10 +91,10 @@ public:
     void reset();
 
     /**
-     * This plays any queued up draws to its GrGpu target. It also resets this object (i.e. flushing
-     * is destructive).
+     * Together these two functions flush all queued up draws to the Gpu.
      */
-    void flush();
+    void prepareBatches(GrBatchFlushState* flushState);
+    void drawBatches(GrBatchFlushState* flushState);
 
     /**
      * Gets the capabilities of the draw target.
@@ -74,74 +113,13 @@ public:
                      GrPathRendering::FillType);
 
     /**
-     * Draws a path. Fill must not be a hairline. It will respect the HW
-     * antialias flag on the GrPipelineBuilder (if possible in the 3D API).
+     * Draws a path batch. Fill must not be a hairline. It will respect the HW antialias flag on
+     * the GrPipelineBuilder (if possible in the 3D API). This needs to be separate from drawBatch
+     * because we install path stencil settings late.
      *
-     * TODO: Remove this function and construct the batch outside GrDrawTarget.
+     * TODO: Figure out a better model that allows us to roll this method into drawBatch.
      */
-    void drawPath(const GrPipelineBuilder&, const SkMatrix& viewMatrix, GrColor color,
-                  const GrPath*, GrPathRendering::FillType);
-
-    /**
-     * Draws the aggregate path from combining multiple. Note that this will not
-     * always be equivalent to back-to-back calls to drawPath(). It will respect
-     * the HW antialias flag on the GrPipelineBuilder (if possible in the 3D API).
-     *
-     * TODO: Remove this function and construct the batch outside GrDrawTarget.
-     *
-     * @param draw            The range, transforms, and indices for the draw.
-     *                        This object must only be drawn once. The draw
-     *                        may modify its contents.
-     * @param fill            Fill type for drawing all the paths
-     */
-    void drawPathsFromRange(const GrPipelineBuilder&,
-                            const SkMatrix& viewMatrix,
-                            const SkMatrix& localMatrix,
-                            GrColor color,
-                            GrPathRangeDraw* draw,
-                            GrPathRendering::FillType fill);
-
-    /**
-     * Helper function for drawing rects.
-     *
-     * @param rect        the rect to draw
-     * @param localRect   optional rect that specifies local coords to map onto
-     *                    rect. If nullptr then rect serves as the local coords.
-     * @param localMatrix Optional local matrix. The local coordinates are specified by localRect,
-     *                    or if it is nullptr by rect. This matrix applies to the coordinate implied by
-     *                    that rectangle before it is input to GrCoordTransforms that read local
-     *                    coordinates
-     */
-    void drawNonAARect(const GrPipelineBuilder& pipelineBuilder,
-                       GrColor color,
-                       const SkMatrix& viewMatrix,
-                       const SkRect& rect);
-
-    void drawNonAARect(const GrPipelineBuilder& pipelineBuilder,
-                       GrColor color,
-                       const SkMatrix& viewMatrix,
-                       const SkRect& rect,
-                       const SkMatrix& localMatrix);
-
-    void drawNonAARect(const GrPipelineBuilder& pipelineBuilder,
-                       GrColor color,
-                       const SkMatrix& viewMatrix,
-                       const SkRect& rect,
-                       const SkRect& localRect);
-
-    void drawNonAARect(const GrPipelineBuilder& ds,
-                       GrColor color,
-                       const SkMatrix& viewM,
-                       const SkIRect& irect) {
-        SkRect rect = SkRect::Make(irect);
-        this->drawNonAARect(ds, color, viewM, rect);
-    }
-
-    void drawAARect(const GrPipelineBuilder& pipelineBuilder,
-                    GrColor color,
-                    const SkMatrix& viewMatrix,
-                    const SkRect& rect,
-                    const SkRect& devRect);
+    void drawPathBatch(const GrPipelineBuilder& pipelineBuilder, GrDrawPathBatchBase* batch);
 
     /**
      * Clear the passed in render target. Ignores the GrPipelineBuilder and clip. Clears the whole
@@ -170,17 +148,6 @@ public:
                      GrSurface* src,
                      const SkIRect& srcRect,
                      const SkIPoint& dstPoint);
-    /**
-     * Release any resources that are cached but not currently in use. This
-     * is intended to give an application some recourse when resources are low.
-     * TODO: Stop holding on to resources.
-     */
-    virtual void purgeResources() {
-        // The clip mask manager can rebuild all its clip masks so just get rid of them all.
-        fClipMaskManager->purgeResources();
-    };
-
-    bool programUnitTest(GrContext* owner, int maxStages);
 
     /** Provides access to internal functions to GrClipMaskManager without friending all of
         GrDrawTarget to CMM. */
@@ -200,7 +167,54 @@ public:
 
     const CMMAccess cmmAccess() { return CMMAccess(this); }
 
+    GrAuditTrail* getAuditTrail() const { return fAuditTrail; }
+
 private:
+    friend class GrDrawingManager; // for resetFlag & TopoSortTraits
+
+    enum Flags {
+        kClosed_Flag    = 0x01,   //!< This drawTarget can't accept any more batches
+
+        kWasOutput_Flag = 0x02,   //!< Flag for topological sorting
+        kTempMark_Flag  = 0x04,   //!< Flag for topological sorting
+    };
+
+    void setFlag(uint32_t flag) {
+        fFlags |= flag;
+    }
+
+    void resetFlag(uint32_t flag) {
+        fFlags &= ~flag;
+    }
+
+    bool isSetFlag(uint32_t flag) const {
+        return SkToBool(fFlags & flag);
+    }
+
+    struct TopoSortTraits {
+        static void Output(GrDrawTarget* dt, int /* index */) {
+            dt->setFlag(GrDrawTarget::kWasOutput_Flag);
+        }
+        static bool WasOutput(const GrDrawTarget* dt) {
+            return dt->isSetFlag(GrDrawTarget::kWasOutput_Flag);
+        }
+        static void SetTempMark(GrDrawTarget* dt) {
+            dt->setFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static void ResetTempMark(GrDrawTarget* dt) {
+            dt->resetFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static bool IsTempMarked(const GrDrawTarget* dt) {
+            return dt->isSetFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static int NumDependencies(const GrDrawTarget* dt) {
+            return dt->fDependencies.count();
+        }
+        static GrDrawTarget* Dependency(GrDrawTarget* dt, int index) {
+            return dt->fDependencies[index];
+        }
+    };
+
     void recordBatch(GrBatch*);
     bool installPipelineInDrawBatch(const GrPipelineBuilder* pipelineBuilder,
                                     const GrScissorState* scissor,
@@ -210,13 +224,10 @@ private:
     // but couldn't be made. Otherwise, returns true.  This method needs to be protected because it
     // needs to be accessed by GLPrograms to setup a correct drawstate
     bool setupDstReadIfNecessary(const GrPipelineBuilder&,
-        const GrProcOptInfo& colorPOI,
-        const GrProcOptInfo& coveragePOI,
+        const GrPipelineOptimizations& optimizations,
         GrXferProcessor::DstTexture*,
         const SkRect& batchBounds);
 
-    void drawPathBatch(const GrPipelineBuilder& pipelineBuilder, GrDrawPathBatchBase* batch,
-                       GrPathRendering::FillType fill);
     // Check to see if this set of draw commands has been sent out
     void getPathStencilSettingsForFilltype(GrPathRendering::FillType,
                                            const GrStencilAttachment*,
@@ -227,6 +238,8 @@ private:
                            GrScissorState*,
                            const SkRect* devBounds);
 
+    void addDependency(GrDrawTarget* dependedOn);
+
     // Used only by CMM.
     void clearStencilClip(const SkIRect&, bool insideClip, GrRenderTarget*);
 
@@ -236,8 +249,17 @@ private:
     GrContext*                                  fContext;
     GrGpu*                                      fGpu;
     GrResourceProvider*                         fResourceProvider;
-    bool                                        fFlushing;
-    GrBatchToken                                fLastFlushToken;
+    GrAuditTrail*                               fAuditTrail;
+
+    SkDEBUGCODE(int                             fDebugID;)
+    uint32_t                                    fFlags;
+
+    // 'this' drawTarget relies on the output of the drawTargets in 'fDependencies'
+    SkTDArray<GrDrawTarget*>                    fDependencies;
+    GrRenderTarget*                             fRenderTarget;
+
+    bool                                        fDrawBatchBounds;
+    int                                         fMaxBatchLookback;
 
     typedef SkRefCnt INHERITED;
 };

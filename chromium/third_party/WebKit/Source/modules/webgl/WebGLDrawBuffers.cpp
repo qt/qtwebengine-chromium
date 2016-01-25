@@ -23,9 +23,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/webgl/WebGLDrawBuffers.h"
+
 #include "modules/webgl/WebGLFramebuffer.h"
 
 namespace blink {
@@ -72,7 +71,7 @@ void WebGLDrawBuffers::drawBuffersWEBGL(const Vector<GLenum>& buffers)
     const GLenum* bufs = buffers.data();
     if (!scoped.context()->m_framebufferBinding) {
         if (n != 1) {
-            scoped.context()->synthesizeGLError(GL_INVALID_VALUE, "drawBuffersWEBGL", "more than one buffer");
+            scoped.context()->synthesizeGLError(GL_INVALID_OPERATION, "drawBuffersWEBGL", "must provide exactly one buffer");
             return;
         }
         if (bufs[0] != GL_BACK && bufs[0] != GL_NONE) {

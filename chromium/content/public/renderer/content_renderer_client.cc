@@ -101,7 +101,7 @@ bool ContentRendererClient::AllowPopup() {
 #ifdef OS_ANDROID
 bool ContentRendererClient::HandleNavigation(
     RenderFrame* render_frame,
-    DocumentState* document_state,
+    bool is_content_initiated,
     int opener_id,
     blink::WebFrame* frame,
     const blink::WebURLRequest& request,
@@ -171,7 +171,7 @@ void ContentRendererClient::AddKeySystems(
 scoped_ptr<media::RendererFactory>
 ContentRendererClient::CreateMediaRendererFactory(
     RenderFrame* render_frame,
-    const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
+    media::GpuVideoAcceleratorFactories* gpu_factories,
     const scoped_refptr<media::MediaLog>& media_log) {
   return nullptr;
 }
@@ -214,10 +214,6 @@ BrowserPluginDelegate* ContentRendererClient::CreateBrowserPluginDelegate(
     const std::string& mime_type,
     const GURL& original_url) {
   return nullptr;
-}
-
-std::string ContentRendererClient::GetUserAgentOverrideForURL(const GURL& url) {
-  return std::string();
 }
 
 scoped_ptr<blink::WebAppBannerClient>

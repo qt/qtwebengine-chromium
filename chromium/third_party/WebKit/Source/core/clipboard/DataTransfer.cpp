@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/clipboard/DataTransfer.h"
 
 #include "core/HTMLNames.h"
@@ -212,15 +211,13 @@ FileList* DataTransfer::files() const
     return files;
 }
 
-void DataTransfer::setDragImage(Element* image, int x, int y, ExceptionState& exceptionState)
+void DataTransfer::setDragImage(Element* image, int x, int y)
 {
+    ASSERT(image);
+
     if (!isForDragAndDrop())
         return;
 
-    if (!image) {
-        exceptionState.throwTypeError("setDragImage: Invalid first argument");
-        return;
-    }
     IntPoint location(x, y);
     if (isHTMLImageElement(*image) && !image->inDocument())
         setDragImageResource(toHTMLImageElement(*image).cachedImage(), location);
@@ -281,10 +278,10 @@ static void writeImageToDataObject(DataObject* dataObject, Element* element, con
 {
     // Shove image data into a DataObject for use as a file
     ImageResource* cachedImage = getImageResource(element);
-    if (!cachedImage || !cachedImage->imageForLayoutObject(element->layoutObject()) || !cachedImage->isLoaded())
+    if (!cachedImage || !cachedImage->image() || !cachedImage->isLoaded())
         return;
 
-    SharedBuffer* imageBuffer = cachedImage->imageForLayoutObject(element->layoutObject())->data();
+    SharedBuffer* imageBuffer = cachedImage->image()->data();
     if (!imageBuffer || !imageBuffer->size())
         return;
 
@@ -357,9 +354,7 @@ void DataTransfer::writeSelection(const FrameSelection& selection)
         return;
 
     if (!enclosingTextFormControl(selection.start())) {
-        EphemeralRange selectedRange = selection.selection().toNormalizedEphemeralRange();
-        ASSERT(selectedRange.isNotNull());
-        m_dataObject->setHTMLAndBaseURL(createMarkup(selectedRange.startPosition(), selectedRange.endPosition(), AnnotateForInterchange, ConvertBlocksToInlines::NotConvert, ResolveNonLocalURLs), selectedRange.document().url());
+        m_dataObject->setHTMLAndBaseURL(selection.selectedHTMLForClipboard(), selection.frame()->document()->url());
     }
 
     String str = selection.selectedTextForClipboard();

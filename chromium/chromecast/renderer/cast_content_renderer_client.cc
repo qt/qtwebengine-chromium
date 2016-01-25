@@ -4,13 +4,16 @@
 
 #include "chromecast/renderer/cast_content_renderer_client.h"
 
+#include <stdint.h>
 #include <sys/sysinfo.h>
 
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "chromecast/base/chromecast_switches.h"
 #include "chromecast/crash/cast_crash_keys.h"
 #include "chromecast/media/base/media_caps.h"
@@ -177,7 +180,7 @@ void CastContentRendererClient::AddKeySystems(
 scoped_ptr<::media::RendererFactory>
 CastContentRendererClient::CreateMediaRendererFactory(
     ::content::RenderFrame* render_frame,
-    const scoped_refptr<::media::GpuVideoAcceleratorFactories>& gpu_factories,
+    ::media::GpuVideoAcceleratorFactories* gpu_factories,
     const scoped_refptr<::media::MediaLog>& media_log) {
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (!cmd_line->HasSwitch(switches::kEnableCmaMediaPipeline))
@@ -185,7 +188,7 @@ CastContentRendererClient::CreateMediaRendererFactory(
 
   return scoped_ptr<::media::RendererFactory>(
       new chromecast::media::ChromecastMediaRendererFactory(
-          gpu_factories, media_log, render_frame->GetRoutingID()));
+          gpu_factories, render_frame->GetRoutingID()));
 }
 #endif
 

@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/timer/timer.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -28,7 +29,9 @@ class Rect;
 namespace ui {
 
 class DrmBuffer;
+class DrmDevice;
 class DrmDeviceManager;
+class DrmOverlayValidator;
 class HardwareDisplayController;
 struct OverlayCheck_Params;
 class ScanoutBufferGenerator;
@@ -53,7 +56,7 @@ class OZONE_EXPORT DrmWindow {
 
   gfx::Rect bounds() const { return bounds_; }
 
-  void Initialize();
+  void Initialize(ScanoutBufferGenerator* buffer_generator);
 
   void Shutdown();
 
@@ -67,7 +70,7 @@ class OZONE_EXPORT DrmWindow {
   void SetController(HardwareDisplayController* controller);
 
   // Called when the window is resized/moved.
-  void OnBoundsChanged(const gfx::Rect& bounds);
+  void SetBounds(const gfx::Rect& bounds);
 
   // Update the HW cursor bitmap & move to specified location. If
   // the bitmap is empty, the cursor is hidden.
@@ -86,8 +89,7 @@ class OZONE_EXPORT DrmWindow {
   void SchedulePageFlip(const std::vector<OverlayPlane>& planes,
                         const SwapCompletionCallback& callback);
   std::vector<OverlayCheck_Params> TestPageFlip(
-      const std::vector<OverlayCheck_Params>& planes,
-      ScanoutBufferGenerator* buffer_generator);
+      const std::vector<OverlayCheck_Params>& overlay_params);
 
   // Returns the last buffer associated with this window.
   const OverlayPlane* GetLastModesetBuffer();
@@ -117,6 +119,7 @@ class OZONE_EXPORT DrmWindow {
   // The controller associated with the current window. This may be nullptr if
   // the window isn't over an active display.
   HardwareDisplayController* controller_ = nullptr;
+  scoped_ptr<DrmOverlayValidator> overlay_validator_;
 
   base::RepeatingTimer cursor_timer_;
 

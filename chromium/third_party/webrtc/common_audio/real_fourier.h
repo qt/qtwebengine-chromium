@@ -14,7 +14,7 @@
 #include <complex>
 
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/aligned_malloc.h"
+#include "webrtc/system_wrappers/include/aligned_malloc.h"
 
 // Uniform interface class for the real DFT and its inverse, for power-of-2
 // input lengths. Also contains helper functions for buffer allocation, taking
@@ -30,7 +30,7 @@ class RealFourier {
       fft_cplx_scoper;
 
   // The alignment required for all input and output buffers, in bytes.
-  static const int kFftBufferAlignment;
+  static const size_t kFftBufferAlignment;
 
   // Construct a wrapper instance for the given input order, which must be
   // between 1 and kMaxFftOrder, inclusively.

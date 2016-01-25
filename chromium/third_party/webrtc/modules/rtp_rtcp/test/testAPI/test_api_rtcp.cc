@@ -14,13 +14,14 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_audio.h"
 #include "webrtc/modules/rtp_rtcp/test/testAPI/test_api.h"
 
-using namespace webrtc;
+namespace webrtc {
+namespace {
 
 const uint64_t kTestPictureId = 12345678;
 const uint8_t kSliPictureId = 156;
@@ -29,30 +30,29 @@ class RtcpCallback : public RtcpIntraFrameObserver {
  public:
   void SetModule(RtpRtcp* module) {
     _rtpRtcpModule = module;
-  };
+  }
   virtual void OnRTCPPacketTimeout(const int32_t id) {
   }
   virtual void OnLipSyncUpdate(const int32_t id,
-                               const int32_t audioVideoOffset) {
-  };
-  virtual void OnReceivedIntraFrameRequest(uint32_t ssrc) {
-  };
+                               const int32_t audioVideoOffset) {}
+  virtual void OnReceivedIntraFrameRequest(uint32_t ssrc) {}
   virtual void OnReceivedSLI(uint32_t ssrc,
                              uint8_t pictureId) {
     EXPECT_EQ(kSliPictureId & 0x3f, pictureId);
-  };
+  }
   virtual void OnReceivedRPSI(uint32_t ssrc,
                               uint64_t pictureId) {
     EXPECT_EQ(kTestPictureId, pictureId);
-  };
-  virtual void OnLocalSsrcChanged(uint32_t old_ssrc, uint32_t new_ssrc) {};
+  }
+  virtual void OnLocalSsrcChanged(uint32_t old_ssrc, uint32_t new_ssrc) {}
+
  private:
   RtpRtcp* _rtpRtcpModule;
 };
 
 class TestRtpFeedback : public NullRtpFeedback {
  public:
-  TestRtpFeedback(RtpRtcp* rtp_rtcp) : rtp_rtcp_(rtp_rtcp) {}
+  explicit TestRtpFeedback(RtpRtcp* rtp_rtcp) : rtp_rtcp_(rtp_rtcp) {}
   virtual ~TestRtpFeedback() {}
 
   void OnIncomingSSRCChanged(const uint32_t ssrc) override {
@@ -266,3 +266,6 @@ TEST_F(RtpRtcpRtcpTest, RemoteRTCPStatRemote) {
   EXPECT_EQ(test_sequence_number, report_blocks[0].extendedHighSeqNum);
   EXPECT_EQ(0u, report_blocks[0].fractionLost);
 }
+
+}  // namespace
+}  // namespace webrtc

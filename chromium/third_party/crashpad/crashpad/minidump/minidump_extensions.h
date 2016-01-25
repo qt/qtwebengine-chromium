@@ -71,11 +71,21 @@ enum MinidumpStreamType : uint32_t {
   //! \sa SystemInfoStream
   kMinidumpStreamTypeSystemInfo = SystemInfoStream,
 
+  //! \brief The stream type for MINIDUMP_HANDLE_DATA_STREAM.
+  //!
+  //! \sa HandleDataStream
+  kMinidumpStreamTypeHandleData = HandleDataStream,
+
   //! \brief The stream type for MINIDUMP_MISC_INFO, MINIDUMP_MISC_INFO_2,
   //!     MINIDUMP_MISC_INFO_3, and MINIDUMP_MISC_INFO_4.
   //!
   //! \sa MiscInfoStream
   kMinidumpStreamTypeMiscInfo = MiscInfoStream,
+
+  //! \brief The stream type for MINIDUMP_MEMORY_INFO_LIST.
+  //!
+  //! \sa MemoryInfoListStream
+  kMinidumpStreamTypeMemoryInfoList = MemoryInfoListStream,
 
   // 0x4350 = "CP"
 

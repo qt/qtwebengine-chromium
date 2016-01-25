@@ -156,13 +156,12 @@ enum ProcessingTypes
     kRecordingPreprocessing
 };
 
-enum FrameType
-{
-    kFrameEmpty            = 0,
-    kAudioFrameSpeech      = 1,
-    kAudioFrameCN          = 2,
-    kVideoFrameKey         = 3,    // independent frame
-    kVideoFrameDelta       = 4,    // depends on the previus frame
+enum FrameType {
+  kEmptyFrame = 0,
+  kAudioFrameSpeech = 1,
+  kAudioFrameCN = 2,
+  kVideoFrameKey = 3,
+  kVideoFrameDelta = 4,
 };
 
 // Statistics for an RTCP channel
@@ -292,7 +291,7 @@ struct CodecInst {
   char plname[RTP_PAYLOAD_NAME_SIZE];
   int plfreq;
   int pacsize;
-  int channels;
+  size_t channels;
   int rate;  // bits/sec unlike {start,min,max}Bitrate elsewhere in this file!
 
   bool operator==(const CodecInst& other) const {
@@ -311,12 +310,6 @@ struct CodecInst {
 
 // RTP
 enum {kRtpCsrcSize = 15}; // RFC 3550 page 13
-
-enum RTPDirections
-{
-    kRtpIncoming = 0,
-    kRtpOutgoing
-};
 
 enum PayloadFrequencies
 {
@@ -548,6 +541,7 @@ enum RawVideoType
 enum { kConfigParameterSize = 128};
 enum { kPayloadNameSize = 32};
 enum { kMaxSimulcastStreams = 4};
+enum { kMaxSpatialLayers = 5 };
 enum { kMaxTemporalStreams = 4};
 
 enum VideoCodecComplexity
@@ -677,6 +671,13 @@ struct SimulcastStream {
   }
 };
 
+struct SpatialLayer {
+  int scaling_factor_num;
+  int scaling_factor_den;
+  int target_bitrate_bps;
+  // TODO(ivica): Add max_quantizer and min_quantizer?
+};
+
 enum VideoCodecMode {
   kRealtimeVideo,
   kScreensharing
@@ -703,6 +704,7 @@ struct VideoCodec {
   unsigned int        qpMax;
   unsigned char       numberOfSimulcastStreams;
   SimulcastStream     simulcastStream[kMaxSimulcastStreams];
+  SpatialLayer spatialLayers[kMaxSpatialLayers];
 
   VideoCodecMode      mode;
 

@@ -5,10 +5,12 @@
 #ifndef UI_MESSAGE_CENTER_MESSAGE_CENTER_IMPL_H_
 #define UI_MESSAGE_CENTER_MESSAGE_CENTER_IMPL_H_
 
+#include <stddef.h>
+
 #include <string>
 #include <vector>
 
-#include "base/containers/scoped_ptr_map.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -69,6 +71,7 @@ class MessageCenterImpl : public MessageCenter,
   void ClickOnNotification(const std::string& id) override;
   void ClickOnNotificationButton(const std::string& id,
                                  int button_index) override;
+  void ClickOnSettingsButton(const std::string& id) override;
   void MarkSinglePopupAsShown(const std::string& id,
                               bool mark_notification_as_read) override;
   void DisplayedNotification(const std::string& id,
@@ -100,7 +103,7 @@ class MessageCenterImpl : public MessageCenter,
 
  protected:
   void DisableTimersForTest() override;
-  void DisableChangeQueueForTest() override;
+  void EnableChangeQueueForTest(bool enable) override;
 
  private:
   struct NotificationCache {

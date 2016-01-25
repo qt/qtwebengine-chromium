@@ -27,17 +27,15 @@
 #define PNGImageDecoder_h
 
 #include "platform/image-decoders/ImageDecoder.h"
-#include "wtf/Noncopyable.h"
-#include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class PNGImageReader;
 
-class PLATFORM_EXPORT PNGImageDecoder : public ImageDecoder {
+class PLATFORM_EXPORT PNGImageDecoder final : public ImageDecoder {
     WTF_MAKE_NONCOPYABLE(PNGImageDecoder);
 public:
-    PNGImageDecoder(AlphaOption, GammaAndColorProfileOption, size_t maxDecodedBytes);
+    PNGImageDecoder(AlphaOption, GammaAndColorProfileOption, size_t maxDecodedBytes, size_t offset = 0);
     ~PNGImageDecoder() override;
 
     // ImageDecoder:
@@ -61,6 +59,7 @@ private:
 
     OwnPtr<PNGImageReader> m_reader;
     bool m_hasColorProfile;
+    const unsigned m_offset;
 };
 
 } // namespace blink

@@ -14,6 +14,8 @@
       'accessible_pane_view.h',
       'animation/bounds_animator.cc',
       'animation/bounds_animator.h',
+      'animation/button_ink_drop_delegate.cc',
+      'animation/button_ink_drop_delegate.h',
       'animation/ink_drop_animation.cc',
       'animation/ink_drop_animation.h',
       'animation/ink_drop_animation_controller.h',
@@ -21,7 +23,13 @@
       'animation/ink_drop_animation_controller_factory.h',
       'animation/ink_drop_animation_controller_impl.cc',
       'animation/ink_drop_animation_controller_impl.h',
+      'animation/ink_drop_animation_observer.cc',
+      'animation/ink_drop_animation_observer.h',
+      'animation/ink_drop_delegate.h',
       'animation/ink_drop_host.h',
+      'animation/ink_drop_painted_layer_delegates.cc',
+      'animation/ink_drop_painted_layer_delegates.h',
+      'animation/ink_drop_state.cc',
       'animation/ink_drop_state.h',
       'animation/scroll_animator.cc',
       'animation/scroll_animator.h',
@@ -71,6 +79,8 @@
       'controls/button/label_button.h',
       'controls/button/label_button_border.cc',
       'controls/button/label_button_border.h',
+      'controls/button/md_text_button.cc',
+      'controls/button/md_text_button.h',
       'controls/button/menu_button.cc',
       'controls/button/menu_button.h',
       'controls/button/menu_button_listener.h',
@@ -93,6 +103,8 @@
       'controls/menu/display_change_listener_mac.cc',
       'controls/menu/menu_config.cc',
       'controls/menu/menu_config.h',
+      'controls/menu/menu_config_chromeos.cc',
+      'controls/menu/menu_config_linux.cc',
       'controls/menu/menu_config_mac.mm',
       'controls/menu/menu_config_win.cc',
       'controls/menu/menu_controller.cc',
@@ -160,8 +172,6 @@
       'controls/scrollbar/base_scroll_bar_button.h',
       'controls/scrollbar/base_scroll_bar_thumb.cc',
       'controls/scrollbar/base_scroll_bar_thumb.h',
-      'controls/scrollbar/kennedy_scroll_bar.cc',
-      'controls/scrollbar/kennedy_scroll_bar.h',
       'controls/scrollbar/native_scroll_bar.cc',
       'controls/scrollbar/native_scroll_bar.h',
       'controls/scrollbar/native_scroll_bar_views.cc',
@@ -336,9 +346,6 @@
       'window/window_shape.h',
     ],
     'views_win_sources': [
-      'controls/menu/menu_2.cc',
-      'controls/menu/menu_2.h',
-      'controls/menu/menu_wrapper.h',
       'widget/widget_hwnd_utils.cc',
       'widget/widget_hwnd_utils.h',
       'win/fullscreen_handler.cc',
@@ -367,7 +374,6 @@
       'bubble/tray_bubble_view.cc',
       'bubble/tray_bubble_view.h',
       'controls/menu/display_change_listener_aura.cc',
-      'controls/menu/menu_config_aura.cc',
       'controls/menu/menu_event_dispatcher.cc',
       'controls/menu/menu_event_dispatcher.h',
       'controls/menu/menu_key_event_handler.cc',
@@ -403,6 +409,13 @@
       'widget/tooltip_manager_aura.h',
       'widget/window_reorderer.cc',
       'widget/window_reorderer.h',
+    ],
+    'views_android_sources': [
+      'controls/menu/menu_config_android.cc',
+      'widget/android/android_focus_rules.cc',
+      'widget/android/android_focus_rules.h',
+      'widget/android/native_widget_android.cc',
+      'widget/android/native_widget_android.h',
     ],
     'views_desktop_aura_sources': [
       'widget/desktop_aura/desktop_capture_client.cc',
@@ -488,10 +501,10 @@
       'test/focus_manager_test.h',
       'test/menu_runner_test_api.cc',
       'test/menu_runner_test_api.h',
-      'test/slider_test_api.cc',
-      'test/slider_test_api.h',
       'test/scoped_views_test_helper.cc',
       'test/scoped_views_test_helper.h',
+      'test/slider_test_api.cc',
+      'test/slider_test_api.h',
       'test/test_views.cc',
       'test/test_views.h',
       'test/test_views_delegate.h',
@@ -520,6 +533,8 @@
       'test/widget_test_aura.cc',
     ],
     'views_test_support_desktop_aura_x11_sources': [
+      'test/desktop_screen_x11_test_api.h',
+      'test/desktop_screen_x11_test_api.cc',
       'test/ui_controls_factory_desktop_aurax11.cc',
       'test/ui_controls_factory_desktop_aurax11.h',
     ],
@@ -547,6 +562,7 @@
       'controls/menu/menu_item_view_unittest.cc',
       'controls/menu/menu_model_adapter_unittest.cc',
       'controls/menu/menu_runner_cocoa_unittest.mm',
+      'controls/menu/menu_runner_unittest.cc',
       'controls/native/native_view_host_mac_unittest.mm',
       'controls/native/native_view_host_test_base.cc',
       'controls/native/native_view_host_test_base.h',
@@ -680,6 +696,9 @@
           'sources/': [
             ['exclude', 'linux_ui'],
           ],
+          'sources!': [
+            'controls/menu/menu_config_linux.cc',
+          ],
         }],
         ['OS=="win"', {
           'sources': [
@@ -791,6 +810,11 @@
       ],
       'sources': [
         '<@(views_test_support_sources)',
+        # These two sources are not listed in views_test_support_sources as
+        # they are not used by the gn target that pulls in
+        # views_test_support_sources.
+        'test/default_platform_test_helper.cc',
+        'test/platform_test_helper.h',
       ],
       'conditions': [
         ['use_aura==1', {

@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/strings/string_number_conversions.h"
@@ -18,13 +20,13 @@ namespace gcm {
 
 namespace {
 const int kMaxRetries = 2;
-const uint64 kAndroidId = 42UL;
+const uint64_t kAndroidId = 42UL;
 const char kLoginHeader[] = "AidLogin";
 const char kAppId[] = "TestAppId";
 const char kDeletedAppId[] = "deleted=TestAppId";
 const char kDeletedToken[] = "token=SomeToken";
 const char kRegistrationURL[] = "http://foo.bar/register";
-const uint64 kSecurityToken = 77UL;
+const uint64_t kSecurityToken = 77UL;
 const int kGCMVersion = 40;
 const char kInstanceId[] = "IID1";
 const char kDeveloperId[] = "Project1";
@@ -94,15 +96,11 @@ void GCMUnregistrationRequestTest::CreateRequest() {
   scoped_ptr<GCMUnregistrationRequestHandler> request_handler(
       new GCMUnregistrationRequestHandler(kAppId));
   request_.reset(new UnregistrationRequest(
-      GURL(kRegistrationURL),
-      request_info,
-      request_handler.Pass(),
+      GURL(kRegistrationURL), request_info, std::move(request_handler),
       GetBackoffPolicy(),
       base::Bind(&UnregistrationRequestTest::UnregistrationCallback,
                  base::Unretained(this)),
-      max_retry_count_,
-      url_request_context_getter(),
-      &recorder_,
+      max_retry_count_, url_request_context_getter(), &recorder_,
       std::string()));
 }
 
@@ -347,15 +345,11 @@ void InstaceIDDeleteTokenRequestTest::CreateRequest(
       new InstanceIDDeleteTokenRequestHandler(
           instance_id, authorized_entity, scope, kGCMVersion));
   request_.reset(new UnregistrationRequest(
-      GURL(kRegistrationURL),
-      request_info,
-      request_handler.Pass(),
+      GURL(kRegistrationURL), request_info, std::move(request_handler),
       GetBackoffPolicy(),
       base::Bind(&UnregistrationRequestTest::UnregistrationCallback,
                  base::Unretained(this)),
-      max_retry_count(),
-      url_request_context_getter(),
-      &recorder_,
+      max_retry_count(), url_request_context_getter(), &recorder_,
       std::string()));
 }
 

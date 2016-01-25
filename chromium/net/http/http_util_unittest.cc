@@ -4,7 +4,6 @@
 
 #include <algorithm>
 
-#include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "net/http/http_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -766,9 +765,9 @@ TEST(HttpUtilTest, ParseRanges) {
     bool expected_return_value;
     size_t expected_ranges_size;
     const struct {
-      int64 expected_first_byte_position;
-      int64 expected_last_byte_position;
-      int64 expected_suffix_length;
+      int64_t expected_first_byte_position;
+      int64_t expected_last_byte_position;
+      int64_t expected_suffix_length;
     } expected_ranges[10];
   } tests[] = {
     { "Range: bytes=0-10",
@@ -1176,6 +1175,29 @@ TEST(HttpUtilTest, NameValuePairsIteratorMissingEndQuote) {
       CheckNextNameValuePair(&parser, true, true, "name", "value"));
   ASSERT_NO_FATAL_FAILURE(CheckNextNameValuePair(
       &parser, false, true, std::string(), std::string()));
+}
+
+TEST(HttpUtilTest, IsValidHeaderValueRFC7230) {
+  EXPECT_TRUE(HttpUtil::IsValidHeaderValueRFC7230(""));
+
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230(" "));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230(" q"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q "));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("\t"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("\tq"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q\t"));
+
+  EXPECT_TRUE(HttpUtil::IsValidHeaderValueRFC7230("q q"));
+  EXPECT_TRUE(HttpUtil::IsValidHeaderValueRFC7230("q\tq"));
+
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230(std::string("\0", 1)));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230(std::string("q\0q", 3)));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q\rq"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q\nq"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q\x01q"));
+  EXPECT_FALSE(HttpUtil::IsValidHeaderValueRFC7230("q\x7fq"));
+
+  EXPECT_TRUE(HttpUtil::IsValidHeaderValueRFC7230("q\x80q"));
 }
 
 }  // namespace net

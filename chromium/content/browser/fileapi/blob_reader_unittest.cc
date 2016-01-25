@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/browser/blob/blob_reader.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -24,6 +28,7 @@
 #include "net/disk_cache/disk_cache.h"
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_reader.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_system_context.h"
@@ -55,7 +60,7 @@ class EmptyDataHandle : public storage::BlobDataBuilder::DataHandle {
 class DelayedReadEntry : public disk_cache::Entry {
  public:
   explicit DelayedReadEntry(disk_cache::ScopedEntryPtr entry)
-      : entry_(entry.Pass()) {}
+      : entry_(std::move(entry)) {}
   ~DelayedReadEntry() override { EXPECT_FALSE(HasPendingReadCallbacks()); }
 
   bool HasPendingReadCallbacks() { return !pending_read_callbacks_.empty(); }
@@ -80,7 +85,7 @@ class DelayedReadEntry : public disk_cache::Entry {
     return entry_->GetLastModified();
   }
 
-  int32 GetDataSize(int index) const override {
+  int32_t GetDataSize(int index) const override {
     return entry_->GetDataSize(index);
   }
 
@@ -106,23 +111,23 @@ class DelayedReadEntry : public disk_cache::Entry {
     return entry_->WriteData(index, offset, buf, buf_len, callback, truncate);
   }
 
-  int ReadSparseData(int64 offset,
+  int ReadSparseData(int64_t offset,
                      IOBuffer* buf,
                      int buf_len,
                      const CompletionCallback& callback) override {
     return entry_->ReadSparseData(offset, buf, buf_len, callback);
   }
 
-  int WriteSparseData(int64 offset,
+  int WriteSparseData(int64_t offset,
                       IOBuffer* buf,
                       int buf_len,
                       const CompletionCallback& callback) override {
     return entry_->WriteSparseData(offset, buf, buf_len, callback);
   }
 
-  int GetAvailableRange(int64 offset,
+  int GetAvailableRange(int64_t offset,
                         int len,
-                        int64* start,
+                        int64_t* start,
                         const CompletionCallback& callback) override {
     return entry_->GetAvailableRange(offset, len, start, callback);
   }
@@ -149,7 +154,7 @@ scoped_ptr<disk_cache::Backend> CreateInMemoryDiskCache(
       thread, nullptr, &cache, callback.callback());
   EXPECT_EQ(net::OK, callback.GetResult(rv));
 
-  return cache.Pass();
+  return cache;
 }
 
 disk_cache::ScopedEntryPtr CreateDiskCacheEntry(disk_cache::Backend* cache,
@@ -166,7 +171,7 @@ disk_cache::ScopedEntryPtr CreateDiskCacheEntry(disk_cache::Backend* cache,
   rv = entry->WriteData(kTestDiskCacheStreamIndex, 0, iobuffer.get(),
                         iobuffer->size(), callback.callback(), false);
   EXPECT_EQ(static_cast<int>(data.size()), callback.GetResult(rv));
-  return entry.Pass();
+  return entry;
 }
 
 template <typename T>
@@ -225,7 +230,8 @@ class FakeFileStreamReader : public FileStreamReader {
     return net::ERR_IO_PENDING;
   }
 
-  int64 GetLength(const net::Int64CompletionCallback& size_callback) override {
+  int64_t GetLength(
+      const net::Int64CompletionCallback& size_callback) override {
     // When async_task_runner_ is not set, return synchronously.
     if (!async_task_runner_.get()) {
       if (net_error_ == net::OK) {
@@ -319,10 +325,10 @@ class BlobReaderTest : public ::testing::Test {
 
  protected:
   void InitializeReader(BlobDataBuilder* builder) {
-    blob_handle_ = builder ? context_.AddFinishedBlob(builder).Pass() : nullptr;
+    blob_handle_ = builder ? context_.AddFinishedBlob(builder) : nullptr;
     provider_ = new MockFileStreamReaderProvider();
     scoped_ptr<BlobReader::FileStreamReaderProvider> temp_ptr(provider_);
-    reader_.reset(new BlobReader(blob_handle_.get(), temp_ptr.Pass(),
+    reader_.reset(new BlobReader(blob_handle_.get(), std::move(temp_ptr),
                                  message_loop_.task_runner().get()));
   }
 
@@ -723,7 +729,7 @@ TEST_F(BlobReaderTest, DiskCacheAsync) {
   scoped_refptr<BlobDataBuilder::DataHandle> data_handle =
       new EmptyDataHandle();
   scoped_ptr<DelayedReadEntry> delayed_read_entry(new DelayedReadEntry(
-      CreateDiskCacheEntry(cache.get(), "test entry", kData).Pass()));
+      CreateDiskCacheEntry(cache.get(), "test entry", kData)));
   b.AppendDiskCacheEntry(data_handle, delayed_read_entry.get(),
                          kTestDiskCacheStreamIndex);
   this->InitializeReader(&b);
@@ -828,7 +834,7 @@ TEST_F(BlobReaderTest, DiskCacheRange) {
 
 TEST_F(BlobReaderTest, FileSomeAsyncSegmentedOffsetsUnknownSizes) {
   // This tests includes:
-  // * Unknown file sizes (item length of uint64::max) for every other item.
+  // * Unknown file sizes (item length of uint64_t::max) for every other item.
   // * Offsets for every 3rd file item.
   // * Non-async reader for every 4th file item.
   BlobDataBuilder b("uuid");

@@ -107,6 +107,9 @@ extern const char kRtcpFbNackParamPli[];
 // rtcp-fb messages according to
 // http://tools.ietf.org/html/draft-alvestrand-rmcat-remb-00
 extern const char kRtcpFbParamRemb[];
+// rtcp-fb messages according to
+// https://tools.ietf.org/html/draft-holmer-rmcat-transport-wide-cc-extensions-01
+extern const char kRtcpFbParamTransportCc[];
 // ccm submessages according to RFC 5104
 extern const char kRtcpFbParamCcm[];
 extern const char kRtcpFbCcmParamFir[];
@@ -153,6 +156,11 @@ extern const int kRtpVideoRotationHeaderExtensionDefaultId;
 extern const char kRtpVideoRotationHeaderExtension[];
 // We don't support 6 bit CVO. Added here for testing purpose.
 extern const char kRtpVideoRotation6BitsHeaderExtensionForTesting[];
+
+// Header extension for transport sequence number, see url for details:
+// http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions
+extern const int kRtpTransportSequenceNumberHeaderExtensionDefaultId;
+extern const char kRtpTransportSequenceNumberHeaderExtension[];
 
 extern const int kNumDefaultUnsignalledVideoRecvStreams;
 

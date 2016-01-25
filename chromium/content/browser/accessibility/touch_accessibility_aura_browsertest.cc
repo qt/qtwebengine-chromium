@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -80,8 +81,8 @@ IN_PROC_BROWSER_TEST_F(TouchAccessibilityBrowserTest,
       // cell. A touch exploration event is just a mouse move event with
       // the ui::EF_TOUCH_ACCESSIBILITY flag set.
       gfx::Rect bounds = window->GetBoundsInRootWindow();
-      gfx::PointF location(bounds.x() + 50 * col + 25,
-                           bounds.y() + 50 * row + 25);
+      gfx::Point location(bounds.x() + 50 * col + 25,
+                          bounds.y() + 50 * row + 25);
       int flags = ui::EF_TOUCH_ACCESSIBILITY;
       scoped_ptr<ui::Event> mouse_move_event(new ui::MouseEvent(
           ui::ET_MOUSE_MOVED, location, location, ui::EventTimeForNow(),
@@ -97,7 +98,7 @@ IN_PROC_BROWSER_TEST_F(TouchAccessibilityBrowserTest,
         BrowserAccessibility* hit = manager->GetFromID(target_id);
         BrowserAccessibility* child = hit->PlatformGetChild(0);
         ASSERT_NE(nullptr, child);
-        cell_text = child->GetData().GetStringAttribute(ui::AX_ATTR_VALUE);
+        cell_text = child->GetData().GetStringAttribute(ui::AX_ATTR_NAME);
         VLOG(1) << "Got hover event in cell with text: " << cell_text;
       } while (cell_text != expected_cell_text);
     }

@@ -1,5 +1,3 @@
-
-
 /**
 Polymer.IronFitBehavior fits an element in another element using `max-height` and `max-width`, and
 optionally centers it in the window or another element.
@@ -195,6 +193,10 @@ CSS properties               | Action
       if (!this._fitInfo.positionedBy.horizontally) {
         this.style.left = '0px';
       }
+      if (!this._fitInfo.positionedBy.vertically || !this._fitInfo.positionedBy.horizontally) {
+        // need position:fixed to properly size the element
+        this.style.position = 'fixed';
+      }
       // need border-box for margin/padding
       this.sizingTarget.style.boxSizing = 'border-box';
       // constrain the width and height if not already set
@@ -240,4 +242,3 @@ CSS properties               | Action
     }
 
   };
-

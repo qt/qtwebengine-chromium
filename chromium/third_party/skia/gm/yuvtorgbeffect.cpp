@@ -13,11 +13,14 @@
 #if SK_SUPPORT_GPU
 
 #include "GrContext.h"
-#include "GrTest.h"
-#include "effects/GrYUVtoRGBEffect.h"
+#include "GrDrawContext.h"
+#include "GrPipelineBuilder.h"
 #include "SkBitmap.h"
 #include "SkGr.h"
 #include "SkGradientShader.h"
+#include "batches/GrDrawBatch.h"
+#include "batches/GrRectBatchFactory.h"
+#include "effects/GrYUVtoRGBEffect.h"
 
 #define YSIZE 8
 #define USIZE 4
@@ -77,17 +80,18 @@ protected:
             return;
         }
 
-        GrTestTarget tt;
-        context->getTestTarget(&tt);
-        if (nullptr == tt.target()) {
-            SkDEBUGFAIL("Couldn't get Gr test target.");
+        SkAutoTUnref<GrDrawContext> drawContext(context->drawContext(rt));
+        if (!drawContext) {
             return;
         }
 
         SkAutoTUnref<GrTexture> texture[3];
-        texture[0].reset(GrRefCachedBitmapTexture(context, fBmp[0], nullptr));
-        texture[1].reset(GrRefCachedBitmapTexture(context, fBmp[1], nullptr));
-        texture[2].reset(GrRefCachedBitmapTexture(context, fBmp[2], nullptr));
+        texture[0].reset(GrRefCachedBitmapTexture(context, fBmp[0],
+                                                  GrTextureParams::ClampBilerp()));
+        texture[1].reset(GrRefCachedBitmapTexture(context, fBmp[1],
+                                                  GrTextureParams::ClampBilerp()));
+        texture[2].reset(GrRefCachedBitmapTexture(context, fBmp[2],
+                                                  GrTextureParams::ClampBilerp()));
 
         if (!texture[0] || !texture[1] || !texture[2]) {
             return;
@@ -112,9 +116,10 @@ protected:
 
             for (int i = 0; i < 6; ++i) {
                 GrPipelineBuilder pipelineBuilder;
+                pipelineBuilder.setXPFactory(
+                    GrPorterDuffXPFactory::Create(SkXfermode::kSrc_Mode))->unref();
                 SkAutoTUnref<GrFragmentProcessor> fp(
-                            GrYUVtoRGBEffect::Create(pipelineBuilder.getProcessorDataManager(),
-                                                     texture[indices[i][0]],
+                            GrYUVtoRGBEffect::Create(texture[indices[i][0]],
                                                      texture[indices[i][1]],
                                                      texture[indices[i][2]],
                                                      sizes,
@@ -124,10 +129,10 @@ protected:
                     viewMatrix.setTranslate(x, y);
                     pipelineBuilder.setRenderTarget(rt);
                     pipelineBuilder.addColorFragmentProcessor(fp);
-                    tt.target()->drawNonAARect(pipelineBuilder,
-                                               GrColor_WHITE,
-                                               viewMatrix,
-                                               renderRect);
+                    SkAutoTUnref<GrDrawBatch> batch(
+                            GrRectBatchFactory::CreateNonAAFill(GrColor_WHITE, viewMatrix,
+                                                                renderRect, nullptr, nullptr));
+                    drawContext->internal_drawBatch(pipelineBuilder, batch);
                 }
                 x += renderRect.width() + kTestPad;
             }

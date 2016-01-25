@@ -32,7 +32,7 @@ namespace blink {
 
 class SelectionEditor final : public NoBaseWillBeGarbageCollectedFinalized<SelectionEditor>, public VisibleSelectionChangeObserver {
     WTF_MAKE_NONCOPYABLE(SelectionEditor);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SelectionEditor);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(SelectionEditor);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SelectionEditor);
 public:
     // TODO(yosin) We should move |EAlteration| and |VerticalDirection| out
@@ -57,11 +57,11 @@ public:
 
     template <typename Strategy>
     const VisibleSelectionTemplate<Strategy>& visibleSelection() const;
-    void setVisibleSelection(const VisibleSelection&);
-    void setVisibleSelection(const VisibleSelectionInComposedTree&);
+    void setVisibleSelection(const VisibleSelection&, FrameSelection::SetSelectionOptions);
+    void setVisibleSelection(const VisibleSelectionInComposedTree&, FrameSelection::SetSelectionOptions);
 
     void setIsDirectional(bool);
-    void setWithoutValidation(const Position& start, const Position& end);
+    void setWithoutValidation(const Position& base, const Position& extent);
 
     void resetXPosForVerticalArrowNavigation();
 
@@ -85,7 +85,7 @@ private:
 
     LocalFrame* frame() const;
 
-    void adjustVisibleSelectionInCompsoedTree();
+    void adjustVisibleSelectionInComposedTree();
     void adjustVisibleSelectionInDOMTree();
 
     TextDirection directionOfEnclosingBlock();

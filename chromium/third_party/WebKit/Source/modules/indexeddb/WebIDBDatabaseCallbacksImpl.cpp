@@ -23,10 +23,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/WebIDBDatabaseCallbacksImpl.h"
 
-#include "core/dom/DOMError.h"
+#include "core/dom/DOMException.h"
 
 namespace blink {
 
@@ -57,7 +56,7 @@ void WebIDBDatabaseCallbacksImpl::onVersionChange(long long oldVersion, long lon
 
 void WebIDBDatabaseCallbacksImpl::onAbort(long long transactionId, const WebIDBDatabaseError& error)
 {
-    m_callbacks->onAbort(transactionId, DOMError::create(error.code(), error.message()));
+    m_callbacks->onAbort(transactionId, DOMException::create(error.code(), error.message()));
 }
 
 void WebIDBDatabaseCallbacksImpl::onComplete(long long transactionId)

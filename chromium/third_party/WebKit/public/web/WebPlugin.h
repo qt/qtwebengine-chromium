@@ -67,10 +67,19 @@ public:
     virtual bool initialize(WebPluginContainer*) = 0;
 
     // Plugins must arrange for themselves to be deleted sometime during or after this
-    // method is called.
+    // method is called. This method is generally called by the owning
+    // WebPluginContainer. If the plugin has been detatched from a WebPluginContainer,
+    // i.e. been replaced by another plugin, it must be destroyed separately.
     virtual void destroy() = 0;
 
-    // Must return null container when the initialize() method returns false.
+    // Returns the container that this plugin has been initialized with.
+    //
+    // Must return nullptr if the initialize() method returns false.
+    // Must also return nullptr this plugin is scheduled for deletion.
+    //
+    // Note: This container doesn't necessarily own this plugin. For example,
+    // if the container has been assigned a new plugin, then the container will
+    // own the new plugin, not this old plugin.
     virtual WebPluginContainer* container() const { return nullptr; }
     virtual void containerDidDetachFromParent() { }
 
@@ -109,7 +118,7 @@ public:
     virtual void updateVisibility(bool) = 0;
 
     virtual bool acceptsInputEvents() = 0;
-    virtual bool handleInputEvent(const WebInputEvent&, WebCursorInfo&) = 0;
+    virtual WebInputEventResult handleInputEvent(const WebInputEvent&, WebCursorInfo&) = 0;
 
     virtual bool handleDragStatusUpdate(WebDragStatus, const WebDragData&, WebDragOperationsMask, const WebPoint& position, const WebPoint& screenPosition) { return false; }
 
@@ -117,12 +126,6 @@ public:
     virtual void didReceiveData(const char* data, int dataLength) = 0;
     virtual void didFinishLoading() = 0;
     virtual void didFailLoading(const WebURLError&) = 0;
-
-    // Called in response to WebPluginContainer::loadFrameRequest
-    virtual void didFinishLoadingFrameRequest(
-        const WebURL&, void* notifyData) = 0;
-    virtual void didFailLoadingFrameRequest(
-        const WebURL&, void* notifyData, const WebURLError&) = 0;
 
     // Printing interface.
     // Whether the plugin supports its own paginated print. The other print

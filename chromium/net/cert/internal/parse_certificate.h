@@ -5,7 +5,10 @@
 #ifndef NET_CERT_INTERNAL_PARSE_CERTIFICATE_H_
 #define NET_CERT_INTERNAL_PARSE_CERTIFICATE_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
+#include <map>
+
 #include "base/compiler_specific.h"
 #include "net/base/net_export.h"
 #include "net/der/input.h"
@@ -213,6 +216,157 @@ struct NET_EXPORT ParsedTbsCertificate {
   bool has_extensions = false;
   der::Input extensions_tlv;
 };
+
+// ParsedExtension represents a parsed "Extension" from RFC 5280. It contains
+// der:Inputs which are not owned so the associated data must be kept alive.
+//
+//    Extension  ::=  SEQUENCE  {
+//            extnID      OBJECT IDENTIFIER,
+//            critical    BOOLEAN DEFAULT FALSE,
+//            extnValue   OCTET STRING
+//                        -- contains the DER encoding of an ASN.1 value
+//                        -- corresponding to the extension type identified
+//                        -- by extnID
+//            }
+struct NET_EXPORT ParsedExtension {
+  der::Input oid;
+  // |value| will contain the contents of the OCTET STRING. For instance for
+  // basicConstraints it will be the TLV for a SEQUENCE.
+  der::Input value;
+  bool critical = false;
+};
+
+// Parses a DER-encoded "Extension" as specified by RFC 5280. Returns true on
+// success and sets the results in |out|.
+//
+// Note that on success |out| aliases data from the input |extension_tlv|.
+// Hence the fields of the ParsedExtension are only valid as long as
+// |extension_tlv| remains valid.
+//
+// On failure |out| has an undefined state. Some of its fields may have been
+// updated during parsing, whereas others may not have been changed.
+NET_EXPORT bool ParseExtension(const der::Input& extension_tlv,
+                               ParsedExtension* out) WARN_UNUSED_RESULT;
+
+// From RFC 5280:
+//
+//     id-ce-keyUsage OBJECT IDENTIFIER ::=  { id-ce 15 }
+//
+// In dotted notation: 2.5.29.15
+NET_EXPORT der::Input KeyUsageOid();
+
+// From RFC 5280:
+//
+//     id-ce-subjectAltName OBJECT IDENTIFIER ::=  { id-ce 17 }
+//
+// In dotted notation: 2.5.29.17
+NET_EXPORT der::Input SubjectAltNameOid();
+
+// From RFC 5280:
+//
+//     id-ce-basicConstraints OBJECT IDENTIFIER ::=  { id-ce 19 }
+//
+// In dotted notation: 2.5.29.19
+NET_EXPORT der::Input BasicConstraintsOid();
+
+// From RFC 5280:
+//
+//     id-ce-nameConstraints OBJECT IDENTIFIER ::=  { id-ce 30 }
+//
+// In dotted notation: 2.5.29.30
+NET_EXPORT der::Input NameConstraintsOid();
+
+// From RFC 5280:
+//
+//     id-ce-certificatePolicies OBJECT IDENTIFIER ::=  { id-ce 32 }
+//
+// In dotted notation: 2.5.29.32
+NET_EXPORT der::Input CertificatePoliciesOid();
+
+// From RFC 5280:
+//
+//     id-ce-policyConstraints OBJECT IDENTIFIER ::=  { id-ce 36 }
+//
+// In dotted notation: 2.5.29.36
+NET_EXPORT der::Input PolicyConstraintsOid();
+
+// From RFC 5280:
+//
+//     id-ce-extKeyUsage OBJECT IDENTIFIER ::= { id-ce 37 }
+//
+// In dotted notation: 2.5.29.37
+NET_EXPORT der::Input ExtKeyUsageOid();
+
+// Parses the Extensions sequence as defined by RFC 5280. Extensions are added
+// to the map |extensions| keyed by the OID. Parsing guarantees that each OID
+// is unique. Note that certificate verification must consume each extension
+// marked as critical.
+//
+// Returns true on success and fills |extensions|. The output will reference
+// bytes in |extensions_tlv|, so that data must be kept alive.
+// On failure |extensions| may be partially written to and should not be used.
+NET_EXPORT bool ParseExtensions(
+    const der::Input& extensions_tlv,
+    std::map<der::Input, ParsedExtension>* extensions) WARN_UNUSED_RESULT;
+
+struct ParsedBasicConstraints {
+  bool is_ca = false;
+  bool has_path_len = false;
+  uint8_t path_len = 0;
+};
+
+// Parses the BasicConstraints extension as defined by RFC 5280:
+//
+//    BasicConstraints ::= SEQUENCE {
+//         cA                      BOOLEAN DEFAULT FALSE,
+//         pathLenConstraint       INTEGER (0..MAX) OPTIONAL }
+//
+// The maximum allowed value of pathLenConstraints will be whatever can fit
+// into a uint8_t.
+NET_EXPORT bool ParseBasicConstraints(const der::Input& basic_constraints_tlv,
+                                      ParsedBasicConstraints* out)
+    WARN_UNUSED_RESULT;
+
+// KeyUsageBit contains the index for a particular key usage. The index is
+// measured from the most significant bit of a bit string.
+//
+// From RFC 5280 section 4.2.1.3:
+//
+//     KeyUsage ::= BIT STRING {
+//          digitalSignature        (0),
+//          nonRepudiation          (1), -- recent editions of X.509 have
+//                               -- renamed this bit to contentCommitment
+//          keyEncipherment         (2),
+//          dataEncipherment        (3),
+//          keyAgreement            (4),
+//          keyCertSign             (5),
+//          cRLSign                 (6),
+//          encipherOnly            (7),
+//          decipherOnly            (8) }
+enum KeyUsageBit {
+  KEY_USAGE_BIT_DIGITAL_SIGNATURE = 0,
+  KEY_USAGE_BIT_NON_REPUDIATION = 1,
+  KEY_USAGE_BIT_KEY_ENCIPHERMENT = 2,
+  KEY_USAGE_BIT_DATA_ENCIPHERMENT = 3,
+  KEY_USAGE_BIT_KEY_AGREEMENT = 4,
+  KEY_USAGE_BIT_KEY_CERT_SIGN = 5,
+  KEY_USAGE_BIT_CRL_SIGN = 6,
+  KEY_USAGE_BIT_ENCIPHER_ONLY = 7,
+  KEY_USAGE_BIT_DECIPHER_ONLY = 8,
+};
+
+// Parses the KeyUsage extension as defined by RFC 5280. Returns true on
+// success, and |key_usage| will alias data in |key_usage_tlv|. On failure
+// returns false, and |key_usage| may have been modified.
+//
+// In addition to validating that key_usage_tlv is a BIT STRING, this does
+// additional KeyUsage specific validations such as requiring at least 1 bit to
+// be set.
+//
+// To test if a particular key usage is set, call, e.g.:
+//     key_usage->AssertsBit(KEY_USAGE_BIT_DIGITAL_SIGNATURE);
+NET_EXPORT bool ParseKeyUsage(const der::Input& key_usage_tlv,
+                              der::BitString* key_usage) WARN_UNUSED_RESULT;
 
 }  // namespace net
 

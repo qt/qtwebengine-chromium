@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "media/capture/video/video_capture_device.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted.h"
@@ -11,14 +17,15 @@
 #include "base/test/test_timeouts.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "media/base/video_capture_types.h"
-#include "media/capture/video/video_capture_device.h"
 #include "media/capture/video/video_capture_device_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
+#include "base/win/windows_version.h"  // For fine-grained suppression.
 #include "media/capture/video/win/video_capture_device_factory_win.h"
 #endif
 
@@ -46,7 +53,6 @@
 // main thread for tests. This results in no frame received by
 // VideoCaptureAndroid.
 #define MAYBE_AllocateBadSize DISABLED_AllocateBadSize
-#define ReAllocateCamera DISABLED_ReAllocateCamera
 #define DeAllocateCameraWhileRunning DISABLED_DeAllocateCameraWhileRunning
 #define DeAllocateCameraWhileRunning DISABLED_DeAllocateCameraWhileRunning
 #define MAYBE_CaptureMjpeg DISABLED_CaptureMjpeg
@@ -67,9 +73,9 @@ static const gfx::Size kCaptureSizes[] = {gfx::Size(640, 480),
 class MockClient : public VideoCaptureDevice::Client {
  public:
   MOCK_METHOD9(OnIncomingCapturedYuvData,
-               void(const uint8* y_data,
-                    const uint8* u_data,
-                    const uint8* v_data,
+               void(const uint8_t* y_data,
+                    const uint8_t* u_data,
+                    const uint8_t* v_data,
                     size_t y_stride,
                     size_t u_stride,
                     size_t v_stride,
@@ -79,14 +85,16 @@ class MockClient : public VideoCaptureDevice::Client {
   MOCK_METHOD0(DoReserveOutputBuffer, void(void));
   MOCK_METHOD0(DoOnIncomingCapturedBuffer, void(void));
   MOCK_METHOD0(DoOnIncomingCapturedVideoFrame, void(void));
-  MOCK_METHOD1(OnError, void(const std::string& reason));
+  MOCK_METHOD2(OnError,
+               void(const tracked_objects::Location& from_here,
+                    const std::string& reason));
   MOCK_CONST_METHOD0(GetBufferPoolUtilization, double(void));
 
   explicit MockClient(base::Callback<void(const VideoCaptureFormat&)> frame_cb)
       : main_thread_(base::ThreadTaskRunnerHandle::Get()),
         frame_cb_(frame_cb) {}
 
-  void OnIncomingCapturedData(const uint8* data,
+  void OnIncomingCapturedData(const uint8_t* data,
                               int length,
                               const VideoCaptureFormat& format,
                               int rotation,
@@ -264,10 +272,9 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_OpenInvalidDevice) {
   VideoCaptureDevice::Name device_name("jibberish", "jibberish", api_type);
 #elif defined(OS_MACOSX)
   VideoCaptureDevice::Name device_name(
-      "jibberish", "jibberish",
-      VideoCaptureDeviceFactoryMac::PlatformSupportsAVFoundation()
-          ? VideoCaptureDevice::Name::AVFOUNDATION
-          : VideoCaptureDevice::Name::QTKIT);
+      "jibberish", "jibberish", AVFoundationGlue::IsAVFoundationSupported()
+                                    ? VideoCaptureDevice::Name::AVFOUNDATION
+                                    : VideoCaptureDevice::Name::QTKIT);
 #else
   VideoCaptureDevice::Name device_name("jibberish", "jibberish");
 #endif
@@ -276,18 +283,18 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_OpenInvalidDevice) {
 #if !defined(OS_MACOSX)
   EXPECT_TRUE(device == NULL);
 #else
-  if (VideoCaptureDeviceFactoryMac::PlatformSupportsAVFoundation()) {
+  if (AVFoundationGlue::IsAVFoundationSupported()) {
     EXPECT_TRUE(device == NULL);
   } else {
     // The presence of the actual device is only checked on AllocateAndStart()
     // and not on creation for QTKit API in Mac OS X platform.
-    EXPECT_CALL(*client_, OnError(_)).Times(1);
+    EXPECT_CALL(*client_, OnError(_, _)).Times(1);
 
     VideoCaptureParams capture_params;
     capture_params.requested_format.frame_size.SetSize(640, 480);
     capture_params.requested_format.frame_rate = 30;
     capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-    device->AllocateAndStart(capture_params, client_.Pass());
+    device->AllocateAndStart(capture_params, std::move(client_));
     device->StopAndDeAllocate();
   }
 #endif
@@ -296,7 +303,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_OpenInvalidDevice) {
 TEST_P(VideoCaptureDeviceTest, CaptureWithSize) {
   names_ = EnumerateDevices();
   if (names_->empty()) {
-    DVLOG(1) << "No camera available. Exiting test.";
+    VLOG(1) << "No camera available. Exiting test.";
     return;
   }
 
@@ -311,14 +318,14 @@ TEST_P(VideoCaptureDeviceTest, CaptureWithSize) {
   ASSERT_TRUE(device);
   DVLOG(1) << names_->front().id();
 
-  EXPECT_CALL(*client_, OnError(_)).Times(0);
+  EXPECT_CALL(*client_, OnError(_, _)).Times(0);
 
   VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(width, height);
   capture_params.requested_format.frame_rate = 30.0f;
   capture_params.requested_format.pixel_format =
       PIXEL_FORMAT_I420;
-  device->AllocateAndStart(capture_params, client_.Pass());
+  device->AllocateAndStart(capture_params, std::move(client_));
   // Get captured video frames.
   WaitForCapturedFrame();
   EXPECT_EQ(last_format().frame_size.width(), width);
@@ -329,7 +336,7 @@ TEST_P(VideoCaptureDeviceTest, CaptureWithSize) {
 }
 
 #if !defined(OS_ANDROID)
-INSTANTIATE_TEST_CASE_P(MAYBE_VideoCaptureDeviceTests,
+INSTANTIATE_TEST_CASE_P(VideoCaptureDeviceTests,
                         VideoCaptureDeviceTest,
                         testing::ValuesIn(kCaptureSizes));
 #endif
@@ -337,14 +344,14 @@ INSTANTIATE_TEST_CASE_P(MAYBE_VideoCaptureDeviceTests,
 TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
   names_ = EnumerateDevices();
   if (names_->empty()) {
-    DVLOG(1) << "No camera available. Exiting test.";
+    VLOG(1) << "No camera available. Exiting test.";
     return;
   }
   scoped_ptr<VideoCaptureDevice> device(
       video_capture_device_factory_->Create(names_->front()));
   ASSERT_TRUE(device);
 
-  EXPECT_CALL(*client_, OnError(_)).Times(0);
+  EXPECT_CALL(*client_, OnError(_, _)).Times(0);
 
   const gfx::Size input_size(640, 480);
   VideoCaptureParams capture_params;
@@ -352,7 +359,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
   capture_params.requested_format.frame_rate = 35;
   capture_params.requested_format.pixel_format =
       PIXEL_FORMAT_I420;
-  device->AllocateAndStart(capture_params, client_.Pass());
+  device->AllocateAndStart(capture_params, std::move(client_));
   WaitForCapturedFrame();
   device->StopAndDeAllocate();
   EXPECT_EQ(last_format().frame_size.width(), input_size.width());
@@ -361,17 +368,11 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
     EXPECT_EQ(input_size.GetArea(), last_format().frame_size.GetArea());
 }
 
-// Cause hangs on Windows Debug. http://crbug.com/417824
-#if defined(OS_WIN) && !defined(NDEBUG)
-#define MAYBE_ReAllocateCamera DISABLED_ReAllocateCamera
-#else
-#define MAYBE_ReAllocateCamera ReAllocateCamera
-#endif
-
-TEST_F(VideoCaptureDeviceTest, MAYBE_ReAllocateCamera) {
+// Cause hangs on Windows, Linux. Fails Android. http://crbug.com/417824
+TEST_F(VideoCaptureDeviceTest, DISABLED_ReAllocateCamera) {
   names_ = EnumerateDevices();
   if (names_->empty()) {
-    DVLOG(1) << "No camera available. Exiting test.";
+    VLOG(1) << "No camera available. Exiting test.";
     return;
   }
 
@@ -390,7 +391,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_ReAllocateCamera) {
     capture_params.requested_format.frame_size = resolution;
     capture_params.requested_format.frame_rate = 30;
     capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-    device->AllocateAndStart(capture_params, client_.Pass());
+    device->AllocateAndStart(capture_params, std::move(client_));
     device->StopAndDeAllocate();
   }
 
@@ -404,7 +405,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_ReAllocateCamera) {
   scoped_ptr<VideoCaptureDevice> device(
       video_capture_device_factory_->Create(names_->front()));
 
-  device->AllocateAndStart(capture_params, client_.Pass());
+  device->AllocateAndStart(capture_params, std::move(client_));
   WaitForCapturedFrame();
   device->StopAndDeAllocate();
   device.reset();
@@ -415,20 +416,20 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_ReAllocateCamera) {
 TEST_F(VideoCaptureDeviceTest, DeAllocateCameraWhileRunning) {
   names_ = EnumerateDevices();
   if (names_->empty()) {
-    DVLOG(1) << "No camera available. Exiting test.";
+    VLOG(1) << "No camera available. Exiting test.";
     return;
   }
   scoped_ptr<VideoCaptureDevice> device(
       video_capture_device_factory_->Create(names_->front()));
   ASSERT_TRUE(device);
 
-  EXPECT_CALL(*client_, OnError(_)).Times(0);
+  EXPECT_CALL(*client_, OnError(_, _)).Times(0);
 
   VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(640, 480);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  device->AllocateAndStart(capture_params, client_.Pass());
+  device->AllocateAndStart(capture_params, std::move(client_));
   // Get captured video frames.
   WaitForCapturedFrame();
   EXPECT_EQ(last_format().frame_size.width(), 640);
@@ -442,20 +443,26 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
   scoped_ptr<VideoCaptureDevice::Name> name =
       GetFirstDeviceNameSupportingPixelFormat(PIXEL_FORMAT_MJPEG);
   if (!name) {
-    DVLOG(1) << "No camera supports MJPEG format. Exiting test.";
+    VLOG(1) << "No camera supports MJPEG format. Exiting test.";
     return;
   }
+#if defined(OS_WIN)
+  if (base::win::GetVersion() == base::win::VERSION_WIN10) {
+    VLOG(1) << "Skipped on Win10: http://crbug.com/570604.";
+    return;
+  }
+#endif
   scoped_ptr<VideoCaptureDevice> device(
       video_capture_device_factory_->Create(*name));
   ASSERT_TRUE(device);
 
-  EXPECT_CALL(*client_, OnError(_)).Times(0);
+  EXPECT_CALL(*client_, OnError(_, _)).Times(0);
 
   VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(1280, 720);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_MJPEG;
-  device->AllocateAndStart(capture_params, client_.Pass());
+  device->AllocateAndStart(capture_params, std::move(client_));
   // Get captured video frames.
   WaitForCapturedFrame();
   // Verify we get MJPEG from the device. Not all devices can capture 1280x720

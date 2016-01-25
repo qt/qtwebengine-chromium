@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "modules/webgl/WebGLCompressedTextureASTC.h"
 
 #include "modules/webgl/WebGLRenderingContextBase.h"
@@ -33,7 +31,7 @@ WebGLCompressedTextureASTC::WebGLCompressedTextureASTC(WebGLRenderingContextBase
     const int kAlphaFormatGap =
         GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR - GL_COMPRESSED_RGBA_ASTC_4x4_KHR;
 
-    for (size_t i = 0; i < arraysize(WebGLCompressedTextureASTC::kBlockSizeCompressASTC); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(WebGLCompressedTextureASTC::kBlockSizeCompressASTC); i++) {
         /* GL_COMPRESSED_RGBA_ASTC(0x93B0 ~ 0x93BD) */
         context->addCompressedTextureFormat(
             WebGLCompressedTextureASTC::kBlockSizeCompressASTC[i].CompressType);

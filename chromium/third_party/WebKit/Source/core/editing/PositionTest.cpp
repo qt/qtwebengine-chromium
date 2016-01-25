@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/editing/Position.h"
 
 #include "core/editing/EditingTestBase.h"
@@ -16,6 +15,29 @@ TEST_F(PositionTest, NodeAsRangeLastNodeNull)
 {
     EXPECT_EQ(nullptr, Position().nodeAsRangeLastNode());
     EXPECT_EQ(nullptr, PositionInComposedTree().nodeAsRangeLastNode());
+}
+
+TEST_F(PositionTest, editingPositionOfWithEditingIgnoresContent)
+{
+    const char* bodyContent = "<textarea id=textarea></textarea><a id=child1>1</a><b id=child2>2</b>";
+    setBodyContent(bodyContent);
+    Node* textarea = document().getElementById("textarea");
+
+    EXPECT_EQ(Position::beforeNode(textarea), Position::editingPositionOf(textarea, 0));
+    EXPECT_EQ(Position::afterNode(textarea), Position::editingPositionOf(textarea, 1));
+    EXPECT_EQ(Position::afterNode(textarea), Position::editingPositionOf(textarea, 2));
+
+    // Change DOM tree to
+    // <textarea id=textarea><a id=child1>1</a><b id=child2>2</b></textarea>
+    Node* child1 = document().getElementById("child1");
+    Node* child2 = document().getElementById("child2");
+    textarea->appendChild(child1);
+    textarea->appendChild(child2);
+
+    EXPECT_EQ(Position::beforeNode(textarea), Position::editingPositionOf(textarea, 0));
+    EXPECT_EQ(Position::afterNode(textarea), Position::editingPositionOf(textarea, 1));
+    EXPECT_EQ(Position::afterNode(textarea), Position::editingPositionOf(textarea, 2));
+    EXPECT_EQ(Position::afterNode(textarea), Position::editingPositionOf(textarea, 3));
 }
 
 TEST_F(PositionTest, NodeAsRangeLastNode)

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/SVGContainerPainter.h"
 
 #include "core/layout/svg/LayoutSVGContainer.h"
@@ -25,7 +24,7 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         return;
 
     FloatRect boundingBox = m_layoutSVGContainer.paintInvalidationRectInLocalCoordinates();
-    if (!paintInfo.intersectsCullRect(m_layoutSVGContainer.localToParentTransform(), boundingBox))
+    if (!paintInfo.cullRect().intersectsCullRect(m_layoutSVGContainer.localToParentTransform(), boundingBox))
         return;
 
     // Spec: An empty viewBox on the <svg> element disables rendering.
@@ -34,13 +33,13 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         return;
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
-    paintInfoBeforeFiltering.updateCullRectForSVGTransform(m_layoutSVGContainer.localToParentTransform());
-    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGContainer, m_layoutSVGContainer.localToParentTransform());
+    paintInfoBeforeFiltering.updateCullRect(m_layoutSVGContainer.localToParentTransform());
+    TransformRecorder transformRecorder(paintInfoBeforeFiltering.context, m_layoutSVGContainer, m_layoutSVGContainer.localToParentTransform());
     {
         Optional<FloatClipRecorder> clipRecorder;
         if (m_layoutSVGContainer.isSVGViewportContainer() && SVGLayoutSupport::isOverflowHidden(&m_layoutSVGContainer)) {
             FloatRect viewport = m_layoutSVGContainer.localToParentTransform().inverse().mapRect(toLayoutSVGViewportContainer(m_layoutSVGContainer).viewport());
-            clipRecorder.emplace(*paintInfoBeforeFiltering.context, m_layoutSVGContainer, paintInfoBeforeFiltering.phase, viewport);
+            clipRecorder.emplace(paintInfoBeforeFiltering.context, m_layoutSVGContainer, paintInfoBeforeFiltering.phase, viewport);
         }
 
         SVGPaintContext paintContext(m_layoutSVGContainer, paintInfoBeforeFiltering);
@@ -60,7 +59,7 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
 
     if (m_layoutSVGContainer.style()->outlineWidth() && m_layoutSVGContainer.style()->visibility() == VISIBLE) {
         PaintInfo outlinePaintInfo(paintInfoBeforeFiltering);
-        outlinePaintInfo.phase = PaintPhaseSelfOutline;
+        outlinePaintInfo.phase = PaintPhaseSelfOutlineOnly;
         ObjectPainter(m_layoutSVGContainer).paintOutline(outlinePaintInfo, LayoutPoint(boundingBox.location()));
     }
 

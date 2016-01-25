@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebFormControlElement.h"
 
 #include "core/dom/NodeComputedStyle.h"
@@ -83,6 +82,8 @@ bool WebFormControlElement::autoComplete() const
         return constUnwrap<HTMLInputElement>()->shouldAutocomplete();
     if (isHTMLTextAreaElement(*m_private))
         return constUnwrap<HTMLTextAreaElement>()->shouldAutocomplete();
+    if (isHTMLSelectElement(*m_private))
+        return constUnwrap<HTMLSelectElement>()->shouldAutocomplete();
     return false;
 }
 

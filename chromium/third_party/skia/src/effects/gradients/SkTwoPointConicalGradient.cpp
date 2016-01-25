@@ -224,9 +224,6 @@ SkTwoPointConicalGradient::TwoPointConicalGradientContext::TwoPointConicalGradie
         const SkTwoPointConicalGradient& shader, const ContextRec& rec)
     : INHERITED(shader, rec)
 {
-    // we don't have a span16 proc
-    fFlags &= ~kHasSpan16_Flag;
-
     // in general, we might discard based on computed-radius, so clear
     // this flag (todo: sometimes we can detect that we never discard...)
     fFlags &= ~kOpaqueAlpha_Flag;
@@ -364,13 +361,11 @@ const GrFragmentProcessor* SkTwoPointConicalGradient::asFragmentProcessor(
                                                   GrContext* context,
                                                   const SkMatrix& viewM,
                                                   const SkMatrix* localMatrix,
-                                                  SkFilterQuality,
-                                                  GrProcessorDataManager* procDataManager) const {
+                                                  SkFilterQuality) const {
     SkASSERT(context);
     SkASSERT(fPtsToUnit.isIdentity());
     SkAutoTUnref<const GrFragmentProcessor> inner(
-        Gr2PtConicalGradientEffect::Create(context, procDataManager, *this, fTileMode,
-                                            localMatrix));
+        Gr2PtConicalGradientEffect::Create(context, *this, fTileMode, localMatrix));
     return GrFragmentProcessor::MulOutputByInputAlpha(inner);
 }
 

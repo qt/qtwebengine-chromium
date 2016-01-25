@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/StyleRuleImport.h"
 
 #include "core/css/StyleSheetContents.h"
@@ -61,6 +60,7 @@ StyleRuleImport::~StyleRuleImport()
 
 DEFINE_TRACE_AFTER_DISPATCH(StyleRuleImport)
 {
+    visitor->trace(m_styleSheetClient);
     visitor->trace(m_parentStyleSheet);
     visitor->trace(m_mediaQueries);
     visitor->trace(m_styleSheet);

@@ -4,14 +4,19 @@
 
 #include "cc/raster/one_copy_tile_task_worker_pool.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <limits>
+#include <utility>
 
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
+#include "cc/base/container_util.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
 #include "cc/raster/raster_buffer.h"
@@ -42,7 +47,7 @@ class RasterBufferImpl : public RasterBuffer {
   ~RasterBufferImpl() override {}
 
   // Overridden from RasterBuffer:
-  void Playback(const RasterSource* raster_source,
+  void Playback(const DisplayListRasterSource* raster_source,
                 const gfx::Rect& raster_full_rect,
                 const gfx::Rect& raster_dirty_rect,
                 uint64_t new_content_id,
@@ -158,7 +163,7 @@ void OneCopyTileTaskWorkerPool::StagingBuffer::OnMemoryDump(
                          in_free_list ? buffer_size_in_bytes : 0);
 
   // Emit an ownership edge towards a global allocator dump node.
-  const uint64 tracing_process_id =
+  const uint64_t tracing_process_id =
       base::trace_event::MemoryDumpManager::GetInstance()
           ->GetTracingProcessId();
   base::trace_event::MemoryAllocatorDumpGuid shared_buffer_guid =
@@ -178,12 +183,12 @@ scoped_ptr<TileTaskWorkerPool> OneCopyTileTaskWorkerPool::Create(
     ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     int max_copy_texture_chromium_size,
-    bool use_persistent_gpu_memory_buffers,
+    bool use_partial_raster,
     int max_staging_buffer_usage_in_bytes,
     bool use_rgba_4444_texture_format) {
   return make_scoped_ptr<TileTaskWorkerPool>(new OneCopyTileTaskWorkerPool(
       task_runner, task_graph_runner, resource_provider,
-      max_copy_texture_chromium_size, use_persistent_gpu_memory_buffers,
+      max_copy_texture_chromium_size, use_partial_raster,
       max_staging_buffer_usage_in_bytes, use_rgba_4444_texture_format));
 }
 
@@ -192,7 +197,7 @@ OneCopyTileTaskWorkerPool::OneCopyTileTaskWorkerPool(
     TaskGraphRunner* task_graph_runner,
     ResourceProvider* resource_provider,
     int max_copy_texture_chromium_size,
-    bool use_persistent_gpu_memory_buffers,
+    bool use_partial_raster,
     int max_staging_buffer_usage_in_bytes,
     bool use_rgba_4444_texture_format)
     : task_runner_(task_runner),
@@ -204,7 +209,7 @@ OneCopyTileTaskWorkerPool::OneCopyTileTaskWorkerPool(
               ? std::min(kMaxBytesPerCopyOperation,
                          max_copy_texture_chromium_size)
               : kMaxBytesPerCopyOperation),
-      use_persistent_gpu_memory_buffers_(use_persistent_gpu_memory_buffers),
+      use_partial_raster_(use_partial_raster),
       bytes_scheduled_since_last_flush_(0),
       max_staging_buffer_usage_in_bytes_(max_staging_buffer_usage_in_bytes),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
@@ -213,10 +218,9 @@ OneCopyTileTaskWorkerPool::OneCopyTileTaskWorkerPool(
       staging_buffer_expiration_delay_(
           base::TimeDelta::FromMilliseconds(kStagingBufferExpirationDelayMs)),
       reduce_memory_usage_pending_(false),
-      weak_ptr_factory_(this),
-      task_set_finished_weak_ptr_factory_(this) {
+      weak_ptr_factory_(this) {
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-      this, base::ThreadTaskRunnerHandle::Get());
+      this, "OneCopyTileTaskWorkerPool", base::ThreadTaskRunnerHandle::Get());
   reduce_memory_usage_callback_ =
       base::Bind(&OneCopyTileTaskWorkerPool::ReduceMemoryUsage,
                  weak_ptr_factory_.GetWeakPtr());
@@ -229,10 +233,6 @@ OneCopyTileTaskWorkerPool::~OneCopyTileTaskWorkerPool() {
 
 TileTaskRunner* OneCopyTileTaskWorkerPool::AsTileTaskRunner() {
   return this;
-}
-
-void OneCopyTileTaskWorkerPool::SetClient(TileTaskRunnerClient* client) {
-  client_ = client;
 }
 
 void OneCopyTileTaskWorkerPool::Shutdown() {
@@ -252,59 +252,10 @@ void OneCopyTileTaskWorkerPool::Shutdown() {
   DCHECK_EQ(free_staging_buffer_usage_in_bytes_, 0);
 }
 
-void OneCopyTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
+void OneCopyTileTaskWorkerPool::ScheduleTasks(TaskGraph* graph) {
   TRACE_EVENT0("cc", "OneCopyTileTaskWorkerPool::ScheduleTasks");
 
-  if (tasks_pending_.none())
-    TRACE_EVENT_ASYNC_BEGIN0("cc", "ScheduledTasks", this);
-
-  // Mark all task sets as pending.
-  tasks_pending_.set();
-
-  size_t priority = kTileTaskPriorityBase;
-
-  graph_.Reset();
-
-  // Cancel existing OnTaskSetFinished callbacks.
-  task_set_finished_weak_ptr_factory_.InvalidateWeakPtrs();
-
-  scoped_refptr<TileTask> new_task_set_finished_tasks[kNumberOfTaskSets];
-
-  size_t task_count[kNumberOfTaskSets] = {0};
-
-  for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set) {
-    new_task_set_finished_tasks[task_set] = CreateTaskSetFinishedTask(
-        task_runner_.get(),
-        base::Bind(&OneCopyTileTaskWorkerPool::OnTaskSetFinished,
-                   task_set_finished_weak_ptr_factory_.GetWeakPtr(), task_set));
-  }
-
-  for (TileTaskQueue::Item::Vector::const_iterator it = queue->items.begin();
-       it != queue->items.end(); ++it) {
-    const TileTaskQueue::Item& item = *it;
-    RasterTask* task = item.task;
-    DCHECK(!task->HasCompleted());
-
-    for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set) {
-      if (!item.task_sets[task_set])
-        continue;
-
-      ++task_count[task_set];
-
-      graph_.edges.push_back(
-          TaskGraph::Edge(task, new_task_set_finished_tasks[task_set].get()));
-    }
-
-    InsertNodesForRasterTask(&graph_, task, task->dependencies(), priority++);
-  }
-
-  for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set) {
-    InsertNodeForTask(&graph_, new_task_set_finished_tasks[task_set].get(),
-                      kTaskSetFinishedTaskPriorityBase + task_set,
-                      task_count[task_set]);
-  }
-
-  ScheduleTasksOnOriginThread(this, &graph_);
+  ScheduleTasksOnOriginThread(this, graph);
 
   // Barrier to sync any new resources to the worker context.
   resource_provider_->output_surface()
@@ -312,14 +263,7 @@ void OneCopyTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
       ->ContextGL()
       ->OrderingBarrierCHROMIUM();
 
-  task_graph_runner_->ScheduleTasks(namespace_token_, &graph_);
-
-  std::copy(new_task_set_finished_tasks,
-            new_task_set_finished_tasks + kNumberOfTaskSets,
-            task_set_finished_tasks_);
-
-  TRACE_EVENT_ASYNC_STEP_INTO1("cc", "ScheduledTasks", this, "running", "state",
-                               StateAsValue());
+  task_graph_runner_->ScheduleTasks(namespace_token_, graph);
 }
 
 void OneCopyTileTaskWorkerPool::CheckForCompletedTasks() {
@@ -371,7 +315,7 @@ void OneCopyTileTaskWorkerPool::ReleaseBufferForRaster(
 void OneCopyTileTaskWorkerPool::PlaybackAndCopyOnWorkerThread(
     const Resource* resource,
     const ResourceProvider::ScopedWriteLockGL* resource_lock,
-    const RasterSource* raster_source,
+    const DisplayListRasterSource* raster_source,
     const gfx::Rect& raster_full_rect,
     const gfx::Rect& raster_dirty_rect,
     float scale,
@@ -387,22 +331,23 @@ void OneCopyTileTaskWorkerPool::PlaybackAndCopyOnWorkerThread(
   {
     base::AutoUnlock unlock(lock_);
 
-    // Allocate GpuMemoryBuffer if necessary.
+    // Allocate GpuMemoryBuffer if necessary. If using partial raster, we
+    // must allocate a buffer with BufferUsage CPU_READ_WRITE_PERSISTENT.
     if (!staging_buffer->gpu_memory_buffer) {
       staging_buffer->gpu_memory_buffer =
           resource_provider_->gpu_memory_buffer_manager()
-              ->AllocateGpuMemoryBuffer(staging_buffer->size,
-                                        BufferFormat(resource->format()),
-                                        use_persistent_gpu_memory_buffers_
-                                            ? gfx::BufferUsage::PERSISTENT_MAP
-                                            : gfx::BufferUsage::MAP);
+              ->AllocateGpuMemoryBuffer(
+                  staging_buffer->size, BufferFormat(resource->format()),
+                  use_partial_raster_
+                      ? gfx::BufferUsage::GPU_READ_CPU_READ_WRITE_PERSISTENT
+                      : gfx::BufferUsage::GPU_READ_CPU_READ_WRITE);
       DCHECK_EQ(gfx::NumberOfPlanesForBufferFormat(
                     staging_buffer->gpu_memory_buffer->GetFormat()),
                 1u);
     }
 
     gfx::Rect playback_rect = raster_full_rect;
-    if (use_persistent_gpu_memory_buffers_ && previous_content_id) {
+    if (use_partial_raster_ && previous_content_id) {
       // Reduce playback rect to dirty region if the content id of the staging
       // buffer matches the prevous content id.
       if (previous_content_id == staging_buffer->content_id)
@@ -410,21 +355,21 @@ void OneCopyTileTaskWorkerPool::PlaybackAndCopyOnWorkerThread(
     }
 
     if (staging_buffer->gpu_memory_buffer) {
-      void* data = nullptr;
-      bool rv = staging_buffer->gpu_memory_buffer->Map(&data);
+      gfx::GpuMemoryBuffer* buffer = staging_buffer->gpu_memory_buffer.get();
+      DCHECK_EQ(1u, gfx::NumberOfPlanesForBufferFormat(buffer->GetFormat()));
+      bool rv = buffer->Map();
       DCHECK(rv);
-      int stride;
-      staging_buffer->gpu_memory_buffer->GetStride(&stride);
+      DCHECK(buffer->memory(0));
       // TileTaskWorkerPool::PlaybackToMemory only supports unsigned strides.
-      DCHECK_GE(stride, 0);
+      DCHECK_GE(buffer->stride(0), 0);
 
       DCHECK(!playback_rect.IsEmpty())
           << "Why are we rastering a tile that's not dirty?";
       TileTaskWorkerPool::PlaybackToMemory(
-          data, resource->format(), staging_buffer->size,
-          static_cast<size_t>(stride), raster_source, raster_full_rect,
-          playback_rect, scale, include_images);
-      staging_buffer->gpu_memory_buffer->Unmap();
+          buffer->memory(0), resource->format(), staging_buffer->size,
+          buffer->stride(0), raster_source, raster_full_rect, playback_rect,
+          scale, include_images);
+      buffer->Unmap();
       staging_buffer->content_id = new_content_id;
     }
   }
@@ -499,10 +444,9 @@ void OneCopyTileTaskWorkerPool::PlaybackAndCopyOnWorkerThread(
       int rows_to_copy = std::min(chunk_size_in_rows, height - y);
       DCHECK_GT(rows_to_copy, 0);
 
-      gl->CopySubTextureCHROMIUM(GL_TEXTURE_2D, staging_buffer->texture_id,
-                                 resource_lock->texture_id(), 0, y, 0, y,
-                                 resource->size().width(), rows_to_copy, false,
-                                 false, false);
+      gl->CopySubTextureCHROMIUM(
+          staging_buffer->texture_id, resource_lock->texture_id(), 0, y, 0, y,
+          resource->size().width(), rows_to_copy, false, false, false);
       y += rows_to_copy;
 
       // Increment |bytes_scheduled_since_last_flush_| by the amount of memory
@@ -528,7 +472,7 @@ void OneCopyTileTaskWorkerPool::PlaybackAndCopyOnWorkerThread(
   }
 
   staging_buffer->last_usage = base::TimeTicks::Now();
-  busy_buffers_.push_back(staging_buffer.Pass());
+  busy_buffers_.push_back(std::move(staging_buffer));
 
   ScheduleReduceMemoryUsage();
 }
@@ -538,10 +482,14 @@ bool OneCopyTileTaskWorkerPool::OnMemoryDump(
     base::trace_event::ProcessMemoryDump* pmd) {
   base::AutoLock lock(lock_);
 
-  for (const auto& buffer : buffers_) {
+  for (const auto* buffer : buffers_) {
+    auto in_free_buffers =
+        std::find_if(free_buffers_.begin(), free_buffers_.end(),
+                     [buffer](const scoped_ptr<StagingBuffer>& b) {
+                       return b.get() == buffer;
+                     });
     buffer->OnMemoryDump(pmd, buffer->format,
-                         std::find(free_buffers_.begin(), free_buffers_.end(),
-                                   buffer) != free_buffers_.end());
+                         in_free_buffers != free_buffers_.end());
   }
 
   return true;
@@ -612,8 +560,8 @@ OneCopyTileTaskWorkerPool::AcquireStagingBuffer(const Resource* resource,
       if (!CheckForQueryResult(gl, busy_buffers_.front()->query_id))
         break;
 
-      MarkStagingBufferAsFree(busy_buffers_.front());
-      free_buffers_.push_back(busy_buffers_.take_front());
+      MarkStagingBufferAsFree(busy_buffers_.front().get());
+      free_buffers_.push_back(PopFront(&busy_buffers_));
     }
   }
 
@@ -627,28 +575,29 @@ OneCopyTileTaskWorkerPool::AcquireStagingBuffer(const Resource* resource,
 
     if (resource_provider_->use_sync_query()) {
       WaitForQueryResult(gl, busy_buffers_.front()->query_id);
-      MarkStagingBufferAsFree(busy_buffers_.front());
-      free_buffers_.push_back(busy_buffers_.take_front());
+      MarkStagingBufferAsFree(busy_buffers_.front().get());
+      free_buffers_.push_back(PopFront(&busy_buffers_));
     } else {
       // Fall-back to glFinish if CHROMIUM_sync_query is not available.
       gl->Finish();
       while (!busy_buffers_.empty()) {
-        MarkStagingBufferAsFree(busy_buffers_.front());
-        free_buffers_.push_back(busy_buffers_.take_front());
+        MarkStagingBufferAsFree(busy_buffers_.front().get());
+        free_buffers_.push_back(PopFront(&busy_buffers_));
       }
     }
   }
 
   // Find a staging buffer that allows us to perform partial raster when
   // using persistent GpuMemoryBuffers.
-  if (use_persistent_gpu_memory_buffers_ && previous_content_id) {
-    StagingBufferDeque::iterator it =
-        std::find_if(free_buffers_.begin(), free_buffers_.end(),
-                     [previous_content_id](const StagingBuffer* buffer) {
-                       return buffer->content_id == previous_content_id;
-                     });
+  if (use_partial_raster_ && previous_content_id) {
+    StagingBufferDeque::iterator it = std::find_if(
+        free_buffers_.begin(), free_buffers_.end(),
+        [previous_content_id](const scoped_ptr<StagingBuffer>& buffer) {
+          return buffer->content_id == previous_content_id;
+        });
     if (it != free_buffers_.end()) {
-      staging_buffer = free_buffers_.take(it);
+      staging_buffer = std::move(*it);
+      free_buffers_.erase(it);
       MarkStagingBufferAsBusy(staging_buffer.get());
     }
   }
@@ -657,12 +606,13 @@ OneCopyTileTaskWorkerPool::AcquireStagingBuffer(const Resource* resource,
   if (!staging_buffer) {
     StagingBufferDeque::iterator it =
         std::find_if(free_buffers_.begin(), free_buffers_.end(),
-                     [resource](const StagingBuffer* buffer) {
+                     [resource](const scoped_ptr<StagingBuffer>& buffer) {
                        return buffer->size == resource->size() &&
                               buffer->format == resource->format();
                      });
     if (it != free_buffers_.end()) {
-      staging_buffer = free_buffers_.take(it);
+      staging_buffer = std::move(*it);
+      free_buffers_.erase(it);
       MarkStagingBufferAsBusy(staging_buffer.get());
     }
   }
@@ -680,12 +630,12 @@ OneCopyTileTaskWorkerPool::AcquireStagingBuffer(const Resource* resource,
       break;
 
     free_buffers_.front()->DestroyGLResources(gl);
-    MarkStagingBufferAsBusy(free_buffers_.front());
-    RemoveStagingBuffer(free_buffers_.front());
-    free_buffers_.take_front();
+    MarkStagingBufferAsBusy(free_buffers_.front().get());
+    RemoveStagingBuffer(free_buffers_.front().get());
+    free_buffers_.pop_front();
   }
 
-  return staging_buffer.Pass();
+  return staging_buffer;
 }
 
 base::TimeTicks OneCopyTileTaskWorkerPool::GetUsageTimeForLRUBuffer() {
@@ -762,9 +712,9 @@ void OneCopyTileTaskWorkerPool::ReleaseBuffersNotUsedSince(
         return;
 
       free_buffers_.front()->DestroyGLResources(gl);
-      MarkStagingBufferAsBusy(free_buffers_.front());
-      RemoveStagingBuffer(free_buffers_.front());
-      free_buffers_.take_front();
+      MarkStagingBufferAsBusy(free_buffers_.front().get());
+      RemoveStagingBuffer(free_buffers_.front().get());
+      free_buffers_.pop_front();
     }
 
     while (!busy_buffers_.empty()) {
@@ -772,53 +722,10 @@ void OneCopyTileTaskWorkerPool::ReleaseBuffersNotUsedSince(
         return;
 
       busy_buffers_.front()->DestroyGLResources(gl);
-      RemoveStagingBuffer(busy_buffers_.front());
-      busy_buffers_.take_front();
+      RemoveStagingBuffer(busy_buffers_.front().get());
+      busy_buffers_.pop_front();
     }
   }
-}
-
-void OneCopyTileTaskWorkerPool::OnTaskSetFinished(TaskSet task_set) {
-  TRACE_EVENT1("cc", "OneCopyTileTaskWorkerPool::OnTaskSetFinished", "task_set",
-               task_set);
-
-  DCHECK(tasks_pending_[task_set]);
-  tasks_pending_[task_set] = false;
-  if (tasks_pending_.any()) {
-    TRACE_EVENT_ASYNC_STEP_INTO1("cc", "ScheduledTasks", this, "running",
-                                 "state", StateAsValue());
-  } else {
-    TRACE_EVENT_ASYNC_END0("cc", "ScheduledTasks", this);
-  }
-  client_->DidFinishRunningTileTasks(task_set);
-}
-
-scoped_refptr<base::trace_event::ConvertableToTraceFormat>
-OneCopyTileTaskWorkerPool::StateAsValue() const {
-  scoped_refptr<base::trace_event::TracedValue> state =
-      new base::trace_event::TracedValue();
-
-  state->BeginArray("tasks_pending");
-  for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set)
-    state->AppendBoolean(tasks_pending_[task_set]);
-  state->EndArray();
-  state->BeginDictionary("staging_state");
-  StagingStateAsValueInto(state.get());
-  state->EndDictionary();
-
-  return state;
-}
-
-void OneCopyTileTaskWorkerPool::StagingStateAsValueInto(
-    base::trace_event::TracedValue* staging_state) const {
-  base::AutoLock lock(lock_);
-
-  staging_state->SetInteger("staging_buffer_count",
-                            static_cast<int>(buffers_.size()));
-  staging_state->SetInteger("busy_count",
-                            static_cast<int>(busy_buffers_.size()));
-  staging_state->SetInteger("free_count",
-                            static_cast<int>(free_buffers_.size()));
 }
 
 }  // namespace cc

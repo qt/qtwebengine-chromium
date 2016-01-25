@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLFormControlsCollection.h"
 
 #include "bindings/core/v8/UnionTypesCore.h"
@@ -202,10 +201,14 @@ void HTMLFormControlsCollection::namedGetter(const AtomicString& name, RadioNode
         return;
 
     if (namedItems.size() == 1) {
+        if (isHTMLImageElement(*namedItems[0]))
+            UseCounter::count(document(), UseCounter::FormControlsCollectionNameAccessForImageElement);
         returnValue.setElement(namedItems.at(0));
         return;
     }
 
+    // This path never returns a RadioNodeList for <img> because
+    // onlyMatchingImgElements flag is false by default.
     returnValue.setRadioNodeList(ownerNode().radioNodeList(name));
 }
 

@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/parser/CSSParserValues.h"
 
 #include "core/css/CSSFunctionValue.h"
@@ -57,9 +56,12 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
                 ASSERT(next.type() == StringToken);
                 value.id = CSSValueInvalid;
                 value.isInt = false;
-                value.setUnit(CSSPrimitiveValue::UnitType::URI);
+                value.m_unit = CSSParserValue::URI;
                 value.string = next.value();
                 break;
+            } else if (token.valueEqualsIgnoringCase("var")) {
+                destroyAndClear();
+                return;
             }
 
             value.id = CSSValueInvalid;
@@ -115,10 +117,6 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             break;
         }
         case DimensionToken:
-            if (!CSSPropertyParser::isValidNumericValue(token.numericValue())) {
-                destroyAndClear();
-                return;
-            }
             if (token.unitType() == CSSPrimitiveValue::UnitType::Unknown) {
                 // Unknown dimensions are handled as a list of two values
                 value.m_unit = CSSParserValue::DimensionList;
@@ -141,10 +139,6 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             // fallthrough
         case NumberToken:
         case PercentageToken:
-            if (!CSSPropertyParser::isValidNumericValue(token.numericValue())) {
-                destroyAndClear();
-                return;
-            }
             value.setFromNumber(token.numericValue(), token.unitType());
             value.isInt = (token.numericValueType() == IntegerValueType);
             break;
@@ -164,9 +158,9 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             if (token.type() == HashToken)
                 value.m_unit = CSSParserValue::HexColor;
             else if (token.type() == StringToken)
-                value.setUnit(CSSPrimitiveValue::UnitType::String);
+                value.m_unit = CSSParserValue::String;
             else
-                value.setUnit(CSSPrimitiveValue::UnitType::URI);
+                value.m_unit = CSSParserValue::URI;
             value.string = token.value();
             break;
         }
@@ -202,10 +196,12 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
         case SuffixMatchToken:
         case SubstringMatchToken:
         case ColumnToken:
-        case BadStringToken:
-        case BadUrlToken:
         case ColonToken:
         case SemicolonToken:
+            destroyAndClear();
+            return;
+        case BadStringToken:
+        case BadUrlToken:
             destroyAndClear();
             return;
         }

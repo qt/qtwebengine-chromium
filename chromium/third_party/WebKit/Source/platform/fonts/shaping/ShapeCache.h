@@ -27,22 +27,23 @@
 #ifndef ShapeCache_h
 #define ShapeCache_h
 
-#include "platform/fonts/shaping/HarfBuzzShaper.h"
+#include "platform/fonts/shaping/ShapeResult.h"
 #include "platform/text/TextRun.h"
 #include "wtf/Forward.h"
 #include "wtf/HashFunctions.h"
 #include "wtf/HashSet.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/StringHasher.h"
+#include "wtf/WeakPtr.h"
 
 namespace blink {
 
 class Font;
 class GlyphBuffer;
 class SimpleFontData;
-class HarfBuzzShaper;
 
 struct ShapeCacheEntry {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     ShapeCacheEntry()
     {
         m_shapeResult = nullptr;
@@ -51,9 +52,12 @@ struct ShapeCacheEntry {
 };
 
 class ShapeCache {
+    USING_FAST_MALLOC(ShapeCache);
+    WTF_MAKE_NONCOPYABLE(ShapeCache);
 private:
     // Used to optimize small strings as hash table keys. Avoids malloc'ing an out-of-line StringImpl.
     class SmallStringKey {
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         static unsigned capacity() { return s_capacity; }
 
@@ -113,12 +117,14 @@ private:
     };
 
     struct SmallStringKeyHash {
+        STATIC_ONLY(SmallStringKeyHash);
         static unsigned hash(const SmallStringKey& key) { return key.hash(); }
         static bool equal(const SmallStringKey& a, const SmallStringKey& b) { return a == b; }
         static const bool safeToCompareToEmptyOrDeleted = true; // Empty and deleted values have lengths that are not equal to any valid length.
     };
 
     struct SmallStringKeyHashTraits : WTF::SimpleClassHashTraits<SmallStringKey> {
+        STATIC_ONLY(SmallStringKeyHashTraits);
         static const bool hasIsEmptyValueFunction = true;
         static bool isEmptyValue(const SmallStringKey& key) { return key.isHashTableEmptyValue(); }
         static const unsigned minimumTableSize = 16;
@@ -127,7 +133,7 @@ private:
     friend bool operator==(const SmallStringKey&, const SmallStringKey&);
 
 public:
-    ShapeCache() { }
+    ShapeCache(): m_weakFactory(this), m_version(0) { }
 
     ShapeCacheEntry* add(const TextRun& run, ShapeCacheEntry entry)
     {
@@ -137,10 +143,40 @@ public:
         return addSlowCase(run, entry);
     }
 
+    void clearIfVersionChanged(unsigned version)
+    {
+        if (version != m_version) {
+            clear();
+            m_version = version;
+        }
+    }
+
     void clear()
     {
         m_singleCharMap.clear();
         m_shortStringMap.clear();
+    }
+
+    unsigned size() const
+    {
+        return m_singleCharMap.size() + m_shortStringMap.size();
+    }
+
+    size_t byteSize() const
+    {
+        size_t selfByteSize = 0;
+        for (auto cacheEntry : m_singleCharMap) {
+            selfByteSize += cacheEntry.value.m_shapeResult->byteSize();
+        }
+        for (auto cacheEntry : m_shortStringMap) {
+            selfByteSize += cacheEntry.value.m_shapeResult->byteSize();
+        }
+        return selfByteSize;
+    }
+
+    WeakPtr<ShapeCache> weakPtr()
+    {
+        return m_weakFactory.createWeakPtr();
     }
 
 private:
@@ -170,14 +206,11 @@ private:
             value = &addResult.storedValue->value;
         }
 
-        // Cache hit: ramp up by sampling the next few words.
-        if (!isNewEntry) {
+        if (!isNewEntry)
             return value;
-        }
 
-        if (m_singleCharMap.size() + m_shortStringMap.size() < s_maxSize) {
+        if (size() < s_maxSize)
             return value;
-        }
 
         // No need to be fancy: we're just trying to avoid pathological growth.
         m_singleCharMap.clear();
@@ -193,11 +226,22 @@ private:
     // cache entries is a lot lower given the average word count for a web page
     // is well below 1,000 and even full length books rarely have over 10,000
     // unique words [1]. 1: http://www.mine-control.com/zack/guttenberg/
-    // 2,500 seems like a resonable number.
+    // Our definition of a word is somewhat different from the norm in that we
+    // only segment on space. Thus "foo", "foo-", and "foo)" would count as
+    // three separate words. Given that 10,000 seems like a reasonable maximum
+    // for desktop.
+#if !OS(ANDROID)
+    static const unsigned s_maxSize = 10000;
+#else
+    // On Android, we use a more conservative value of 2,500 due to memory
+    // constraints. crbug.com/577306
     static const unsigned s_maxSize = 2500;
+#endif
 
     SingleCharMap m_singleCharMap;
     SmallStringMap m_shortStringMap;
+    WeakPtrFactory<ShapeCache> m_weakFactory;
+    unsigned m_version;
 };
 
 inline bool operator==(const ShapeCache::SmallStringKey& a, const ShapeCache::SmallStringKey& b)

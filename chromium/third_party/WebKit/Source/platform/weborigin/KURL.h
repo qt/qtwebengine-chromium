@@ -27,12 +27,13 @@
 #define KURL_h
 
 #include "platform/PlatformExport.h"
+#include "url/third_party/mozilla/url_parse.h"
+#include "url/url_canon.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
-#include <url/third_party/mozilla/url_parse.h>
-#include <url/url_canon.h>
 
 namespace WTF {
 class TextEncoding;
@@ -45,6 +46,7 @@ struct KURLHash;
 enum ParsedURLStringTag { ParsedURLString };
 
 class PLATFORM_EXPORT KURL {
+    USING_FAST_MALLOC(KURL);
 public:
     // This must be called during initialization (before we create
     // other threads).
@@ -138,6 +140,7 @@ public:
     bool protocolIsInHTTPFamily() const;
     bool isLocalFile() const;
     bool isAboutBlankURL() const; // Is exactly about:blank.
+    bool isAboutSrcdocURL() const; // Is exactly about:srcdoc.
 
     bool setProtocol(const String&);
     void setHost(const String&);
@@ -212,6 +215,7 @@ PLATFORM_EXPORT bool operator!=(const String&, const KURL&);
 PLATFORM_EXPORT bool equalIgnoringFragmentIdentifier(const KURL&, const KURL&);
 
 PLATFORM_EXPORT const KURL& blankURL();
+PLATFORM_EXPORT const KURL& srcdocURL();
 
 // Functions to do URL operations on strings.
 // These are operations that aren't faster on a parsed URL.

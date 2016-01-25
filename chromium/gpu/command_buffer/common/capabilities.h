@@ -33,7 +33,7 @@ struct GPU_EXPORT Capabilities {
     int precision;
   };
 
-  struct PerStagePrecisions {
+  struct GPU_EXPORT PerStagePrecisions {
     PerStagePrecisions();
 
     ShaderPrecision low_int;
@@ -114,6 +114,7 @@ struct GPU_EXPORT Capabilities {
   int uniform_buffer_offset_alignment;
 
   bool post_sub_buffer;
+  bool commit_overlay_planes;
   bool egl_image_external;
   bool texture_format_astc;
   bool texture_format_atc;
@@ -138,6 +139,7 @@ struct GPU_EXPORT Capabilities {
   bool occlusion_query_boolean;
   bool timer_queries;
   bool surfaceless;
+  bool flips_vertically;
 
   int major_version;
   int minor_version;

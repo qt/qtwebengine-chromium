@@ -42,22 +42,22 @@ public:
     WebSize size() override;
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
-    void resizePinchViewport(const WebSize&) override;
+    void resizeVisualViewport(const WebSize&) override;
     void willEndLiveResize() override;
     void didEnterFullScreen() override;
     void didExitFullScreen() override;
-    void beginFrame(const WebBeginFrameArgs& frameTime) override;
-    void layout() override;
+    void beginFrame(double lastFrameTimeMonotonic) override;
+    void updateAllLifecyclePhases() override;
     void paint(WebCanvas*, const WebRect& viewPort) override;
     void paintCompositedDeprecated(WebCanvas*, const WebRect&) override;
     void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
     void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
     void themeChanged() override;
-    bool handleInputEvent(const WebInputEvent&) override;
+    WebInputEventResult handleInputEvent(const WebInputEvent&) override;
     void setCursorVisibilityState(bool isVisible) override;
     bool hasTouchEventHandlersAt(const WebPoint&) override;
     void applyViewportDeltas(
-        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& visualViewportDelta,
         const WebFloatSize& layoutViewportDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,
@@ -95,6 +95,7 @@ public:
     void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) override;
     void setVisibilityState(WebPageVisibilityState, bool isInitialState) override;
     bool forSubframe() const { return false; }
+    void scheduleAnimation() override;
 
 private:
     WebWidgetClient* m_client;

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_config_memory_test_util.h"
@@ -448,6 +451,12 @@ TEST(TraceConfigTest, IsCategoryGroupEnabled) {
   EXPECT_TRUE(tc.IsCategoryGroupEnabled("disabled-by-default-cc"));
   EXPECT_TRUE(tc.IsCategoryGroupEnabled("included"));
   EXPECT_FALSE(tc.IsCategoryGroupEnabled("other_included"));
+
+  // Excluding categories won't enable disabled-by-default ones with the
+  // excluded category is also present in the group.
+  tc = TraceConfig("-excluded", "");
+  EXPECT_STREQ("-excluded", tc.ToCategoryFilterString().c_str());
+  EXPECT_FALSE(tc.IsCategoryGroupEnabled("excluded,disabled-by-default-cc"));
 }
 
 TEST(TraceConfigTest, IsEmptyOrContainsLeadingOrTrailingWhitespace) {

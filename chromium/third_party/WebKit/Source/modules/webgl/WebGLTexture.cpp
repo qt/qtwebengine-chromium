@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/webgl/WebGLTexture.h"
 
 #include "modules/webgl/WebGLRenderingContextBase.h"
@@ -39,11 +37,6 @@ WebGLTexture* WebGLTexture::create(WebGLRenderingContextBase* ctx)
 WebGLTexture::WebGLTexture(WebGLRenderingContextBase* ctx)
     : WebGLSharedPlatform3DObject(ctx)
     , m_target(0)
-    , m_minFilter(GL_NEAREST_MIPMAP_LINEAR)
-    , m_magFilter(GL_LINEAR)
-    , m_wrapR(GL_REPEAT)
-    , m_wrapS(GL_REPEAT)
-    , m_wrapT(GL_REPEAT)
     , m_isNPOT(false)
     , m_isCubeComplete(false)
     , m_isComplete(false)
@@ -101,7 +94,7 @@ void WebGLTexture::setParameteri(GLenum pname, GLint param)
         case GL_LINEAR_MIPMAP_NEAREST:
         case GL_NEAREST_MIPMAP_LINEAR:
         case GL_LINEAR_MIPMAP_LINEAR:
-            m_minFilter = param;
+            m_samplerState.minFilter = param;
             break;
         }
         break;
@@ -109,7 +102,7 @@ void WebGLTexture::setParameteri(GLenum pname, GLint param)
         switch (param) {
         case GL_NEAREST:
         case GL_LINEAR:
-            m_magFilter = param;
+            m_samplerState.magFilter = param;
             break;
         }
         break;
@@ -118,7 +111,7 @@ void WebGLTexture::setParameteri(GLenum pname, GLint param)
         case GL_CLAMP_TO_EDGE:
         case GL_MIRRORED_REPEAT:
         case GL_REPEAT:
-            m_wrapR = param;
+            m_samplerState.wrapR = param;
             break;
         }
         break;
@@ -127,7 +120,7 @@ void WebGLTexture::setParameteri(GLenum pname, GLint param)
         case GL_CLAMP_TO_EDGE:
         case GL_MIRRORED_REPEAT:
         case GL_REPEAT:
-            m_wrapS = param;
+            m_samplerState.wrapS = param;
             break;
         }
         break;
@@ -136,7 +129,7 @@ void WebGLTexture::setParameteri(GLenum pname, GLint param)
         case GL_CLAMP_TO_EDGE:
         case GL_MIRRORED_REPEAT:
         case GL_REPEAT:
-            m_wrapT = param;
+            m_samplerState.wrapT = param;
             break;
         }
         break;
@@ -303,14 +296,15 @@ bool WebGLTexture::isNPOT() const
     return m_isNPOT;
 }
 
-bool WebGLTexture::needToUseBlackTexture(TextureExtensionFlag flag) const
+bool WebGLTexture::needToUseBlackTexture(TextureExtensionFlag flag, const WebGLSamplerState* samplerState) const
 {
+    ASSERT(samplerState);
     if (!object())
         return false;
     if (m_needToUseBlackTexture)
         return true;
     if ((m_isFloatType && !(flag & TextureFloatLinearExtensionEnabled)) || (m_isHalfFloatType && !(flag && TextureHalfFloatLinearExtensionEnabled))) {
-        if (m_magFilter != GL_NEAREST || (m_minFilter != GL_NEAREST && m_minFilter != GL_NEAREST_MIPMAP_NEAREST))
+        if (samplerState->magFilter != GL_NEAREST || (samplerState->minFilter != GL_NEAREST && samplerState->minFilter != GL_NEAREST_MIPMAP_NEAREST))
             return true;
     }
     return false;
@@ -359,15 +353,10 @@ bool WebGLTexture::canGenerateMipmaps()
 
     if (m_baseLevel >= m_info[0].size())
         return false;
-    const LevelInfo& base = m_info[0][m_baseLevel];
-    for (size_t ii = 0; ii < m_info.size(); ++ii) {
-        const LevelInfo& info = m_info[ii][m_baseLevel];
-        if (!info.valid
-            || info.width != base.width || info.height != base.height || info.depth != base.depth
-            || info.internalFormat != base.internalFormat || info.type != base.type
-            || (m_info.size() > 1 && !m_isCubeComplete))
-            return false;
-    }
+
+    if (m_info.size() > 1 && !m_isCubeComplete)
+        return false;
+
     return true;
 }
 
@@ -413,7 +402,7 @@ void WebGLTexture::update()
         if (m_baseLevel + levelCount > 0)
             maxLevel = m_baseLevel + levelCount - 1;
         maxLevel = m_isWebGL2OrHigher ? std::min(m_maxLevel, maxLevel) : maxLevel;
-        for (size_t ii = 0; ii < m_info.size() && m_isComplete; ++ii) {
+        for (size_t ii = 0; ii < m_info.size(); ++ii) {
             const LevelInfo& info0 = m_info[ii][m_baseLevel];
             if (!info0.valid
                 || info0.width != base.width || info0.height != base.height || info0.depth != base.depth
@@ -424,6 +413,9 @@ void WebGLTexture::update()
                 m_isComplete = false;
                 break;
             }
+
+            if (!m_isComplete)
+                continue;
             GLsizei width = info0.width;
             GLsizei height = info0.height;
             GLsizei depth = info0.depth;
@@ -447,16 +439,19 @@ void WebGLTexture::update()
     m_isHalfFloatType = m_info[0][0].type == GL_HALF_FLOAT_OES;
 
     m_needToUseBlackTexture = false;
-    // NPOT
-    if (!m_isWebGL2OrHigher && m_isNPOT && ((m_minFilter != GL_NEAREST && m_minFilter != GL_LINEAR)
-        || m_wrapS != GL_CLAMP_TO_EDGE || m_wrapT != GL_CLAMP_TO_EDGE || (m_target == GL_TEXTURE_3D && m_wrapR != GL_CLAMP_TO_EDGE)))
-        m_needToUseBlackTexture = true;
     // If it is a Cube texture, check Cube Completeness first
     if (m_info.size() > 1 && !m_isCubeComplete)
         m_needToUseBlackTexture = true;
-    // Completeness
-    if (!m_isComplete && m_minFilter != GL_NEAREST && m_minFilter != GL_LINEAR)
-        m_needToUseBlackTexture = true;
+    if (!m_isWebGL2OrHigher) {
+        // We can do these checks up front in WebGL 1 because there's no separate samplers.
+        // NPOT
+        if (m_isNPOT && ((m_samplerState.minFilter != GL_NEAREST && m_samplerState.minFilter != GL_LINEAR)
+            || m_samplerState.wrapS != GL_CLAMP_TO_EDGE || m_samplerState.wrapT != GL_CLAMP_TO_EDGE))
+            m_needToUseBlackTexture = true;
+        // Completeness
+        if (!m_isComplete && m_samplerState.minFilter != GL_NEAREST && m_samplerState.minFilter != GL_LINEAR)
+            m_needToUseBlackTexture = true;
+    }
 }
 
 const WebGLTexture::LevelInfo* WebGLTexture::getLevelInfo(GLenum target, GLint level) const

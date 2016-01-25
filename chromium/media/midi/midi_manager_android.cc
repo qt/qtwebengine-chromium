@@ -5,6 +5,7 @@
 #include "media/midi/midi_manager_android.h"
 
 #include "base/android/build_info.h"
+#include "base/android/context_utils.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
@@ -45,8 +46,8 @@ void MidiManagerAndroid::StartInitialization() {
 }
 
 void MidiManagerAndroid::DispatchSendMidiData(MidiManagerClient* client,
-                                              uint32 port_index,
-                                              const std::vector<uint8>& data,
+                                              uint32_t port_index,
+                                              const std::vector<uint8_t>& data,
                                               double timestamp) {
   if (port_index >= all_output_ports_.size()) {
     // |port_index| is provided by a renderer so we can't believe that it is
@@ -75,7 +76,7 @@ void MidiManagerAndroid::DispatchSendMidiData(MidiManagerClient* client,
 }
 
 void MidiManagerAndroid::OnReceivedData(MidiInputPortAndroid* port,
-                                        const uint8* data,
+                                        const uint8_t* data,
                                         size_t size,
                                         base::TimeTicks timestamp) {
   const auto i = input_port_to_index_.find(port);
@@ -83,9 +84,10 @@ void MidiManagerAndroid::OnReceivedData(MidiInputPortAndroid* port,
   ReceiveMidiData(i->second, data, size, timestamp);
 }
 
-void MidiManagerAndroid::OnInitialized(JNIEnv* env,
-                                       jobject caller,
-                                       jobjectArray devices) {
+void MidiManagerAndroid::OnInitialized(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& caller,
+    const JavaParamRef<jobjectArray>& devices) {
   jsize length = env->GetArrayLength(devices);
 
   for (jsize i = 0; i < length; ++i) {
@@ -96,14 +98,14 @@ void MidiManagerAndroid::OnInitialized(JNIEnv* env,
 }
 
 void MidiManagerAndroid::OnAttached(JNIEnv* env,
-                                    jobject caller,
-                                    jobject raw_device) {
+                                    const JavaParamRef<jobject>& caller,
+                                    const JavaParamRef<jobject>& raw_device) {
   AddDevice(make_scoped_ptr(new MidiDeviceAndroid(env, raw_device, this)));
 }
 
 void MidiManagerAndroid::OnDetached(JNIEnv* env,
-                                    jobject caller,
-                                    jobject raw_device) {
+                                    const JavaParamRef<jobject>& caller,
+                                    const JavaParamRef<jobject>& raw_device) {
   for (const auto& device : devices_) {
     if (device->HasRawDevice(env, raw_device)) {
       for (const auto& port : device->input_ports()) {

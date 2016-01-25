@@ -35,72 +35,27 @@
 WebInspector.ResourceSourceFrame = function(resource)
 {
     this._resource = resource;
-    this._messages = [];
     WebInspector.SourceFrame.call(this, resource);
 }
 
 WebInspector.ResourceSourceFrame.prototype = {
-    /**
-     * @param {!WebInspector.ConsoleMessage} message
-     */
-    addPersistentMessage: function(message)
-    {
-        this._messages.push(message);
-        if (this.loaded)
-            this.addMessageToSource(WebInspector.SourceFrameMessage.fromConsoleMessage(message, message.line - 1, message.column));
-    },
-
-    /**
-     * @override
-     */
-    onTextEditorContentLoaded: function()
-    {
-        for (var message of this._messages)
-            this.addMessageToSource(WebInspector.SourceFrameMessage.fromConsoleMessage(message, message.line - 1, message.column));
-    },
-
     get resource()
     {
         return this._resource;
     },
 
+    /**
+     * @override
+     * @param {!WebInspector.ContextMenu} contextMenu
+     * @param {number} lineNumber
+     * @param {number} columnNumber
+     * @return {!Promise}
+     */
     populateTextAreaContextMenu: function(contextMenu, lineNumber, columnNumber)
     {
         contextMenu.appendApplicableItems(this._resource);
+        return Promise.resolve();
     },
 
     __proto__: WebInspector.SourceFrame.prototype
-}
-
-/**
- * @constructor
- * @extends {WebInspector.VBox}
- * @param {!WebInspector.ContentProvider} resource
- */
-WebInspector.ResourceSourceFrameFallback = function(resource)
-{
-    WebInspector.VBox.call(this);
-    this.registerRequiredCSS("source_frame/resourceSourceFrame.css");
-    this._resource = resource;
-    this._content = this.element.createChild("div", "resource-source-frame-fallback monospace");
-}
-
-WebInspector.ResourceSourceFrameFallback.prototype = {
-    wasShown: function()
-    {
-        if (!this._contentRequested) {
-            this._contentRequested = true;
-            this._resource.requestContent(this._contentLoaded.bind(this));
-        }
-    },
-
-    /**
-     * @param {?string} content
-     */
-    _contentLoaded: function(content)
-    {
-        this._content.textContent = content;
-    },
-
-    __proto__: WebInspector.VBox.prototype
 }

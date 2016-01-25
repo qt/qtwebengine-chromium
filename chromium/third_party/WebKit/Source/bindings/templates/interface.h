@@ -2,7 +2,6 @@
 #ifndef {{v8_class}}_h
 #define {{v8_class}}_h
 
-{% filter conditional(conditional_string) %}
 {% for filename in header_includes %}
 #include "{{filename}}"
 {% endfor %}
@@ -46,6 +45,9 @@ public:
     {% else %}
     static v8::Local<v8::Object> findInstanceInPrototypeChain(v8::Local<v8::Value>, v8::Isolate*);
     {{exported}}static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*);
+    {% if has_named_properties_object %}
+    {{exported}}static v8::Local<v8::FunctionTemplate> domTemplateForNamedPropertiesObject(v8::Isolate*);
+    {% endif %}
     static {{cpp_class}}* toImpl(v8::Local<v8::Object> object)
     {
         return toScriptWrappable(object)->toImpl<{{cpp_class}}>();
@@ -78,9 +80,7 @@ public:
     {% endif %}
     {% for method in methods %}
     {% if method.is_custom %}
-    {% filter conditional(method.conditional_string) %}
     static void {{method.name}}MethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
-    {% endfilter %}
     {% endif %}
     {% if method.is_custom_call_prologue %}
     static void {{method.name}}MethodPrologueCustom(const v8::FunctionCallbackInfo<v8::Value>&, {{cpp_class}}*);
@@ -97,22 +97,18 @@ public:
     {% endif %}
     {% for attribute in attributes %}
     {% if attribute.has_custom_getter %}{# FIXME: and not attribute.implemented_by #}
-    {% filter conditional(attribute.conditional_string) %}
     {% if attribute.is_data_type_property %}
     static void {{attribute.name}}AttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>&);
     {% else %}
     static void {{attribute.name}}AttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     {% endif %}
-    {% endfilter %}
     {% endif %}
     {% if attribute.has_custom_setter %}{# FIXME: and not attribute.implemented_by #}
-    {% filter conditional(attribute.conditional_string) %}
     {% if attribute.is_data_type_property %}
     static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::PropertyCallbackInfo<void>&);
     {% else %}
     static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::FunctionCallbackInfo<v8::Value>&);
     {% endif %}
-    {% endfilter %}
     {% endif %}
     {% endfor %}
     {# Custom special operations #}
@@ -161,13 +157,12 @@ public:
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + {{custom_internal_field_counter}};
     {# End custom internal fields #}
     {% if interface_name == 'Window' %}
-    static bool namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType, v8::Local<v8::Value> data);
-    static bool indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t index, v8::AccessType, v8::Local<v8::Value> data);
+    static bool securityCheckCustom(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject);
     {% endif %}
     static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*){% if has_conditional_attributes %};
     {% else %} { }
     {% endif %}
-    static void preparePrototypeAndInterfaceObject(v8::Isolate*, v8::Local<v8::Object> prototypeObject, v8::Local<v8::Function> interfaceObject, v8::Local<v8::FunctionTemplate> interfaceTemplate){% if unscopeables or has_conditional_attributes_on_prototype or conditionally_enabled_methods %};
+    static void preparePrototypeAndInterfaceObject(v8::Local<v8::Context>, v8::Local<v8::Object> prototypeObject, v8::Local<v8::Function> interfaceObject, v8::Local<v8::FunctionTemplate> interfaceTemplate){% if unscopeables or has_conditional_attributes_on_prototype or conditionally_enabled_methods %};
     {% else %} { }
     {% endif %}
     {% if has_partial_interface %}
@@ -194,6 +189,5 @@ struct V8TypeOf<{{cpp_class}}> {
 };
 
 } // namespace blink
-{% endfilter %}
 
 #endif // {{v8_class}}_h

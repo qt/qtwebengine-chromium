@@ -24,7 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/DOMURL.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -64,7 +63,8 @@ void DOMURL::setInput(const String& value)
 
 String DOMURL::createObjectURL(ExecutionContext* executionContext, Blob* blob, ExceptionState& exceptionState)
 {
-    if (!executionContext || !blob)
+    ASSERT(blob);
+    if (!executionContext)
         return String();
     if (blob->hasBeenClosed()) {
         exceptionState.throwDOMException(InvalidStateError, String(blob->isFile() ? "File" : "Blob") + " has been closed.");

@@ -74,6 +74,7 @@ scoped_refptr<Dispatcher> Dispatcher::TransportDataAccess::Deserialize(
     size_t size,
     embedder::PlatformHandleVector* platform_handles) {
   switch (static_cast<Dispatcher::Type>(type)) {
+    case Type::WAIT_SET:
     case Type::UNKNOWN:
       DVLOG(2) << "Deserializing invalid handle";
       return nullptr;
@@ -226,7 +227,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsState() const {
 
 MojoResult Dispatcher::AddAwakable(Awakable* awakable,
                                    MojoHandleSignals signals,
-                                   uint32_t context,
+                                   uintptr_t context,
                                    HandleSignalsState* signals_state) {
   MutexLocker locker(&mutex_);
   if (is_closed_) {
@@ -248,6 +249,37 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
   }
 
   RemoveAwakableImplNoLock(awakable, handle_signals_state);
+}
+
+MojoResult Dispatcher::AddWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher,
+    MojoHandleSignals signals,
+    uintptr_t context) {
+  MutexLocker locker(&mutex_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return AddWaitingDispatcherImplNoLock(dispatcher, signals, context);
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher) {
+  MutexLocker locker(&mutex_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return RemoveWaitingDispatcherImplNoLock(dispatcher);
+}
+
+MojoResult Dispatcher::GetReadyDispatchers(UserPointer<uint32_t> count,
+                                           DispatcherVector* dispatchers,
+                                           UserPointer<MojoResult> results,
+                                           UserPointer<uintptr_t> contexts) {
+  MutexLocker locker(&mutex_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return GetReadyDispatchersImplNoLock(count, dispatchers, results, contexts);
 }
 
 Dispatcher::Dispatcher() : is_closed_(false) {
@@ -378,7 +410,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
 MojoResult Dispatcher::AddAwakableImplNoLock(
     Awakable* /*awakable*/,
     MojoHandleSignals /*signals*/,
-    uint32_t /*context*/,
+    uintptr_t /*context*/,
     HandleSignalsState* signals_state) {
   mutex_.AssertHeld();
   DCHECK(!is_closed_);
@@ -387,6 +419,35 @@ MojoResult Dispatcher::AddAwakableImplNoLock(
   if (signals_state)
     *signals_state = HandleSignalsState();
   return MOJO_RESULT_FAILED_PRECONDITION;
+}
+
+MojoResult Dispatcher::AddWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& /*dispatcher*/,
+    MojoHandleSignals /*signals*/,
+    uintptr_t /*context*/) {
+  mutex_.AssertHeld();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& /*dispatcher*/) {
+  mutex_.AssertHeld();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::GetReadyDispatchersImplNoLock(
+    UserPointer<uint32_t> /*count*/,
+    DispatcherVector* /*dispatchers*/,
+    UserPointer<MojoResult> /*results*/,
+    UserPointer<uintptr_t> /*contexts*/) {
+  mutex_.AssertHeld();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
 void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,

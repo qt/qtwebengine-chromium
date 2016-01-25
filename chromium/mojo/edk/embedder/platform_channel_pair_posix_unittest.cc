@@ -7,13 +7,14 @@
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
-
 #include <deque>
+#include <utility>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -34,7 +35,7 @@ namespace {
 
 void WaitReadable(PlatformHandle h) {
   struct pollfd pfds = {};
-  pfds.fd = h.fd;
+  pfds.fd = h.handle;
   pfds.events = POLLIN;
   CHECK_EQ(poll(&pfds, 1, -1), 1);
 }
@@ -64,13 +65,13 @@ class PlatformChannelPairPosixTest : public testing::Test {
 
 TEST_F(PlatformChannelPairPosixTest, NoSigPipe) {
   PlatformChannelPair channel_pair;
-  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
-  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
+  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle();
+  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle();
 
   // Write to the client.
   static const char kHello[] = "hello";
   EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
-            write(client_handle.get().fd, kHello, sizeof(kHello)));
+            write(client_handle.get().handle, kHello, sizeof(kHello)));
 
   // Close the client.
   client_handle.reset();
@@ -78,11 +79,11 @@ TEST_F(PlatformChannelPairPosixTest, NoSigPipe) {
   // Read from the server; this should be okay.
   char buffer[100] = {};
   EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
-            read(server_handle.get().fd, buffer, sizeof(buffer)));
+            read(server_handle.get().handle, buffer, sizeof(buffer)));
   EXPECT_STREQ(kHello, buffer);
 
   // Try reading again.
-  ssize_t result = read(server_handle.get().fd, buffer, sizeof(buffer));
+  ssize_t result = read(server_handle.get().handle, buffer, sizeof(buffer));
   // We should probably get zero (for "end of file"), but -1 would also be okay.
   EXPECT_TRUE(result == 0 || result == -1);
   if (result == -1)
@@ -105,8 +106,8 @@ TEST_F(PlatformChannelPairPosixTest, NoSigPipe) {
 
 TEST_F(PlatformChannelPairPosixTest, SendReceiveData) {
   PlatformChannelPair channel_pair;
-  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
-  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
+  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle();
+  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle();
 
   for (size_t i = 0; i < 10; i++) {
     std::string send_string(1 << i, 'A' + i);
@@ -134,8 +135,8 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
   static const char kHello[] = "hello";
 
   PlatformChannelPair channel_pair;
-  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
-  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
+  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle();
+  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle();
 
 // Reduce the number of FDs opened on OS X to avoid test flake.
 #if defined(OS_MACOSX)
@@ -156,7 +157,7 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
       ASSERT_TRUE(fp);
       ASSERT_EQ(j, fwrite(std::string(j, c).data(), 1, j, fp.get()));
       platform_handles->push_back(
-          test::PlatformHandleFromFILE(fp.Pass()).release());
+          test::PlatformHandleFromFILE(std::move(fp)).release());
       ASSERT_TRUE(platform_handles->back().is_valid());
     }
 
@@ -200,8 +201,8 @@ TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
   static const char kHello[] = "hello";
 
   PlatformChannelPair channel_pair;
-  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
-  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
+  ScopedPlatformHandle server_handle = channel_pair.PassServerHandle();
+  ScopedPlatformHandle client_handle = channel_pair.PassClientHandle();
 
   const std::string file_contents("hello world");
 
@@ -214,7 +215,7 @@ TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
               fwrite(file_contents.data(), 1, file_contents.size(), fp.get()));
     ScopedPlatformHandleVectorPtr platform_handles(new PlatformHandleVector);
     platform_handles->push_back(
-        test::PlatformHandleFromFILE(fp.Pass()).release());
+        test::PlatformHandleFromFILE(std::move(fp)).release());
     ASSERT_TRUE(platform_handles->back().is_valid());
 
     // Send the FD (+ "hello").

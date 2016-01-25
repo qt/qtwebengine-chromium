@@ -7,16 +7,21 @@
 
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebMemoryDumpProvider.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
 class BLINK_PLATFORM_EXPORT PartitionAllocMemoryDumpProvider final : public WebMemoryDumpProvider {
+    WTF_MAKE_NONCOPYABLE(PartitionAllocMemoryDumpProvider);
 public:
     static PartitionAllocMemoryDumpProvider* instance();
     ~PartitionAllocMemoryDumpProvider() override;
 
     // WebMemoryDumpProvider implementation.
     bool onMemoryDump(WebMemoryDumpLevelOfDetail, WebProcessMemoryDump*) override;
+    bool supportsHeapProfiling() override { return true; }
+    void onHeapProfilingEnabled(AllocationHook*, FreeHook*) override;
 
 private:
     PartitionAllocMemoryDumpProvider();

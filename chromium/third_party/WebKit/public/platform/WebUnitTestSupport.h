@@ -26,12 +26,10 @@
 #ifndef WebUnitTestSupport_h
 #define WebUnitTestSupport_h
 
-#include "WebBlobData.h"
 #include "WebCommon.h"
 #include "WebData.h"
 #include "WebString.h"
 #include "WebURLLoaderTestDelegate.h"
-#include "WebVector.h"
 
 namespace blink {
 
@@ -58,21 +56,9 @@ public:
     // Set a delegate that allows callbacks for all WebURLLoaderClients to be intercepted.
     virtual void setLoaderDelegate(WebURLLoaderTestDelegate*) { }
 
-    // Returns the root directory of the WebKit code.
-    virtual WebString webKitRootDir() { return WebString(); }
-
     // Constructs a WebLayerTreeView set up with reasonable defaults for
     // testing.
     virtual WebLayerTreeView* createLayerTreeViewForTesting() { return nullptr; }
-
-    virtual WebData readFromFile(const WebString& path) { return WebData(); }
-
-    // Gets the blob items from the blob handle's uuid.
-    // The ownership of WebBlobData::Items is not transferred.
-    virtual bool getBlobItems(const WebString& uuid, WebVector<WebBlobData::Item*>*) { return false; }
-
-    virtual void enterRunLoop() { }
-    virtual void exitRunLoop() { }
 };
 
 }

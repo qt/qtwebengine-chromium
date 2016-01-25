@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioNode.h"
-
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InstanceCounters.h"
@@ -323,8 +320,11 @@ void AudioHandler::processIfNecessary(size_t framesToProcess)
         if (silentInputs && propagatesSilence()) {
             silenceOutputs();
         } else {
-            process(framesToProcess);
+            // Unsilence the outputs first because the processing of the node may cause the outputs
+            // to go silent and we want to propagate that hint to the downstream nodes!  (For
+            // example, a Gain node with a gain of 0 will want to silence its output.)
             unsilenceOutputs();
+            process(framesToProcess);
         }
     }
 }
@@ -412,14 +412,15 @@ void AudioHandler::disableOutputsIfNecessary()
         // But internally our outputs should be disabled from the inputs they're connected to.
         // disable() can recursively deref connections (and call disable()) down a whole chain of connected nodes.
 
-        // TODO(rtoy,hongchan): we special case the convolver, delay, and biquad since they have a
-        // significant tail-time and shouldn't be disconnected simply because they no longer have
-        // any input connections. This needs to be handled more generally where AudioNodes have a
-        // tailTime attribute. Then the AudioNode only needs to remain "active" for tailTime seconds
-        // after there are no longer any active connections.
+        // TODO(rtoy,hongchan): we need special cases the convolver, delay, biquad, and IIR since
+        // they have a significant tail-time and shouldn't be disconnected simply because they no
+        // longer have any input connections. This needs to be handled more generally where
+        // AudioNodes have a tailTime attribute. Then the AudioNode only needs to remain "active"
+        // for tailTime seconds after there are no longer any active connections.
         if (nodeType() != NodeTypeConvolver
             && nodeType() != NodeTypeDelay
-            && nodeType() != NodeTypeBiquadFilter) {
+            && nodeType() != NodeTypeBiquadFilter
+            && nodeType() != NodeTypeIIRFilter) {
             m_isDisabled = true;
             clearInternalStateWhenDisabled();
             for (auto& output : m_outputs)
@@ -556,7 +557,7 @@ AbstractAudioContext* AudioNode::context() const
     return m_context;
 }
 
-void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned inputIndex, ExceptionState& exceptionState)
+AudioNode* AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned inputIndex, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     AbstractAudioContext::AutoLocker locker(context());
@@ -565,14 +566,14 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
         exceptionState.throwDOMException(
             InvalidStateError,
             "Cannot connect after the context has been closed.");
-        return;
+        return nullptr;
     }
 
     if (!destination) {
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid destination node.");
-        return;
+        return nullptr;
     }
 
     // Sanity check input and output indices.
@@ -580,21 +581,21 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
         exceptionState.throwDOMException(
             IndexSizeError,
             "output index (" + String::number(outputIndex) + ") exceeds number of outputs (" + String::number(numberOfOutputs()) + ").");
-        return;
+        return nullptr;
     }
 
     if (destination && inputIndex >= destination->numberOfInputs()) {
         exceptionState.throwDOMException(
             IndexSizeError,
             "input index (" + String::number(inputIndex) + ") exceeds number of inputs (" + String::number(destination->numberOfInputs()) + ").");
-        return;
+        return nullptr;
     }
 
     if (context() != destination->context()) {
         exceptionState.throwDOMException(
             SyntaxError,
             "cannot connect to a destination belonging to a different audio context.");
-        return;
+        return nullptr;
     }
 
     // ScriptProcessorNodes with 0 output channels can't be connected to any destination.  If there
@@ -604,7 +605,7 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
         exceptionState.throwDOMException(
             InvalidAccessError,
             "cannot connect a ScriptProcessorNode with 0 output channels to any destination node.");
-        return;
+        return nullptr;
     }
 
     destination->handler().input(inputIndex).connect(handler().output(outputIndex));
@@ -614,6 +615,8 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
 
     // Let context know that a connection has been made.
     context()->incrementConnectionCount();
+
+    return destination;
 }
 
 void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionState& exceptionState)
@@ -938,4 +941,3 @@ void AudioNode::didAddOutput(unsigned numberOfOutputs)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -8,9 +8,11 @@
 #include <openssl/ec_key.h>
 #include <openssl/evp.h>
 #include <openssl/pkcs12.h>
+#include <stddef.h>
+#include <utility>
 
 #include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/macros.h"
 #include "components/webcrypto/algorithms/asymmetric_key_util.h"
 #include "components/webcrypto/algorithms/util.h"
 #include "components/webcrypto/blink_key_handle.h"
@@ -159,10 +161,8 @@ Status WritePaddedBIGNUM(const std::string& member_name,
                          size_t padded_length,
                          JwkWriter* jwk) {
   std::vector<uint8_t> padded_bytes(padded_length);
-  if (!BN_bn2bin_padded(vector_as_array(&padded_bytes), padded_bytes.size(),
-                        value)) {
+  if (!BN_bn2bin_padded(padded_bytes.data(), padded_bytes.size(), value))
     return Status::OperationError();
-  }
   jwk->SetBytes(member_name, CryptoData(padded_bytes));
   return Status::Success();
 }
@@ -277,12 +277,12 @@ Status EcAlgorithm::GenerateKey(const blink::WebCryptoAlgorithm& algorithm,
 
   // Note that extractable is unconditionally set to true. This is because per
   // the WebCrypto spec generated public keys are always extractable.
-  status = CreateWebCryptoPublicKey(public_pkey.Pass(), key_algorithm, true,
+  status = CreateWebCryptoPublicKey(std::move(public_pkey), key_algorithm, true,
                                     public_usages, &public_key);
   if (status.IsError())
     return status;
 
-  status = CreateWebCryptoPrivateKey(private_pkey.Pass(), key_algorithm,
+  status = CreateWebCryptoPrivateKey(std::move(private_pkey), key_algorithm,
                                      extractable, private_usages, &private_key);
   if (status.IsError())
     return status;
@@ -317,7 +317,7 @@ Status EcAlgorithm::ImportKeyPkcs8(const CryptoData& key_data,
   if (status.IsError())
     return status;
 
-  return CreateWebCryptoPrivateKey(private_key.Pass(),
+  return CreateWebCryptoPrivateKey(std::move(private_key),
                                    blink::WebCryptoKeyAlgorithm::createEc(
                                        algorithm.id(), params->namedCurve()),
                                    extractable, usages, key);
@@ -342,7 +342,7 @@ Status EcAlgorithm::ImportKeySpki(const CryptoData& key_data,
   if (status.IsError())
     return status;
 
-  return CreateWebCryptoPublicKey(public_key.Pass(),
+  return CreateWebCryptoPublicKey(std::move(public_key),
                                   blink::WebCryptoKeyAlgorithm::createEc(
                                       algorithm.id(), params->namedCurve()),
                                   extractable, usages, key);
@@ -449,10 +449,10 @@ Status EcAlgorithm::ImportKeyJwk(const CryptoData& key_data,
 
   // Wrap the EVP_PKEY into a WebCryptoKey
   if (is_private_key) {
-    return CreateWebCryptoPrivateKey(pkey.Pass(), key_algorithm, extractable,
-                                     usages, key);
+    return CreateWebCryptoPrivateKey(std::move(pkey), key_algorithm,
+                                     extractable, usages, key);
   }
-  return CreateWebCryptoPublicKey(pkey.Pass(), key_algorithm, extractable,
+  return CreateWebCryptoPublicKey(std::move(pkey), key_algorithm, extractable,
                                   usages, key);
 }
 

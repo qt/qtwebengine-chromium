@@ -22,7 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/Range.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -55,8 +54,15 @@
 #endif
 
 namespace blink {
-
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, rangeCounter, ("Range"));
+namespace {
+#ifndef NDEBUG
+WTF::RefCountedLeakCounter& rangeCounter()
+{
+    DEFINE_STATIC_LOCAL(WTF::RefCountedLeakCounter, staticRangeCounter, ("Range"));
+    return staticRangeCounter;
+}
+#endif
+} // namespace
 
 inline Range::Range(Document& ownerDocument)
     : m_ownerDocument(&ownerDocument)
@@ -64,7 +70,7 @@ inline Range::Range(Document& ownerDocument)
     , m_end(m_ownerDocument)
 {
 #ifndef NDEBUG
-    rangeCounter.increment();
+    rangeCounter().increment();
 #endif
 
     m_ownerDocument->attachRange(this);
@@ -81,7 +87,7 @@ inline Range::Range(Document& ownerDocument, Node* startContainer, int startOffs
     , m_end(m_ownerDocument)
 {
 #ifndef NDEBUG
-    rangeCounter.increment();
+    rangeCounter().increment();
 #endif
 
     m_ownerDocument->attachRange(this);
@@ -130,7 +136,7 @@ Range::~Range()
 #endif
 
 #ifndef NDEBUG
-    rangeCounter.decrement();
+    rangeCounter().decrement();
 #endif
 }
 #endif
@@ -141,6 +147,12 @@ void Range::dispose()
     // A prompt detach from the owning Document helps avoid GC overhead.
     m_ownerDocument->detachRange(this);
 #endif
+}
+
+bool Range::inDocument() const
+{
+    ASSERT(m_start.inDocument() == m_end.inDocument());
+    return m_start.inDocument();
 }
 
 void Range::setDocument(Document& document)
@@ -405,14 +417,10 @@ bool Range::intersectsNode(Node* refNode, ExceptionState& exceptionState)
         return false;
 
     ContainerNode* parentNode = refNode->parentNode();
-    int nodeIndex = refNode->nodeIndex();
+    if (!parentNode)
+        return true;
 
-    if (!parentNode) {
-        // if the node is the top document we should return NODE_BEFORE_AND_AFTER
-        // but we throw to match firefox behavior
-        exceptionState.throwDOMException(NotFoundError, "The node provided has no parent.");
-        return false;
-    }
+    int nodeIndex = refNode->nodeIndex();
 
     if (comparePoint(parentNode, nodeIndex, exceptionState) < 0 // starts before start
         && comparePoint(parentNode, nodeIndex + 1, exceptionState) < 0) { // ends before start
@@ -435,14 +443,10 @@ bool Range::intersectsNode(Node* refNode, const Position& start, const Position&
         return false;
 
     ContainerNode* parentNode = refNode->parentNode();
-    int nodeIndex = refNode->nodeIndex();
+    if (!parentNode)
+        return true;
 
-    if (!parentNode) {
-        // if the node is the top document we should return NODE_BEFORE_AND_AFTER
-        // but we throw to match firefox behavior
-        exceptionState.throwDOMException(NotFoundError, "The node provided has no parent.");
-        return false;
-    }
+    int nodeIndex = refNode->nodeIndex();
 
     Node* startContainerNode = start.computeContainerNode();
     int startOffset = start.computeOffsetInContainerNode();
@@ -621,6 +625,7 @@ PassRefPtrWillBeRawPtr<Node> Range::processContentsBetweenOffsets(ActionType act
     case Node::TEXT_NODE:
     case Node::CDATA_SECTION_NODE:
     case Node::COMMENT_NODE:
+    case Node::PROCESSING_INSTRUCTION_NODE:
         endOffset = std::min(endOffset, toCharacterData(container)->length());
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             RefPtrWillBeRawPtr<CharacterData> c = static_pointer_cast<CharacterData>(container->cloneNode(true));
@@ -634,25 +639,6 @@ PassRefPtrWillBeRawPtr<Node> Range::processContentsBetweenOffsets(ActionType act
         }
         if (action == EXTRACT_CONTENTS || action == DELETE_CONTENTS)
             toCharacterData(container)->deleteData(startOffset, endOffset - startOffset, exceptionState);
-        break;
-    case Node::PROCESSING_INSTRUCTION_NODE:
-        endOffset = std::min(endOffset, toProcessingInstruction(container)->data().length());
-        if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
-            RefPtrWillBeRawPtr<ProcessingInstruction> c = static_pointer_cast<ProcessingInstruction>(container->cloneNode(true));
-            c->setData(c->data().substring(startOffset, endOffset - startOffset));
-            if (fragment) {
-                result = fragment;
-                result->appendChild(c.release(), exceptionState);
-            } else {
-                result = c.release();
-            }
-        }
-        if (action == EXTRACT_CONTENTS || action == DELETE_CONTENTS) {
-            ProcessingInstruction* pi = toProcessingInstruction(container);
-            String data(pi->data());
-            data.remove(startOffset, endOffset - startOffset);
-            pi->setData(data);
-        }
         break;
     case Node::ELEMENT_NODE:
     case Node::ATTRIBUTE_NODE:

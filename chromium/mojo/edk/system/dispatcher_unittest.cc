@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/dispatcher.h"
 
+#include <stddef.h>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/synchronization/waitable_event.h"
@@ -79,7 +81,7 @@ TEST(DispatcherTest, Basic) {
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->WriteMessage(nullptr, 0, nullptr, MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->ReadMessage(nullptr, nullptr, nullptr, nullptr,  
+            d->ReadMessage(nullptr, nullptr, nullptr, nullptr,
                            MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->WriteData(nullptr, nullptr, MOJO_WRITE_DATA_FLAG_NONE));

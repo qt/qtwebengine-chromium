@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/NinePieceImageGrid.h"
 
 #include "core/css/CSSGradientValue.h"
@@ -10,7 +9,7 @@
 #include "core/style/ComputedStyle.h"
 #include "core/style/NinePieceImage.h"
 #include "core/style/StyleGeneratedImage.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 namespace {
@@ -22,7 +21,7 @@ public:
     PassRefPtrWillBeRawPtr<StyleImage> generatedImage()
     {
         RefPtrWillBeRawPtr<CSSLinearGradientValue> gradient = CSSLinearGradientValue::create(Repeating);
-        return StyleGeneratedImage::create(gradient.get());
+        return StyleGeneratedImage::create(*gradient);
     }
 
 private:

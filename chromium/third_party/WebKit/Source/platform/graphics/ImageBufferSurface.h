@@ -36,7 +36,7 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 
@@ -54,13 +54,12 @@ class FloatRect;
 class GraphicsContext;
 
 class PLATFORM_EXPORT ImageBufferSurface {
-    WTF_MAKE_NONCOPYABLE(ImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(ImageBufferSurface);
+    WTF_MAKE_NONCOPYABLE(ImageBufferSurface); USING_FAST_MALLOC(ImageBufferSurface);
 public:
     virtual ~ImageBufferSurface();
 
     virtual SkCanvas* canvas() = 0;
     virtual void disableDeferral() { }
-    virtual const SkBitmap& deprecatedBitmapForOverwrite();
     virtual void willOverwriteCanvas() { }
     virtual void didDraw(const FloatRect& rect) { }
     virtual bool isValid() const = 0;
@@ -74,7 +73,7 @@ public:
     virtual void setImageBuffer(ImageBuffer*) { }
     virtual PassRefPtr<SkPicture> getPicture();
     virtual void finalizeFrame(const FloatRect &dirtyRect) { }
-    virtual void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode);
+    virtual void draw(GraphicsContext&, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode);
     virtual void setHasExpensiveOp() { }
     virtual Platform3DObject getBackingTextureHandleForOverwrite() { return 0; }
     virtual void flush(); // Execute all deferred rendering immediately

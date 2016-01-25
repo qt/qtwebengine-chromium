@@ -69,14 +69,14 @@ public:
 
 private:
     explicit ContextFeatures(PassOwnPtr<ContextFeaturesClient> client)
-        : m_client(client)
+        : m_client(std::move(client))
     { }
 
     OwnPtr<ContextFeaturesClient> m_client;
 };
 
 class ContextFeaturesClient {
-    WTF_MAKE_FAST_ALLOCATED(ContextFeaturesClient);
+    USING_FAST_MALLOC(ContextFeaturesClient);
 public:
     static PassOwnPtr<ContextFeaturesClient> empty();
 
@@ -90,7 +90,7 @@ void provideContextFeaturesToDocumentFrom(Document&, Page&);
 
 inline PassRefPtrWillBeRawPtr<ContextFeatures> ContextFeatures::create(PassOwnPtr<ContextFeaturesClient> client)
 {
-    return adoptRefWillBeNoop(new ContextFeatures(client));
+    return adoptRefWillBeNoop(new ContextFeatures(std::move(client)));
 }
 
 inline bool ContextFeatures::isEnabled(Document* document, FeatureType type, bool defaultValue) const

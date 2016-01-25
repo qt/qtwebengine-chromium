@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebDOMMessageEvent.h"
 
 #include "bindings/core/v8/SerializedScriptValue.h"
@@ -49,7 +48,7 @@ WebDOMMessageEvent::WebDOMMessageEvent(const WebSerializedScriptValue& messageDa
 {
     DOMWindow* window = nullptr;
     if (sourceFrame)
-        window = toCoreFrame(sourceFrame)->domWindow();
+        window = sourceFrame->toImplBase()->frame()->domWindow();
     MessagePortArray* ports = nullptr;
     if (!targetDocument.isNull()) {
         RefPtrWillBeRawPtr<Document> coreDocument = PassRefPtrWillBeRawPtr<Document>(targetDocument);

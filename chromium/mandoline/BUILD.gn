@@ -10,14 +10,16 @@ group("all") {
 
   deps = [
     ":tests",
+    "//mojo",
   ]
 
-  if (!is_component_build) {
-    if (is_android) {
-      deps += [ "//mandoline/app/android" ]
-    } else {
-      deps += [ "//mandoline/app/desktop" ]
-    }
+  if (is_android) {
+    deps += [ "//mandoline/app/android" ]
+  } else {
+    deps += [
+      "//mandoline/app/desktop",
+      "//mash/example",
+    ]
   }
 }
 
@@ -35,14 +37,14 @@ group("tests") {
     deps += [ "//tools/xdisplaycheck" ]
   }
 
-  if (!is_component_build && !is_mac) {
+  if (!is_mac) {
     deps += [
       "//components/clipboard:apptests",
       "//components/filesystem:apptests",
       "//components/html_viewer:apptests",
       "//components/html_viewer:html_viewer_unittests",
       "//components/html_viewer:layout_test_html_viewer",
-      "//components/mus/vm:tests",
+      "//components/mus/ws:tests",
       "//components/resource_provider:apptests",
       "//components/resource_provider:resource_provider_unittests",
       "//components/web_view:apptests",

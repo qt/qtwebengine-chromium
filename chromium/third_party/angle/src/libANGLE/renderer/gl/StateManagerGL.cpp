@@ -11,17 +11,24 @@
 #include "common/BitSetIterator.h"
 #include "libANGLE/Data.h"
 #include "libANGLE/Framebuffer.h"
+#include "libANGLE/TransformFeedback.h"
 #include "libANGLE/VertexArray.h"
+#include "libANGLE/Query.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/ProgramGL.h"
 #include "libANGLE/renderer/gl/SamplerGL.h"
 #include "libANGLE/renderer/gl/TextureGL.h"
+#include "libANGLE/renderer/gl/TransformFeedbackGL.h"
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
+#include "libANGLE/renderer/gl/QueryGL.h"
 
 namespace rx
 {
+
+static const GLenum QueryTypes[] = {GL_ANY_SAMPLES_PASSED, GL_ANY_SAMPLES_PASSED_CONSERVATIVE,
+                                    GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN};
 
 StateManagerGL::IndexedBufferBinding::IndexedBufferBinding() : offset(0), size(0), buffer(0)
 {
@@ -37,6 +44,11 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions, const gl::Caps &ren
       mTextureUnitIndex(0),
       mTextures(),
       mSamplers(rendererCaps.maxCombinedTextureImageUnits, 0),
+      mTransformFeedback(0),
+      mQueries(),
+      mPrevDrawTransformFeedback(nullptr),
+      mPrevDrawQueries(),
+      mPrevDrawContext(0),
       mUnpackAlignment(4),
       mUnpackRowLength(0),
       mUnpackSkipRows(0),
@@ -110,6 +122,11 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions, const gl::Caps &ren
     mTextures[GL_TEXTURE_3D].resize(rendererCaps.maxCombinedTextureImageUnits);
 
     mIndexedBuffers[GL_UNIFORM_BUFFER].resize(rendererCaps.maxCombinedUniformBlocks);
+
+    for (GLenum queryType : QueryTypes)
+    {
+        mQueries[queryType] = 0;
+    }
 
     // Initialize point sprite state for desktop GL
     if (mFunctions->standard == STANDARD_GL_DESKTOP)
@@ -243,6 +260,41 @@ void StateManagerGL::deleteRenderbuffer(GLuint rbo)
         }
 
         mFunctions->deleteRenderbuffers(1, &rbo);
+    }
+}
+
+void StateManagerGL::deleteTransformFeedback(GLuint transformFeedback)
+{
+    if (transformFeedback != 0)
+    {
+        if (mTransformFeedback == transformFeedback)
+        {
+            bindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
+        }
+
+        if (mPrevDrawTransformFeedback != nullptr &&
+            mPrevDrawTransformFeedback->getTransformFeedbackID() == transformFeedback)
+        {
+            mPrevDrawTransformFeedback = nullptr;
+        }
+
+        mFunctions->deleteTransformFeedbacks(1, &transformFeedback);
+    }
+}
+
+void StateManagerGL::deleteQuery(GLuint query)
+{
+    if (query != 0)
+    {
+        for (auto &activeQuery : mQueries)
+        {
+            GLuint activeQueryID = activeQuery.second;
+            if (activeQueryID == query)
+            {
+                GLenum type = activeQuery.first;
+                endQuery(type, query);
+            }
+        }
     }
 }
 
@@ -487,6 +539,49 @@ void StateManagerGL::bindRenderbuffer(GLenum type, GLuint renderbuffer)
     }
 }
 
+void StateManagerGL::bindTransformFeedback(GLenum type, GLuint transformFeedback)
+{
+    ASSERT(type == GL_TRANSFORM_FEEDBACK);
+    if (mTransformFeedback != transformFeedback)
+    {
+        // Pause the current transform feedback if one is active.
+        // To handle virtualized contexts, StateManagerGL needs to be able to bind a new transform
+        // feedback at any time, even if there is one active.
+        if (mPrevDrawTransformFeedback != nullptr &&
+            mPrevDrawTransformFeedback->getTransformFeedbackID() != transformFeedback)
+        {
+            mPrevDrawTransformFeedback->syncPausedState(true);
+            mPrevDrawTransformFeedback = nullptr;
+        }
+
+        mTransformFeedback = transformFeedback;
+        mFunctions->bindTransformFeedback(type, mTransformFeedback);
+    }
+}
+
+void StateManagerGL::beginQuery(GLenum type, GLuint query)
+{
+    // Make sure this is a valid query type and there is no current active query of this type
+    ASSERT(mQueries.find(type) != mQueries.end());
+    ASSERT(mQueries[type] == 0);
+    ASSERT(query != 0);
+
+    mQueries[type] = query;
+    mFunctions->beginQuery(type, query);
+}
+
+void StateManagerGL::endQuery(GLenum type, GLuint query)
+{
+    ASSERT(mQueries[type] == query);
+    mQueries[type] = 0;
+    mFunctions->endQuery(type);
+}
+
+void StateManagerGL::onDeleteQueryObject(QueryGL *query)
+{
+    mPrevDrawQueries.erase(query);
+}
+
 gl::Error StateManagerGL::setDrawArraysState(const gl::Data &data,
                                              GLint first,
                                              GLsizei count,
@@ -542,12 +637,30 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::Data &data)
 {
     const gl::State &state = *data.state;
 
+    // If the context has changed, pause the previous context's transform feedback and queries
+    if (data.context != mPrevDrawContext)
+    {
+        if (mPrevDrawTransformFeedback != nullptr)
+        {
+            mPrevDrawTransformFeedback->syncPausedState(true);
+        }
+
+        for (QueryGL *prevQuery : mPrevDrawQueries)
+        {
+            prevQuery->pause();
+        }
+    }
+    mPrevDrawTransformFeedback = nullptr;
+    mPrevDrawQueries.clear();
+
+    mPrevDrawContext = data.context;
+
+    // Sync the current program state
     const gl::Program *program = state.getProgram();
     const ProgramGL *programGL = GetImplAs<ProgramGL>(program);
     useProgram(programGL->getProgramID());
 
-    for (size_t uniformBlockIndex = 0;
-         uniformBlockIndex < gl::IMPLEMENTATION_MAX_COMBINED_SHADER_UNIFORM_BUFFERS;
+    for (size_t uniformBlockIndex = 0; uniformBlockIndex < program->getActiveUniformBlockCount();
          uniformBlockIndex++)
     {
         GLuint binding = program->getUniformBlockBinding(static_cast<GLuint>(uniformBlockIndex));
@@ -619,6 +732,37 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::Data &data)
 
     // Seamless cubemaps are required for ES3 and higher contexts.
     setTextureCubemapSeamlessEnabled(data.clientVersion >= 3);
+
+    // Set the current transform feedback state
+    gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
+    if (transformFeedback)
+    {
+        TransformFeedbackGL *transformFeedbackGL =
+            GetImplAs<TransformFeedbackGL>(transformFeedback);
+        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, transformFeedbackGL->getTransformFeedbackID());
+        transformFeedbackGL->syncActiveState(transformFeedback->isActive(),
+                                             transformFeedback->getPrimitiveMode());
+        transformFeedbackGL->syncPausedState(transformFeedback->isPaused());
+        mPrevDrawTransformFeedback = transformFeedbackGL;
+    }
+    else
+    {
+        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
+        mPrevDrawTransformFeedback = nullptr;
+    }
+
+    // Set the current query state
+    for (GLenum queryType : QueryTypes)
+    {
+        gl::Query *query = state.getActiveQuery(queryType);
+        if (query != nullptr)
+        {
+            QueryGL *queryGL = GetImplAs<QueryGL>(query);
+            queryGL->resume();
+
+            mPrevDrawQueries.insert(queryGL);
+        }
+    }
 
     return gl::Error(GL_NO_ERROR);
 }
@@ -1133,7 +1277,7 @@ void StateManagerGL::setClearStencil(GLint clearStencil)
 void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)
 {
     // TODO(jmadill): Investigate only syncing vertex state for active attributes
-    for (unsigned int dirtyBit : angle::IterateBitSet(dirtyBits | mLocalDirtyBits))
+    for (auto dirtyBit : angle::IterateBitSet(dirtyBits | mLocalDirtyBits))
     {
         switch (dirtyBit)
         {
@@ -1277,11 +1421,39 @@ void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBit
                 // TODO(jmadill): split this
                 setPixelUnpackState(state.getUnpackState());
                 break;
+            case gl::State::DIRTY_BIT_UNPACK_IMAGE_HEIGHT:
+                // TODO(jmadill): split this
+                setPixelUnpackState(state.getUnpackState());
+                break;
+            case gl::State::DIRTY_BIT_UNPACK_SKIP_IMAGES:
+                // TODO(jmadill): split this
+                setPixelUnpackState(state.getUnpackState());
+                break;
+            case gl::State::DIRTY_BIT_UNPACK_SKIP_ROWS:
+                // TODO(jmadill): split this
+                setPixelUnpackState(state.getUnpackState());
+                break;
+            case gl::State::DIRTY_BIT_UNPACK_SKIP_PIXELS:
+                // TODO(jmadill): split this
+                setPixelUnpackState(state.getUnpackState());
+                break;
             case gl::State::DIRTY_BIT_PACK_ALIGNMENT:
                 // TODO(jmadill): split this
                 setPixelPackState(state.getPackState());
                 break;
             case gl::State::DIRTY_BIT_PACK_REVERSE_ROW_ORDER:
+                // TODO(jmadill): split this
+                setPixelPackState(state.getPackState());
+                break;
+            case gl::State::DIRTY_BIT_PACK_ROW_LENGTH:
+                // TODO(jmadill): split this
+                setPixelPackState(state.getPackState());
+                break;
+            case gl::State::DIRTY_BIT_PACK_SKIP_ROWS:
+                // TODO(jmadill): split this
+                setPixelPackState(state.getPackState());
+                break;
+            case gl::State::DIRTY_BIT_PACK_SKIP_PIXELS:
                 // TODO(jmadill): split this
                 setPixelPackState(state.getPackState());
                 break;

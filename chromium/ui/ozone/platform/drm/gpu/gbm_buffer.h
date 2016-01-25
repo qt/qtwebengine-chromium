@@ -5,8 +5,8 @@
 #ifndef UI_OZONE_PLATFORM_DRM_GPU_GBM_BUFFER_H_
 #define UI_OZONE_PLATFORM_DRM_GPU_GBM_BUFFER_H_
 
+#include "base/files/scoped_file.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/ozone/platform/drm/gpu/gbm_buffer_base.h"
@@ -26,14 +26,17 @@ class GbmBuffer : public GbmBufferBase {
       gfx::BufferFormat format,
       const gfx::Size& size,
       gfx::BufferUsage usage);
+  gfx::BufferFormat GetFormat() const { return format_; }
   gfx::BufferUsage GetUsage() const { return usage_; }
 
  private:
   GbmBuffer(const scoped_refptr<GbmDevice>& gbm,
             gbm_bo* bo,
+            gfx::BufferFormat format,
             gfx::BufferUsage usage);
   ~GbmBuffer() override;
 
+  gfx::BufferFormat format_;
   gfx::BufferUsage usage_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmBuffer);
@@ -41,16 +44,18 @@ class GbmBuffer : public GbmBufferBase {
 
 class GbmPixmap : public NativePixmap {
  public:
-  GbmPixmap(const scoped_refptr<GbmBuffer>& buffer,
-            GbmSurfaceFactory* surface_manager);
-  bool Initialize();
-  void SetScalingCallback(const ScalingCallback& scaling_callback) override;
-  scoped_refptr<NativePixmap> GetScaledPixmap(gfx::Size new_size) override;
+  explicit GbmPixmap(GbmSurfaceFactory* surface_manager);
+  void Initialize(base::ScopedFD dma_buf, int dma_buf_pitch);
+  bool InitializeFromBuffer(const scoped_refptr<GbmBuffer>& buffer);
+  void SetProcessingCallback(
+      const ProcessingCallback& processing_callback) override;
 
   // NativePixmap:
-  void* GetEGLClientBuffer() override;
-  int GetDmaBufFd() override;
-  int GetDmaBufPitch() override;
+  void* GetEGLClientBuffer() const override;
+  int GetDmaBufFd() const override;
+  int GetDmaBufPitch() const override;
+  gfx::BufferFormat GetBufferFormat() const override;
+  gfx::Size GetBufferSize() const override;
   bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                             int plane_z_order,
                             gfx::OverlayTransform plane_transform,
@@ -62,16 +67,19 @@ class GbmPixmap : public NativePixmap {
 
  private:
   ~GbmPixmap() override;
-  bool ShouldApplyScaling(const gfx::Rect& display_bounds,
-                          const gfx::RectF& crop_rect,
-                          gfx::Size* required_size);
+  scoped_refptr<ScanoutBuffer> ProcessBuffer(const gfx::Size& size,
+                                             uint32_t format);
 
   scoped_refptr<GbmBuffer> buffer_;
-  int dma_buf_ = -1;
+  base::ScopedFD dma_buf_;
+  int dma_buf_pitch_ = -1;
 
   GbmSurfaceFactory* surface_manager_;
 
-  ScalingCallback scaling_callback_;
+  // OverlayValidator can request scaling or format conversions as needed for
+  // this Pixmap. This holds the processed buffer.
+  scoped_refptr<GbmPixmap> processed_pixmap_;
+  ProcessingCallback processing_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmPixmap);
 };

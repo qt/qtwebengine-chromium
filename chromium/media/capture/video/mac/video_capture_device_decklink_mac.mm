@@ -4,7 +4,10 @@
 
 #include "media/capture/video/mac/video_capture_device_decklink_mac.h"
 
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/synchronization/lock.h"
@@ -69,7 +72,8 @@ class DeckLinkCaptureDelegate
   ULONG Release() override;
 
   // Forwarder to VideoCaptureDeviceDeckLinkMac::SendErrorString().
-  void SendErrorString(const std::string& reason);
+  void SendErrorString(const tracked_objects::Location& from_here,
+                       const std::string& reason);
 
   // Forwarder to VideoCaptureDeviceDeckLinkMac::SendLogString().
   void SendLogString(const std::string& message);
@@ -143,21 +147,21 @@ void DeckLinkCaptureDelegate::AllocateAndStart(
     }
   }
   if (!decklink_local.get()) {
-    SendErrorString("Device id not found in the system");
+    SendErrorString(FROM_HERE, "Device id not found in the system");
     return;
   }
 
   ScopedDeckLinkPtr<IDeckLinkInput> decklink_input_local;
   if (decklink_local->QueryInterface(
           IID_IDeckLinkInput, decklink_input_local.ReceiveVoid()) != S_OK) {
-    SendErrorString("Error querying input interface.");
+    SendErrorString(FROM_HERE, "Error querying input interface.");
     return;
   }
 
   ScopedDeckLinkPtr<IDeckLinkDisplayModeIterator> display_mode_iter;
   if (decklink_input_local->GetDisplayModeIterator(
           display_mode_iter.Receive()) != S_OK) {
-    SendErrorString("Error creating Display Mode Iterator");
+    SendErrorString(FROM_HERE, "Error creating Display Mode Iterator");
     return;
   }
 
@@ -178,7 +182,7 @@ void DeckLinkCaptureDelegate::AllocateAndStart(
     display_mode.Release();
   }
   if (!chosen_display_mode.get()) {
-    SendErrorString("Could not find a display mode");
+    SendErrorString(FROM_HERE, "Could not find a display mode");
     return;
   }
 #if !defined(NDEBUG)
@@ -194,13 +198,13 @@ void DeckLinkCaptureDelegate::AllocateAndStart(
   if (decklink_input_local->EnableVideoInput(
           chosen_display_mode->GetDisplayMode(), bmdFormat8BitYUV,
           bmdVideoInputFlagDefault) != S_OK) {
-    SendErrorString("Could not select the video format we like.");
+    SendErrorString(FROM_HERE, "Could not select the video format we like.");
     return;
   }
 
   decklink_input_local->SetCallback(this);
   if (decklink_input_local->StartStreams() != S_OK)
-    SendErrorString("Could not start capturing");
+    SendErrorString(FROM_HERE, "Could not start capturing");
 
   decklink_.swap(decklink_local);
   decklink_input_.swap(decklink_input_local);
@@ -231,7 +235,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(
     IDeckLinkVideoInputFrame* video_frame,
     IDeckLinkAudioInputPacket* /* audio_packet */) {
   // Capture frames are manipulated as an IDeckLinkVideoFrame.
-  uint8* video_data = NULL;
+  uint8_t* video_data = NULL;
   video_frame->GetBytes(reinterpret_cast<void**>(&video_data));
 
   media::VideoPixelFormat pixel_format =
@@ -244,7 +248,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(
       pixel_format = media::PIXEL_FORMAT_ARGB;
       break;
     default:
-      SendErrorString("Unsupported pixel format");
+      SendErrorString(FROM_HERE, "Unsupported pixel format");
       break;
   }
 
@@ -288,10 +292,12 @@ ULONG DeckLinkCaptureDelegate::Release() {
   return ret_value;
 }
 
-void DeckLinkCaptureDelegate::SendErrorString(const std::string& reason) {
+void DeckLinkCaptureDelegate::SendErrorString(
+    const tracked_objects::Location& from_here,
+    const std::string& reason) {
   base::AutoLock lock(lock_);
   if (frame_receiver_)
-    frame_receiver_->SendErrorString(reason);
+    frame_receiver_->SendErrorString(from_here, reason);
 }
 
 void DeckLinkCaptureDelegate::SendLogString(const std::string& message) {
@@ -441,7 +447,7 @@ VideoCaptureDeviceDeckLinkMac::~VideoCaptureDeviceDeckLinkMac() {
 }
 
 void VideoCaptureDeviceDeckLinkMac::OnIncomingCapturedData(
-    const uint8* data,
+    const uint8_t* data,
     size_t length,
     const VideoCaptureFormat& frame_format,
     int rotation,  // Clockwise.
@@ -453,11 +459,13 @@ void VideoCaptureDeviceDeckLinkMac::OnIncomingCapturedData(
   }
 }
 
-void VideoCaptureDeviceDeckLinkMac::SendErrorString(const std::string& reason) {
+void VideoCaptureDeviceDeckLinkMac::SendErrorString(
+    const tracked_objects::Location& from_here,
+    const std::string& reason) {
   DCHECK(thread_checker_.CalledOnValidThread());
   base::AutoLock lock(lock_);
   if (client_)
-    client_->OnError(reason);
+    client_->OnError(from_here, reason);
 }
 
 void VideoCaptureDeviceDeckLinkMac::SendLogString(const std::string& message) {
@@ -471,7 +479,7 @@ void VideoCaptureDeviceDeckLinkMac::AllocateAndStart(
     const VideoCaptureParams& params,
     scoped_ptr<VideoCaptureDevice::Client> client) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  client_ = client.Pass();
+  client_ = std::move(client);
   if (decklink_capture_delegate_.get())
     decklink_capture_delegate_->AllocateAndStart(params);
 }

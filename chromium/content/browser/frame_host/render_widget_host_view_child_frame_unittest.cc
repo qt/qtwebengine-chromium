@@ -4,8 +4,12 @@
 
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 
-#include "base/basictypes.h"
+#include <stdint.h>
+#include <utility>
+
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "build/build_config.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_manager.h"
@@ -44,7 +48,7 @@ class MockCrossProcessFrameConnector : public CrossProcessFrameConnector {
   ~MockCrossProcessFrameConnector() override {}
 
   void ChildFrameCompositorFrameSwapped(
-      uint32 output_surface_id,
+      uint32_t output_surface_id,
       int host_id,
       int route_id,
       scoped_ptr<cc::CompositorFrame> frame) override {
@@ -88,7 +92,7 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
 
     MockRenderProcessHost* process_host =
         new MockRenderProcessHost(browser_context_.get());
-    int32 routing_id = process_host->GetNextRoutingID();
+    int32_t routing_id = process_host->GetNextRoutingID();
     widget_host_ =
         new RenderWidgetHostImpl(&delegate_, process_host, routing_id, false);
     view_ = new RenderWidgetHostViewChildFrame(widget_host_);
@@ -139,7 +143,7 @@ scoped_ptr<cc::CompositorFrame> CreateDelegatedFrame(float scale_factor,
   scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
   pass->SetNew(cc::RenderPassId(1, 1), gfx::Rect(size), damage,
                gfx::Transform());
-  frame->delegated_frame_data->render_pass_list.push_back(pass.Pass());
+  frame->delegated_frame_data->render_pass_list.push_back(std::move(pass));
   return frame;
 }
 

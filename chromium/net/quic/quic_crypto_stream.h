@@ -5,7 +5,9 @@
 #ifndef NET_QUIC_QUIC_CRYPTO_STREAM_H_
 #define NET_QUIC_QUIC_CRYPTO_STREAM_H_
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "net/quic/crypto/crypto_framer.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/quic_config.h"
@@ -39,7 +41,7 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
 
   // ReliableQuicStream implementation
   void OnDataAvailable() override;
-  QuicPriority EffectivePriority() const override;
+  SpdyPriority Priority() const override;
 
   // Sends |message| to the peer.
   // TODO(wtc): return a success/failure status.
@@ -47,7 +49,7 @@ class NET_EXPORT_PRIVATE QuicCryptoStream
   // As above, but registers |delegate| for notification when |message| has been
   // ACKed by the peer.
   void SendHandshakeMessage(const CryptoHandshakeMessage& message,
-                            QuicAckNotifier::DelegateInterface* delegate);
+                            QuicAckListenerInterface* listener);
 
   // Performs key extraction to derive a new secret of |result_len| bytes
   // dependent on |label|, |context|, and the stream's negotiated subkey secret.

@@ -27,7 +27,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/MediaQueryExp.h"
 
 #include "core/css/parser/CSSParserToken.h"
@@ -157,6 +156,7 @@ static inline bool featureWithoutValue(const String& mediaFeature)
         || mediaFeature == anyPointerMediaFeature
         || mediaFeature == devicePixelRatioMediaFeature
         || mediaFeature == resolutionMediaFeature
+        || mediaFeature == displayModeMediaFeature
         || mediaFeature == scanMediaFeature;
 }
 
@@ -174,6 +174,19 @@ bool MediaQueryExp::isViewportDependent() const
         || m_mediaFeature == devicePixelRatioMediaFeature
         || m_mediaFeature == resolutionMediaFeature
         || m_mediaFeature == maxAspectRatioMediaFeature;
+}
+
+bool MediaQueryExp::isDeviceDependent() const
+{
+    return m_mediaFeature == deviceAspectRatioMediaFeature
+        || m_mediaFeature == deviceWidthMediaFeature
+        || m_mediaFeature == deviceHeightMediaFeature
+        || m_mediaFeature == minDeviceAspectRatioMediaFeature
+        || m_mediaFeature == minDeviceWidthMediaFeature
+        || m_mediaFeature == minDeviceHeightMediaFeature
+        || m_mediaFeature == maxDeviceAspectRatioMediaFeature
+        || m_mediaFeature == maxDeviceWidthMediaFeature
+        || m_mediaFeature == maxDeviceHeightMediaFeature;
 }
 
 MediaQueryExp::MediaQueryExp(const MediaQueryExp& other)

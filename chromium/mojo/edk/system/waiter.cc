@@ -4,6 +4,8 @@
 
 #include "mojo/edk/system/waiter.h"
 
+#include <stdint.h>
+
 #include <limits>
 
 #include "base/logging.h"
@@ -36,7 +38,7 @@ void Waiter::Init() {
 }
 
 // TODO(vtl): Fast-path the |deadline == 0| case?
-MojoResult Waiter::Wait(MojoDeadline deadline, uint32_t* context) {
+MojoResult Waiter::Wait(MojoDeadline deadline, uintptr_t* context) {
   base::AutoLock locker(lock_);
 
 #ifndef NDEBUG
@@ -49,7 +51,7 @@ MojoResult Waiter::Wait(MojoDeadline deadline, uint32_t* context) {
   if (awoken_) {
     DCHECK_NE(awake_result_, MOJO_RESULT_INTERNAL);
     if (context)
-      *context = static_cast<uint32_t>(awake_context_);
+      *context = awake_context_;
     return awake_result_;
   }
 
@@ -78,7 +80,7 @@ MojoResult Waiter::Wait(MojoDeadline deadline, uint32_t* context) {
 
   DCHECK_NE(awake_result_, MOJO_RESULT_INTERNAL);
   if (context)
-    *context = static_cast<uint32_t>(awake_context_);
+    *context = awake_context_;
   return awake_result_;
 }
 

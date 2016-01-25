@@ -72,7 +72,7 @@
 
 .webkit-html-js-node,
 .webkit-html-css-node {
-    white-space: pre;
+    white-space: pre-wrap;
 }
 
 .webkit-html-text-node {
@@ -106,6 +106,13 @@
 .webkit-html-resource-link {
     /* Keep this in sync with view-source.css (.webkit-html-external-link, .webkit-html-resource-link) */
     color: #00e;
+}
+
+.-theme-with-dark-background .webkit-html-external-link,
+.-theme-with-dark-background .webkit-html-resource-link,
+:host-context(.-theme-with-dark-background) .webkit-html-external-link,
+:host-context(.-theme-with-dark-background) .webkit-html-resource-link {
+    color: hsl(0, 0%, 67%);
 }
 
 .webkit-html-resource-link {

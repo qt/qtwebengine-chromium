@@ -34,6 +34,7 @@ class SCHEDULER_EXPORT WebTaskRunnerImpl : public blink::WebTaskRunner {
   void postDelayedTask(const blink::WebTraceLocation& web_location,
                        blink::WebTaskRunner::Task* task,
                        double delayMs) override;
+  blink::WebTaskRunner* clone() override;
 
   // blink::WebTaskRunner::Task should be wrapped by base::Passed() when
   // used with base::Bind(). See https://crbug.com/551356.

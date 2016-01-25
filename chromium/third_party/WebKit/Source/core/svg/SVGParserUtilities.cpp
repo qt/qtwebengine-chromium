@@ -20,14 +20,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGParserUtilities.h"
 
-#include "core/svg/SVGPointList.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/transforms/AffineTransform.h"
-#include "wtf/ASCIICType.h"
-#include "wtf/text/StringHash.h"
+#include "wtf/MathExtras.h"
 #include <limits>
 
 namespace blink {
@@ -43,11 +38,10 @@ static inline bool isValidRange(const FloatType& x)
 // at a higher precision internally, without any unnecessary runtime cost or code
 // complexity.
 template <typename CharType, typename FloatType>
-static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatType& number, WhitespaceMode mode)
+static bool genericParseNumber(const CharType*& cursor, const CharType* end, FloatType& number, WhitespaceMode mode)
 {
     FloatType integer, decimal, frac, exponent;
     int sign, expsign;
-    const CharType* start = ptr;
 
     exponent = 0;
     integer = 0;
@@ -57,8 +51,9 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
     expsign = 1;
 
     if (mode & AllowLeadingWhitespace)
-        skipOptionalSVGSpaces(ptr, end);
+        skipOptionalSVGSpaces(cursor, end);
 
+    const CharType* ptr = cursor;
     // read the sign
     if (ptr < end && *ptr == '+')
         ptr++;
@@ -72,14 +67,14 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
         return false;
 
     // read the integer part, build right-to-left
-    const CharType* ptrStartIntPart = ptr;
+    const CharType* digitsStart = ptr;
     while (ptr < end && *ptr >= '0' && *ptr <= '9')
         ++ptr; // Advance to first non-digit.
 
-    if (ptr != ptrStartIntPart) {
+    if (ptr != digitsStart) {
         const CharType* ptrScanIntPart = ptr - 1;
         FloatType multiplier = 1;
-        while (ptrScanIntPart >= ptrStartIntPart) {
+        while (ptrScanIntPart >= digitsStart) {
             integer += multiplier * static_cast<FloatType>(*(ptrScanIntPart--) - '0');
             multiplier *= 10;
         }
@@ -99,8 +94,12 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
             decimal += (*(ptr++) - '0') * (frac *= static_cast<FloatType>(0.1));
     }
 
+    // When we get here we should have consumed either a digit for the integer
+    // part or a fractional part (with at least one digit after the '.'.)
+    ASSERT(digitsStart != ptr);
+
     // read the exponent part
-    if (ptr != start && ptr + 1 < end && (*ptr == 'e' || *ptr == 'E')
+    if (ptr + 1 < end && (*ptr == 'e' || *ptr == 'E')
         && (ptr[1] != 'x' && ptr[1] != 'm')) {
         ptr++;
 
@@ -136,11 +135,11 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
     if (!isValidRange(number))
         return false;
 
-    if (start == ptr)
-        return false;
+    // A valid number has been parsed. Commit cursor.
+    cursor = ptr;
 
     if (mode & AllowTrailingWhitespace)
-        skipOptionalSVGSpacesOrDelimiter(ptr, end);
+        skipOptionalSVGSpacesOrDelimiter(cursor, end);
 
     return true;
 }
@@ -249,60 +248,6 @@ bool parseNumberOrPercentage(const String& string, float& number)
     const UChar* ptr = string.characters16();
     const UChar* end = ptr + string.length();
     return genericParseNumberOrPercentage(ptr, end, number);
-}
-
-static const LChar skewXDesc[] =  {'s', 'k', 'e', 'w', 'X'};
-static const LChar skewYDesc[] =  {'s', 'k', 'e', 'w', 'Y'};
-static const LChar scaleDesc[] =  {'s', 'c', 'a', 'l', 'e'};
-static const LChar translateDesc[] =  {'t', 'r', 'a', 'n', 's', 'l', 'a', 't', 'e'};
-static const LChar rotateDesc[] =  {'r', 'o', 't', 'a', 't', 'e'};
-static const LChar matrixDesc[] =  {'m', 'a', 't', 'r', 'i', 'x'};
-
-template<typename CharType>
-bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType& type)
-{
-    if (ptr >= end)
-        return false;
-
-    if (*ptr == 's') {
-        if (skipString(ptr, end, skewXDesc, WTF_ARRAY_LENGTH(skewXDesc)))
-            type = SVG_TRANSFORM_SKEWX;
-        else if (skipString(ptr, end, skewYDesc, WTF_ARRAY_LENGTH(skewYDesc)))
-            type = SVG_TRANSFORM_SKEWY;
-        else if (skipString(ptr, end, scaleDesc, WTF_ARRAY_LENGTH(scaleDesc)))
-            type = SVG_TRANSFORM_SCALE;
-        else
-            return false;
-    } else if (skipString(ptr, end, translateDesc, WTF_ARRAY_LENGTH(translateDesc)))
-        type = SVG_TRANSFORM_TRANSLATE;
-    else if (skipString(ptr, end, rotateDesc, WTF_ARRAY_LENGTH(rotateDesc)))
-        type = SVG_TRANSFORM_ROTATE;
-    else if (skipString(ptr, end, matrixDesc, WTF_ARRAY_LENGTH(matrixDesc)))
-        type = SVG_TRANSFORM_MATRIX;
-    else
-        return false;
-
-    return true;
-}
-
-template bool parseAndSkipTransformType(const UChar*& current, const UChar* end, SVGTransformType&);
-template bool parseAndSkipTransformType(const LChar*& current, const LChar* end, SVGTransformType&);
-
-SVGTransformType parseTransformType(const String& string)
-{
-    if (string.isEmpty())
-        return SVG_TRANSFORM_UNKNOWN;
-    SVGTransformType type = SVG_TRANSFORM_UNKNOWN;
-    if (string.is8Bit()) {
-        const LChar* ptr = string.characters8();
-        const LChar* end = ptr + string.length();
-        parseAndSkipTransformType(ptr, end, type);
-    } else {
-        const UChar* ptr = string.characters16();
-        const UChar* end = ptr + string.length();
-        parseAndSkipTransformType(ptr, end, type);
-    }
-    return type;
 }
 
 }

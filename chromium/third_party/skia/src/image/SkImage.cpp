@@ -9,6 +9,7 @@
 #include "SkBitmapCache.h"
 #include "SkCanvas.h"
 #include "SkData.h"
+#include "SkImageEncoder.h"
 #include "SkImageGenerator.h"
 #include "SkImagePriv.h"
 #include "SkImageShader.h"
@@ -48,12 +49,33 @@ const void* SkImage::peekPixels(SkImageInfo* info, size_t* rowBytes) const {
 }
 
 bool SkImage::readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                           int srcX, int srcY) const {
+                           int srcX, int srcY, CachingHint chint) const {
     SkReadPixelsRec rec(dstInfo, dstPixels, dstRowBytes, srcX, srcY);
     if (!rec.trim(this->width(), this->height())) {
         return false;
     }
-    return as_IB(this)->onReadPixels(rec.fInfo, rec.fPixels, rec.fRowBytes, rec.fX, rec.fY);
+    return as_IB(this)->onReadPixels(rec.fInfo, rec.fPixels, rec.fRowBytes, rec.fX, rec.fY, chint);
+}
+
+bool SkImage::scalePixels(const SkPixmap& dst, SkFilterQuality quality, CachingHint chint) const {
+    if (this->width() == dst.width() && this->height() == dst.height()) {
+        return this->readPixels(dst, 0, 0, chint);
+    }
+
+    // Idea: If/when SkImageGenerator supports a native-scaling API (where the generator itself
+    //       can scale more efficiently) we should take advantage of it here.
+    //
+    SkBitmap bm;
+    if (as_IB(this)->getROPixels(&bm, chint)) {
+        bm.lockPixels();
+        SkPixmap pmap;
+        // Note: By calling the pixmap scaler, we never cache the final result, so the chint
+        //       is (currently) only being applied to the getROPixels. If we get a request to
+        //       also attempt to cache the final (scaled) result, we would add that logic here.
+        //
+        return bm.peekPixels(&pmap) && pmap.scalePixels(dst, quality);
+    }
+    return false;
 }
 
 void SkImage::preroll(GrContext* ctx) const {
@@ -66,6 +88,8 @@ void SkImage::preroll(GrContext* ctx) const {
         bm.unlockPixels();
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 SkShader* SkImage::newShader(SkShader::TileMode tileX,
                              SkShader::TileMode tileY,
@@ -81,25 +105,14 @@ SkData* SkImage::encode(SkImageEncoder::Type type, int quality) const {
     return nullptr;
 }
 
-namespace {
-
-class DefaultSerializer :  public SkPixelSerializer {
-protected:
-    bool onUseEncodedData(const void *data, size_t len) override {
-        return true;
-    }
-
-    SkData* onEncodePixels(const SkImageInfo& info, const void* pixels, size_t rowBytes) override {
-        return SkImageEncoder::EncodeData(info, pixels, rowBytes, SkImageEncoder::kPNG_Type, 100);
-    }
-};
-
-} // anonymous namespace
-
 SkData* SkImage::encode(SkPixelSerializer* serializer) const {
-    DefaultSerializer defaultSerializer;
-    SkPixelSerializer* effectiveSerializer = serializer ? serializer : &defaultSerializer;
-
+    SkAutoTUnref<SkPixelSerializer> defaultSerializer;
+    SkPixelSerializer* effectiveSerializer = serializer;
+    if (!effectiveSerializer) {
+        defaultSerializer.reset(SkImageEncoder::CreatePixelSerializer());
+        SkASSERT(defaultSerializer.get());
+        effectiveSerializer = defaultSerializer.get();
+    }
     SkAutoTUnref<SkData> encoded(this->refEncoded());
     if (encoded && effectiveSerializer->useEncodedData(encoded->data(), encoded->size())) {
         return encoded.detach();
@@ -108,15 +121,15 @@ SkData* SkImage::encode(SkPixelSerializer* serializer) const {
     SkBitmap bm;
     SkAutoPixmapUnlock apu;
     if (as_IB(this)->getROPixels(&bm) && bm.requestLock(&apu)) {
-        const SkPixmap& pmap = apu.pixmap();
-        return effectiveSerializer->encodePixels(pmap.info(), pmap.addr(), pmap.rowBytes());
+        return effectiveSerializer->encode(apu.pixmap());
     }
 
     return nullptr;
 }
 
 SkData* SkImage::refEncoded() const {
-    return as_IB(this)->onRefEncoded();
+    GrContext* ctx = nullptr;   // should we allow the caller to pass in a ctx?
+    return as_IB(this)->onRefEncoded(ctx);
 }
 
 SkImage* SkImage::NewFromEncoded(SkData* encoded, const SkIRect* subset) {
@@ -198,15 +211,10 @@ static bool raster_canvas_supports(const SkImageInfo& info) {
     return false;
 }
 
-static SkSurfaceProps copy_or_safe_defaults(const SkSurfaceProps* props) {
-    return props ? *props : SkSurfaceProps(0, kUnknown_SkPixelGeometry);
-}
-
-SkImage_Base::SkImage_Base(int width, int height, uint32_t uniqueID, const SkSurfaceProps* props)
+SkImage_Base::SkImage_Base(int width, int height, uint32_t uniqueID)
     : INHERITED(width, height, uniqueID)
-    , fProps(copy_or_safe_defaults(props))
     , fAddedToCache(false)
-{ }
+{}
 
 SkImage_Base::~SkImage_Base() {
     if (fAddedToCache.load()) {
@@ -215,7 +223,7 @@ SkImage_Base::~SkImage_Base() {
 }
 
 bool SkImage_Base::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                                int srcX, int srcY) const {
+                                int srcX, int srcY, CachingHint) const {
     if (!raster_canvas_supports(dstInfo)) {
         return false;
     }
@@ -246,8 +254,8 @@ bool SkImage::peekPixels(SkPixmap* pmap) const {
     return false;
 }
 
-bool SkImage::readPixels(const SkPixmap& pmap, int srcX, int srcY) const {
-    return this->readPixels(pmap.info(), pmap.writable_addr(), pmap.rowBytes(), srcX, srcY);
+bool SkImage::readPixels(const SkPixmap& pmap, int srcX, int srcY, CachingHint chint) const {
+    return this->readPixels(pmap.info(), pmap.writable_addr(), pmap.rowBytes(), srcX, srcY, chint);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -276,7 +284,7 @@ SkImage* SkImage::NewFromBitmap(const SkBitmap& bm) {
 #endif
 
     // This will check for immutable (share or copy)
-    return SkNewImageFromRasterBitmap(bm, nullptr);
+    return SkNewImageFromRasterBitmap(bm);
 }
 
 bool SkImage::asLegacyBitmap(SkBitmap* bitmap, LegacyBitmapMode mode) const {

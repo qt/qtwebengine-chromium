@@ -4,12 +4,15 @@
 
 #include "media/base/fake_demuxer_stream.h"
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "media/base/bind_to_current_loop.h"
@@ -29,11 +32,9 @@ const int kStartWidth = 320;
 const int kStartHeight = 240;
 const int kWidthDelta = 4;
 const int kHeightDelta = 3;
-const uint8 kKeyId[] = { 0x00, 0x01, 0x02, 0x03 };
-const uint8 kIv[] = {
-  0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
+const uint8_t kKeyId[] = {0x00, 0x01, 0x02, 0x03};
+const uint8_t kIv[] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 FakeDemuxerStream::FakeDemuxerStream(int num_configs,
                                      int num_buffers_in_one_config,

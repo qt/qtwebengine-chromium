@@ -5,9 +5,11 @@
 #ifndef NET_WEBSOCKETS_WEBSOCKET_TEST_UTIL_H_
 #define NET_WEBSOCKETS_WEBSOCKET_TEST_UTIL_H_
 
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/url_request/url_request_test_util.h"
 #include "net/websockets/websocket_stream.h"
@@ -33,11 +35,11 @@ class URLRequestContext;
 
 class LinearCongruentialGenerator {
  public:
-  explicit LinearCongruentialGenerator(uint32 seed);
-  uint32 Generate();
+  explicit LinearCongruentialGenerator(uint32_t seed);
+  uint32_t Generate();
 
  private:
-  uint64 current_;
+  uint64_t current_;
 };
 
 // Generates a standard WebSocket handshake request. The challenge key used is

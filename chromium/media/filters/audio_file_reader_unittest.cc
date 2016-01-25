@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
@@ -73,7 +74,7 @@ class AudioFileReaderTest : public testing::Test {
           EXPECT_EQ(packet_md5_hashes_[j], md5_hash) << "j = " << j;
         }
 
-        av_free_packet(&packet);
+        av_packet_unref(&packet);
       }
       ASSERT_TRUE(reader_->SeekForTesting(start_timestamp));
     }

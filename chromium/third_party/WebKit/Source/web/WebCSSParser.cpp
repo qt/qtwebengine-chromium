@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "public/web/WebCSSParser.h"
 
 #include "core/css/parser/CSSParser.h"
@@ -10,9 +9,12 @@
 
 namespace blink {
 
-bool WebCSSParser::parseColor(WebColor* color, const WebString& colorString)
+bool WebCSSParser::parseColor(WebColor* webColor, const WebString& colorString)
 {
-    return CSSParser::parseColor(*color, colorString, true);
+    Color color = Color(*webColor);
+    bool success = CSSParser::parseColor(color, colorString, true);
+    *webColor = color.rgb();
+    return success;
 }
 
 } // namespace blink

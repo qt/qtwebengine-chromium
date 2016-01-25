@@ -4,9 +4,13 @@
 
 #include "gpu/command_buffer/service/texture_manager.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -43,16 +47,19 @@ class TextureTestHelper {
   static bool IsCubeComplete(const Texture* texture) {
     return texture->cube_complete();
   }
+  static GLuint owned_service_id(const Texture* texture) {
+    return texture->owned_service_id();
+  }
 };
 
 class TextureManagerTest : public GpuServiceTest {
  public:
-  static const GLint kMaxTextureSize = 16;
+  static const GLint kMaxTextureSize = 32;
   static const GLint kMaxCubeMapTextureSize = 8;
-  static const GLint kMaxRectangleTextureSize = 16;
-  static const GLint kMaxExternalTextureSize = 16;
+  static const GLint kMaxRectangleTextureSize = 32;
+  static const GLint kMaxExternalTextureSize = 32;
   static const GLint kMax3DTextureSize = 256;
-  static const GLint kMax2dLevels = 5;
+  static const GLint kMax2dLevels = 6;
   static const GLint kMaxCubeMapLevels = 4;
   static const GLint kMaxExternalLevels = 1;
   static const bool kUseDefaultTextures = false;
@@ -463,13 +470,55 @@ TEST_F(TextureManagerTest, ValidForTargetNPOT) {
   manager.Destroy(false);
 }
 
+TEST_F(TextureManagerTest, OverrideServiceID) {
+  // Create a texture.
+  const GLuint kClientId = 1;
+  const GLuint kServiceId = 11;
+  manager_->CreateTexture(kClientId, kServiceId);
+  scoped_refptr<TextureRef> texture_ref(manager_->GetTexture(kClientId));
+  manager_->SetTarget(texture_ref.get(), GL_TEXTURE_EXTERNAL_OES);
+
+  Texture* texture = texture_ref->texture();
+  GLuint owned_service_id = TextureTestHelper::owned_service_id(texture);
+  GLuint service_id = texture->service_id();
+  // Initially, the texture should use the same service id that it owns.
+  EXPECT_EQ(owned_service_id, service_id);
+
+  // Override the service_id.
+  GLuint unowned_service_id = service_id + 1;
+  texture->SetUnownedServiceId(unowned_service_id);
+
+  // Make sure that service_id() changed but owned_service_id() didn't.
+  EXPECT_EQ(unowned_service_id, texture->service_id());
+  EXPECT_EQ(owned_service_id, TextureTestHelper::owned_service_id(texture));
+
+  // Undo the override.
+  texture->SetUnownedServiceId(0);
+
+  // The service IDs should be back as they were.
+  EXPECT_EQ(service_id, texture->service_id());
+  EXPECT_EQ(owned_service_id, TextureTestHelper::owned_service_id(texture));
+
+  // Override again, so that we can check delete behavior.
+  texture->SetUnownedServiceId(unowned_service_id);
+  EXPECT_EQ(unowned_service_id, texture->service_id());
+  EXPECT_EQ(owned_service_id, TextureTestHelper::owned_service_id(texture));
+
+  // Remove the texture.  It should delete the texture id that it owns, even
+  // though it is overridden.
+  EXPECT_CALL(*gl_, DeleteTextures(1, ::testing::Pointee(owned_service_id)))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_->RemoveTexture(kClientId);
+}
+
 class TextureTestBase : public GpuServiceTest {
  public:
-  static const GLint kMaxTextureSize = 16;
+  static const GLint kMaxTextureSize = 32;
   static const GLint kMaxCubeMapTextureSize = 8;
-  static const GLint kMaxRectangleTextureSize = 16;
+  static const GLint kMaxRectangleTextureSize = 32;
   static const GLint kMax3DTextureSize = 256;
-  static const GLint kMax2dLevels = 5;
+  static const GLint kMax2dLevels = 6;
   static const GLint kMaxCubeMapLevels = 4;
   static const GLuint kClient1Id = 1;
   static const GLuint kService1Id = 11;
@@ -550,9 +599,9 @@ class TextureMemoryTrackerTest : public TextureTestBase {
   scoped_refptr<MockMemoryTracker> mock_memory_tracker_;
 };
 
-#define EXPECT_MEMORY_ALLOCATION_CHANGE(old_size, new_size, pool)   \
-  EXPECT_CALL(*mock_memory_tracker_.get(),                          \
-              TrackMemoryAllocatedChange(old_size, new_size, pool)) \
+#define EXPECT_MEMORY_ALLOCATION_CHANGE(old_size, new_size)   \
+  EXPECT_CALL(*mock_memory_tracker_.get(),                    \
+              TrackMemoryAllocatedChange(old_size, new_size)) \
       .Times(1).RetiresOnSaturation()
 
 TEST_F(TextureTest, Basic) {
@@ -623,33 +672,16 @@ TEST_F(TextureTest, EstimatedSize) {
 
 TEST_F(TextureMemoryTrackerTest, EstimatedSize) {
   manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_2D);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 128, MemoryTracker::kUnmanaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 128);
   manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 0, GL_RGBA, 8, 4, 1,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(8, 4));
-  EXPECT_MEMORY_ALLOCATION_CHANGE(128, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 256, MemoryTracker::kUnmanaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(128, 0);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 256);
   manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 2, GL_RGBA, 8, 4, 1,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(8, 4));
   // Add expectation for texture deletion.
-  EXPECT_MEMORY_ALLOCATION_CHANGE(256, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0, MemoryTracker::kUnmanaged);
-}
-
-TEST_F(TextureMemoryTrackerTest, SetParameterPool) {
-  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_2D);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 128, MemoryTracker::kUnmanaged);
-  manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 0, GL_RGBA, 8, 4, 1,
-                         0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(8, 4));
-  EXPECT_MEMORY_ALLOCATION_CHANGE(128, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 128, MemoryTracker::kManaged);
-  SetParameter(texture_ref_.get(),
-               GL_TEXTURE_POOL_CHROMIUM,
-               GL_TEXTURE_POOL_MANAGED_CHROMIUM,
-               GL_NO_ERROR);
-  // Add expectation for texture deletion.
-  EXPECT_MEMORY_ALLOCATION_CHANGE(128, 0, MemoryTracker::kManaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0, MemoryTracker::kManaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(256, 0);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0);
 }
 
 TEST_F(TextureTest, POT2D) {
@@ -701,16 +733,65 @@ TEST_F(TextureTest, POT2D) {
   EXPECT_FALSE(manager_->HaveUnrenderableTextures());
 }
 
+TEST_F(TextureTest, BaseLevel) {
+  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_2D);
+  Texture* texture = texture_ref_->texture();
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_2D), texture->target());
+  // Check Setting level 1 to POT
+  manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 1, GL_RGBA, 4, 4, 1,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(4, 4));
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_MIN_FILTER, GL_LINEAR, GL_NO_ERROR);
+  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->HaveUnrenderableTextures());
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_BASE_LEVEL, 1, GL_NO_ERROR);
+  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_FALSE(manager_->HaveUnrenderableTextures());
+}
+
+TEST_F(TextureTest, BaseLevelMaxLevel) {
+  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_2D);
+  Texture* texture = texture_ref_->texture();
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_2D), texture->target());
+  // Set up level 2, 3, 4.
+  manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 2, GL_RGBA, 8, 8, 1,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(8, 8));
+  manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 3, GL_RGBA, 4, 4, 1,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(4, 4));
+  manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 4, GL_RGBA, 2, 2, 1,
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(2, 2));
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR,
+      GL_NO_ERROR);
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_MAG_FILTER, GL_LINEAR, GL_NO_ERROR);
+  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->HaveUnrenderableTextures());
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_BASE_LEVEL, 2, GL_NO_ERROR);
+  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->HaveUnrenderableTextures());
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_MAX_LEVEL, 4, GL_NO_ERROR);
+  EXPECT_TRUE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_FALSE(manager_->HaveUnrenderableTextures());
+  SetParameter(
+      texture_ref_.get(), GL_TEXTURE_BASE_LEVEL, 0, GL_NO_ERROR);
+  EXPECT_FALSE(manager_->CanRender(texture_ref_.get()));
+  EXPECT_TRUE(manager_->HaveUnrenderableTextures());
+}
+
 TEST_F(TextureMemoryTrackerTest, MarkMipmapsGenerated) {
   manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_2D);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 64, MemoryTracker::kUnmanaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 64);
   manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 1,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(4, 4));
-  EXPECT_MEMORY_ALLOCATION_CHANGE(64, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 84, MemoryTracker::kUnmanaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(64, 0);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 84);
   EXPECT_TRUE(manager_->MarkMipmapsGenerated(texture_ref_.get()));
-  EXPECT_MEMORY_ALLOCATION_CHANGE(84, 0, MemoryTracker::kUnmanaged);
-  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0, MemoryTracker::kUnmanaged);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(84, 0);
+  EXPECT_MEMORY_ALLOCATION_CHANGE(0, 0);
 }
 
 TEST_F(TextureTest, UnusedMips) {
@@ -1407,13 +1488,16 @@ TEST_F(TextureTest, GetLevelImage) {
   Texture* texture = texture_ref_->texture();
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
   // Set image.
-  scoped_refptr<gfx::GLImage> image(new gfx::GLImageStub);
-  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get());
+  scoped_refptr<gl::GLImage> image(new gl::GLImageStub);
+  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get(),
+                          Texture::BOUND);
   EXPECT_FALSE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
   // Remove it.
-  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, NULL);
+  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, nullptr,
+                          Texture::UNBOUND);
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
-  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get());
+  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get(),
+                          Texture::UNBOUND);
   // Image should be reset when SetLevelInfo is called.
   manager_->SetLevelInfo(texture_ref_.get(), GL_TEXTURE_2D, 1, GL_RGBA, 2, 2, 1,
                          0, GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect(2, 2));
@@ -1751,10 +1835,11 @@ TEST_P(ProduceConsumeTextureTest, ProduceConsumeTextureWithImage) {
   manager_->SetTarget(texture_ref_.get(), target);
   Texture* texture = texture_ref_->texture();
   EXPECT_EQ(static_cast<GLenum>(target), texture->target());
-  scoped_refptr<gfx::GLImage> image(new gfx::GLImageStub);
+  scoped_refptr<gl::GLImage> image(new gl::GLImageStub);
   manager_->SetLevelInfo(texture_ref_.get(), target, 0, GL_RGBA, 0, 0, 1, 0,
                          GL_RGBA, GL_UNSIGNED_BYTE, gfx::Rect());
-  manager_->SetLevelImage(texture_ref_.get(), target, 0, image.get());
+  manager_->SetLevelImage(texture_ref_.get(), target, 0, image.get(),
+                          Texture::BOUND);
   GLuint service_id = texture->service_id();
   Texture* produced_texture = Produce(texture_ref_.get());
 
@@ -1804,22 +1889,18 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsumeCube) {
 class CountingMemoryTracker : public MemoryTracker {
  public:
   CountingMemoryTracker() {
-    current_size_[0] = 0;
-    current_size_[1] = 0;
+    current_size_ = 0;
   }
 
   void TrackMemoryAllocatedChange(size_t old_size,
-                                  size_t new_size,
-                                  Pool pool) override {
-    DCHECK_LT(static_cast<size_t>(pool), arraysize(current_size_));
-    current_size_[pool] += new_size - old_size;
+                                  size_t new_size) override {
+    current_size_ += new_size - old_size;
   }
 
   bool EnsureGPUMemoryAvailable(size_t size_needed) override { return true; }
 
-  size_t GetSize(Pool pool) {
-    DCHECK_LT(static_cast<size_t>(pool), arraysize(current_size_));
-    return current_size_[pool];
+  size_t GetSize() {
+    return current_size_;
   }
 
   uint64_t ClientTracingId() const override { return 0; }
@@ -1831,7 +1912,7 @@ class CountingMemoryTracker : public MemoryTracker {
  private:
   ~CountingMemoryTracker() override {}
 
-  size_t current_size_[2];
+  size_t current_size_;
   DISALLOW_COPY_AND_ASSIGN(CountingMemoryTracker);
 };
 
@@ -2026,8 +2107,8 @@ TEST_F(SharedTextureTest, FBOCompletenessCheck) {
 }
 
 TEST_F(SharedTextureTest, Memory) {
-  size_t initial_memory1 = memory_tracker1_->GetSize(MemoryTracker::kUnmanaged);
-  size_t initial_memory2 = memory_tracker2_->GetSize(MemoryTracker::kUnmanaged);
+  size_t initial_memory1 = memory_tracker1_->GetSize();
+  size_t initial_memory2 = memory_tracker2_->GetSize();
 
   // Newly created texture is unrenderable.
   scoped_refptr<TextureRef> ref1 = texture_manager1_->CreateTexture(10, 10);
@@ -2037,24 +2118,23 @@ TEST_F(SharedTextureTest, Memory) {
 
   EXPECT_LT(0u, ref1->texture()->estimated_size());
   EXPECT_EQ(initial_memory1 + ref1->texture()->estimated_size(),
-            memory_tracker1_->GetSize(MemoryTracker::kUnmanaged));
+            memory_tracker1_->GetSize());
 
   // Associate new texture ref to other texture manager, it doesn't account for
   // the texture memory, the first memory tracker still has it.
   scoped_refptr<TextureRef> ref2 =
       texture_manager2_->Consume(20, ref1->texture());
   EXPECT_EQ(initial_memory1 + ref1->texture()->estimated_size(),
-            memory_tracker1_->GetSize(MemoryTracker::kUnmanaged));
-  EXPECT_EQ(initial_memory2,
-            memory_tracker2_->GetSize(MemoryTracker::kUnmanaged));
+            memory_tracker1_->GetSize());
+  EXPECT_EQ(initial_memory2, memory_tracker2_->GetSize());
 
   // Delete the texture, memory should go to the remaining tracker.
   texture_manager1_->RemoveTexture(10);
   ref1 = NULL;
   EXPECT_EQ(initial_memory1,
-            memory_tracker1_->GetSize(MemoryTracker::kUnmanaged));
+            memory_tracker1_->GetSize());
   EXPECT_EQ(initial_memory2 + ref2->texture()->estimated_size(),
-            memory_tracker2_->GetSize(MemoryTracker::kUnmanaged));
+            memory_tracker2_->GetSize());
 
   EXPECT_CALL(*gl_, DeleteTextures(1, _))
       .Times(1)
@@ -2062,7 +2142,7 @@ TEST_F(SharedTextureTest, Memory) {
   ref2 = NULL;
   texture_manager2_->RemoveTexture(20);
   EXPECT_EQ(initial_memory2,
-            memory_tracker2_->GetSize(MemoryTracker::kUnmanaged));
+            memory_tracker2_->GetSize());
 }
 
 TEST_F(SharedTextureTest, Images) {
@@ -2078,14 +2158,16 @@ TEST_F(SharedTextureTest, Images) {
   EXPECT_FALSE(ref2->texture()->HasImages());
   EXPECT_FALSE(texture_manager1_->HaveImages());
   EXPECT_FALSE(texture_manager2_->HaveImages());
-  scoped_refptr<gfx::GLImage> image1(new gfx::GLImageStub);
-  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image1.get());
+  scoped_refptr<gl::GLImage> image1(new gl::GLImageStub);
+  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image1.get(),
+                                   Texture::BOUND);
   EXPECT_TRUE(ref1->texture()->HasImages());
   EXPECT_TRUE(ref2->texture()->HasImages());
   EXPECT_TRUE(texture_manager1_->HaveImages());
   EXPECT_TRUE(texture_manager2_->HaveImages());
-  scoped_refptr<gfx::GLImage> image2(new gfx::GLImageStub);
-  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image2.get());
+  scoped_refptr<gl::GLImage> image2(new gl::GLImageStub);
+  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image2.get(),
+                                   Texture::BOUND);
   EXPECT_TRUE(ref1->texture()->HasImages());
   EXPECT_TRUE(ref2->texture()->HasImages());
   EXPECT_TRUE(texture_manager1_->HaveImages());

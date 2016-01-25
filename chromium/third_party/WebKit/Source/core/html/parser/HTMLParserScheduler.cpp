@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLParserScheduler.h"
 
 #include "core/dom/Document.h"
@@ -82,9 +81,9 @@ void SpeculationsPumpSession::addedElementTokens(size_t count)
     m_processedElementTokens += count;
 }
 
-HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser* parser)
+HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser* parser, WebTaskRunner* loadingTaskRunner)
     : m_parser(parser)
-    , m_loadingTaskRunner(Platform::current()->currentThread()->scheduler()->loadingTaskRunner())
+    , m_loadingTaskRunner(adoptPtr(loadingTaskRunner->clone()))
     , m_cancellableContinueParse(CancellableTaskFactory::create(this, &HTMLParserScheduler::continueParsing))
     , m_isSuspendedWithActiveTimer(false)
 {
@@ -94,10 +93,15 @@ HTMLParserScheduler::~HTMLParserScheduler()
 {
 }
 
+DEFINE_TRACE(HTMLParserScheduler)
+{
+    visitor->trace(m_parser);
+}
+
 void HTMLParserScheduler::scheduleForResume()
 {
     ASSERT(!m_isSuspendedWithActiveTimer);
-    m_loadingTaskRunner->postTask(FROM_HERE, m_cancellableContinueParse->cancelAndCreate());
+    m_loadingTaskRunner->postTask(BLINK_FROM_HERE, m_cancellableContinueParse->cancelAndCreate());
 }
 
 void HTMLParserScheduler::suspend()
@@ -116,7 +120,7 @@ void HTMLParserScheduler::resume()
         return;
     m_isSuspendedWithActiveTimer = false;
 
-    m_loadingTaskRunner->postTask(FROM_HERE, m_cancellableContinueParse->cancelAndCreate());
+    m_loadingTaskRunner->postTask(BLINK_FROM_HERE, m_cancellableContinueParse->cancelAndCreate());
 }
 
 void HTMLParserScheduler::detach()

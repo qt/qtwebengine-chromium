@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/line/InlineBox.h"
 
 #include "core/layout/HitTestLocation.h"
@@ -76,7 +75,7 @@ void InlineBox::remove(MarkLineBoxes markLineBoxes)
 
 void* InlineBox::operator new(size_t sz)
 {
-    return partitionAlloc(WTF::Partitions::layoutPartition(), sz);
+    return partitionAlloc(WTF::Partitions::layoutPartition(), sz, WTF_HEAP_PROFILER_TYPE_NAME(InlineBox));
 }
 
 void InlineBox::operator delete(void* ptr)
@@ -92,6 +91,12 @@ const char* InlineBox::boxName() const
 String InlineBox::debugName() const
 {
     return boxName();
+}
+
+IntRect InlineBox::visualRect() const
+{
+    // TODO(chrishtr): tighten these bounds.
+    return layoutObject().visualRect();
 }
 
 #ifndef NDEBUG
@@ -203,7 +208,7 @@ void InlineBox::move(const LayoutSize& delta)
 {
     m_topLeft.move(delta);
 
-    if (lineLayoutItem().isReplaced())
+    if (lineLayoutItem().isAtomicInlineLevel())
         toLayoutBox(layoutObject()).move(delta.width(), delta.height());
 }
 
@@ -304,8 +309,8 @@ SelectionState InlineBox::selectionState() const
 
 bool InlineBox::canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const
 {
-    // Non-replaced elements can always accommodate an ellipsis.
-    if (!lineLayoutItem().isReplaced())
+    // Non-atomic inline-level elements can always accommodate an ellipsis.
+    if (!lineLayoutItem().isAtomicInlineLevel())
         return true;
 
     IntRect boxRect(left(), 0, m_logicalWidth, 10);
@@ -382,6 +387,15 @@ LayoutPoint InlineBox::flipForWritingMode(const LayoutPoint& point) const
     if (!UNLIKELY(lineLayoutItem().hasFlippedBlocksWritingMode()))
         return point;
     return root().block().flipForWritingMode(point);
+}
+
+void InlineBox::invalidateDisplayItemClientsRecursively()
+{
+    layoutObject().invalidateDisplayItemClient(*this);
+    if (!isInlineFlowBox())
+        return;
+    for (InlineBox* child = toInlineFlowBox(this)->firstChild(); child; child = child->nextOnLine())
+        child->invalidateDisplayItemClientsRecursively();
 }
 
 } // namespace blink

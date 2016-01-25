@@ -23,7 +23,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLTextAreaElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -154,7 +153,7 @@ void HTMLTextAreaElement::collectStyleForPresentationAttribute(const QualifiedNa
     }
 }
 
-void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == rowsAttr) {
         unsigned rows = 0;
@@ -196,7 +195,7 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
     } else if (name == minlengthAttr) {
         setNeedsValidityCheck();
     } else {
-        HTMLTextFormControlElement::parseAttribute(name, value);
+        HTMLTextFormControlElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -241,13 +240,18 @@ bool HTMLTextAreaElement::shouldShowFocusRingOnMouseFocus() const
     return true;
 }
 
-void HTMLTextAreaElement::updateFocusAppearance(bool restorePreviousSelection)
+void HTMLTextAreaElement::updateFocusAppearance(SelectionBehaviorOnFocus selectionBehavior)
 {
-    if (!restorePreviousSelection)
+    switch (selectionBehavior) {
+    case SelectionBehaviorOnFocus::Reset:
         setSelectionRange(0, 0, SelectionHasNoDirection, NotDispatchSelectEvent);
-    else
+        break;
+    case SelectionBehaviorOnFocus::Restore:
         restoreCachedSelection();
-
+        break;
+    case SelectionBehaviorOnFocus::None:
+        return;
+    }
     if (document().frame())
         document().frame()->selection().revealSelection();
 }
@@ -307,8 +311,7 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
     // that case, and nothing in the text field will be removed.
     unsigned selectionLength = 0;
     if (focused()) {
-        const EphemeralRange range = document().frame()->selection().selection().toNormalizedEphemeralRange();
-        selectionLength = computeLengthForSubmission(plainText(range));
+        selectionLength = computeLengthForSubmission(document().frame()->selection().selectedText());
     }
     ASSERT(currentLength >= selectionLength);
     unsigned baseLength = currentLength - selectionLength;
@@ -624,7 +627,7 @@ void HTMLTextAreaElement::updatePlaceholderText()
         placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         placeholder->setInlineStyleProperty(CSSPropertyDisplay, isPlaceholderVisible() ? CSSValueBlock : CSSValueNone, true);
-        userAgentShadowRoot()->insertBefore(placeholder, innerEditorElement()->nextSibling());
+        userAgentShadowRoot()->insertBefore(placeholder, innerEditorElement());
     }
     placeholder->setTextContent(placeholderText);
 }

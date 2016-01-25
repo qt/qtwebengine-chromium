@@ -86,7 +86,7 @@ WebInspector.SourcesSearchScope.prototype = {
          */
         function filterOutServiceProjects(project)
         {
-            return !project.isServiceProject() || project.type() === WebInspector.projectTypes.Formatter;
+            return !WebInspector.Project.isServiceProject(project) || project.type() === WebInspector.projectTypes.Formatter;
         }
 
         /**
@@ -148,7 +148,7 @@ WebInspector.SourcesSearchScope.prototype = {
             if (dirtyOnly && !uiSourceCode.isDirty())
                 continue;
             if (this._searchConfig.filePathMatchesFileQuery(uiSourceCode.fullDisplayName()))
-                result.push(uiSourceCode.path());
+                result.push(uiSourceCode.url());
         }
         result.sort(String.naturalOrderComparator);
         return result;
@@ -175,7 +175,7 @@ WebInspector.SourcesSearchScope.prototype = {
 
         var uiSourceCodes = [];
         for (var i = 0; i < files.length; ++i) {
-            var uiSourceCode = project.uiSourceCode(files[i]);
+            var uiSourceCode = project.uiSourceCodeForURL(files[i]);
             if (uiSourceCode)
                 uiSourceCodes.push(uiSourceCode);
         }
@@ -221,7 +221,7 @@ WebInspector.SourcesSearchScope.prototype = {
             if (uiSourceCode.isDirty())
                 contentLoaded.call(this, uiSourceCode, uiSourceCode.workingCopy());
             else
-                uiSourceCode.checkContentUpdated(contentUpdated.bind(this, uiSourceCode));
+                uiSourceCode.checkContentUpdated(true, contentUpdated.bind(this, uiSourceCode));
         }
 
         /**

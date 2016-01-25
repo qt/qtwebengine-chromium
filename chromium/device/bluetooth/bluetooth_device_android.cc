@@ -4,10 +4,13 @@
 
 #include "device/bluetooth/bluetooth_device_android.h"
 
+#include "base/android/context_utils.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/strings/stringprintf.h"
 #include "device/bluetooth/bluetooth_adapter_android.h"
+#include "device/bluetooth/bluetooth_remote_gatt_service_android.h"
 #include "jni/ChromeBluetoothDevice_jni.h"
 
 using base::android::AttachCurrentThread;
@@ -47,7 +50,7 @@ BluetoothDeviceAndroid::GetJavaObject() {
   return base::android::ScopedJavaLocalRef<jobject>(j_device_);
 }
 
-uint32 BluetoothDeviceAndroid::GetBluetoothClass() const {
+uint32_t BluetoothDeviceAndroid::GetBluetoothClass() const {
   return Java_ChromeBluetoothDevice_getBluetoothClass(AttachCurrentThread(),
                                                       j_device_.obj());
 }
@@ -63,17 +66,17 @@ BluetoothDevice::VendorIDSource BluetoothDeviceAndroid::GetVendorIDSource()
   return VENDOR_ID_UNKNOWN;
 }
 
-uint16 BluetoothDeviceAndroid::GetVendorID() const {
+uint16_t BluetoothDeviceAndroid::GetVendorID() const {
   // Android API does not provide Vendor ID.
   return 0;
 }
 
-uint16 BluetoothDeviceAndroid::GetProductID() const {
+uint16_t BluetoothDeviceAndroid::GetProductID() const {
   // Android API does not provide Product ID.
   return 0;
 }
 
-uint16 BluetoothDeviceAndroid::GetDeviceID() const {
+uint16_t BluetoothDeviceAndroid::GetDeviceID() const {
   // Android API does not provide Device ID.
   return 0;
 }
@@ -115,12 +118,12 @@ BluetoothDevice::UUIDList BluetoothDeviceAndroid::GetUUIDs() const {
   return uuids;
 }
 
-int16 BluetoothDeviceAndroid::GetInquiryRSSI() const {
+int16_t BluetoothDeviceAndroid::GetInquiryRSSI() const {
   NOTIMPLEMENTED();
   return kUnknownPower;
 }
 
-int16 BluetoothDeviceAndroid::GetInquiryTxPower() const {
+int16_t BluetoothDeviceAndroid::GetInquiryTxPower() const {
   NOTIMPLEMENTED();
   return kUnknownPower;
 }
@@ -157,7 +160,7 @@ void BluetoothDeviceAndroid::SetPinCode(const std::string& pincode) {
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceAndroid::SetPasskey(uint32 passkey) {
+void BluetoothDeviceAndroid::SetPasskey(uint32_t passkey) {
   NOTIMPLEMENTED();
 }
 
@@ -179,7 +182,8 @@ void BluetoothDeviceAndroid::Disconnect(const base::Closure& callback,
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceAndroid::Forget(const ErrorCallback& error_callback) {
+void BluetoothDeviceAndroid::Forget(const base::Closure& callback,
+                                    const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
 }
 
@@ -197,28 +201,74 @@ void BluetoothDeviceAndroid::ConnectToServiceInsecurely(
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceAndroid::OnConnectionStateChange(JNIEnv* env,
-                                                     jobject jcaller,
-                                                     int32_t status,
-                                                     bool connected) {
+void BluetoothDeviceAndroid::OnConnectionStateChange(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& jcaller,
+    int32_t status,
+    bool connected) {
   gatt_connected_ = connected;
   if (gatt_connected_) {
     DidConnectGatt();
   } else {
-    // TODO(scheib) Create new BluetoothDevice::ConnectErrorCode enums for
-    // android values not yet represented. http://crbug.com/531058
+    gatt_services_.clear();
+    SetGattServicesDiscoveryComplete(false);
+
     switch (status) {   // Constants are from android.bluetooth.BluetoothGatt.
+      case 0x0000008f:  // GATT_CONNECTION_CONGESTED
+        return DidFailToConnectGatt(ERROR_CONNECTION_CONGESTED);
       case 0x00000101:  // GATT_FAILURE
         return DidFailToConnectGatt(ERROR_FAILED);
       case 0x00000005:  // GATT_INSUFFICIENT_AUTHENTICATION
         return DidFailToConnectGatt(ERROR_AUTH_FAILED);
+      case 0x0000000f:  // GATT_INSUFFICIENT_ENCRYPTION
+        return DidFailToConnectGatt(ERROR_INSUFFICIENT_ENCRYPTION);
+      case 0x0000000d:  // GATT_INVALID_ATTRIBUTE_LENGTH
+        return DidFailToConnectGatt(ERROR_ATTRIBUTE_LENGTH_INVALID);
+      case 0x00000007:  // GATT_INVALID_OFFSET
+        return DidFailToConnectGatt(ERROR_OFFSET_INVALID);
+      case 0x00000002:  // GATT_READ_NOT_PERMITTED
+        return DidFailToConnectGatt(ERROR_READ_NOT_PERMITTED);
+      case 0x00000006:  // GATT_REQUEST_NOT_SUPPORTED
+        return DidFailToConnectGatt(ERROR_REQUEST_NOT_SUPPORTED);
       case 0x00000000:  // GATT_SUCCESS
         return DidDisconnectGatt();
+      case 0x00000003:  // GATT_WRITE_NOT_PERMITTED
+        return DidFailToConnectGatt(ERROR_WRITE_NOT_PERMITTED);
       default:
         VLOG(1) << "Unhandled status: " << status;
         return DidFailToConnectGatt(ERROR_UNKNOWN);
     }
   }
+}
+
+void BluetoothDeviceAndroid::OnGattServicesDiscovered(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& jcaller) {
+  SetGattServicesDiscoveryComplete(true);
+  FOR_EACH_OBSERVER(BluetoothAdapter::Observer, GetAdapter()->GetObservers(),
+                    GattServicesDiscovered(GetAdapter(), this));
+}
+
+void BluetoothDeviceAndroid::CreateGattRemoteService(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& caller,
+    const JavaParamRef<jstring>& instance_id,
+    const JavaParamRef<jobject>&
+        bluetooth_gatt_service_wrapper) {  // BluetoothGattServiceWrapper
+  std::string instance_id_string =
+      base::android::ConvertJavaStringToUTF8(env, instance_id);
+
+  if (gatt_services_.contains(instance_id_string))
+    return;
+
+  BluetoothDevice::GattServiceMap::iterator service_iterator =
+      gatt_services_.set(instance_id_string,
+                         BluetoothRemoteGattServiceAndroid::Create(
+                             GetAdapter(), this, bluetooth_gatt_service_wrapper,
+                             instance_id_string, j_device_.obj()));
+
+  FOR_EACH_OBSERVER(BluetoothAdapter::Observer, GetAdapter()->GetObservers(),
+                    GattServiceAdded(adapter_, this, service_iterator->second));
 }
 
 BluetoothDeviceAndroid::BluetoothDeviceAndroid(BluetoothAdapterAndroid* adapter)

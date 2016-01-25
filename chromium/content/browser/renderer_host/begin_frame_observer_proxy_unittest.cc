@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <list>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/test/test_simple_task_runner.h"
@@ -40,8 +39,7 @@ class BeginFrameObserverProxyTest : public testing::Test {
     compositor_task_runner_ = new base::TestSimpleTaskRunner();
     compositor_.reset(
         new ui::Compositor(context_factory, compositor_task_runner_));
-    compositor_->SetAcceleratedWidgetAndStartCompositor(
-        gfx::kNullAcceleratedWidget);
+    compositor_->SetAcceleratedWidget(gfx::kNullAcceleratedWidget);
   }
 
   void TearDown() override {

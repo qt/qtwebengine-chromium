@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/csp/CSPSourceList.h"
 
 #include "core/dom/Document.h"
@@ -11,7 +10,7 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -146,12 +145,16 @@ TEST_F(CSPSourceListTest, WildcardMatching)
     EXPECT_TRUE(sourceList.matches(KURL(base, "https://foo.example2.com/bar/")));
     EXPECT_TRUE(sourceList.matches(KURL(base, "http://foo.test/")));
     EXPECT_TRUE(sourceList.matches(KURL(base, "http://foo.bar.test/")));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://example1.com/foo/")));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://example1.com:8000/foo/")));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://example1.com:9000/foo/")));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://foo.test/")));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://foo.bar.test/")));
 
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example1.com:8000/foo")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example2.com:8000/bar")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://foo.example2.com:8000/bar")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example2.foo.com/bar")));
-    EXPECT_FALSE(sourceList.matches(KURL(base, "https://foo.test/")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://foo.test.bar/")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example2.com/bar/")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://test/")));
@@ -168,9 +171,10 @@ TEST_F(CSPSourceListTest, RedirectMatching)
     EXPECT_TRUE(sourceList.matches(KURL(base, "http://example1.com/bar/"), ContentSecurityPolicy::DidRedirect));
     EXPECT_TRUE(sourceList.matches(KURL(base, "http://example2.com/bar/"), ContentSecurityPolicy::DidRedirect));
     EXPECT_TRUE(sourceList.matches(KURL(base, "http://example2.com/foo/"), ContentSecurityPolicy::DidRedirect));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://example1.com/foo/"), ContentSecurityPolicy::DidRedirect));
+    EXPECT_TRUE(sourceList.matches(KURL(base, "https://example1.com/bar/"), ContentSecurityPolicy::DidRedirect));
 
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://example3.com/foo/"), ContentSecurityPolicy::DidRedirect));
-    EXPECT_FALSE(sourceList.matches(KURL(base, "https://example1.com/foo/"), ContentSecurityPolicy::DidRedirect));
 }
 
 } // namespace

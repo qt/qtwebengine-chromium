@@ -53,13 +53,13 @@ WebInspector.FileSystemMapping.prototype = {
         this._fileSystemMappings = {};
         for (var fileSystemPath in savedMapping) {
             var savedFileSystemMappings = savedMapping[fileSystemPath];
-
+            fileSystemPath = WebInspector.IsolatedFileSystemManager.normalizePath(fileSystemPath);
             this._fileSystemMappings[fileSystemPath] = [];
             var fileSystemMappings = this._fileSystemMappings[fileSystemPath];
 
             for (var i = 0; i < savedFileSystemMappings.length; ++i) {
                 var savedEntry = savedFileSystemMappings[i];
-                var entry = new WebInspector.FileSystemMapping.Entry(savedEntry.fileSystemPath, savedEntry.urlPrefix, savedEntry.pathPrefix, true);
+                var entry = new WebInspector.FileSystemMapping.Entry(fileSystemPath, savedEntry.urlPrefix, savedEntry.pathPrefix, true);
                 fileSystemMappings.push(entry);
             }
         }
@@ -79,7 +79,6 @@ WebInspector.FileSystemMapping.prototype = {
             }
         }
         this._fileSystemMappingSetting.set(setting);
-        this._rebuildIndexes();
     },
 
     _rebuildIndexes: function()
@@ -91,8 +90,12 @@ WebInspector.FileSystemMapping.prototype = {
             var fileSystemMapping = this._fileSystemMappings[fileSystemPath];
             for (var i = 0; i < fileSystemMapping.length; ++i) {
                 var entry = fileSystemMapping[i];
+                // Resolve conflict in favor of configurable mapping.
+                if (this._mappingForURLPrefix[entry.urlPrefix] && !entry.configurable)
+                    continue;
                 this._mappingForURLPrefix[entry.urlPrefix] = entry;
-                this._urlPrefixes.push(entry.urlPrefix);
+                if (this._urlPrefixes.indexOf(entry.urlPrefix) === -1)
+                    this._urlPrefixes.push(entry.urlPrefix);
             }
         }
         this._urlPrefixes.sort();
@@ -118,6 +121,7 @@ WebInspector.FileSystemMapping.prototype = {
         if (!this._fileSystemMappings[fileSystemPath])
             return;
         delete this._fileSystemMappings[fileSystemPath];
+        this._rebuildIndexes();
         this._saveToSettings();
     },
 
@@ -128,7 +132,14 @@ WebInspector.FileSystemMapping.prototype = {
      */
     addFileMapping: function(fileSystemPath, urlPrefix, pathPrefix)
     {
+        if (!urlPrefix.endsWith("/"))
+            urlPrefix += "/";
+        if (!pathPrefix.endsWith("/"))
+            pathPrefix += "/";
+        if (!pathPrefix.startsWith("/"))
+            pathPrefix = "/" + pathPrefix;
         this._innerAddFileMapping(fileSystemPath, urlPrefix, pathPrefix, true);
+        this._saveToSettings();
     },
 
     /**
@@ -151,7 +162,7 @@ WebInspector.FileSystemMapping.prototype = {
     {
         var entry = new WebInspector.FileSystemMapping.Entry(fileSystemPath, urlPrefix, pathPrefix, configurable);
         this._fileSystemMappings[fileSystemPath].push(entry);
-        this._saveToSettings();
+        this._rebuildIndexes();
         this.dispatchEventToListeners(WebInspector.FileSystemMapping.Events.FileMappingAdded, entry);
     },
 
@@ -162,10 +173,11 @@ WebInspector.FileSystemMapping.prototype = {
      */
     removeFileMapping: function(fileSystemPath, urlPrefix, pathPrefix)
     {
-        var entry = this._mappingEntryForPathPrefix(fileSystemPath, pathPrefix);
+        var entry = this._configurableMappingEntryForPathPrefix(fileSystemPath, pathPrefix);
         if (!entry)
             return;
         this._fileSystemMappings[fileSystemPath].remove(entry);
+        this._rebuildIndexes();
         this._saveToSettings();
         this.dispatchEventToListeners(WebInspector.FileSystemMapping.Events.FileMappingRemoved, entry);
     },
@@ -198,10 +210,12 @@ WebInspector.FileSystemMapping.prototype = {
         var entry = null;
         for (var i = 0; i < entries.length; ++i) {
             var pathPrefix = entries[i].pathPrefix;
+            if (entry && entry.configurable && !entries[i].configurable)
+                continue;
             // We are looking for the longest pathPrefix match.
             if (entry && entry.pathPrefix.length > pathPrefix.length)
                 continue;
-            if (filePath.startsWith(pathPrefix.substr(1)))
+            if (filePath.startsWith(pathPrefix))
                 entry = entries[i];
         }
         return entry;
@@ -212,11 +226,11 @@ WebInspector.FileSystemMapping.prototype = {
      * @param {string} pathPrefix
      * @return {?WebInspector.FileSystemMapping.Entry}
      */
-    _mappingEntryForPathPrefix: function(fileSystemPath, pathPrefix)
+    _configurableMappingEntryForPathPrefix: function(fileSystemPath, pathPrefix)
     {
         var entries = this._fileSystemMappings[fileSystemPath];
         for (var i = 0; i < entries.length; ++i) {
-            if (pathPrefix === entries[i].pathPrefix)
+            if (entries[i].configurable && pathPrefix === entries[i].pathPrefix)
                 return entries[i];
         }
         return null;
@@ -235,14 +249,14 @@ WebInspector.FileSystemMapping.prototype = {
      * @param {string} url
      * @return {boolean}
      */
-    hasMappingForURL: function(url)
+    hasMappingForNetworkURL: function(url)
     {
         return !!this._mappingEntryForURL(url);
     },
 
     /**
      * @param {string} url
-     * @return {?{fileSystemPath: string, filePath: string}}
+     * @return {?{fileSystemPath: string, fileURL: string}}
      */
     fileForURL: function(url)
     {
@@ -251,7 +265,7 @@ WebInspector.FileSystemMapping.prototype = {
             return null;
         var file = {};
         file.fileSystemPath = entry.fileSystemPath;
-        file.filePath = entry.pathPrefix.substr(1) + url.substr(entry.urlPrefix.length);
+        file.fileURL = entry.fileSystemPath + entry.pathPrefix + url.substr(entry.urlPrefix.length);
         return file;
     },
 
@@ -260,12 +274,13 @@ WebInspector.FileSystemMapping.prototype = {
      * @param {string} filePath
      * @return {string}
      */
-    urlForPath: function(fileSystemPath, filePath)
+    networkURLForFileSystemURL: function(fileSystemPath, filePath)
     {
-        var entry = this._mappingEntryForPath(fileSystemPath, filePath);
+        var relativePath = filePath.substring(fileSystemPath.length);
+        var entry = this._mappingEntryForPath(fileSystemPath, relativePath);
         if (!entry)
             return "";
-        return entry.urlPrefix + filePath.substring(entry.pathPrefix.length - 1);
+        return entry.urlPrefix + relativePath.substring(entry.pathPrefix.length);
     },
 
     /**
@@ -274,7 +289,7 @@ WebInspector.FileSystemMapping.prototype = {
     removeMappingForURL: function(url)
     {
         var entry = this._mappingEntryForURL(url);
-        if (!entry)
+        if (!entry || !entry.configurable)
             return;
         this._fileSystemMappings[entry.fileSystemPath].remove(entry);
         this._saveToSettings();
@@ -288,16 +303,15 @@ WebInspector.FileSystemMapping.prototype = {
     addMappingForResource: function(url, fileSystemPath, filePath)
     {
         var commonPathSuffixLength = 0;
-        var normalizedFilePath = "/" + filePath;
-        for (var i = 0; i < normalizedFilePath.length; ++i) {
-            var filePathCharacter = normalizedFilePath[normalizedFilePath.length - 1 - i];
+        for (var i = 0; i < filePath.length; ++i) {
+            var filePathCharacter = filePath[filePath.length - 1 - i];
             var urlCharacter = url[url.length - 1 - i];
             if (filePathCharacter !== urlCharacter)
                 break;
             if (filePathCharacter === "/")
                 commonPathSuffixLength = i;
         }
-        var pathPrefix = normalizedFilePath.substr(0, normalizedFilePath.length - commonPathSuffixLength);
+        var pathPrefix = filePath.substring(fileSystemPath.length, filePath.length - commonPathSuffixLength);
         var urlPrefix = url.substr(0, url.length - commonPathSuffixLength);
         this.addFileMapping(fileSystemPath, urlPrefix, pathPrefix);
     },

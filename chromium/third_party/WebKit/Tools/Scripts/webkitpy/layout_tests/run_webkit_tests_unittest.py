@@ -62,8 +62,8 @@ def parse_args(extra_args=None, tests_included=False, new_results=False, print_n
     args = []
     if not '--platform' in extra_args:
         args.extend(['--platform', 'test'])
-    if not new_results:
-        args.append('--no-new-test-results')
+    if new_results:
+        args.append('--new-test-results')
 
     if not '--child-processes' in extra_args:
         args.extend(['--child-processes', 1])
@@ -446,7 +446,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # This tests that we skip both known failing and known flaky tests. Because there are
         # no known flaky tests in the default test_expectations, we add additional expectations.
         host = MockHost()
-        host.filesystem.write_text_file('/tmp/overrides.txt', 'Bug(x) passes/image.html [ ImageOnlyFailure Pass ]\n')
+        host.filesystem.write_text_file('/tmp/overrides.txt', 'Bug(x) passes/image.html [ Failure Pass ]\n')
 
         batches = get_test_batches(['--skip-failing-tests', '--additional-expectations', '/tmp/overrides.txt'], host=host)
         has_passes_text = False
@@ -822,7 +822,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
     def test_additional_expectations(self):
         host = MockHost()
-        host.filesystem.write_text_file('/tmp/overrides.txt', 'Bug(x) failures/unexpected/mismatch.html [ ImageOnlyFailure ]\n')
+        host.filesystem.write_text_file('/tmp/overrides.txt', 'Bug(x) failures/unexpected/mismatch.html [ Failure ]\n')
         self.assertTrue(passing_run(['--additional-expectations', '/tmp/overrides.txt', 'failures/unexpected/mismatch.html'],
                                     tests_included=True, host=host))
 

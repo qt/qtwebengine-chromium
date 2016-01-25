@@ -42,6 +42,12 @@ public:
     static PassRefPtrWillBeRawPtr<HTMLOptionElement> createForJSConstructor(Document&, const String& data, const AtomicString& value,
         bool defaultSelected, bool selected, ExceptionState&);
 
+    // A text to be shown to users.  The difference from |label()| is |label()|
+    // returns an empty string if |label| content attribute is empty.
+    // |displayLabel()| returns the value string in that case.
+    String displayLabel() const;
+
+    // |text| IDL attribute implementations.
     String text() const;
     void setText(const String&, ExceptionState&);
 
@@ -52,6 +58,8 @@ public:
 
     bool selected() const;
     void setSelected(bool);
+    bool selectedForBinding() const;
+    void setSelectedForBinding(bool);
 
     HTMLDataListElement* ownerDataListElement() const;
     HTMLSelectElement* ownerSelectElement() const;
@@ -59,13 +67,16 @@ public:
     String label() const;
     void setLabel(const AtomicString&);
 
-    bool ownElementDisabled() const { return m_disabled; }
+    bool ownElementDisabled() const;
 
     bool isDisabledFormControl() const override;
 
     String textIndentedToRespectGroupLabel() const;
 
+    // Update 'selectedness'.
     void setSelectedState(bool);
+    // Update 'dirtiness'.
+    void setDirty(bool);
 
     HTMLFormElement* form() const;
     bool spatialNavigationFocused() const;
@@ -81,9 +92,8 @@ private:
     bool supportsFocus() const override;
     void attach(const AttachContext& = AttachContext()) override;
     void detach(const AttachContext& = AttachContext()) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
-    void didNotifySubtreeInsertionsToDocument() override;
     void removedFrom(ContainerNode*) override;
     void accessKeyAction(bool) override;
     void childrenChanged(const ChildrenChange&) override;
@@ -98,8 +108,12 @@ private:
 
     void updateLabel();
 
-    bool m_disabled;
+    // Represents 'selectedness'.
+    // https://html.spec.whatwg.org/multipage/forms.html#concept-option-selectedness
     bool m_isSelected;
+    // Represents 'dirtiness'.
+    // https://html.spec.whatwg.org/multipage/forms.html#concept-option-dirtiness
+    bool m_isDirty = false;
     RefPtr<ComputedStyle> m_style;
 };
 

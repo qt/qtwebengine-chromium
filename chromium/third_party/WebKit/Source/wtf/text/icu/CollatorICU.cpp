@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "wtf/text/Collator.h"
 
 #include "wtf/Assertions.h"
@@ -43,7 +42,7 @@ static UCollator* cachedCollator;
 static char cachedEquivalentLocale[Collator::ulocFullnameCapacity];
 static Mutex& cachedCollatorMutex()
 {
-    AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, new Mutex);
     return mutex;
 }
 

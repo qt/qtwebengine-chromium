@@ -5,6 +5,9 @@
 #ifndef CONTENT_CHILD_WEB_MEMORY_ALLOCATOR_DUMP_IMPL_H_
 #define CONTENT_CHILD_WEB_MEMORY_ALLOCATOR_DUMP_IMPL_H_
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "third_party/WebKit/public/platform/WebMemoryAllocatorDump.h"
 
 namespace base {
@@ -25,9 +28,9 @@ class WebMemoryAllocatorDumpImpl : public blink::WebMemoryAllocatorDump {
   ~WebMemoryAllocatorDumpImpl() override;
 
   // blink::WebMemoryAllocatorDump implementation.
-  void AddScalar(const char* name, const char* units, uint64 value) override;
-  void AddScalarF(const char* name, const char* units, double value) override;
-  void AddString(const char* name,
+  void addScalar(const char* name, const char* units, uint64_t value) override;
+  void addScalarF(const char* name, const char* units, double value) override;
+  void addString(const char* name,
                  const char* units,
                  const blink::WebString& value) override;
 

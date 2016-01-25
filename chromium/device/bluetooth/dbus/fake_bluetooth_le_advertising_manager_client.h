@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROMEOS_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_
-#define CHROMEOS_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_
+#ifndef DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_
+#define DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_
 
 #include <map>
 #include <string>
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/observer_list.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
@@ -76,4 +77,4 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothLEAdvertisingManagerClient
 
 }  // namespace bluez
 
-#endif  // CHROMEOS_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_
+#endif  // DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_LE_ADVERTISING_MANAGER_CLIENT_H_

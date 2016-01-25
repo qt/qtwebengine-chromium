@@ -20,10 +20,10 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "config.h"
 #include "core/fetch/MemoryCache.h"
 
 #include "core/fetch/ResourcePtr.h"
+#include "core/fetch/WebCacheMemoryDumpProvider.h"
 #include "platform/Logging.h"
 #include "platform/TraceEvent.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -65,6 +65,7 @@ MemoryCache* replaceMemoryCacheForTesting(MemoryCache* cache)
     memoryCache();
     MemoryCache* oldCache = gMemoryCache->release();
     *gMemoryCache = cache;
+    WebCacheMemoryDumpProvider::instance()->setMemoryCache(cache);
     return oldCache;
 }
 
@@ -105,9 +106,10 @@ inline MemoryCache::MemoryCache()
     , m_statsTimer(this, &MemoryCache::dumpStats)
 #endif
 {
+    WebCacheMemoryDumpProvider::instance()->setMemoryCache(this);
 #ifdef MEMORY_CACHE_STATS
     const double statsIntervalInSeconds = 15;
-    m_statsTimer.startRepeating(statsIntervalInSeconds, FROM_HERE);
+    m_statsTimer.startRepeating(statsIntervalInSeconds, BLINK_FROM_HERE);
 #endif
 }
 
@@ -171,17 +173,6 @@ void MemoryCache::add(Resource* resource)
     update(resource, 0, resource->size(), true);
 
     WTF_LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
-}
-
-void MemoryCache::replace(Resource* newResource, Resource* oldResource)
-{
-    ASSERT(newResource->cacheIdentifier() == oldResource->cacheIdentifier());
-    ResourceMap* resources = ensureResourceMap(oldResource->cacheIdentifier());
-    if (MemoryCacheEntry* oldEntry = resources->get(oldResource->url()))
-        evict(oldEntry);
-    add(newResource);
-    if (newResource->decodedSize() && newResource->hasClients())
-        insertInLiveDecodedResourcesList(resources->get(newResource->url()));
 }
 
 void MemoryCache::remove(Resource* resource)
@@ -339,7 +330,12 @@ void MemoryCache::pruneDeadResources(PruneStrategy strategy)
         while (current) {
             // Protect 'previous' so it can't get deleted during destroyDecodedData().
             MemoryCacheEntry* previous = current->m_previousInAllResourcesList;
-            ASSERT(!previous || contains(previous->m_resource.get()));
+            if (previous) {
+                // These release assertions are for investigating crashes and
+                // should be removed shortly.
+                RELEASE_ASSERT(previous->m_resource);
+                RELEASE_ASSERT(contains(previous->m_resource.get()));
+            }
             if (!current->m_resource->hasClients() && !current->m_resource->isPreloaded() && current->m_resource->isLoaded()) {
                 // Destroy our decoded data. This will remove us from
                 // m_liveDecodedResources, and possibly move us to a different
@@ -351,7 +347,7 @@ void MemoryCache::pruneDeadResources(PruneStrategy strategy)
             }
             // Decoded data may reference other resources. Stop iterating if 'previous' somehow got
             // kicked out of cache during destroyDecodedData().
-            if (previous && !contains(previous->m_resource.get()))
+            if (!previous || !previous->m_resource || !contains(previous->m_resource.get()))
                 break;
             current = previous;
         }
@@ -360,7 +356,12 @@ void MemoryCache::pruneDeadResources(PruneStrategy strategy)
         current = m_allResources[i].m_tail;
         while (current) {
             MemoryCacheEntry* previous = current->m_previousInAllResourcesList;
-            ASSERT(!previous || contains(previous->m_resource.get()));
+            if (previous) {
+                // These release assertions are for investigating crashes and
+                // should be removed shortly.
+                RELEASE_ASSERT(previous->m_resource);
+                RELEASE_ASSERT(contains(previous->m_resource.get()));
+            }
             if (!current->m_resource->hasClients() && !current->m_resource->isPreloaded()
                 && !current->m_resource->isCacheValidator() && current->m_resource->canDelete()
                 && current->m_resource->type() != Resource::MainResource) {
@@ -371,7 +372,7 @@ void MemoryCache::pruneDeadResources(PruneStrategy strategy)
                 if (targetSize && m_deadSize <= targetSize)
                     return;
             }
-            if (previous && !contains(previous->m_resource.get()))
+            if (!previous || !previous->m_resource || !contains(previous->m_resource.get()))
                 break;
             current = previous;
         }
@@ -778,6 +779,25 @@ void MemoryCache::pruneNow(double currentTime, PruneStrategy strategy)
 void MemoryCache::updateFramePaintTimestamp()
 {
     m_lastFramePaintTimeStamp = currentTime();
+}
+
+void MemoryCache::onMemoryDump(WebMemoryDumpLevelOfDetail levelOfDetail, WebProcessMemoryDump* memoryDump)
+{
+    for (const auto& resourceMapIter : m_resourceMaps) {
+        for (const auto& resourceIter : *resourceMapIter.value) {
+            Resource* resource = resourceIter.value->m_resource.get();
+            resource->onMemoryDump(levelOfDetail, memoryDump);
+        }
+    }
+}
+
+bool MemoryCache::isInSameLRUListForTest(const Resource* x, const Resource* y)
+{
+    MemoryCacheEntry* ex = getEntryForResource(x);
+    MemoryCacheEntry* ey = getEntryForResource(y);
+    ASSERT(ex);
+    ASSERT(ey);
+    return lruListFor(ex->m_accessCount, x->size()) == lruListFor(ey->m_accessCount, y->size());
 }
 
 void MemoryCache::registerLiveResource(Resource& resource)

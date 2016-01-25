@@ -27,8 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/html/shadow/MediaControlElementTypes.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -97,6 +95,8 @@ void MediaControlElement::setDoesFit(bool fits)
 
 void MediaControlElement::setIsWanted(bool wanted)
 {
+    if (m_isWanted == wanted)
+        return;
     m_isWanted = wanted;
     updateShownState();
 }

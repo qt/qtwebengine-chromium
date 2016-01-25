@@ -19,8 +19,6 @@
     Boston, MA 02110-1301, USA.
 */
 
-
-#include "config.h"
 #include "core/html/parser/TextResourceDecoder.h"
 
 #include "core/HTMLNames.h"
@@ -112,7 +110,7 @@ const WTF::TextEncoding& TextResourceDecoder::defaultEncoding(ContentType conten
     return specifiedDefaultEncoding;
 }
 
-TextResourceDecoder::TextResourceDecoder(const String& mimeType, const WTF::TextEncoding& specifiedDefaultEncoding, bool usesEncodingDetector)
+TextResourceDecoder::TextResourceDecoder(const String& mimeType, const WTF::TextEncoding& specifiedDefaultEncoding, EncodingDetectionOption encodingDetectionOption)
     : m_contentType(determineContentType(mimeType))
     , m_encoding(defaultEncoding(m_contentType, specifiedDefaultEncoding))
     , m_source(DefaultEncoding)
@@ -123,8 +121,10 @@ TextResourceDecoder::TextResourceDecoder(const String& mimeType, const WTF::Text
     , m_checkedForMetaCharset(false)
     , m_useLenientXMLDecoding(false)
     , m_sawError(false)
-    , m_usesEncodingDetector(usesEncodingDetector)
+    , m_encodingDetectionOption(encodingDetectionOption)
 {
+    if (m_encodingDetectionOption == AlwaysUseUTF8ForText)
+        ASSERT(m_contentType == PlainTextContent && m_encoding == UTF8Encoding());
 }
 
 TextResourceDecoder::~TextResourceDecoder()
@@ -210,23 +210,25 @@ size_t TextResourceDecoder::checkForBOM(const char* data, size_t len)
     unsigned char c4 = buf2Len ? (--buf2Len, *buf2++) : 0;
 
     // Check for the BOM.
-    if (c1 == 0xFF && c2 == 0xFE) {
-        if (c3 || c4) {
-            setEncoding(UTF16LittleEndianEncoding(), AutoDetectedEncoding);
-            lengthOfBOM = 2;
-        } else {
-            setEncoding(UTF32LittleEndianEncoding(), AutoDetectedEncoding);
-            lengthOfBOM = 4;
-        }
-    } else if (c1 == 0xEF && c2 == 0xBB && c3 == 0xBF) {
+    if (c1 == 0xEF && c2 == 0xBB && c3 == 0xBF) {
         setEncoding(UTF8Encoding(), AutoDetectedEncoding);
         lengthOfBOM = 3;
-    } else if (c1 == 0xFE && c2 == 0xFF) {
-        setEncoding(UTF16BigEndianEncoding(), AutoDetectedEncoding);
-        lengthOfBOM = 2;
-    } else if (!c1 && !c2 && c3 == 0xFE && c4 == 0xFF) {
-        setEncoding(UTF32BigEndianEncoding(), AutoDetectedEncoding);
-        lengthOfBOM = 4;
+    } else if (m_encodingDetectionOption != AlwaysUseUTF8ForText) {
+        if (c1 == 0xFF && c2 == 0xFE) {
+            if (c3 || c4) {
+                setEncoding(UTF16LittleEndianEncoding(), AutoDetectedEncoding);
+                lengthOfBOM = 2;
+            } else {
+                setEncoding(UTF32LittleEndianEncoding(), AutoDetectedEncoding);
+                lengthOfBOM = 4;
+            }
+        } else if (c1 == 0xFE && c2 == 0xFF) {
+            setEncoding(UTF16BigEndianEncoding(), AutoDetectedEncoding);
+            lengthOfBOM = 2;
+        } else if (!c1 && !c2 && c3 == 0xFE && c4 == 0xFF) {
+            setEncoding(UTF32BigEndianEncoding(), AutoDetectedEncoding);
+            lengthOfBOM = 4;
+        }
     }
 
     if (lengthOfBOM || bufferLength + len >= 4)
@@ -360,7 +362,7 @@ bool TextResourceDecoder::shouldAutoDetect() const
 {
     // Just checking m_hintEncoding suffices here because it's only set
     // in setHintEncoding when the source is AutoDetectedEncoding.
-    return m_usesEncodingDetector
+    return m_encodingDetectionOption == UseAllAutoDetection
         && (m_source == DefaultEncoding || (m_source == EncodingFromParentFrame && m_hintEncoding));
 }
 
@@ -401,9 +403,7 @@ String TextResourceDecoder::decode(const char* data, size_t len)
         checkForMetaCharset(dataForDecode, lengthForDecode);
 
     if (shouldAutoDetect()) {
-        WTF::TextEncoding detectedEncoding;
-        if (detectTextEncoding(data, len, m_hintEncoding, &detectedEncoding))
-            setEncoding(detectedEncoding, EncodingFromContentSniffing);
+        detectTextEncoding(data, len);
     }
 
     ASSERT(m_encoding.isValid());
@@ -417,6 +417,16 @@ String TextResourceDecoder::decode(const char* data, size_t len)
     return result;
 }
 
+void TextResourceDecoder::detectTextEncoding(const char* data, size_t len)
+{
+    WTF::TextEncoding detectedEncoding;
+    bool detected = blink::detectTextEncoding(data, len, m_hintEncoding, &detectedEncoding);
+    if (detected && detectedEncoding != encoding())
+        setEncoding(detectedEncoding, EncodingFromContentSniffing);
+    else
+        setEncoding(detectedEncoding, DefaultEncodingAttemptedSniffing);
+}
+
 String TextResourceDecoder::flush()
 {
     // If we can not identify the encoding even after a document is completely
@@ -424,9 +434,7 @@ String TextResourceDecoder::flush()
     // autodetection is satisfied.
     if (m_buffer.size() && shouldAutoDetect()
         && ((!m_checkedForXMLCharset && (m_contentType == HTMLContent || m_contentType == XMLContent)) || (!m_checkedForCSSCharset && (m_contentType == CSSContent)))) {
-        WTF::TextEncoding detectedEncoding;
-        if (detectTextEncoding(m_buffer.data(), m_buffer.size(), m_hintEncoding, &detectedEncoding))
-            setEncoding(detectedEncoding, EncodingFromContentSniffing);
+        detectTextEncoding(m_buffer.data(), m_buffer.size());
     }
 
     if (!m_codec)

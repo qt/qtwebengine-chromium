@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "wtf/ArrayBufferBuilder.h"
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Assertions.h"
-#include <gtest/gtest.h>
 #include <limits.h>
 #include <string.h>
 

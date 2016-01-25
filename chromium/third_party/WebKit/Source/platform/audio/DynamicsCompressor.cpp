@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/DynamicsCompressor.h"
-
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioUtilities.h"
 #include "wtf/MathExtras.h"
@@ -209,4 +204,3 @@ void DynamicsCompressor::setNumberOfChannels(unsigned numberOfChannels)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

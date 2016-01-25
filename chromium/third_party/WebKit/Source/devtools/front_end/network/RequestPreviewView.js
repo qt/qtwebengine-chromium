@@ -55,9 +55,15 @@ WebInspector.RequestPreviewView.prototype = {
                 delete this._emptyWidget;
             }
 
-            if (!this._previewView)
+            if (!this._previewView) {
                 this._previewView = this._createPreviewView();
-            this._previewView.show(this.element);
+                this._previewView.show(this.element);
+                if (this._previewView instanceof WebInspector.VBoxWithToolbarItems) {
+                    var toolbar = new WebInspector.Toolbar("network-item-preview-toolbar", this.element);
+                    for (var item of /** @type {!WebInspector.VBoxWithToolbarItems} */ (this._previewView).toolbarItems())
+                        toolbar.appendToolbarItem(item);
+                }
+            }
             this.innerView = this._previewView;
         }
     },
@@ -86,13 +92,12 @@ WebInspector.RequestPreviewView.prototype = {
     },
 
     /**
-     * @return {?WebInspector.RequestJSONView}
+     * @return {?WebInspector.JSONView}
      */
     _jsonView: function()
     {
-        var content = this._requestContent();
-        var parsedJSON = WebInspector.RequestJSONView.parseJSON(content);
-        return parsedJSON ? new WebInspector.RequestJSONView(this.request, parsedJSON) : null;
+        var parsedJSON = WebInspector.JSONView.parseJSON(this._requestContent());
+        return parsedJSON && new WebInspector.JSONView(parsedJSON);
     },
 
     /**

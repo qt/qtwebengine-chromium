@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/renderer/render_thread_impl.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -10,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
+#include "content/app/mojo/mojo_init.h"
 #include "content/common/in_process_child_thread_params.h"
 #include "content/common/resource_messages.h"
 #include "content/common/websocket_messages.h"
@@ -18,7 +25,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_thread_impl.h"
 #include "content/test/mock_render_process.h"
 #include "content/test/render_thread_impl_browser_test_ipc_helper.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -93,7 +99,7 @@ class RenderThreadImplForTest : public RenderThreadImpl {
   RenderThreadImplForTest(const InProcessChildThreadParams& params,
                           scoped_ptr<scheduler::RendererScheduler> scheduler,
                           scoped_refptr<TestTaskCounter> test_task_counter)
-      : RenderThreadImpl(params, scheduler.Pass()),
+      : RenderThreadImpl(params, std::move(scheduler)),
         test_task_counter_(test_task_counter) {}
 
   ~RenderThreadImplForTest() override {}
@@ -131,7 +137,7 @@ class QuitOnTestMsgFilter : public IPC::MessageFilter {
   }
 
   bool GetSupportedMessageClasses(
-      std::vector<uint32>* supported_message_classes) const override {
+      std::vector<uint32_t>* supported_message_classes) const override {
     supported_message_classes->push_back(TestMsgStart);
     return true;
   }
@@ -173,10 +179,11 @@ class RenderThreadImplBrowserTest : public testing::Test {
 
     scoped_ptr<scheduler::RendererScheduler> renderer_scheduler =
         scheduler::RendererScheduler::Create();
+    InitializeMojo();
     thread_ = new RenderThreadImplForTest(
         InProcessChildThreadParams(test_helper_->GetChannelId(),
                                    test_helper_->GetIOTaskRunner()),
-        renderer_scheduler.Pass(), test_task_counter_);
+        std::move(renderer_scheduler), test_task_counter_);
     cmd->InitFromArgv(old_argv);
 
     thread_->EnsureWebKitInitialized();

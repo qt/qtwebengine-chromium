@@ -79,7 +79,6 @@ enum IPCMessageStart {
   WebSocketMsgStart,
   NaClHostMsgStart,
   WebRTCIdentityMsgStart,
-  LocalDiscoveryMsgStart,
   PowerMonitorMsgStart,
   EncryptedMediaMsgStart,
   CacheStorageMsgStart,
@@ -113,6 +112,7 @@ enum IPCMessageStart {
   BluetoothMsgStart,
   CastMediaMsgStart,
   AwMessagePortMsgStart,
+  SyncCompositorMsgStart,
   ExtensionsGuestViewMsgStart,
   GuestViewMsgStart,
   // Note: CastCryptoMsgStart and CastChannelMsgStart reserved for Chromecast
@@ -127,7 +127,14 @@ enum IPCMessageStart {
   RenderProcessMsgStart,
   PageLoadMetricsMsgStart,
   MemoryMsgStart,
+  MediaSessionMsgStart,
   IPCTestMsgStart,
+  ArcInstanceMsgStart,
+  ArcInstanceHostMsgStart,
+  DistillerMsgStart,
+  StartupMetricMsgStart,
+  ArcCameraMsgStart,
+  DWriteFontProxyMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

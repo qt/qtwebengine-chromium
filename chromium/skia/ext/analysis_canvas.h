@@ -5,6 +5,9 @@
 #ifndef SKIA_EXT_ANALYSIS_CANVAS_H_
 #define SKIA_EXT_ANALYSIS_CANVAS_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPicture.h"
@@ -61,10 +64,6 @@ class SK_API AnalysisCanvas : public SkCanvas, public SkPicture::AbortCallback {
                        const SkRect& dst,
                        const SkPaint* paint,
                        SrcRectConstraint) override;
-  void onDrawSprite(const SkBitmap&,
-                    int left,
-                    int top,
-                    const SkPaint* paint = NULL) override;
   void onDrawVertices(VertexMode,
                       int vertexCount,
                       const SkPoint vertices[],
@@ -77,9 +76,7 @@ class SK_API AnalysisCanvas : public SkCanvas, public SkPicture::AbortCallback {
 
  protected:
   void willSave() override;
-  SaveLayerStrategy willSaveLayer(const SkRect*,
-                                  const SkPaint*,
-                                  SaveFlags) override;
+  SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec&) override;
   void willRestore() override;
 
   void onClipRect(const SkRect& rect,

@@ -4,6 +4,9 @@
 
 #include "gpu/command_buffer/common/buffer.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/numerics/safe_math.h"
@@ -13,7 +16,7 @@ namespace gpu {
 SharedMemoryBufferBacking::SharedMemoryBufferBacking(
     scoped_ptr<base::SharedMemory> shared_memory,
     size_t size)
-    : shared_memory_(shared_memory.Pass()), size_(size) {}
+    : shared_memory_(std::move(shared_memory)), size_(size) {}
 
 SharedMemoryBufferBacking::~SharedMemoryBufferBacking() {}
 
@@ -24,7 +27,7 @@ void* SharedMemoryBufferBacking::GetMemory() const {
 size_t SharedMemoryBufferBacking::GetSize() const { return size_; }
 
 Buffer::Buffer(scoped_ptr<BufferBacking> backing)
-    : backing_(backing.Pass()),
+    : backing_(std::move(backing)),
       memory_(backing_->GetMemory()),
       size_(backing_->GetSize()) {
   DCHECK(memory_) << "The memory must be mapped to create a Buffer";
@@ -32,12 +35,12 @@ Buffer::Buffer(scoped_ptr<BufferBacking> backing)
 
 Buffer::~Buffer() {}
 
-void* Buffer::GetDataAddress(uint32 data_offset, uint32 data_size) const {
-  base::CheckedNumeric<uint32> end = data_offset;
+void* Buffer::GetDataAddress(uint32_t data_offset, uint32_t data_size) const {
+  base::CheckedNumeric<uint32_t> end = data_offset;
   end += data_size;
-  if (!end.IsValid() || end.ValueOrDie() > static_cast<uint32>(size_))
+  if (!end.IsValid() || end.ValueOrDie() > static_cast<uint32_t>(size_))
     return NULL;
-  return static_cast<uint8*>(memory_) + data_offset;
+  return static_cast<uint8_t*>(memory_) + data_offset;
 }
 
 base::trace_event::MemoryAllocatorDumpGuid GetBufferGUIDForTracing(

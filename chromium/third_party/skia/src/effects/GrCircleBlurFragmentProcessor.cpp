@@ -11,23 +11,26 @@
 #if SK_SUPPORT_GPU
 
 #include "GrContext.h"
+#include "GrInvariantOutput.h"
 #include "GrTextureProvider.h"
 
-#include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
 
-class GrGLCircleBlurFragmentProcessor : public GrGLFragmentProcessor {
+class GrGLCircleBlurFragmentProcessor : public GrGLSLFragmentProcessor {
 public:
     GrGLCircleBlurFragmentProcessor(const GrProcessor&) {}
     void emitCode(EmitArgs&) override;
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 private:
-    GrGLProgramDataManager::UniformHandle fDataUniform;
+    GrGLSLProgramDataManager::UniformHandle fDataUniform;
 
-    typedef GrGLFragmentProcessor INHERITED;
+    typedef GrGLSLFragmentProcessor INHERITED;
 };
 
 void GrGLCircleBlurFragmentProcessor::emitCode(EmitArgs& args) {
@@ -37,33 +40,38 @@ void GrGLCircleBlurFragmentProcessor::emitCode(EmitArgs& args) {
     // The data is formatted as:
     // x,y  - the center of the circle
     // z    - the distance at which the intensity starts falling off (e.g., the start of the table)
-    // w    - the size of the profile texture
-    fDataUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                             kVec4f_GrSLType,
-                                             kDefault_GrSLPrecision,
-                                             "data",
-                                             &dataName);
+    // w    - the inverse of the profile texture size
+    fDataUniform = args.fUniformHandler->addUniform(GrGLSLUniformHandler::kFragment_Visibility,
+                                                    kVec4f_GrSLType,
+                                                    kDefault_GrSLPrecision,
+                                                    "data",
+                                                    &dataName);
 
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
-    const char *fragmentPos = fsBuilder->fragmentPosition();
+    GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
+    const char *fragmentPos = fragBuilder->fragmentPosition();
 
     if (args.fInputColor) {
-        fsBuilder->codeAppendf("vec4 src=%s;", args.fInputColor);
+        fragBuilder->codeAppendf("vec4 src=%s;", args.fInputColor);
     } else {
-        fsBuilder->codeAppendf("vec4 src=vec4(1);");
+        fragBuilder->codeAppendf("vec4 src=vec4(1);");
     }
 
-    fsBuilder->codeAppendf("vec2 vec = %s.xy - %s.xy;", fragmentPos, dataName);
-    fsBuilder->codeAppendf("float dist = (length(vec) - %s.z + 0.5) / %s.w;", dataName, dataName);
+    // We just want to compute "length(vec) - %s.z + 0.5) * %s.w" but need to rearrange
+    // for precision
+    fragBuilder->codeAppendf("vec2 vec = vec2( (%s.x - %s.x) * %s.w , (%s.y - %s.y) * %s.w );", 
+                             fragmentPos, dataName, dataName,
+                             fragmentPos, dataName, dataName);
+    fragBuilder->codeAppendf("float dist = length(vec) + ( 0.5 - %s.z ) * %s.w;",
+                             dataName, dataName);
 
-    fsBuilder->codeAppendf("float intensity = ");
-    fsBuilder->appendTextureLookup(args.fSamplers[0], "vec2(dist, 0.5)");
-    fsBuilder->codeAppend(".a;");
+    fragBuilder->codeAppendf("float intensity = ");
+    fragBuilder->appendTextureLookup(args.fSamplers[0], "vec2(dist, 0.5)");
+    fragBuilder->codeAppend(".a;");
 
-    fsBuilder->codeAppendf("%s = src * intensity;\n", args.fOutputColor );
+    fragBuilder->codeAppendf("%s = src * intensity;\n", args.fOutputColor );
 }
 
-void GrGLCircleBlurFragmentProcessor::onSetData(const GrGLProgramDataManager& pdman,
+void GrGLCircleBlurFragmentProcessor::onSetData(const GrGLSLProgramDataManager& pdman,
                                                 const GrProcessor& proc) {
     const GrCircleBlurFragmentProcessor& cbfp = proc.cast<GrCircleBlurFragmentProcessor>();
     const SkRect& circle = cbfp.circle();
@@ -71,9 +79,9 @@ void GrGLCircleBlurFragmentProcessor::onSetData(const GrGLProgramDataManager& pd
     // The data is formatted as:
     // x,y  - the center of the circle
     // z    - the distance at which the intensity starts falling off (e.g., the start of the table)
-    // w    - the size of the profile texture
+    // w    - the inverse of the profile texture size
     pdman.set4f(fDataUniform, circle.centerX(), circle.centerY(), cbfp.offset(),
-                SkIntToScalar(cbfp.profileSize()));
+                1.0f / cbfp.profileSize());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,12 +99,12 @@ GrCircleBlurFragmentProcessor::GrCircleBlurFragmentProcessor(const SkRect& circl
     this->setWillReadFragmentPosition();
 }
 
-GrGLFragmentProcessor* GrCircleBlurFragmentProcessor::onCreateGLInstance() const {
+GrGLSLFragmentProcessor* GrCircleBlurFragmentProcessor::onCreateGLSLInstance() const {
     return new GrGLCircleBlurFragmentProcessor(*this);
 }
 
-void GrCircleBlurFragmentProcessor::onGetGLProcessorKey(const GrGLSLCaps& caps,
-                                                        GrProcessorKeyBuilder* b) const {
+void GrCircleBlurFragmentProcessor::onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                                                          GrProcessorKeyBuilder* b) const {
     GrGLCircleBlurFragmentProcessor::GenKey(*this, caps, b);
 }
 
@@ -178,7 +186,7 @@ static inline void compute_profile_offset_and_size(float halfWH, float sigma,
         // The circle is bigger than the Gaussian. In this case we know the interior of the
         // blurred circle is solid.
         *offset = halfWH - 3 * sigma; // This location maps to 0.5f in the weights texture.
-                                     // It should always be 255.
+                                      // It should always be 255.
         *size = SkScalarCeilToInt(6*sigma);
     } else {
         // The Gaussian is bigger than the circle.

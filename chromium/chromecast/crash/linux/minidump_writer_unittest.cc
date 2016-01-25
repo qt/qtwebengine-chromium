@@ -8,8 +8,10 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/test/scoped_path_override.h"
+#include "chromecast/base/scoped_temp_file.h"
 #include "chromecast/crash/linux/crash_testing_utils.h"
 #include "chromecast/crash/linux/dump_info.h"
 #include "chromecast/crash/linux/minidump_generator.h"
@@ -46,10 +48,11 @@ class MinidumpWriterTest : public testing::Test {
 
   void SetUp() override {
     // Set up a temporary directory which will be used as our fake home dir.
-    base::FilePath fake_home_dir;
-    ASSERT_TRUE(base::CreateNewTempDirectory("", &fake_home_dir));
-    home_.reset(new base::ScopedPathOverride(base::DIR_HOME, fake_home_dir));
-    minidump_dir_ = fake_home_dir.Append(kMinidumpSubdir);
+    ASSERT_TRUE(fake_home_dir_.CreateUniqueTempDir());
+    home_.reset(
+        new base::ScopedPathOverride(base::DIR_HOME, fake_home_dir_.path()));
+
+    minidump_dir_ = fake_home_dir_.path().Append(kMinidumpSubdir);
     dumplog_file_ = minidump_dir_.Append(kDumplogFile);
     lockfile_path_ = minidump_dir_.Append(kLockfileName);
     metadata_path_ = minidump_dir_.Append(kMetadataName);
@@ -72,6 +75,7 @@ class MinidumpWriterTest : public testing::Test {
   base::FilePath metadata_path_;
 
  private:
+  base::ScopedTempDir fake_home_dir_;
   scoped_ptr<base::ScopedPathOverride> home_;
 
   DISALLOW_COPY_AND_ASSIGN(MinidumpWriterTest);

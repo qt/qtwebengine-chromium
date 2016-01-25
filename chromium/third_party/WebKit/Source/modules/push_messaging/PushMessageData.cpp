@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/push_messaging/PushMessageData.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -33,7 +32,7 @@ PushMessageData* PushMessageData::create(const ArrayBufferOrArrayBufferViewOrUSV
     }
 
     if (messageData.isUSVString()) {
-        CString encodedString = UTF8Encoding().normalizeAndEncode(messageData.getAsUSVString(), WTF::EntitiesForUnencodables);
+        CString encodedString = UTF8Encoding().encode(messageData.getAsUSVString(), WTF::EntitiesForUnencodables);
         return new PushMessageData(encodedString.data(), encodedString.length());
     }
 
@@ -78,7 +77,7 @@ ScriptValue PushMessageData::json(ScriptState* scriptState, ExceptionState& exce
     ScriptState::Scope scope(scriptState);
     v8::Local<v8::String> dataString = v8String(isolate, text());
 
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     v8::Local<v8::Value> parsed;
     if (!v8Call(v8::JSON::Parse(isolate, dataString), parsed, block)) {
         exceptionState.rethrowV8Exception(block.Exception());

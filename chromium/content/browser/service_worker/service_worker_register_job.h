@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_register_job_base.h"
@@ -120,8 +121,6 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase {
   void OnStoreRegistrationComplete(ServiceWorkerStatusCode status);
   void InstallAndContinue();
   void OnInstallFinished(ServiceWorkerStatusCode status);
-  void ActivateAndContinue();
-  void OnActivateFinished(ServiceWorkerStatusCode status);
   void Complete(ServiceWorkerStatusCode status);
   void Complete(ServiceWorkerStatusCode status,
                 const std::string& status_message);

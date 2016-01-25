@@ -5,8 +5,10 @@
 #include "sandbox/win/src/broker_services.h"
 
 #include <AclAPI.h>
+#include <stddef.h>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/threading/platform_thread.h"
@@ -16,8 +18,8 @@
 #include "base/win/windows_version.h"
 #include "sandbox/win/src/app_container.h"
 #include "sandbox/win/src/process_mitigations.h"
-#include "sandbox/win/src/sandbox_policy_base.h"
 #include "sandbox/win/src/sandbox.h"
+#include "sandbox/win/src/sandbox_policy_base.h"
 #include "sandbox/win/src/target_process.h"
 #include "sandbox/win/src/win2k_threadpool.h"
 #include "sandbox/win/src/win_utils.h"
@@ -111,18 +113,6 @@ void DeregisterPeerTracker(PeerTracker* peer) {
 }  // namespace
 
 namespace sandbox {
-
-// TODO(rvargas): Replace this structure with a std::pair of ScopedHandles.
-struct BrokerServicesBase::TokenPair {
-  TokenPair(base::win::ScopedHandle initial_token,
-         base::win::ScopedHandle lockdown_token)
-      : initial(initial_token.Pass()),
-        lockdown(lockdown_token.Pass()) {
-  }
-
-  base::win::ScopedHandle initial;
-  base::win::ScopedHandle lockdown;
-};
 
 BrokerServicesBase::BrokerServicesBase() : thread_pool_(NULL) {
 }
@@ -325,9 +315,11 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
   // with the soon to be created target process.
   base::win::ScopedHandle initial_token;
   base::win::ScopedHandle lockdown_token;
+  base::win::ScopedHandle lowbox_token;
   ResultCode result = SBOX_ALL_OK;
 
-  result = policy_base->MakeTokens(&initial_token, &lockdown_token);
+  result =
+      policy_base->MakeTokens(&initial_token, &lockdown_token, &lowbox_token);
   if (SBOX_ALL_OK != result)
     return result;
 
@@ -424,41 +416,15 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
   if (NULL == thread_pool_)
     thread_pool_ = new Win2kThreadPool();
 
-  // We need to temporarily mark all inherited handles as closeable. The handle
-  // tracker may have marked the handles we're passing to the child as
-  // non-closeable, but the child is getting new copies that it's allowed to
-  // close. We're about to mark these handles as closeable for this process
-  // (when we close them below in ClearSharedHandles()) but that will be too
-  // late -- there will already another copy in the child that's non-closeable.
-  // After launching we restore the non-closability of these handles. We don't
-  // have any way here to affect *only* the child's copy, as the process
-  // launching mechanism takes care of doing the duplication-with-the-same-value
-  // into the child.
-  std::vector<DWORD> inherited_handle_information(inherited_handle_list.size());
-  for (size_t i = 0; i < inherited_handle_list.size(); ++i) {
-    const HANDLE& inherited_handle = inherited_handle_list[i];
-    ::GetHandleInformation(inherited_handle, &inherited_handle_information[i]);
-    ::SetHandleInformation(inherited_handle, HANDLE_FLAG_PROTECT_FROM_CLOSE, 0);
-  }
-
   // Create the TargetProces object and spawn the target suspended. Note that
   // Brokerservices does not own the target object. It is owned by the Policy.
   base::win::ScopedProcessInformation process_info;
-  TargetProcess* target = new TargetProcess(initial_token.Pass(),
-                                            lockdown_token.Pass(),
-                                            job.Get(),
-                                            thread_pool_);
+  TargetProcess* target =
+      new TargetProcess(initial_token.Pass(), lockdown_token.Pass(),
+                        lowbox_token.Pass(), job.Get(), thread_pool_);
 
   DWORD win_result = target->Create(exe_path, command_line, inherit_handles,
-                                    policy_base->GetLowBoxSid() ? true : false,
                                     startup_info, &process_info);
-
-  // Restore the previous handle protection values.
-  for (size_t i = 0; i < inherited_handle_list.size(); ++i) {
-    ::SetHandleInformation(inherited_handle_list[i],
-                           HANDLE_FLAG_PROTECT_FROM_CLOSE,
-                           inherited_handle_information[i]);
-  }
 
   policy_base->ClearSharedHandles();
 
@@ -551,7 +517,7 @@ ResultCode BrokerServicesBase::AddTargetPeer(HANDLE peer_process) {
   }
 
   // Release the pointer since it will be cleaned up by the callback.
-  peer.release();
+  ignore_result(peer.release());
   return SBOX_ALL_OK;
 }
 

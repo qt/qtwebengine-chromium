@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/DeleteSelectionCommand.h"
 
 #include "core/HTMLNames.h"
@@ -167,10 +166,14 @@ void DeleteSelectionCommand::initializePositionData()
 {
     Position start, end;
     initializeStartEnd(start, end);
-
+    ASSERT(start.isNotNull());
+    ASSERT(end.isNotNull());
     ASSERT(isEditablePosition(start, ContentIsEditable, DoNotUpdateStyle));
-    if (!isEditablePosition(end, ContentIsEditable, DoNotUpdateStyle))
-        end = lastEditablePositionBeforePositionInRoot(end, highestEditableRoot(start));
+    if (!isEditablePosition(end, ContentIsEditable, DoNotUpdateStyle)) {
+        Node* highestRoot = highestEditableRoot(start);
+        ASSERT(highestRoot);
+        end = lastEditablePositionBeforePositionInRoot(end, *highestRoot);
+    }
 
     m_upstreamStart = mostBackwardCaretPosition(start);
     m_downstreamStart = mostForwardCaretPosition(start);
@@ -628,7 +631,7 @@ void DeleteSelectionCommand::mergeParagraphs()
 
     // We need to merge into m_upstreamStart's block, but it's been emptied out and collapsed by deletion.
     if (!mergeDestination.deepEquivalent().anchorNode() || (!mergeDestination.deepEquivalent().anchorNode()->isDescendantOf(enclosingBlock(m_upstreamStart.computeContainerNode())) && (!mergeDestination.deepEquivalent().anchorNode()->hasChildren() || !m_upstreamStart.computeContainerNode()->hasChildren())) || (m_startsAtEmptyLine && mergeDestination.deepEquivalent() != startOfParagraphToMove.deepEquivalent())) {
-        insertNodeAt(createBreakElement(document()).get(), m_upstreamStart);
+        insertNodeAt(HTMLBRElement::create(document()).get(), m_upstreamStart);
         mergeDestination = createVisiblePosition(m_upstreamStart);
     }
 
@@ -849,7 +852,7 @@ void DeleteSelectionCommand::doApply()
         m_needPlaceholder = hasPlaceholder && lineBreakBeforeStart && !lineBreakAtEndOfSelectionToDelete;
     }
 
-    RefPtrWillBeRawPtr<HTMLBRElement> placeholder = m_needPlaceholder ? createBreakElement(document()) : nullptr;
+    RefPtrWillBeRawPtr<HTMLBRElement> placeholder = m_needPlaceholder ? HTMLBRElement::create(document()) : nullptr;
 
     if (placeholder) {
         if (m_sanitizeMarkup)

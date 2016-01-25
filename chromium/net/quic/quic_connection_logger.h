@@ -5,8 +5,11 @@
 #ifndef NET_QUIC_QUIC_CONNECTION_LOGGER_H_
 #define NET_QUIC_QUIC_CONNECTION_LOGGER_H_
 
+#include <stddef.h>
+
 #include <bitset>
 
+#include "base/macros.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/socket_performance_watcher.h"
@@ -42,9 +45,8 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   // QuicConnectionDebugVisitorInterface
   void OnPacketSent(const SerializedPacket& serialized_packet,
                     QuicPacketNumber original_packet_number,
-                    EncryptionLevel level,
                     TransmissionType transmission_type,
-                    const QuicEncryptedPacket& packet,
+                    size_t encrypted_length,
                     QuicTime sent_time) override;
   void OnPacketReceived(const IPEndPoint& self_address,
                         const IPEndPoint& peer_address,
@@ -73,10 +75,8 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
   void OnRttChanged(QuicTime::Delta rtt) const override;
 
-  void OnCryptoHandshakeMessageReceived(
-      const CryptoHandshakeMessage& message);
-  void OnCryptoHandshakeMessageSent(
-      const CryptoHandshakeMessage& message);
+  void OnCryptoHandshakeMessageReceived(const CryptoHandshakeMessage& message);
+  void OnCryptoHandshakeMessageSent(const CryptoHandshakeMessage& message);
   void UpdateReceivedFrameCounts(QuicStreamId stream_id,
                                  int num_frames_received,
                                  int num_duplicate_frames_received);

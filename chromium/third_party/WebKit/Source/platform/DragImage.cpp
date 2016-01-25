@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/DragImage.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
@@ -72,9 +71,24 @@ const float kMaxDragLabelStringWidth = (kMaxDragLabelWidth - 2 * kDragLabelBorde
 const float kDragLinkLabelFontSize = 11;
 const float kDragLinkUrlFontSize = 10;
 
-PassRefPtr<SkImage> adjustedImage(PassRefPtr<SkImage> image, const IntSize& size,
-    const AffineTransform& transform, float opacity, InterpolationQuality interpolationQuality)
+} // anonymous namespace
+
+PassRefPtr<SkImage> DragImage::resizeAndOrientImage(PassRefPtr<SkImage> image, ImageOrientation orientation,
+    FloatSize imageScale, float opacity, InterpolationQuality interpolationQuality)
 {
+    IntSize size(image->width(), image->height());
+    size.scale(imageScale.width(), imageScale.height());
+    AffineTransform transform;
+    if (orientation != DefaultImageOrientation) {
+        if (orientation.usesWidthAsHeight())
+            size = size.transposedSize();
+        transform *= orientation.transformFromDefault(FloatSize(size));
+    }
+    transform.scaleNonUniform(imageScale.width(), imageScale.height());
+
+    if (size.isEmpty())
+        return nullptr;
+
     if (transform.isIdentity() && opacity == 1) {
         // Nothing to adjust, just use the original.
         ASSERT(image->width() == size.width());
@@ -100,15 +114,13 @@ PassRefPtr<SkImage> adjustedImage(PassRefPtr<SkImage> image, const IntSize& size
     return adoptRef(surface->newImageSnapshot());
 }
 
-} // anonymous namespace
-
-FloatSize DragImage::clampedImageScale(const Image& image, const IntSize& size,
+FloatSize DragImage::clampedImageScale(const IntSize& imageSize, const IntSize& size,
     const IntSize& maxSize)
 {
     // Non-uniform scaling for size mapping.
     FloatSize imageScale(
-        static_cast<float>(size.width()) / image.width(),
-        static_cast<float>(size.height()) / image.height());
+        static_cast<float>(size.width()) / imageSize.width(),
+        static_cast<float>(size.height()) / imageSize.height());
 
     // Uniform scaling for clamping.
     const float clampScaleX = size.width() > maxSize.width()
@@ -122,7 +134,7 @@ FloatSize DragImage::clampedImageScale(const Image& image, const IntSize& size,
 
 PassOwnPtr<DragImage> DragImage::create(Image* image,
     RespectImageOrientationEnum shouldRespectImageOrientation, float deviceScaleFactor,
-    InterpolationQuality interpolationQuality, float opacity, const FloatSize& imageScale)
+    InterpolationQuality interpolationQuality, float opacity, FloatSize imageScale)
 {
     if (!image)
         return nullptr;
@@ -131,32 +143,13 @@ PassOwnPtr<DragImage> DragImage::create(Image* image,
     if (!skImage)
         return nullptr;
 
-    IntSize size = image->size();
-    size.scale(imageScale.width(), imageScale.height());
-    if (size.isEmpty())
-        return nullptr;
-
-    AffineTransform transform;
-    transform.scaleNonUniform(imageScale.width(), imageScale.height());
-
-    if (shouldRespectImageOrientation == RespectImageOrientation && image->isBitmapImage()) {
-        BitmapImage* bitmapImage = toBitmapImage(image);
-        ImageOrientation orientation = bitmapImage->currentFrameOrientation();
-
-        if (orientation != DefaultImageOrientation) {
-            size = bitmapImage->sizeRespectingOrientation();
-            if (orientation.usesWidthAsHeight())
-                size.scale(imageScale.height(), imageScale.width());
-            else
-                size.scale(imageScale.width(), imageScale.height());
-
-            transform *= orientation.transformFromDefault(size);
-        }
-    }
+    ImageOrientation orientation;
+    if (shouldRespectImageOrientation == RespectImageOrientation && image->isBitmapImage())
+        orientation = toBitmapImage(image)->currentFrameOrientation();
 
     SkBitmap bm;
     RefPtr<SkImage> resizedImage =
-        adjustedImage(skImage.release(), size, transform, opacity, interpolationQuality);
+        resizeAndOrientImage(skImage.release(), orientation, imageScale, opacity, interpolationQuality);
     if (!resizedImage || !resizedImage->asLegacyBitmap(&bm, SkImage::kRO_LegacyBitmapMode))
         return nullptr;
 
@@ -183,6 +176,7 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     bool drawURLString = true;
     bool clipURLString = false;
     bool clipLabelString = false;
+    float kMaxDragLabelStringWidthDIP = kMaxDragLabelStringWidth / deviceScaleFactor;
 
     String urlString = url.string();
     String label = inLabel.stripWhiteSpace();
@@ -196,8 +190,8 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     TextRun urlRun(urlString.impl());
     IntSize labelSize(labelFont.width(labelRun), labelFont.fontMetrics().ascent() + labelFont.fontMetrics().descent());
 
-    if (labelSize.width() > kMaxDragLabelStringWidth) {
-        labelSize.setWidth(kMaxDragLabelStringWidth);
+    if (labelSize.width() > kMaxDragLabelStringWidthDIP) {
+        labelSize.setWidth(kMaxDragLabelStringWidthDIP);
         clipLabelString = true;
     }
 
@@ -208,8 +202,8 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
         urlStringSize.setWidth(urlFont.width(urlRun));
         urlStringSize.setHeight(urlFont.fontMetrics().ascent() + urlFont.fontMetrics().descent());
         imageSize.setHeight(imageSize.height() + urlStringSize.height());
-        if (urlStringSize.width() > kMaxDragLabelStringWidth) {
-            imageSize.setWidth(kMaxDragLabelWidth);
+        if (urlStringSize.width() > kMaxDragLabelStringWidthDIP) {
+            imageSize.setWidth(kMaxDragLabelStringWidthDIP);
             clipURLString = true;
         } else
             imageSize.setWidth(std::max(labelSize.width(), urlStringSize.width()) + kDragLabelBorderX * 2);

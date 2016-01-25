@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/WebFontImpl.h"
 
 #include "platform/fonts/FontCache.h"
@@ -54,6 +53,12 @@ WebFontImpl::WebFontImpl(const FontDescription& desc)
     : m_font(desc)
 {
     m_font.update(nullptr);
+}
+
+IntRect WebFontImpl::visualRect() const
+{
+    // TODO(chrishtr): fix this.
+    return IntRect();
 }
 
 WebFontDescription WebFontImpl::fontDescription() const
@@ -97,16 +102,16 @@ void WebFontImpl::drawText(WebCanvas* canvas, const WebTextRun& run, const WebFl
 
     IntRect intRect(clip);
     SkPictureBuilder pictureBuilder(intRect);
-    GraphicsContext* context = &pictureBuilder.context();
+    GraphicsContext& context = pictureBuilder.context();
 
-    ASSERT(!DrawingRecorder::useCachedDrawingIfPossible(*context, *this, DisplayItem::WebFont));
+    ASSERT(!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::WebFont));
     {
-        DrawingRecorder drawingRecorder(*context, *this, DisplayItem::WebFont, intRect);
-        context->save();
-        context->setFillColor(color);
-        context->clip(textClipRect);
-        context->drawText(m_font, runInfo, leftBaseline);
-        context->restore();
+        DrawingRecorder drawingRecorder(context, *this, DisplayItem::WebFont, intRect);
+        context.save();
+        context.setFillColor(color);
+        context.clip(textClipRect);
+        context.drawText(m_font, runInfo, leftBaseline);
+        context.restore();
     }
 
     pictureBuilder.endRecording()->playback(canvas);

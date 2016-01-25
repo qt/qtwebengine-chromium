@@ -24,6 +24,7 @@
 #define LayoutTextFragment_h
 
 #include "core/layout/LayoutText.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -44,7 +45,7 @@ public:
     bool canBeSelectionLeaf() const override { return node() && node()->hasEditableStyle(); }
 
     unsigned start() const { return m_start; }
-    unsigned end() const { return m_end; }
+    unsigned fragmentLength() const { return m_fragmentLength; }
 
     unsigned textStartOffset() const override { return start(); }
 
@@ -83,13 +84,12 @@ private:
     void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
     unsigned m_start;
-    unsigned m_end;
+    unsigned m_fragmentLength;
     bool m_isRemainingTextLayoutObject;
     RefPtr<StringImpl> m_contentString;
     // Reference back to FirstLetterPseudoElement; cleared by FirstLetterPseudoElement::detach() if
     // it goes away first.
-    GC_PLUGIN_IGNORE("http://crbug.com/509911")
-    FirstLetterPseudoElement* m_firstLetterPseudoElement;
+    RawPtrWillBeUntracedMember<FirstLetterPseudoElement> m_firstLetterPseudoElement;
 };
 
 DEFINE_TYPE_CASTS(LayoutTextFragment, LayoutObject, object, toLayoutText(object)->isTextFragment(), toLayoutText(object).isTextFragment());

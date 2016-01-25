@@ -34,7 +34,7 @@
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebURLRequest.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Functional.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -49,7 +49,7 @@ class ExecutionContext;
 class TextResourceDecoder;
 
 class CORE_EXPORT WorkerScriptLoader final : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
-    WTF_MAKE_FAST_ALLOCATED(WorkerScriptLoader);
+    USING_FAST_MALLOC(WorkerScriptLoader);
 public:
     static PassRefPtr<WorkerScriptLoader> create()
     {
@@ -96,7 +96,7 @@ private:
     WorkerScriptLoader();
     ~WorkerScriptLoader() override;
 
-    PassOwnPtr<ResourceRequest> createResourceRequest();
+    ResourceRequest createResourceRequest();
     void notifyError();
     void notifyFinished();
 

@@ -5,9 +5,13 @@
 #include "media/capture/video/mac/video_capture_device_factory_mac.h"
 
 #import <IOKit/audio/IOAudioTypes.h>
+#include <stddef.h>
+
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
@@ -66,7 +70,7 @@ EnumerateDevicesUsingQTKit() {
       name.set_is_blacklisted(true);
     device_names->push_back(name);
   }
-  return device_names.Pass();
+  return device_names;
 }
 
 static void RunDevicesEnumeratedCallback(
@@ -78,12 +82,7 @@ static void RunDevicesEnumeratedCallback(
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "458397 media::RunDevicesEnumeratedCallback"));
-  callback.Run(device_names.Pass());
-}
-
-// static
-bool VideoCaptureDeviceFactoryMac::PlatformSupportsAVFoundation() {
-  return AVFoundationGlue::IsAVFoundationSupported();
+  callback.Run(std::move(device_names));
 }
 
 VideoCaptureDeviceFactoryMac::VideoCaptureDeviceFactoryMac(
@@ -112,7 +111,7 @@ scoped_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryMac::Create(
       capture_device.reset();
     }
   }
-  return scoped_ptr<VideoCaptureDevice>(capture_device.Pass());
+  return scoped_ptr<VideoCaptureDevice>(std::move(capture_device));
 }
 
 void VideoCaptureDeviceFactoryMac::GetDeviceNames(
@@ -161,7 +160,7 @@ void VideoCaptureDeviceFactoryMac::EnumerateDeviceNames(const base::Callback<
     scoped_ptr<VideoCaptureDevice::Names> device_names(
         new VideoCaptureDevice::Names());
     GetDeviceNames(device_names.get());
-    callback.Run(device_names.Pass());
+    callback.Run(std::move(device_names));
   } else {
     DVLOG(1) << "Enumerating video capture devices using QTKit";
     base::PostTaskAndReplyWithResult(

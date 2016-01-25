@@ -39,8 +39,8 @@ class CastAudioOutputStream : public ::media::AudioOutputStream {
   class Backend;
 
   void OnClosed();
-  void PushFrame();
-  void OnPushFrameComplete(bool success);
+  void PushBuffer();
+  void OnPushBufferComplete(bool success);
 
   const ::media::AudioParameters audio_params_;
   CastAudioManager* const audio_manager_;
@@ -50,14 +50,15 @@ class CastAudioOutputStream : public ::media::AudioOutputStream {
   scoped_ptr<::media::AudioBus> audio_bus_;
   scoped_refptr<media::DecoderBufferBase> decoder_buffer_;
   scoped_ptr<Backend> backend_;
-  bool backend_busy_;
   const base::TimeDelta buffer_duration_;
+  bool push_in_progress_;
   base::TimeTicks next_push_time_;
 
   scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> backend_task_runner_;
 
   base::WeakPtrFactory<CastAudioOutputStream> weak_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(CastAudioOutputStream);
 };
 

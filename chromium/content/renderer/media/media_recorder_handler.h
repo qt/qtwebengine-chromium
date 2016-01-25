@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_MEDIA_MEDIA_RECORDER_HANDLER_H_
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_piece.h"
@@ -20,6 +21,8 @@ class WebString;
 }  // namespace blink
 
 namespace media {
+class AudioBus;
+class AudioParameters;
 class VideoFrame;
 class WebmMuxer;
 }  // namespace media
@@ -27,6 +30,7 @@ class WebmMuxer;
 namespace content {
 
 class VideoTrackRecorder;
+class AudioTrackRecorder;
 
 // MediaRecorderHandler orchestrates the creation, lifetime management and
 // mapping between:
@@ -37,7 +41,6 @@ class VideoTrackRecorder;
 // All methods are called on the same thread as construction and destruction,
 // i.e. the Main Render thread. (Note that a BindToCurrentLoop is used to
 // guarantee this, since VideoTrackRecorder sends back frames on IO thread.)
-// TODO(mcasas): http://crbug.com/528519 Implement audio recording.
 class CONTENT_EXPORT MediaRecorderHandler final
     : public NON_EXPORTED_BASE(blink::WebMediaRecorderHandler) {
  public:
@@ -45,10 +48,12 @@ class CONTENT_EXPORT MediaRecorderHandler final
   ~MediaRecorderHandler() override;
 
   // blink::WebMediaRecorderHandler.
-  bool canSupportMimeType(const blink::WebString& mimeType) override;
+  bool canSupportMimeType(const blink::WebString& web_type,
+                          const blink::WebString& web_codecs) override;
   bool initialize(blink::WebMediaRecorderHandlerClient* client,
                   const blink::WebMediaStream& media_stream,
-                  const blink::WebString& mimeType) override;
+                  const blink::WebString& type,
+                  const blink::WebString& codecs) override;
   bool start() override;
   bool start(int timeslice) override;
   void stop() override;
@@ -62,13 +67,28 @@ class CONTENT_EXPORT MediaRecorderHandler final
                       scoped_ptr<std::string> encoded_data,
                       base::TimeTicks timestamp,
                       bool is_key_frame);
+  void OnEncodedAudio(const media::AudioParameters& params,
+                      scoped_ptr<std::string> encoded_data,
+                      base::TimeTicks timestamp);
   void WriteData(base::StringPiece data);
 
   void OnVideoFrameForTesting(const scoped_refptr<media::VideoFrame>& frame,
                               const base::TimeTicks& timestamp);
+  void OnAudioBusForTesting(const media::AudioBus& audio_bus,
+                            const base::TimeTicks& timestamp);
+  void SetAudioFormatForTesting(const media::AudioParameters& params);
 
   // Bound to the main render thread.
   base::ThreadChecker main_render_thread_checker_;
+
+  // Force using VP9 for video encoding, otherwise VP8 will be used by default.
+  bool use_vp9_;
+
+  // |client_| has no notion of time, thus may configure us via start(timeslice)
+  // to notify it after a certain |timeslice_| has passed. We use a moving
+  // |slice_origin_timestamp_| to track those time chunks.
+  base::TimeDelta timeslice_;
+  base::TimeTicks slice_origin_timestamp_;
 
   bool recording_;
   blink::WebMediaStream media_stream_;  // The MediaStream being recorded.
@@ -77,6 +97,7 @@ class CONTENT_EXPORT MediaRecorderHandler final
   blink::WebMediaRecorderHandlerClient* client_;
 
   ScopedVector<VideoTrackRecorder> video_recorders_;
+  ScopedVector<AudioTrackRecorder> audio_recorders_;
 
   // Worker class doing the actual Webm Muxing work.
   scoped_ptr<media::WebmMuxer> webm_muxer_;

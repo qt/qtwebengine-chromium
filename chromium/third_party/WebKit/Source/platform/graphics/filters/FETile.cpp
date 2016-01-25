@@ -19,11 +19,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "platform/graphics/filters/FETile.h"
 
 #include "SkTileImageFilter.h"
-
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
@@ -45,26 +43,11 @@ FloatRect FETile::mapPaintRect(const FloatRect& rect, bool forward)
     return forward ? maxEffectRect() : inputEffect(0)->maxEffectRect();
 }
 
-static FloatRect getRect(FilterEffect* effect)
+PassRefPtr<SkImageFilter> FETile::createImageFilter(SkiaImageFilterBuilder& builder)
 {
-    FloatRect result = effect->filter()->filterRegion();
-    FloatRect boundaries = effect->effectBoundaries();
-    if (effect->hasX())
-        result.setX(boundaries.x());
-    if (effect->hasY())
-        result.setY(boundaries.y());
-    if (effect->hasWidth())
-        result.setWidth(boundaries.width());
-    if (effect->hasHeight())
-        result.setHeight(boundaries.height());
-    return result;
-}
-
-PassRefPtr<SkImageFilter> FETile::createImageFilter(SkiaImageFilterBuilder* builder)
-{
-    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
-    FloatRect srcRect = inputEffect(0) ? getRect(inputEffect(0)) : filter()->filterRegion();
-    FloatRect dstRect = getRect(this);
+    RefPtr<SkImageFilter> input(builder.build(inputEffect(0), operatingColorSpace()));
+    FloatRect srcRect = inputEffect(0)->filterPrimitiveSubregion();
+    FloatRect dstRect = applyEffectBoundaries(filter()->filterRegion());
     return adoptRef(SkTileImageFilter::Create(srcRect, dstRect, input.get()));
 }
 

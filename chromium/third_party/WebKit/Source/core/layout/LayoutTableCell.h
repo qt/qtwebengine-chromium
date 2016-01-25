@@ -137,7 +137,7 @@ public:
         Length styleWidth = style()->logicalWidth();
         if (!styleWidth.isAuto())
             return styleWidth;
-        if (LayoutTableCol* firstColumn = table()->colElement(col()))
+        if (LayoutTableCol* firstColumn = table()->colElement(col()).innermostColOrColGroup())
             return logicalWidthFromColumns(firstColumn, styleWidth);
         return styleWidth;
     }
@@ -270,6 +270,8 @@ public:
 
     const char* name() const override { return "LayoutTableCell"; }
 
+    bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const override;
+
 protected:
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     void computePreferredLogicalWidths() override;
@@ -290,7 +292,7 @@ private:
 
     LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = nullptr) const override;
     LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
-    void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    void mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, const PaintInvalidationState*) const override;
 
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
@@ -309,6 +311,24 @@ private:
     bool hasStartBorderAdjoiningTable() const;
     bool hasEndBorderAdjoiningTable() const;
 
+    // Those functions implement the CSS collapsing border conflict
+    // resolution algorithm.
+    // http://www.w3.org/TR/CSS2/tables.html#border-conflict-resolution
+    //
+    // The code is pretty complicated as it needs to handle mixed directionality
+    // between the table and the different table parts (cell, row, row group,
+    // column, column group).
+    // TODO(jchaffraix): It should be easier to compute all the borders in
+    // physical coordinates. However this is not the design of the current code.
+    //
+    // Blink's support for mixed directionality is currently partial. We only
+    // support the directionality up to |styleForCellFlow|. See comment on the
+    // function above for more details.
+    // See also https://code.google.com/p/chromium/issues/detail?id=128227 for
+    // some history.
+    //
+    // Those functions are called when the cache (m_collapsedBorders) is
+    // invalidated on LayoutTable.
     CollapsedBorderValue computeCollapsedStartBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
     CollapsedBorderValue computeCollapsedEndBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
     CollapsedBorderValue computeCollapsedBeforeBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;

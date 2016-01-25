@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/navigatorconnect/ServicePortCollection.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
@@ -34,14 +33,13 @@ public:
 
     ~ConnectCallbacks() override { }
 
-    void onSuccess(WebServicePortID* portIdRaw) override
+    void onSuccess(WebServicePortID portId) override
     {
-        OwnPtr<WebServicePortID> webPortId = adoptPtr(portIdRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
             return;
         }
         WebServicePort webPort;
-        webPort.id = *webPortId;
+        webPort.id = portId;
         webPort.targetUrl = m_targetUrl;
         webPort.name = m_portName;
         webPort.data = m_serializedPortData;

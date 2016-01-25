@@ -60,7 +60,7 @@ public:
     {
         size_t gcInfoIndex = GCInfoTrait<HeapVectorBacking<T, VectorTraits<T>>>::index();
         ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
-        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, ThreadState::InlineVectorHeapIndex, gcInfoIndex));
+        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, BlinkGC::InlineVectorHeapIndex, gcInfoIndex));
     }
     static void freeInlineVectorBacking(void*);
     static bool expandInlineVectorBacking(void*, size_t);
@@ -71,7 +71,7 @@ public:
     {
         size_t gcInfoIndex = GCInfoTrait<HeapHashTableBacking<HashTable>>::index();
         ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
-        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, ThreadState::HashTableHeapIndex, gcInfoIndex));
+        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, BlinkGC::HashTableHeapIndex, gcInfoIndex));
     }
     template <typename T, typename HashTable>
     static T* allocateZeroedHashTableBacking(size_t size)
@@ -82,7 +82,7 @@ public:
     static bool expandHashTableBacking(void*, size_t);
 
     template <typename Return, typename Metadata>
-    static Return malloc(size_t size)
+    static Return malloc(size_t size, const char* typeName)
     {
         return reinterpret_cast<Return>(Heap::allocate<Metadata>(size, IsEagerlyFinalizedType<Metadata>::value));
     }
@@ -116,7 +116,7 @@ public:
     template<typename VisitorDispatcher, typename T, typename Traits>
     static void trace(VisitorDispatcher visitor, T& t)
     {
-        TraceCollectionIfEnabled<WTF::ShouldBeTraced<Traits>::value, Traits::weakHandlingFlag, WTF::WeakPointersActWeak, T, Traits>::trace(visitor, t);
+        TraceCollectionIfEnabled<WTF::NeedsTracingTrait<Traits>::value, Traits::weakHandlingFlag, WTF::WeakPointersActWeak, T, Traits>::trace(visitor, t);
     }
 
     template<typename VisitorDispatcher>
@@ -190,7 +190,7 @@ static void traceListHashSetValue(VisitorDispatcher visitor, Value& value)
     // (there's an assert elsewhere), but we have to specify some value for the
     // strongify template argument, so we specify WTF::WeakPointersActWeak,
     // arbitrarily.
-    TraceCollectionIfEnabled<WTF::ShouldBeTraced<WTF::HashTraits<Value>>::value, WTF::NoWeakHandlingInCollections, WTF::WeakPointersActWeak, Value, WTF::HashTraits<Value>>::trace(visitor, value);
+    TraceCollectionIfEnabled<WTF::NeedsTracingTrait<WTF::HashTraits<Value>>::value, WTF::NoWeakHandlingInCollections, WTF::WeakPointersActWeak, Value, WTF::HashTraits<Value>>::trace(visitor, value);
 }
 
 // The inline capacity is just a dummy template argument to match the off-heap
@@ -229,7 +229,7 @@ public:
         // Consider using a LinkedHashSet instead if this compile-time assert fails:
         static_assert(!WTF::IsWeak<ValueArg>::value, "weak pointers in a ListHashSet will result in null entries in the set");
 
-        return malloc<void*, Node>(sizeof(Node));
+        return malloc<void*, Node>(sizeof(Node), nullptr /* Oilpan does not use the heap profiler at the moment. */);
     }
 
     template<typename VisitorDispatcher>
@@ -250,7 +250,7 @@ void HeapVectorBacking<T, Traits>::finalize(void* pointer)
 {
     static_assert(Traits::needsDestruction, "Only vector buffers with items requiring destruction should be finalized");
     // See the comment in HeapVectorBacking::trace.
-    static_assert(Traits::canClearUnusedSlotsWithMemset || WTF::IsPolymorphic<T>::value, "HeapVectorBacking doesn't support objects that cannot be cleared as unused with memset or don't have a vtable");
+    static_assert(Traits::canClearUnusedSlotsWithMemset || std::is_polymorphic<T>::value, "HeapVectorBacking doesn't support objects that cannot be cleared as unused with memset or don't have a vtable");
 
     ASSERT(!WTF::IsTriviallyDestructible<T>::value);
     HeapObjectHeader* header = HeapObjectHeader::fromPayload(pointer);
@@ -264,7 +264,7 @@ void HeapVectorBacking<T, Traits>::finalize(void* pointer)
     // (which are already zeroed out).
     ANNOTATE_CHANGE_SIZE(buffer, length, 0, length);
 #endif
-    if (WTF::IsPolymorphic<T>::value) {
+    if (std::is_polymorphic<T>::value) {
         for (unsigned i = 0; i < length; ++i) {
             if (blink::vTableInitialized(&buffer[i]))
                 buffer[i].~T();
@@ -299,47 +299,51 @@ void HeapHashTableBacking<Table>::finalize(void* pointer)
     }
 }
 
-// FIXME: These should just be template aliases:
-//
-// template<typename T, size_t inlineCapacity = 0>
-// using HeapVector = Vector<T, inlineCapacity, HeapAllocator>;
-//
-// as soon as all the compilers we care about support that.
-// MSVC supports it only in MSVC 2013.
 template<
     typename KeyArg,
     typename MappedArg,
     typename HashArg = typename DefaultHash<KeyArg>::Hash,
     typename KeyTraitsArg = HashTraits<KeyArg>,
     typename MappedTraitsArg = HashTraits<MappedArg>>
-class HeapHashMap : public HashMap<KeyArg, MappedArg, HashArg, KeyTraitsArg, MappedTraitsArg, HeapAllocator> { };
+class HeapHashMap : public HashMap<KeyArg, MappedArg, HashArg, KeyTraitsArg, MappedTraitsArg, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
+};
 
 template<
     typename ValueArg,
     typename HashArg = typename DefaultHash<ValueArg>::Hash,
     typename TraitsArg = HashTraits<ValueArg>>
-class HeapHashSet : public HashSet<ValueArg, HashArg, TraitsArg, HeapAllocator> { };
+class HeapHashSet : public HashSet<ValueArg, HashArg, TraitsArg, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
+};
 
 template<
     typename ValueArg,
     typename HashArg = typename DefaultHash<ValueArg>::Hash,
     typename TraitsArg = HashTraits<ValueArg>>
-class HeapLinkedHashSet : public LinkedHashSet<ValueArg, HashArg, TraitsArg, HeapAllocator> { };
+class HeapLinkedHashSet : public LinkedHashSet<ValueArg, HashArg, TraitsArg, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
+};
 
 template<
     typename ValueArg,
     size_t inlineCapacity = 0, // The inlineCapacity is just a dummy to match ListHashSet (off-heap).
     typename HashArg = typename DefaultHash<ValueArg>::Hash>
-class HeapListHashSet : public ListHashSet<ValueArg, inlineCapacity, HashArg, HeapListHashSetAllocator<ValueArg, inlineCapacity>> { };
+class HeapListHashSet : public ListHashSet<ValueArg, inlineCapacity, HashArg, HeapListHashSetAllocator<ValueArg, inlineCapacity>> {
+    IS_GARBAGE_COLLECTED_TYPE();
+};
 
 template<
     typename Value,
     typename HashFunctions = typename DefaultHash<Value>::Hash,
     typename Traits = HashTraits<Value>>
-class HeapHashCountedSet : public HashCountedSet<Value, HashFunctions, Traits, HeapAllocator> { };
+class HeapHashCountedSet : public HashCountedSet<Value, HashFunctions, Traits, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
+};
 
 template<typename T, size_t inlineCapacity = 0>
 class HeapVector : public Vector<T, inlineCapacity, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
 public:
     HeapVector() { }
 
@@ -360,6 +364,7 @@ public:
 
 template<typename T, size_t inlineCapacity = 0>
 class HeapDeque : public Deque<T, inlineCapacity, HeapAllocator> {
+    IS_GARBAGE_COLLECTED_TYPE();
 public:
     HeapDeque() { }
 

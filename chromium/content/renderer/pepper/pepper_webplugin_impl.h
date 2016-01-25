@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -55,17 +56,13 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   void updateFocus(bool focused, blink::WebFocusType focus_type) override;
   void updateVisibility(bool visible) override;
   bool acceptsInputEvents() override;
-  bool handleInputEvent(const blink::WebInputEvent& event,
-                        blink::WebCursorInfo& cursor_info) override;
+  blink::WebInputEventResult handleInputEvent(
+      const blink::WebInputEvent& event,
+      blink::WebCursorInfo& cursor_info) override;
   void didReceiveResponse(const blink::WebURLResponse& response) override;
   void didReceiveData(const char* data, int data_length) override;
   void didFinishLoading() override;
   void didFailLoading(const blink::WebURLError&) override;
-  void didFinishLoadingFrameRequest(const blink::WebURL& url,
-                                    void* notify_data) override;
-  void didFailLoadingFrameRequest(const blink::WebURL& url,
-                                  void* notify_data,
-                                  const blink::WebURLError& error) override;
   bool hasSelection() const override;
   blink::WebString selectionAsText() const override;
   blink::WebString selectionAsMarkup() const override;

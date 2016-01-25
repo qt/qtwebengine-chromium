@@ -5,10 +5,12 @@
 #ifndef MEDIA_BASE_VIDEO_DECODER_CONFIG_H_
 #define MEDIA_BASE_VIDEO_DECODER_CONFIG_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "media/base/media_export.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_types.h"
@@ -64,6 +66,8 @@ class MEDIA_EXPORT VideoDecoderConfig {
   std::string AsHumanReadableString() const;
 
   std::string GetHumanReadableCodecName() const;
+
+  static std::string GetHumanReadableProfile(VideoCodecProfile profile);
 
   VideoCodec codec() const { return codec_; }
   VideoCodecProfile profile() const { return profile_; }

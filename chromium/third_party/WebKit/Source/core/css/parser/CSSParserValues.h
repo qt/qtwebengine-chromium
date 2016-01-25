@@ -37,7 +37,7 @@ struct CSSParserCalcFunction;
 class CSSParserValueList;
 
 struct CSSParserValue {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     CSSValueID id;
     bool isInt;
     union {
@@ -63,6 +63,8 @@ struct CSSParserValue {
         DimensionList = 0x100006,
         // Represents a unicode range by a pair of UChar32 values
         UnicodeRange = 0x100007,
+        String = 0x100008,
+        URI = 0x100009,
     };
     int m_unit;
     CSSPrimitiveValue::UnitType unit() const { return static_cast<CSSPrimitiveValue::UnitType>(m_unit); }
@@ -74,7 +76,7 @@ struct CSSParserValue {
 };
 
 class CORE_EXPORT CSSParserValueList {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserValueList);
+    USING_FAST_MALLOC(CSSParserValueList);
 public:
     CSSParserValueList()
         : m_current(0)
@@ -114,14 +116,14 @@ private:
 };
 
 struct CSSParserFunction {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserFunction);
+    USING_FAST_MALLOC(CSSParserFunction);
 public:
     CSSValueID id;
     OwnPtr<CSSParserValueList> args;
 };
 
 struct CSSParserCalcFunction {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserCalcFunction);
+    USING_FAST_MALLOC(CSSParserCalcFunction);
 public:
     CSSParserCalcFunction(CSSParserTokenRange args_) : args(args_) {}
     CSSParserTokenRange args;

@@ -18,8 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGFEBlendElement.h"
 
 #include "core/SVGNames.h"
@@ -140,9 +138,7 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEBlendElement::build(SVGFilterBuilder* 
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
     FilterEffect* input2 = filterBuilder->getEffectById(AtomicString(m_in2->currentValue()->value()));
-
-    if (!input1 || !input2)
-        return nullptr;
+    ASSERT(input1 && input2);
 
     RefPtrWillBeRawPtr<FilterEffect> effect = FEBlend::create(filter, toWebBlendMode(m_mode->currentValue()->enumValue()));
     FilterEffectVector& inputEffects = effect->inputEffects();

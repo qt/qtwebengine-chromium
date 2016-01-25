@@ -15,16 +15,120 @@
 #include "util/file/file_io.h"
 
 #include "base/atomicops.h"
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "gtest/gtest.h"
 #include "test/errors.h"
+#include "test/file.h"
 #include "test/scoped_temp_dir.h"
+#include "util/misc/implicit_cast.h"
 #include "util/thread/thread.h"
 
 namespace crashpad {
 namespace test {
 namespace {
+
+void TestOpenFileForWrite(FileHandle (*opener)(const base::FilePath&,
+                                               FileWriteMode,
+                                               FilePermissions)) {
+  ScopedTempDir temp_dir;
+  base::FilePath file_path_1 =
+      temp_dir.path().Append(FILE_PATH_LITERAL("file_1"));
+  ASSERT_FALSE(FileExists(file_path_1));
+
+  ScopedFileHandle file_handle(opener(file_path_1,
+                                      FileWriteMode::kReuseOrFail,
+                                      FilePermissions::kWorldReadable));
+  EXPECT_EQ(kInvalidFileHandle, file_handle);
+  EXPECT_FALSE(FileExists(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kCreateOrFail,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(0, FileSize(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kReuseOrCreate,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(0, FileSize(file_path_1));
+
+  const char data = '%';
+  EXPECT_TRUE(LoggingWriteFile(file_handle.get(), &data, sizeof(data)));
+
+  // Close file_handle to ensure that the write is flushed to disk.
+  file_handle.reset();
+  EXPECT_EQ(implicit_cast<FileOffset>(sizeof(data)), FileSize(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kReuseOrCreate,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(implicit_cast<FileOffset>(sizeof(data)), FileSize(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kCreateOrFail,
+                           FilePermissions::kWorldReadable));
+  EXPECT_EQ(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(implicit_cast<FileOffset>(sizeof(data)), FileSize(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kReuseOrFail,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(implicit_cast<FileOffset>(sizeof(data)), FileSize(file_path_1));
+
+  file_handle.reset(opener(file_path_1,
+                           FileWriteMode::kTruncateOrCreate,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_1));
+  EXPECT_EQ(0, FileSize(file_path_1));
+
+  base::FilePath file_path_2 =
+      temp_dir.path().Append(FILE_PATH_LITERAL("file_2"));
+  ASSERT_FALSE(FileExists(file_path_2));
+
+  file_handle.reset(opener(file_path_2,
+                           FileWriteMode::kTruncateOrCreate,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_2));
+  EXPECT_EQ(0, FileSize(file_path_2));
+
+  base::FilePath file_path_3 =
+      temp_dir.path().Append(FILE_PATH_LITERAL("file_3"));
+  ASSERT_FALSE(FileExists(file_path_3));
+
+  file_handle.reset(opener(file_path_3,
+                           FileWriteMode::kReuseOrCreate,
+                           FilePermissions::kWorldReadable));
+  EXPECT_NE(kInvalidFileHandle, file_handle);
+  EXPECT_TRUE(FileExists(file_path_3));
+  EXPECT_EQ(0, FileSize(file_path_3));
+}
+
+TEST(FileIO, OpenFileForWrite) {
+  TestOpenFileForWrite(OpenFileForWrite);
+}
+
+TEST(FileIO, OpenFileForReadAndWrite) {
+  TestOpenFileForWrite(OpenFileForReadAndWrite);
+}
+
+TEST(FileIO, LoggingOpenFileForWrite) {
+  TestOpenFileForWrite(LoggingOpenFileForWrite);
+}
+
+TEST(FileIO, LoggingOpenFileForReadAndWrite) {
+  TestOpenFileForWrite(LoggingOpenFileForReadAndWrite);
+}
 
 enum class ReadOrWrite : bool {
   kRead,

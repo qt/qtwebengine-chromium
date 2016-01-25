@@ -35,7 +35,7 @@
 namespace blink {
 
 class PLATFORM_EXPORT Cursor {
-    WTF_MAKE_FAST_ALLOCATED(Cursor);
+    USING_FAST_MALLOC(Cursor);
 public:
     enum Type {
         Pointer = 0,
@@ -83,8 +83,6 @@ public:
         Grabbing,
         Custom
     };
-
-    static const Cursor& fromType(Cursor::Type);
 
     Cursor()
         // This is an invalid Cursor and should never actually get used.

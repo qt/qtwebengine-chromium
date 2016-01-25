@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/heap/HeapPage.h"
 
 #include "platform/ScriptForbiddenScope.h"
@@ -52,15 +51,6 @@
 #include "wtf/PageAllocator.h"
 #include "wtf/Partitions.h"
 #include "wtf/PassOwnPtr.h"
-#if ENABLE(GC_PROFILING)
-#include "platform/TracedValue.h"
-#include "wtf/HashMap.h"
-#include "wtf/HashSet.h"
-#include "wtf/text/StringBuilder.h"
-#include "wtf/text/StringHash.h"
-#include <stdio.h>
-#include <utility>
-#endif
 
 #ifdef ANNOTATE_CONTIGUOUS_CONTAINER
 // FIXME: have ContainerAnnotations.h define an ENABLE_-style name instead.
@@ -96,15 +86,6 @@
 #endif
 
 namespace blink {
-
-#if ENABLE(GC_PROFILING)
-static String classOf(const void* object)
-{
-    if (const GCInfo* gcInfo = Heap::findGCInfo(reinterpret_cast<Address>(const_cast<void*>(object))))
-        return gcInfo->className();
-    return "unknown";
-}
-#endif
 
 #if ENABLE(ASSERT)
 NO_SANITIZE_ADDRESS
@@ -166,17 +147,17 @@ void BaseHeap::takeSnapshot(const String& dumpBaseName, ThreadState::GCSnapshotI
         heapTotalFreeCount += heapPageFreeCount;
         pageIndex++;
     }
-    allocatorDump->AddScalar("blink_page_count", "objects", pageIndex);
+    allocatorDump->addScalar("blink_page_count", "objects", pageIndex);
 
     // When taking a full dump (w/ freelist), both the /buckets and /pages
     // report their free size but they are not meant to be added together.
     // Therefore, here we override the free_size of the parent heap to be
     // equal to the free_size of the sum of its heap pages.
-    allocatorDump->AddScalar("free_size", "bytes", heapTotalFreeSize);
-    allocatorDump->AddScalar("free_count", "objects", heapTotalFreeCount);
+    allocatorDump->addScalar("free_size", "bytes", heapTotalFreeSize);
+    allocatorDump->addScalar("free_count", "objects", heapTotalFreeCount);
 }
 
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
 BasePage* BaseHeap::findPageFromAddress(Address address)
 {
     for (BasePage* page = m_firstPage; page; page = page->next()) {
@@ -191,55 +172,14 @@ BasePage* BaseHeap::findPageFromAddress(Address address)
 }
 #endif
 
-#if ENABLE(GC_PROFILING)
-#define GC_PROFILE_HEAP_PAGE_SNAPSHOT_THRESHOLD 0
-void BaseHeap::snapshot(TracedValue* json, ThreadState::SnapshotInfo* info)
-{
-    ASSERT(isConsistentForGC());
-    size_t previousPageCount = info->pageCount;
-
-    json->beginArray("pages");
-    for (BasePage* page = m_firstPage; page; page = page->next(), ++info->pageCount) {
-        // FIXME: To limit the size of the snapshot we only output "threshold" many page snapshots.
-        if (info->pageCount < GC_PROFILE_HEAP_PAGE_SNAPSHOT_THRESHOLD) {
-            json->beginArray();
-            json->pushInteger(reinterpret_cast<intptr_t>(page));
-            page->snapshot(json, info);
-            json->endArray();
-        } else {
-            page->snapshot(nullptr, info);
-        }
-    }
-    json->endArray();
-
-    json->setInteger("pageCount", info->pageCount - previousPageCount);
-}
-
-void BaseHeap::countMarkedObjects(ClassAgeCountsMap& classAgeCounts) const
-{
-    for (BasePage* page = m_firstPage; page; page = page->next())
-        page->countMarkedObjects(classAgeCounts);
-}
-
-void BaseHeap::countObjectsToSweep(ClassAgeCountsMap& classAgeCounts) const
-{
-    for (BasePage* page = m_firstPage; page; page = page->next())
-        page->countObjectsToSweep(classAgeCounts);
-}
-
-void BaseHeap::incrementMarkedObjectsAge()
-{
-    for (BasePage* page = m_firstPage; page; page = page->next())
-        page->incrementMarkedObjectsAge();
-}
-#endif
-
 void BaseHeap::makeConsistentForGC()
 {
     clearFreeLists();
     ASSERT(isConsistentForGC());
-    for (BasePage* page = m_firstPage; page; page = page->next())
+    for (BasePage* page = m_firstPage; page; page = page->next()) {
         page->markAsUnswept();
+        page->invalidateObjectStartBitmap();
+    }
 
     // If a new GC is requested before this thread got around to sweep,
     // ie. due to the thread doing a long running operation, we clear
@@ -252,6 +192,7 @@ void BaseHeap::makeConsistentForGC()
     for (BasePage* page = m_firstUnsweptPage; page; previousPage = page, page = page->next()) {
         page->makeConsistentForGC();
         ASSERT(!page->hasBeenSwept());
+        page->invalidateObjectStartBitmap();
     }
     if (previousPage) {
         ASSERT(m_firstUnsweptPage);
@@ -274,6 +215,7 @@ void BaseHeap::makeConsistentForMutator()
     for (BasePage* page = m_firstUnsweptPage; page; previousPage = page, page = page->next()) {
         page->makeConsistentForMutator();
         page->markAsSwept();
+        page->invalidateObjectStartBitmap();
     }
     if (previousPage) {
         ASSERT(m_firstUnsweptPage);
@@ -314,10 +256,10 @@ void BaseHeap::prepareForSweep()
 }
 
 #if defined(ADDRESS_SANITIZER)
-void BaseHeap::poisonHeap(ThreadState::ObjectsToPoison objectsToPoison, ThreadState::Poisoning poisoning)
+void BaseHeap::poisonHeap(BlinkGC::ObjectsToPoison objectsToPoison, BlinkGC::Poisoning poisoning)
 {
     // TODO(sof): support complete poisoning of all heaps.
-    ASSERT(objectsToPoison != ThreadState::MarkedAndUnmarked || heapIndex() == ThreadState::EagerSweepHeapIndex);
+    ASSERT(objectsToPoison != BlinkGC::MarkedAndUnmarked || heapIndex() == BlinkGC::EagerSweepHeapIndex);
 
     // This method may either be called to poison (SetPoison) heap
     // object payloads prior to sweeping, or it may be called at
@@ -325,7 +267,7 @@ void BaseHeap::poisonHeap(ThreadState::ObjectsToPoison objectsToPoison, ThreadSt
     // objects remaining in the heap. Those will all be live and unmarked.
     //
     // Poisoning may be limited to unmarked objects only, or apply to all.
-    if (poisoning == ThreadState::SetPoison) {
+    if (poisoning == BlinkGC::SetPoison) {
         for (BasePage* page = m_firstUnsweptPage; page; page = page->next())
             page->poisonObjects(objectsToPoison, poisoning);
         return;
@@ -355,16 +297,12 @@ Address BaseHeap::lazySweep(size_t allocationSize, size_t gcInfoIndex)
         return nullptr;
 
     TRACE_EVENT0("blink_gc", "BaseHeap::lazySweepPages");
-    ThreadState::SweepForbiddenScope scope(threadState());
+    ThreadState::SweepForbiddenScope sweepForbidden(threadState());
+    ScriptForbiddenIfMainThreadScope scriptForbidden;
 
-    if (threadState()->isMainThread())
-        ScriptForbiddenScope::enter();
-
+    double startTime = WTF::currentTimeMS();
     Address result = lazySweepPages(allocationSize, gcInfoIndex);
-
-    if (threadState()->isMainThread())
-        ScriptForbiddenScope::exit();
-
+    threadState()->accumulateSweepingTime(WTF::currentTimeMS() - startTime);
     Heap::reportMemoryUsageForTracing();
 
     return result;
@@ -388,7 +326,7 @@ void BaseHeap::sweepUnsweptPage()
 
 bool BaseHeap::lazySweepWithDeadline(double deadlineSeconds)
 {
-    // It might be heavy to call Platform::current()->monotonicallyIncreasingTime()
+    // It might be heavy to call Platform::current()->monotonicallyIncreasingTimeSeconds()
     // per page (i.e., 128 KB sweep or one LargeObject sweep), so we check
     // the deadline per 10 pages.
     static const int deadlineCheckInterval = 10;
@@ -401,7 +339,7 @@ bool BaseHeap::lazySweepWithDeadline(double deadlineSeconds)
     while (m_firstUnsweptPage) {
         sweepUnsweptPage();
         if (pageCount % deadlineCheckInterval == 0) {
-            if (deadlineSeconds <= Platform::current()->monotonicallyIncreasingTime()) {
+            if (deadlineSeconds <= Platform::current()->monotonicallyIncreasingTimeSeconds()) {
                 // Deadline has come.
                 Heap::reportMemoryUsageForTracing();
                 return !m_firstUnsweptPage;
@@ -422,7 +360,6 @@ void BaseHeap::completeSweep()
     while (m_firstUnsweptPage) {
         sweepUnsweptPage();
     }
-
     Heap::reportMemoryUsageForTracing();
 }
 
@@ -432,11 +369,6 @@ NormalPageHeap::NormalPageHeap(ThreadState* state, int index)
     , m_remainingAllocationSize(0)
     , m_lastRemainingAllocationSize(0)
     , m_promptlyFreedSize(0)
-#if ENABLE(GC_PROFILING)
-    , m_cumulativeAllocationSize(0)
-    , m_allocationCount(0)
-    , m_inlineAllocationCount(0)
-#endif
 {
     clearFreeLists();
 }
@@ -480,42 +412,9 @@ void NormalPageHeap::takeFreelistSnapshot(const String& dumpName)
     if (m_freeList.takeSnapshot(dumpName)) {
         WebMemoryAllocatorDump* bucketsDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName + "/buckets");
         WebMemoryAllocatorDump* pagesDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName + "/pages");
-        BlinkGCMemoryDumpProvider::instance()->currentProcessMemoryDump()->AddOwnershipEdge(pagesDump->guid(), bucketsDump->guid());
+        BlinkGCMemoryDumpProvider::instance()->currentProcessMemoryDump()->addOwnershipEdge(pagesDump->guid(), bucketsDump->guid());
     }
 }
-
-#if ENABLE(GC_PROFILING)
-void NormalPageHeap::snapshotFreeList(TracedValue& json)
-{
-    json.setInteger("cumulativeAllocationSize", m_cumulativeAllocationSize);
-    json.setDouble("inlineAllocationRate", static_cast<double>(m_inlineAllocationCount) / m_allocationCount);
-    json.setInteger("inlineAllocationCount", m_inlineAllocationCount);
-    json.setInteger("allocationCount", m_allocationCount);
-    size_t pageCount = 0;
-    size_t totalPageSize = 0;
-    for (NormalPage* page = static_cast<NormalPage*>(m_firstPage); page; page = static_cast<NormalPage*>(page->next())) {
-        ++pageCount;
-        totalPageSize += page->payloadSize();
-    }
-    json.setInteger("pageCount", pageCount);
-    json.setInteger("totalPageSize", totalPageSize);
-
-    FreeList::PerBucketFreeListStats bucketStats[blinkPageSizeLog2];
-    size_t totalFreeSize;
-    m_freeList.getFreeSizeStats(bucketStats, totalFreeSize);
-    json.setInteger("totalFreeSize", totalFreeSize);
-
-    json.beginArray("perBucketEntryCount");
-    for (size_t i = 0; i < blinkPageSizeLog2; ++i)
-        json.pushInteger(bucketStats[i].entryCount);
-    json.endArray();
-
-    json.beginArray("perBucketFreeSize");
-    for (size_t i = 0; i < blinkPageSizeLog2; ++i)
-        json.pushInteger(bucketStats[i].freeSize);
-    json.endArray();
-}
-#endif
 
 void NormalPageHeap::allocatePage()
 {
@@ -606,7 +505,6 @@ bool NormalPageHeap::coalesce()
     m_freeList.clear();
     size_t freedSize = 0;
     for (NormalPage* page = static_cast<NormalPage*>(m_firstPage); page; page = static_cast<NormalPage*>(page->next())) {
-        page->clearObjectStartBitMap();
         Address startOfGap = page->payload();
         for (Address headerAddress = startOfGap; headerAddress < page->payloadEnd(); ) {
             HeapObjectHeader* header = reinterpret_cast<HeapObjectHeader*>(headerAddress);
@@ -669,15 +567,7 @@ void NormalPageHeap::promptlyFreeObject(HeapObjectHeader* header)
         header->finalize(payload, payloadSize);
         if (address + size == m_currentAllocationPoint) {
             m_currentAllocationPoint = address;
-            m_remainingAllocationSize += size;
-            // Sync recorded allocated-object size:
-            //  - if previous alloc checkpoint is larger, allocation size has increased.
-            //  - if smaller, a net reduction in size since last call to updateRemainingAllocationSize().
-            if (m_lastRemainingAllocationSize > m_remainingAllocationSize)
-                Heap::increaseAllocatedObjectSize(m_lastRemainingAllocationSize - m_remainingAllocationSize);
-            else if (m_lastRemainingAllocationSize != m_remainingAllocationSize)
-                Heap::decreaseAllocatedObjectSize(m_remainingAllocationSize - m_lastRemainingAllocationSize);
-            m_lastRemainingAllocationSize = m_remainingAllocationSize;
+            setRemainingAllocationSize(m_remainingAllocationSize + size);
             SET_MEMORY_INACCESSIBLE(address, size);
             return;
         }
@@ -699,10 +589,10 @@ bool NormalPageHeap::expandObject(HeapObjectHeader* header, size_t newSize)
     size_t allocationSize = Heap::allocationSizeFromSize(newSize);
     ASSERT(allocationSize > header->size());
     size_t expandSize = allocationSize - header->size();
-    if (header->payloadEnd() == m_currentAllocationPoint && expandSize <= m_remainingAllocationSize) {
+    if (isObjectAllocatedAtAllocationPoint(header) && expandSize <= m_remainingAllocationSize) {
         m_currentAllocationPoint += expandSize;
-        m_remainingAllocationSize -= expandSize;
-
+        ASSERT(m_remainingAllocationSize >= expandSize);
+        setRemainingAllocationSize(m_remainingAllocationSize - expandSize);
         // Unpoison the memory used for the object (payload).
         SET_MEMORY_ACCESSIBLE(header->payloadEnd(), expandSize);
         header->setSize(allocationSize);
@@ -719,9 +609,9 @@ bool NormalPageHeap::shrinkObject(HeapObjectHeader* header, size_t newSize)
     size_t allocationSize = Heap::allocationSizeFromSize(newSize);
     ASSERT(header->size() > allocationSize);
     size_t shrinkSize = header->size() - allocationSize;
-    if (header->payloadEnd() == m_currentAllocationPoint) {
+    if (isObjectAllocatedAtAllocationPoint(header)) {
         m_currentAllocationPoint -= shrinkSize;
-        m_remainingAllocationSize += shrinkSize;
+        setRemainingAllocationSize(m_remainingAllocationSize + shrinkSize);
         SET_MEMORY_INACCESSIBLE(m_currentAllocationPoint, shrinkSize);
         header->setSize(allocationSize);
         return true;
@@ -765,6 +655,20 @@ Address NormalPageHeap::lazySweepPages(size_t allocationSize, size_t gcInfoIndex
     return result;
 }
 
+void NormalPageHeap::setRemainingAllocationSize(size_t newRemainingAllocationSize)
+{
+    m_remainingAllocationSize = newRemainingAllocationSize;
+
+    // Sync recorded allocated-object size:
+    //  - if previous alloc checkpoint is larger, allocation size has increased.
+    //  - if smaller, a net reduction in size since last call to updateRemainingAllocationSize().
+    if (m_lastRemainingAllocationSize > m_remainingAllocationSize)
+        Heap::increaseAllocatedObjectSize(m_lastRemainingAllocationSize - m_remainingAllocationSize);
+    else if (m_lastRemainingAllocationSize != m_remainingAllocationSize)
+        Heap::decreaseAllocatedObjectSize(m_remainingAllocationSize - m_lastRemainingAllocationSize);
+    m_lastRemainingAllocationSize = m_remainingAllocationSize;
+}
+
 void NormalPageHeap::updateRemainingAllocationSize()
 {
     if (m_lastRemainingAllocationSize > remainingAllocationSize()) {
@@ -797,15 +701,11 @@ Address NormalPageHeap::outOfLineAllocate(size_t allocationSize, size_t gcInfoIn
     ASSERT(allocationSize > remainingAllocationSize());
     ASSERT(allocationSize >= allocationGranularity);
 
-#if ENABLE(GC_PROFILING)
-    threadState()->snapshotFreeListIfNecessary();
-#endif
-
     // 1. If this allocation is big enough, allocate a large object.
     if (allocationSize >= largeObjectSizeThreshold) {
         // TODO(sof): support eagerly finalized large objects, if ever needed.
-        RELEASE_ASSERT(heapIndex() != ThreadState::EagerSweepHeapIndex);
-        LargeObjectHeap* largeObjectHeap = static_cast<LargeObjectHeap*>(threadState()->heap(ThreadState::LargeObjectHeapIndex));
+        RELEASE_ASSERT(heapIndex() != BlinkGC::EagerSweepHeapIndex);
+        LargeObjectHeap* largeObjectHeap = static_cast<LargeObjectHeap*>(threadState()->heap(BlinkGC::LargeObjectHeapIndex));
         Address largeObject = largeObjectHeap->allocateLargeObjectPage(allocationSize, gcInfoIndex);
         ASAN_MARK_LARGE_VECTOR_CONTAINER(this, largeObject);
         return largeObject;
@@ -1141,28 +1041,12 @@ bool FreeList::takeSnapshot(const String& dumpBaseName)
 
         String dumpName = dumpBaseName + String::format("/buckets/bucket_%lu", static_cast<unsigned long>(1 << i));
         WebMemoryAllocatorDump* bucketDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName);
-        bucketDump->AddScalar("free_count", "objects", entryCount);
-        bucketDump->AddScalar("free_size", "bytes", freeSize);
+        bucketDump->addScalar("free_count", "objects", entryCount);
+        bucketDump->addScalar("free_size", "bytes", freeSize);
         didDumpBucketStats = true;
     }
     return didDumpBucketStats;
 }
-
-#if ENABLE(GC_PROFILING)
-void FreeList::getFreeSizeStats(PerBucketFreeListStats bucketStats[], size_t& totalFreeSize) const
-{
-    totalFreeSize = 0;
-    for (size_t i = 0; i < blinkPageSizeLog2; i++) {
-        size_t& entryCount = bucketStats[i].entryCount;
-        size_t& freeSize = bucketStats[i].freeSize;
-        for (FreeListEntry* entry = m_freeLists[i]; entry; entry = entry->next()) {
-            ++entryCount;
-            freeSize += entry->size();
-        }
-        totalFreeSize += freeSize;
-    }
-}
-#endif
 
 BasePage::BasePage(PageMemory* storage, BaseHeap* heap)
     : m_storage(storage)
@@ -1185,8 +1069,8 @@ void BasePage::markOrphaned()
 
 NormalPage::NormalPage(PageMemory* storage, BaseHeap* heap)
     : BasePage(storage, heap)
+    , m_objectStartBitMapComputed(false)
 {
-    m_objectStartBitMapComputed = false;
     ASSERT(isPageHeaderAddress(reinterpret_cast<Address>(this)));
 }
 
@@ -1222,8 +1106,6 @@ void NormalPage::removeFromHeap()
 
 void NormalPage::sweep()
 {
-    clearObjectStartBitMap();
-
     size_t markedObjectSize = 0;
     Address startOfGap = payload();
     for (Address headerAddress = startOfGap; headerAddress < payloadEnd(); ) {
@@ -1337,7 +1219,7 @@ void NormalPage::makeConsistentForMutator()
 }
 
 #if defined(ADDRESS_SANITIZER)
-void NormalPage::poisonObjects(ThreadState::ObjectsToPoison objectsToPoison, ThreadState::Poisoning poisoning)
+void NormalPage::poisonObjects(BlinkGC::ObjectsToPoison objectsToPoison, BlinkGC::Poisoning poisoning)
 {
     for (Address headerAddress = payload(); headerAddress < payloadEnd();) {
         HeapObjectHeader* header = reinterpret_cast<HeapObjectHeader*>(headerAddress);
@@ -1349,8 +1231,8 @@ void NormalPage::poisonObjects(ThreadState::ObjectsToPoison objectsToPoison, Thr
             continue;
         }
         ASSERT(header->checkHeader());
-        if (objectsToPoison == ThreadState::MarkedAndUnmarked || !header->isMarked()) {
-            if (poisoning == ThreadState::SetPoison)
+        if (objectsToPoison == BlinkGC::MarkedAndUnmarked || !header->isMarked()) {
+            if (poisoning == BlinkGC::SetPoison)
                 ASAN_POISON_MEMORY_REGION(header->payload(), header->payloadSize());
             else
                 ASAN_UNPOISON_MEMORY_REGION(header->payload(), header->payloadSize());
@@ -1378,11 +1260,6 @@ void NormalPage::populateObjectStartBitMap()
     m_objectStartBitMapComputed = true;
 }
 
-void NormalPage::clearObjectStartBitMap()
-{
-    m_objectStartBitMapComputed = false;
-}
-
 static int numberOfLeadingZeroes(uint8_t byte)
 {
     if (!byte)
@@ -1405,7 +1282,7 @@ HeapObjectHeader* NormalPage::findHeaderFromAddress(Address address)
 {
     if (address < payload())
         return nullptr;
-    if (!isObjectStartBitMapComputed())
+    if (!m_objectStartBitMapComputed)
         populateObjectStartBitMap();
     size_t objectOffset = address - payload();
     size_t objectStartNumber = objectOffset / allocationGranularity;
@@ -1520,100 +1397,17 @@ void NormalPage::takeSnapshot(String dumpName, size_t pageIndex, ThreadState::GC
         }
     }
 
-    pageDump->AddScalar("live_count", "objects", liveCount);
-    pageDump->AddScalar("dead_count", "objects", deadCount);
-    pageDump->AddScalar("free_count", "objects", freeCount);
-    pageDump->AddScalar("live_size", "bytes", liveSize);
-    pageDump->AddScalar("dead_size", "bytes", deadSize);
-    pageDump->AddScalar("free_size", "bytes", freeSize);
+    pageDump->addScalar("live_count", "objects", liveCount);
+    pageDump->addScalar("dead_count", "objects", deadCount);
+    pageDump->addScalar("free_count", "objects", freeCount);
+    pageDump->addScalar("live_size", "bytes", liveSize);
+    pageDump->addScalar("dead_size", "bytes", deadSize);
+    pageDump->addScalar("free_size", "bytes", freeSize);
     *outFreeSize = freeSize;
     *outFreeCount = freeCount;
 }
 
-#if ENABLE(GC_PROFILING)
-const GCInfo* NormalPage::findGCInfo(Address address)
-{
-    if (address < payload())
-        return nullptr;
-
-    HeapObjectHeader* header = findHeaderFromAddress(address);
-    if (!header)
-        return nullptr;
-
-    return Heap::gcInfo(header->gcInfoIndex());
-}
-#endif
-
-#if ENABLE(GC_PROFILING)
-void NormalPage::snapshot(TracedValue* json, ThreadState::SnapshotInfo* info)
-{
-    HeapObjectHeader* header = nullptr;
-    for (Address addr = payload(); addr < payloadEnd(); addr += header->size()) {
-        header = reinterpret_cast<HeapObjectHeader*>(addr);
-        if (json)
-            json->pushInteger(header->encodedSize());
-        if (header->isFree()) {
-            info->freeSize += header->size();
-            continue;
-        }
-        ASSERT(header->checkHeader());
-
-        size_t tag = info->getClassTag(Heap::gcInfo(header->gcInfoIndex()));
-        size_t age = header->age();
-        if (json)
-            json->pushInteger(tag);
-        if (header->isMarked()) {
-            info->liveCount[tag] += 1;
-            info->liveSize[tag] += header->size();
-            // Count objects that are live when promoted to the final generation.
-            if (age == maxHeapObjectAge - 1)
-                info->generations[tag][maxHeapObjectAge] += 1;
-        } else {
-            info->deadCount[tag] += 1;
-            info->deadSize[tag] += header->size();
-            // Count objects that are dead before the final generation.
-            if (age < maxHeapObjectAge)
-                info->generations[tag][age] += 1;
-        }
-    }
-}
-
-void NormalPage::incrementMarkedObjectsAge()
-{
-    HeapObjectHeader* header = nullptr;
-    for (Address address = payload(); address < payloadEnd(); address += header->size()) {
-        header = reinterpret_cast<HeapObjectHeader*>(address);
-        if (header->isMarked())
-            header->incrementAge();
-    }
-}
-
-void NormalPage::countMarkedObjects(ClassAgeCountsMap& classAgeCounts)
-{
-    HeapObjectHeader* header = nullptr;
-    for (Address address = payload(); address < payloadEnd(); address += header->size()) {
-        header = reinterpret_cast<HeapObjectHeader*>(address);
-        if (header->isMarked()) {
-            String className(classOf(header->payload()));
-            ++(classAgeCounts.add(className, AgeCounts()).storedValue->value.ages[header->age()]);
-        }
-    }
-}
-
-void NormalPage::countObjectsToSweep(ClassAgeCountsMap& classAgeCounts)
-{
-    HeapObjectHeader* header = nullptr;
-    for (Address address = payload(); address < payloadEnd(); address += header->size()) {
-        header = reinterpret_cast<HeapObjectHeader*>(address);
-        if (!header->isFree() && !header->isMarked()) {
-            String className(classOf(header->payload()));
-            ++(classAgeCounts.add(className, AgeCounts()).storedValue->value.ages[header->age()]);
-        }
-    }
-}
-#endif
-
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
 bool NormalPage::contains(Address addr)
 {
     Address blinkPageStart = roundToBlinkPageStart(address());
@@ -1677,11 +1471,11 @@ void LargeObjectPage::makeConsistentForMutator()
 }
 
 #if defined(ADDRESS_SANITIZER)
-void LargeObjectPage::poisonObjects(ThreadState::ObjectsToPoison objectsToPoison, ThreadState::Poisoning poisoning)
+void LargeObjectPage::poisonObjects(BlinkGC::ObjectsToPoison objectsToPoison, BlinkGC::Poisoning poisoning)
 {
     HeapObjectHeader* header = heapObjectHeader();
-    if (objectsToPoison == ThreadState::MarkedAndUnmarked || !header->isMarked()) {
-        if (poisoning == ThreadState::SetPoison)
+    if (objectsToPoison == BlinkGC::MarkedAndUnmarked || !header->isMarked()) {
+        if (poisoning == BlinkGC::SetPoison)
             ASAN_POISON_MEMORY_REGION(header->payload(), header->payloadSize());
         else
             ASAN_UNPOISON_MEMORY_REGION(header->payload(), header->payloadSize());
@@ -1728,74 +1522,13 @@ void LargeObjectPage::takeSnapshot(String dumpName, size_t pageIndex, ThreadStat
         info.deadSize[gcInfoIndex] += header->size();
     }
 
-    pageDump->AddScalar("live_count", "objects", liveCount);
-    pageDump->AddScalar("dead_count", "objects", deadCount);
-    pageDump->AddScalar("live_size", "bytes", liveSize);
-    pageDump->AddScalar("dead_size", "bytes", deadSize);
+    pageDump->addScalar("live_count", "objects", liveCount);
+    pageDump->addScalar("dead_count", "objects", deadCount);
+    pageDump->addScalar("live_size", "bytes", liveSize);
+    pageDump->addScalar("dead_size", "bytes", deadSize);
 }
 
-#if ENABLE(GC_PROFILING)
-const GCInfo* LargeObjectPage::findGCInfo(Address address)
-{
-    if (!containedInObjectPayload(address))
-        return nullptr;
-    HeapObjectHeader* header = heapObjectHeader();
-    return Heap::gcInfo(header->gcInfoIndex());
-}
-
-void LargeObjectPage::snapshot(TracedValue* json, ThreadState::SnapshotInfo* info)
-{
-    HeapObjectHeader* header = heapObjectHeader();
-    size_t tag = info->getClassTag(Heap::gcInfo(header->gcInfoIndex()));
-    size_t age = header->age();
-    if (header->isMarked()) {
-        info->liveCount[tag] += 1;
-        info->liveSize[tag] += header->size();
-        // Count objects that are live when promoted to the final generation.
-        if (age == maxHeapObjectAge - 1)
-            info->generations[tag][maxHeapObjectAge] += 1;
-    } else {
-        info->deadCount[tag] += 1;
-        info->deadSize[tag] += header->size();
-        // Count objects that are dead before the final generation.
-        if (age < maxHeapObjectAge)
-            info->generations[tag][age] += 1;
-    }
-
-    if (json) {
-        json->setInteger("class", tag);
-        json->setInteger("size", header->size());
-        json->setInteger("isMarked", header->isMarked());
-    }
-}
-
-void LargeObjectPage::incrementMarkedObjectsAge()
-{
-    HeapObjectHeader* header = heapObjectHeader();
-    if (header->isMarked())
-        header->incrementAge();
-}
-
-void LargeObjectPage::countMarkedObjects(ClassAgeCountsMap& classAgeCounts)
-{
-    HeapObjectHeader* header = heapObjectHeader();
-    if (header->isMarked()) {
-        String className(classOf(header->payload()));
-        ++(classAgeCounts.add(className, AgeCounts()).storedValue->value.ages[header->age()]);
-    }
-}
-
-void LargeObjectPage::countObjectsToSweep(ClassAgeCountsMap& classAgeCounts)
-{
-    HeapObjectHeader* header = heapObjectHeader();
-    if (!header->isFree() && !header->isMarked()) {
-        String className(classOf(header->payload()));
-        ++(classAgeCounts.add(className, AgeCounts()).storedValue->value.ages[header->age()]);
-    }
-}
-#endif
-
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
 bool LargeObjectPage::contains(Address object)
 {
     return roundToBlinkPageStart(address()) <= object && object < roundToBlinkPageEnd(address() + size());

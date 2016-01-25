@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/parser/CSSParser.h"
 
+#include "core/css/CSSColorValue.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/StyleColor.h"
 #include "core/css/StylePropertySet.h"
@@ -16,6 +16,7 @@
 #include "core/css/parser/CSSSelectorParser.h"
 #include "core/css/parser/CSSSupportsParser.h"
 #include "core/css/parser/CSSTokenizer.h"
+#include "core/css/parser/CSSVariableParser.h"
 #include "core/layout/LayoutTheme.h"
 
 namespace blink {
@@ -30,10 +31,10 @@ void CSSParser::parseDeclarationListForInspector(const CSSParserContext& context
     CSSParserImpl::parseDeclarationListForInspector(declaration, context, observer);
 }
 
-void CSSParser::parseSelector(const CSSParserContext& context, const String& selector, CSSSelectorList& selectorList)
+CSSSelectorList CSSParser::parseSelector(const CSSParserContext& context, const String& selector)
 {
     CSSTokenizer::Scope scope(selector);
-    CSSSelectorParser::parseSelector(scope.tokenRange(), context, nullptr, selectorList);
+    return CSSSelectorParser::parseSelector(scope.tokenRange(), context, nullptr);
 }
 
 PassRefPtrWillBeRawPtr<StyleRuleBase> CSSParser::parseRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
@@ -66,6 +67,20 @@ bool CSSParser::parseValue(MutableStylePropertySet* declaration, CSSPropertyID u
         context.setMode(parserMode);
     }
     return parseValue(declaration, unresolvedProperty, string, important, context);
+}
+
+bool CSSParser::parseValueForCustomProperty(MutableStylePropertySet* declaration, const AtomicString& propertyName, const String& value, bool important, StyleSheetContents* styleSheet)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled() && CSSVariableParser::isValidVariableName(propertyName));
+    if (value.isEmpty())
+        return false;
+    CSSParserMode parserMode = declaration->cssParserMode();
+    CSSParserContext context(parserMode, 0);
+    if (styleSheet) {
+        context = styleSheet->parserContext();
+        context.setMode(parserMode);
+    }
+    return CSSParserImpl::parseVariableValue(declaration, propertyName, value, important, context);
 }
 
 bool CSSParser::parseValue(MutableStylePropertySet* declaration, CSSPropertyID unresolvedProperty, const String& string, bool important, const CSSParserContext& context)
@@ -108,7 +123,7 @@ bool CSSParser::parseSupportsCondition(const String& condition)
     return CSSSupportsParser::supportsCondition(scope.tokenRange(), parser) == CSSSupportsParser::Supported;
 }
 
-bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
+bool CSSParser::parseColor(Color& color, const String& string, bool strict)
 {
     if (string.isEmpty())
         return false;
@@ -117,7 +132,7 @@ bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
     // handle these first.
     Color namedColor;
     if (namedColor.setNamedColor(string)) {
-        color = namedColor.rgb();
+        color = namedColor;
         return true;
     }
 
@@ -126,18 +141,13 @@ bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
     if (!value)
         value = parseSingleValue(CSSPropertyColor, string, strictCSSParserContext());
 
-    if (!value || !value->isPrimitiveValue())
+    if (!value || !value->isColorValue())
         return false;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
-    if (!primitiveValue->isRGBColor())
-        return false;
-
-    color = primitiveValue->getRGBA32Value();
+    color = toCSSColorValue(*value).value();
     return true;
 }
 
-bool CSSParser::parseSystemColor(RGBA32& color, const String& colorString)
+bool CSSParser::parseSystemColor(Color& color, const String& colorString)
 {
     CSSParserString cssColor;
     cssColor.init(colorString);
@@ -145,8 +155,7 @@ bool CSSParser::parseSystemColor(RGBA32& color, const String& colorString)
     if (!CSSPropertyParser::isSystemColor(id))
         return false;
 
-    Color parsedColor = LayoutTheme::theme().systemColor(id);
-    color = parsedColor.rgb();
+    color = LayoutTheme::theme().systemColor(id);
     return true;
 }
 

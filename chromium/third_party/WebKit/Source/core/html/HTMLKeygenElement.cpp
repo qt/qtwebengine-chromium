@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLKeygenElement.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -35,6 +34,7 @@
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/layout/LayoutBlockFlow.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLocalizedString.h"
@@ -50,6 +50,8 @@ HTMLKeygenElement::HTMLKeygenElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(keygenTag, document, form)
 {
     UseCounter::count(document, UseCounter::HTMLKeygenElement);
+    if (document.frame())
+        document.frame()->loader().client()->didUseKeygen();
 }
 
 PassRefPtrWillBeRawPtr<HTMLKeygenElement> HTMLKeygenElement::create(Document& document, HTMLFormElement* form)
@@ -88,13 +90,13 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     root.appendChild(select);
 }
 
-void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     // Reflect disabled attribute on the shadow select element
     if (name == disabledAttr)
         shadowSelect()->setAttribute(name, value);
 
-    HTMLFormControlElement::parseAttribute(name, value);
+    HTMLFormControlElement::parseAttribute(name, oldValue, value);
 }
 
 void HTMLKeygenElement::appendToFormData(FormData& formData)
@@ -103,7 +105,10 @@ void HTMLKeygenElement::appendToFormData(FormData& formData)
     const AtomicString& keyType = fastGetAttribute(keytypeAttr);
     if (!keyType.isNull() && !equalIgnoringCase(keyType, "rsa"))
         return;
-    String value = Platform::current()->signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), fastGetAttribute(challengeAttr), document().baseURL());
+    SecurityOrigin* topOrigin = document().frame()->tree().top()->securityContext()->securityOrigin();
+    String value = Platform::current()->signedPublicKeyAndChallengeString(
+        shadowSelect()->selectedIndex(), fastGetAttribute(challengeAttr), document().baseURL(),
+        KURL(KURL(), topOrigin->toString()));
     if (!value.isNull())
         formData.append(name(), value);
 }

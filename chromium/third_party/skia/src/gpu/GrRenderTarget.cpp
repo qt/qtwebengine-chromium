@@ -11,9 +11,17 @@
 
 #include "GrContext.h"
 #include "GrDrawContext.h"
+#include "GrDrawTarget.h"
 #include "GrGpu.h"
 #include "GrRenderTargetPriv.h"
 #include "GrStencilAttachment.h"
+
+GrRenderTarget::~GrRenderTarget() {
+    if (fLastDrawTarget) {
+        fLastDrawTarget->clearRT();
+    }
+    SkSafeUnref(fLastDrawTarget);
+}
 
 void GrRenderTarget::discard() {
     // go through context so that all necessary flushing occurs
@@ -22,12 +30,12 @@ void GrRenderTarget::discard() {
         return;
     }
 
-    SkAutoTUnref<GrDrawContext> drawContext(context->drawContext());
+    SkAutoTUnref<GrDrawContext> drawContext(context->drawContext(this));
     if (!drawContext) {
         return;
     }
 
-    drawContext->discard(this);
+    drawContext->discard();
 }
 
 void GrRenderTarget::flagAsNeedingResolve(const SkIRect* rect) {
@@ -63,7 +71,23 @@ void GrRenderTarget::onRelease() {
 void GrRenderTarget::onAbandon() {
     SkSafeSetNull(fStencilAttachment);
 
+    // The contents of this renderTarget are gone/invalid. It isn't useful to point back
+    // the creating drawTarget.
+    this->setLastDrawTarget(nullptr);
+
     INHERITED::onAbandon();
+}
+
+void GrRenderTarget::setLastDrawTarget(GrDrawTarget* dt) {
+    if (fLastDrawTarget) {
+        // The non-MDB world never closes so we can't check this condition
+#ifdef ENABLE_MDB
+        SkASSERT(fLastDrawTarget->isClosed());
+#endif
+        fLastDrawTarget->clearRT();
+    }
+
+    SkRefCnt_SafeAssign(fLastDrawTarget, dt);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

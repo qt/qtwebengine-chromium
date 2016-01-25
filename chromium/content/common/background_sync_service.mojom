@@ -21,10 +21,16 @@ enum BackgroundSyncState {
   PENDING,
   FIRING,
   UNREGISTERED_WHILE_FIRING,
+  REREGISTERED_WHILE_FIRING,
   FAILED,
   SUCCESS,
   UNREGISTERED
- };
+};
+
+enum BackgroundSyncEventLastChance {
+  IS_NOT_LAST_CHANCE,
+  IS_LAST_CHANCE
+};
 
 interface BackgroundSyncService {
   Register(SyncRegistration options, int64 service_worker_registration_id,
@@ -36,19 +42,19 @@ interface BackgroundSyncService {
   GetRegistrations(BackgroundSyncPeriodicity periodicity,
                    int64 service_worker_registration_id)
       => (BackgroundSyncError err, array<SyncRegistration> registrations);
-  Unregister(int64 handle_id, int64 service_worker_registration_id) 
+  Unregister(int64 handle_id, int64 service_worker_registration_id)
       => (BackgroundSyncError err);
   GetPermissionStatus(BackgroundSyncPeriodicity periodicity,
                       int64 service_worker_registration_id)
       => (BackgroundSyncError err, PermissionStatus status);
-  DuplicateRegistrationHandle(int64 handle_id) 
-      => (BackgroundSyncError err, SyncRegistration? registration);  
+  DuplicateRegistrationHandle(int64 handle_id)
+      => (BackgroundSyncError err, SyncRegistration? registration);
   ReleaseRegistration(int64 handle_id);
-  NotifyWhenDone(int64 handle_id) => (BackgroundSyncError err, BackgroundSyncState final_status);
+  NotifyWhenFinished(int64 handle_id) => (BackgroundSyncError err, BackgroundSyncState final_status);
 };
 
 interface BackgroundSyncServiceClient {
-  Sync(int64 handle_id)
+  Sync(int64 handle_id, BackgroundSyncEventLastChance last_chance)
       => (ServiceWorkerEventStatus status);
 };
 

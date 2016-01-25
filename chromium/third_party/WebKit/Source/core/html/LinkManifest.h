@@ -6,7 +6,7 @@
 #define LinkManifest_h
 
 #include "core/html/LinkResource.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -15,7 +15,7 @@ namespace blink {
 class HTMLLinkElement;
 
 class LinkManifest final : public LinkResource {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(LinkManifest);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(LinkManifest);
 public:
 
     static PassOwnPtrWillBeRawPtr<LinkManifest> create(HTMLLinkElement* owner);

@@ -232,6 +232,7 @@ struct PEB {
   typename Traits::Pointer UnicodeCaseTableData;
   DWORD NumberOfProcessors;
   DWORD NtGlobalFlag;
+  DWORD alignment_for_x86;
   LARGE_INTEGER CriticalSectionTimeout;
   typename Traits::UnsignedIntegral HeapSegmentReserve;
   typename Traits::UnsignedIntegral HeapSegmentCommit;
@@ -359,10 +360,10 @@ struct SYSTEM_THREAD_INFORMATION {
 // There's an extra field in the x64 VM_COUNTERS (or maybe it's VM_COUNTERS_EX,
 // it's not clear), so we just make separate specializations for 32/64.
 template <class Traits>
-class VM_COUNTERS {};
+struct VM_COUNTERS {};
 
 template <>
-class VM_COUNTERS<internal::Traits32> {
+struct VM_COUNTERS<internal::Traits32> {
   SIZE_T PeakVirtualSize;
   SIZE_T VirtualSize;
   ULONG PageFaultCount;
@@ -377,7 +378,7 @@ class VM_COUNTERS<internal::Traits32> {
 };
 
 template <>
-class VM_COUNTERS<internal::Traits64> {
+struct VM_COUNTERS<internal::Traits64> {
   SIZE_T PeakVirtualSize;
   SIZE_T VirtualSize;
   union {
@@ -453,6 +454,52 @@ struct EXCEPTION_POINTERS {
 
 using EXCEPTION_POINTERS32 = EXCEPTION_POINTERS<internal::Traits32>;
 using EXCEPTION_POINTERS64 = EXCEPTION_POINTERS<internal::Traits64>;
+
+// This is defined in winnt.h, but not for cross-bitness.
+template <class Traits>
+struct RTL_CRITICAL_SECTION {
+  typename Traits::Pointer DebugInfo;
+  LONG LockCount;
+  LONG RecursionCount;
+  typename Traits::Pointer OwningThread;
+  typename Traits::Pointer LockSemaphore;
+  typename Traits::UnsignedIntegral SpinCount;
+};
+
+template <class Traits>
+struct RTL_CRITICAL_SECTION_DEBUG {
+  union {
+    struct {
+      WORD Type;
+      WORD CreatorBackTraceIndex;
+    };
+    typename Traits::Pad alignment_for_x64;
+  };
+  typename Traits::Pointer CriticalSection;
+  LIST_ENTRY<Traits> ProcessLocksList;
+  DWORD EntryCount;
+  DWORD ContentionCount;
+  DWORD Flags;
+  WORD CreatorBackTraceIndexHigh;
+  WORD SpareWORD;
+};
+
+struct SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX {
+  void* Object;
+  ULONG_PTR UniqueProcessId;
+  HANDLE HandleValue;
+  ULONG GrantedAccess;
+  USHORT CreatorBackTraceIndex;
+  USHORT ObjectTypeIndex;
+  ULONG HandleAttributes;
+  ULONG Reserved;
+};
+
+struct SYSTEM_HANDLE_INFORMATION_EX {
+  ULONG_PTR NumberOfHandles;
+  ULONG_PTR Reserved;
+  SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
+};
 
 #pragma pack(pop)
 

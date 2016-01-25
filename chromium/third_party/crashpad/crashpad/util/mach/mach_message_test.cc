@@ -115,7 +115,7 @@ TEST(MachMessage, AuditPIDFromMachMessageTrailer) {
   mach_msg_empty_send_t send = {};
   send.header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND_ONCE, 0);
   send.header.msgh_size = sizeof(send);
-  send.header.msgh_remote_port = port;
+  send.header.msgh_remote_port = port.get();
   mach_msg_return_t mr =
       MachMessageWithDeadline(&send.header,
                               MACH_SEND_MSG,
@@ -138,7 +138,7 @@ TEST(MachMessage, AuditPIDFromMachMessageTrailer) {
   mr = MachMessageWithDeadline(&receive.header,
                                MACH_RCV_MSG | kMachMessageReceiveAuditTrailer,
                                sizeof(receive),
-                               port,
+                               port.get(),
                                kMachMessageDeadlineNonblocking,
                                MACH_PORT_NULL,
                                false);
@@ -146,6 +146,55 @@ TEST(MachMessage, AuditPIDFromMachMessageTrailer) {
       << MachErrorMessage(mr, "MachMessageWithDeadline receive");
 
   EXPECT_EQ(getpid(), AuditPIDFromMachMessageTrailer(&receive.trailer));
+}
+
+TEST(MachMessage, MachMessageDestroyReceivedPort) {
+  mach_port_t port = NewMachPort(MACH_PORT_RIGHT_RECEIVE);
+  ASSERT_NE(kMachPortNull, port);
+  EXPECT_TRUE(MachMessageDestroyReceivedPort(port, MACH_MSG_TYPE_PORT_RECEIVE));
+
+  base::mac::ScopedMachReceiveRight receive(
+      NewMachPort(MACH_PORT_RIGHT_RECEIVE));
+  mach_msg_type_name_t right_type;
+  kern_return_t kr = mach_port_extract_right(mach_task_self(),
+                                             receive.get(),
+                                             MACH_MSG_TYPE_MAKE_SEND,
+                                             &port,
+                                             &right_type);
+  ASSERT_EQ(KERN_SUCCESS, kr)
+      << MachErrorMessage(kr, "mach_port_extract_right");
+  ASSERT_EQ(receive, port);
+  ASSERT_EQ(implicit_cast<mach_msg_type_name_t>(MACH_MSG_TYPE_PORT_SEND),
+            right_type);
+  EXPECT_TRUE(MachMessageDestroyReceivedPort(port, MACH_MSG_TYPE_PORT_SEND));
+
+  kr = mach_port_extract_right(mach_task_self(),
+                               receive.get(),
+                               MACH_MSG_TYPE_MAKE_SEND_ONCE,
+                               &port,
+                               &right_type);
+  ASSERT_EQ(KERN_SUCCESS, kr)
+      << MachErrorMessage(kr, "mach_port_extract_right");
+  ASSERT_NE(kMachPortNull, port);
+  EXPECT_NE(receive, port);
+  ASSERT_EQ(implicit_cast<mach_msg_type_name_t>(MACH_MSG_TYPE_PORT_SEND_ONCE),
+            right_type);
+  EXPECT_TRUE(
+      MachMessageDestroyReceivedPort(port, MACH_MSG_TYPE_PORT_SEND_ONCE));
+
+  kr = mach_port_extract_right(mach_task_self(),
+                               receive.get(),
+                               MACH_MSG_TYPE_MAKE_SEND,
+                               &port,
+                               &right_type);
+  ASSERT_EQ(KERN_SUCCESS, kr)
+      << MachErrorMessage(kr, "mach_port_extract_right");
+  ASSERT_EQ(receive, port);
+  ASSERT_EQ(implicit_cast<mach_msg_type_name_t>(MACH_MSG_TYPE_PORT_SEND),
+            right_type);
+  EXPECT_TRUE(MachMessageDestroyReceivedPort(port, MACH_MSG_TYPE_PORT_RECEIVE));
+  ignore_result(receive.release());
+  EXPECT_TRUE(MachMessageDestroyReceivedPort(port, MACH_MSG_TYPE_PORT_SEND));
 }
 
 }  // namespace

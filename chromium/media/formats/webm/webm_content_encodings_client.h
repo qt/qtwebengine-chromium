@@ -5,10 +5,13 @@
 #ifndef MEDIA_FORMATS_WEBM_WEBM_CONTENT_ENCODINGS_CLIENT_H_
 #define MEDIA_FORMATS_WEBM_WEBM_CONTENT_ENCODINGS_CLIENT_H_
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
@@ -30,8 +33,8 @@ class MEDIA_EXPORT WebMContentEncodingsClient : public WebMParserClient {
   // WebMParserClient methods
   WebMParserClient* OnListStart(int id) override;
   bool OnListEnd(int id) override;
-  bool OnUInt(int id, int64 val) override;
-  bool OnBinary(int id, const uint8* data, int size) override;
+  bool OnUInt(int id, int64_t val) override;
+  bool OnBinary(int id, const uint8_t* data, int size) override;
 
  private:
   scoped_refptr<MediaLog> media_log_;

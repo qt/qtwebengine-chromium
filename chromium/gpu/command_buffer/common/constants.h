@@ -52,6 +52,10 @@ namespace error {
     // The GPU channel was lost. This error is set client-side.
     kGpuChannelLost,
 
+    // The GPU process sent an invalid message/reply. This error is set
+    // client-side.
+    kInvalidGpuMessage,
+
     kContextLostReasonLast = kGpuChannelLost
   };
 }
@@ -67,16 +71,17 @@ const int32_t kCommandBufferSharedMemoryId = 4;
 const size_t kDefaultMaxProgramCacheMemoryBytes = 6 * 1024 * 1024;
 
 // Namespace used to separate various command buffer types.
-enum CommandBufferNamespace {
+enum CommandBufferNamespace : int8_t {
   INVALID = -1,
 
   GPU_IO,
   IN_PROCESS,
   MOJO,
+  MOJO_LOCAL,
+  OLD_SYNC_POINTS,
 
   NUM_COMMAND_BUFFER_NAMESPACES
 };
-
 
 }  // namespace gpu
 

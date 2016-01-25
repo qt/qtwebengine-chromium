@@ -4,10 +4,12 @@
 
 #include "ui/views/controls/menu/menu_scroll_view_container.h"
 
+#include "base/macros.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -40,9 +42,8 @@ class MenuScrollButton : public View {
   }
 
   gfx::Size GetPreferredSize() const override {
-    return gfx::Size(
-        host_->GetMenuItem()->GetMenuConfig().scroll_arrow_height * 2 - 1,
-        pref_height_);
+    return gfx::Size(MenuConfig::instance().scroll_arrow_height * 2 - 1,
+                     pref_height_);
   }
 
   bool CanDrop(const OSExchangeData& data) override {
@@ -70,7 +71,7 @@ class MenuScrollButton : public View {
   }
 
   void OnPaint(gfx::Canvas* canvas) override {
-    const MenuConfig& config = host_->GetMenuItem()->GetMenuConfig();
+    const MenuConfig& config = MenuConfig::instance();
 
     // The background.
     gfx::Rect item_bounds(0, 0, width(), height());
@@ -201,18 +202,11 @@ void MenuScrollViewContainer::SetBubbleArrowOffset(int offset) {
   bubble_border_->set_arrow_offset(offset);
 }
 
-void MenuScrollViewContainer::OnPaintBackground(gfx::Canvas* canvas) {
-  if (background()) {
-    View::OnPaintBackground(canvas);
-    return;
-  }
-
-  gfx::Rect bounds(0, 0, width(), height());
-  NativeTheme::ExtraParams extra;
-  const MenuConfig& menu_config = content_view_->GetMenuItem()->GetMenuConfig();
-  extra.menu_background.corner_radius = menu_config.corner_radius;
-  GetNativeTheme()->Paint(canvas->sk_canvas(),
-      NativeTheme::kMenuPopupBackground, NativeTheme::kNormal, bounds, extra);
+gfx::Size MenuScrollViewContainer::GetPreferredSize() const {
+  gfx::Size prefsize = scroll_view_->GetContents()->GetPreferredSize();
+  gfx::Insets insets = GetInsets();
+  prefsize.Enlarge(insets.width(), insets.height());
+  return prefsize;
 }
 
 void MenuScrollViewContainer::Layout() {
@@ -242,11 +236,24 @@ void MenuScrollViewContainer::Layout() {
   scroll_view_->Layout();
 }
 
-gfx::Size MenuScrollViewContainer::GetPreferredSize() const {
-  gfx::Size prefsize = scroll_view_->GetContents()->GetPreferredSize();
-  gfx::Insets insets = GetInsets();
-  prefsize.Enlarge(insets.width(), insets.height());
-  return prefsize;
+void MenuScrollViewContainer::OnNativeThemeChanged(
+    const ui::NativeTheme* theme) {
+  if (arrow_ == BubbleBorder::NONE)
+    CreateDefaultBorder();
+}
+
+void MenuScrollViewContainer::OnPaintBackground(gfx::Canvas* canvas) {
+  if (background()) {
+    View::OnPaintBackground(canvas);
+    return;
+  }
+
+  gfx::Rect bounds(0, 0, width(), height());
+  NativeTheme::ExtraParams extra;
+  const MenuConfig& menu_config = MenuConfig::instance();
+  extra.menu_background.corner_radius = menu_config.corner_radius;
+  GetNativeTheme()->Paint(canvas->sk_canvas(),
+      NativeTheme::kMenuPopupBackground, NativeTheme::kNormal, bounds, extra);
 }
 
 void MenuScrollViewContainer::GetAccessibleState(
@@ -270,11 +277,10 @@ void MenuScrollViewContainer::OnBoundsChanged(
 }
 
 void MenuScrollViewContainer::CreateDefaultBorder() {
-  arrow_ = BubbleBorder::NONE;
-  bubble_border_ = NULL;
+  DCHECK_EQ(arrow_, BubbleBorder::NONE);
+  bubble_border_ = nullptr;
 
-  const MenuConfig& menu_config =
-      content_view_->GetMenuItem()->GetMenuConfig();
+  const MenuConfig& menu_config = MenuConfig::instance();
 
   int padding = menu_config.use_outer_border && menu_config.corner_radius > 0
                     ? kBorderPaddingDueToRoundedCorners
@@ -286,11 +292,12 @@ void MenuScrollViewContainer::CreateDefaultBorder() {
   int right = menu_config.menu_horizontal_border_size + padding;
 
   if (menu_config.use_outer_border) {
+    SkColor color = GetNativeTheme()
+                        ? GetNativeTheme()->GetSystemColor(
+                              ui::NativeTheme::kColorId_MenuBorderColor)
+                        : gfx::kPlaceholderColor;
     SetBorder(views::Border::CreateBorderPainter(
-        new views::RoundRectPainter(
-            menu_config.native_theme->GetSystemColor(
-                ui::NativeTheme::kColorId_MenuBorderColor),
-            menu_config.corner_radius),
+        new views::RoundRectPainter(color, menu_config.corner_radius),
         gfx::Insets(top, left, bottom, right)));
   } else {
     SetBorder(Border::CreateEmptyBorder(top, left, bottom, right));

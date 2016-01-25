@@ -34,17 +34,6 @@
         ],
       },
     }],
-    ['OS=="android" or OS=="linux" or OS=="win" or OS=="mac"', {
-      'variables': {
-        'files': [
-          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/google_now/',
-          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/print_preview/',
-          '<(PRODUCT_DIR)/test_data/chrome/renderer/resources/extensions/',
-          '<(PRODUCT_DIR)/test_data/chrome/test/data/unit/',
-          '<(PRODUCT_DIR)/test_data/ui/webui/',
-        ],
-      },
-    }],
     ['OS=="android" or OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
         'files': [
@@ -54,6 +43,7 @@
           '../google_apis/test/data/',
           '../net/data/',
           '../third_party/accessibility-audit/axs_testing.js',
+          '../third_party/chaijs/chai.js',
           '../third_party/hunspell_dictionaries/',
           '../third_party/zlib/google/test/data/',
           '../tools/metrics/histograms/histograms.xml',
@@ -88,6 +78,12 @@
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
           '<(PRODUCT_DIR)/pyproto/google/',
+          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/google_now/',
+          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/md_downloads/',
+          '<(PRODUCT_DIR)/test_data/chrome/browser/resources/print_preview/',
+          '<(PRODUCT_DIR)/test_data/chrome/renderer/resources/extensions/',
+          '<(PRODUCT_DIR)/test_data/chrome/test/data/unit/',
+          '<(PRODUCT_DIR)/test_data/ui/webui/',
         ],
       },
     }],
@@ -152,6 +148,7 @@
       'variables': {
         'files': [
           '../chromeos/test/data/network/',
+          '<(PRODUCT_DIR)/keyboard_resources.pak',
           '<(PRODUCT_DIR)/libexif.so',
           '<(PRODUCT_DIR)/test_data/chrome/browser/resources/chromeos/',
         ],

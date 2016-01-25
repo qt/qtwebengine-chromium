@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/inspector/WorkerInspectorController.h"
 
 #include "core/InspectorBackendDispatcher.h"
@@ -59,27 +57,8 @@ namespace blink {
 
 namespace {
 
-class PageInspectorProxy final : public InspectorFrontendChannel {
-    WTF_MAKE_FAST_ALLOCATED(PageInspectorProxy);
-public:
-    explicit PageInspectorProxy(WorkerGlobalScope* workerGlobalScope) : m_workerGlobalScope(workerGlobalScope) { }
-    ~PageInspectorProxy() override { }
-private:
-    void sendProtocolResponse(int callId, PassRefPtr<JSONObject> message) override
-    {
-        // Worker messages are wrapped, no need to handle callId.
-        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
-    }
-    void sendProtocolNotification(PassRefPtr<JSONObject> message) override
-    {
-        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
-    }
-    void flush() override { }
-    WorkerGlobalScope* m_workerGlobalScope;
-};
-
 class WorkerStateClient final : public InspectorStateClient {
-    WTF_MAKE_FAST_ALLOCATED(WorkerStateClient);
+    USING_FAST_MALLOC(WorkerStateClient);
 public:
     WorkerStateClient(WorkerGlobalScope* context) { }
     ~WorkerStateClient() override { }
@@ -107,6 +86,40 @@ private:
 };
 
 }
+
+class WorkerInspectorController::PageInspectorProxy final : public NoBaseWillBeGarbageCollectedFinalized<WorkerInspectorController::PageInspectorProxy>, public InspectorFrontendChannel {
+    USING_FAST_MALLOC_WILL_BE_REMOVED(PageInspectorProxy);
+public:
+    static PassOwnPtrWillBeRawPtr<PageInspectorProxy> create(WorkerGlobalScope* workerGlobalScope)
+    {
+        return adoptPtrWillBeNoop(new PageInspectorProxy(workerGlobalScope));
+    }
+    ~PageInspectorProxy() override { }
+
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_workerGlobalScope);
+    }
+
+private:
+    explicit PageInspectorProxy(WorkerGlobalScope* workerGlobalScope)
+        : m_workerGlobalScope(workerGlobalScope)
+    {
+    }
+
+    void sendProtocolResponse(int sessionId, int callId, PassRefPtr<JSONObject> message) override
+    {
+        // Worker messages are wrapped, no need to handle callId.
+        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
+    }
+    void sendProtocolNotification(PassRefPtr<JSONObject> message) override
+    {
+        m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
+    }
+    void flush() override { }
+
+    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
+};
 
 class WorkerInjectedScriptHostClient: public InjectedScriptHostClient {
 public:
@@ -136,7 +149,7 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
     m_agents.append(workerDebuggerAgent.release());
 
     v8::Isolate* isolate = workerGlobalScope->thread()->isolate();
-    m_agents.append(InspectorProfilerAgent::create(isolate, m_injectedScriptManager.get(), 0));
+    m_agents.append(InspectorProfilerAgent::create(isolate, 0));
     m_agents.append(InspectorHeapProfilerAgent::create(isolate, m_injectedScriptManager.get()));
 
     OwnPtrWillBeRawPtr<WorkerConsoleAgent> workerConsoleAgent = WorkerConsoleAgent::create(m_injectedScriptManager.get(), workerGlobalScope);
@@ -162,9 +175,9 @@ void WorkerInspectorController::connectFrontend()
 {
     ASSERT(!m_frontend);
     m_state->unmute();
-    m_frontendChannel = adoptPtr(new PageInspectorProxy(m_workerGlobalScope));
-    m_frontend = adoptPtr(new InspectorFrontend(m_frontendChannel.get()));
-    m_backendDispatcher = InspectorBackendDispatcher::create(m_frontendChannel.get());
+    m_pageInspectorProxy = PageInspectorProxy::create(m_workerGlobalScope);
+    m_frontend = adoptPtr(new InspectorFrontend(frontendChannel()));
+    m_backendDispatcher = InspectorBackendDispatcher::create(frontendChannel());
     m_agents.registerInDispatcher(m_backendDispatcher.get());
     m_agents.setFrontend(m_frontend.get());
     InspectorInstrumentation::frontendCreated();
@@ -182,7 +195,7 @@ void WorkerInspectorController::disconnectFrontend()
     m_agents.clearFrontend();
     m_frontend.clear();
     InspectorInstrumentation::frontendDeleted();
-    m_frontendChannel.clear();
+    m_pageInspectorProxy.clear();
 }
 
 void WorkerInspectorController::restoreInspectorStateFromCookie(const String& inspectorCookie)
@@ -197,8 +210,10 @@ void WorkerInspectorController::restoreInspectorStateFromCookie(const String& in
 void WorkerInspectorController::dispatchMessageFromFrontend(const String& message)
 {
     InspectorTaskRunner::IgnoreInterruptsScope scope(m_inspectorTaskRunner.get());
-    if (m_backendDispatcher)
-        m_backendDispatcher->dispatch(message);
+    if (m_backendDispatcher) {
+        // sessionId will be overwritten by WebDevToolsAgent::sendProtocolNotifications call.
+        m_backendDispatcher->dispatch(0, message);
+    }
 }
 
 void WorkerInspectorController::dispose()
@@ -223,6 +238,11 @@ bool WorkerInspectorController::isRunRequired()
     return m_paused;
 }
 
+InspectorFrontendChannel* WorkerInspectorController::frontendChannel() const
+{
+    return static_cast<InspectorFrontendChannel*>(m_pageInspectorProxy.get());
+}
+
 void WorkerInspectorController::workerContextInitialized(bool shouldPauseOnStart)
 {
     m_beforeInitlizedScope.clear();
@@ -245,6 +265,7 @@ DEFINE_TRACE(WorkerInspectorController)
     visitor->trace(m_injectedScriptManager);
     visitor->trace(m_backendDispatcher);
     visitor->trace(m_agents);
+    visitor->trace(m_pageInspectorProxy);
     visitor->trace(m_workerDebuggerAgent);
     visitor->trace(m_workerRuntimeAgent);
 }

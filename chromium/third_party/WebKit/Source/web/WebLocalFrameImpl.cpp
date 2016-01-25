@@ -82,7 +82,6 @@
 // The client is expected to be set whenever the WebLocalFrameImpl is attached to
 // the DOM.
 
-#include "config.h"
 #include "web/WebLocalFrameImpl.h"
 
 #include "bindings/core/v8/BindingSecurity.h"
@@ -118,7 +117,9 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/RemoteFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFormElement.h"
@@ -155,6 +156,7 @@
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "modules/app_banner/AppBannerController.h"
+#include "modules/audio_output_devices/AudioOutputDeviceClient.h"
 #include "modules/bluetooth/BluetoothSupplement.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/notifications/NotificationPermissionClient.h"
@@ -201,6 +203,7 @@
 #include "public/web/WebFindOptions.h"
 #include "public/web/WebFormElement.h"
 #include "public/web/WebFrameClient.h"
+#include "public/web/WebFrameOwnerProperties.h"
 #include "public/web/WebHistoryItem.h"
 #include "public/web/WebIconURL.h"
 #include "public/web/WebInputElement.h"
@@ -215,8 +218,9 @@
 #include "public/web/WebSerializedScriptValue.h"
 #include "public/web/WebTestInterfaceFactory.h"
 #include "public/web/WebTreeScopeType.h"
-#include "skia/ext/platform_device.h"
+#include "skia/ext/platform_canvas.h"
 #include "web/AssociatedURLLoader.h"
+#include "web/AudioOutputDeviceClientImpl.h"
 #include "web/CompositionUnderlineVectorBuilder.h"
 #include "web/FindInPageCoordinates.h"
 #include "web/GeolocationClientProxy.h"
@@ -330,7 +334,7 @@ WebPluginContainerImpl* WebLocalFrameImpl::pluginContainerFromNode(LocalFrame* f
 
 // Simple class to override some of PrintContext behavior. Some of the methods
 // made virtual so that they can be overridden by ChromePluginPrintContext.
-class ChromePrintContext : public PrintContext {
+class ChromePrintContext : public PrintContext, public DisplayItemClient {
     WTF_MAKE_NONCOPYABLE(ChromePrintContext);
 public:
     ChromePrintContext(LocalFrame* frame)
@@ -365,12 +369,11 @@ public:
             return 0;
 
         IntRect pageRect = m_pageRects[pageNumber];
-        SkPictureBuilder pictureBuilder(pageRect, &skia::getMetaData(*canvas));
+        SkPictureBuilder pictureBuilder(pageRect, &skia::GetMetaData(*canvas));
         pictureBuilder.context().setPrinting(true);
 
         float scale = spoolPage(pictureBuilder.context(), pageNumber);
         pictureBuilder.endRecording()->playback(canvas);
-        outputLinkedDestinations(canvas, pageRect);
         return scale;
     }
 
@@ -392,13 +395,13 @@ public:
         int totalHeight = numPages * (pageSizeInPixels.height() + 1) - 1;
         IntRect allPagesRect(0, 0, pageWidth, totalHeight);
 
-        SkPictureBuilder pictureBuilder(allPagesRect, &skia::getMetaData(*canvas));
+        SkPictureBuilder pictureBuilder(allPagesRect, &skia::GetMetaData(*canvas));
         pictureBuilder.context().setPrinting(true);
 
         GraphicsContext& context = pictureBuilder.context();
 
         // Fill the whole background by white.
-        if (!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::PrintedContentBackground)) {
+        {
             DrawingRecorder backgroundRecorder(context, *this, DisplayItem::PrintedContentBackground, allPagesRect);
             context.fillRect(FloatRect(0, 0, pageWidth, totalHeight), Color::white);
         }
@@ -407,7 +410,7 @@ public:
         for (size_t pageIndex = 0; pageIndex < numPages; pageIndex++) {
             ScopeRecorder scopeRecorder(context);
             // Draw a line for a page boundary if this isn't the first page.
-            if (pageIndex > 0 && !DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::PrintedContentLineBoundary)) {
+            if (pageIndex > 0) {
                 DrawingRecorder lineBoundaryRecorder(context, *this, DisplayItem::PrintedContentLineBoundary, allPagesRect);
                 context.save();
                 context.setStrokeColor(Color(0, 0, 255));
@@ -430,12 +433,11 @@ public:
             currentHeight += pageSizeInPixels.height() + 1;
         }
         pictureBuilder.endRecording()->playback(canvas);
-        outputLinkedDestinations(canvas, allPagesRect);
     }
 
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-
-    String debugName() const { return "ChromePrintContext"; }
+    // DisplayItemClient methods
+    String debugName() const final { return "ChromePrintContext"; }
+    IntRect visualRect() const override { ASSERT_NOT_REACHED(); return IntRect(); }
 
 protected:
     // Spools the printed page, a subrect of frame(). Skip the scale step.
@@ -457,7 +459,12 @@ protected:
 
         ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(pageRect));
 
-        frame()->view()->paintContents(&context, GlobalPaintNormalPhase, pageRect);
+        frame()->view()->paintContents(context, GlobalPaintNormalPhase, pageRect);
+
+        {
+            DrawingRecorder lineBoundaryRecorder(context, *this, DisplayItem::PrintedContentDestinationLocations, pageRect);
+            outputLinkedDestinations(context, pageRect);
+        }
 
         return scale;
     }
@@ -530,7 +537,7 @@ protected:
     float spoolPage(GraphicsContext& context, int pageNumber) override
     {
         IntRect pageRect = m_pageRects[pageNumber];
-        m_plugin->printPage(pageNumber, &context, pageRect);
+        m_plugin->printPage(pageNumber, context, pageRect);
 
         return 1.0;
     }
@@ -853,7 +860,7 @@ void WebLocalFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
         return;
     }
 
-    frame()->document()->addConsoleMessage(ConsoleMessage::create(OtherMessageSource, webCoreMessageLevel, message.text));
+    frame()->document()->addConsoleMessage(ConsoleMessage::create(OtherMessageSource, webCoreMessageLevel, message.text, message.url, message.lineNumber, message.columnNumber));
 }
 
 void WebLocalFrameImpl::collectGarbage()
@@ -934,13 +941,13 @@ v8::Local<v8::Value> WebLocalFrameImpl::callFunctionEvenIfScriptDisabled(v8::Loc
 v8::Local<v8::Context> WebLocalFrameImpl::mainWorldScriptContext() const
 {
     ScriptState* scriptState = ScriptState::forMainWorld(frame());
-    ASSERT(scriptState->contextIsValid());
+    ASSERT(scriptState);
     return scriptState->context();
 }
 
 bool WebFrame::scriptCanAccess(WebFrame* target)
 {
-    return BindingSecurity::shouldAllowAccessToFrame(mainThreadIsolate(), toCoreFrame(target), DoNotReportSecurityError);
+    return BindingSecurity::shouldAllowAccessToFrame(mainThreadIsolate(), callingDOMWindow(mainThreadIsolate()), target->toImplBase()->frame(), DoNotReportSecurityError);
 }
 
 void WebLocalFrameImpl::reload(bool ignoreCache)
@@ -1028,13 +1035,7 @@ void WebLocalFrameImpl::stopLoading()
 WebDataSource* WebLocalFrameImpl::provisionalDataSource() const
 {
     ASSERT(frame());
-
-    // We regard the policy document loader as still provisional.
-    DocumentLoader* documentLoader = frame()->loader().provisionalDocumentLoader();
-    if (!documentLoader)
-        documentLoader = frame()->loader().policyDocumentLoader();
-
-    return DataSourceForDocLoader(documentLoader);
+    return DataSourceForDocLoader(frame()->loader().provisionalDocumentLoader());
 }
 
 WebDataSource* WebLocalFrameImpl::dataSource() const
@@ -1058,7 +1059,7 @@ bool WebLocalFrameImpl::isViewSourceModeEnabled() const
 
 void WebLocalFrameImpl::setReferrerForRequest(WebURLRequest& request, const WebURL& referrerURL)
 {
-    String referrer = referrerURL.isEmpty() ? frame()->document()->outgoingReferrer() : String(referrerURL.spec().utf16());
+    String referrer = referrerURL.isEmpty() ? frame()->document()->outgoingReferrer() : String(referrerURL.string());
     request.toMutableResourceRequest().setHTTPReferrer(SecurityPolicy::generateReferrer(frame()->document()->referrerPolicy(), request.url(), referrer));
 }
 
@@ -1080,7 +1081,7 @@ unsigned WebLocalFrameImpl::unloadListenerCount() const
 
 void WebLocalFrameImpl::replaceSelection(const WebString& text)
 {
-    bool selectReplacement = false;
+    bool selectReplacement = frame()->editor().behavior().shouldSelectReplacement();
     bool smartReplace = true;
     frame()->editor().replaceSelectionWithText(text, selectReplacement, smartReplace);
 }
@@ -1241,11 +1242,7 @@ WebString WebLocalFrameImpl::selectionAsText() const
     if (pluginContainer)
         return pluginContainer->plugin()->selectionAsText();
 
-    const EphemeralRange range = frame()->selection().selection().toNormalizedEphemeralRange();
-    if (range.isNull())
-        return WebString();
-
-    String text = plainText(range, TextIteratorEmitsObjectReplacementCharacter);
+    String text = frame()->selection().selectedText(TextIteratorEmitsObjectReplacementCharacter);
 #if OS(WIN)
     replaceNewlinesWithWindowsStyleNewlines(text);
 #endif
@@ -1259,11 +1256,7 @@ WebString WebLocalFrameImpl::selectionAsMarkup() const
     if (pluginContainer)
         return pluginContainer->plugin()->selectionAsMarkup();
 
-    const EphemeralRange range = frame()->selection().selection().toNormalizedEphemeralRange();
-    if (range.isNull())
-        return WebString();
-
-    return createMarkup(range.startPosition(), range.endPosition(), AnnotateForInterchange, ConvertBlocksToInlines::NotConvert, ResolveNonLocalURLs);
+    return frame()->selection().selectedHTMLForClipboard();
 }
 
 void WebLocalFrameImpl::selectWordAroundPosition(LocalFrame* frame, VisiblePosition position)
@@ -1358,13 +1351,6 @@ void WebLocalFrameImpl::extendSelectionAndDelete(int before, int after)
 void WebLocalFrameImpl::setCaretVisible(bool visible)
 {
     frame()->selection().setCaretVisible(visible);
-}
-
-void WebLocalFrameImpl::clearFocus()
-{
-    // This uses setFocusedElement rather than setFocusedFrame so that blur
-    // events are properly dispatched on any currently focused elements.
-    frame()->page()->focusController().setFocusedElement(nullptr, nullptr);
 }
 
 VisiblePosition WebLocalFrameImpl::visiblePositionForViewportPoint(const WebPoint& pointInViewport)
@@ -1647,6 +1633,11 @@ WebLocalFrame* WebLocalFrame::create(WebTreeScopeType scope, WebFrameClient* cli
     return WebLocalFrameImpl::create(scope, client);
 }
 
+WebLocalFrame* WebLocalFrame::createProvisional(WebFrameClient* client, WebRemoteFrame* oldWebFrame, WebSandboxFlags flags, const WebFrameOwnerProperties& frameOwnerProperties)
+{
+    return WebLocalFrameImpl::createProvisional(client, oldWebFrame, flags, frameOwnerProperties);
+}
+
 WebLocalFrameImpl* WebLocalFrameImpl::create(WebTreeScopeType scope, WebFrameClient* client)
 {
     WebLocalFrameImpl* frame = new WebLocalFrameImpl(scope, client);
@@ -1656,6 +1647,45 @@ WebLocalFrameImpl* WebLocalFrameImpl::create(WebTreeScopeType scope, WebFrameCli
     return adoptRef(frame).leakRef();
 #endif
 }
+
+WebLocalFrameImpl* WebLocalFrameImpl::createProvisional(WebFrameClient* client, WebRemoteFrame* oldWebFrame, WebSandboxFlags flags, const WebFrameOwnerProperties& frameOwnerProperties)
+{
+    RefPtrWillBeRawPtr<WebLocalFrameImpl> webFrame = adoptRefWillBeNoop(new WebLocalFrameImpl(oldWebFrame, client));
+    Frame* oldFrame = oldWebFrame->toImplBase()->frame();
+    webFrame->setParent(oldWebFrame->parent());
+    webFrame->setOpener(oldWebFrame->opener());
+    // Note: this *always* temporarily sets a frame owner, even for main frames!
+    // When a core Frame is created with no owner, it attempts to set itself as
+    // the main frame of the Page. However, this is a provisional frame, and may
+    // disappear, so Page::m_mainFrame can't be updated just yet.
+    OwnPtrWillBeRawPtr<FrameOwner> tempOwner = RemoteBridgeFrameOwner::create(nullptr, SandboxNone, WebFrameOwnerProperties());
+    // TODO(dcheng): This block is very similar to initializeCoreFrame. Try to reuse it here.
+    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(webFrame->m_frameLoaderClientImpl.get(), oldFrame->host(), tempOwner.get());
+    // Set the name and unique name directly, bypassing any of the normal logic
+    // to calculate unique name.
+    frame->tree().setNameForReplacementFrame(toWebRemoteFrameImpl(oldWebFrame)->frame()->tree().name(), toWebRemoteFrameImpl(oldWebFrame)->frame()->tree().uniqueName());
+    webFrame->setCoreFrame(frame);
+
+    frame->setOwner(oldFrame->owner());
+
+    if (frame->owner() && !frame->owner()->isLocal()) {
+        toRemoteBridgeFrameOwner(frame->owner())->setSandboxFlags(static_cast<SandboxFlags>(flags));
+        // Since a remote frame doesn't get the notifications about frame owner
+        // property modifications, we need to sync up those properties here.
+        webFrame->setFrameOwnerProperties(frameOwnerProperties);
+    }
+
+    // We must call init() after m_frame is assigned because it is referenced
+    // during init(). Note that this may dispatch JS events; the frame may be
+    // detached after init() returns.
+    frame->init();
+#if ENABLE(OILPAN)
+    return webFrame.get();
+#else
+    return webFrame.release().leakRef();
+#endif
+}
+
 
 WebLocalFrameImpl::WebLocalFrameImpl(WebTreeScopeType scope, WebFrameClient* client)
     : WebLocalFrame(scope)
@@ -1674,6 +1704,11 @@ WebLocalFrameImpl::WebLocalFrameImpl(WebTreeScopeType scope, WebFrameClient* cli
 {
     Platform::current()->incrementStatsCounter(webFrameActiveCount);
     frameCount++;
+}
+
+WebLocalFrameImpl::WebLocalFrameImpl(WebRemoteFrame* oldWebFrame, WebFrameClient* client)
+    : WebLocalFrameImpl(oldWebFrame->inShadowTree() ? WebTreeScopeType::Shadow : WebTreeScopeType::Document, client)
+{
 }
 
 WebLocalFrameImpl::~WebLocalFrameImpl()
@@ -1699,6 +1734,7 @@ DEFINE_TRACE(WebLocalFrameImpl)
     visitor->trace(m_geolocationClientProxy);
     visitor->template registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
     WebFrame::traceFrames(visitor, this);
+    WebFrameImplBase::trace(visitor);
 }
 #endif
 
@@ -1733,29 +1769,31 @@ void WebLocalFrameImpl::setCoreFrame(PassRefPtrWillBeRawPtr<LocalFrame> frame)
             VRController::provideTo(*m_frame, m_client ? m_client->webVRClient() : nullptr);
         if (RuntimeEnabledFeatures::wakeLockEnabled())
             ScreenWakeLock::provideTo(*m_frame, m_client ? m_client->wakeLockClient() : nullptr);
+        if (RuntimeEnabledFeatures::audioOutputDevicesEnabled())
+            provideAudioOutputDeviceClientTo(*m_frame, AudioOutputDeviceClientImpl::create());
     }
 }
 
-PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name, const AtomicString& fallbackName)
+void WebLocalFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name, const AtomicString& fallbackName)
 {
-    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(m_frameLoaderClientImpl.get(), host, owner);
-    setCoreFrame(frame);
-    frame->tree().setName(name, fallbackName);
+    setCoreFrame(LocalFrame::create(m_frameLoaderClientImpl.get(), host, owner));
+    frame()->tree().setName(name, fallbackName);
     // We must call init() after m_frame is assigned because it is referenced
     // during init(). Note that this may dispatch JS events; the frame may be
     // detached after init() returns.
-    frame->init();
-    return frame;
+    frame()->init();
 }
 
 PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::createChildFrame(const FrameLoadRequest& request,
     const AtomicString& name, HTMLFrameOwnerElement* ownerElement)
 {
     ASSERT(m_client);
+    TRACE_EVENT0("blink", "WebLocalFrameImpl::createChildframe");
     WebTreeScopeType scope = frame()->document() == ownerElement->treeScope()
         ? WebTreeScopeType::Document
         : WebTreeScopeType::Shadow;
-    WebLocalFrameImpl* webframeChild = toWebLocalFrameImpl(m_client->createChildFrame(this, scope, name, static_cast<WebSandboxFlags>(ownerElement->sandboxFlags())));
+    WebFrameOwnerProperties ownerProperties(ownerElement->scrollingMode(), ownerElement->marginWidth(), ownerElement->marginHeight());
+    RefPtrWillBeRawPtr<WebLocalFrameImpl> webframeChild = toWebLocalFrameImpl(m_client->createChildFrame(this, scope, name, static_cast<WebSandboxFlags>(ownerElement->sandboxFlags()), ownerProperties));
     if (!webframeChild)
         return nullptr;
 
@@ -1763,17 +1801,17 @@ PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::createChildFrame(const Fra
     // solution. subResourceAttributeName returns just one attribute name. The
     // element might not have the attribute, and there might be other attributes
     // which can identify the element.
-    RefPtrWillBeRawPtr<LocalFrame> child = webframeChild->initializeCoreFrame(frame()->host(), ownerElement, name, ownerElement->getAttribute(ownerElement->subResourceAttributeName()));
+    webframeChild->initializeCoreFrame(frame()->host(), ownerElement, name, ownerElement->getAttribute(ownerElement->subResourceAttributeName()));
     // Initializing the core frame may cause the new child to be detached, since
     // it may dispatch a load event in the parent.
-    if (!child->tree().parent())
+    if (!webframeChild->parent())
         return nullptr;
 
     // If we're moving in the back/forward list, we might want to replace the content
     // of this child frame with whatever was there at that point.
     RefPtrWillBeRawPtr<HistoryItem> childItem = nullptr;
     if (isBackForwardLoadType(frame()->loader().loadType()) && !frame()->document()->loadEventFinished())
-        childItem = PassRefPtrWillBeRawPtr<HistoryItem>(webframeChild->client()->historyItemForNewChildFrame(webframeChild));
+        childItem = PassRefPtrWillBeRawPtr<HistoryItem>(webframeChild->client()->historyItemForNewChildFrame());
 
     FrameLoadRequest newRequest = request;
     FrameLoadType loadType = FrameLoadTypeStandard;
@@ -1782,14 +1820,14 @@ PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::createChildFrame(const Fra
             FrameLoader::resourceRequestFromHistoryItem(childItem.get(), UseProtocolCachePolicy));
         loadType = FrameLoadTypeInitialHistoryLoad;
     }
-    child->loader().load(newRequest, loadType, childItem.get());
+    webframeChild->frame()->loader().load(newRequest, loadType, childItem.get());
 
     // Note a synchronous navigation (about:blank) would have already processed
     // onload, so it is possible for the child frame to have already been
     // detached by script in the page.
-    if (!child->tree().parent())
+    if (!webframeChild->parent())
         return nullptr;
-    return child;
+    return webframeChild->frame();
 }
 
 void WebLocalFrameImpl::didChangeContentsSize(const IntSize& size)
@@ -1809,7 +1847,8 @@ void WebLocalFrameImpl::createFrameView()
 
     WebViewImpl* webView = viewImpl();
 
-    IntSize initialSize = frameWidget() ? (IntSize)frameWidget()->size() : webView->mainFrameSize();
+    bool isMainFrame = !parent();
+    IntSize initialSize = (isMainFrame || !frameWidget()) ? webView->mainFrameSize() : (IntSize)frameWidget()->size();
 
     frame()->createView(initialSize, webView->baseBackgroundColor(), webView->isTransparent());
     if (webView->shouldAutoResize() && frame()->isLocalRoot())
@@ -1822,7 +1861,7 @@ void WebLocalFrameImpl::createFrameView()
 WebLocalFrameImpl* WebLocalFrameImpl::fromFrame(LocalFrame* frame)
 {
     if (!frame)
-        return 0;
+        return nullptr;
     return fromFrame(*frame);
 }
 
@@ -1830,22 +1869,21 @@ WebLocalFrameImpl* WebLocalFrameImpl::fromFrame(LocalFrame& frame)
 {
     FrameLoaderClient* client = frame.loader().client();
     if (!client || !client->isFrameLoaderClientImpl())
-        return 0;
+        return nullptr;
     return toFrameLoaderClientImpl(client)->webFrame();
 }
 
 WebLocalFrameImpl* WebLocalFrameImpl::fromFrameOwnerElement(Element* element)
 {
-    // FIXME: Why do we check specifically for <iframe> and <frame> here? Why can't we get the WebLocalFrameImpl from an <object> element, for example.
-    if (!isHTMLFrameElementBase(element))
-        return 0;
-    return fromFrame(toLocalFrame(toHTMLFrameElementBase(element)->contentFrame()));
+    if (!element->isFrameOwnerElement())
+        return nullptr;
+    return fromFrame(toLocalFrame(toHTMLFrameOwnerElement(element)->contentFrame()));
 }
 
 WebViewImpl* WebLocalFrameImpl::viewImpl() const
 {
     if (!frame())
-        return 0;
+        return nullptr;
     return WebViewImpl::fromPage(frame()->page());
 }
 
@@ -1893,7 +1931,7 @@ void WebLocalFrameImpl::setFindEndstateFocusAndSelection()
                 // Found a focusable parent node. Set the active match as the
                 // selection and focus to the focusable node.
                 frame()->selection().setSelection(VisibleSelection(EphemeralRange(activeMatch)));
-                frame()->document()->setFocusedElement(element);
+                frame()->document()->setFocusedElement(element, FocusParams(SelectionBehaviorOnFocus::None, WebFocusTypeNone, nullptr));
                 return;
             }
         }
@@ -1907,7 +1945,7 @@ void WebLocalFrameImpl::setFindEndstateFocusAndSelection()
                 continue;
             Element* element = toElement(node);
             if (element->isFocusable()) {
-                frame()->document()->setFocusedElement(element);
+                frame()->document()->setFocusedElement(element, FocusParams(SelectionBehaviorOnFocus::None, WebFocusTypeNone, nullptr));
                 return;
             }
         }
@@ -1918,7 +1956,7 @@ void WebLocalFrameImpl::setFindEndstateFocusAndSelection()
         // we have nothing focused (otherwise you might have text selected but
         // a link focused, which is weird).
         frame()->selection().setSelection(VisibleSelection(EphemeralRange(activeMatch)));
-        frame()->document()->setFocusedElement(nullptr);
+        frame()->document()->clearFocusedElement();
 
         // Finally clear the active match, for two reasons:
         // We just finished the find 'session' and we don't want future (potentially
@@ -1936,10 +1974,25 @@ void WebLocalFrameImpl::didFail(const ResourceError& error, bool wasProvisional,
         return;
     WebURLError webError = error;
     WebHistoryCommitType webCommitType = static_cast<WebHistoryCommitType>(commitType);
+
+    if (WebPluginContainerImpl* plugin = pluginContainerFromFrame(frame()))
+        plugin->didFailLoading(error);
+
     if (wasProvisional)
         client()->didFailProvisionalLoad(this, webError, webCommitType);
     else
         client()->didFailLoad(this, webError, webCommitType);
+}
+
+void WebLocalFrameImpl::didFinish()
+{
+    if (!client())
+        return;
+
+    if (WebPluginContainerImpl* plugin = pluginContainerFromFrame(frame()))
+        plugin->didFinishLoading();
+
+    client()->didFinishLoad(this);
 }
 
 void WebLocalFrameImpl::setCanHaveScrollbars(bool canHaveScrollbars)
@@ -1995,28 +2048,6 @@ static void ensureFrameLoaderHasCommitted(FrameLoader& frameLoader)
     frameLoader.stateMachine()->advanceTo(FrameLoaderStateMachine::CommittedMultipleRealLoads);
 }
 
-void WebLocalFrameImpl::initializeToReplaceRemoteFrame(WebRemoteFrame* oldWebFrame, const WebString& name, WebSandboxFlags flags)
-{
-    Frame* oldFrame = toCoreFrame(oldWebFrame);
-    // Note: this *always* temporarily sets a frame owner, even for main frames!
-    // When a core Frame is created with no owner, it attempts to set itself as
-    // the main frame of the Page. However, this is a provisional frame, and may
-    // disappear, so Page::m_mainFrame can't be updated just yet.
-    OwnPtrWillBeRawPtr<FrameOwner> tempOwner = RemoteBridgeFrameOwner::create(nullptr, SandboxNone);
-    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(m_frameLoaderClientImpl.get(), oldFrame->host(), tempOwner.get());
-    frame->setOwner(oldFrame->owner());
-    if (frame->owner() && !frame->owner()->isLocal())
-        toRemoteBridgeFrameOwner(frame->owner())->setSandboxFlags(static_cast<SandboxFlags>(flags));
-    frame->tree().setName(name);
-    setParent(oldWebFrame->parent());
-    setOpener(oldWebFrame->opener());
-    setCoreFrame(frame);
-    // We must call init() after m_frame is assigned because it is referenced
-    // during init(). Note that this may dispatch JS events; the frame may be
-    // detached after init() returns.
-    frame->init();
-}
-
 void WebLocalFrameImpl::setAutofillClient(WebAutofillClient* autofillClient)
 {
     m_autofillClient = autofillClient;
@@ -2041,6 +2072,28 @@ void WebLocalFrameImpl::setDevToolsAgentClient(WebDevToolsAgentClient* devToolsC
 WebDevToolsAgent* WebLocalFrameImpl::devToolsAgent()
 {
     return m_devToolsAgent.get();
+}
+
+void WebLocalFrameImpl::setFrameOwnerProperties(const WebFrameOwnerProperties& frameOwnerProperties)
+{
+    // At the moment, this is only used to replicate frame owner properties
+    // for frames with a remote owner.
+    FrameOwner* owner = frame()->owner();
+    ASSERT(owner);
+    toRemoteBridgeFrameOwner(owner)->setScrollingMode(frameOwnerProperties.scrollingMode);
+    toRemoteBridgeFrameOwner(owner)->setMarginWidth(frameOwnerProperties.marginWidth);
+    toRemoteBridgeFrameOwner(owner)->setMarginHeight(frameOwnerProperties.marginHeight);
+}
+
+WebLocalFrameImpl* WebLocalFrameImpl::localRoot()
+{
+    // This can't use the LocalFrame::localFrameRoot, since it may be called
+    // when the WebLocalFrame exists but the core LocalFrame does not.
+    // TODO(alexmos, dcheng): Clean this up to only calculate this in one place.
+    WebLocalFrameImpl* localRoot = this;
+    while (!localRoot->frameWidget())
+        localRoot = toWebLocalFrameImpl(localRoot->parent());
+    return localRoot;
 }
 
 void WebLocalFrameImpl::sendPings(const WebNode& contextNode, const WebURL& destinationURL)
@@ -2141,6 +2194,16 @@ void WebLocalFrameImpl::requestRunTask(WebSuspendableTask* task) const
     ASSERT(frame());
     ASSERT(frame()->document());
     frame()->document()->postSuspendableTask(WebSuspendableTaskWrapper::create(adoptPtr(task)));
+}
+
+void WebLocalFrameImpl::didCallAddSearchProvider()
+{
+    UseCounter::count(frame(), UseCounter::ExternalAddSearchProvider);
+}
+
+void WebLocalFrameImpl::didCallIsSearchProviderInstalled()
+{
+    UseCounter::count(frame(), UseCounter::ExternalIsSearchProviderInstalled);
 }
 
 void WebLocalFrameImpl::willBeDetached()

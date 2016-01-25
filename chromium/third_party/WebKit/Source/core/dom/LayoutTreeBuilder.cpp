@@ -23,7 +23,6 @@
  *
  */
 
-#include "config.h"
 #include "core/dom/LayoutTreeBuilder.h"
 
 #include "core/HTMLNames.h"
@@ -48,7 +47,7 @@ LayoutTreeBuilderForElement::LayoutTreeBuilderForElement(Element& element, Compu
     : LayoutTreeBuilder(element, nullptr)
     , m_style(style)
 {
-    ASSERT(!isActiveInsertionPoint(element));
+    ASSERT(!element.isSlotOrActiveInsertionPoint());
     if (element.isFirstLetterPseudoElement()) {
         if (LayoutObject* nextLayoutObject = FirstLetterPseudoElement::firstLetterTextLayoutObject(element))
             m_layoutObjectParent = nextLayoutObject->parent();

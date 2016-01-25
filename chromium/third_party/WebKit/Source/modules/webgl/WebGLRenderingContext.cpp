@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webgl/WebGLRenderingContext.h"
 
 #include "core/frame/LocalFrame.h"
@@ -113,7 +112,7 @@ void WebGLRenderingContext::registerContextExtensions()
     registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays);
     registerExtension<CHROMIUMSubscribeUniform>(m_chromiumSubscribeUniform);
     registerExtension<EXTBlendMinMax>(m_extBlendMinMax);
-    registerExtension<EXTDisjointTimerQuery>(m_extDisjointTimerQuery, DraftExtension);
+    registerExtension<EXTDisjointTimerQuery>(m_extDisjointTimerQuery);
     registerExtension<EXTFragDepth>(m_extFragDepth);
     registerExtension<EXTShaderTextureLOD>(m_extShaderTextureLOD);
     registerExtension<EXTsRGB>(m_extsRGB);

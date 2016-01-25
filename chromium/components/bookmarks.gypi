@@ -26,7 +26,6 @@
         'keyed_service_core',
         'pref_registry',
         'query_parser',
-        'startup_metric_utils',
         'url_formatter/url_formatter.gyp:url_formatter',
       ],
       'sources': [
@@ -56,6 +55,8 @@
         'bookmarks/browser/bookmark_pasteboard_helper_mac.mm',
         'bookmarks/browser/bookmark_storage.cc',
         'bookmarks/browser/bookmark_storage.h',
+        'bookmarks/browser/bookmark_undo_delegate.h',
+        'bookmarks/browser/bookmark_undo_provider.h',
         'bookmarks/browser/bookmark_utils.cc',
         'bookmarks/browser/bookmark_utils.h',
         'bookmarks/browser/scoped_group_bookmark_actions.cc',

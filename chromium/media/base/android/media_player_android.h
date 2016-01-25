@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "media/base/android/media_player_listener.h"
@@ -19,7 +20,7 @@
 
 namespace media {
 
-class BrowserCdm;
+class MediaKeys;
 class MediaPlayerManager;
 
 // This class serves as the base class for different media player
@@ -65,6 +66,8 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual void SetVolume(double volume) = 0;
 
   // Get the media information from the player.
+  virtual bool HasVideo() const = 0;
+  virtual bool HasAudio() const = 0;
   virtual int GetVideoWidth() = 0;
   virtual int GetVideoHeight() = 0;
   virtual base::TimeDelta GetDuration() = 0;
@@ -78,11 +81,12 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual GURL GetFirstPartyForCookies();
 
   // Associates the |cdm| with this player.
-  virtual void SetCdm(BrowserCdm* cdm);
+  virtual void SetCdm(const scoped_refptr<MediaKeys>& cdm);
 
   // Requests playback permission from MediaPlayerManager.
   // Overridden in MediaCodecPlayer to pass data between threads.
-  virtual void RequestPermissionAndPostResult(base::TimeDelta duration) {}
+  virtual void RequestPermissionAndPostResult(base::TimeDelta duration,
+                                              bool has_audio) {}
 
   // Overridden in MediaCodecPlayer to pass data between threads.
   virtual void OnMediaMetadataChanged(base::TimeDelta duration,

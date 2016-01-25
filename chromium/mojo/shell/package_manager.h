@@ -5,10 +5,12 @@
 #ifndef MOJO_SHELL_PACKAGE_MANAGER_H_
 #define MOJO_SHELL_PACKAGE_MANAGER_H_
 
-#include "mojo/application/public/interfaces/application.mojom.h"
+#include <stdint.h>
+
 #include "mojo/services/network/public/interfaces/url_loader.mojom.h"
 #include "mojo/shell/capability_filter.h"
 #include "mojo/shell/fetcher.h"
+#include "mojo/shell/public/interfaces/application.mojom.h"
 
 class GURL;
 

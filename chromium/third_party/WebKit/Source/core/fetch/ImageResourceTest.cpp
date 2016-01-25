@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/ImageResource.h"
 
 #include "core/fetch/ImageResourceClient.h"
@@ -47,8 +46,7 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -135,7 +133,7 @@ TEST(ImageResourceTest, MultipartImage)
     ASSERT_FALSE(cachedImage->image()->isNull());
     ASSERT_EQ(cachedImage->image()->width(), 1);
     ASSERT_EQ(cachedImage->image()->height(), 1);
-    ASSERT_EQ(client.imageChangedCount(), 2);
+    ASSERT_EQ(client.imageChangedCount(), 1);
     ASSERT_TRUE(client.notifyFinishedCalled());
 }
 
@@ -219,10 +217,7 @@ TEST(ImageResourceTest, UpdateBitmapImages)
     ASSERT_FALSE(cachedImage->image()->isNull());
     ASSERT_EQ(client.imageChangedCount(), 2);
     ASSERT_TRUE(client.notifyFinishedCalled());
-
-    HashSet<ImageResource*> bitmapImages;
     ASSERT_TRUE(cachedImage->image()->isBitmapImage());
-    bitmapImages.add(cachedImage.get());
 }
 
 } // namespace blink

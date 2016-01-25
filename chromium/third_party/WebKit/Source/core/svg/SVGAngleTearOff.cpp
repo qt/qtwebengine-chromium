@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/SVGAngleTearOff.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -97,9 +96,13 @@ void SVGAngleTearOff::convertToSpecifiedUnits(unsigned short unitType, Exception
         return;
     }
 
-    target()->convertToSpecifiedUnits(static_cast<SVGAngle::SVGAngleType>(unitType), exceptionState);
-    if (!exceptionState.hadException())
-        commitChange();
+    if (target()->unitType() == SVGAngle::SVG_ANGLETYPE_UNKNOWN) {
+        exceptionState.throwDOMException(NotSupportedError, "Cannot convert from unknown or invalid units.");
+        return;
+    }
+
+    target()->convertToSpecifiedUnits(static_cast<SVGAngle::SVGAngleType>(unitType));
+    commitChange();
 }
 
 void SVGAngleTearOff::setValueAsString(const String& value, ExceptionState& exceptionState)
@@ -111,10 +114,13 @@ void SVGAngleTearOff::setValueAsString(const String& value, ExceptionState& exce
 
     String oldValue = target()->valueAsString();
 
-    target()->setValueAsString(value, exceptionState);
+    SVGParsingError status = target()->setValueAsString(value);
 
-    if (!exceptionState.hadException() && !hasExposedAngleUnit()) {
-        target()->setValueAsString(oldValue, ASSERT_NO_EXCEPTION); // rollback to old value
+    if (status == NoError && !hasExposedAngleUnit()) {
+        target()->setValueAsString(oldValue); // rollback to old value
+        status = ParsingAttributeFailedError;
+    }
+    if (status != NoError) {
         exceptionState.throwDOMException(SyntaxError, "The value provided ('" + value + "') is invalid.");
         return;
     }

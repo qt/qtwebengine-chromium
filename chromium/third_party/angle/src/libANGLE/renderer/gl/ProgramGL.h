@@ -33,6 +33,7 @@ class ProgramGL : public ProgramImpl
 
     LinkResult load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream) override;
     gl::Error save(gl::BinaryOutputStream *stream) override;
+    void setBinaryRetrievableHint(bool retrievable) override;
 
     LinkResult link(const gl::Data &data, gl::InfoLog &infoLog) override;
     GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) override;
@@ -61,8 +62,9 @@ class ProgramGL : public ProgramImpl
 
     void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) override;
 
-    void gatherUniformBlockInfo(std::vector<gl::UniformBlock> *uniformBlocks,
-                                std::vector<gl::LinkedUniform> *uniforms) override;
+    bool getUniformBlockSize(const std::string &blockName, size_t *sizeOut) const override;
+    bool getUniformBlockMemberInfo(const std::string &memberUniformName,
+                                   sh::BlockMemberInfo *memberInfoOut) const override;
 
     GLuint getProgramID() const;
     const std::vector<SamplerBindingGL> &getAppliedSamplerUniforms() const;

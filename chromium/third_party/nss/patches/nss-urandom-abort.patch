@@ -1,7 +1,8 @@
-diff -r c3565a90b8c4 lib/freebl/unix_rand.c
---- a/lib/freebl/unix_rand.c	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/freebl/unix_rand.c	Tue Jan 07 11:28:59 2014 -0800
-@@ -916,8 +916,19 @@
+diff --git a/lib/freebl/unix_rand.c b/lib/freebl/unix_rand.c
+index 579040e..2f9b3e5 100644
+--- a/lib/freebl/unix_rand.c
++++ b/lib/freebl/unix_rand.c
+@@ -916,8 +916,19 @@ void RNG_SystemInfoForRNG(void)
  #if defined(BSDI) || defined(FREEBSD) || defined(NETBSD) \
      || defined(OPENBSD) || defined(DARWIN) || defined(LINUX) \
      || defined(HPUX)
@@ -22,7 +23,7 @@ diff -r c3565a90b8c4 lib/freebl/unix_rand.c
  #endif
  
  #ifdef SOLARIS
-@@ -1134,6 +1145,11 @@
+@@ -1134,6 +1145,11 @@ static void rng_systemJitter(void)
     }
  }
  
@@ -34,7 +35,7 @@ diff -r c3565a90b8c4 lib/freebl/unix_rand.c
  size_t RNG_SystemRNG(void *dest, size_t maxLen)
  {
      FILE *file;
-@@ -1144,7 +1160,10 @@
+@@ -1144,7 +1160,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
  
      file = fopen("/dev/urandom", "r");
      if (file == NULL) {
@@ -46,7 +47,7 @@ diff -r c3565a90b8c4 lib/freebl/unix_rand.c
      }
      /* Read from the underlying file descriptor directly to bypass stdio
       * buffering and avoid reading more bytes than we need from /dev/urandom.
-@@ -1164,8 +1183,10 @@
+@@ -1164,8 +1183,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
      }
      fclose(file);
      if (fileBytes != maxLen) {

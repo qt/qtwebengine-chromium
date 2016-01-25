@@ -9,7 +9,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "net/spdy/buffered_spdy_framer.h"
-#include "net/spdy/spdy_test_utils.h"
 #include "net/tools/balsa/balsa_enums.h"
 #include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/flip_server/flip_config.h"
@@ -27,6 +26,11 @@ using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 using ::testing::SaveArg;
 using ::testing::Values;
+
+inline bool operator==(StringPiece x,
+                       const SpdyHeaderBlock::StringPieceProxy& y) {
+  return x == y.operator StringPiece();
+}
 
 namespace {
 
@@ -67,11 +71,15 @@ class SpdyFramerVisitor : public BufferedSpdyFramerVisitorInterface {
                                        size_t,
                                        bool));
   MOCK_METHOD2(OnStreamPadding, void(SpdyStreamId, size_t));
+  MOCK_METHOD1(OnHeaderFrameStart,
+               SpdyHeadersHandlerInterface*(SpdyStreamId stream_id));
+  MOCK_METHOD2(OnHeaderFrameEnd,
+               void(SpdyStreamId stream_id, bool end_headers));
   MOCK_METHOD1(OnSettings, void(bool clear_persisted));
-  MOCK_METHOD3(OnSetting, void(SpdySettingsIds, uint8, uint32));
+  MOCK_METHOD3(OnSetting, void(SpdySettingsIds, uint8_t, uint32_t));
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
   MOCK_METHOD2(OnRstStream, void(SpdyStreamId, SpdyRstStreamStatus));
-  MOCK_METHOD2(OnGoAway, void(SpdyStreamId, SpdyGoAwayStatus));
+  MOCK_METHOD3(OnGoAway, void(SpdyStreamId, SpdyGoAwayStatus, StringPiece));
   MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId, int));
   MOCK_METHOD3(OnPushPromise,
                void(SpdyStreamId, SpdyStreamId, const SpdyHeaderBlock&));
@@ -181,7 +189,7 @@ class SpdySMTestBase : public ::testing::TestWithParam<SpdyMajorVersion> {
     output_list.clear();
   }
 
-  bool HasStream(uint32 stream_id) {
+  bool HasStream(uint32_t stream_id) {
     return interface_->output_ordering().ExistsInPriorityMaps(stream_id);
   }
 
@@ -223,8 +231,8 @@ TEST_P(SpdySMProxyTest, InitSMConnection) {
 TEST_P(SpdySMProxyTest, OnStreamFrameData) {
   BufferedSpdyFramerVisitorInterface* visitor = interface_.get();
   scoped_ptr<MockSMInterface> mock_interface(new MockSMInterface);
-  uint32 stream_id = 92;
-  uint32 associated_id = 43;
+  uint32_t stream_id = 92;
+  uint32_t associated_id = 43;
   SpdyHeaderBlock block;
   testing::MockFunction<void(int)> checkpoint;  // NOLINT
 
@@ -253,7 +261,7 @@ TEST_P(SpdySMProxyTest, OnStreamFrameData) {
 
 TEST_P(SpdySMProxyTest, OnRstStream) {
   BufferedSpdyFramerVisitorInterface* visitor = interface_.get();
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   MemCacheIter mci;
   mci.stream_id = stream_id;
 
@@ -279,7 +287,7 @@ TEST_P(SpdySMProxyTest, ProcessReadInput) {
 }
 
 TEST_P(SpdySMProxyTest, ResetForNewConnection) {
-  uint32 stream_id = 13;
+  uint32_t stream_id = 13;
   MemCacheIter mci;
   mci.stream_id = stream_id;
   // incomplete input
@@ -338,7 +346,7 @@ TEST_P(SpdySMProxyTest, NewStream) {
 }
 
 TEST_P(SpdySMProxyTest, AddToOutputOrder) {
-  uint32 stream_id = 13;
+  uint32_t stream_id = 13;
   MemCacheIter mci;
   mci.stream_id = stream_id;
 
@@ -354,7 +362,7 @@ TEST_P(SpdySMProxyTest, AddToOutputOrder) {
 }
 
 TEST_P(SpdySMProxyTest, SendErrorNotFound) {
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   SpdyHeaderBlock actual_header_block;
   const char* actual_data;
   size_t actual_size;
@@ -402,7 +410,7 @@ TEST_P(SpdySMProxyTest, SendErrorNotFound) {
 }
 
 TEST_P(SpdySMProxyTest, SendSynStream) {
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   BalsaHeaders headers;
   SpdyHeaderBlock actual_header_block;
   headers.AppendHeader("key1", "value1");
@@ -433,7 +441,7 @@ TEST_P(SpdySMProxyTest, SendSynStream) {
 }
 
 TEST_P(SpdySMProxyTest, SendSynReply) {
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   BalsaHeaders headers;
   SpdyHeaderBlock actual_header_block;
   headers.AppendHeader("key1", "value1");
@@ -467,7 +475,7 @@ TEST_P(SpdySMProxyTest, SendSynReply) {
 }
 
 TEST_P(SpdySMProxyTest, SendDataFrame) {
-  uint32 stream_id = 133;
+  uint32_t stream_id = 133;
   SpdyDataFlags flags = DATA_FLAG_NONE;
   const char* actual_data;
   size_t actual_size;
@@ -493,7 +501,7 @@ TEST_P(SpdySMProxyTest, SendDataFrame) {
 }
 
 TEST_P(SpdySMProxyTest, SendLongDataFrame) {
-  uint32 stream_id = 133;
+  uint32_t stream_id = 133;
   SpdyDataFlags flags = DATA_FLAG_NONE;
   const char* actual_data;
   size_t actual_size;
@@ -533,7 +541,7 @@ TEST_P(SpdySMProxyTest, SendLongDataFrame) {
 
 TEST_P(SpdySMServerTest, OnSynStream) {
   BufferedSpdyFramerVisitorInterface* visitor = interface_.get();
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   SpdyHeaderBlock spdy_headers;
   spdy_headers["url"] = "http://www.example.com/path";
   spdy_headers["method"] = "GET";
@@ -549,7 +557,7 @@ TEST_P(SpdySMServerTest, OnSynStream) {
 }
 
 TEST_P(SpdySMServerTest, NewStream) {
-  uint32 stream_id = 13;
+  uint32_t stream_id = 13;
   std::string filename = "foobar";
 
   {
@@ -562,7 +570,7 @@ TEST_P(SpdySMServerTest, NewStream) {
 }
 
 TEST_P(SpdySMServerTest, NewStreamError) {
-  uint32 stream_id = 82;
+  uint32_t stream_id = 82;
   SpdyHeaderBlock actual_header_block;
   const char* actual_data;
   size_t actual_size;

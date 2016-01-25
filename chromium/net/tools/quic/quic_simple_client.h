@@ -8,24 +8,26 @@
 #ifndef NET_TOOLS_QUIC_QUIC_SIMPLE_CLIENT_H_
 #define NET_TOOLS_QUIC_QUIC_SIMPLE_CLIENT_H_
 
+#include <stddef.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "net/base/ip_endpoint.h"
 #include "net/http/http_response_headers.h"
 #include "net/log/net_log.h"
 #include "net/quic/quic_config.h"
-#include "net/quic/quic_data_stream.h"
 #include "net/quic/quic_packet_reader.h"
+#include "net/quic/quic_spdy_stream.h"
 #include "net/tools/quic/quic_client_base.h"
 
 namespace net {
 
 struct HttpRequestInfo;
-class QuicConnectionHelper;
+class QuicChromiumConnectionHelper;
 class UDPClientSocket;
 
 namespace tools {
@@ -35,7 +37,7 @@ class QuicClientPeer;
 }  // namespace test
 
 class QuicSimpleClient : public QuicClientBase,
-                         public QuicDataStream::Visitor,
+                         public QuicSpdyStream::Visitor,
                          public QuicPacketReader::Visitor {
  public:
   class ResponseListener {
@@ -81,11 +83,13 @@ class QuicSimpleClient : public QuicClientBase,
   // EpollServer.
   QuicSimpleClient(IPEndPoint server_address,
                    const QuicServerId& server_id,
-                   const QuicVersionVector& supported_versions);
+                   const QuicVersionVector& supported_versions,
+                   ProofVerifier* proof_verifier);
   QuicSimpleClient(IPEndPoint server_address,
                    const QuicServerId& server_id,
                    const QuicVersionVector& supported_versions,
-                   const QuicConfig& config);
+                   const QuicConfig& config,
+                   ProofVerifier* proof_verifier);
 
   ~QuicSimpleClient() override;
 
@@ -125,13 +129,13 @@ class QuicSimpleClient : public QuicClientBase,
   bool MigrateSocket(const IPAddressNumber& new_host);
 
   // QuicPacketReader::Visitor
-  void OnReadError(int result) override;
+  void OnReadError(int result, const DatagramClientSocket* socket) override;
   bool OnPacket(const QuicEncryptedPacket& packet,
                 IPEndPoint local_address,
                 IPEndPoint peer_address) override;
 
-  // QuicDataStream::Visitor
-  void OnClose(QuicDataStream* stream) override;
+  // QuicSpdyStream::Visitor
+  void OnClose(QuicSpdyStream* stream) override;
 
   // If the crypto handshake has not yet been confirmed, adds the data to the
   // queue of data to resend if the client receives a stateless reject.
@@ -162,7 +166,7 @@ class QuicSimpleClient : public QuicClientBase,
   const std::string& latest_response_body() const;
 
  protected:
-  virtual QuicConnectionHelper* CreateQuicConnectionHelper();
+  virtual QuicChromiumConnectionHelper* CreateQuicConnectionHelper();
   virtual QuicPacketWriter* CreateQuicPacketWriter();
 
  private:
@@ -216,9 +220,6 @@ class QuicSimpleClient : public QuicClientBase,
 
   // UDP socket connected to the server.
   scoped_ptr<UDPClientSocket> socket_;
-
-  // Helper to be used by created connections.
-  scoped_ptr<QuicConnectionHelper> helper_;
 
   // Listens for full responses.
   scoped_ptr<ResponseListener> response_listener_;

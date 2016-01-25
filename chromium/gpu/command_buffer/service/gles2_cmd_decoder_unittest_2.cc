@@ -4,11 +4,13 @@
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 
+#include <stdint.h>
+
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_base.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/context_group.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_base.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,8 +40,9 @@ class GLES2DecoderTest2 : public GLES2DecoderTestBase {
  public:
   GLES2DecoderTest2() { }
 
-  void TestAcceptedUniform(
-      GLenum uniform_type, uint32 accepts_apis, bool es3_enabled) {
+  void TestAcceptedUniform(GLenum uniform_type,
+                           uint32_t accepts_apis,
+                           bool es3_enabled) {
     decoder_->set_unsafe_es3_apis_enabled(es3_enabled);
 
     SetupShaderForUniform(uniform_type);
@@ -475,10 +478,6 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::GetProgramInfoLog, 0>(
       .WillOnce(SetArgumentPointee<2>(0));
   EXPECT_CALL(*gl_, GetProgramiv(kServiceProgramId, GL_ACTIVE_UNIFORMS, _))
       .WillOnce(SetArgumentPointee<2>(0));
-  EXPECT_CALL(
-      *gl_,
-      GetProgramiv(kServiceProgramId, GL_ACTIVE_UNIFORM_MAX_LENGTH, _))
-      .WillOnce(SetArgumentPointee<2>(0));
 
   Program* program = GetProgram(client_program_id_);
   ASSERT_TRUE(program != NULL);
@@ -588,10 +587,6 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::LinkProgram, 0>(
       GetProgramiv(kServiceProgramId, GL_ACTIVE_ATTRIBUTE_MAX_LENGTH, _))
       .WillOnce(SetArgumentPointee<2>(0));
   EXPECT_CALL(*gl_, GetProgramiv(kServiceProgramId, GL_ACTIVE_UNIFORMS, _))
-      .WillOnce(SetArgumentPointee<2>(0));
-  EXPECT_CALL(
-      *gl_,
-      GetProgramiv(kServiceProgramId, GL_ACTIVE_UNIFORM_MAX_LENGTH, _))
       .WillOnce(SetArgumentPointee<2>(0));
 
   cmds::AttachShader attach_cmd;

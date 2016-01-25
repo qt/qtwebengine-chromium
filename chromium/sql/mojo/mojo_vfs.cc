@@ -4,9 +4,14 @@
 
 #include "sql/mojo/mojo_vfs.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
 #include "components/filesystem/public/interfaces/file.mojom.h"
 #include "components/filesystem/public/interfaces/file_system.mojom.h"
 #include "components/filesystem/public/interfaces/types.mojom.h"
@@ -60,6 +65,7 @@ filesystem::FilePtr& GetFSFile(sqlite3_file* vfs_file) {
 
 int MojoVFSClose(sqlite3_file* file) {
   DVLOG(1) << "MojoVFSClose(*)";
+  TRACE_EVENT0("sql", "MojoVFSClose");
   using filesystem::FilePtr;
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
   // Must call File::Close explicitly instead of just deleting the file, since
@@ -75,6 +81,7 @@ int MojoVFSRead(sqlite3_file* sql_file,
                 int size,
                 sqlite3_int64 offset) {
   DVLOG(1) << "MojoVFSRead (" << size << " @ " << offset << ")";
+  TRACE_EVENT0("sql", "MojoVFSRead");
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
   mojo::Array<uint8_t> mojo_data;
   GetFSFile(sql_file)->Read(size, offset, filesystem::WHENCE_FROM_BEGIN,
@@ -104,12 +111,13 @@ int MojoVFSWrite(sqlite3_file* sql_file,
                  int size,
                  sqlite_int64 offset) {
   DVLOG(1) << "MojoVFSWrite(*, " << size << ", " << offset << ")";
+  TRACE_EVENT0("sql", "MojoVFSWrite");
   mojo::Array<uint8_t> mojo_data(size);
   memcpy(&mojo_data.front(), buffer, size);
 
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
   uint32_t num_bytes_written = 0;
-  GetFSFile(sql_file)->Write(mojo_data.Pass(), offset,
+  GetFSFile(sql_file)->Write(std::move(mojo_data), offset,
                              filesystem::WHENCE_FROM_BEGIN,
                              Capture(&error, &num_bytes_written));
   GetFSFile(sql_file).WaitForIncomingResponse();
@@ -128,6 +136,7 @@ int MojoVFSWrite(sqlite3_file* sql_file,
 
 int MojoVFSTruncate(sqlite3_file* sql_file, sqlite_int64 size) {
   DVLOG(1) << "MojoVFSTruncate(*, " << size << ")";
+  TRACE_EVENT0("sql", "MojoVFSTruncate");
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
   GetFSFile(sql_file)->Truncate(size, Capture(&error));
   GetFSFile(sql_file).WaitForIncomingResponse();
@@ -142,6 +151,7 @@ int MojoVFSTruncate(sqlite3_file* sql_file, sqlite_int64 size) {
 
 int MojoVFSSync(sqlite3_file* sql_file, int flags) {
   DVLOG(1) << "MojoVFSSync(*, " << flags << ")";
+  TRACE_EVENT0("sql", "MojoVFSSync");
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
   GetFSFile(sql_file)->Flush(Capture(&error));
   GetFSFile(sql_file).WaitForIncomingResponse();
@@ -156,6 +166,7 @@ int MojoVFSSync(sqlite3_file* sql_file, int flags) {
 
 int MojoVFSFileSize(sqlite3_file* sql_file, sqlite_int64* size) {
   DVLOG(1) << "MojoVFSFileSize(*)";
+  TRACE_EVENT0("sql", "MojoVFSFileSize");
 
   filesystem::FileError err = filesystem::FILE_ERROR_FAILED;
   filesystem::FileInformationPtr file_info;
@@ -236,6 +247,9 @@ int MojoVFSOpen(sqlite3_vfs* mojo_vfs,
                 int flags,
                 int* pOutFlags) {
   DVLOG(1) << "MojoVFSOpen(*, " << name << ", *, " << flags << ")";
+  TRACE_EVENT2("sql", "MojoVFSOpen",
+               "name", name,
+               "flags", flags);
   int open_flags = 0;
   if (flags & SQLITE_OPEN_EXCLUSIVE) {
     DCHECK(flags & SQLITE_OPEN_CREATE);
@@ -286,13 +300,16 @@ int MojoVFSOpen(sqlite3_vfs* mojo_vfs,
   // |file| is actually a malloced buffer of size szOsFile. This means that we
   // need to manually use placement new to construct the C++ object which owns
   // the pipe to our file.
-  new (&GetFSFile(file)) filesystem::FilePtr(file_ptr.Pass());
+  new (&GetFSFile(file)) filesystem::FilePtr(std::move(file_ptr));
 
   return SQLITE_OK;
 }
 
 int MojoVFSDelete(sqlite3_vfs* mojo_vfs, const char* filename, int sync_dir) {
   DVLOG(1) << "MojoVFSDelete(*, " << filename << ", " << sync_dir << ")";
+  TRACE_EVENT2("sql", "MojoVFSDelete",
+               "name", filename,
+               "sync_dir", sync_dir);
   // TODO(erg): The default windows sqlite VFS has retry code to work around
   // antivirus software keeping files open. We'll probably have to do something
   // like that in the far future if we ever support Windows.
@@ -313,6 +330,9 @@ int MojoVFSAccess(sqlite3_vfs* mojo_vfs,
                   int flags,
                   int* result) {
   DVLOG(1) << "MojoVFSAccess(*, " << filename << ", " << flags << ", *)";
+  TRACE_EVENT2("sql", "MojoVFSAccess",
+               "name", filename,
+               "flags", flags);
   filesystem::FileError error = filesystem::FILE_ERROR_FAILED;
 
   if (flags == SQLITE_ACCESS_READWRITE || flags == SQLITE_ACCESS_READ) {
@@ -412,7 +432,7 @@ static sqlite3_vfs mojo_vfs = {
 ScopedMojoFilesystemVFS::ScopedMojoFilesystemVFS(
     filesystem::DirectoryPtr root_directory)
     : parent_(sqlite3_vfs_find(NULL)),
-      root_directory_(root_directory.Pass()) {
+      root_directory_(std::move(root_directory)) {
   CHECK(!mojo_vfs.pAppData);
   mojo_vfs.pAppData = this;
   mojo_vfs.mxPathname = parent_->mxPathname;

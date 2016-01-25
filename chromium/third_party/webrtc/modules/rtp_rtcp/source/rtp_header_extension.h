@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_RTP_HEADER_EXTENSION_H_
-#define WEBRTC_MODULES_RTP_RTCP_RTP_HEADER_EXTENSION_H_
+#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_HEADER_EXTENSION_H_
+#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_HEADER_EXTENSION_H_
 
 #include <map>
 
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -28,7 +28,7 @@ const size_t kVideoRotationLength = 2;
 const size_t kTransportSequenceNumberLength = 3;
 
 struct HeaderExtension {
-  HeaderExtension(RTPExtensionType extension_type)
+  explicit HeaderExtension(RTPExtensionType extension_type)
       : type(extension_type), length(0), active(true) {
     Init();
   }
@@ -112,6 +112,7 @@ class RtpHeaderExtensionMap {
   int32_t Register(const RTPExtensionType type, const uint8_t id, bool active);
   std::map<uint8_t, HeaderExtension*> extensionMap_;
 };
-}
+}  // namespace webrtc
 
-#endif // WEBRTC_MODULES_RTP_RTCP_RTP_HEADER_EXTENSION_H_
+#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_HEADER_EXTENSION_H_
+

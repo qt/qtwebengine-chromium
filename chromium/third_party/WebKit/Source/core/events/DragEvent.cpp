@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/events/DragEvent.h"
 
 #include "core/clipboard/DataTransfer.h"
@@ -14,15 +13,17 @@ namespace blink {
 PassRefPtrWillBeRawPtr<DragEvent> DragEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
     int detail, int screenX, int screenY, int windowX, int windowY,
     int movementX, int movementY,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
+    PlatformEvent::Modifiers modifiers,
     short button, unsigned short buttons,
-    PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, DataTransfer* dataTransfer, PlatformMouseEvent::SyntheticEventType syntheticEventType,
-    double uiCreateTime)
+    PassRefPtrWillBeRawPtr<EventTarget> relatedTarget,
+    double platformTimeStamp, DataTransfer* dataTransfer,
+    PlatformMouseEvent::SyntheticEventType syntheticEventType)
 {
     return adoptRefWillBeNoop(new DragEvent(type, canBubble, cancelable, view,
         detail, screenX, screenY, windowX, windowY,
         movementX, movementY,
-        ctrlKey, altKey, shiftKey, metaKey, button, buttons, relatedTarget, dataTransfer, syntheticEventType, uiCreateTime));
+        modifiers, button, buttons, relatedTarget, platformTimeStamp,
+        dataTransfer, syntheticEventType));
 }
 
 
@@ -39,13 +40,13 @@ DragEvent::DragEvent(DataTransfer* dataTransfer)
 DragEvent::DragEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
     int detail, int screenX, int screenY, int windowX, int windowY,
     int movementX, int movementY,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
+    PlatformEvent::Modifiers modifiers,
     short button, unsigned short buttons, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget,
-    DataTransfer* dataTransfer, PlatformMouseEvent::SyntheticEventType syntheticEventType,
-    double uiCreateTime)
+    double platformTimeStamp, DataTransfer* dataTransfer,
+    PlatformMouseEvent::SyntheticEventType syntheticEventType)
     : MouseEvent(eventType, canBubble, cancelable, view, detail, screenX, screenY,
-        windowX, windowY, movementX, movementY, ctrlKey, altKey, shiftKey, metaKey, button, buttons, relatedTarget,
-        syntheticEventType, uiCreateTime)
+        windowX, windowY, movementX, movementY, modifiers, button, buttons, relatedTarget,
+        platformTimeStamp, syntheticEventType)
     , m_dataTransfer(dataTransfer)
 
 {

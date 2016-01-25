@@ -52,6 +52,7 @@ class ContainerNode;
 class DOMSettableTokenList;
 class Document;
 class Element;
+class ElementShadow;
 class Event;
 class EventDispatchMediator;
 class EventListener;
@@ -60,6 +61,7 @@ class FloatPoint;
 class LocalFrame;
 class HTMLInputElement;
 class HTMLQualifiedName;
+class HTMLSlotElement;
 class IntRect;
 class KeyboardEvent;
 class NSResolver;
@@ -112,6 +114,8 @@ protected:
     { }
 
 protected:
+    // LayoutObjects are fully owned by their DOM node. See LayoutObject's
+    // LIFETIME documentation section.
     LayoutObject* m_layoutObject;
 };
 
@@ -126,6 +130,8 @@ WILL_NOT_BE_EAGERLY_TRACED_CLASS(Node);
 #define NODE_BASE_CLASSES public EventTarget, public TreeShared<Node>
 #endif
 
+// This class represents a DOM node in the DOM tree.
+// https://dom.spec.whatwg.org/#interface-node
 class CORE_EXPORT Node : NODE_BASE_CLASSES {
 #if !ENABLE(OILPAN)
     DEFINE_EVENT_TARGET_REFCOUNTING(TreeShared<Node>);
@@ -178,7 +184,7 @@ public:
     static void* allocateObject(size_t size, bool isEager)
     {
         ThreadState* state = ThreadStateFor<ThreadingTrait<Node>::Affinity>::state();
-        return Heap::allocateOnHeapIndex(state, size, isEager ? ThreadState::EagerSweepHeapIndex : ThreadState::NodeHeapIndex, GCInfoTrait<EventTarget>::index());
+        return Heap::allocateOnHeapIndex(state, size, isEager ? BlinkGC::EagerSweepHeapIndex : BlinkGC::NodeHeapIndex, GCInfoTrait<EventTarget>::index());
     }
 #else // !ENABLE(OILPAN)
     // All Nodes are placed in their own heap partition for security.
@@ -216,7 +222,7 @@ public:
     Node* pseudoAwareFirstChild() const;
     Node* pseudoAwareLastChild() const;
 
-    virtual KURL baseURI() const;
+    const KURL& baseURI() const;
 
     PassRefPtrWillBeRawPtr<Node> insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION);
     PassRefPtrWillBeRawPtr<Node> replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, PassRefPtrWillBeRawPtr<Node> oldChild, ExceptionState& = ASSERT_NO_EXCEPTION);
@@ -224,7 +230,7 @@ public:
     PassRefPtrWillBeRawPtr<Node> appendChild(PassRefPtrWillBeRawPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
 
     bool hasChildren() const { return firstChild(); }
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = false) = 0;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) = 0;
     void normalize();
 
     bool isSameNode(Node* other) const { return this == other; }
@@ -291,6 +297,7 @@ public:
     bool isInsertionPoint() const { return getFlag(IsInsertionPointFlag); }
 
     bool canParticipateInComposedTree() const;
+    bool isSlotOrActiveInsertionPoint() const;
 
     bool hasCustomStyleCallbacks() const { return getFlag(HasCustomStyleCallbacksFlag); }
 
@@ -299,6 +306,8 @@ public:
     // shadow tree but its root is detached from its host. This can happen when handling
     // queued events (e.g. during execCommand()).
     Element* shadowHost() const;
+    // crbug.com/569532: containingShadowRoot() can return nullptr even if isInShadowTree() returns true.
+    // This can happen when handling queued events (e.g. during execCommand())
     ShadowRoot* containingShadowRoot() const;
     ShadowRoot* youngestShadowRoot() const;
 
@@ -475,6 +484,12 @@ public:
     bool isInShadowTree() const { return getFlag(IsInShadowTreeFlag); }
     bool isInTreeScope() const { return getFlag(static_cast<NodeFlags>(InDocumentFlag | IsInShadowTreeFlag)); }
 
+    ElementShadow* parentElementShadow() const;
+    bool isInV1ShadowTree() const;
+    bool isInV0ShadowTree() const;
+    bool isChildOfV1ShadowHost() const;
+    bool isChildOfV0ShadowHost() const;
+
     bool isDocumentTypeNode() const { return nodeType() == DOCUMENT_TYPE_NODE; }
     virtual bool childTypeAllowed(NodeType) const { return false; }
     unsigned countChildren() const;
@@ -514,10 +529,11 @@ public:
 
     struct AttachContext {
         STACK_ALLOCATED();
-        ComputedStyle* resolvedStyle;
-        bool performingReattach;
+        ComputedStyle* resolvedStyle = nullptr;
+        bool performingReattach = false;
+        bool clearInvalidation = false;
 
-        AttachContext() : resolvedStyle(nullptr), performingReattach(false) { }
+        AttachContext() { }
     };
 
     // Attaches this node to the layout tree. This calculates the style to be applied to the node and creates an
@@ -575,6 +591,8 @@ public:
     //
     virtual void removedFrom(ContainerNode* insertionPoint);
 
+    // FIXME(dominicc): This method is not debug-only--it is used by
+    // Tracing--rename it to something indicative.
     String debugName() const;
 
 #ifndef NDEBUG
@@ -608,8 +626,6 @@ public:
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const final;
 
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     void removeAllEventListeners() override;
     void removeAllEventListenersRecursively();
 
@@ -625,10 +641,7 @@ public:
     void dispatchSubtreeModifiedEvent();
     bool dispatchDOMActivateEvent(int detail, PassRefPtrWillBeRawPtr<Event> underlyingEvent);
 
-    bool dispatchKeyEvent(const PlatformKeyboardEvent&);
-    bool dispatchWheelEvent(const PlatformWheelEvent&);
     bool dispatchMouseEvent(const PlatformMouseEvent&, const AtomicString& eventType, int clickCount = 0, Node* relatedTarget = nullptr);
-    bool dispatchGestureEvent(const PlatformGestureEvent&);
 
     void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents, SimulatedClickCreationScope = SimulatedClickCreationScope::FromUserAgent);
 
@@ -654,6 +667,8 @@ public:
     void updateAncestorConnectedSubframeCountForInsertion() const;
 
     PassRefPtrWillBeRawPtr<StaticNodeList> getDestinationInsertionPoints();
+    HTMLSlotElement* assignedSlot() const;
+    HTMLSlotElement* assignedSlotForBinding();
 
     void setAlreadySpellChecked(bool flag) { setFlag(flag, AlreadySpellCheckedFlag); }
     bool isAlreadySpellChecked() { return getFlag(AlreadySpellCheckedFlag); }
@@ -742,6 +757,8 @@ protected:
 
     virtual void didMoveToNewDocument(Document& oldDocument);
 
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+    bool removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
     bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
     static void reattachWhitespaceSiblingsIfNeeded(Text* start);
@@ -783,6 +800,13 @@ private:
 #endif
     bool hasTreeSharedParent() const { return !!parentOrShadowHostNode(); }
 
+    // Gets nodeName without caching AtomicStrings. Used by
+    // debugName. Compositor may call debugName from the "impl" thread
+    // during "commit". The main thread is stopped at that time, but
+    // it is not safe to cache AtomicStrings because those are
+    // per-thread.
+    virtual String debugNodeName() const;
+
     enum EditableLevel { Editable, RichlyEditable };
     bool hasEditableStyle(EditableLevel, UserSelectAllTreatment = UserSelectAllIsAlwaysNonEditable) const;
     bool isEditableToAccessibility(EditableLevel) const;
@@ -813,6 +837,8 @@ private:
     // When a node has rare data we move the layoutObject into the rare data.
     union DataUnion {
         DataUnion() : m_layoutObject(nullptr) { }
+        // LayoutObjects are fully owned by their DOM node. See LayoutObject's
+        // LIFETIME documentation section.
         LayoutObject* m_layoutObject;
         NodeRareDataBase* m_rareData;
     } m_data;

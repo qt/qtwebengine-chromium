@@ -26,7 +26,9 @@
 #define CompositorAnimationsTestHelper_h
 
 #include "core/animation/CompositorAnimations.h"
-#include "public/platform/Platform.h"
+#include "platform/testing/TestingPlatformSupport.h"
+#include "public/platform/WebCompositorAnimationPlayer.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFloatAnimationCurve.h"
 #include "public/platform/WebFloatKeyframe.h"
@@ -113,6 +115,25 @@ public:
 
 using WebFloatAnimationCurveMock = WebCompositorAnimationCurveMock<WebFloatAnimationCurve, WebCompositorAnimationCurve::AnimationCurveTypeFloat, WebFloatKeyframe>;
 
+class WebCompositorAnimationTimelineMock : public WebCompositorAnimationTimeline {
+public:
+    MOCK_METHOD1(playerAttached, void(const WebCompositorAnimationPlayerClient&));
+    MOCK_METHOD1(playerDestroyed, void(const WebCompositorAnimationPlayerClient&));
+};
+
+class WebCompositorAnimationPlayerMock : public WebCompositorAnimationPlayer {
+public:
+    MOCK_METHOD1(setAnimationDelegate, void(WebCompositorAnimationDelegate*));
+
+    MOCK_METHOD1(attachLayer, void(WebLayer*));
+    MOCK_METHOD0(detachLayer, void());
+    MOCK_CONST_METHOD0(isLayerAttached, bool());
+
+    MOCK_METHOD1(addAnimation, void(WebCompositorAnimation*));
+    MOCK_METHOD1(removeAnimation, void(int));
+    MOCK_METHOD2(pauseAnimation, void(int, double));
+};
+
 } // namespace blink
 
 namespace blink {
@@ -125,34 +146,19 @@ public:
     public:
         MOCK_METHOD4(createAnimation, WebCompositorAnimation*(const WebCompositorAnimationCurve& curve, WebCompositorAnimation::TargetProperty target, int groupId, int animationId));
         MOCK_METHOD0(createFloatAnimationCurve, WebFloatAnimationCurve*());
+
+        MOCK_METHOD0(createAnimationPlayer, WebCompositorAnimationPlayer*());
+        MOCK_METHOD0(createAnimationTimeline, WebCompositorAnimationTimeline*());
     };
 
 private:
-    class PlatformProxy : public Platform {
+    class PlatformProxy : public TestingPlatformSupport {
     public:
-        PlatformProxy(WebCompositorSupportMock** compositor) : m_platform(Platform::current()), m_compositor(compositor) { }
-
-        ~PlatformProxy()
-        {
-            blink::Platform::initialize(m_platform);
-        }
-
-        virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) { ASSERT_NOT_REACHED(); }
-        const unsigned char* getTraceCategoryEnabledFlag(const char* categoryName) override
-        {
-            static const unsigned char tracingIsDisabled = 0;
-            return &tracingIsDisabled;
-        }
-
-        WebThread* currentThread() override
-        {
-            return m_platform->currentThread();
-        }
-
+        explicit PlatformProxy(WebCompositorSupportMock** compositor) : m_compositor(compositor) { }
     private:
-        blink::Platform* m_platform; // Not owned.
-        WebCompositorSupportMock** m_compositor;
         WebCompositorSupport* compositorSupport() override { return *m_compositor; }
+
+        WebCompositorSupportMock** m_compositor;
     };
 
     WebCompositorSupportMock* m_mockCompositor;

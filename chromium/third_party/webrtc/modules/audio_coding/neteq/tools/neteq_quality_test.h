@@ -15,7 +15,7 @@
 #include <gflags/gflags.h>
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
+#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
 #include "webrtc/modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_generator.h"
@@ -66,7 +66,7 @@ class NetEqQualityTest : public ::testing::Test {
   NetEqQualityTest(int block_duration_ms,
                    int in_sampling_khz,
                    int out_sampling_khz,
-                   enum NetEqDecoder decoder_type);
+                   NetEqDecoder decoder_type);
   virtual ~NetEqQualityTest();
 
   void SetUp() override;
@@ -98,8 +98,8 @@ class NetEqQualityTest : public ::testing::Test {
   // Write to log file. Usage Log() << ...
   std::ofstream& Log();
 
-  enum NetEqDecoder decoder_type_;
-  const int channels_;
+  NetEqDecoder decoder_type_;
+  const size_t channels_;
 
  private:
   int decoded_time_ms_;

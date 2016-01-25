@@ -18,10 +18,11 @@
 #include <algorithm>
 #include <vector>
 
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/common.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/estimators/nada.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
-#include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
+#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
 
 namespace webrtc {
 namespace testing {
@@ -63,7 +64,7 @@ void NadaBweReceiver::ReceivePacket(int64_t arrival_time_ms,
   }
 
   delay_signal_ms_ = delay_ms - baseline_delay_ms_;  // Refered as d_n.
-  const int kMedian = ARRAY_SIZE(last_delays_ms_);
+  const int kMedian = arraysize(last_delays_ms_);
   last_delays_ms_[(last_delays_index_++) % kMedian] = delay_signal_ms_;
   int size = std::min(last_delays_index_, kMedian);
 

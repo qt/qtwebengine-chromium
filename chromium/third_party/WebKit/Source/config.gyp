@@ -32,6 +32,9 @@
     # If set to 1, doesn't compile debug symbols into webcore reducing the
     # size of the binary and increasing the speed of gdb.  gcc only.
     'remove_webcore_debug_symbols%': 0,
+    # Enables the Oilpan garbage-collection infrastructure.
+    # If you update the default value below, be sure to update the one in
+    # build/features.gypi, too!
     'enable_oilpan%': 0,
     # If set to 1 (default) and using clang, the Blink GC plugin will check the
     # usage of the garbage-collection infrastructure during compilation.
@@ -89,16 +92,6 @@
         ['OS!="win" and remove_webcore_debug_symbols==1', {
           # Remove -g from all targets defined here.
           'cflags!': ['-g'],
-        }],
-        ['gcc_version>=46', {
-          # Disable warnings about c++0x compatibility, as some names (such as
-          # nullptr) conflict with upcoming c++0x types.
-          'cflags_cc': ['-Wno-c++0x-compat'],
-        }],
-        ['OS=="linux" and target_arch=="arm"', {
-          # Due to a bug in gcc arm, we get warnings about uninitialized
-          # timesNewRoman.unstatic.3258 and colorTransparent.unstatic.4879.
-          'cflags': ['-Wno-uninitialized'],
         }],
         # Only enable the blink_gc_plugin when using clang and chrome plugins.
         ['blink_gc_plugin==1 and clang==1 and clang_use_chrome_plugins==1', {

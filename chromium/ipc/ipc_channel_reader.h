@@ -5,6 +5,8 @@
 #ifndef IPC_IPC_CHANNEL_READER_H_
 #define IPC_IPC_CHANNEL_READER_H_
 
+#include <stddef.h>
+
 #include <set>
 
 #include "base/gtest_prod_util.h"
@@ -129,16 +131,41 @@ class IPC_EXPORT ChannelReader : public SupportsAttachmentBrokering,
   FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, AttachmentNotYetBrokered);
   FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, ResizeOverflowBuffer);
   FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, InvalidMessageSize);
+  FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, TrimBuffer);
 
-  typedef std::set<BrokerableAttachment::AttachmentId> AttachmentIdSet;
+  using AttachmentIdSet = std::set<BrokerableAttachment::AttachmentId>;
+  using AttachmentIdVector = std::vector<BrokerableAttachment::AttachmentId>;
 
-  // Takes the given data received from the IPC channel, translates it into
-  // Messages, and puts them in queued_messages_.
-  // As an optimization, after a message is translated, the message is
-  // immediately dispatched if able. This prevents an otherwise unnecessary deep
-  // copy of the message which is needed to store the message in the message
-  // queue.
+  // Takes the data received from the IPC channel and translates it into
+  // Messages. Complete messages are passed to HandleTranslatedMessage().
+  // Returns |false| on unrecoverable error.
   bool TranslateInputData(const char* input_data, int input_data_len);
+
+  // Internal messages and messages bound for the attachment broker are
+  // immediately dispatched. Other messages are passed to
+  // HandleExternalMessage().
+  // Returns |false| on unrecoverable error.
+  bool HandleTranslatedMessage(Message* translated_message,
+                               const AttachmentIdVector& attachment_ids);
+
+  // Populates the message with brokered and non-brokered attachments. If
+  // possible, the message is immediately dispatched. Otherwise, a deep copy of
+  // the message is added to |queued_messages_|. |blocked_ids_| are updated if
+  // necessary.
+  bool HandleExternalMessage(Message* external_message,
+                             const AttachmentIdVector& attachment_ids);
+
+  // If there was a dispatch error, informs |listener_|.
+  void HandleDispatchError(const Message& message);
+
+  // Emits logging associated with a Message that is about to be dispatched.
+  void EmitLogBeforeDispatch(const Message& message);
+
+  // Attachment broker messages should be dispatched out of band, since there
+  // are no ordering restrictions on them, and they may be required to dispatch
+  // the messages waiting in |queued_messages_|.
+  // Returns true if the attachment broker handled |message|.
+  bool DispatchAttachmentBrokerMessage(const Message& message);
 
   // Dispatches messages from queued_messages_ to listeners. Successfully
   // dispatched messages are removed from queued_messages_.
@@ -170,6 +197,11 @@ class IPC_EXPORT ChannelReader : public SupportsAttachmentBrokering,
   // Large messages that span multiple pipe buffers, get built-up using
   // this buffer.
   std::string input_overflow_buf_;
+
+  // Maximum overflow buffer size, see Channel::kMaximumReadBufferSize.
+  // This is not a constant because we update it to reflect the reality
+  // of std::string::reserve() implementation.
+  size_t max_input_buffer_size_;
 
   // These messages are waiting to be dispatched. If this vector is non-empty,
   // then the front Message must be blocked on receiving an attachment from the

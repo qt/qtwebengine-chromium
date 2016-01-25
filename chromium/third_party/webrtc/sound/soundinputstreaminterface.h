@@ -21,7 +21,7 @@ namespace rtc {
 // for rtc::Worker.
 class SoundInputStreamInterface {
  public:
-  virtual ~SoundInputStreamInterface() {}
+  virtual ~SoundInputStreamInterface();
 
   // Starts the reading of samples on the current thread.
   virtual bool StartReading() = 0;
@@ -57,7 +57,7 @@ class SoundInputStreamInterface {
       SoundInputStreamInterface *> SignalSamplesRead;
 
  protected:
-  SoundInputStreamInterface() {}
+  SoundInputStreamInterface();
 
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(SoundInputStreamInterface);
@@ -65,4 +65,4 @@ class SoundInputStreamInterface {
 
 }  // namespace rtc
 
-#endif  // WEBRTC_SOUND_SOUNDOUTPUTSTREAMINTERFACE_H_
+#endif  // WEBRTC_SOUND_SOUNDINPUTSTREAMINTERFACE_H_

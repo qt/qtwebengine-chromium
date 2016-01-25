@@ -15,9 +15,9 @@
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_processing/typing_detection.h"
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/utility/interface/file_player.h"
-#include "webrtc/modules/utility/interface/file_recorder.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/utility/include/file_player.h"
+#include "webrtc/modules/utility/include/file_recorder.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/level_indicator.h"
 #include "webrtc/voice_engine/monitor_module.h"
@@ -52,7 +52,7 @@ public:
 
     int32_t PrepareDemux(const void* audioSamples,
                          size_t nSamples,
-                         uint8_t  nChannels,
+                         size_t nChannels,
                          uint32_t samplesPerSec,
                          uint16_t totalDelayMS,
                          int32_t  clockDrift,
@@ -63,12 +63,12 @@ public:
     int32_t DemuxAndMix();
     // Used by the Chrome to pass the recording data to the specific VoE
     // channels for demux.
-    void DemuxAndMix(const int voe_channels[], int number_of_voe_channels);
+    void DemuxAndMix(const int voe_channels[], size_t number_of_voe_channels);
 
     int32_t EncodeAndSend();
     // Used by the Chrome to pass the recording data to the specific VoE
     // channels for encoding and sending to the network.
-    void EncodeAndSend(const int voe_channels[], int number_of_voe_channels);
+    void EncodeAndSend(const int voe_channels[], size_t number_of_voe_channels);
 
     // Must be called on the same thread as PrepareDemux().
     uint32_t CaptureLevel() const;
@@ -170,11 +170,11 @@ private:
 
     // Gets the maximum sample rate and number of channels over all currently
     // sending codecs.
-    void GetSendCodecInfo(int* max_sample_rate, int* max_channels);
+    void GetSendCodecInfo(int* max_sample_rate, size_t* max_channels);
 
     void GenerateAudioFrame(const int16_t audioSamples[],
                             size_t nSamples,
-                            int nChannels,
+                            size_t nChannels,
                             int samplesPerSec);
     int32_t RecordAudioToFile(uint32_t mixingFrequency);
 

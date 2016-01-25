@@ -27,11 +27,7 @@
 // https://url.spec.whatwg.org/#url
 
 [
-    // TODO(philipj): There should only be one constructor:
-    // Constructor(USVString url, optional USVString base)
-    Constructor(USVString url),
-    Constructor(USVString url, USVString base),
-    Constructor(USVString url, URL base),
+    Constructor(USVString url, optional USVString base),
     Exposed=(Window,Worker),
     ImplementedAs=DOMURL,
     RaisesException=Constructor,
@@ -45,8 +41,8 @@
     // TODO(philipj): This should be in a partial interface definition:
     // File API
     // https://w3c.github.io/FileAPI/#creating-revoking
-    // TODO(philipj): Neither the return value nor the argument should be nullable.
-    [RaisesException, CallWith=ExecutionContext] static DOMString? createObjectURL(Blob? blob);
+    // TODO(philipj): The return type should not be nullable.
+    [RaisesException, CallWith=ExecutionContext] static DOMString? createObjectURL(Blob blob);
     [CallWith=ExecutionContext] static void revokeObjectURL(DOMString url);
 };
 

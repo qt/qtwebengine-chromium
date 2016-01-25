@@ -36,6 +36,11 @@ const unsigned int kRequestTimeoutInSeconds = 3;
 const char kDefaultConnectivityCheckUrl[] =
     "https://clients3.google.com/generate_204";
 
+// Delay notification of network change events to smooth out rapid flipping.
+// Histogram "Cast.Network.Down.Duration.In.Seconds" shows 40% of network
+// downtime is less than 3 seconds.
+const char kNetworkChangedDelayInSeconds = 3;
+
 }  // namespace
 
 ConnectivityCheckerImpl::ConnectivityCheckerImpl(
@@ -43,7 +48,9 @@ ConnectivityCheckerImpl::ConnectivityCheckerImpl(
     : ConnectivityChecker(),
       task_runner_(task_runner),
       connected_(false),
-      check_errors_(0) {
+      connection_type_(net::NetworkChangeNotifier::CONNECTION_NONE),
+      check_errors_(0),
+      network_changed_pending_(false) {
   DCHECK(task_runner_.get());
   task_runner->PostTask(FROM_HERE,
                         base::Bind(&ConnectivityCheckerImpl::Initialize, this));
@@ -60,7 +67,7 @@ void ConnectivityCheckerImpl::Initialize() {
   builder.set_proxy_config_service(make_scoped_ptr(
       new net::ProxyConfigServiceFixed(net::ProxyConfig::CreateDirect())));
   builder.DisableHttpCache();
-  url_request_context_ = builder.Build().Pass();
+  url_request_context_ = builder.Build();
 
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   task_runner_->PostTask(FROM_HERE,
@@ -125,9 +132,22 @@ void ConnectivityCheckerImpl::Check() {
 void ConnectivityCheckerImpl::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   VLOG(2) << "OnNetworkChanged " << type;
+  connection_type_ = type;
+
+  if (network_changed_pending_)
+    return;
+  network_changed_pending_ = true;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ConnectivityCheckerImpl::OnNetworkChangedInternal, this),
+      base::TimeDelta::FromSeconds(kNetworkChangedDelayInSeconds));
+}
+
+void ConnectivityCheckerImpl::OnNetworkChangedInternal() {
+  network_changed_pending_ = false;
   Cancel();
 
-  if (type == net::NetworkChangeNotifier::CONNECTION_NONE) {
+  if (connection_type_ == net::NetworkChangeNotifier::CONNECTION_NONE) {
     SetConnected(false);
     return;
   }
@@ -136,24 +156,25 @@ void ConnectivityCheckerImpl::OnNetworkChanged(
 }
 
 void ConnectivityCheckerImpl::OnResponseStarted(net::URLRequest* request) {
-  timeout_.Cancel();
   int http_response_code =
       (request->status().is_success() &&
-       request->response_info().headers.get() != NULL)
+       request->response_info().headers.get() != nullptr)
           ? request->response_info().headers->response_code()
           : net::HTTP_BAD_REQUEST;
 
   // Clears resources.
-  url_request_.reset(NULL);  // URLRequest::Cancel() is called in destructor.
+  url_request_.reset(nullptr);  // URLRequest::Cancel() is called in destructor.
 
   if (http_response_code < 400) {
     VLOG(1) << "Connectivity check succeeded";
     check_errors_ = 0;
     SetConnected(true);
+    timeout_.Cancel();
     return;
   }
   VLOG(1) << "Connectivity check failed: " << http_response_code;
   OnUrlRequestError();
+  timeout_.Cancel();
 }
 
 void ConnectivityCheckerImpl::OnReadCompleted(net::URLRequest* request,
@@ -166,9 +187,9 @@ void ConnectivityCheckerImpl::OnSSLCertificateError(
     const net::SSLInfo& ssl_info,
     bool fatal) {
   LOG(ERROR) << "OnSSLCertificateError: cert_status=" << ssl_info.cert_status;
-  timeout_.Cancel();
   net::SSLClientSocket::ClearSessionCache();
   OnUrlRequestError();
+  timeout_.Cancel();
 }
 
 void ConnectivityCheckerImpl::OnUrlRequestError() {
@@ -177,7 +198,7 @@ void ConnectivityCheckerImpl::OnUrlRequestError() {
     check_errors_ = kNumErrorsToNotifyOffline;
     SetConnected(false);
   }
-  url_request_.reset(NULL);
+  url_request_.reset(nullptr);
   // Check again.
   task_runner_->PostDelayedTask(
       FROM_HERE, base::Bind(&ConnectivityCheckerImpl::Check, this),
@@ -193,8 +214,8 @@ void ConnectivityCheckerImpl::Cancel() {
   if (!url_request_.get())
     return;
   VLOG(2) << "Cancel connectivity check in progress";
+  url_request_.reset(nullptr);  // URLRequest::Cancel() is called in destructor.
   timeout_.Cancel();
-  url_request_.reset(NULL);  // URLRequest::Cancel() is called in destructor.
 }
 
 }  // namespace chromecast

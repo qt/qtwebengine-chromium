@@ -4,7 +4,10 @@
 
 #include "chrome/browser/spellchecker/spellcheck_platform.h"
 
+#include <stddef.h>
+
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -32,7 +35,7 @@ class SpellcheckPlatformMacTest: public testing::Test {
  private:
   void QuitMessageLoop() {
     CHECK(base::MessageLoop::current() == &message_loop_);
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   void CompletionCallback(const std::vector<SpellCheckResult>& results) {

@@ -4,7 +4,13 @@
 
 #include "ui/views/controls/combobox/combobox.h"
 
+#include <stddef.h>
+
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
+#include "build/build_config.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/models/combobox_model.h"
@@ -18,6 +24,7 @@
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/common_theme.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/button/label_button.h"
@@ -94,7 +101,7 @@ class TransparentButton : public CustomButton {
   }
 
   double GetAnimationValue() const {
-    return hover_animation_->GetCurrentValue();
+    return hover_animation().GetCurrentValue();
   }
 
  private:
@@ -232,8 +239,7 @@ class Combobox::ComboboxMenuModelAdapter : public ui::MenuModel,
  private:
   bool UseCheckmarks() const {
     return owner_->style_ != STYLE_ACTION &&
-           MenuConfig::instance(owner_->GetNativeTheme())
-               .check_selected_combobox_item;
+           MenuConfig::instance().check_selected_combobox_item;
   }
 
   // Overridden from MenuModel:
@@ -686,8 +692,8 @@ void Combobox::UpdateBorder() {
   if (style_ == STYLE_ACTION)
     border->SetInsets(5, 10, 5, 10);
   if (invalid_)
-    border->SetColor(gfx::kErrorRed);
-  SetBorder(border.Pass());
+    border->SetColor(gfx::kGoogleRed700);
+  SetBorder(std::move(border));
 }
 
 void Combobox::AdjustBoundsForRTLUI(gfx::Rect* rect) const {
@@ -890,9 +896,9 @@ gfx::Size Combobox::ArrowSize() const {
   // TODO(estade): hack alert! This should always use GetNativeTheme(). For now
   // STYLE_ACTION isn't properly themed so we have to override the NativeTheme
   // behavior. See crbug.com/384071
-  const ui::NativeTheme* native_theme_for_arrow = style_ == STYLE_ACTION ?
-      ui::NativeTheme::instance() :
-      GetNativeTheme();
+  const ui::NativeTheme* native_theme_for_arrow =
+      style_ == STYLE_ACTION ? ui::NativeThemeAura::instance()
+                             : GetNativeTheme();
 #else
   const ui::NativeTheme* native_theme_for_arrow = GetNativeTheme();
 #endif

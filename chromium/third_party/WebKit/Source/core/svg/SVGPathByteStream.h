@@ -21,7 +21,8 @@
 #define SVGPathByteStream_h
 
 #include "wtf/Noncopyable.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -32,17 +33,17 @@ union ByteType {
     unsigned char bytes[sizeof(DataType)];
 };
 
-class SVGPathByteStream {
-    WTF_MAKE_FAST_ALLOCATED(SVGPathByteStream);
+class SVGPathByteStream : public RefCounted<SVGPathByteStream> {
+    USING_FAST_MALLOC(SVGPathByteStream);
 public:
-    static PassOwnPtr<SVGPathByteStream> create()
+    static PassRefPtr<SVGPathByteStream> create()
     {
-        return adoptPtr(new SVGPathByteStream);
+        return adoptRef(new SVGPathByteStream);
     }
 
-    PassOwnPtr<SVGPathByteStream> copy() const
+    PassRefPtr<SVGPathByteStream> clone() const
     {
-        return adoptPtr(new SVGPathByteStream(m_data));
+        return adoptRef(new SVGPathByteStream(m_data));
     }
 
     typedef Vector<unsigned char> Data;
@@ -50,13 +51,14 @@ public:
 
     DataIterator begin() const { return m_data.begin(); }
     DataIterator end() const { return m_data.end(); }
-    void append(unsigned char byte) { m_data.append(byte); }
-    void append(SVGPathByteStream* other) { m_data.appendVector(other->m_data); }
+    void append(const unsigned char* data, size_t dataSize) { m_data.append(data, dataSize); }
     void clear() { m_data.clear(); }
     void reserveInitialCapacity(size_t size) { m_data.reserveInitialCapacity(size); }
     void shrinkToFit() { m_data.shrinkToFit(); }
     bool isEmpty() const { return m_data.isEmpty(); }
     unsigned size() const { return m_data.size(); }
+
+    bool operator==(const SVGPathByteStream& other) const { return m_data == other.m_data; }
 
 private:
     SVGPathByteStream() { }

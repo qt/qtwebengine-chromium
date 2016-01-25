@@ -48,9 +48,17 @@
     'asm_sources': [
     ],
 
+
     # Allow overriding the selection of which FFmpeg binaries to copy via an
     # environment variable.  Affects the ffmpeg_binaries target.
     'conditions': [
+      # Android ia32 can't handle textrels and ffmpeg can't compile without them.
+      # http://crbug.com/559379
+      ['(OS == "android" and target_arch == "ia32") or msan==1', {
+        'disable_ffmpeg_asm%': 1,
+      }, {
+        'disable_ffmpeg_asm%': 0,
+      }],
       ['target_arch == "arm" and arm_version == 7 and arm_neon == 1', {
         # Need a separate config for arm+neon vs arm
         'ffmpeg_config%': 'arm-neon',
@@ -86,22 +94,7 @@
     'sig_files': ['chromium/ffmpeg.sigs'],
   },
   'conditions': [
-    ['chromeos == 1', {
-      # This short-lived hack allows chromium changes to statically link ffmpeg to be independent
-      # from chrome-os changes to ebuild files that explicitly mention libffmpegsumo.so as a target.
-      # TODO(chcunningham): Remove this once ebuilds are patched.
-      'targets': [
-        {
-          'target_name': 'ffmpegsumo',
-          'type': 'loadable_module',
-          'sources': [
-            # Reusing an existing dummy file.
-            'xcode_hack.c',
-          ],
-        },
-      ], # targets
-    }], # (chromeos == 1)
-    ['(target_arch == "ia32" or target_arch == "x64") and os_config != "linux-noasm"', {
+    ['(target_arch == "ia32" or target_arch == "x64") and disable_ffmpeg_asm == 0', {
       'targets': [
         {
           'target_name': 'ffmpeg_yasm',
@@ -183,7 +176,6 @@
           },
           'includes': [
             'ffmpeg_generated.gypi',
-            '../../build/util/version.gypi',
           ],
           'sources': [
             '<@(c_sources)',
@@ -199,11 +191,16 @@
             '_POSIX_C_SOURCE=200112',
             '_XOPEN_SOURCE=600',
             'PIC',
-            # Disable deprecated features which generate spammy warnings.
-            'FF_API_PIX_FMT_DESC=0',
-            'FF_API_OLD_DECODE_AUDIO=0',
-            'FF_API_DESTRUCT_PACKET=0',
-            'FF_API_GET_BUFFER=0',
+            # Disable deprecated features that generate spammy warnings.
+            # BUILD.gn & media/ffmpeg/ffmpeg_common.h must be kept in sync.
+            'FF_API_CONVERGENCE_DURATION=0',
+            # Upstream libavcodec/utils.c still uses the deprecated
+            # av_dup_packet(), causing deprecation warnings.
+            # The normal fix for such things is to disable the feature as below,
+            # but the upstream code does not yet compile with it disabled.
+            # (In this case, the fix is replacing the call with a new function.)
+            # In the meantime, we directly disable those warnings in the C file.
+            # 'FF_API_AVPACKET_OLD_API=0',
           ],
           'variables': {
             'clang_warning_flags': [
@@ -243,7 +240,7 @@
           # Silence a warning in libc++ builds (C code doesn't need this flag).
           'ldflags!': [ '-stdlib=libc++', ],
           'conditions': [
-            ['(target_arch == "ia32" or target_arch == "x64") and os_config != "linux-noasm"', {
+            ['(target_arch == "ia32" or target_arch == "x64") and disable_ffmpeg_asm == 0', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -267,7 +264,7 @@
                 '-fno-omit-frame-pointer',
               ],
             }],  # target_arch == "ia32"
-            ['target_arch == "arm"', {
+            ['target_arch == "arm" or target_arch == "arm64"', {
               # On arm we use gcc to compile the assembly.
               'sources': [
                 '<@(asm_sources)',
@@ -280,6 +277,16 @@
                 }, {
                   'cflags': [
                     '-DHAVE_VFP_ARGS=0'
+                  ],
+                }],
+                ['clang==1', {
+                  # TODO(hans) Enable integrated-as (crbug.com/124610).
+                  'cflags': [ '-fno-integrated-as' ],
+                  'conditions': [
+                    ['OS == "android"', {
+                      # Else /usr/bin/as gets picked up.
+                      'cflags': [ '-B<(android_toolchain)' ],
+                    }],
                   ],
                 }],
               ],
@@ -305,14 +312,28 @@
               ],
               'link_settings': {
                 'libraries': [
-                  '-lm',
-                  '-lz',
                 ],
               },
               'conditions': [
                 ['OS != "android"', {
                   'link_settings': {
+                    # OS=android requires that both -lz and -lm occur
+                    # after -lc++_shared on the link command
+                    # line. Android link rules already include -lm, and
+                    # we get -lz as a transitive dependency of
+                    # libandroid.so, so simply moving both to the
+                    # non-Android section solves the problem.
+                    #
+                    # The root cause of this problem is certain system
+                    # libraries (libm starting with MNC and libz before
+                    # MNC, among others) re-export the libgcc unwinder,
+                    # and libc++ exports the libc++abi unwinder. As we
+                    # build against libc++ headers, libc++ must be the
+                    # first in the runtime symbol lookup order (among
+                    # all unwinder-providing libraries).
                     'libraries': [
+                      '-lm',
+                      '-lz',
                       '-lrt',
                     ],
                   },
@@ -344,33 +365,6 @@
                 '_DARWIN_C_SOURCE',
               ],
               'conditions': [
-                ['mac_breakpad == 1', {
-                  'variables': {
-                    # A real .dSYM is needed for dump_syms to operate on.
-                    'mac_real_dsym': 1,
-                  },
-                }],
-                ['target_arch != "x64"', {
-                  # -read_only_relocs cannot be used with x86_64
-                  'xcode_settings': {
-                    'OTHER_LDFLAGS': [
-                      # This is needed because even though FFmpeg now builds
-                      # with -fPIC, it's not quite a complete PIC build, only
-                      # partial :( Thus we need to instruct the linker to allow
-                      # relocations for read-only segments for this target to be
-                      # able to generated the shared library on Mac.
-                      #
-                      # This makes Mark sad, but he's okay with it since it is
-                      # isolated to this module. When Mark finds this in the
-                      # future, and has forgotten this conversation, this
-                      # comment should remind him that the world is still nice
-                      # and butterflies still exist...as do rainbows, sunshine,
-                      # tulips, etc., etc...but not kittens. Those went away
-                      # with this flag.
-                      '-Wl,-read_only_relocs,suppress',
-                    ],
-                  },
-                }],
                 ['ffmpeg_component == "shared_library"', {
                   'xcode_settings': {
                     # GCC version of no -fvisiliity=hidden. Ensures that all
@@ -379,17 +373,6 @@
                   },
                 }],
               ],
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/usr/lib/libz.dylib',
-                ],
-              },
-              'xcode_settings': {
-                'DYLIB_INSTALL_NAME_BASE': '@loader_path',
-                'LIBRARY_SEARCH_PATHS': [
-                  '<(shared_generated_dir)'
-                ],
-              },
             }],  # OS == "mac"
             ['OS == "win"', {
               # TODO(dalecurtis): We should fix these.  http://crbug.com/154421

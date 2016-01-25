@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXSpinButton.h"
 
 #include "core/layout/LayoutObject.h"
@@ -80,6 +79,7 @@ AccessibilityRole AXSpinButton::roleValue() const
 
 void AXSpinButton::addChildren()
 {
+    ASSERT(!isDetached());
     m_haveChildren = true;
 
     AXSpinButtonPart* incrementor = toAXSpinButtonPart(axObjectCache().getOrCreate(SpinButtonPartRole));

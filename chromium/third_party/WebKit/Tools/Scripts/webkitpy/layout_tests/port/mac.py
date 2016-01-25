@@ -38,7 +38,7 @@ _log = logging.getLogger(__name__)
 
 
 class MacPort(base.Port):
-    SUPPORTED_VERSIONS = ('snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'yosemite')
+    SUPPORTED_VERSIONS = ('snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'mac10.10')
     port_name = 'mac'
 
     # FIXME: We treat Retina (High-DPI) devices as if they are running
@@ -49,8 +49,8 @@ class MacPort(base.Port):
     # We also currently only support Retina on 10.9.
 
     FALLBACK_PATHS = {}
-    FALLBACK_PATHS['yosemite'] = ['mac']
-    FALLBACK_PATHS['mavericks'] = ['mac-mavericks'] + FALLBACK_PATHS['yosemite']
+    FALLBACK_PATHS['mac10.10'] = ['mac']
+    FALLBACK_PATHS['mavericks'] = ['mac-mavericks'] + FALLBACK_PATHS['mac10.10']
     FALLBACK_PATHS['retina'] = ['mac-retina'] + FALLBACK_PATHS['mavericks']
     FALLBACK_PATHS['mountainlion'] = ['mac-mountainlion'] + FALLBACK_PATHS['mavericks']
     FALLBACK_PATHS['lion'] = ['mac-lion'] + FALLBACK_PATHS['mountainlion']
@@ -66,7 +66,7 @@ class MacPort(base.Port):
     def determine_full_port_name(cls, host, options, port_name):
         if port_name.endswith('mac'):
             if host.platform.os_version in ('future',):
-                version = 'yosemite'
+                version = 'mac10.10'
             else:
                 version = host.platform.os_version
             if host.platform.is_highdpi():
@@ -78,9 +78,6 @@ class MacPort(base.Port):
         super(MacPort, self).__init__(host, port_name, **kwargs)
         self._version = port_name[port_name.index('mac-') + len('mac-'):]
         assert self._version in self.SUPPORTED_VERSIONS
-
-    def _modules_to_search_for_symbols(self):
-        return [self._build_path('ffmpegsumo.so')]
 
     def check_build(self, needs_http, printer):
         result = super(MacPort, self).check_build(needs_http, printer)

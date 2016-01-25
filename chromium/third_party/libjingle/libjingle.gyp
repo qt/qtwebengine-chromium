@@ -15,8 +15,7 @@
     'webrtc_xmpp': "../webrtc/libjingle/xmpp",
   },
   # Most of these settings have been split according to their scope into
-  # :jingle_unexported_configs, :jingle_public_configs,
-  # :jingle_all_dependent_configs in the GN build.
+  # :jingle_unexported_configs and :jingle_public_config in the GN build.
   'target_defaults': {
     'defines': [
       'ENABLE_EXTERNAL_AUTH',
@@ -35,15 +34,6 @@
       'USE_WEBRTC_DEV_BRANCH',
       'WEBRTC_CHROMIUM_BUILD',
     ],
-    'configurations': {
-      'Debug': {
-        'defines': [
-          # TODO(sergeyu): Fix libjingle to use NDEBUG instead of
-          # _DEBUG and remove this define. See below as well.
-          '_DEBUG',
-        ],
-      }
-    },
     'include_dirs': [
       './overrides',
       '../../third_party/webrtc_overrides',
@@ -52,7 +42,7 @@
       '../../testing/gtest/include',
       '../../third_party',
       '../../third_party/libyuv/include',
-      '../../third_party/usrsctp',
+      '../../third_party/usrsctp/usrsctplib',
     ],
     # These dependencies have been translated into :jingle_deps in the GN build.
     'dependencies': [
@@ -156,17 +146,6 @@
           ],
         }],
       ],
-    },
-    'all_dependent_settings': {
-      'configurations': {
-        'Debug': {
-          'defines': [
-            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of _DEBUG and
-            # remove this define. See above and GN file as well.
-            '_DEBUG',
-          ],
-        }
-      },
     },
     'variables': {
       'clang_warning_flags_unset': [
@@ -279,8 +258,6 @@
           'sources': [
             '<(libjingle_source)/talk/app/webrtc/audiotrack.cc',
             '<(libjingle_source)/talk/app/webrtc/audiotrack.h',
-            '<(libjingle_source)/talk/app/webrtc/audiotrackrenderer.cc',
-            '<(libjingle_source)/talk/app/webrtc/audiotrackrenderer.h',
             '<(libjingle_source)/talk/app/webrtc/datachannel.cc',
             '<(libjingle_source)/talk/app/webrtc/datachannel.h',
             '<(libjingle_source)/talk/app/webrtc/dtlsidentitystore.cc',
@@ -303,10 +280,10 @@
             '<(libjingle_source)/talk/app/webrtc/mediastreamhandler.cc',
             '<(libjingle_source)/talk/app/webrtc/mediastreamhandler.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreaminterface.h',
+            '<(libjingle_source)/talk/app/webrtc/mediastreamobserver.cc',
+            '<(libjingle_source)/talk/app/webrtc/mediastreamobserver.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamprovider.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamproxy.h',
-            '<(libjingle_source)/talk/app/webrtc/mediastreamsignaling.cc',
-            '<(libjingle_source)/talk/app/webrtc/mediastreamsignaling.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamtrack.h',
             '<(libjingle_source)/talk/app/webrtc/mediastreamtrackproxy.h',
             '<(libjingle_source)/talk/app/webrtc/notifier.h',
@@ -319,6 +296,8 @@
             '<(libjingle_source)/talk/app/webrtc/portallocatorfactory.h',
             '<(libjingle_source)/talk/app/webrtc/remoteaudiosource.cc',
             '<(libjingle_source)/talk/app/webrtc/remoteaudiosource.h',
+            '<(libjingle_source)/talk/app/webrtc/remoteaudiotrack.cc',
+            '<(libjingle_source)/talk/app/webrtc/remoteaudiotrack.h',
             '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.cc',
             '<(libjingle_source)/talk/app/webrtc/remotevideocapturer.h',
             '<(libjingle_source)/talk/app/webrtc/rtpreceiver.cc',

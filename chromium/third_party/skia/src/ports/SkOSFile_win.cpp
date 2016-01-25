@@ -5,6 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
+
 #include "SkOSFile.h"
 
 #include "SkTFitsIn.h"
@@ -30,7 +33,7 @@ typedef struct {
     ULONGLONG fMsbSize;
 } SkFILEID;
 
-static bool sk_ino(SkFILE* f, SkFILEID* id) {
+static bool sk_ino(FILE* f, SkFILEID* id) {
     int fileno = _fileno((FILE*)f);
     if (fileno < 0) {
         return false;
@@ -53,7 +56,7 @@ static bool sk_ino(SkFILE* f, SkFILEID* id) {
     return true;
 }
 
-bool sk_fidentical(SkFILE* a, SkFILE* b) {
+bool sk_fidentical(FILE* a, FILE* b) {
     SkFILEID aID, bID;
     return sk_ino(a, &aID) && sk_ino(b, &bID)
            && aID.fLsbSize == bID.fLsbSize
@@ -108,11 +111,11 @@ void* sk_fdmmap(int fileno, size_t* length) {
     return addr;
 }
 
-int sk_fileno(SkFILE* f) {
+int sk_fileno(FILE* f) {
     return _fileno((FILE*)f);
 }
 
-void* sk_fmmap(SkFILE* f, size_t* length) {
+void* sk_fmmap(FILE* f, size_t* length) {
     int fileno = sk_fileno(f);
     if (fileno < 0) {
         return nullptr;
@@ -240,3 +243,5 @@ bool SkOSFile::Iter::next(SkString* name, bool getDir) {
     }
     return self.fHandle != (HANDLE)~0 && get_the_file(self.fHandle, name, dataPtr, getDir);
 }
+
+#endif//defined(SK_BUILD_FOR_WIN32)

@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include <openssl/evp.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
-#include "base/stl_util.h"
 #include "components/webcrypto/algorithms/rsa.h"
 #include "components/webcrypto/algorithms/util.h"
 #include "components/webcrypto/blink_key_handle.h"
@@ -80,8 +82,8 @@ Status CommonEncryptDecrypt(InitFunc init_func,
   buffer->resize(outlen);
 
   // Do the actual encryption/decryption.
-  if (!encrypt_decrypt_func(ctx.get(), vector_as_array(buffer), &outlen,
-                            data.bytes(), data.byte_length())) {
+  if (!encrypt_decrypt_func(ctx.get(), buffer->data(), &outlen, data.bytes(),
+                            data.byte_length())) {
     return Status::OperationError();
   }
   buffer->resize(outlen);

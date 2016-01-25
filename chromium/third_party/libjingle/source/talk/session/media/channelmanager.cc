@@ -49,6 +49,7 @@
 #include "webrtc/base/sigslotrepeater.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
+#include "webrtc/base/trace_event.h"
 
 namespace cricket {
 
@@ -101,8 +102,6 @@ void ChannelManager::Construct(MediaEngineInterface* me,
   initialized_ = false;
   main_thread_ = rtc::Thread::Current();
   worker_thread_ = worker_thread;
-  // Get the default audio options from the media engine.
-  audio_options_ = media_engine_->GetAudioOptions();
   audio_output_volume_ = kNotSetOutputVolume;
   local_renderer_ = NULL;
   capturing_ = false;
@@ -156,7 +155,7 @@ void ChannelManager::GetSupportedAudioCodecs(
 
 void ChannelManager::GetSupportedAudioRtpHeaderExtensions(
     RtpHeaderExtensions* ext) const {
-  *ext = media_engine_->audio_rtp_header_extensions();
+  *ext = media_engine_->GetAudioCapabilities().header_extensions;
 }
 
 void ChannelManager::GetSupportedVideoCodecs(
@@ -175,7 +174,7 @@ void ChannelManager::GetSupportedVideoCodecs(
 
 void ChannelManager::GetSupportedVideoRtpHeaderExtensions(
     RtpHeaderExtensions* ext) const {
-  *ext = media_engine_->video_rtp_header_extensions();
+  *ext = media_engine_->GetVideoCapabilities().header_extensions;
 }
 
 void ChannelManager::GetSupportedDataCodecs(
@@ -205,22 +204,12 @@ bool ChannelManager::Init() {
     return false;
   }
 
-  if (!SetAudioOptions(audio_options_)) {
-    LOG(LS_WARNING) << "Failed to SetAudioOptions with options: "
-                    << audio_options_.ToString();
-  }
-
   // If audio_output_volume_ has been set via SetOutputVolume(), set the
   // audio output volume of the engine.
   if (kNotSetOutputVolume != audio_output_volume_ &&
       !SetOutputVolume(audio_output_volume_)) {
     LOG(LS_WARNING) << "Failed to SetOutputVolume to "
                     << audio_output_volume_;
-  }
-
-  // Now apply the default video codec that has been set earlier.
-  if (default_video_encoder_config_.max_codec.id != 0) {
-    SetDefaultVideoEncoderConfig(default_video_encoder_config_);
   }
 
   return initialized_;
@@ -295,6 +284,7 @@ VoiceChannel* ChannelManager::CreateVoiceChannel_w(
 }
 
 void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyVoiceChannel");
   if (voice_channel) {
     worker_thread_->Invoke<void>(
         Bind(&ChannelManager::DestroyVoiceChannel_w, this, voice_channel));
@@ -302,6 +292,7 @@ void ChannelManager::DestroyVoiceChannel(VoiceChannel* voice_channel) {
 }
 
 void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyVoiceChannel_w");
   // Destroy voice channel.
   ASSERT(initialized_);
   ASSERT(worker_thread_ == rtc::Thread::Current());
@@ -351,6 +342,7 @@ VideoChannel* ChannelManager::CreateVideoChannel_w(
 }
 
 void ChannelManager::DestroyVideoChannel(VideoChannel* video_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyVideoChannel");
   if (video_channel) {
     worker_thread_->Invoke<void>(
         Bind(&ChannelManager::DestroyVideoChannel_w, this, video_channel));
@@ -358,6 +350,7 @@ void ChannelManager::DestroyVideoChannel(VideoChannel* video_channel) {
 }
 
 void ChannelManager::DestroyVideoChannel_w(VideoChannel* video_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyVideoChannel_w");
   // Destroy video channel.
   ASSERT(initialized_);
   ASSERT(worker_thread_ == rtc::Thread::Current());
@@ -408,6 +401,7 @@ DataChannel* ChannelManager::CreateDataChannel_w(
 }
 
 void ChannelManager::DestroyDataChannel(DataChannel* data_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyDataChannel");
   if (data_channel) {
     worker_thread_->Invoke<void>(
         Bind(&ChannelManager::DestroyDataChannel_w, this, data_channel));
@@ -415,6 +409,7 @@ void ChannelManager::DestroyDataChannel(DataChannel* data_channel) {
 }
 
 void ChannelManager::DestroyDataChannel_w(DataChannel* data_channel) {
+  TRACE_EVENT0("webrtc", "ChannelManager::DestroyDataChannel_w");
   // Destroy data channel.
   ASSERT(initialized_);
   DataChannels::iterator it = std::find(data_channels_.begin(),
@@ -425,43 +420,6 @@ void ChannelManager::DestroyDataChannel_w(DataChannel* data_channel) {
 
   data_channels_.erase(it);
   delete data_channel;
-}
-
-bool ChannelManager::SetAudioOptions(const AudioOptions& options) {
-  // "Get device ids from DeviceManager" - these are the defaults returned.
-  Device in_dev("", -1);
-  Device out_dev("", -1);
-
-  // If we're initialized, pass the settings to the media engine.
-  bool ret = true;
-  if (initialized_) {
-    ret = worker_thread_->Invoke<bool>(
-        Bind(&ChannelManager::SetAudioOptions_w, this,
-             options, &in_dev, &out_dev));
-  }
-
-  // If all worked well, save the values for use in GetAudioOptions.
-  if (ret) {
-    audio_options_ = options;
-  }
-  return ret;
-}
-
-bool ChannelManager::SetAudioOptions_w(
-    const AudioOptions& options,
-    const Device* in_dev, const Device* out_dev) {
-  ASSERT(worker_thread_ == rtc::Thread::Current());
-  ASSERT(initialized_);
-
-  // Set audio options
-  bool ret = media_engine_->SetAudioOptions(options);
-
-  // Set the audio devices
-  if (ret) {
-    ret = media_engine_->SetSoundDevices(in_dev, out_dev);
-  }
-
-  return ret;
 }
 
 bool ChannelManager::GetOutputVolume(int* level) {
@@ -485,39 +443,6 @@ bool ChannelManager::SetOutputVolume(int level) {
   }
 
   return ret;
-}
-
-bool ChannelManager::SetDefaultVideoEncoderConfig(const VideoEncoderConfig& c) {
-  bool ret = true;
-  if (initialized_) {
-    ret = worker_thread_->Invoke<bool>(
-        Bind(&MediaEngineInterface::SetDefaultVideoEncoderConfig,
-             media_engine_.get(), c));
-  }
-  if (ret) {
-    default_video_encoder_config_ = c;
-  }
-  return ret;
-}
-
-void ChannelManager::SetVoiceLogging(int level, const char* filter) {
-  if (initialized_) {
-    worker_thread_->Invoke<void>(
-        Bind(&MediaEngineInterface::SetVoiceLogging,
-             media_engine_.get(), level, filter));
-  } else {
-    media_engine_->SetVoiceLogging(level, filter);
-  }
-}
-
-void ChannelManager::SetVideoLogging(int level, const char* filter) {
-  if (initialized_) {
-    worker_thread_->Invoke<void>(
-        Bind(&MediaEngineInterface::SetVideoLogging,
-             media_engine_.get(), level, filter));
-  } else {
-    media_engine_->SetVideoLogging(level, filter);
-  }
 }
 
 std::vector<cricket::VideoFormat> ChannelManager::GetSupportedFormats(
@@ -628,6 +553,21 @@ void ChannelManager::OnMessage(rtc::Message* message) {
 bool ChannelManager::StartAecDump(rtc::PlatformFile file) {
   return worker_thread_->Invoke<bool>(
       Bind(&MediaEngineInterface::StartAecDump, media_engine_.get(), file));
+}
+
+void ChannelManager::StopAecDump() {
+  worker_thread_->Invoke<void>(
+      Bind(&MediaEngineInterface::StopAecDump, media_engine_.get()));
+}
+
+bool ChannelManager::StartRtcEventLog(rtc::PlatformFile file) {
+  return worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::StartRtcEventLog, media_engine_.get(), file));
+}
+
+void ChannelManager::StopRtcEventLog() {
+  worker_thread_->Invoke<void>(
+      Bind(&MediaEngineInterface::StopRtcEventLog, media_engine_.get()));
 }
 
 }  // namespace cricket

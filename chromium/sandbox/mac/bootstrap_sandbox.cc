@@ -5,11 +5,13 @@
 #include "sandbox/mac/bootstrap_sandbox.h"
 
 #include <servers/bootstrap.h>
+#include <stdint.h>
 #include <unistd.h>
 
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mach_logging.h"
+#include "base/macros.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "sandbox/mac/launchd_interception_server.h"
@@ -66,7 +68,7 @@ scoped_ptr<BootstrapSandbox> BootstrapSandbox::Create() {
   if (kr != KERN_SUCCESS) {
     BOOTSTRAP_LOG(ERROR, kr)
         << "Failed to bootstrap_check_in the sandbox server.";
-    return null.Pass();
+    return null;
   }
   sandbox->check_in_port_.reset(port);
 
@@ -79,9 +81,9 @@ scoped_ptr<BootstrapSandbox> BootstrapSandbox::Create() {
 
   // Start the sandbox server.
   if (!sandbox->launchd_server_->Initialize(MACH_PORT_NULL))
-    return null.Pass();
+    return null;
 
-  return sandbox.Pass();
+  return sandbox;
 }
 
 // Warning: This function must be safe to call in

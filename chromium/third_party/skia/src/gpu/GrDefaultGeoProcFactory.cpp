@@ -8,8 +8,12 @@
 #include "GrDefaultGeoProcFactory.h"
 
 #include "GrInvariantOutput.h"
-#include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLGeometryProcessor.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
+#include "glsl/GrGLSLVarying.h"
+#include "glsl/GrGLSLUniformHandler.h"
+#include "glsl/GrGLSLUtil.h"
 
 /*
  * The default Geometry Processor simply takes position and multiplies it by the uniform view
@@ -53,63 +57,85 @@ public:
     bool coverageWillBeIgnored() const { return fCoverageWillBeIgnored; }
     bool hasVertexCoverage() const { return SkToBool(fInCoverage); }
 
-    class GLProcessor : public GrGLGeometryProcessor {
+    class GLSLProcessor : public GrGLSLGeometryProcessor {
     public:
-        GLProcessor()
+        GLSLProcessor()
             : fViewMatrix(SkMatrix::InvalidMatrix()), fColor(GrColor_ILLEGAL), fCoverage(0xff) {}
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
             const DefaultGeoProc& gp = args.fGP.cast<DefaultGeoProc>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
-            GrGLFragmentBuilder* fs = args.fPB->getFragmentShaderBuilder();
+            GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
+            GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
+            GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
+            GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
             // emit attributes
-            vsBuilder->emitAttributes(gp);
+            varyingHandler->emitAttributes(gp);
 
             // Setup pass through color
             if (!gp.colorIgnored()) {
                 if (gp.hasVertexColor()) {
-                    pb->addPassThroughAttribute(gp.inColor(), args.fOutputColor);
+                    varyingHandler->addPassThroughAttribute(gp.inColor(), args.fOutputColor);
                 } else {
-                    this->setupUniformColor(pb, args.fOutputColor, &fColorUniform);
+                    this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor,
+                                            &fColorUniform);
                 }
             }
 
             // Setup position
-            this->setupPosition(pb, gpArgs, gp.inPosition()->fName, gp.viewMatrix(),
+            this->setupPosition(vertBuilder,
+                                uniformHandler,
+                                gpArgs,
+                                gp.inPosition()->fName,
+                                gp.viewMatrix(),
                                 &fViewMatrixUniform);
 
             if (gp.hasExplicitLocalCoords()) {
                 // emit transforms with explicit local coords
-                this->emitTransforms(pb, gpArgs->fPositionVar, gp.inLocalCoords()->fName,
-                                     gp.localMatrix(), args.fTransformsIn, args.fTransformsOut);
+                this->emitTransforms(vertBuilder,
+                                     varyingHandler,
+                                     uniformHandler,
+                                     gpArgs->fPositionVar,
+                                     gp.inLocalCoords()->fName,
+                                     gp.localMatrix(),
+                                     args.fTransformsIn,
+                                     args.fTransformsOut);
             } else if(gp.hasTransformedLocalCoords()) {
                 // transforms have already been applied to vertex attributes on the cpu
-                this->emitTransforms(pb, gp.inLocalCoords()->fName,
-                                     args.fTransformsIn, args.fTransformsOut);
+                this->emitTransforms(vertBuilder,
+                                     varyingHandler,
+                                     gp.inLocalCoords()->fName,
+                                     args.fTransformsIn,
+                                     args.fTransformsOut);
             } else {
                 // emit transforms with position
-                this->emitTransforms(pb, gpArgs->fPositionVar, gp.inPosition()->fName,
-                                     gp.localMatrix(), args.fTransformsIn, args.fTransformsOut);
+                this->emitTransforms(vertBuilder,
+                                     varyingHandler,
+                                     uniformHandler,
+                                     gpArgs->fPositionVar,
+                                     gp.inPosition()->fName,
+                                     gp.localMatrix(),
+                                     args.fTransformsIn,
+                                     args.fTransformsOut);
             }
 
             // Setup coverage as pass through
             if (!gp.coverageWillBeIgnored()) {
                 if (gp.hasVertexCoverage()) {
-                    fs->codeAppendf("float alpha = 1.0;");
-                    args.fPB->addPassThroughAttribute(gp.inCoverage(), "alpha");
-                    fs->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
+                    fragBuilder->codeAppendf("float alpha = 1.0;");
+                    varyingHandler->addPassThroughAttribute(gp.inCoverage(), "alpha");
+                    fragBuilder->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
                 } else if (gp.coverage() == 0xff) {
-                    fs->codeAppendf("%s = vec4(1);", args.fOutputCoverage);
+                    fragBuilder->codeAppendf("%s = vec4(1);", args.fOutputCoverage);
                 } else {
                     const char* fragCoverage;
-                    fCoverageUniform = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                                      kFloat_GrSLType,
-                                                      kDefault_GrSLPrecision,
-                                                      "Coverage",
-                                                      &fragCoverage);
-                    fs->codeAppendf("%s = vec4(%s);", args.fOutputCoverage, fragCoverage);
+                    fCoverageUniform = uniformHandler->addUniform(
+                                                         GrGLSLUniformHandler::kFragment_Visibility,
+                                                         kFloat_GrSLType,
+                                                         kDefault_GrSLPrecision,
+                                                         "Coverage",
+                                                         &fragCoverage);
+                    fragBuilder->codeAppendf("%s = vec4(%s);", args.fOutputCoverage, fragCoverage);
                 }
             }
         }
@@ -130,18 +156,19 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const DefaultGeoProc& dgp = gp.cast<DefaultGeoProc>();
 
             if (!dgp.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(dgp.viewMatrix())) {
                 fViewMatrix = dgp.viewMatrix();
-                GrGLfloat viewMatrix[3 * 3];
-                GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
+                float viewMatrix[3 * 3];
+                GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
                 pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
             }
 
             if (dgp.color() != fColor && !dgp.hasVertexColor()) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(dgp.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = dgp.color();
@@ -155,7 +182,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<DefaultGeoProc>(primProc, pdman, index, transforms);
@@ -169,15 +196,15 @@ public:
         UniformHandle fColorUniform;
         UniformHandle fCoverageUniform;
 
-        typedef GrGLGeometryProcessor INHERITED;
+        typedef GrGLSLGeometryProcessor INHERITED;
     };
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
-        GLProcessor::GenKey(*this, caps, b);
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
+        GLSLProcessor::GenKey(*this, caps, b);
     }
 
-    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override {
-        return new GLProcessor();
+    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override {
+        return new GLSLProcessor();
     }
 
 private:

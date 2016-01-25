@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/shadow/SpinButtonElement.h"
 
 #include "core/HTMLNames.h"
@@ -216,8 +215,8 @@ bool SpinButtonElement::matchesReadWritePseudoClass() const
 void SpinButtonElement::startRepeatingTimer()
 {
     m_pressStartingState = m_upDownState;
-    ScrollbarTheme* theme = ScrollbarTheme::theme();
-    m_repeatingTimer.start(theme->initialAutoscrollTimerDelay(), theme->autoscrollTimerDelay(), FROM_HERE);
+    ScrollbarTheme& theme = ScrollbarTheme::theme();
+    m_repeatingTimer.start(theme.initialAutoscrollTimerDelay(), theme.autoscrollTimerDelay(), BLINK_FROM_HERE);
 }
 
 void SpinButtonElement::stopRepeatingTimer()

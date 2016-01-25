@@ -4,12 +4,15 @@
 
 #include "base/feature_list.h"
 
+#include <stddef.h>
+
 #include <utility>
 #include <vector>
 
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 
 namespace base {
 
@@ -20,9 +23,14 @@ namespace {
 // have more control over initialization timing. Leaky.
 FeatureList* g_instance = nullptr;
 
-// Splits a comma-separated string containing feature names into a vector.
-std::vector<std::string> SplitFeatureListString(const std::string& input) {
-  return SplitString(input, ",", TRIM_WHITESPACE, SPLIT_WANT_NONEMPTY);
+// Some characters are not allowed to appear in feature names or the associated
+// field trial names, as they are used as special characters for command-line
+// serialization. This function checks that the strings are ASCII (since they
+// are used in command-line API functions that require ASCII) and whether there
+// are any reserved characters present, returning true if the string is valid.
+// Only called in DCHECKs.
+bool IsValidFeatureOrFieldTrialName(const std::string& name) {
+  return IsStringASCII(name) && name.find_first_of(",<") == std::string::npos;
 }
 
 }  // namespace
@@ -38,12 +46,8 @@ void FeatureList::InitializeFromCommandLine(
 
   // Process disabled features first, so that disabled ones take precedence over
   // enabled ones (since RegisterOverride() uses insert()).
-  for (const auto& feature_name : SplitFeatureListString(disable_features)) {
-    RegisterOverride(feature_name, OVERRIDE_DISABLE_FEATURE, nullptr);
-  }
-  for (const auto& feature_name : SplitFeatureListString(enable_features)) {
-    RegisterOverride(feature_name, OVERRIDE_ENABLE_FEATURE, nullptr);
-  }
+  RegisterOverridesFromCommandLine(disable_features, OVERRIDE_DISABLE_FEATURE);
+  RegisterOverridesFromCommandLine(enable_features, OVERRIDE_ENABLE_FEATURE);
 }
 
 bool FeatureList::IsFeatureOverriddenFromCommandLine(
@@ -52,20 +56,6 @@ bool FeatureList::IsFeatureOverriddenFromCommandLine(
   auto it = overrides_.find(feature_name);
   return it != overrides_.end() && it->second.overridden_state == state &&
          !it->second.overridden_by_field_trial;
-}
-
-void FeatureList::RegisterFieldTrialOverride(const std::string& feature_name,
-                                             OverrideState override_state,
-                                             FieldTrial* field_trial) {
-  DCHECK(field_trial);
-  DCHECK(!ContainsKey(overrides_, feature_name) ||
-         !overrides_.find(feature_name)->second.field_trial)
-      << "Feature " << feature_name
-      << " has conflicting field trial overrides: "
-      << overrides_.find(feature_name)->second.field_trial->trial_name()
-      << " / " << field_trial->trial_name();
-
-  RegisterOverride(feature_name, override_state, field_trial);
 }
 
 void FeatureList::AssociateReportingFieldTrial(
@@ -88,9 +78,64 @@ void FeatureList::AssociateReportingFieldTrial(
   entry->field_trial = field_trial;
 }
 
+void FeatureList::RegisterFieldTrialOverride(const std::string& feature_name,
+                                             OverrideState override_state,
+                                             FieldTrial* field_trial) {
+  DCHECK(field_trial);
+  DCHECK(!ContainsKey(overrides_, feature_name) ||
+         !overrides_.find(feature_name)->second.field_trial)
+      << "Feature " << feature_name
+      << " has conflicting field trial overrides: "
+      << overrides_.find(feature_name)->second.field_trial->trial_name()
+      << " / " << field_trial->trial_name();
+
+  RegisterOverride(feature_name, override_state, field_trial);
+}
+
+void FeatureList::GetFeatureOverrides(std::string* enable_overrides,
+                                      std::string* disable_overrides) {
+  DCHECK(initialized_);
+
+  enable_overrides->clear();
+  disable_overrides->clear();
+
+  for (const auto& entry : overrides_) {
+    std::string* target_list = nullptr;
+    switch (entry.second.overridden_state) {
+      case OVERRIDE_ENABLE_FEATURE:
+        target_list = enable_overrides;
+        break;
+      case OVERRIDE_DISABLE_FEATURE:
+        target_list = disable_overrides;
+        break;
+    }
+
+    if (!target_list->empty())
+      target_list->push_back(',');
+    target_list->append(entry.first);
+    if (entry.second.field_trial) {
+      target_list->push_back('<');
+      target_list->append(entry.second.field_trial->trial_name());
+    }
+  }
+}
+
 // static
 bool FeatureList::IsEnabled(const Feature& feature) {
   return GetInstance()->IsFeatureEnabled(feature);
+}
+
+// static
+std::vector<std::string> FeatureList::SplitFeatureListString(
+    const std::string& input) {
+  return SplitString(input, ",", TRIM_WHITESPACE, SPLIT_WANT_NONEMPTY);
+}
+
+// static
+void FeatureList::InitializeInstance() {
+  if (g_instance)
+    return;
+  SetInstance(make_scoped_ptr(new FeatureList));
 }
 
 // static
@@ -120,6 +165,7 @@ void FeatureList::FinalizeInitialization() {
 
 bool FeatureList::IsFeatureEnabled(const Feature& feature) {
   DCHECK(initialized_);
+  DCHECK(IsValidFeatureOrFieldTrialName(feature.name)) << feature.name;
   DCHECK(CheckFeatureIdentity(feature)) << feature.name;
 
   auto it = overrides_.find(feature.name);
@@ -137,15 +183,39 @@ bool FeatureList::IsFeatureEnabled(const Feature& feature) {
   return feature.default_state == FEATURE_ENABLED_BY_DEFAULT;
 }
 
-void FeatureList::RegisterOverride(const std::string& feature_name,
+void FeatureList::RegisterOverridesFromCommandLine(
+    const std::string& feature_list,
+    OverrideState overridden_state) {
+  for (const auto& value : SplitFeatureListString(feature_list)) {
+    StringPiece feature_name(value);
+    base::FieldTrial* trial = nullptr;
+
+    // The entry may be of the form FeatureName<FieldTrialName - in which case,
+    // this splits off the field trial name and associates it with the override.
+    std::string::size_type pos = feature_name.find('<');
+    if (pos != std::string::npos) {
+      feature_name.set(value.data(), pos);
+      trial = base::FieldTrialList::Find(value.substr(pos + 1));
+    }
+
+    RegisterOverride(feature_name, overridden_state, trial);
+  }
+}
+
+void FeatureList::RegisterOverride(StringPiece feature_name,
                                    OverrideState overridden_state,
                                    FieldTrial* field_trial) {
   DCHECK(!initialized_);
+  if (field_trial) {
+    DCHECK(IsValidFeatureOrFieldTrialName(field_trial->trial_name()))
+        << field_trial->trial_name();
+  }
+
   // Note: The semantics of insert() is that it does not overwrite the entry if
   // one already exists for the key. Thus, only the first override for a given
   // feature name takes effect.
   overrides_.insert(std::make_pair(
-      feature_name, OverrideEntry(overridden_state, field_trial)));
+      feature_name.as_string(), OverrideEntry(overridden_state, field_trial)));
 }
 
 bool FeatureList::CheckFeatureIdentity(const Feature& feature) {

@@ -23,7 +23,6 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/ValidationMessageClientImpl.h"
 
 #include "core/dom/Element.h"
@@ -87,7 +86,7 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
     m_finishTime = monotonicallyIncreasingTime() + std::max(minimumSecondToShowValidationMessage, (message.length() + subMessage.length()) * secondPerCharacter);
     // FIXME: We should invoke checkAnchorStatus actively when layout, scroll,
     // or page scale change happen.
-    m_timer.startRepeating(statusCheckInterval, FROM_HERE);
+    m_timer.startRepeating(statusCheckInterval, BLINK_FROM_HERE);
 }
 
 void ValidationMessageClientImpl::hideValidationMessage(const Element& anchor)
@@ -127,7 +126,7 @@ void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClien
     // FIXME: This intersection eliminates the part of the rect outside the root view.
     // If this is meant as a visiblity test, intersecting it against the viewport rect
     // likely makes more sense.
-    newAnchorRectInViewport = intersection(currentView()->convertToContainingWindow(currentView()->boundsRect()), newAnchorRectInViewport);
+    newAnchorRectInViewport = intersection(currentView()->convertToRootFrame(currentView()->boundsRect()), newAnchorRectInViewport);
     if (newAnchorRectInViewport.isEmpty()) {
         hideValidationMessage(*m_currentAnchor);
         return;

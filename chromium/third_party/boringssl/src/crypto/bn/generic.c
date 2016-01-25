@@ -69,13 +69,7 @@
     (!defined(OPENSSL_X86_64) && !defined(OPENSSL_X86)) || \
     (defined(OPENSSL_X86_64) && defined(OPENSSL_WINDOWS))
 
-#if defined(OPENSSL_WINDOWS)
-#define alloca _alloca
-#else
-#include <alloca.h>
-#endif
-
-#ifdef BN_LLONG
+#ifdef BN_ULLONG
 #define mul_add(r, a, w, c)             \
   {                                     \
     BN_ULLONG t;                        \
@@ -222,9 +216,9 @@
     (c) = h & BN_MASK2;       \
     (r) = l & BN_MASK2;       \
   }
-#endif /* !BN_LLONG */
+#endif /* !BN_ULLONG */
 
-#if defined(BN_LLONG) || defined(BN_UMULT_HIGH)
+#if defined(BN_ULLONG) || defined(BN_UMULT_HIGH)
 
 BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, int num,
                           BN_ULONG w) {
@@ -304,7 +298,7 @@ void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, int n) {
   }
 }
 
-#else /* !(defined(BN_LLONG) || defined(BN_UMULT_HIGH)) */
+#else /* !(defined(BN_ULLONG) || defined(BN_UMULT_HIGH)) */
 
 BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, int num,
                           BN_ULONG w) {
@@ -390,9 +384,9 @@ void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, int n) {
   }
 }
 
-#endif /* !(defined(BN_LLONG) || defined(BN_UMULT_HIGH)) */
+#endif /* !(defined(BN_ULLONG) || defined(BN_UMULT_HIGH)) */
 
-#if defined(BN_LLONG)
+#if defined(BN_ULLONG)
 
 BN_ULONG bn_div_words(BN_ULONG h, BN_ULONG l, BN_ULONG d) {
   return (BN_ULONG)(((((BN_ULLONG)h) << BN_BITS2) | l) / (BN_ULLONG)d);
@@ -470,9 +464,9 @@ BN_ULONG bn_div_words(BN_ULONG h, BN_ULONG l, BN_ULONG d) {
   return ret;
 }
 
-#endif /* !defined(BN_LLONG) */
+#endif /* !defined(BN_ULLONG) */
 
-#ifdef BN_LLONG
+#ifdef BN_ULLONG
 BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
                       int n) {
   BN_ULLONG ll = 0;
@@ -512,7 +506,7 @@ BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
   return (BN_ULONG)ll;
 }
 
-#else /* !BN_LLONG */
+#else /* !BN_ULLONG */
 
 BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
                       int n) {
@@ -569,7 +563,7 @@ BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
   return (BN_ULONG)c;
 }
 
-#endif /* !BN_LLONG */
+#endif /* !BN_ULLONG */
 
 BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
                       int n) {
@@ -631,7 +625,7 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
 /* sqr_add_c(a,i,c0,c1,c2)  -- c+=a[i]^2 for three word number c=(c2,c1,c0) */
 /* sqr_add_c2(a,i,c0,c1,c2) -- c+=2*a[i]*a[j] for three word number c=(c2,c1,c0) */
 
-#ifdef BN_LLONG
+#ifdef BN_ULLONG
 
 /* Keep in mind that additions to multiplication result can not overflow,
  * because its high half cannot be all-ones. */
@@ -722,7 +716,7 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
 
-#else /* !BN_LLONG */
+#else /* !BN_ULLONG */
 
 /* Keep in mind that additions to hi can not overflow, because
  * the high word of a multiplication result cannot be all-ones. */
@@ -774,7 +768,7 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
   } while (0)
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
-#endif /* !BN_LLONG */
+#endif /* !BN_ULLONG */
 
 void bn_mul_comba8(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
   BN_ULONG c1, c2, c3;
@@ -1021,111 +1015,5 @@ void bn_sqr_comba4(BN_ULONG *r, const BN_ULONG *a) {
   r[6] = c1;
   r[7] = c2;
 }
-
-#if defined(OPENSSL_NO_ASM) || (!defined(OPENSSL_ARM) && !defined(OPENSSL_X86_64))
-/* This is essentially reference implementation, which may or may not
- * result in performance improvement. E.g. on IA-32 this routine was
- * observed to give 40% faster rsa1024 private key operations and 10%
- * faster rsa4096 ones, while on AMD64 it improves rsa1024 sign only
- * by 10% and *worsens* rsa4096 sign by 15%. Once again, it's a
- * reference implementation, one to be used as starting point for
- * platform-specific assembler. Mentioned numbers apply to compiler
- * generated code compiled with and without -DOPENSSL_BN_ASM_MONT and
- * can vary not only from platform to platform, but even for compiler
- * versions. Assembler vs. assembler improvement coefficients can
- * [and are known to] differ and are to be documented elsewhere. */
-int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
-                const BN_ULONG *np, const BN_ULONG *n0p, int num) {
-  BN_ULONG c0, c1, ml, *tp, n0;
-#ifdef mul64
-  BN_ULONG mh;
-#endif
-  volatile BN_ULONG *vp;
-  int i = 0, j;
-
-#if 0 /* template for platform-specific implementation */
-	if (ap==bp)	return bn_sqr_mont(rp,ap,np,n0p,num);
-#endif
-  vp = tp = alloca((num + 2) * sizeof(BN_ULONG));
-
-  n0 = *n0p;
-
-  c0 = 0;
-  ml = bp[0];
-#ifdef mul64
-  mh = HBITS(ml);
-  ml = LBITS(ml);
-  for (j = 0; j < num; ++j) {
-    mul(tp[j], ap[j], ml, mh, c0);
-  }
-#else
-  for (j = 0; j < num; ++j) {
-    mul(tp[j], ap[j], ml, c0);
-  }
-#endif
-
-  tp[num] = c0;
-  tp[num + 1] = 0;
-  goto enter;
-
-  for (i = 0; i < num; i++) {
-    c0 = 0;
-    ml = bp[i];
-#ifdef mul64
-    mh = HBITS(ml);
-    ml = LBITS(ml);
-    for (j = 0; j < num; ++j) {
-      mul_add(tp[j], ap[j], ml, mh, c0);
-    }
-#else
-    for (j = 0; j < num; ++j) {
-      mul_add(tp[j], ap[j], ml, c0);
-    }
-#endif
-    c1 = (tp[num] + c0) & BN_MASK2;
-    tp[num] = c1;
-    tp[num + 1] = (c1 < c0 ? 1 : 0);
-  enter:
-    c1 = tp[0];
-    ml = (c1 * n0) & BN_MASK2;
-    c0 = 0;
-#ifdef mul64
-    mh = HBITS(ml);
-    ml = LBITS(ml);
-    mul_add(c1, np[0], ml, mh, c0);
-#else
-    mul_add(c1, ml, np[0], c0);
-#endif
-    for (j = 1; j < num; j++) {
-      c1 = tp[j];
-#ifdef mul64
-      mul_add(c1, np[j], ml, mh, c0);
-#else
-      mul_add(c1, ml, np[j], c0);
-#endif
-      tp[j - 1] = c1 & BN_MASK2;
-    }
-    c1 = (tp[num] + c0) & BN_MASK2;
-    tp[num - 1] = c1;
-    tp[num] = tp[num + 1] + (c1 < c0 ? 1 : 0);
-  }
-
-  if (tp[num] != 0 || tp[num - 1] >= np[num - 1]) {
-    c0 = bn_sub_words(rp, tp, np, num);
-    if (tp[num] != 0 || c0 == 0) {
-      for (i = 0; i < num + 2; i++) {
-        vp[i] = 0;
-      }
-      return 1;
-    }
-  }
-  for (i = 0; i < num; i++) {
-    rp[i] = tp[i], vp[i] = 0;
-  }
-  vp[num] = 0;
-  vp[num + 1] = 0;
-  return 1;
-}
-#endif
 
 #endif

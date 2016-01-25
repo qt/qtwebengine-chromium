@@ -5,12 +5,15 @@
 #ifndef CONTENT_RENDERER_USB_WEB_USB_DEVICE_IMPL_H_
 #define CONTENT_RENDERER_USB_WEB_USB_DEVICE_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "device/devices_app/usb/public/interfaces/device.mojom.h"
 #include "device/devices_app/usb/public/interfaces/device_manager.mojom.h"
-#include "mojo/application/public/interfaces/service_provider.mojom.h"
+#include "mojo/shell/public/interfaces/service_provider.mojom.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBDevice.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBDeviceInfo.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBError.h"

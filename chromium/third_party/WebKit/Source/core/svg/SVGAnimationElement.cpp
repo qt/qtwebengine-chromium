@@ -22,7 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGAnimationElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -160,7 +159,7 @@ static bool parseKeySplines(const String& string, Vector<UnitBezier>& result)
     return true;
 }
 
-void SVGAnimationElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGAnimationElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == SVGNames::valuesAttr) {
         if (!parseValues(value, m_values)) {
@@ -208,7 +207,7 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
         return;
     }
 
-    SVGSMILElement::parseAttribute(name, value);
+    SVGSMILElement::parseAttribute(name, oldValue, value);
 }
 
 void SVGAnimationElement::svgAttributeChanged(const QualifiedName& attrName)

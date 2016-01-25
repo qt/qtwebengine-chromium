@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "wtf/BitVector.h"
 
 #include "wtf/LeakAnnotations.h"
@@ -77,10 +76,10 @@ BitVector::OutOfLineBits* BitVector::OutOfLineBits::create(size_t numBits)
 {
     // Because of the way BitVector stores the pointer, memory tools
     // will erroneously report a leak here.
-    WTF_ANNOTATE_SCOPED_MEMORY_LEAK;
-    numBits = (numBits + bitsInPointer() - 1) & ~(bitsInPointer() - 1);
+    WTF_INTERNAL_LEAK_SANITIZER_DISABLED_SCOPE;
+    numBits = (numBits + bitsInPointer() - 1) & ~(bitsInPointer() - static_cast<size_t>(1));
     size_t size = sizeof(OutOfLineBits) + sizeof(uintptr_t) * (numBits / bitsInPointer());
-    void* allocation = Partitions::bufferMalloc(size);
+    void* allocation = Partitions::bufferMalloc(size, WTF_HEAP_PROFILER_TYPE_NAME(OutOfLineBits));
     OutOfLineBits* result = new (NotNull, allocation) OutOfLineBits(numBits);
     return result;
 }

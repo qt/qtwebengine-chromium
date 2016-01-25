@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/Logging.h"
 
 #include "wtf/text/WTFString.h"
@@ -69,6 +68,8 @@ WTFLogChannel LogGamepad =            { WTFLogChannelOff };
 
 WTFLogChannel LogScriptedAnimationController = { WTFLogChannelOff };
 WTFLogChannel LogTimers =                      { WTFLogChannelOff };
+
+WTFLogChannel LogFonts =              { WTFLogChannelOff };
 
 WTFLogChannel* getChannelFromName(const String& channelName)
 {
@@ -155,6 +156,9 @@ WTFLogChannel* getChannelFromName(const String& channelName)
 
     if (equalIgnoringCase(channelName, String("Timers")))
         return &LogTimers;
+
+    if (equalIgnoringCase(channelName, String("Fonts")))
+        return &LogFonts;
 
     return 0;
 }

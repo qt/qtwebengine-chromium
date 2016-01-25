@@ -54,15 +54,11 @@ WebInspector.SoftContextMenu.prototype = {
 
         // Create context menu.
         this.element = createElementWithClass("div", "soft-context-menu");
-        var root = WebInspector.createShadowRootWithCoreStyles(this.element);
-        root.appendChild(WebInspector.Widget.createStyleElement("ui/softContextMenu.css"));
+        var root = WebInspector.createShadowRootWithCoreStyles(this.element, "ui/softContextMenu.css");
         this._contextMenuElement = root.createChild("div");
         this.element.style.top = y + "px";
-        this.element.style.left = x + "px";
-
-        var maxHeight = WebInspector.Dialog.modalHostView().element.offsetHeight;
-        maxHeight -= y - WebInspector.Dialog.modalHostView().element.totalOffsetTop();
-        this.element.style.maxHeight = maxHeight + "px";
+        var subMenuOverlap = 3;
+        this.element.style.left = (this._parentMenu ? x - subMenuOverlap : x) + "px";
 
         this._contextMenuElement.tabIndex = 0;
         this._contextMenuElement.addEventListener("mouseup", consumeEvent, false);
@@ -80,16 +76,28 @@ WebInspector.SoftContextMenu.prototype = {
             document.body.appendChild(this._glassPaneElement);
             this._discardMenuOnResizeListener = this._discardMenu.bind(this, true);
             document.defaultView.addEventListener("resize", this._discardMenuOnResizeListener, false);
-            this._focus();
         } else {
             this._parentMenu._parentGlassPaneElement().appendChild(this.element);
         }
 
         // Re-position menu in case it does not fit.
-        if (document.body.offsetWidth <  this.element.offsetLeft + this.element.offsetWidth)
-            this.element.style.left = Math.max(0, document.body.offsetWidth - this.element.offsetWidth) + "px";
-        if (document.body.offsetHeight < this.element.offsetTop + this.element.offsetHeight)
-            this.element.style.top = Math.max(0, document.body.offsetHeight - this.element.offsetHeight) + "px";
+        if (document.body.offsetWidth < this.element.offsetLeft + this.element.offsetWidth) {
+            this.element.style.left = Math.max(WebInspector.Dialog.modalHostView().element.totalOffsetLeft(), this._parentMenu
+                ? this._parentMenu.element.offsetLeft - this.element.offsetWidth + subMenuOverlap
+                : document.body.offsetWidth - this.element.offsetWidth) + "px";
+        }
+
+        // Move submenus upwards if it does not fit.
+        if (this._parentMenu && document.body.offsetHeight < this.element.offsetTop + this.element.offsetHeight) {
+            y = Math.max(WebInspector.Dialog.modalHostView().element.totalOffsetTop(), document.body.offsetHeight - this.element.offsetHeight);
+            this.element.style.top = y + "px";
+        }
+
+        var maxHeight = WebInspector.Dialog.modalHostView().element.offsetHeight;
+        maxHeight -= y - WebInspector.Dialog.modalHostView().element.totalOffsetTop();
+        this.element.style.maxHeight = maxHeight + "px";
+
+        this._focus();
     },
 
     discard: function()
@@ -126,6 +134,8 @@ WebInspector.SoftContextMenu.prototype = {
             return menuItemElement;
         }
 
+        if (!item.enabled)
+            menuItemElement.classList.add("soft-context-menu-disabled");
         menuItemElement.createTextChild(item.label);
         menuItemElement.createChild("span", "soft-context-menu-shortcut").textContent = item.shortcut;
 
@@ -169,7 +179,6 @@ WebInspector.SoftContextMenu.prototype = {
     {
         var separatorElement = createElementWithClass("div", "soft-context-menu-separator");
         separatorElement._isSeparator = true;
-        separatorElement.addEventListener("mouseover", this._hideSubMenu.bind(this), false);
         separatorElement.createChild("div", "separator-line");
         return separatorElement;
     },
@@ -216,12 +225,8 @@ WebInspector.SoftContextMenu.prototype = {
             return;
 
         this._subMenu = new WebInspector.SoftContextMenu(menuItemElement._subItems, this._itemSelectedCallback, this);
-        var menuLeft = menuItemElement.totalOffsetLeft();
-        var menuRight = menuLeft + menuItemElement.offsetWidth;
-        var menuX = menuRight - 3;
-        if (menuRight + menuItemElement.offsetWidth > this._document.body.offsetWidth)
-            menuX = Math.max(0, menuLeft - menuItemElement.offsetWidth);
-        this._subMenu.show(this._document, menuX, menuItemElement.totalOffsetTop() - 1);
+        var topPadding = 4;
+        this._subMenu.show(this._document, menuItemElement.totalOffsetLeft() + menuItemElement.offsetWidth, menuItemElement.totalOffsetTop() - 1 - topPadding);
     },
 
     _hideSubMenu: function()
@@ -234,22 +239,26 @@ WebInspector.SoftContextMenu.prototype = {
 
     _menuItemMouseOver: function(event)
     {
-        this._highlightMenuItem(event.target);
+        this._highlightMenuItem(event.target, true);
     },
 
     _menuItemMouseLeave: function(event)
     {
         if (!this._subMenu || !event.relatedTarget) {
-            this._highlightMenuItem(null);
+            this._highlightMenuItem(null, true);
             return;
         }
 
         var relatedTarget = event.relatedTarget;
         if (relatedTarget.classList.contains("soft-context-menu-glass-pane"))
-            this._highlightMenuItem(null);
+            this._highlightMenuItem(null, true);
     },
 
-    _highlightMenuItem: function(menuItemElement)
+    /**
+     * @param {?Element} menuItemElement
+     * @param {boolean} scheduleSubMenu
+     */
+    _highlightMenuItem: function(menuItemElement, scheduleSubMenu)
     {
         if (this._highlightedMenuItemElement ===  menuItemElement)
             return;
@@ -266,7 +275,7 @@ WebInspector.SoftContextMenu.prototype = {
         if (this._highlightedMenuItemElement) {
             this._highlightedMenuItemElement.classList.add("soft-context-menu-item-mouse-over");
             this._contextMenuElement.focus();
-            if (this._highlightedMenuItemElement._subItems && !this._highlightedMenuItemElement._subMenuTimer)
+            if (scheduleSubMenu && this._highlightedMenuItemElement._subItems && !this._highlightedMenuItemElement._subMenuTimer)
                 this._highlightedMenuItemElement._subMenuTimer = setTimeout(this._showSubMenu.bind(this, this._highlightedMenuItemElement), 150);
         }
     },
@@ -277,7 +286,7 @@ WebInspector.SoftContextMenu.prototype = {
         while (menuItemElement && (menuItemElement._isSeparator || menuItemElement._isCustom))
             menuItemElement = menuItemElement.previousSibling;
         if (menuItemElement)
-            this._highlightMenuItem(menuItemElement);
+            this._highlightMenuItem(menuItemElement, false);
     },
 
     _highlightNext: function()
@@ -286,7 +295,7 @@ WebInspector.SoftContextMenu.prototype = {
         while (menuItemElement && (menuItemElement._isSeparator || menuItemElement._isCustom))
             menuItemElement = menuItemElement.nextSibling;
         if (menuItemElement)
-            this._highlightMenuItem(menuItemElement);
+            this._highlightMenuItem(menuItemElement, false);
     },
 
     _menuKeyDown: function(event)
@@ -298,8 +307,8 @@ WebInspector.SoftContextMenu.prototype = {
             this._highlightNext(); break;
         case "Left":
             if (this._parentMenu) {
-                this._highlightMenuItem(null);
-                this._parentMenu._focus();
+                this._highlightMenuItem(null, false);
+                this._parentMenu._hideSubMenu();
             }
             break;
         case "Right":
@@ -312,7 +321,7 @@ WebInspector.SoftContextMenu.prototype = {
             }
             break;
         case "U+001B": // Escape
-            this._discardMenu(true, event); break;
+            this._discardMenu(false, event); break;
         case "Enter":
             if (!isEnterKey(event))
                 break;
@@ -320,6 +329,10 @@ WebInspector.SoftContextMenu.prototype = {
         case "U+0020": // Space
             if (this._highlightedMenuItemElement)
                 this._triggerAction(this._highlightedMenuItemElement, event);
+            if (this._highlightedMenuItemElement._subItems) {
+                this._subMenu._focus();
+                this._subMenu._highlightNext();
+            }
             break;
         }
         event.consume(true);
@@ -353,6 +366,8 @@ WebInspector.SoftContextMenu.prototype = {
                 delete this._parentMenu._subMenu;
                 if (closeParentMenus)
                     this._parentMenu._discardMenu(closeParentMenus, event);
+                else
+                    this._parentMenu._focus();
             }
 
             if (event)
@@ -361,11 +376,13 @@ WebInspector.SoftContextMenu.prototype = {
             this._discardSubMenus();
             if (closeParentMenus)
                 this._parentMenu._discardMenu(closeParentMenus, event);
+            else
+                this._parentMenu._focus();
             if (event)
                 event.consume(true);
         }
         if (this._discardMenuOnResizeListener) {
-            this._document.defaultView.removeEventListener(this._discardMenuOnResizeListener);
+            this._document.defaultView.removeEventListener("resize", this._discardMenuOnResizeListener, false);
             delete this._discardMenuOnResizeListener;
         }
     },

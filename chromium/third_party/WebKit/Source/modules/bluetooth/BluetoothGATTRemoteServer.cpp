@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/bluetooth/BluetoothGATTRemoteServer.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -32,7 +31,7 @@ BluetoothGATTRemoteServer* BluetoothGATTRemoteServer::take(ScriptPromiseResolver
 
 ScriptPromise BluetoothGATTRemoteServer::getPrimaryService(ScriptState* scriptState, const StringOrUnsignedLong& service, ExceptionState& exceptionState)
 {
-    WebBluetooth* webbluetooth = BluetoothSupplement::from(scriptState);
+    WebBluetooth* webbluetooth = BluetoothSupplement::fromScriptState(scriptState);
 
     String serviceUUID = BluetoothUUID::getService(service, exceptionState);
     if (exceptionState.hadException())

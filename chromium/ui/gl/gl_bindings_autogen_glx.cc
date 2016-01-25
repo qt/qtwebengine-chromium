@@ -140,14 +140,12 @@ void DriverGLX::InitializeExtensionBindings() {
   if (ext.b_GLX_EXT_texture_from_pixmap) {
     fn.glXBindTexImageEXTFn = reinterpret_cast<glXBindTexImageEXTProc>(
         GetGLProcAddress("glXBindTexImageEXT"));
-    DCHECK(fn.glXBindTexImageEXTFn);
   }
 
   debug_fn.glXCopySubBufferMESAFn = 0;
   if (ext.b_GLX_MESA_copy_sub_buffer) {
     fn.glXCopySubBufferMESAFn = reinterpret_cast<glXCopySubBufferMESAProc>(
         GetGLProcAddress("glXCopySubBufferMESA"));
-    DCHECK(fn.glXCopySubBufferMESAFn);
   }
 
   debug_fn.glXCreateContextAttribsARBFn = 0;
@@ -155,7 +153,6 @@ void DriverGLX::InitializeExtensionBindings() {
     fn.glXCreateContextAttribsARBFn =
         reinterpret_cast<glXCreateContextAttribsARBProc>(
             GetGLProcAddress("glXCreateContextAttribsARB"));
-    DCHECK(fn.glXCreateContextAttribsARBFn);
   }
 
   debug_fn.glXGetFBConfigFromVisualSGIXFn = 0;
@@ -163,49 +160,42 @@ void DriverGLX::InitializeExtensionBindings() {
     fn.glXGetFBConfigFromVisualSGIXFn =
         reinterpret_cast<glXGetFBConfigFromVisualSGIXProc>(
             GetGLProcAddress("glXGetFBConfigFromVisualSGIX"));
-    DCHECK(fn.glXGetFBConfigFromVisualSGIXFn);
   }
 
   debug_fn.glXGetMscRateOMLFn = 0;
   if (ext.b_GLX_OML_sync_control) {
     fn.glXGetMscRateOMLFn = reinterpret_cast<glXGetMscRateOMLProc>(
         GetGLProcAddress("glXGetMscRateOML"));
-    DCHECK(fn.glXGetMscRateOMLFn);
   }
 
   debug_fn.glXGetSyncValuesOMLFn = 0;
   if (ext.b_GLX_OML_sync_control) {
     fn.glXGetSyncValuesOMLFn = reinterpret_cast<glXGetSyncValuesOMLProc>(
         GetGLProcAddress("glXGetSyncValuesOML"));
-    DCHECK(fn.glXGetSyncValuesOMLFn);
   }
 
   debug_fn.glXReleaseTexImageEXTFn = 0;
   if (ext.b_GLX_EXT_texture_from_pixmap) {
     fn.glXReleaseTexImageEXTFn = reinterpret_cast<glXReleaseTexImageEXTProc>(
         GetGLProcAddress("glXReleaseTexImageEXT"));
-    DCHECK(fn.glXReleaseTexImageEXTFn);
   }
 
   debug_fn.glXSwapIntervalEXTFn = 0;
   if (ext.b_GLX_EXT_swap_control) {
     fn.glXSwapIntervalEXTFn = reinterpret_cast<glXSwapIntervalEXTProc>(
         GetGLProcAddress("glXSwapIntervalEXT"));
-    DCHECK(fn.glXSwapIntervalEXTFn);
   }
 
   debug_fn.glXSwapIntervalMESAFn = 0;
   if (ext.b_GLX_MESA_swap_control) {
     fn.glXSwapIntervalMESAFn = reinterpret_cast<glXSwapIntervalMESAProc>(
         GetGLProcAddress("glXSwapIntervalMESA"));
-    DCHECK(fn.glXSwapIntervalMESAFn);
   }
 
   debug_fn.glXWaitVideoSyncSGIFn = 0;
   if (ext.b_GLX_SGI_video_sync) {
     fn.glXWaitVideoSyncSGIFn = reinterpret_cast<glXWaitVideoSyncSGIProc>(
         GetGLProcAddress("glXWaitVideoSyncSGI"));
-    DCHECK(fn.glXWaitVideoSyncSGIFn);
   }
 
   if (g_debugBindingsInitialized)
@@ -512,8 +502,8 @@ static GLXFBConfig* GL_BINDING_CALL Debug_glXGetFBConfigs(Display* dpy,
 
 static bool GL_BINDING_CALL Debug_glXGetMscRateOML(Display* dpy,
                                                    GLXDrawable drawable,
-                                                   int32* numerator,
-                                                   int32* denominator) {
+                                                   int32_t* numerator,
+                                                   int32_t* denominator) {
   GL_SERVICE_LOG("glXGetMscRateOML"
                  << "(" << static_cast<const void*>(dpy) << ", " << drawable
                  << ", " << static_cast<const void*>(numerator) << ", "
@@ -535,9 +525,9 @@ static void GL_BINDING_CALL Debug_glXGetSelectedEvent(Display* dpy,
 
 static bool GL_BINDING_CALL Debug_glXGetSyncValuesOML(Display* dpy,
                                                       GLXDrawable drawable,
-                                                      int64* ust,
-                                                      int64* msc,
-                                                      int64* sbc) {
+                                                      int64_t* ust,
+                                                      int64_t* msc,
+                                                      int64_t* sbc) {
   GL_SERVICE_LOG("glXGetSyncValuesOML"
                  << "(" << static_cast<const void*>(dpy) << ", " << drawable
                  << ", " << static_cast<const void*>(ust) << ", "
@@ -1097,8 +1087,8 @@ GLXFBConfig* GLXApiBase::glXGetFBConfigsFn(Display* dpy,
 
 bool GLXApiBase::glXGetMscRateOMLFn(Display* dpy,
                                     GLXDrawable drawable,
-                                    int32* numerator,
-                                    int32* denominator) {
+                                    int32_t* numerator,
+                                    int32_t* denominator) {
   return driver_->fn.glXGetMscRateOMLFn(dpy, drawable, numerator, denominator);
 }
 
@@ -1110,9 +1100,9 @@ void GLXApiBase::glXGetSelectedEventFn(Display* dpy,
 
 bool GLXApiBase::glXGetSyncValuesOMLFn(Display* dpy,
                                        GLXDrawable drawable,
-                                       int64* ust,
-                                       int64* msc,
-                                       int64* sbc) {
+                                       int64_t* ust,
+                                       int64_t* msc,
+                                       int64_t* sbc) {
   return driver_->fn.glXGetSyncValuesOMLFn(dpy, drawable, ust, msc, sbc);
 }
 
@@ -1396,8 +1386,8 @@ GLXFBConfig* TraceGLXApi::glXGetFBConfigsFn(Display* dpy,
 
 bool TraceGLXApi::glXGetMscRateOMLFn(Display* dpy,
                                      GLXDrawable drawable,
-                                     int32* numerator,
-                                     int32* denominator) {
+                                     int32_t* numerator,
+                                     int32_t* denominator) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::glXGetMscRateOML")
   return glx_api_->glXGetMscRateOMLFn(dpy, drawable, numerator, denominator);
 }
@@ -1411,9 +1401,9 @@ void TraceGLXApi::glXGetSelectedEventFn(Display* dpy,
 
 bool TraceGLXApi::glXGetSyncValuesOMLFn(Display* dpy,
                                         GLXDrawable drawable,
-                                        int64* ust,
-                                        int64* msc,
-                                        int64* sbc) {
+                                        int64_t* ust,
+                                        int64_t* msc,
+                                        int64_t* sbc) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::glXGetSyncValuesOML")
   return glx_api_->glXGetSyncValuesOMLFn(dpy, drawable, ust, msc, sbc);
 }

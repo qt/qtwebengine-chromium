@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/layout/compositing/PaintLayerCompositor.h"
 
 #include "core/animation/AnimationTimeline.h"
@@ -58,10 +56,12 @@
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/GraphicsLayer.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/CullRect.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/TransformDisplayItem.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebCompositorMutableProperties.h"
 
 namespace blink {
 
@@ -194,6 +194,10 @@ void updateDescendantDependentFlagsForEntireSubtree(PaintLayer& layer)
 
 void PaintLayerCompositor::updateIfNeededRecursive()
 {
+    FrameView* view = m_layoutView.frameView();
+    if (view->shouldThrottleRendering())
+        return;
+
     for (Frame* child = m_layoutView.frameView()->frame().tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (!child->isLocalFrame())
             continue;
@@ -238,8 +242,12 @@ void PaintLayerCompositor::updateIfNeededRecursive()
     ASSERT(lifecycle().state() == DocumentLifecycle::CompositingClean);
     assertNoUnresolvedDirtyBits();
     for (Frame* child = m_layoutView.frameView()->frame().tree().firstChild(); child; child = child->tree().nextSibling()) {
-        if (child->isLocalFrame())
-            toLocalFrame(child)->contentLayoutObject()->compositor()->assertNoUnresolvedDirtyBits();
+        if (!child->isLocalFrame())
+            continue;
+        LocalFrame* localFrame = toLocalFrame(child);
+        if (localFrame->shouldThrottleRendering())
+            continue;
+        localFrame->contentLayoutObject()->compositor()->assertNoUnresolvedDirtyBits();
     }
 #endif
 }
@@ -323,11 +331,11 @@ void PaintLayerCompositor::updateWithoutAcceleratedCompositing(CompositingUpdate
 
 static void forceRecomputePaintInvalidationRectsIncludingNonCompositingDescendants(LayoutObject* layoutObject)
 {
-    // We clear the previous paint invalidation rect as it's wrong (paint invaliation container
+    // We clear the previous paint invalidation rect as it's wrong (paint invalidation container
     // changed, ...). Forcing a full invalidation will make us recompute it. Also we are not
     // changing the previous position from our paint invalidation container, which is fine as
     // we want a full paint invalidation anyway.
-    layoutObject->setPreviousPaintInvalidationRect(LayoutRect());
+    layoutObject->clearPreviousPaintInvalidationRects();
     layoutObject->setShouldDoFullPaintInvalidation();
 
     for (LayoutObject* child = layoutObject->slowFirstChild(); child; child = child->nextSibling()) {
@@ -377,11 +385,27 @@ void PaintLayerCompositor::updateIfNeeded()
             }
         }
 
-        if (layersChanged)
+        if (layersChanged) {
             updateType = std::max(updateType, CompositingUpdateRebuildTree);
+            if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
+                scrollingCoordinator->notifyGeometryChanged();
+        }
     }
 
     if (updateType != CompositingUpdateNone) {
+        if (RuntimeEnabledFeatures::compositorWorkerEnabled() && m_scrollLayer) {
+            if (Element* scrollingElement = m_layoutView.document().scrollingElement()) {
+                uint64_t elementId = 0;
+                uint32_t mutableProperties = WebCompositorMutablePropertyNone;
+                if (scrollingElement->hasCompositorProxy()) {
+                    elementId = DOMNodeIds::idForNode(scrollingElement);
+                    mutableProperties = (WebCompositorMutablePropertyScrollLeft | WebCompositorMutablePropertyScrollTop) & scrollingElement->compositorMutableProperties();
+                }
+                m_scrollLayer->setElementId(elementId);
+                m_scrollLayer->setCompositorMutableProperties(mutableProperties);
+            }
+        }
+
         GraphicsLayerUpdater updater;
         updater.update(*updateRoot, layersNeedingPaintInvalidation);
 
@@ -529,8 +553,8 @@ void PaintLayerCompositor::frameViewDidChangeSize()
 {
     if (m_containerLayer) {
         FrameView* frameView = m_layoutView.frameView();
-        m_containerLayer->setSize(frameView->visibleContentSize());
-        m_overflowControlsHostLayer->setSize(frameView->visibleContentSize(IncludeScrollbars));
+        m_containerLayer->setSize(FloatSize(frameView->visibleContentSize()));
+        m_overflowControlsHostLayer->setSize(FloatSize(frameView->visibleContentSize(IncludeScrollbars)));
 
         frameViewDidScroll();
         updateOverflowControlsLayers();
@@ -608,7 +632,7 @@ bool PaintLayerCompositor::scrollingLayerDidChange(PaintLayer* layer)
 
 String PaintLayerCompositor::layerTreeAsText(LayerTreeFlags flags)
 {
-    ASSERT(lifecycle().state() >= DocumentLifecycle::PaintInvalidationClean);
+    ASSERT(lifecycle().state() >= DocumentLifecycle::PaintInvalidationClean || m_layoutView.frameView()->shouldThrottleRendering());
 
     if (!m_rootContentLayer)
         return String();
@@ -636,8 +660,7 @@ PaintLayerCompositor* PaintLayerCompositor::frameContentsCompositor(LayoutPart* 
     return nullptr;
 }
 
-// FIXME: What does this function do? It needs a clearer name.
-bool PaintLayerCompositor::parentFrameContentLayers(LayoutPart* layoutObject)
+bool PaintLayerCompositor::attachFrameContentLayersToIframeLayer(LayoutPart* layoutObject)
 {
     PaintLayerCompositor* innerCompositor = frameContentsCompositor(layoutObject);
     if (!innerCompositor || !innerCompositor->staleInCompositingMode() || innerCompositor->rootLayerAttachment() != RootLayerAttachedViaEnclosingFrame)
@@ -647,13 +670,7 @@ bool PaintLayerCompositor::parentFrameContentLayers(LayoutPart* layoutObject)
     if (!layer->hasCompositedLayerMapping())
         return false;
 
-    CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
-    GraphicsLayer* hostingLayer = compositedLayerMapping->parentForSublayers();
-    GraphicsLayer* rootLayer = innerCompositor->rootGraphicsLayer();
-    if (hostingLayer->children().size() != 1 || hostingLayer->children()[0] != rootLayer) {
-        hostingLayer->removeAllChildren();
-        hostingLayer->addChild(rootLayer);
-    }
+    layer->compositedLayerMapping()->setSublayers(GraphicsLayerVector(1, innerCompositor->rootGraphicsLayer()));
     return true;
 }
 
@@ -683,9 +700,7 @@ PaintLayer* PaintLayerCompositor::rootLayer() const
 
 GraphicsLayer* PaintLayerCompositor::rootGraphicsLayer() const
 {
-    if (m_overflowControlsHostLayer)
-        return m_overflowControlsHostLayer.get();
-    return m_rootContentLayer.get();
+    return m_overflowControlsHostLayer.get();
 }
 
 GraphicsLayer* PaintLayerCompositor::frameScrollLayer() const
@@ -703,20 +718,6 @@ GraphicsLayer* PaintLayerCompositor::scrollLayer() const
 GraphicsLayer* PaintLayerCompositor::containerLayer() const
 {
     return m_containerLayer.get();
-}
-
-GraphicsLayer* PaintLayerCompositor::ensureRootTransformLayer()
-{
-    ASSERT(rootGraphicsLayer());
-
-    if (!m_rootTransformLayer.get()) {
-        m_rootTransformLayer = GraphicsLayer::create(graphicsLayerFactory(), this);
-        m_overflowControlsHostLayer->addChild(m_rootTransformLayer.get());
-        m_rootTransformLayer->addChild(m_containerLayer.get());
-        updateOverflowControlsLayers();
-    }
-
-    return m_rootTransformLayer.get();
 }
 
 void PaintLayerCompositor::setIsInWindow(bool isInWindow)
@@ -744,13 +745,13 @@ void PaintLayerCompositor::updateRootLayerPosition()
 {
     if (m_rootContentLayer) {
         const IntRect& documentRect = m_layoutView.documentRect();
-        m_rootContentLayer->setSize(documentRect.size());
+        m_rootContentLayer->setSize(FloatSize(documentRect.size()));
         m_rootContentLayer->setPosition(documentRect.location());
     }
     if (m_containerLayer) {
         FrameView* frameView = m_layoutView.frameView();
-        m_containerLayer->setSize(frameView->visibleContentSize());
-        m_overflowControlsHostLayer->setSize(frameView->visibleContentSize(IncludeScrollbars));
+        m_containerLayer->setSize(FloatSize(frameView->visibleContentSize()));
+        m_overflowControlsHostLayer->setSize(FloatSize(frameView->visibleContentSize(IncludeScrollbars)));
     }
 }
 
@@ -775,7 +776,7 @@ bool PaintLayerCompositor::canBeComposited(const PaintLayer* layer) const
 // into the hierarchy between this layer and its children in the z-order hierarchy.
 bool PaintLayerCompositor::clipsCompositingDescendants(const PaintLayer* layer) const
 {
-    return layer->hasCompositingDescendant() && layer->layoutObject()->hasClipOrOverflowClip();
+    return layer->hasCompositingDescendant() && layer->layoutObject()->hasClipRelatedProperty();
 }
 
 // If an element has composited negative z-index children, those children paint in front of the
@@ -802,17 +803,22 @@ static void paintScrollbar(const Scrollbar* scrollbar, GraphicsContext& context,
     translation.translate(-paintOffset.x(), -paintOffset.y());
     TransformRecorder transformRecorder(context, *scrollbar, translation);
 
-    scrollbar->paint(&context, transformedClip);
+    scrollbar->paint(context, CullRect(transformedClip));
 }
 
-void PaintLayerCompositor::paintContents(const GraphicsLayer* graphicsLayer, GraphicsContext& context, GraphicsLayerPaintingPhase, const IntRect& clip) const
+IntRect PaintLayerCompositor::computeInterestRect(const GraphicsLayer* graphicsLayer, const IntRect&) const
+{
+    return enclosingIntRect(FloatRect(FloatPoint(), graphicsLayer->size()));
+}
+
+void PaintLayerCompositor::paintContents(const GraphicsLayer* graphicsLayer, GraphicsContext& context, GraphicsLayerPaintingPhase, const IntRect& interestRect) const
 {
     if (graphicsLayer == layerForHorizontalScrollbar())
-        paintScrollbar(m_layoutView.frameView()->horizontalScrollbar(), context, clip);
+        paintScrollbar(m_layoutView.frameView()->horizontalScrollbar(), context, interestRect);
     else if (graphicsLayer == layerForVerticalScrollbar())
-        paintScrollbar(m_layoutView.frameView()->verticalScrollbar(), context, clip);
+        paintScrollbar(m_layoutView.frameView()->verticalScrollbar(), context, interestRect);
     else if (graphicsLayer == layerForScrollCorner())
-        FramePainter(*m_layoutView.frameView()).paintScrollCorner(&context, clip);
+        FramePainter(*m_layoutView.frameView()).paintScrollCorner(context, interestRect);
 }
 
 bool PaintLayerCompositor::supportsFixedRootBackgroundCompositing() const
@@ -872,13 +878,9 @@ void PaintLayerCompositor::resetTrackedPaintInvalidationRects()
 void PaintLayerCompositor::setTracksPaintInvalidations(bool tracksPaintInvalidations)
 {
 #if ENABLE(ASSERT)
-    if (RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
-        ASSERT(lifecycle().state() == DocumentLifecycle::CompositingForSlimmingPaintV2Clean
-            // TODO(wangxianzhu): Remove this when we remove the old path for spv2.
-            || lifecycle().state() == DocumentLifecycle::PaintInvalidationClean);
-    } else {
-        ASSERT(lifecycle().state() == DocumentLifecycle::PaintInvalidationClean);
-    }
+    FrameView* view = m_layoutView.frameView();
+    ASSERT(lifecycle().state() == DocumentLifecycle::PaintClean
+        || (view && view->shouldThrottleRendering()));
 #endif
 
     m_isTrackingPaintInvalidations = tracksPaintInvalidations;
@@ -906,7 +908,7 @@ bool PaintLayerCompositor::requiresScrollCornerLayer() const
 
 void PaintLayerCompositor::updateOverflowControlsLayers()
 {
-    GraphicsLayer* controlsParent = m_rootTransformLayer.get() ? m_rootTransformLayer.get() : m_overflowControlsHostLayer.get();
+    GraphicsLayer* controlsParent = m_overflowControlsHostLayer.get();
     // Main frame scrollbars should always be stuck to the sides of the screen (in overscroll and in pinch-zoom), so
     // make the parent for the scrollbars be the viewport container layer.
     if (m_layoutView.frame()->isMainFrame()) {
@@ -1036,8 +1038,7 @@ void PaintLayerCompositor::destroyRootLayer()
         m_layerForHorizontalScrollbar = nullptr;
         if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
             scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_layoutView.frameView(), HorizontalScrollbar);
-        if (Scrollbar* horizontalScrollbar = m_layoutView.frameView()->horizontalScrollbar())
-            m_layoutView.frameView()->invalidateScrollbar(horizontalScrollbar, IntRect(IntPoint(0, 0), horizontalScrollbar->frameRect().size()));
+        m_layoutView.frameView()->setScrollbarNeedsPaintInvalidation(HorizontalScrollbar);
     }
 
     if (m_layerForVerticalScrollbar) {
@@ -1045,13 +1046,12 @@ void PaintLayerCompositor::destroyRootLayer()
         m_layerForVerticalScrollbar = nullptr;
         if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
             scrollingCoordinator->scrollableAreaScrollbarLayerDidChange(m_layoutView.frameView(), VerticalScrollbar);
-        if (Scrollbar* verticalScrollbar = m_layoutView.frameView()->verticalScrollbar())
-            m_layoutView.frameView()->invalidateScrollbar(verticalScrollbar, IntRect(IntPoint(0, 0), verticalScrollbar->frameRect().size()));
+        m_layoutView.frameView()->setScrollbarNeedsPaintInvalidation(VerticalScrollbar);
     }
 
     if (m_layerForScrollCorner) {
         m_layerForScrollCorner = nullptr;
-        m_layoutView.frameView()->invalidateScrollCorner(m_layoutView.frameView()->scrollCornerRect());
+        m_layoutView.frameView()->setScrollCornerNeedsPaintInvalidation();
     }
 
     if (m_overflowControlsHostLayer) {
@@ -1061,12 +1061,16 @@ void PaintLayerCompositor::destroyRootLayer()
     }
     ASSERT(!m_scrollLayer);
     m_rootContentLayer = nullptr;
-    m_rootTransformLayer = nullptr;
 }
 
 void PaintLayerCompositor::attachRootLayer(RootLayerAttachment attachment)
 {
     if (!m_rootContentLayer)
+        return;
+
+    // In Slimming Paint v2, PaintArtifactCompositor is responsible for the root
+    // layer.
+    if (RuntimeEnabledFeatures::slimmingPaintV2Enabled())
         return;
 
     switch (attachment) {
@@ -1181,13 +1185,11 @@ DocumentLifecycle& PaintLayerCompositor::lifecycle() const
     return m_layoutView.document().lifecycle();
 }
 
-String PaintLayerCompositor::debugName(const GraphicsLayer* graphicsLayer)
+String PaintLayerCompositor::debugName(const GraphicsLayer* graphicsLayer) const
 {
     String name;
     if (graphicsLayer == m_rootContentLayer.get()) {
         name = "Content Root Layer";
-    } else if (graphicsLayer == m_rootTransformLayer.get()) {
-        name = "Root Transform Layer";
     } else if (graphicsLayer == m_overflowControlsHostLayer.get()) {
         name = "Frame Overflow Controls Host Layer";
     } else if (graphicsLayer == m_layerForHorizontalScrollbar.get()) {

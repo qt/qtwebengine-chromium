@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "public/platform/WebRTCConfiguration.h"
 
 #include "platform/mediastream/RTCConfiguration.h"
@@ -71,33 +69,6 @@ WebString WebRTCICEServer::credential() const
     return m_private->credential();
 }
 
-WebRTCICEServerArray::WebRTCICEServerArray(RTCIceServerArray* iceServers)
-    : m_private(iceServers)
-{
-}
-
-void WebRTCICEServerArray::assign(const WebRTCICEServerArray& other)
-{
-    m_private = other.m_private;
-}
-
-void WebRTCICEServerArray::reset()
-{
-    m_private.reset();
-}
-
-size_t WebRTCICEServerArray::numberOfServers() const
-{
-    ASSERT(!isNull());
-    return m_private->numberOfServers();
-}
-
-WebRTCICEServer WebRTCICEServerArray::server(size_t index) const
-{
-    ASSERT(!isNull());
-    return WebRTCICEServer(m_private->server(index));
-}
-
 WebRTCConfiguration::WebRTCConfiguration(RTCConfiguration* configuration)
     : m_private(configuration)
 {
@@ -111,6 +82,18 @@ void WebRTCConfiguration::assign(const WebRTCConfiguration& other)
 void WebRTCConfiguration::reset()
 {
     m_private.reset();
+}
+
+size_t WebRTCConfiguration::numberOfServers() const
+{
+    ASSERT(!isNull());
+    return m_private->numberOfServers();
+}
+
+WebRTCICEServer WebRTCConfiguration::server(size_t index) const
+{
+    ASSERT(!isNull());
+    return WebRTCICEServer(m_private->server(index));
 }
 
 WebRTCIceTransports WebRTCConfiguration::iceTransports() const
@@ -159,10 +142,16 @@ WebRTCRtcpMuxPolicy WebRTCConfiguration::rtcpMuxPolicy() const
     return WebRTCRtcpMuxPolicyNegotiate;
 }
 
-WebRTCICEServerArray WebRTCConfiguration::iceServers() const
+size_t WebRTCConfiguration::numberOfCertificates() const
 {
     ASSERT(!isNull());
-    return WebRTCICEServerArray(m_private->iceServers());
+    return m_private->numberOfCertificates();
+}
+
+WebRTCCertificate* WebRTCConfiguration::certificate(size_t index) const
+{
+    ASSERT(!isNull());
+    return m_private->certificate(index);
 }
 
 } // namespace blink

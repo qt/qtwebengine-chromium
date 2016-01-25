@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "dbus/bus.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_export.h"
@@ -21,7 +22,7 @@ namespace bluez {
 // Instantiate with a chosen D-Bus object path (that conforms to the BlueZ GATT
 // service specification), service UUID, and the list of included services, and
 // pass the D-Bus object path as the |service_path| argument to the
-// chromeos::BluetoothGattManagerClient::RegisterService method. Make sure to
+// bluez::BluetoothGattManagerClient::RegisterService method. Make sure to
 // create characteristic and descriptor objects using the appropriate service
 // providers before registering a GATT service with the Bluetooth daemon.
 class DEVICE_BLUETOOTH_EXPORT BluetoothGattServiceServiceProvider {

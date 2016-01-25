@@ -21,10 +21,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLAnchorElement.h"
 
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/FrameHost.h"
@@ -177,23 +175,7 @@ void HTMLAnchorElement::setActive(bool down)
     ContainerNode::setActive(down);
 }
 
-void HTMLAnchorElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == hrefAttr && inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("a");
-            argv.append(hrefAttr.toString());
-            argv.append(oldValue);
-            argv.append(newValue);
-            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
-        }
-    }
-    HTMLElement::attributeWillChange(name, oldValue, newValue);
-}
-
-void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == hrefAttr) {
         bool wasLink = isLink();
@@ -216,12 +198,13 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
             }
         }
         invalidateCachedVisitedLinkHash();
+        logUpdateAttributeIfIsolatedWorldAndInDocument("a", hrefAttr, oldValue, value);
     } else if (name == nameAttr || name == titleAttr) {
         // Do nothing.
     } else if (name == relAttr) {
         setRel(value);
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -300,6 +283,8 @@ void HTMLAnchorElement::setRel(const AtomicString& value)
     // FIXME: Add link relations as they are implemented
     if (newLinkRelations.contains("noreferrer"))
         m_linkRelations |= RelationNoReferrer;
+    if (newLinkRelations.contains("noopener"))
+        m_linkRelations |= RelationNoOpener;
 }
 
 const AtomicString& HTMLAnchorElement::name() const
@@ -362,13 +347,17 @@ void HTMLAnchorElement::handleClick(Event* event)
         bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
         const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
 
-        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
+        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName, false);
     } else {
         request.setRequestContext(WebURLRequest::RequestContextHyperlink);
         FrameLoadRequest frameRequest(&document(), request, getAttribute(targetAttr));
         frameRequest.setTriggeringEvent(event);
-        if (hasRel(RelationNoReferrer))
+        if (hasRel(RelationNoReferrer)) {
             frameRequest.setShouldSendReferrer(NeverSendReferrer);
+            frameRequest.setShouldSetOpener(NeverSetOpener);
+        }
+        if (hasRel(RelationNoOpener))
+            frameRequest.setShouldSetOpener(NeverSetOpener);
         frame->loader().load(frameRequest);
     }
 }
@@ -395,16 +384,9 @@ bool HTMLAnchorElement::isInteractiveContent() const
 
 Node::InsertionNotificationRequest HTMLAnchorElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("a");
-            argv.append(fastGetAttribute(hrefAttr));
-            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
-        }
-    }
-    return HTMLElement::insertedInto(insertionPoint);
+    InsertionNotificationRequest request = HTMLElement::insertedInto(insertionPoint);
+    logAddElementIfIsolatedWorldAndInDocument("a", hrefAttr);
+    return request;
 }
 
 } // namespace blink

@@ -21,8 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/layout/svg/LayoutSVGRoot.h"
 
 #include "core/frame/LocalFrame.h"
@@ -312,7 +310,7 @@ const AffineTransform& LayoutSVGRoot::localToParentTransform() const
 LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // This is an open-coded aggregate of SVGLayoutSupport::clippedOverflowRectForPaintInvalidation,
-    // LayoutSVGRoot::mapRectToPaintInvalidationBacking and LayoutReplaced::clippedOverflowRectForPaintInvalidation.
+    // LayoutSVGRoot::mapToVisibleRectInContainerSpace and LayoutReplaced::clippedOverflowRectForPaintInvalidation.
     // The reason for this is to optimize/minimize the paint invalidation rect when the box is not "decorated"
     // (does not have background/border/etc.)
 
@@ -333,17 +331,17 @@ LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutBo
     if (m_hasBoxDecorationBackground || hasOverflowModel()) {
         // The selectionRect can project outside of the overflowRect, so take their union
         // for paint invalidation to avoid selection painting glitches.
-        LayoutRect decoratedPaintInvalidationRect = unionRect(localSelectionRect(false), visualOverflowRect());
+        LayoutRect decoratedPaintInvalidationRect = unionRect(localSelectionRect(), visualOverflowRect());
         paintInvalidationRect.unite(decoratedPaintInvalidationRect);
     }
 
     // Compute the paint invalidation rect in the parent coordinate space.
     LayoutRect rect(enclosingIntRect(paintInvalidationRect));
-    LayoutReplaced::mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
+    LayoutReplaced::mapToVisibleRectInAncestorSpace(paintInvalidationContainer, rect, paintInvalidationState);
     return rect;
 }
 
-void LayoutSVGRoot::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGRoot::mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
     // Note that we don't apply the border-box transform here - it's assumed
     // that whoever called us has done that already.
@@ -352,20 +350,17 @@ void LayoutSVGRoot::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject
     if (shouldApplyViewportClip())
         rect.intersect(LayoutRect(pixelSnappedBorderBoxRect()));
 
-    LayoutReplaced::mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
+    LayoutReplaced::mapToVisibleRectInAncestorSpace(ancestor, rect, paintInvalidationState);
 }
 
 // This method expects local CSS box coordinates.
 // Callers with local SVG viewport coordinates should first apply the localToBorderBoxTransform
 // to convert from SVG viewport coordinates to local CSS box coordinates.
-void LayoutSVGRoot::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGRoot::mapLocalToAncestor(const LayoutBoxModelObject* ancestor, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
     ASSERT(mode & ~IsFixed); // We should have no fixed content in the SVG layout tree.
-    // We used to have this ASSERT here, but we removed it when enabling layer squashing.
-    // See http://crbug.com/364901
-    // ASSERT(mode & UseTransforms); // mapping a point through SVG w/o respecting trasnforms is useless.
 
-    LayoutReplaced::mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip, wasFixed, paintInvalidationState);
+    LayoutReplaced::mapLocalToAncestor(ancestor, transformState, mode | ApplyContainerFlip, wasFixed, paintInvalidationState);
 }
 
 const LayoutObject* LayoutSVGRoot::pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const

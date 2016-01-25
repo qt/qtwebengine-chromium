@@ -96,8 +96,6 @@ accelerated2dCanvasMSAASampleCount type=int, initial=0
 # WebAudio support.
 webAudioEnabled initial=false
 
-asynchronousSpellCheckingEnabled initial=false
-
 hyperlinkAuditingEnabled initial=false
 allowDisplayOfInsecureContent initial=true
 allowRunningOfInsecureContent initial=true
@@ -233,14 +231,9 @@ touchEditingEnabled initial=false
 useSolidColorScrollbars initial=false
 pinchOverlayScrollbarThickness type=int, initial=0
 
-# Experiment to invert the scroll order of the layout and visual viewports
-# in some circumstances. Namely, during a pinch-zoom gesture and browser
-# generated scrolls like "scroll into view".
-invertViewportScrollOrder initial=false
-
 # Experiment to have all APIs reflect the layout viewport.
 # crbug.com/489206 tracks the experiment.
-inertVisualViewport initial=false
+inertVisualViewport initial=true
 
 # The rubber-band overscroll effect is implemented in Blink and is being moved
 # to the compositor thread. This will be set to true and eventually removed.
@@ -276,6 +269,8 @@ viewportEnabled initial=false, invalidate=ViewportDescription
 viewportMetaEnabled initial=false
 
 dnsPrefetchingEnabled initial=false, invalidate=DNSPrefetching
+
+dataSaverEnabled initial=false
 
 # FIXME: This is a temporary flag and should be removed
 # when squashing is ready. (crbug.com/261605)
@@ -379,5 +374,13 @@ fetchIncreaseAsyncScriptPriority initial=false
 # as soon as possible for something currently on the screen.
 fetchIncreasePriorities initial=false
 
+# Whether to disallow network fetches for parser blocking scripts in the main
+# frame inserted via document.write.
+disallowFetchForDocWrittenScriptsInMainFrame initial=false
+
 # The autoplay gesture override experiment is described in crbug.com/487345 .
 autoplayExperimentMode type=String, initial="off"
+
+# When DevTools is emulating mobile device, frame resize may mean device size has changed,
+# which in turn affects media queries.
+resizeIsDeviceSizeChange initial=false

@@ -5,11 +5,13 @@
 #ifndef CONTENT_GPU_GPU_CHILD_THREAD_H_
 #define CONTENT_GPU_GPU_CHILD_THREAD_H_
 
+#include <stdint.h>
+
 #include <queue>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
@@ -19,7 +21,10 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/x_util.h"
+#include "content/common/process_control.mojom.h"
 #include "gpu/config/gpu_info.h"
+#include "mojo/common/weak_binding_set.h"
+#include "mojo/public/cpp/bindings/interface_request.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gpu {
@@ -32,6 +37,7 @@ class TargetServices;
 
 namespace content {
 class GpuMemoryBufferFactory;
+class GpuProcessControlImpl;
 class GpuWatchdogThread;
 
 // The main thread of the GPU child process. There will only ever be one of
@@ -55,8 +61,6 @@ class GpuChildThread : public ChildThreadImpl {
 
   ~GpuChildThread() override;
 
-  static gfx::GpuMemoryBufferType GetGpuMemoryBufferFactoryType();
-
   void Shutdown() override;
 
   void Init(const base::Time& process_start_time);
@@ -73,7 +77,7 @@ class GpuChildThread : public ChildThreadImpl {
   void OnFinalize();
   void OnCollectGraphicsInfo();
   void OnGetVideoMemoryUsageStats();
-  void OnSetVideoMemoryWindowCount(uint32 window_count);
+  void OnSetVideoMemoryWindowCount(uint32_t window_count);
 
   void OnClean();
   void OnCrash();
@@ -81,9 +85,8 @@ class GpuChildThread : public ChildThreadImpl {
   void OnDisableWatchdog();
   void OnGpuSwitched();
 
-#if defined(USE_TCMALLOC)
-  void OnGetGpuTcmalloc();
-#endif
+  void BindProcessControlRequest(
+      mojo::InterfaceRequest<ProcessControl> request);
 
   // Set this flag to true if a fatal error occurred before we receive the
   // OnInitialize message, in which case we just declare ourselves DOA.
@@ -112,6 +115,12 @@ class GpuChildThread : public ChildThreadImpl {
 
   // The GpuMemoryBufferFactory instance used to allocate GpuMemoryBuffers.
   GpuMemoryBufferFactory* const gpu_memory_buffer_factory_;
+
+  // Process control for Mojo application hosting.
+  scoped_ptr<GpuProcessControlImpl> process_control_;
+
+  // Bindings to the ProcessControl impl.
+  mojo::WeakBindingSet<ProcessControl> process_control_bindings_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

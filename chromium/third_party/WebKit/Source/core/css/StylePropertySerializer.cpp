@@ -20,11 +20,11 @@
  * Boston, MA 02110-1301, USA.
 */
 
-#include "config.h"
 #include "core/css/StylePropertySerializer.h"
 
 #include "core/CSSValueKeywords.h"
 #include "core/StylePropertyShorthand.h"
+#include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSValuePool.h"
 #include "wtf/BitArray.h"
@@ -176,6 +176,22 @@ StylePropertySerializer::StylePropertySerializer(const StylePropertySet& propert
 {
 }
 
+String StylePropertySerializer::getCustomPropertyText(const PropertyValueForSerializer& property, bool isNotFirstDecl) const
+{
+    ASSERT(property.id() == CSSPropertyVariable);
+    StringBuilder result;
+    if (isNotFirstDecl)
+        result.append(' ');
+    const CSSCustomPropertyDeclaration* value = toCSSCustomPropertyDeclaration(property.value());
+    result.append(value->name());
+    result.appendLiteral(": ");
+    result.append(value->customCSSText());
+    if (property.isImportant())
+        result.appendLiteral(" !important");
+    result.append(';');
+    return result.toString();
+}
+
 String StylePropertySerializer::getPropertyText(CSSPropertyID propertyID, const String& value, bool isImportant, bool isNotFirstDecl) const
 {
     StringBuilder result;
@@ -210,7 +226,9 @@ String StylePropertySerializer::asText() const
         CSSPropertyID shorthandPropertyID = CSSPropertyInvalid;
         CSSPropertyID borderFallbackShorthandProperty = CSSPropertyInvalid;
         String value;
-        ASSERT(!isShorthandProperty(propertyID));
+        // Shorthands with variable references are not expanded at parse time
+        // and hence may still be observed during serialization.
+        ASSERT(!isShorthandProperty(propertyID) || property.value()->isVariableReferenceValue());
 
         switch (propertyID) {
         case CSSPropertyBackgroundAttachment:
@@ -343,6 +361,9 @@ String StylePropertySerializer::asText() const
         case CSSPropertyWebkitMaskOrigin:
             shorthandPropertyID = CSSPropertyWebkitMask;
             break;
+        case CSSPropertyVariable:
+            result.append(getCustomPropertyText(property, numDecls++));
+            continue;
         case CSSPropertyAll:
             result.append(getPropertyText(propertyID, property.value()->cssText(), property.isImportant(), numDecls++));
             continue;
@@ -428,6 +449,8 @@ String StylePropertySerializer::getPropertyValue(CSSPropertyID propertyID) const
         return getShorthandValue(gridRowShorthand(), " / ");
     case CSSPropertyGridArea:
         return getShorthandValue(gridAreaShorthand(), " / ");
+    case CSSPropertyGridGap:
+        return getShorthandValue(gridGapShorthand());
     case CSSPropertyFont:
         return fontValue();
     case CSSPropertyMargin:
@@ -487,8 +510,7 @@ String StylePropertySerializer::borderSpacingValue(const StylePropertyShorthand&
 void StylePropertySerializer::appendFontLonghandValueIfNotNormal(CSSPropertyID propertyID, StringBuilder& result, String& commonValue) const
 {
     int foundPropertyIndex = m_propertySet.findPropertyIndex(propertyID);
-    if (foundPropertyIndex == -1)
-        return;
+    ASSERT(foundPropertyIndex != -1);
 
     const CSSValue* val = m_propertySet.propertyAt(foundPropertyIndex).value();
     if (val->isPrimitiveValue() && toCSSPrimitiveValue(val)->getValueID() == CSSValueNormal) {
@@ -523,10 +545,12 @@ void StylePropertySerializer::appendFontLonghandValueIfNotNormal(CSSPropertyID p
 
 String StylePropertySerializer::fontValue() const
 {
+    if (!isPropertyShorthandAvailable(fontShorthand()) && !shorthandHasOnlyInitialOrInheritedValue(fontShorthand()))
+        return emptyString();
+
     int fontSizePropertyIndex = m_propertySet.findPropertyIndex(CSSPropertyFontSize);
     int fontFamilyPropertyIndex = m_propertySet.findPropertyIndex(CSSPropertyFontFamily);
-    if (fontSizePropertyIndex == -1 || fontFamilyPropertyIndex == -1)
-        return emptyString();
+    ASSERT(fontSizePropertyIndex != -1 && fontFamilyPropertyIndex != -1);
 
     PropertyValueForSerializer fontSizeProperty = m_propertySet.propertyAt(fontSizePropertyIndex);
     PropertyValueForSerializer fontFamilyProperty = m_propertySet.propertyAt(fontFamilyPropertyIndex);
@@ -607,7 +631,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
     const unsigned size = shorthand.length();
 
     // Begin by collecting the properties into a vector.
-    WillBeHeapVector<const CSSValue*> values(size);
+    WillBeHeapVector<RawPtrWillBeMember<const CSSValue>> values(size);
     // If the below loop succeeds, there should always be at minimum 1 layer.
     size_t numLayers = 1U;
 
@@ -660,7 +684,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
                 ASSERT(shorthand.properties()[propertyIndex + 1] == CSSPropertyBackgroundRepeatY
                     || shorthand.properties()[propertyIndex + 1] == CSSPropertyWebkitMaskRepeatY);
                 const CSSValue* yValue = values[propertyIndex + 1]->isValueList() ?
-                    toCSSValueList(values[propertyIndex + 1])->item(layer) : values[propertyIndex + 1];
+                    toCSSValueList(values[propertyIndex + 1])->item(layer) : values[propertyIndex + 1].get();
 
 
                 // FIXME: At some point we need to fix this code to avoid returning an invalid shorthand,
@@ -813,7 +837,7 @@ String StylePropertySerializer::borderPropertyValue(CommonValueMode valueMode) c
 static void appendBackgroundRepeatValue(StringBuilder& builder, const CSSValue& repeatXCSSValue, const CSSValue& repeatYCSSValue)
 {
     // FIXME: Ensure initial values do not appear in CSS_VALUE_LISTS.
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(CSSPrimitiveValue, initialRepeatValue, (CSSPrimitiveValue::create(CSSValueRepeat)));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(CSSPrimitiveValue, initialRepeatValue, (CSSPrimitiveValue::createIdentifier(CSSValueRepeat)));
     const CSSPrimitiveValue& repeatX = repeatXCSSValue.isInitialValue() ? *initialRepeatValue : toCSSPrimitiveValue(repeatXCSSValue);
     const CSSPrimitiveValue& repeatY = repeatYCSSValue.isInitialValue() ? *initialRepeatValue : toCSSPrimitiveValue(repeatYCSSValue);
     CSSValueID repeatXValueId = repeatX.getValueID();

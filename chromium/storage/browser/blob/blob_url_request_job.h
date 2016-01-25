@@ -5,9 +5,12 @@
 #ifndef STORAGE_BROWSER_BLOB_BLOB_URL_REQUEST_JOB_H_
 #define STORAGE_BROWSER_BLOB_BLOB_URL_REQUEST_JOB_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "net/http/http_byte_range.h"
@@ -44,7 +47,7 @@ class STORAGE_EXPORT BlobURLRequestJob
   // net::URLRequestJob methods.
   void Start() override;
   void Kill() override;
-  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
+  int ReadRawData(net::IOBuffer* buf, int buf_size) override;
   bool GetMimeType(std::string* mime_type) const override;
   void GetResponseInfo(net::HttpResponseInfo* info) override;
   int GetResponseCode() const override;

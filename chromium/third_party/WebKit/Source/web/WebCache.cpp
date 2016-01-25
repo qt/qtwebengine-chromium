@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebCache.h"
 
 #include "core/fetch/MemoryCache.h"
@@ -91,13 +90,6 @@ void WebCache::getResourceTypeStats(ResourceTypeStats* result)
         ToResourceTypeStat(stats.other, result->other);
     } else
         memset(result, 0, sizeof(WebCache::ResourceTypeStats));
-}
-
-void WebCache::pruneAll()
-{
-    MemoryCache* cache = memoryCache();
-    if (cache)
-        cache->pruneAll();
 }
 
 }  // namespace blink

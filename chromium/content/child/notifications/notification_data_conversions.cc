@@ -4,6 +4,8 @@
 
 #include "content/child/notifications/notification_data_conversions.h"
 
+#include <stddef.h>
+
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -29,8 +31,7 @@ PlatformNotificationData ToPlatformNotificationData(
           PlatformNotificationData::DIRECTION_RIGHT_TO_LEFT;
       break;
     case WebNotificationData::DirectionAuto:
-      platform_data.direction =
-          PlatformNotificationData::DIRECTION_AUTO;
+      platform_data.direction = PlatformNotificationData::DIRECTION_AUTO;
       break;
   }
 

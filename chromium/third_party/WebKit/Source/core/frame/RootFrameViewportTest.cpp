@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "core/frame/RootFrameViewport.h"
 
 #include "core/layout/ScrollAlignment.h"
 #include "platform/geometry/DoubleRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/scroll/ScrollableArea.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 #define EXPECT_POINT_EQ(expected, actual) \
     do { \
@@ -89,8 +86,7 @@ protected:
     bool scrollbarsCanBeActive() const override { return true; }
     IntRect scrollableAreaBoundingBox() const override { return IntRect(); }
     bool shouldPlaceVerticalScrollbarOnLeft() const override { return true; }
-    void invalidateScrollbarRect(Scrollbar*, const IntRect&) override { }
-    void invalidateScrollCornerRect(const IntRect&) override { }
+    void scrollControlWasSetNeedsPaintInvalidation() override { }
     GraphicsLayer* layerForContainer() const override { return nullptr; }
     GraphicsLayer* layerForScrolling() const override { return nullptr; }
     GraphicsLayer* layerForHorizontalScrollbar() const override { return nullptr; }
@@ -363,10 +359,10 @@ TEST_F(RootFrameViewportTest, ScrollIntoView)
         LayoutRect(25, 75, 50, 50),
         ScrollAlignment::alignToEdgeIfNeeded,
         ScrollAlignment::alignToEdgeIfNeeded);
-    EXPECT_POINT_EQ(DoublePoint(25, 25), layoutViewport->scrollPositionDouble());
-    EXPECT_POINT_EQ(DoublePoint(0, 50), visualViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(25, 75), layoutViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(0, 0), visualViewport->scrollPositionDouble());
 
-    // Reset the visual viewport's size, scale the page and repeat the test
+    // Reset the visual viewport's size, scale the page, and repeat the test
     visualViewport->setViewportSize(IntSize(100, 150));
     visualViewport->setScale(2);
     rootFrameViewport->setScrollPosition(DoublePoint(), ProgrammaticScroll);
@@ -375,8 +371,8 @@ TEST_F(RootFrameViewportTest, ScrollIntoView)
         LayoutRect(50, 75, 50, 75),
         ScrollAlignment::alignToEdgeIfNeeded,
         ScrollAlignment::alignToEdgeIfNeeded);
-    EXPECT_POINT_EQ(DoublePoint(50, 75), layoutViewport->scrollPositionDouble());
-    EXPECT_POINT_EQ(DoublePoint(0, 0), visualViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(0, 0), layoutViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(50, 75), visualViewport->scrollPositionDouble());
 
     rootFrameViewport->scrollIntoView(
         LayoutRect(190, 290, 10, 10),
@@ -425,18 +421,18 @@ TEST_F(RootFrameViewportTest, SetScrollPosition)
 
     visualViewport->setScale(2);
 
-    // Ensure that the layout viewport scrolls first.
+    // Ensure that the visual viewport scrolls first.
     rootFrameViewport->setScrollPosition(DoublePoint(100, 100), ProgrammaticScroll);
-    EXPECT_POINT_EQ(DoublePoint(0, 0), visualViewport->scrollPositionDouble());
-    EXPECT_POINT_EQ(DoublePoint(100, 100), layoutViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(100, 100), visualViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(0, 0), layoutViewport->scrollPositionDouble());
 
-    // Scroll to the layout viewport's extent, the visual viewport should scroll the
+    // Scroll to the visual viewport's extent, the layout viewport should scroll the
     // remainder.
-    rootFrameViewport->setScrollPosition(DoublePoint(700, 1700), ProgrammaticScroll);
-    EXPECT_POINT_EQ(DoublePoint(200, 200), visualViewport->scrollPositionDouble());
-    EXPECT_POINT_EQ(DoublePoint(500, 1500), layoutViewport->scrollPositionDouble());
+    rootFrameViewport->setScrollPosition(DoublePoint(300, 400), ProgrammaticScroll);
+    EXPECT_POINT_EQ(DoublePoint(250, 250), visualViewport->scrollPositionDouble());
+    EXPECT_POINT_EQ(DoublePoint(50, 150), layoutViewport->scrollPositionDouble());
 
-    // Only the visual viewport should scroll further. Make sure it doesn't scroll
+    // Only the layout viewport should scroll further. Make sure it doesn't scroll
     // out of bounds.
     rootFrameViewport->setScrollPosition(DoublePoint(780, 1780), ProgrammaticScroll);
     EXPECT_POINT_EQ(DoublePoint(250, 250), visualViewport->scrollPositionDouble());
@@ -473,17 +469,16 @@ TEST_F(RootFrameViewportTest, VisibleContentRect)
     EXPECT_SIZE_EQ(DoubleSize(250, 200.5), rootFrameViewport->visibleContentRectDouble().size());
 }
 
-// Tests that the invert scroll order experiment scrolls the visual viewport
-// before trying to scroll the layout viewport.
+// Tests that scrolls on the root frame scroll the visual viewport before
+// trying to scroll the layout viewport.
 TEST_F(RootFrameViewportTest, ViewportScrollOrder)
 {
     IntSize viewportSize(100, 100);
     OwnPtrWillBeRawPtr<RootFrameViewStub> layoutViewport = RootFrameViewStub::create(viewportSize, IntSize(200, 300));
     OwnPtrWillBeRawPtr<VisualViewportStub> visualViewport = VisualViewportStub::create(viewportSize, viewportSize);
 
-    bool invertScrollOrder = true;
     OwnPtrWillBeRawPtr<ScrollableArea> rootFrameViewport =
-        RootFrameViewport::create(*visualViewport.get(), *layoutViewport.get(), invertScrollOrder);
+        RootFrameViewport::create(*visualViewport.get(), *layoutViewport.get());
 
     visualViewport->setScale(2);
 

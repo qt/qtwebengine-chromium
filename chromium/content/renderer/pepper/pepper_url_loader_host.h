@@ -5,8 +5,11 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_URL_LOADER_HOST_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_URL_LOADER_HOST_H_
 
+#include <stdint.h>
+
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
@@ -42,9 +45,9 @@ class PepperURLLoaderHost : public ppapi::host::ResourceHost,
       ppapi::host::HostMessageContext* context) override;
 
   // blink::WebURLLoaderClient implementation.
-  void willSendRequest(blink::WebURLLoader* loader,
-                       blink::WebURLRequest& new_request,
-                       const blink::WebURLResponse& redir_response) override;
+  void willFollowRedirect(blink::WebURLLoader* loader,
+                          blink::WebURLRequest& new_request,
+                          const blink::WebURLResponse& redir_response) override;
   void didSendData(blink::WebURLLoader* loader,
                    unsigned long long bytes_sent,
                    unsigned long long total_bytes_to_be_sent) override;

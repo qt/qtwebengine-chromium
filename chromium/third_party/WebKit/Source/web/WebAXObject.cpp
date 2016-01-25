@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebAXObject.h"
 
 #include "core/HTMLNames.h"
@@ -313,14 +312,6 @@ bool WebAXObject::isHovered() const
     return m_private->isHovered();
 }
 
-bool WebAXObject::isIndeterminate() const
-{
-    if (isDetached())
-        return false;
-
-    return m_private->isIndeterminate();
-}
-
 bool WebAXObject::isLinked() const
 {
     if (isDetached())
@@ -477,7 +468,7 @@ bool WebAXObject::ariaControls(WebVector<WebAXObject>& controlsElements) const
     if (isDetached())
         return false;
 
-    AXObject::AccessibilityChildrenVector controls;
+    AXObject::AXObjectVector controls;
     m_private->ariaControlsElements(controls);
 
     WebVector<WebAXObject> result(controls.size());
@@ -501,7 +492,7 @@ bool WebAXObject::ariaFlowTo(WebVector<WebAXObject>& flowToElements) const
     if (isDetached())
         return false;
 
-    AXObject::AccessibilityChildrenVector flowTo;
+    AXObject::AXObjectVector flowTo;
     m_private->ariaFlowToElements(flowTo);
 
     WebVector<WebAXObject> result(flowTo.size());
@@ -992,126 +983,12 @@ WebURL WebAXObject::url() const
     return m_private->url();
 }
 
-WebString WebAXObject::deprecatedAccessibilityDescription() const
-{
-    if (isDetached())
-        return WebString();
-
-    ASSERT(isLayoutClean(m_private->document()));
-
-    return m_private->deprecatedAccessibilityDescription();
-}
-
-bool WebAXObject::deprecatedAriaDescribedby(WebVector<WebAXObject>& describedbyElements) const
-{
-    if (isDetached())
-        return false;
-
-    AXObject::AccessibilityChildrenVector describedby;
-    m_private->deprecatedAriaDescribedbyElements(describedby);
-
-    WebVector<WebAXObject> result(describedby.size());
-    for (size_t i = 0; i < describedby.size(); i++)
-        result[i] = WebAXObject(describedby[i]);
-    describedbyElements.swap(result);
-
-    return true;
-}
-
-bool WebAXObject::deprecatedAriaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
-{
-    if (isDetached())
-        return false;
-
-    AXObject::AccessibilityChildrenVector labelledby;
-    m_private->deprecatedAriaLabelledbyElements(labelledby);
-
-    WebVector<WebAXObject> result(labelledby.size());
-    for (size_t i = 0; i < labelledby.size(); i++)
-        result[i] = WebAXObject(labelledby[i]);
-    labelledbyElements.swap(result);
-
-    return true;
-}
-
-WebString WebAXObject::deprecatedHelpText() const
-{
-    if (isDetached())
-        return WebString();
-
-    return m_private->deprecatedHelpText();
-}
-
-WebString WebAXObject::deprecatedPlaceholder() const
-{
-    if (isDetached())
-        return WebString();
-
-    return WebString(m_private->deprecatedPlaceholder());
-}
-
-WebString WebAXObject::deprecatedTitle() const
-{
-    if (isDetached())
-        return WebString();
-
-    ASSERT(isLayoutClean(m_private->document()));
-
-    return m_private->deprecatedTitle();
-}
-
-WebAXObject WebAXObject::deprecatedTitleUIElement() const
-{
-    if (isDetached())
-        return WebAXObject();
-
-    if (!m_private->deprecatedExposesTitleUIElement())
-        return WebAXObject();
-
-    return WebAXObject(m_private->deprecatedTitleUIElement());
-}
-
-WebString WebAXObject::accessibilityDescription() const
-{
-    return deprecatedAccessibilityDescription();
-}
-
-bool WebAXObject::ariaDescribedby(WebVector<WebAXObject>& describedbyElements) const
-{
-    return deprecatedAriaDescribedby(describedbyElements);
-}
-
-bool WebAXObject::ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
-{
-    return deprecatedAriaLabelledby(labelledbyElements);
-}
-
-WebString WebAXObject::helpText() const
-{
-    return deprecatedHelpText();
-}
-
-WebString WebAXObject::placeholder() const
-{
-    return deprecatedPlaceholder();
-}
-
-WebString WebAXObject::title() const
-{
-    return deprecatedTitle();
-}
-
-WebAXObject WebAXObject::titleUIElement() const
-{
-    return deprecatedTitleUIElement();
-}
-
 WebString WebAXObject::name(WebAXNameFrom& outNameFrom, WebVector<WebAXObject>& outNameObjects) const
 {
     if (isDetached())
         return WebString();
 
-    AXNameFrom nameFrom = AXNameFromAttribute;
+    AXNameFrom nameFrom = AXNameFromUninitialized;
     HeapVector<Member<AXObject>> nameObjects;
     WebString result = m_private->name(nameFrom, &nameObjects);
     outNameFrom = static_cast<WebAXNameFrom>(nameFrom);
@@ -1124,12 +1001,22 @@ WebString WebAXObject::name(WebAXNameFrom& outNameFrom, WebVector<WebAXObject>& 
     return result;
 }
 
+WebString WebAXObject::name() const
+{
+    if (isDetached())
+        return WebString();
+
+    AXNameFrom nameFrom;
+    HeapVector<Member<AXObject>> nameObjects;
+    return m_private->name(nameFrom, &nameObjects);
+}
+
 WebString WebAXObject::description(WebAXNameFrom nameFrom, WebAXDescriptionFrom& outDescriptionFrom, WebVector<WebAXObject>& outDescriptionObjects) const
 {
     if (isDetached())
         return WebString();
 
-    AXDescriptionFrom descriptionFrom;
+    AXDescriptionFrom descriptionFrom = AXDescriptionFromUninitialized;
     HeapVector<Member<AXObject>> descriptionObjects;
     String result = m_private->description(static_cast<AXNameFrom>(nameFrom), descriptionFrom, &descriptionObjects);
     outDescriptionFrom = static_cast<WebAXDescriptionFrom>(descriptionFrom);
@@ -1328,7 +1215,7 @@ WebAXObject WebAXObject::rowAtIndex(unsigned rowIndex) const
     if (!m_private->isAXTable())
         return WebAXObject();
 
-    const AXObject::AccessibilityChildrenVector& rows = toAXTable(m_private.get())->rows();
+    const AXObject::AXObjectVector& rows = toAXTable(m_private.get())->rows();
     if (rowIndex < rows.size())
         return WebAXObject(rows[rowIndex]);
 
@@ -1343,7 +1230,7 @@ WebAXObject WebAXObject::columnAtIndex(unsigned columnIndex) const
     if (!m_private->isAXTable())
         return WebAXObject();
 
-    const AXObject::AccessibilityChildrenVector& columns = toAXTable(m_private.get())->columns();
+    const AXObject::AXObjectVector& columns = toAXTable(m_private.get())->columns();
     if (columnIndex < columns.size())
         return WebAXObject(columns[columnIndex]);
 
@@ -1380,7 +1267,7 @@ void WebAXObject::rowHeaders(WebVector<WebAXObject>& rowHeaderElements) const
     if (!m_private->isAXTable())
         return;
 
-    AXObject::AccessibilityChildrenVector headers;
+    AXObject::AXObjectVector headers;
     toAXTable(m_private.get())->rowHeaders(headers);
 
     size_t headerCount = headers.size();
@@ -1422,7 +1309,7 @@ void WebAXObject::columnHeaders(WebVector<WebAXObject>& columnHeaderElements) co
     if (!m_private->isAXTable())
         return;
 
-    AXObject::AccessibilityChildrenVector headers;
+    AXObject::AXObjectVector headers;
     toAXTable(m_private.get())->columnHeaders(headers);
 
     size_t headerCount = headers.size();

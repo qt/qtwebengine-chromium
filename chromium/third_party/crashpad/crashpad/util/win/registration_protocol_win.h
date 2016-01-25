@@ -49,15 +49,23 @@ struct RegistrationRequest {
   //! \brief The PID of the client process.
   DWORD client_process_id;
 
-  //! \brief The address, in the client process address space, of an
+  //! \brief The address, in the client process's address space, of an
   //!     ExceptionInformation structure, used when handling a crash dump
   //!     request.
   WinVMAddress crash_exception_information;
 
-  //! \brief The address, in the client process address space, of an
+  //! \brief The address, in the client process's address space, of an
   //!     ExceptionInformation structure, used when handling a non-crashing dump
   //!     request.
   WinVMAddress non_crash_exception_information;
+
+  //! \brief The address, in the client process's address space, of a
+  //!     `CRITICAL_SECTION` allocated with a valid .DebugInfo field. This can
+  //!     be accomplished by using
+  //!     InitializeCriticalSectionWithDebugInfoIfPossible() or equivalent. This
+  //!     value can be `0`, however then limited lock data will be available in
+  //!     minidumps.
+  WinVMAddress critical_section_address;
 };
 
 //! \brief A message only sent to the server by itself to trigger shutdown.
@@ -84,27 +92,22 @@ struct ClientToServerMessage {
   };
 };
 
-//! \brief  A client registration response.
-//!
-//! See <a
-//! href="https://msdn.microsoft.com/en-us/library/windows/desktop/aa384203">Interprocess
-//! Communication Between 32-bit and 64-bit Applications</a> for details on
-//! communicating handle values between processes of varying bitness.
+//! \brief A client registration response.
 struct RegistrationResponse {
   //! \brief An event `HANDLE`, valid in the client process, that should be
-  //!     signaled to request a crash report. 64-bit clients should convert the
-  //!     value to a `HANDLE` using sign-extension.
-  uint32_t request_crash_dump_event;
+  //!     signaled to request a crash report. Clients should convert the value
+  //!     to a `HANDLE` by calling IntToHandle().
+  int request_crash_dump_event;
 
   //! \brief An event `HANDLE`, valid in the client process, that should be
-  //!     signaled to request a non-crashing dump be taken. 64-bit clients
-  //!     should convert the value to `HANDLEEE` using sign-extension.
-  uint32_t request_non_crash_dump_event;
+  //!     signaled to request a non-crashing dump be taken. Clients should
+  //!     convert the value to a `HANDLE` by calling IntToHandle().
+  int request_non_crash_dump_event;
 
   //! \brief An event `HANDLE`, valid in the client process, that will be
-  //!     signaled by the server when the non-crashing dump is complete. 64-bit
-  //!     clients should convert the value to `HANDLEEE` using sign-extension.
-  uint32_t non_crash_dump_completed_event;
+  //!     signaled by the server when the non-crashing dump is complete. Clients
+  //!     should convert the value to a `HANDLE` by calling IntToHandle().
+  int non_crash_dump_completed_event;
 };
 
 //! \brief The response sent back to the client via SendToCrashHandlerServer().

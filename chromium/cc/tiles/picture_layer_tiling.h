@@ -5,12 +5,15 @@
 #ifndef CC_TILES_PICTURE_LAYER_TILING_H_
 #define CC_TILES_PICTURE_LAYER_TILING_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
@@ -28,9 +31,9 @@ class TracedValue;
 
 namespace cc {
 
+class DisplayListRasterSource;
 class PictureLayerTiling;
 class PrioritizedTile;
-class RasterSource;
 
 class CC_EXPORT PictureLayerTilingClient {
  public:
@@ -70,9 +73,9 @@ namespace BASE_HASH_NAMESPACE {
 template <>
 struct hash<cc::TileMapKey> {
   size_t operator()(const cc::TileMapKey& key) const {
-    uint16 value1 = static_cast<uint16>(key.index_x);
-    uint16 value2 = static_cast<uint16>(key.index_y);
-    uint32 value1_32 = value1;
+    uint16_t value1 = static_cast<uint16_t>(key.index_x);
+    uint16_t value2 = static_cast<uint16_t>(key.index_y);
+    uint32_t value1_32 = value1;
     return (value1_32 << 16) | value2;
   }
 };
@@ -95,13 +98,14 @@ class CC_EXPORT PictureLayerTiling {
   static scoped_ptr<PictureLayerTiling> Create(
       WhichTree tree,
       float contents_scale,
-      scoped_refptr<RasterSource> raster_source,
+      scoped_refptr<DisplayListRasterSource> raster_source,
       PictureLayerTilingClient* client,
       size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content_pixels);
 
-  void SetRasterSourceAndResize(scoped_refptr<RasterSource> raster_source);
+  void SetRasterSourceAndResize(
+      scoped_refptr<DisplayListRasterSource> raster_source);
   void Invalidate(const Region& layer_invalidation);
   void CreateMissingTilesInLiveTilesRect();
   void TakeTilesAndPropertiesFrom(PictureLayerTiling* pending_twin,
@@ -125,7 +129,9 @@ class CC_EXPORT PictureLayerTiling {
     can_require_tiles_for_activation_ = can_require_tiles;
   }
 
-  RasterSource* raster_source() const { return raster_source_.get(); }
+  DisplayListRasterSource* raster_source() const {
+    return raster_source_.get();
+  }
   gfx::Size tiling_size() const { return tiling_data_.tiling_size(); }
   gfx::Rect live_tiles_rect() const { return live_tiles_rect_; }
   gfx::Size tile_size() const { return tiling_data_.max_texture_size(); }
@@ -277,7 +283,7 @@ class CC_EXPORT PictureLayerTiling {
 
   PictureLayerTiling(WhichTree tree,
                      float contents_scale,
-                     scoped_refptr<RasterSource> raster_source,
+                     scoped_refptr<DisplayListRasterSource> raster_source,
                      PictureLayerTilingClient* client,
                      size_t tiling_interest_area_padding,
                      float skewport_target_time_in_seconds,
@@ -376,7 +382,7 @@ class CC_EXPORT PictureLayerTiling {
   const float contents_scale_;
   PictureLayerTilingClient* const client_;
   const WhichTree tree_;
-  scoped_refptr<RasterSource> raster_source_;
+  scoped_refptr<DisplayListRasterSource> raster_source_;
   TileResolution resolution_;
   bool may_contain_low_resolution_tiles_;
 

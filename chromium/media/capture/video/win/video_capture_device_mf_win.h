@@ -11,9 +11,11 @@
 
 #include <mfidl.h>
 #include <mfreadwrite.h>
+#include <stdint.h>
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
@@ -21,6 +23,10 @@
 #include "media/capture/video/video_capture_device.h"
 
 interface IMFSourceReader;
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -46,13 +52,13 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin : public base::NonThreadSafe,
   void StopAndDeAllocate() override;
 
   // Captured new video data.
-  void OnIncomingCapturedData(const uint8* data,
+  void OnIncomingCapturedData(const uint8_t* data,
                               int length,
                               int rotation,
                               const base::TimeTicks& time_stamp);
 
  private:
-  void OnError(HRESULT hr);
+  void OnError(const tracked_objects::Location& from_here, HRESULT hr);
 
   Name name_;
   base::win::ScopedComPtr<IMFActivate> device_;

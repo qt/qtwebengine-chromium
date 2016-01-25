@@ -6,13 +6,13 @@
 
 #include <mfapi.h>
 #include <mferror.h>
+#include <stddef.h>
 
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "base/win/metro.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_variant.h"
 #include "base/win/windows_version.h"
@@ -63,9 +63,9 @@ static bool LoadMediaFoundationDlls() {
       L"%WINDIR%\\system32\\mfreadwrite.dll",
   };
 
-  for (int i = 0; i < arraysize(kMfDLLs); ++i) {
+  for (const wchar_t* kMfDLL : kMfDLLs) {
     wchar_t path[MAX_PATH] = {0};
-    ExpandEnvironmentStringsW(kMfDLLs[i], path, arraysize(path));
+    ExpandEnvironmentStringsW(kMfDLL, path, arraysize(path));
     if (!LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH))
       return false;
   }
@@ -377,10 +377,8 @@ VideoCaptureDeviceFactoryWin::VideoCaptureDeviceFactoryWin() {
   // 8 in non-Metro mode.
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   use_media_foundation_ =
-      (base::win::IsMetroProcess() &&
-       !cmd_line->HasSwitch(switches::kForceDirectShowVideoCapture)) ||
-      (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
-       cmd_line->HasSwitch(switches::kForceMediaFoundationVideoCapture));
+      base::win::GetVersion() >= base::win::VERSION_WIN7 &&
+      cmd_line->HasSwitch(switches::kForceMediaFoundationVideoCapture);
 }
 
 scoped_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryWin::Create(

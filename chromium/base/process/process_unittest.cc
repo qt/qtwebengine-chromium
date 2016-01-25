@@ -4,10 +4,13 @@
 
 #include "base/process/process.h"
 
+#include <utility>
+
 #include "base/process/kill.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
@@ -49,13 +52,13 @@ TEST_F(ProcessTest, Move) {
   Process process2;
   EXPECT_FALSE(process2.IsValid());
 
-  process2 = process1.Pass();
+  process2 = std::move(process1);
   EXPECT_TRUE(process2.IsValid());
   EXPECT_FALSE(process1.IsValid());
   EXPECT_FALSE(process2.is_current());
 
   Process process3 = Process::Current();
-  process2 = process3.Pass();
+  process2 = std::move(process3);
   EXPECT_TRUE(process2.is_current());
   EXPECT_TRUE(process2.IsValid());
   EXPECT_FALSE(process3.IsValid());
@@ -202,5 +205,21 @@ TEST_F(ProcessTest, SetProcessBackgroundedSelf) {
   int new_priority = process.GetPriority();
   EXPECT_EQ(old_priority, new_priority);
 }
+
+#if defined(OS_CHROMEOS)
+
+// Tests that the function IsProcessBackgroundedCGroup() can parse the contents
+// of the /proc/<pid>/cgroup file successfully.
+TEST_F(ProcessTest, TestIsProcessBackgroundedCGroup) {
+  const char kNotBackgrounded[] = "5:cpuacct,cpu,cpuset:/daemons\n";
+  const char kBackgrounded[] =
+      "2:freezer:/chrome_renderers/to_be_frozen\n"
+      "1:cpu:/chrome_renderers/background\n";
+
+  EXPECT_FALSE(IsProcessBackgroundedCGroup(kNotBackgrounded));
+  EXPECT_TRUE(IsProcessBackgroundedCGroup(kBackgrounded));
+}
+
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace base

@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -281,7 +282,7 @@ class GestureProviderTest : public testing::Test, public GestureProviderClient {
     const float scroll_to_x = kFakeCoordX + 100;
     const float scroll_to_y = kFakeCoordY + 100;
     int motion_event_id = 3;
-    int motion_event_flags = EF_SHIFT_DOWN | EF_CAPS_LOCK_DOWN;
+    int motion_event_flags = EF_SHIFT_DOWN | EF_CAPS_LOCK_ON;
 
     MockMotionEvent event =
         ObtainMotionEvent(event_time, MotionEvent::ACTION_DOWN);
@@ -409,7 +410,7 @@ class GestureProviderTest : public testing::Test, public GestureProviderClient {
 
   static void RunTasksAndWait(base::TimeDelta delay) {
     base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, base::MessageLoop::QuitClosure(), delay);
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(), delay);
     base::MessageLoop::current()->Run();
   }
 
@@ -466,7 +467,7 @@ TEST_F(GestureProviderTest, GestureTap) {
 TEST_F(GestureProviderTest, GestureTapWithDelay) {
   base::TimeTicks event_time = base::TimeTicks::Now();
   int motion_event_id = 6;
-  int motion_event_flags = EF_CONTROL_DOWN | EF_ALT_DOWN | EF_CAPS_LOCK_DOWN;
+  int motion_event_flags = EF_CONTROL_DOWN | EF_ALT_DOWN | EF_CAPS_LOCK_ON;
 
   gesture_provider_->SetDoubleTapSupportForPlatformEnabled(true);
 

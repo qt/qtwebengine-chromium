@@ -28,7 +28,6 @@
  */
 
 
-#include "config.h"
 #include "core/editing/DOMSelection.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -43,6 +42,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "wtf/text/WTFString.h"
 
@@ -208,6 +208,7 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
         return;
 
     if (!node) {
+        UseCounter::count(m_frame, UseCounter::SelectionCollapseNull);
         m_frame->selection().clear();
         return;
     }
@@ -280,6 +281,9 @@ void DOMSelection::setBaseAndExtent(Node* baseNode, int baseOffset, Node* extent
         exceptionState.throwDOMException(IndexSizeError, String::number(extentOffset) + " is not a valid extent offset.");
         return;
     }
+
+    if (!baseNode || !extentNode)
+        UseCounter::count(m_frame, UseCounter::SelectionSetBaseAndExtentNull);
 
     if (!isValidForPosition(baseNode) || !isValidForPosition(extentNode))
         return;
@@ -393,17 +397,13 @@ void DOMSelection::removeAllRanges()
 
 void DOMSelection::addRange(Range* newRange)
 {
+    ASSERT(newRange);
+
     if (!m_frame)
         return;
 
-    // FIXME: Should we throw DOMException for error cases below?
-    if (!newRange) {
-        addConsoleError("The given range is null.");
-        return;
-    }
-
-    if (!newRange->startContainer()) {
-        addConsoleError("The given range has no container. Perhaps 'detach()' has been invoked on it?");
+    if (!newRange->inDocument()) {
+        addConsoleError("The given range isn't in document.");
         return;
     }
 

@@ -54,6 +54,7 @@ namespace blink {
     struct CrossThreadResourceRequestData;
 
     template<typename T> struct CrossThreadCopierPassThrough {
+        STATIC_ONLY(CrossThreadCopierPassThrough);
         typedef T Type;
         static Type copy(const T& parameter)
         {
@@ -65,26 +66,30 @@ namespace blink {
 
     // Integers get passed through without any changes.
     template<typename T> struct CrossThreadCopierBase<true, false, false, T> : public CrossThreadCopierPassThrough<T> {
+        STATIC_ONLY(CrossThreadCopierBase);
     };
 
     // To allow a type to be passed across threads using its copy constructor, add a forward declaration of the type and
     // a CopyThreadCopierBase<false, false, TypeName> : public CrossThreadCopierPassThrough<TypeName> { }; to this file.
     template<> struct CrossThreadCopierBase<false, false, false, IntRect> : public CrossThreadCopierPassThrough<IntRect> {
+        STATIC_ONLY(CrossThreadCopierBase);
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, IntSize> : public CrossThreadCopierPassThrough<IntSize> {
+        STATIC_ONLY(CrossThreadCopierBase);
     };
 
     // Custom copy methods.
     template<typename T> struct CrossThreadCopierBase<false, true, false, T> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef typename WTF::RemoveTemplate<T, RefPtr>::Type TypeWithoutRefPtr;
         typedef typename WTF::RemoveTemplate<TypeWithoutRefPtr, PassRefPtr>::Type TypeWithoutPassRefPtr;
-        typedef typename WTF::RemovePointer<TypeWithoutPassRefPtr>::Type RefCountedType;
+        typedef typename std::remove_pointer<TypeWithoutPassRefPtr>::type RefCountedType;
 
         // Verify that only one of the above did a change.
-        static_assert((WTF::IsSameType<RefPtr<RefCountedType>, T>::value
-                        || WTF::IsSameType<PassRefPtr<RefCountedType>, T>::value
-                        || WTF::IsSameType<RefCountedType*, T>::value),
+        static_assert((std::is_same<RefPtr<RefCountedType>, T>::value
+                        || std::is_same<PassRefPtr<RefCountedType>, T>::value
+                        || std::is_same<RefCountedType*, T>::value),
                         "only one type modification should be allowed");
 
         typedef PassRefPtr<RefCountedType> Type;
@@ -95,6 +100,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, false, PassOwnPtr<T>> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef PassOwnPtr<T> Type;
         static Type copy(Type ownPtr)
         {
@@ -103,6 +109,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, false, WeakMember<T>*> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef WeakMember<T>* Type;
         static Type copy(Type ptr)
         {
@@ -111,32 +118,38 @@ namespace blink {
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, KURL> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef KURL Type;
         PLATFORM_EXPORT static Type copy(const KURL&);
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, String> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef String Type;
         PLATFORM_EXPORT static Type copy(const String&);
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, ResourceError> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef ResourceError Type;
         PLATFORM_EXPORT static Type copy(const ResourceError&);
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, ResourceRequest> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef PassOwnPtr<CrossThreadResourceRequestData> Type;
         PLATFORM_EXPORT static Type copy(const ResourceRequest&);
     };
 
     template<> struct CrossThreadCopierBase<false, false, false, ResourceResponse> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef PassOwnPtr<CrossThreadResourceResponseData> Type;
         PLATFORM_EXPORT static Type copy(const ResourceResponse&);
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, true, T> {
-        typedef typename WTF::RemovePointer<T>::Type TypeWithoutPointer;
+        STATIC_ONLY(CrossThreadCopierBase);
+        typedef typename std::remove_pointer<T>::type TypeWithoutPointer;
         typedef RawPtr<TypeWithoutPointer> Type;
         static Type copy(const T& ptr)
         {
@@ -145,6 +158,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, true, RawPtr<T>> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef RawPtr<T> Type;
         static Type copy(const Type& ptr)
         {
@@ -153,6 +167,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, true, Member<T>> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef RawPtr<T> Type;
         static Type copy(const Member<T>& ptr)
         {
@@ -161,6 +176,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, true, WeakMember<T>> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef RawPtr<T> Type;
         static Type copy(const WeakMember<T>& ptr)
         {
@@ -168,15 +184,16 @@ namespace blink {
         }
     };
 
-    template<typename T> struct CrossThreadCopier : public CrossThreadCopierBase<WTF::IsConvertibleToInteger<T>::value,
+    template<typename T> struct CrossThreadCopier : public CrossThreadCopierBase<std::is_convertible<T, int>::value,
         WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, RefPtr>::Type, ThreadSafeRefCounted>::value
-            || WTF::IsSubclassOfTemplate<typename WTF::RemovePointer<T>::Type, ThreadSafeRefCounted>::value
+            || WTF::IsSubclassOfTemplate<typename std::remove_pointer<T>::type, ThreadSafeRefCounted>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, PassRefPtr>::Type, ThreadSafeRefCounted>::value,
-        WTF::IsSubclassOfTemplate<typename WTF::RemovePointer<T>::Type, GarbageCollected>::value
+        WTF::IsSubclassOfTemplate<typename std::remove_pointer<T>::type, GarbageCollected>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, RawPtr>::Type, GarbageCollected>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, Member>::Type, GarbageCollected>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, WeakMember>::Type, GarbageCollected>::value,
         T> {
+        STATIC_ONLY(CrossThreadCopier);
     };
 
     // |T| is |C*| or |const WeakPtr<C>&|.
@@ -196,6 +213,7 @@ namespace blink {
     };
 
     template<typename T> struct CrossThreadCopierBase<false, false, false, AllowCrossThreadAccessWrapper<T>> {
+        STATIC_ONLY(CrossThreadCopierBase);
         typedef T Type;
         static Type copy(const AllowCrossThreadAccessWrapper<T>& wrapper) { return wrapper.value(); }
     };

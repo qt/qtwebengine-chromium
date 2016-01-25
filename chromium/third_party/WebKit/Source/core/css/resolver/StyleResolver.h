@@ -30,12 +30,10 @@
 #include "core/css/RuleSet.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorFilter.h"
-#include "core/css/TreeBoundaryCrossingRules.h"
 #include "core/css/resolver/CSSPropertyPriority.h"
 #include "core/css/resolver/MatchedPropertiesCache.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverStats.h"
-#include "core/css/resolver/StyleResourceLoader.h"
 #include "core/dom/DocumentOrderedList.h"
 #include "core/style/CachedUAStyle.h"
 #include "platform/heap/Handle.h"
@@ -80,17 +78,14 @@ using ActiveInterpolationsMap = HashMap<PropertyHandle, Vector<RefPtr<Interpolat
 
 // This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class CORE_EXPORT StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
-    WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleResolver);
+    WTF_MAKE_NONCOPYABLE(StyleResolver); USING_FAST_MALLOC_WILL_BE_REMOVED(StyleResolver);
 public:
-    explicit StyleResolver(Document&);
-    virtual ~StyleResolver();
-
-    // FIXME: StyleResolver should not be keeping tree-walk state.
-    // These should move to some global tree-walk state, or should be contained in a
-    // TreeWalkContext or similar which is passed in to StyleResolver methods when available.
-    // Using these during tree walk will allow style selector to optimize child and descendant selector lookups.
-    void pushParentElement(Element&);
-    void popParentElement(Element&);
+    static PassOwnPtrWillBeRawPtr<StyleResolver> create(Document& document)
+    {
+        return adoptPtrWillBeNoop(new StyleResolver(document));
+    }
+    ~StyleResolver();
+    void dispose();
 
     PassRefPtr<ComputedStyle> styleForElement(Element*, const ComputedStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules);
@@ -116,6 +111,8 @@ public:
     void appendPendingAuthorStyleSheets();
     bool hasPendingAuthorStyleSheets() const { return m_pendingStyleSheets.size() > 0 || m_needCollectFeatures; }
 
+    // TODO(esprehn): StyleResolver should probably not contain tree walking
+    // state, instead we should pass a context object during recalcStyle.
     SelectorFilter& selectorFilter() { return m_selectorFilter; }
 
     StyleRuleKeyframes* findKeyframesRule(const Element*, const AtomicString& animationName);
@@ -137,10 +134,11 @@ public:
 
     ViewportStyleResolver* viewportStyleResolver() { return m_viewportStyleResolver.get(); }
 
-    void addMediaQueryResults(const MediaQueryResultList&);
-    MediaQueryResultList* viewportDependentMediaQueryResults() { return &m_viewportDependentMediaQueryResults; }
+    void addViewportDependentMediaQueries(const MediaQueryResultList&);
     bool hasViewportDependentMediaQueries() const { return !m_viewportDependentMediaQueryResults.isEmpty(); }
     bool mediaQueryAffectedByViewportChange() const;
+    void addDeviceDependentMediaQueries(const MediaQueryResultList&);
+    bool mediaQueryAffectedByDeviceChange() const;
 
     // FIXME: Rename to reflect the purpose, like didChangeFontSize or something.
     void invalidateMatchedPropertiesCache();
@@ -185,6 +183,8 @@ public:
     void addTreeBoundaryCrossingScope(ContainerNode& scope);
 
 private:
+    explicit StyleResolver(Document&);
+
     PassRefPtr<ComputedStyle> initialStyleForElement();
 
     void initWatchedSelectorRules();
@@ -197,12 +197,13 @@ private:
 
     void appendCSSStyleSheet(CSSStyleSheet&);
 
-    void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
+    void collectPseudoRulesForElement(const Element&, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchRuleSet(ElementRuleCollector&, RuleSet*);
     void matchUARules(ElementRuleCollector&);
-    void matchAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
+    void matchAuthorRules(const Element&, ElementRuleCollector&);
     void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool includeSMILProperties);
     void collectFeatures();
+    void collectTreeBoundaryCrossingRules(const Element&, ElementRuleCollector&);
     void resetRuleFeatures();
 
     void applyMatchedProperties(StyleResolverState&, const MatchResult&);
@@ -230,8 +231,9 @@ private:
 
     MatchedPropertiesCache m_matchedPropertiesCache;
 
-    OwnPtr<MediaQueryEvaluator> m_medium;
+    OwnPtrWillBeMember<MediaQueryEvaluator> m_medium;
     MediaQueryResultList m_viewportDependentMediaQueryResults;
+    MediaQueryResultList m_deviceDependentMediaQueryResults;
 
     RawPtrWillBeMember<Document> m_document;
     SelectorFilter m_selectorFilter;
@@ -246,12 +248,11 @@ private:
     OwnPtrWillBeMember<RuleSet> m_siblingRuleSet;
     OwnPtrWillBeMember<RuleSet> m_uncommonAttributeRuleSet;
     OwnPtrWillBeMember<RuleSet> m_watchedSelectorsRules;
-    TreeBoundaryCrossingRules m_treeBoundaryCrossingRules;
+
+    DocumentOrderedList m_treeBoundaryCrossingScopes;
 
     bool m_needCollectFeatures;
     bool m_printMediaType;
-
-    StyleResourceLoader m_styleResourceLoader;
 
     unsigned m_styleSharingDepth;
     WillBeHeapVector<OwnPtrWillBeMember<StyleSharingList>, styleSharingMaxDepth> m_styleSharingLists;

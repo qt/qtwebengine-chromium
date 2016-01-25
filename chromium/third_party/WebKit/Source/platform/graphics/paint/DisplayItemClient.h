@@ -6,51 +6,38 @@
 #define DisplayItemClient_h
 
 #include "platform/PlatformExport.h"
-#include "platform/heap/Heap.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class DisplayItemClientInternalVoid;
-using DisplayItemClient = const DisplayItemClientInternalVoid*;
-
-inline DisplayItemClient toDisplayItemClient(const void* object) { return static_cast<DisplayItemClient>(object); }
-
-// Used to pass DisplayItemClient and debugName() (called only when needed) from
-// core/layout module etc. to platform/paint module.
-// The instance must not out-live the object. Long-time reference to a client must
-// use DisplayItemClient.
-class PLATFORM_EXPORT DisplayItemClientWrapper {
-    DISALLOW_ALLOCATION(); // Allow allocated in stack or in another object only.
+// The interface for objects that can be associated with display items.
+// A DisplayItemClient object should live at least longer than the document cycle
+// in which its display items are created during painting.
+// After the document cycle, a pointer/reference to DisplayItemClient should be
+// no longer dereferenced unless we can make sure the client is still valid.
+class PLATFORM_EXPORT DisplayItemClient {
 public:
-    template <typename T>
-    DisplayItemClientWrapper(const T& object)
-        : m_displayItemClient(object.displayItemClient())
-        , m_object(reinterpret_cast<const GenericClass&>(object))
-        , m_debugNameInvoker(&invokeDebugName<T>)
-    { }
+#if ENABLE(ASSERT)
+    DisplayItemClient();
+    virtual ~DisplayItemClient();
+#else
+    virtual ~DisplayItemClient() { }
+#endif
 
-    DisplayItemClientWrapper(const DisplayItemClientWrapper& other)
-        : m_displayItemClient(other.m_displayItemClient)
-        , m_object(other.m_object)
-        , m_debugNameInvoker(other.m_debugNameInvoker)
-    { }
+    virtual String debugName() const = 0;
 
-    DisplayItemClient displayItemClient() const { return m_displayItemClient; }
-    String debugName() const { return m_debugNameInvoker(m_object); }
+    // The visual rect of this DisplayItemClient, in the space of its containing GraphicsLayer.
+    virtual IntRect visualRect() const = 0;
 
-private:
-    DisplayItemClientWrapper& operator=(const DisplayItemClientWrapper&) = delete;
-
-    class GenericClass;
-    template <typename T>
-    static String invokeDebugName(const GenericClass& object) { return reinterpret_cast<const T&>(object).debugName(); }
-
-    DisplayItemClient m_displayItemClient;
-    const GenericClass& m_object;
-    using DebugNameInvoker = String(*)(const GenericClass&);
-    DebugNameInvoker m_debugNameInvoker;
+#if ENABLE(ASSERT)
+    // Tests if a DisplayItemClient object has been created and has not been deleted yet.
+    static bool isAlive(const DisplayItemClient&);
+#endif
 };
+
+inline bool operator==(const DisplayItemClient& client1, const DisplayItemClient& client2) { return &client1 == &client2; }
+inline bool operator!=(const DisplayItemClient& client1, const DisplayItemClient& client2) { return &client1 != &client2; }
 
 }
 

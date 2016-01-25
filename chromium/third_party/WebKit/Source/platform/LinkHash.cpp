@@ -28,13 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/LinkHash.h"
 
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
+#include "url/url_util.h"
 #include "wtf/text/StringUTF8Adaptor.h"
-#include <url/url_util.h>
 
 namespace blink {
 

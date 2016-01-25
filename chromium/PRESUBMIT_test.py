@@ -392,15 +392,18 @@ class CheckSingletonInHeadersTest(unittest.TestCase):
                         'base::Singleton<Type, Traits, DifferentiatingType>::']
     diff_foo_h = ['// base::Singleton<Foo> in comment.',
                   'friend class base::Singleton<Foo>']
+    diff_foo2_h = ['  //Foo* bar = base::Singleton<Foo>::get();']
     diff_bad_h = ['Foo* foo = base::Singleton<Foo>::get();']
     mock_input_api = MockInputApi()
     mock_input_api.files = [MockAffectedFile('base/memory/singleton.h',
                                      diff_singleton_h),
                             MockAffectedFile('foo.h', diff_foo_h),
+                            MockAffectedFile('foo2.h', diff_foo2_h),
                             MockAffectedFile('bad.h', diff_bad_h)]
     warnings = PRESUBMIT._CheckSingletonInHeaders(mock_input_api,
                                                   MockOutputApi())
     self.assertEqual(1, len(warnings))
+    self.assertEqual(2, len(warnings[0].items))
     self.assertEqual('error', warnings[0].type)
     self.assertTrue('Found base::Singleton<T>' in warnings[0].message)
 
@@ -943,6 +946,35 @@ class LogUsageTest(unittest.TestCase):
                      'Expected %d items, found %d: %s' % (2, nb, msgs[4].items))
     self.assertTrue('HasDottedTag.java' in msgs[4].items)
     self.assertTrue('HasOldTag.java' in msgs[4].items)
+
+class HardcodedGoogleHostsTest(unittest.TestCase):
+
+  def testWarnOnAssignedLiterals(self):
+    input_api = MockInputApi()
+    input_api.files = [
+      MockFile('content/file.cc',
+               ['char* host = "https://www.google.com";']),
+      MockFile('content/file.cc',
+               ['char* host = "https://www.googleapis.com";']),
+      MockFile('content/file.cc',
+               ['char* host = "https://clients1.google.com";']),
+    ]
+
+    warnings = PRESUBMIT._CheckHardcodedGoogleHostsInLowerLayers(
+      input_api, MockOutputApi())
+    self.assertEqual(1, len(warnings))
+    self.assertEqual(3, len(warnings[0].items))
+
+  def testAllowInComment(self):
+    input_api = MockInputApi()
+    input_api.files = [
+      MockFile('content/file.cc',
+               ['char* host = "https://www.aol.com"; // google.com'])
+    ]
+
+    warnings = PRESUBMIT._CheckHardcodedGoogleHostsInLowerLayers(
+      input_api, MockOutputApi())
+    self.assertEqual(0, len(warnings))
 
 
 if __name__ == '__main__':

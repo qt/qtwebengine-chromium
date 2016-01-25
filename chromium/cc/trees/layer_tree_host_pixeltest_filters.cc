@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "build/build_config.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/test/layer_tree_pixel_test.h"
@@ -75,8 +77,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
   blur->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
-  // Windows has 2596 pixels off by at most 2: crbug.com/259922
-  float percentage_pixels_large_error = 6.5f;  // 2596px / (200*200), rounded up
+  // Windows has 7.6975% pixels by at most 2: crbug.com/259922
+  float percentage_pixels_large_error = 7.7f;
   float percentage_pixels_small_error = 0.0f;
   float average_error_allowed_in_bad_pixels = 1.f;
   int large_error_allowed = 2;
@@ -369,7 +371,8 @@ class ImageBackgroundFilter : public LayerTreeHostFiltersPixelTest {
 
     // Add a slightly transparent blue layer.
     scoped_refptr<SolidColorLayer> filter =
-        CreateSolidColorLayer(gfx::Rect(100, 0, 100, 200), 0x220000FF);
+        CreateSolidColorLayer(gfx::Rect(100, 0, 100, 200), SK_ColorBLUE);
+    filter->SetOpacity(0.137f);
 
     // Add some rotation so that we can see that it blurs only under the layer.
     gfx::Transform transform_filter;
@@ -384,8 +387,8 @@ class ImageBackgroundFilter : public LayerTreeHostFiltersPixelTest {
     filter->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
-    // Windows has 994 pixels off by at most 2: crbug.com/225027
-    float percentage_pixels_large_error = 2.4825f;  // 994px / (200*200)
+    // Windows has 2.5875% pixels off by at most 2: crbug.com/225027
+    float percentage_pixels_large_error = 2.6f;  // 994px / (200*200)
     float percentage_pixels_small_error = 0.0f;
     float average_error_allowed_in_bad_pixels = 1.f;
     int large_error_allowed = 2;

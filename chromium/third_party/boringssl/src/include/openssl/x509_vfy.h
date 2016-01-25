@@ -1,4 +1,3 @@
-/* crypto/x509/x509_vfy.h */
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -499,7 +498,7 @@ OPENSSL_EXPORT int	X509_STORE_load_locations (X509_STORE *ctx,
 OPENSSL_EXPORT int	X509_STORE_set_default_paths(X509_STORE *ctx);
 #endif
 
-OPENSSL_EXPORT int X509_STORE_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
+OPENSSL_EXPORT int X509_STORE_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
 	CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func);
 OPENSSL_EXPORT int	X509_STORE_CTX_set_ex_data(X509_STORE_CTX *ctx,int idx,void *data);
 OPENSSL_EXPORT void *	X509_STORE_CTX_get_ex_data(X509_STORE_CTX *ctx,int idx);

@@ -28,19 +28,18 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-class SkCanvas;
-
 namespace blink {
 
 class Element;
 class LocalFrame;
 class FloatRect;
 class FloatSize;
+class GraphicsContext;
 class IntRect;
 class Node;
 
 class CORE_EXPORT PrintContext : public NoBaseWillBeGarbageCollectedFinalized<PrintContext> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PrintContext);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(PrintContext);
 public:
     explicit PrintContext(LocalFrame*);
     virtual ~PrintContext();
@@ -79,7 +78,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 protected:
-    void outputLinkedDestinations(SkCanvas*, const IntRect& pageRect);
+    void outputLinkedDestinations(GraphicsContext&, const IntRect& pageRect);
 
     RawPtrWillBeMember<LocalFrame> m_frame;
     Vector<IntRect> m_pageRects;

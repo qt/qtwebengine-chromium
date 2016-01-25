@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/security_style.h"
@@ -36,7 +37,7 @@ class SSLPolicy {
   void OnCertError(SSLCertErrorHandler* handler);
 
   void DidRunInsecureContent(NavigationEntryImpl* entry,
-                             const std::string& security_origin);
+                             const GURL& security_origin);
 
   // We have started a resource request with the given info.
   void OnRequestStarted(SSLRequestInfo* info);

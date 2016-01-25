@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/tracing/background_tracing_config_impl.h"
+
+#include <utility>
+
 #include "base/macros.h"
 #include "base/values.h"
-#include "content/browser/tracing/background_tracing_config_impl.h"
 #include "content/browser/tracing/background_tracing_rule.h"
 
 namespace content {
@@ -17,12 +20,17 @@ const char kConfigModeKey[] = "mode";
 const char kConfigModePreemptive[] = "PREEMPTIVE_TRACING_MODE";
 const char kConfigModeReactive[] = "REACTIVE_TRACING_MODE";
 
+const char kConfigScenarioName[] = "scenario_name";
+const char kConfigEnableBlinkFeatures[] = "enable_blink_features";
+const char kConfigDisableBlinkFeatures[] = "disable_blink_features";
+
 const char kConfigCategoryKey[] = "category";
 const char kConfigCategoryBenchmark[] = "BENCHMARK";
 const char kConfigCategoryBenchmarkDeep[] = "BENCHMARK_DEEP";
 const char kConfigCategoryBenchmarkGPU[] = "BENCHMARK_GPU";
 const char kConfigCategoryBenchmarkIPC[] = "BENCHMARK_IPC";
 const char kConfigCategoryBenchmarkStartup[] = "BENCHMARK_STARTUP";
+const char kConfigCategoryBlinkStyle[] = "BLINK_STYLE";
 
 }  // namespace
 
@@ -46,6 +54,8 @@ std::string BackgroundTracingConfigImpl::CategoryPresetToString(
       return kConfigCategoryBenchmarkIPC;
     case BackgroundTracingConfigImpl::BENCHMARK_STARTUP:
       return kConfigCategoryBenchmarkStartup;
+    case BackgroundTracingConfigImpl::BLINK_STYLE:
+      return kConfigCategoryBlinkStyle;
   }
   NOTREACHED();
   return "";
@@ -79,6 +89,11 @@ bool BackgroundTracingConfigImpl::StringToCategoryPreset(
     return true;
   }
 
+  if (category_preset_string == kConfigCategoryBlinkStyle) {
+    *category_preset = BackgroundTracingConfigImpl::BLINK_STYLE;
+    return true;
+  }
+
   return false;
 }
 
@@ -99,10 +114,17 @@ void BackgroundTracingConfigImpl::IntoDict(base::DictionaryValue* dict) const {
     scoped_ptr<base::DictionaryValue> config_dict(new base::DictionaryValue());
     DCHECK(it);
     it->IntoDict(config_dict.get());
-    configs_list->Append(config_dict.Pass());
+    configs_list->Append(std::move(config_dict));
   }
 
-  dict->Set(kConfigsKey, configs_list.Pass());
+  dict->Set(kConfigsKey, std::move(configs_list));
+
+  if (!scenario_name_.empty())
+    dict->SetString(kConfigScenarioName, scenario_name_);
+  if (!enable_blink_features_.empty())
+    dict->SetString(kConfigEnableBlinkFeatures, enable_blink_features_);
+  if (!disable_blink_features_.empty())
+    dict->SetString(kConfigDisableBlinkFeatures, disable_blink_features_);
 }
 
 void BackgroundTracingConfigImpl::AddPreemptiveRule(
@@ -110,7 +132,7 @@ void BackgroundTracingConfigImpl::AddPreemptiveRule(
   scoped_ptr<BackgroundTracingRule> rule =
       BackgroundTracingRule::PreemptiveRuleFromDict(dict);
   if (rule)
-    rules_.push_back(rule.Pass());
+    rules_.push_back(std::move(rule));
 }
 
 void BackgroundTracingConfigImpl::AddReactiveRule(
@@ -119,7 +141,7 @@ void BackgroundTracingConfigImpl::AddReactiveRule(
   scoped_ptr<BackgroundTracingRule> rule =
       BackgroundTracingRule::ReactiveRuleFromDict(dict, category_preset);
   if (rule)
-    rules_.push_back(rule.Pass());
+    rules_.push_back(std::move(rule));
 }
 
 scoped_ptr<BackgroundTracingConfigImpl> BackgroundTracingConfigImpl::FromDict(
@@ -140,7 +162,15 @@ scoped_ptr<BackgroundTracingConfigImpl> BackgroundTracingConfigImpl::FromDict(
     return nullptr;
   }
 
-  return config.Pass();
+  if (config) {
+    dict->GetString(kConfigScenarioName, &config->scenario_name_);
+    dict->GetString(kConfigEnableBlinkFeatures,
+                    &config->enable_blink_features_);
+    dict->GetString(kConfigDisableBlinkFeatures,
+                    &config->disable_blink_features_);
+  }
+
+  return config;
 }
 
 scoped_ptr<BackgroundTracingConfigImpl>
@@ -174,7 +204,7 @@ BackgroundTracingConfigImpl::PreemptiveFromDict(
   if (config->rules().empty())
     return nullptr;
 
-  return config.Pass();
+  return config;
 }
 
 scoped_ptr<BackgroundTracingConfigImpl>
@@ -208,7 +238,7 @@ BackgroundTracingConfigImpl::ReactiveFromDict(
   if (config->rules().empty())
     return nullptr;
 
-  return config.Pass();
+  return config;
 }
 
 }  // namspace content

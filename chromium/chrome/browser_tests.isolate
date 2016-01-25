@@ -65,12 +65,14 @@
           '../ppapi/tests/test_page.css.mock-http-headers',
           '../testing/test_env.py',
           '../third_party/accessibility-audit/axs_testing.js',
+          '../third_party/chaijs/chai.js',
           '../third_party/mocha/mocha.js',
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/',
           '../third_party/safe_browsing/',
           '../third_party/simplejson/',
           '../third_party/tlslite/',
+          '../ui/webui/resources/js/',
           '<(PRODUCT_DIR)/browser_tests.pak',
           '<(PRODUCT_DIR)/pseudo_locales/',
           '<(PRODUCT_DIR)/pyproto/',
@@ -89,6 +91,14 @@
           'common/extensions/docs/examples/apps/calculator/',
           'test/data/',
           'third_party/mock4js/',
+        ],
+      },
+    }],
+    ['OS=="linux" or OS=="win"', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/chrome_material_100_percent.pak',
+          '<(PRODUCT_DIR)/chrome_100_percent.pak',
         ],
       },
     }],
@@ -116,7 +126,7 @@
         ],
       },
     }],
-    ['disable_nacl==0 and (OS=="linux" or OS=="mac" or OS=="win") and (target_arch=="x64" or target_arch=="ia32")', {
+    ['disable_nacl==0 and (OS=="linux" or OS=="mac" or OS=="win") and (target_arch=="x64" or target_arch=="ia32" or target_arch=="arm")', {
       'variables': {
         'files': [
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc.nmf',
@@ -133,6 +143,8 @@
     ['disable_nacl==0 and OS=="linux" and target_arch=="arm"', {
       'variables': {
         'files': [
+          '<(PRODUCT_DIR)/libarm/',
+          '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc_arm.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib_arm.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_arm.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_arm_nonsfi.nexe',
@@ -194,6 +206,7 @@
           '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/clearkeycdm.dll',
           '<(PRODUCT_DIR)/clearkeycdmadapter.dll',
+          '<(PRODUCT_DIR)/crashpad_handler.exe',
           '<(PRODUCT_DIR)/plugins/',
           '<(PRODUCT_DIR)/power_saver_test_plugin.dll',
           '<(PRODUCT_DIR)/ppapi_tests.dll',
@@ -241,6 +254,7 @@
           '../ui/file_manager/integration_tests/',
           '../ui/webui/resources/js/',
           '../third_party/analytics/',
+          '../third_party/polymer/v1_0/components-chromium/polymer/',
           '../chrome/browser/resources/chromeos/wallpaper_manager/',
           '<(PRODUCT_DIR)/chromevox_test_data/',
           '<(PRODUCT_DIR)/content_shell.pak',

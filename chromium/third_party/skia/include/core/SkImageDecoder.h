@@ -10,6 +10,7 @@
 
 #include "SkBitmap.h"
 #include "SkImage.h"
+#include "SkPngChunkReader.h"
 #include "SkRect.h"
 #include "SkRefCnt.h"
 #include "SkTRegistry.h"
@@ -126,23 +127,8 @@ public:
     */
     bool getRequireUnpremultipliedColors() const { return fRequireUnpremultipliedColors; }
 
-    /** \class Peeker
-
-        Base class for optional callbacks to retrieve meta/chunk data out of
-        an image as it is being decoded.
-    */
-    class Peeker : public SkRefCnt {
-    public:
-        /** Return true to continue decoding, or false to indicate an error, which
-            will cause the decoder to not return the image.
-        */
-        virtual bool peek(const char tag[], const void* data, size_t length) = 0;
-    private:
-        typedef SkRefCnt INHERITED;
-    };
-
-    Peeker* getPeeker() const { return fPeeker; }
-    Peeker* setPeeker(Peeker*);
+    SkPngChunkReader* getPeeker() const { return fPeeker; }
+    SkPngChunkReader* setPeeker(SkPngChunkReader*);
 
     /**
      *  By default, the codec will try to comply with the "pref" colortype
@@ -229,33 +215,13 @@ public:
         to allocate the memory from a cache, volatile memory, or even from
         an existing bitmap's memory.
 
-        If a Peeker is installed via setPeeker, it may be used to peek into
-        meta data during the decode.
+        If an SkPngChunkReader is installed via setPeeker, it may be used to
+        peek into meta data during the decode.
     */
     Result decode(SkStream*, SkBitmap* bitmap, SkColorType pref, Mode);
     Result decode(SkStream* stream, SkBitmap* bitmap, Mode mode) {
         return this->decode(stream, bitmap, kUnknown_SkColorType, mode);
     }
-
-    /**
-     * Given a stream, build an index for doing tile-based decode.
-     * The built index will be saved in the decoder, and the image size will
-     * be returned in width and height.
-     *
-     * Takes ownership of the SkStreamRewindable, on success or failure.
-     *
-     * Return true for success or false on failure.
-     */
-    bool buildTileIndex(SkStreamRewindable*, int *width, int *height);
-
-    /**
-     * Decode a rectangle subset in the image.
-     * The method can only be called after buildTileIndex().
-     *
-     * Return true for success.
-     * Return false if the index is never built or failing in decoding.
-     */
-    bool decodeSubset(SkBitmap* bm, const SkIRect& subset, SkColorType pref);
 
     /** Given a stream, this will try to find an appropriate decoder object.
         If none is found, the method returns NULL.
@@ -308,16 +274,6 @@ protected:
     // must be overridden in subclasses. This guy is called by decode(...)
     virtual Result onDecode(SkStream*, SkBitmap* bitmap, Mode) = 0;
 
-    // If the decoder wants to support tiled based decoding, this method must be overridden.
-    // This is called by buildTileIndex(...)
-    virtual bool onBuildTileIndex(SkStreamRewindable*, int* /*width*/, int* /*height*/);
-
-    // If the decoder wants to support tiled based decoding,
-    // this method must be overridden. This guy is called by decodeRegion(...)
-    virtual bool onDecodeSubset(SkBitmap*, const SkIRect&) {
-        return false;
-    }
-
     /** If planes or rowBytes is NULL, decodes the header and computes componentSizes
         for memory allocation.
         Otherwise, decodes the YUV planes into the provided image planes and
@@ -329,25 +285,6 @@ protected:
                                     SkYUVColorSpace*) {
         return false;
     }
-
-    /*
-     * Crop a rectangle from the src Bitmap to the dest Bitmap. src and dst are
-     * both sampled by sampleSize from an original Bitmap.
-     *
-     * @param dst the destination bitmap.
-     * @param src the source bitmap that is sampled by sampleSize from the
-     *            original bitmap.
-     * @param sampleSize the sample size that src is sampled from the original bitmap.
-     * @param (dstX, dstY) the upper-left point of the dest bitmap in terms of
-     *                     the coordinate in the original bitmap.
-     * @param (width, height) the width and height of the unsampled dst.
-     * @param (srcX, srcY) the upper-left point of the src bitmap in terms of
-     *                     the coordinate in the original bitmap.
-     * @return bool Whether or not it succeeded.
-     */
-    bool cropBitmap(SkBitmap *dst, SkBitmap *src, int sampleSize,
-                    int dstX, int dstY, int width, int height,
-                    int srcX, int srcY);
 
     /**
      *  Copy all fields on this decoder to the other decoder. Used by subclasses
@@ -399,7 +336,7 @@ protected:
     SkColorType getPrefColorType(SrcDepth, bool hasAlpha) const;
 
 private:
-    Peeker*                 fPeeker;
+    SkPngChunkReader*       fPeeker;
     SkBitmap::Allocator*    fAllocator;
     int                     fSampleSize;
     SkColorType             fDefaultPref;   // use if fUsePrefTable is false

@@ -69,6 +69,7 @@
 #define TALK_APP_WEBRTC_PEERCONNECTIONINTERFACE_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "talk/app/webrtc/datachannelinterface.h"
@@ -86,6 +87,7 @@
 #include "webrtc/base/rtccertificate.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/socketaddress.h"
+#include "webrtc/p2p/base/portallocator.h"
 
 namespace rtc {
 class SSLIdentity;
@@ -93,7 +95,6 @@ class Thread;
 }
 
 namespace cricket {
-class PortAllocator;
 class WebRtcVideoDecoderFactory;
 class WebRtcVideoEncoderFactory;
 }
@@ -248,28 +249,27 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // TODO(pthatcher): Rename this ice_servers, but update Chromium
     // at the same time.
     IceServers servers;
-    // A localhost candidate is signaled whenever a candidate with the any
-    // address is allocated.
-    bool enable_localhost_ice_candidate;
     BundlePolicy bundle_policy;
     RtcpMuxPolicy rtcp_mux_policy;
     TcpCandidatePolicy tcp_candidate_policy;
     int audio_jitter_buffer_max_packets;
     bool audio_jitter_buffer_fast_accelerate;
-    int ice_connection_receiving_timeout;
+    int ice_connection_receiving_timeout;         // ms
+    int ice_backup_candidate_pair_ping_interval;  // ms
     ContinualGatheringPolicy continual_gathering_policy;
     std::vector<rtc::scoped_refptr<rtc::RTCCertificate>> certificates;
-
+    bool disable_prerenderer_smoothing;
     RTCConfiguration()
         : type(kAll),
-          enable_localhost_ice_candidate(false),
           bundle_policy(kBundlePolicyBalanced),
           rtcp_mux_policy(kRtcpMuxPolicyNegotiate),
           tcp_candidate_policy(kTcpCandidatePolicyEnabled),
           audio_jitter_buffer_max_packets(kAudioJitterBufferMaxPackets),
           audio_jitter_buffer_fast_accelerate(false),
           ice_connection_receiving_timeout(kUndefined),
-          continual_gathering_policy(GATHER_ONCE) {}
+          ice_backup_candidate_pair_ping_interval(kUndefined),
+          continual_gathering_policy(GATHER_ONCE),
+          disable_prerenderer_smoothing(false) {}
   };
 
   struct RTCOfferAnswerOptions {
@@ -337,6 +337,15 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
       AudioTrackInterface* track) = 0;
 
   // TODO(deadbeef): Make these pure virtual once all subclasses implement them.
+  // |kind| must be "audio" or "video".
+  // |stream_id| is used to populate the msid attribute; if empty, one will
+  // be generated automatically.
+  virtual rtc::scoped_refptr<RtpSenderInterface> CreateSender(
+      const std::string& kind,
+      const std::string& stream_id) {
+    return rtc::scoped_refptr<RtpSenderInterface>();
+  }
+
   virtual std::vector<rtc::scoped_refptr<RtpSenderInterface>> GetSenders()
       const {
     return std::vector<rtc::scoped_refptr<RtpSenderInterface>>();
@@ -480,51 +489,6 @@ class PeerConnectionObserver {
   ~PeerConnectionObserver() {}
 };
 
-// Factory class used for creating cricket::PortAllocator that is used
-// for ICE negotiation.
-class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
- public:
-  struct StunConfiguration {
-    StunConfiguration(const std::string& address, int port)
-        : server(address, port) {}
-    // STUN server address and port.
-    rtc::SocketAddress server;
-  };
-
-  struct TurnConfiguration {
-    TurnConfiguration(const std::string& address,
-                      int port,
-                      const std::string& username,
-                      const std::string& password,
-                      const std::string& transport_type,
-                      bool secure)
-        : server(address, port),
-          username(username),
-          password(password),
-          transport_type(transport_type),
-          secure(secure) {}
-    rtc::SocketAddress server;
-    std::string username;
-    std::string password;
-    std::string transport_type;
-    bool secure;
-  };
-
-  virtual cricket::PortAllocator* CreatePortAllocator(
-      const std::vector<StunConfiguration>& stun_servers,
-      const std::vector<TurnConfiguration>& turn_configurations) = 0;
-
-  // TODO(phoglund): Make pure virtual when Chrome's factory implements this.
-  // After this method is called, the port allocator should consider loopback
-  // network interfaces as well.
-  virtual void SetNetworkIgnoreMask(int network_ignore_mask) {
-  }
-
- protected:
-  PortAllocatorFactoryInterface() {}
-  ~PortAllocatorFactoryInterface() {}
-};
-
 // PeerConnectionFactoryInterface is the factory interface use for creating
 // PeerConnection, MediaStream and media tracks.
 // PeerConnectionFactoryInterface will create required libjingle threads,
@@ -532,20 +496,21 @@ class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
 // If an application decides to provide its own threads and network
 // implementation of these classes it should use the alternate
 // CreatePeerConnectionFactory method which accepts threads as input and use the
-// CreatePeerConnection version that takes a PortAllocatorFactoryInterface as
+// CreatePeerConnection version that takes a PortAllocator as an
 // argument.
 class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
  public:
   class Options {
    public:
-    Options() :
-      disable_encryption(false),
-      disable_sctp_data_channels(false),
-      network_ignore_mask(rtc::kDefaultNetworkIgnoreMask),
-      ssl_max_version(rtc::SSL_PROTOCOL_DTLS_10) {
-    }
+    Options()
+        : disable_encryption(false),
+          disable_sctp_data_channels(false),
+          disable_network_monitor(false),
+          network_ignore_mask(rtc::kDefaultNetworkIgnoreMask),
+          ssl_max_version(rtc::SSL_PROTOCOL_DTLS_12) {}
     bool disable_encryption;
     bool disable_sctp_data_channels;
+    bool disable_network_monitor;
 
     // Sets the network types to ignore. For instance, calling this with
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
@@ -560,31 +525,12 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
 
   virtual void SetOptions(const Options& options) = 0;
 
-  virtual rtc::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(
-          const PeerConnectionInterface::RTCConfiguration& configuration,
-          const MediaConstraintsInterface* constraints,
-          PortAllocatorFactoryInterface* allocator_factory,
-          rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
-          PeerConnectionObserver* observer) = 0;
-
-  // TODO(hbos): Remove below version after clients are updated to above method.
-  // In latest W3C WebRTC draft, PC constructor will take RTCConfiguration,
-  // and not IceServers. RTCConfiguration is made up of ice servers and
-  // ice transport type.
-  // http://dev.w3.org/2011/webrtc/editor/webrtc.html
-  inline rtc::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(
-          const PeerConnectionInterface::IceServers& servers,
-          const MediaConstraintsInterface* constraints,
-          PortAllocatorFactoryInterface* allocator_factory,
-          rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
-          PeerConnectionObserver* observer) {
-      PeerConnectionInterface::RTCConfiguration rtc_config;
-      rtc_config.servers = servers;
-      return CreatePeerConnection(rtc_config, constraints, allocator_factory,
-                                  dtls_identity_store.Pass(), observer);
-  }
+  virtual rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
+      const PeerConnectionInterface::RTCConfiguration& configuration,
+      const MediaConstraintsInterface* constraints,
+      rtc::scoped_ptr<cricket::PortAllocator> allocator,
+      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      PeerConnectionObserver* observer) = 0;
 
   virtual rtc::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) = 0;
@@ -618,6 +564,25 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // TODO(grunell): Remove when Chromium has started to use AEC in each source.
   // http://crbug.com/264611.
   virtual bool StartAecDump(rtc::PlatformFile file) = 0;
+
+  // Stops logging the AEC dump.
+  virtual void StopAecDump() = 0;
+
+  // Starts RtcEventLog using existing file. Takes ownership of |file| and
+  // passes it on to VoiceEngine, which will take the ownership. If the
+  // operation fails the file will be closed. The logging will stop
+  // automatically after 10 minutes have passed, or when the StopRtcEventLog
+  // function is called.
+  // This function as well as the StopRtcEventLog don't really belong on this
+  // interface, this is a temporary solution until we move the logging object
+  // from inside voice engine to webrtc::Call, which will happen when the VoE
+  // restructuring effort is further along.
+  // TODO(ivoc): Move this into being:
+  //             PeerConnection => MediaController => webrtc::Call.
+  virtual bool StartRtcEventLog(rtc::PlatformFile file) = 0;
+
+  // Stops logging the RtcEventLog.
+  virtual void StopRtcEventLog() = 0;
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via

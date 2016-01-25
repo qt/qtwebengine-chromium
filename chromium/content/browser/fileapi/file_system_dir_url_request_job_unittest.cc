@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "storage/browser/fileapi/file_system_dir_url_request_job.h"
-
+#include <stdint.h>
 #include <string>
+#include <utility>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -17,6 +17,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
@@ -29,6 +30,7 @@
 #include "net/url_request/url_request_test_util.h"
 #include "storage/browser/fileapi/external_mount_points.h"
 #include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_dir_url_request_job.h"
 #include "storage/browser/fileapi/file_system_file_util.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
@@ -161,7 +163,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     handlers.push_back(base::Bind(&TestAutoMountForURLRequest));
 
     file_system_context_ = CreateFileSystemContextWithAutoMountersForTesting(
-        NULL, additional_providers.Pass(), handlers, temp_dir_.path());
+        NULL, std::move(additional_providers), handlers, temp_dir_.path());
   }
 
   void OnOpenFileSystem(const GURL& root_url,
@@ -228,7 +230,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
         context.get(), CreateURL(path), NULL));
   }
 
-  void TruncateFile(const base::StringPiece file_name, int64 length) {
+  void TruncateFile(const base::StringPiece file_name, int64_t length) {
     base::FilePath path = base::FilePath().AppendASCII(file_name);
     scoped_ptr<FileSystemOperationContext> context(NewOperationContext());
     ASSERT_EQ(base::File::FILE_OK, file_util()->Truncate(
@@ -249,7 +251,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
                           const std::string& name,
                           const std::string& url,
                           bool is_directory,
-                          int64 size) {
+                          int64_t size) {
 #define STR "([^\"]*)"
     icu::UnicodeString pattern("^<script>addRow\\(\"" STR "\",\"" STR
                                "\",(0|1),\"" STR "\",\"" STR "\"\\);</script>");

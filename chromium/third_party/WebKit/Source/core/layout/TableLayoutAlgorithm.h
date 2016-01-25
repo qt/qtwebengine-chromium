@@ -21,7 +21,7 @@
 #ifndef TableLayoutAlgorithm_h
 #define TableLayoutAlgorithm_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
@@ -30,7 +30,7 @@ class LayoutUnit;
 class LayoutTable;
 
 class TableLayoutAlgorithm {
-    WTF_MAKE_NONCOPYABLE(TableLayoutAlgorithm); WTF_MAKE_FAST_ALLOCATED(TableLayoutAlgorithm);
+    WTF_MAKE_NONCOPYABLE(TableLayoutAlgorithm); USING_FAST_MALLOC(TableLayoutAlgorithm);
 public:
     explicit TableLayoutAlgorithm(LayoutTable* table)
         : m_table(table)

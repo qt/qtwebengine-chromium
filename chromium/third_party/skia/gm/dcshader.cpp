@@ -11,8 +11,10 @@
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 #include "effects/GrXfermodeFragmentProcessor.h"
-#include "gl/GrGLProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 #include "Resources.h"
 #include "SkReadBuffer.h"
 #include "SkShader.h"
@@ -37,8 +39,7 @@ public:
     const GrFragmentProcessor* asFragmentProcessor(GrContext*,
                                                    const SkMatrix& viewM,
                                                    const SkMatrix* localMatrix,
-                                                   SkFilterQuality,
-                                                   GrProcessorDataManager*) const override;
+                                                   SkFilterQuality) const override;
 
 #ifndef SK_IGNORE_TO_STRING
     void toString(SkString* str) const override {
@@ -58,26 +59,27 @@ SkFlattenable* DCShader::CreateProc(SkReadBuffer& buf) {
 
 class DCFP : public GrFragmentProcessor {
 public:
-    DCFP(GrProcessorDataManager*, const SkMatrix& m) : fDeviceTransform(kDevice_GrCoordSet, m) {
+    DCFP(const SkMatrix& m) : fDeviceTransform(kDevice_GrCoordSet, m) {
         this->addCoordTransform(&fDeviceTransform);
         this->initClassID<DCFP>();
     }
 
-    GrGLFragmentProcessor* onCreateGLInstance() const override {
-        class DCGLFP : public GrGLFragmentProcessor {
+    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
+        class DCGLFP : public GrGLSLFragmentProcessor {
             void emitCode(EmitArgs& args) override {
-                GrGLFragmentBuilder* fpb = args.fBuilder->getFragmentShaderBuilder();
-                fpb->codeAppendf("vec2 c = %s;", fpb->ensureFSCoords2D(args.fCoords, 0).c_str());
-                fpb->codeAppend("vec2 r = mod(c, vec2(20.0));");
-                fpb->codeAppend("vec4 color = vec4(0.5*sin(c.x / 15.0) + 0.5,"
-                                                    "0.5*cos((c.x + c.y) / 15.0) + 0.5,"
-                                                    "(r.x + r.y) / 20.0,"
-                                                    "distance(r, vec2(15.0)) / 20.0 + 0.2);");
-                fpb->codeAppendf("color.rgb *= color.a;"
-                                    "%s = color * %s;",
-                                    args.fOutputColor, GrGLSLExpr4(args.fInputColor).c_str());
+                GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
+                fragBuilder->codeAppendf("vec2 c = %s;",
+                                         fragBuilder->ensureFSCoords2D(args.fCoords, 0).c_str());
+                fragBuilder->codeAppend("vec2 r = mod(c, vec2(20.0));");
+                fragBuilder->codeAppend("vec4 color = vec4(0.5*sin(c.x / 15.0) + 0.5,"
+                                                      "0.5*cos((c.x + c.y) / 15.0) + 0.5,"
+                                                      "(r.x + r.y) / 20.0,"
+                                                      "distance(r, vec2(15.0)) / 20.0 + 0.2);");
+                fragBuilder->codeAppendf("color.rgb *= color.a;"
+                                         "%s = color * %s;",
+                                         args.fOutputColor, GrGLSLExpr4(args.fInputColor).c_str());
             }
-            void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override {}
+            void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override {}
         };
         return new DCGLFP;
     }
@@ -89,21 +91,19 @@ public:
     }
 
 private:
-    void onGetGLProcessorKey(const GrGLSLCaps& caps,
-                             GrProcessorKeyBuilder* b) const override {}
+    void onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                               GrProcessorKeyBuilder* b) const override {}
 
     bool onIsEqual(const GrFragmentProcessor&) const override { return true; }
 
     GrCoordTransform fDeviceTransform;
 };
 
-const GrFragmentProcessor* DCShader::asFragmentProcessor(
-                                                 GrContext*,
-                                                 const SkMatrix& viewM,
-                                                 const SkMatrix* localMatrix,
-                                                 SkFilterQuality,
-                                                 GrProcessorDataManager* procDataManager) const {
-    SkAutoTUnref<const GrFragmentProcessor> inner(new DCFP(procDataManager, fDeviceMatrix));
+const GrFragmentProcessor* DCShader::asFragmentProcessor(GrContext*,
+                                                         const SkMatrix& viewM,
+                                                         const SkMatrix* localMatrix,
+                                                         SkFilterQuality) const {
+    SkAutoTUnref<const GrFragmentProcessor> inner(new DCFP(fDeviceMatrix));
     return GrFragmentProcessor::MulOutputByInputAlpha(inner);
 }
 

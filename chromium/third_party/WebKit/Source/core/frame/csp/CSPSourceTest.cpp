@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/csp/CSPSource.h"
 
 #include "core/dom/Document.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -63,10 +62,33 @@ TEST_F(CSPSourceTest, RedirectMatching)
 
     EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/"), ContentSecurityPolicy::DidRedirect));
     EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
 
-    EXPECT_FALSE(source.matches(KURL(base, "https://example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
     EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
     EXPECT_FALSE(source.matches(KURL(base, "http://example.com:9000/foo/"), ContentSecurityPolicy::DidNotRedirect));
+}
+
+TEST_F(CSPSourceTest, InsecureSourceMatchesSecure)
+{
+    KURL base;
+    CSPSource source(csp.get(), "http", "", 0, "/", CSPSource::NoWildcard, CSPSource::HasWildcard);
+
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/")));
+    EXPECT_TRUE(source.matches(KURL(base, "http://not-example.com:8000/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://not-example.com:8000/")));
+    EXPECT_FALSE(source.matches(KURL(base, "ftp://example.com:8000/")));
+}
+
+TEST_F(CSPSourceTest, InsecureHostMatchesSecure)
+{
+    KURL base;
+    CSPSource source(csp.get(), "http", "example.com", 0, "/", CSPSource::NoWildcard, CSPSource::HasWildcard);
+
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/")));
+    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:8000/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/")));
+    EXPECT_FALSE(source.matches(KURL(base, "https://not-example.com:8000/")));
 }
 
 } // namespace

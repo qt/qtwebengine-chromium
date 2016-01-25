@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/SpellCheckerClientImpl.h"
 
 #include "core/dom/Element.h"
@@ -115,18 +114,6 @@ void SpellCheckerClientImpl::toggleContinuousSpellChecking()
     }
 }
 
-bool SpellCheckerClientImpl::isGrammarCheckingEnabled()
-{
-    const LocalFrame* frame = toLocalFrame(m_webView->focusedCoreFrame());
-    return frame && frame->settings() && (frame->settings()->asynchronousSpellCheckingEnabled() || frame->settings()->unifiedTextCheckerEnabled());
-}
-
-bool SpellCheckerClientImpl::shouldEraseMarkersAfterChangeSelection(TextCheckingType type) const
-{
-    const Frame* frame = m_webView->focusedCoreFrame();
-    return !frame || !frame->settings() || (!frame->settings()->asynchronousSpellCheckingEnabled() && !frame->settings()->unifiedTextCheckerEnabled());
-}
-
 void SpellCheckerClientImpl::checkSpellingOfString(const String& text, int* misspellingLocation, int* misspellingLength)
 {
     // SpellCheckWord will write (0, 0) into the output vars, which is what our
@@ -158,23 +145,6 @@ void SpellCheckerClientImpl::requestCheckingOfString(PassRefPtrWillBeRawPtr<Text
         const Vector<unsigned>& markerOffsets = request->data().offsets();
         m_webView->spellCheckClient()->requestCheckingOfText(text, markers, markerOffsets, new WebTextCheckingCompletionImpl(request));
     }
-}
-
-String SpellCheckerClientImpl::getAutoCorrectSuggestionForMisspelledWord(const String& misspelledWord)
-{
-    if (!(isContinuousSpellCheckingEnabled() && m_webView->client()))
-        return String();
-
-    // Do not autocorrect words with capital letters in it except the
-    // first letter. This will remove cases changing "IMB" to "IBM".
-    for (size_t i = 1; i < misspelledWord.length(); i++) {
-        if (u_isupper(static_cast<UChar32>(misspelledWord[i])))
-            return String();
-    }
-
-    if (m_webView->spellCheckClient())
-        return m_webView->spellCheckClient()->autoCorrectWord(WebString(misspelledWord));
-    return String();
 }
 
 void SpellCheckerClientImpl::checkGrammarOfString(const String& text, WTF::Vector<GrammarDetail>& details, int* badGrammarLocation, int* badGrammarLength)

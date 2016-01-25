@@ -22,7 +22,7 @@ public:
     NullExecutionContext();
 
     void disableEval(const String&) override { }
-    String userAgent(const KURL&) const override { return String(); }
+    String userAgent() const override { return String(); }
 
     void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override;
 
@@ -36,8 +36,6 @@ public:
     void didUpdateSecurityOrigin() override { }
     SecurityContext& securityContext() override { return *this; }
     DOMTimerCoordinator* timers() override { return nullptr; }
-
-    double timerAlignmentInterval() const;
 
     void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override { }
     void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override { }

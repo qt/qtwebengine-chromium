@@ -336,8 +336,10 @@ class GritNode(base.Node):
             input_files.add(self.ToRealPath(input_path))
 
           # If it's a flattened node, grab inlined resources too.
-          if node.name == 'structure' and node.attrs['flattenhtml'] == 'true':
-            node.RunPreSubstitutionGatherer()
+          if ((node.name == 'structure' or node.name == 'include')
+              and node.attrs['flattenhtml'] == 'true'):
+            if node.name == 'structure':
+              node.RunPreSubstitutionGatherer()
             input_files.update(node.GetHtmlResourceFilenames())
 
     self.SetOutputLanguage(old_output_language)

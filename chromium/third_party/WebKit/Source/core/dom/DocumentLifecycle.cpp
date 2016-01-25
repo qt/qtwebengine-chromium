@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/DocumentLifecycle.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
@@ -37,6 +36,10 @@
 namespace blink {
 
 static DocumentLifecycle::DeprecatedTransition* s_deprecatedTransitionStack = 0;
+
+// TODO(skyostil): Come up with a better way to store cross-frame lifecycle
+// related data to avoid this being a global setting.
+static unsigned s_preventThrottlingCount = 0;
 
 DocumentLifecycle::Scope::Scope(DocumentLifecycle& lifecycle, State finalState)
     : m_lifecycle(lifecycle)
@@ -60,6 +63,17 @@ DocumentLifecycle::DeprecatedTransition::DeprecatedTransition(State from, State 
 DocumentLifecycle::DeprecatedTransition::~DeprecatedTransition()
 {
     s_deprecatedTransitionStack = m_previous;
+}
+
+DocumentLifecycle::PreventThrottlingScope::PreventThrottlingScope(DocumentLifecycle& lifecycle)
+{
+    s_preventThrottlingCount++;
+}
+
+DocumentLifecycle::PreventThrottlingScope::~PreventThrottlingScope()
+{
+    ASSERT(s_preventThrottlingCount > 0);
+    s_preventThrottlingCount--;
 }
 
 DocumentLifecycle::DocumentLifecycle()
@@ -198,9 +212,8 @@ bool DocumentLifecycle::canAdvanceTo(State nextState) const
         if (RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
             if (nextState == InUpdatePaintProperties)
                 return true;
-        } else {
-            if (nextState == InPaint && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-                return true;
+        } else if (nextState == InPaint) {
+            return true;
         }
         break;
     case InUpdatePaintProperties:
@@ -212,37 +225,15 @@ bool DocumentLifecycle::canAdvanceTo(State nextState) const
             return true;
         break;
     case InPaint:
-        if (nextState == PaintClean && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+        if (nextState == PaintClean)
             return true;
         break;
     case PaintClean:
-        if (!RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-            break;
-        if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
-            if (nextState == InStyleRecalc)
-                return true;
-            if (nextState == InPreLayout)
-                return true;
-            if (nextState == InCompositingUpdate)
-                return true;
-        }
-        if (nextState == InCompositingForSlimmingPaintV2 && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
-            return true;
-        break;
-    case InCompositingForSlimmingPaintV2:
-        if (nextState == CompositingForSlimmingPaintV2Clean && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
-            return true;
-        break;
-    case CompositingForSlimmingPaintV2Clean:
-        if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled())
-            return false;
         if (nextState == InStyleRecalc)
             return true;
         if (nextState == InPreLayout)
             return true;
         if (nextState == InCompositingUpdate)
-            return true;
-        if (nextState == CompositingForSlimmingPaintV2Clean)
             return true;
         break;
     case Stopping:
@@ -268,15 +259,15 @@ bool DocumentLifecycle::canRewindTo(State nextState) const
         || m_state == LayoutClean
         || m_state == CompositingClean
         || m_state == PaintInvalidationClean
-        || (m_state == PaintClean && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        || (m_state == CompositingForSlimmingPaintV2Clean && RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+        || m_state == PaintClean;
 }
 
 #endif
 
 void DocumentLifecycle::advanceTo(State nextState)
 {
-    ASSERT(canAdvanceTo(nextState));
+    ASSERT_WITH_MESSAGE(canAdvanceTo(nextState),
+        "Cannot advance document lifecycle from %s to %s.", stateAsDebugString(m_state), stateAsDebugString(nextState));
     m_state = nextState;
 }
 
@@ -285,8 +276,50 @@ void DocumentLifecycle::ensureStateAtMost(State state)
     ASSERT(state == VisualUpdatePending || state == StyleClean || state == LayoutClean);
     if (m_state <= state)
         return;
-    ASSERT(canRewindTo(state));
+    ASSERT_WITH_MESSAGE(canRewindTo(state),
+        "Cannot rewind document lifecycle from %s to %s.", stateAsDebugString(m_state), stateAsDebugString(state));
     m_state = state;
 }
+
+bool DocumentLifecycle::throttlingAllowed() const
+{
+    return !s_preventThrottlingCount;
+}
+
+#if ENABLE(ASSERT)
+#define DEBUG_STRING_CASE(StateName) \
+    case StateName: return #StateName
+
+const char* DocumentLifecycle::stateAsDebugString(const State state)
+{
+    switch (state) {
+        DEBUG_STRING_CASE(Uninitialized);
+        DEBUG_STRING_CASE(Inactive);
+        DEBUG_STRING_CASE(VisualUpdatePending);
+        DEBUG_STRING_CASE(InStyleRecalc);
+        DEBUG_STRING_CASE(StyleClean);
+        DEBUG_STRING_CASE(InLayoutSubtreeChange);
+        DEBUG_STRING_CASE(LayoutSubtreeChangeClean);
+        DEBUG_STRING_CASE(InPreLayout);
+        DEBUG_STRING_CASE(InPerformLayout);
+        DEBUG_STRING_CASE(AfterPerformLayout);
+        DEBUG_STRING_CASE(LayoutClean);
+        DEBUG_STRING_CASE(InCompositingUpdate);
+        DEBUG_STRING_CASE(CompositingClean);
+        DEBUG_STRING_CASE(InPaintInvalidation);
+        DEBUG_STRING_CASE(PaintInvalidationClean);
+        DEBUG_STRING_CASE(InUpdatePaintProperties);
+        DEBUG_STRING_CASE(UpdatePaintPropertiesClean);
+        DEBUG_STRING_CASE(InPaint);
+        DEBUG_STRING_CASE(PaintClean);
+        DEBUG_STRING_CASE(Stopping);
+        DEBUG_STRING_CASE(Stopped);
+        DEBUG_STRING_CASE(Disposed);
+    }
+
+    ASSERT_NOT_REACHED();
+    return "Unknown";
+}
+#endif
 
 }

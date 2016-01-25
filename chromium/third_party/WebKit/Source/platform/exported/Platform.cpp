@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/PartitionAllocMemoryDumpProvider.h"
 #include "public/platform/Platform.h"
 
@@ -49,7 +48,7 @@ void Platform::initialize(Platform* platform)
 
     // TODO(ssid): remove this check after fixing crbug.com/486782.
     if (s_platform && s_platform->m_mainThread)
-        s_platform->registerMemoryDumpProvider(PartitionAllocMemoryDumpProvider::instance());
+        s_platform->registerMemoryDumpProvider(PartitionAllocMemoryDumpProvider::instance(), "PartitionAlloc");
 }
 
 void Platform::shutdown()

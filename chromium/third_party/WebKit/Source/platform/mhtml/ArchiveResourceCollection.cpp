@@ -26,12 +26,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/mhtml/ArchiveResourceCollection.h"
 
 #include "platform/mhtml/ArchiveResource.h"
 #include "platform/mhtml/MHTMLArchive.h"
+#include "platform/mhtml/MHTMLParser.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -50,12 +51,12 @@ void ArchiveResourceCollection::addAllResources(MHTMLArchive* archive)
         return;
 
     const MHTMLArchive::SubArchiveResources& subresources = archive->subresources();
-    for (MHTMLArchive::SubArchiveResources::const_iterator iterator = subresources.begin(); iterator != subresources.end(); ++iterator)
-        m_subresources.set((*iterator)->url(), iterator->get());
+    for (const RefPtrWillBeMember<ArchiveResource>& subresource : subresources) {
+        addResource(*subresource);
+    }
 
     const MHTMLArchive::SubFrameArchives& subframes = archive->subframeArchives();
-    for (MHTMLArchive::SubFrameArchives::const_iterator iterator = subframes.begin(); iterator != subframes.end(); ++iterator) {
-        RefPtrWillBeRawPtr<MHTMLArchive> archive = *iterator;
+    for (const RefPtrWillBeMember<MHTMLArchive>& archive : subframes) {
         ASSERT(archive->mainResource());
 
         const String& frameName = archive->mainResource()->frameName();
@@ -65,19 +66,23 @@ void ArchiveResourceCollection::addAllResources(MHTMLArchive* archive)
             // In the MHTML case, frames don't have a name so we use the URL instead.
             m_subframes.set(archive->mainResource()->url().string(), archive.get());
         }
+
+        KURL cidURI = MHTMLParser::convertContentIDToURI(archive->mainResource()->contentID());
+        if (cidURI.isValid())
+            m_subframes.set(cidURI, archive.get());
     }
 }
 
 // FIXME: Adding a resource directly to a DocumentLoader/ArchiveResourceCollection seems like bad design, but is API some apps rely on.
 // Can we change the design in a manner that will let us deprecate that API without reducing functionality of those apps?
-void ArchiveResourceCollection::addResource(PassRefPtrWillBeRawPtr<ArchiveResource> resource)
+void ArchiveResourceCollection::addResource(ArchiveResource& resource)
 {
-    ASSERT(resource);
-    if (!resource)
-        return;
+    const KURL& url = resource.url();
+    m_subresources.set(url, &resource);
 
-    const KURL& url = resource->url(); // get before passing PassRefPtr (which sets it to 0)
-    m_subresources.set(url, resource);
+    KURL cidURI = MHTMLParser::convertContentIDToURI(resource.contentID());
+    if (cidURI.isValid())
+        m_subresources.set(cidURI, &resource);
 }
 
 ArchiveResource* ArchiveResourceCollection::archiveResourceForURL(const KURL& url)

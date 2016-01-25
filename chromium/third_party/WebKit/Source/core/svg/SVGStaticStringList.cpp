@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/SVGStaticStringList.h"
 
 #include "core/svg/SVGElement.h"
@@ -56,6 +55,12 @@ DEFINE_TRACE(SVGStaticStringList)
 SVGPropertyBase* SVGStaticStringList::currentValueBase()
 {
     return m_value.get();
+}
+
+const SVGPropertyBase& SVGStaticStringList::baseValueBase() const
+{
+    ASSERT_NOT_REACHED();
+    return *m_value;
 }
 
 bool SVGStaticStringList::isAnimating() const
@@ -92,14 +97,9 @@ SVGStringListTearOff* SVGStaticStringList::tearOff()
     return m_tearOff.get();
 }
 
-void SVGStaticStringList::setBaseValueAsString(const String& value, SVGParsingError& parseError)
+SVGParsingError SVGStaticStringList::setBaseValueAsString(const String& value)
 {
-    TrackExceptionState es;
-
-    m_value->setValueAsString(value, es);
-
-    if (es.hadException())
-        parseError = ParsingAttributeFailedError;
+    return m_value->setValueAsString(value);
 }
 
 }

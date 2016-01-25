@@ -44,6 +44,7 @@
 #include "mathops.h"
 #include "me_cmp.h"
 #include "mpegutils.h"
+#include "profiles.h"
 #include "rectangle.h"
 #include "svq3.h"
 #include "thread.h"
@@ -642,6 +643,8 @@ static int h264_init_context(AVCodecContext *avctx, H264Context *h)
     return 0;
 }
 
+static AVOnce h264_vlc_init = AV_ONCE_INIT;
+
 av_cold int ff_h264_decode_init(AVCodecContext *avctx)
 {
     H264Context *h = avctx->priv_data;
@@ -655,9 +658,11 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx)
     if (!avctx->has_b_frames)
         h->low_delay = 1;
 
-    ff_h264_decode_init_vlc();
-
-    ff_init_cabac_states();
+    ret = ff_thread_once(&h264_vlc_init, ff_h264_decode_init_vlc);
+    if (ret != 0) {
+        av_log(avctx, AV_LOG_ERROR, "pthread_once has failed.");
+        return AVERROR_UNKNOWN;
+    }
 
     if (avctx->codec_id == AV_CODEC_ID_H264) {
         if (avctx->ticks_per_frame == 1) {
@@ -699,6 +704,7 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
+#if HAVE_THREADS
 static int decode_init_thread_copy(AVCodecContext *avctx)
 {
     H264Context *h = avctx->priv_data;
@@ -717,6 +723,7 @@ static int decode_init_thread_copy(AVCodecContext *avctx)
 
     return 0;
 }
+#endif
 
 /**
  * Run setup operations that must be run after slice header decoding.
@@ -801,7 +808,7 @@ static void decode_postinit(H264Context *h, int setup_finished)
         /* Derive top_field_first from field pocs. */
         cur->f->top_field_first = cur->field_poc[0] < cur->field_poc[1];
     } else {
-        if (cur->f->interlaced_frame || h->sps.pic_struct_present_flag) {
+        if (h->sps.pic_struct_present_flag) {
             /* Use picture timing SEI information. Even if it is a
              * information of a past frame, better than nothing. */
             if (h->sei_pic_struct == SEI_PIC_STRUCT_TOP_BOTTOM ||
@@ -809,6 +816,10 @@ static void decode_postinit(H264Context *h, int setup_finished)
                 cur->f->top_field_first = 1;
             else
                 cur->f->top_field_first = 0;
+        } else if (cur->f->interlaced_frame) {
+            /* Default to top field first when pic_struct_present_flag
+             * is not set but interlaced frame detected */
+            cur->f->top_field_first = 1;
         } else {
             /* Most likely progressive */
             cur->f->top_field_first = 0;
@@ -894,18 +905,11 @@ static void decode_postinit(H264Context *h, int setup_finished)
     // FIXME do something with unavailable reference frames
 
     /* Sort B-frames into display order */
-
-    if (h->sps.bitstream_restriction_flag &&
-        h->avctx->has_b_frames < h->sps.num_reorder_frames) {
-        h->avctx->has_b_frames = h->sps.num_reorder_frames;
-        h->low_delay           = 0;
+    if (h->sps.bitstream_restriction_flag ||
+        h->avctx->strict_std_compliance >= FF_COMPLIANCE_STRICT) {
+        h->avctx->has_b_frames = FFMAX(h->avctx->has_b_frames, h->sps.num_reorder_frames);
     }
-
-    if (h->avctx->strict_std_compliance >= FF_COMPLIANCE_STRICT &&
-        !h->sps.bitstream_restriction_flag) {
-        h->avctx->has_b_frames = MAX_DELAYED_PIC_COUNT - 1;
-        h->low_delay           = 0;
-    }
+    h->low_delay = !h->avctx->has_b_frames;
 
     for (i = 0; 1; i++) {
         if(i == MAX_DELAYED_PIC_COUNT || cur->poc < h->last_pocs[i]){
@@ -1360,7 +1364,7 @@ static int get_last_needed_nal(H264Context *h, const uint8_t *buf, int buf_size)
         case NAL_IDR_SLICE:
         case NAL_SLICE:
             init_get_bits(&gb, ptr, bit_length);
-            if (!get_ue_golomb(&gb) ||
+            if (!get_ue_golomb_long(&gb) ||  // first_mb_in_slice
                 !first_slice ||
                 first_slice != h->nal_unit_type)
                 nals_needed = nal_index;
@@ -1544,8 +1548,6 @@ again:
                 // "recovered".
                 if (h->nal_unit_type == NAL_IDR_SLICE)
                     h->frame_recovered |= FRAME_RECOVERED_IDR;
-                h->frame_recovered |= 3*!!(avctx->flags2 & AV_CODEC_FLAG2_SHOW_ALL);
-                h->frame_recovered |= 3*!!(avctx->flags & AV_CODEC_FLAG_OUTPUT_CORRUPT);
 #if 1
                 h->cur_pic_ptr->recovered |= h->frame_recovered;
 #else
@@ -1851,7 +1853,8 @@ static int h264_decode_frame(AVCodecContext *avctx, void *data,
 
         /* Wait for second field. */
         *got_frame = 0;
-        if (h->next_output_pic && (
+        if (h->next_output_pic && ((avctx->flags & AV_CODEC_FLAG_OUTPUT_CORRUPT) ||
+                                   (avctx->flags2 & AV_CODEC_FLAG2_SHOW_ALL) ||
                                    h->next_output_pic->recovered)) {
             if (!h->next_output_pic->recovered)
                 h->next_output_pic->f->flags |= AV_FRAME_FLAG_CORRUPT;
@@ -1947,7 +1950,7 @@ static av_cold int h264_decode_end(AVCodecContext *avctx)
 static const AVOption h264_options[] = {
     {"is_avc", "is avc", offsetof(H264Context, is_avc), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, 0},
     {"nal_length_size", "nal_length_size", offsetof(H264Context, nal_length_size), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 4, 0},
-    { "enable_er", "Enable error resilience on damaged frames (unsafe)", OFFSET(enable_er), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, VD },
+    { "enable_er", "Enable error resilience on damaged frames (unsafe)", OFFSET(enable_er), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, VD },
     { NULL },
 };
 
@@ -1956,23 +1959,6 @@ static const AVClass h264_class = {
     .item_name  = av_default_item_name,
     .option     = h264_options,
     .version    = LIBAVUTIL_VERSION_INT,
-};
-
-static const AVProfile profiles[] = {
-    { FF_PROFILE_H264_BASELINE,             "Baseline"              },
-    { FF_PROFILE_H264_CONSTRAINED_BASELINE, "Constrained Baseline"  },
-    { FF_PROFILE_H264_MAIN,                 "Main"                  },
-    { FF_PROFILE_H264_EXTENDED,             "Extended"              },
-    { FF_PROFILE_H264_HIGH,                 "High"                  },
-    { FF_PROFILE_H264_HIGH_10,              "High 10"               },
-    { FF_PROFILE_H264_HIGH_10_INTRA,        "High 10 Intra"         },
-    { FF_PROFILE_H264_HIGH_422,             "High 4:2:2"            },
-    { FF_PROFILE_H264_HIGH_422_INTRA,       "High 4:2:2 Intra"      },
-    { FF_PROFILE_H264_HIGH_444,             "High 4:4:4"            },
-    { FF_PROFILE_H264_HIGH_444_PREDICTIVE,  "High 4:4:4 Predictive" },
-    { FF_PROFILE_H264_HIGH_444_INTRA,       "High 4:4:4 Intra"      },
-    { FF_PROFILE_H264_CAVLC_444,            "CAVLC 4:4:4"           },
-    { FF_PROFILE_UNKNOWN },
 };
 
 AVCodec ff_h264_decoder = {
@@ -1987,10 +1973,11 @@ AVCodec ff_h264_decoder = {
     .capabilities          = /*AV_CODEC_CAP_DRAW_HORIZ_BAND |*/ AV_CODEC_CAP_DR1 |
                              AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SLICE_THREADS |
                              AV_CODEC_CAP_FRAME_THREADS,
+    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE,
     .flush                 = flush_dpb,
     .init_thread_copy      = ONLY_IF_THREADS_ENABLED(decode_init_thread_copy),
     .update_thread_context = ONLY_IF_THREADS_ENABLED(ff_h264_update_thread_context),
-    .profiles              = NULL_IF_CONFIG_SMALL(profiles),
+    .profiles              = NULL_IF_CONFIG_SMALL(ff_h264_profiles),
     .priv_class            = &h264_class,
 };
 
@@ -2015,7 +2002,7 @@ AVCodec ff_h264_vdpau_decoder = {
     .flush          = flush_dpb,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_VDPAU_H264,
                                                      AV_PIX_FMT_NONE},
-    .profiles       = NULL_IF_CONFIG_SMALL(profiles),
+    .profiles       = NULL_IF_CONFIG_SMALL(ff_h264_profiles),
     .priv_class     = &h264_vdpau_class,
 };
 #endif

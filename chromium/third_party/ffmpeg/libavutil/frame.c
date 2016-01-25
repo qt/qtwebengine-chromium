@@ -198,7 +198,7 @@ static int get_video_buffer(AVFrame *frame, int align)
     }
     if (desc->flags & AV_PIX_FMT_FLAG_PAL || desc->flags & AV_PIX_FMT_FLAG_PSEUDOPAL) {
         av_buffer_unref(&frame->buf[1]);
-        frame->buf[1] = av_buffer_alloc(1024);
+        frame->buf[1] = av_buffer_alloc(AVPALETTE_SIZE);
         if (!frame->buf[1])
             goto fail;
         frame->data[1] = frame->buf[1]->data;
@@ -315,7 +315,11 @@ static int frame_copy_props(AVFrame *dst, const AVFrame *src, int force_copy)
 
     av_dict_copy(&dst->metadata, src->metadata, 0);
 
+#if FF_API_ERROR_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
     memcpy(dst->error, src->error, sizeof(dst->error));
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     for (i = 0; i < src->nb_side_data; i++) {
         const AVFrameSideData *sd_src = src->side_data[i];

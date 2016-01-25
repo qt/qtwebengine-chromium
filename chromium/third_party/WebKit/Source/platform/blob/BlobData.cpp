@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/blob/BlobData.h"
 
 #include "platform/UUID.h"
@@ -209,7 +208,7 @@ BlobDataHandle::BlobDataHandle(PassOwnPtr<BlobData> data, long long size)
     , m_type(data->contentType().isolatedCopy())
     , m_size(size)
 {
-    BlobRegistry::registerBlobData(m_uuid, data);
+    BlobRegistry::registerBlobData(m_uuid, std::move(data));
 }
 
 BlobDataHandle::BlobDataHandle(const String& uuid, const String& type, long long size)

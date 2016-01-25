@@ -272,7 +272,7 @@ Bug(A) [ Debug ] : fast/css/large-list-of-rules-crash.html [ Failure ]
 
     def test_rebaseline_test_with_results_directory(self):
         self._write("userscripts/another-test.html", "test data")
-        self._write(self.lion_expectations_path, "Bug(x) [ Mac ] userscripts/another-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/another-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) [ Mac ] userscripts/another-test.html [ Failure ]\nbug(z) [ Linux ] userscripts/another-test.html [ Failure ]\n")
         self.options.results_directory = '/tmp'
         self.command._rebaseline_test_and_update_expectations(self.options)
         self.assertItemsEqual(self.tool.web.urls_fetched, ['file:///tmp/userscripts/another-test-actual.txt'])
@@ -377,7 +377,7 @@ class TestRebaselineJson(_BaseTestCase):
 
         options = MockOptions(optimize=True, verbose=True, results_directory=None)
 
-        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ Failure ]\n")
         self._write("userscripts/first-test.html", "Dummy test contents")
 
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"MOCK builder": ["txt", "png"]}})
@@ -457,26 +457,26 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
     def test_rebaseline_updates_expectations_file(self):
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
 
-        self._write(self.lion_expectations_path, "Bug(x) [ Mac ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) [ Mac ] userscripts/first-test.html [ Failure ]\nbug(z) [ Linux ] userscripts/first-test.html [ Failure ]\n")
         self._write("userscripts/first-test.html", "Dummy test contents")
         self._setup_mock_builder_data()
 
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Mavericks MountainLion Retina SnowLeopard Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Mac10.10 Mac10.9 Mac10.8 Retina Mac10.6 ] userscripts/first-test.html [ Failure ]\nbug(z) [ Linux ] userscripts/first-test.html [ Failure ]\n")
 
     def test_rebaseline_updates_expectations_file_all_platforms(self):
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
 
-        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ Failure ]\n")
         self._write("userscripts/first-test.html", "Dummy test contents")
         self._setup_mock_builder_data()
 
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux Mac10.10 Mac10.9 Mac10.8 Retina Mac10.6 Win ] userscripts/first-test.html [ Failure ]\n")
 
     def test_rebaseline_handles_platform_skips(self):
         # This test is just like test_rebaseline_updates_expectations_file_all_platforms(),
@@ -484,7 +484,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         # we count that as passing, and do not think that we still need to rebaseline it.
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
 
-        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ Failure ]\n")
         self._write("NeverFixTests", "Bug(y) [ Android ] userscripts [ Skip ]\n")
         self._write("userscripts/first-test.html", "Dummy test contents")
         self._setup_mock_builder_data()
@@ -492,7 +492,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mac10.10 Mac10.9 Mac10.8 Retina Mac10.6 Win ] userscripts/first-test.html [ Failure ]\n")
 
     def test_rebaseline_handles_skips_in_file(self):
         # This test is like test_Rebaseline_handles_platform_skips, except that the
@@ -503,7 +503,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
 
         self._write(self.lion_expectations_path,
-            ("Bug(x) [ Linux Mac Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
+            ("Bug(x) [ Linux Mac Win ] userscripts/first-test.html [ Failure ]\n"
              "Bug(y) [ Android ] userscripts/first-test.html [ Skip ]\n"))
         self._write("userscripts/first-test.html", "Dummy test contents")
         self._setup_mock_builder_data()
@@ -513,7 +513,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         new_expectations = self._read(self.lion_expectations_path)
         self.assertMultiLineEqual(
             new_expectations,
-            ("Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
+            ("Bug(x) [ Linux Mac10.10 Mac10.9 Mac10.8 Retina Mac10.6 Win ] userscripts/first-test.html [ Failure ]\n"
              "Bug(y) [ Android ] userscripts/first-test.html [ Skip ]\n"))
 
     def test_rebaseline_handles_smoke_tests(self):
@@ -523,7 +523,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         # run smoke tests, and do not think that we still need to rebaseline it.
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
 
-        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self._write(self.lion_expectations_path, "Bug(x) userscripts/first-test.html [ Failure ]\n")
         self._write("SmokeTests", "fast/html/article-element.html")
         self._write("userscripts/first-test.html", "Dummy test contents")
         self._setup_mock_builder_data()
@@ -531,7 +531,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mac10.10 Mac10.9 Mac10.8 Retina Mac10.6 Win ] userscripts/first-test.html [ Failure ]\n")
 
 
 class TestRebaseline(_BaseTestCase):
@@ -930,13 +930,14 @@ class TestAutoRebaseline(_BaseTestCase):
     def test_tests_to_rebaseline(self):
         def blame(path):
             return """
-624c3081c0 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ ImageOnlyFailure ]
-624c3081c0 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) path/to/rebaseline-without-bug-number.html [ NeedsRebaseline ]
-624c3081c0 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/rebaseline-with-modifiers.html [ NeedsRebaseline ]
-624c3081c0 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   12) crbug.com/24182 crbug.com/234 path/to/rebaseline-without-modifiers.html [ NeedsRebaseline ]
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/rebaseline-new-revision.html [ NeedsRebaseline ]
-624caaaaaa path/to/TestExpectations                   (foo@chromium.org        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/not-cycled-through-bots.html [ NeedsRebaseline ]
-0000000000 path/to/TestExpectations                   (foo@chromium.org        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
+624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ Failure ]
+624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org@bbb929c8-8fbe-4397-9dbb-9b2b20218538> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline-email-with-hash.html [ Failure ]
+624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) path/to/rebaseline-without-bug-number.html [ NeedsRebaseline ]
+624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/rebaseline-with-modifiers.html [ NeedsRebaseline ]
+624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   12) crbug.com/24182 crbug.com/234 path/to/rebaseline-without-modifiers.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org@bbb929c8-8fbe-4397-9dbb-9b2b20218538> 2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/rebaseline-new-revision.html [ NeedsRebaseline ]
+624caaaaaa path/to/TestExpectations                   (<foo@chromium.org>        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/not-cycled-through-bots.html [ NeedsRebaseline ]
+0000000000 path/to/TestExpectations                   (<foo@chromium.org@@bbb929c8-8fbe-4397-9dbb-9b2b20218538>        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -953,7 +954,7 @@ class TestAutoRebaseline(_BaseTestCase):
         def blame(path):
             result = ""
             for i in range(0, self.command.MAX_LINES_TO_REBASELINE + 1):
-                result += "624c3081c0 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) crbug.com/24182 path/to/rebaseline-%s.html [ NeedsRebaseline ]\n" % i
+                result += "624c3081c0 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) crbug.com/24182 path/to/rebaseline-%s.html [ NeedsRebaseline ]\n" % i
             return result
         self.tool.scm().blame = blame
 
@@ -996,7 +997,7 @@ TBR=foo@chromium.org
     def test_no_needs_rebaseline_lines(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ ImageOnlyFailure ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ Failure ]
 """
         self.tool.scm().blame = blame
 
@@ -1006,13 +1007,13 @@ TBR=foo@chromium.org
     def test_execute(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) # Test NeedsRebaseline being in a comment doesn't bork parsing.
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ ImageOnlyFailure ]
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ SnowLeopard ] fast/dom/prototype-strawberry.html [ NeedsRebaseline ]
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   12) crbug.com/24182 fast/dom/prototype-chocolate.html [ NeedsRebaseline ]
-624caaaaaa path/to/TestExpectations                   (foo@chromium.org        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/not-cycled-through-bots.html [ NeedsRebaseline ]
-0000000000 path/to/TestExpectations                   (foo@chromium.org        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) # Test NeedsRebaseline being in a comment doesn't bork parsing.
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ Debug ] path/to/norebaseline.html [ Failure ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-06-14 20:18:46 +0000   11) crbug.com/24182 [ SnowLeopard ] fast/dom/prototype-strawberry.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   12) crbug.com/24182 fast/dom/prototype-chocolate.html [ NeedsRebaseline ]
+624caaaaaa path/to/TestExpectations                   (<foo@chromium.org>        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/not-cycled-through-bots.html [ NeedsRebaseline ]
+0000000000 path/to/TestExpectations                   (<foo@chromium.org>        2013-04-28 04:52:41 +0000   12) crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -1072,12 +1073,12 @@ crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
             }
 
             self.command.tree_status = lambda: 'closed'
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [])
 
             self.command.tree_status = lambda: 'open'
             self.tool.executive.calls = []
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
 
             self.assertEqual(self.tool.executive.calls, [
                 [
@@ -1117,7 +1118,7 @@ crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
     def test_execute_git_cl_hangs(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -1161,7 +1162,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
             self.command.tree_status = lambda: 'open'
             self.tool.executive = MockExecutive()
             self.tool.executive.calls = []
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
 
             self.assertEqual(self.tool.executive.calls, [
                 [
@@ -1179,7 +1180,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
     def test_execute_test_passes_everywhere(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -1221,7 +1222,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
             }
 
             self.command.tree_status = lambda: 'open'
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [
                 [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
@@ -1240,7 +1241,7 @@ Bug(foo) [ Linux Win ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
     def test_execute_use_alternate_rebaseline_branch(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -1275,6 +1276,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
         self.tool.executive = MockLineRemovingExecutive()
 
         old_exact_matches = builders._exact_matches
+        old_branch_name = webkitpy.tool.commands.rebaseline._get_branch_name_or_ref
         try:
             builders._exact_matches = {
                 "MOCK Win": {"port_name": "test-win-win7", "specifiers": set(["mock-specifier"])},
@@ -1282,7 +1284,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
             self.command.tree_status = lambda: 'open'
             webkitpy.tool.commands.rebaseline._get_branch_name_or_ref = lambda x: 'auto-rebaseline-temporary-branch'
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [
                 [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
@@ -1296,11 +1298,12 @@ Bug(foo) [ Linux Mac XP ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """)
         finally:
             builders._exact_matches = old_exact_matches
+            webkitpy.tool.commands.rebaseline._get_branch_name_or_ref = old_branch_name
 
     def test_execute_stuck_on_alternate_rebaseline_branch(self):
         def blame(path):
             return """
-6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """
         self.tool.scm().blame = blame
 
@@ -1335,6 +1338,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
         self.tool.executive = MockLineRemovingExecutive()
 
         old_exact_matches = builders._exact_matches
+        old_branch_name = webkitpy.tool.commands.rebaseline._get_branch_name_or_ref
         try:
             builders._exact_matches = {
                 "MOCK Win": {"port_name": "test-win-win7", "specifiers": set(["mock-specifier"])},
@@ -1342,7 +1346,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
             self.command.tree_status = lambda: 'open'
             webkitpy.tool.commands.rebaseline._get_branch_name_or_ref = lambda x: 'auto-rebaseline-alt-temporary-branch'
-            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=None), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [
                 [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
@@ -1353,6 +1357,70 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
             self.assertEqual(self.tool.filesystem.read_text_file(test_port.path_to_generic_test_expectations_file()), """
 Bug(foo) [ Linux Mac XP ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
+""")
+        finally:
+            builders._exact_matches = old_exact_matches
+            webkitpy.tool.commands.rebaseline._get_branch_name_or_ref = old_branch_name
+
+    def test_execute_with_rietveld_auth_refresh_token(self):
+        RIETVELD_REFRESH_TOKEN = '/creds/refresh_tokens/test_rietveld_token'
+
+        def blame(path):
+            return """
+6469e754a1 path/to/TestExpectations                   (<foobarbaz1@chromium.org> 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+"""
+        self.tool.scm().blame = blame
+
+        test_port = self._setup_test_port()
+
+        old_builder_data = self.command.builder_data
+
+        def builder_data():
+            self.command._builder_data['MOCK Leopard'] = self.command._builder_data['MOCK SnowLeopard'] = LayoutTestResults.results_from_string("""ADD_RESULTS({
+    "tests": {
+        "fast": {
+            "dom": {
+                "prototype-taco.html": {
+                    "expected": "FAIL",
+                    "actual": "PASS",
+                    "is_unexpected": true
+                }
+            }
+        }
+    }
+});""")
+            return self.command._builder_data
+
+        self.command.builder_data = builder_data
+
+        self.tool.filesystem.write_text_file(test_port.path_to_generic_test_expectations_file(), """
+Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+""")
+
+        self._write_test_file(test_port, 'fast/dom/prototype-taco.html', "Dummy test contents")
+
+        self.tool.executive = MockLineRemovingExecutive()
+
+        old_exact_matches = builders._exact_matches
+        try:
+            builders._exact_matches = {
+                "MOCK Leopard": {"port_name": "test-mac-leopard", "specifiers": set(["mock-specifier"])},
+                "MOCK SnowLeopard": {"port_name": "test-mac-snowleopard", "specifiers": set(["mock-specifier"])},
+            }
+
+            self.command.tree_status = lambda: 'open'
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False, auth_refresh_token_json=RIETVELD_REFRESH_TOKEN), [], self.tool)
+            self.assertEqual(self.tool.executive.calls, [
+                [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
+                ['git', 'cl', 'upload', '-f', '--auth-refresh-token-json', RIETVELD_REFRESH_TOKEN],
+                ['git', 'pull'],
+                ['git', 'cl', 'land', '-f', '-v', '--auth-refresh-token-json', RIETVELD_REFRESH_TOKEN],
+                ['git', 'config', 'branch.auto-rebaseline-temporary-branch.rietveldissue'],
+            ])
+
+            # The mac ports should both be removed since they're the only ones in builders._exact_matches.
+            self.assertEqual(self.tool.filesystem.read_text_file(test_port.path_to_generic_test_expectations_file()), """
+Bug(foo) [ Linux Win ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """)
         finally:
             builders._exact_matches = old_exact_matches

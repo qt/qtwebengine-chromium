@@ -34,6 +34,8 @@
 #include "platform/CrossThreadCopier.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
@@ -41,6 +43,8 @@ namespace blink {
 struct CrossThreadResourceTimingInfoData;
 
 class PLATFORM_EXPORT ResourceTimingInfo {
+    USING_FAST_MALLOC(ResourceTimingInfo);
+    WTF_MAKE_NONCOPYABLE(ResourceTimingInfo);
 public:
     static PassOwnPtr<ResourceTimingInfo> create(const AtomicString& type, const double time, bool isMainResource)
     {
@@ -99,7 +103,7 @@ private:
 
 struct CrossThreadResourceTimingInfoData {
     WTF_MAKE_NONCOPYABLE(CrossThreadResourceTimingInfoData);
-    WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceTimingInfoData);
+    USING_FAST_MALLOC(CrossThreadResourceTimingInfoData);
 public:
     CrossThreadResourceTimingInfoData() {}
 

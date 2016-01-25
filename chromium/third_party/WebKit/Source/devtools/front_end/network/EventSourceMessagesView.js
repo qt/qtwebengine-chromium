@@ -28,7 +28,7 @@ WebInspector.EventSourceMessagesView = function(request)
     this._dataGrid.addEventListener(WebInspector.DataGrid.Events.SortingChanged, this._sortItems, this);
 
     this._dataGrid.setName("EventSourceMessagesView");
-    this._dataGrid.show(this.element);
+    this._dataGrid.asWidget().show(this.element);
 }
 
 WebInspector.EventSourceMessagesView.prototype = {

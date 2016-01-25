@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/ScriptPromise.h"
 
 #include "bindings/core/v8/ScriptFunction.h"
@@ -37,8 +36,7 @@
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 #include <v8.h>
 
 namespace blink {
@@ -109,7 +107,7 @@ protected:
 
 TEST_F(ScriptPromiseTest, constructFromNonPromise)
 {
-    v8::TryCatch trycatch;
+    v8::TryCatch trycatch(isolate());
     ScriptPromise promise(scriptState(), v8::Undefined(isolate()));
     ASSERT_TRUE(trycatch.HasCaught());
     ASSERT_TRUE(promise.isEmpty());

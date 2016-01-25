@@ -68,7 +68,7 @@ enum ReasonForCallingCanExecuteScripts {
 
 class CORE_EXPORT ScriptController final : public NoBaseWillBeGarbageCollectedFinalized<ScriptController> {
     WTF_MAKE_NONCOPYABLE(ScriptController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScriptController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ScriptController);
 public:
     enum ExecuteScriptPolicy {
         ExecuteScriptWhenScriptsDisabled,
@@ -90,7 +90,7 @@ public:
     // Evaluate JavaScript in the main world.
     void executeScriptInMainWorld(const String&, ExecuteScriptPolicy = DoNotExecuteScriptWhenScriptsDisabled);
     void executeScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin, double* compilationFinishTime = 0);
-    v8::Local<v8::Value> executeScriptInMainWorldAndReturnValue(const ScriptSourceCode&);
+    v8::Local<v8::Value> executeScriptInMainWorldAndReturnValue(const ScriptSourceCode&, ExecuteScriptPolicy = DoNotExecuteScriptWhenScriptsDisabled);
     v8::Local<v8::Value> executeScriptAndReturnValue(v8::Local<v8::Context>, const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin, double* compilationFinishTime = 0);
 
     // Executes JavaScript in an isolated world. The script gets its own global scope,
@@ -125,7 +125,7 @@ public:
 
     static bool canAccessFromCurrentOrigin(LocalFrame*);
 
-    static void setCaptureCallStackForUncaughtExceptions(bool);
+    static void setCaptureCallStackForUncaughtExceptions(v8::Isolate*, bool);
     void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*>>&);
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);

@@ -32,14 +32,14 @@ const char kCrashOnFailure[] = "crash-on-failure";
 // each LayoutBlockFlow to be dumped as well.
 const char kDumpLineBoxTrees[] = "dump-line-box-trees";
 
-// Expose window.ipcTester object for testing
-const char kExposeIpcEcho[] = "expose-ipc-echo";
-
 // Enable accelerated 2D canvas.
 const char kEnableAccelerated2DCanvas[] = "enable-accelerated-2d-canvas";
 
 // Enable font antialiasing for pixel tests.
 const char kEnableFontAntialiasing[] = "enable-font-antialiasing";
+
+// Always use the complex text path for layout tests.
+const char kAlwaysUseComplexText[] = "always-use-complex-text";
 
 // Enables the leak detection of loading webpages. This allows us to check
 // whether or not reloading a webpage releases web-related objects correctly.
@@ -51,6 +51,14 @@ const char kEncodeBinary[] = "encode-binary";
 // Exposes the window.internals object to JavaScript for interactive development
 // and debugging of layout tests that rely on it.
 const char kExposeInternalsForTesting[] = "expose-internals-for-testing";
+
+// Enable site isolation (--site-per-process style isolation) for a subset of
+// sites. The argument is a wildcard pattern which will be matched against the
+// site URL to determine which sites to isolate. This can be used to isolate
+// just one top-level domain, or just one scheme. Example usages:
+//     --isolate-sites-for-testing=*.com
+//     --isolate-sites-for-testing=https://*
+const char kIsolateSitesForTesting[] = "isolate-sites-for-testing";
 
 // Registers additional font files on Windows (for fonts outside the usual
 // %WINDIR%\Fonts location). Multiple files can be used by separating them

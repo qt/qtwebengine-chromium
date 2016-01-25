@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutReplaced.h"
 
 #include "core/editing/PositionWithAffinity.h"
@@ -43,14 +42,18 @@ LayoutReplaced::LayoutReplaced(Element* element)
     : LayoutBox(element)
     , m_intrinsicSize(defaultWidth, defaultHeight)
 {
-    setReplaced(true);
+    // TODO(jchaffraix): We should not set this boolean for block-level
+    // replaced elements (crbug.com/567964).
+    setIsAtomicInlineLevel(true);
 }
 
 LayoutReplaced::LayoutReplaced(Element* element, const LayoutSize& intrinsicSize)
     : LayoutBox(element)
     , m_intrinsicSize(intrinsicSize)
 {
-    setReplaced(true);
+    // TODO(jchaffraix): We should not set this boolean for block-level
+    // replaced elements (crbug.com/567964).
+    setIsAtomicInlineLevel(true);
 }
 
 LayoutReplaced::~LayoutReplaced()
@@ -113,7 +116,7 @@ void LayoutReplaced::paint(const PaintInfo& paintInfo, const LayoutPoint& paintO
 
 bool LayoutReplaced::shouldPaint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
-    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseOutline && paintInfo.phase != PaintPhaseSelfOutline
+    if (paintInfo.phase != PaintPhaseForeground && !shouldPaintSelfOutline(paintInfo.phase)
         && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseMask && paintInfo.phase != PaintPhaseClippingMask)
         return false;
 
@@ -125,22 +128,10 @@ bool LayoutReplaced::shouldPaint(const PaintInfo& paintInfo, const LayoutPoint& 
         return false;
 
     LayoutRect paintRect(visualOverflowRect());
+    paintRect.unite(localSelectionRect());
     paintRect.moveBy(paintOffset + location());
 
-    // Early exit if the element touches the edges.
-    LayoutUnit top = paintRect.y();
-    LayoutUnit bottom = paintRect.maxY();
-    if (isSelected() && inlineBoxWrapper()) {
-        LayoutUnit selTop = paintOffset.y() + inlineBoxWrapper()->root().selectionTop();
-        LayoutUnit selBottom = paintOffset.y() + selTop + inlineBoxWrapper()->root().selectionHeight();
-        top = std::min(selTop, top);
-        bottom = std::max(selBottom, bottom);
-    }
-
-    if (paintRect.x() >= paintInfo.rect.maxX() || paintRect.maxX() <= paintInfo.rect.x())
-        return false;
-
-    if (top >= paintInfo.rect.maxY() || bottom <= paintInfo.rect.y())
+    if (!paintInfo.cullRect().intersectsCullRect(paintRect))
         return false;
 
     return true;
@@ -301,7 +292,7 @@ LayoutUnit LayoutReplaced::computeReplacedLogicalWidth(ShouldComputePreferred sh
             // of 'width' is: (used height) * (intrinsic ratio)
             if (intrinsicRatio && ((computedHeightIsAuto && !hasIntrinsicWidth && hasIntrinsicHeight) || !computedHeightIsAuto)) {
                 LayoutUnit logicalHeight = computeReplacedLogicalHeight();
-                return computeReplacedLogicalWidthRespectingMinMaxWidth(roundToInt(round(logicalHeight * intrinsicRatio)), shouldComputePreferred);
+                return computeReplacedLogicalWidthRespectingMinMaxWidth(logicalHeight * intrinsicRatio, shouldComputePreferred);
             }
 
             // If 'height' and 'width' both have computed values of 'auto' and the element has an intrinsic ratio but no intrinsic height or width, then the used value of
@@ -359,7 +350,7 @@ LayoutUnit LayoutReplaced::computeReplacedLogicalHeight() const
     // Otherwise, if 'height' has a computed value of 'auto', and the element has an intrinsic ratio then the used value of 'height' is:
     // (used width) / (intrinsic ratio)
     if (intrinsicRatio)
-        return computeReplacedLogicalHeightRespectingMinMaxHeight(roundToInt(round(availableLogicalWidth() / intrinsicRatio)));
+        return computeReplacedLogicalHeightRespectingMinMaxHeight(availableLogicalWidth() / intrinsicRatio);
 
     // Otherwise, if 'height' has a computed value of 'auto', and the element has an intrinsic height, then that intrinsic height is the used value of 'height'.
     if (hasIntrinsicHeight)
@@ -379,9 +370,10 @@ void LayoutReplaced::computePreferredLogicalWidths()
 {
     ASSERT(preferredLogicalWidthsDirty());
 
-    // We cannot resolve any percent logical width here as the available logical
-    // width may not be set on our containing block.
-    if (style()->logicalWidth().hasPercent())
+    // We cannot resolve some logical width here (i.e. percent, fill-available or fit-content)
+    // as the available logical width may not be set on our containing block.
+    const Length& logicalWidth = style()->logicalWidth();
+    if (logicalWidth.hasPercent() || logicalWidth.isFillAvailable() || logicalWidth.isFitContent())
         computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
     else
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = computeReplacedLogicalWidth(ComputePreferred);
@@ -438,20 +430,20 @@ LayoutRect LayoutReplaced::selectionRectForPaintInvalidation(const LayoutBoxMode
 {
     ASSERT(!needsLayout());
 
-    if (!isSelected())
-        return LayoutRect();
-
     LayoutRect rect = localSelectionRect();
-    mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
+    if (rect.isEmpty())
+        return rect;
+
+    mapToVisibleRectInAncestorSpace(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
     if (paintInvalidationContainer->layer()->groupedMapping())
         PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 
-LayoutRect LayoutReplaced::localSelectionRect(bool checkWhetherSelected) const
+LayoutRect LayoutReplaced::localSelectionRect() const
 {
-    if (checkWhetherSelected && !isSelected())
+    if (selectionState() == SelectionNone)
         return LayoutRect();
 
     if (!inlineBoxWrapper()) {
@@ -480,41 +472,7 @@ void LayoutReplaced::setSelectionState(SelectionState state)
         setPreviousPaintInvalidationRect(boundsRectForPaintInvalidation(containerForPaintInvalidation()));
 
     if (canUpdateSelectionOnRootLineBoxes())
-        inlineBoxWrapper()->root().setHasSelectedChildren(isSelected());
-}
-
-bool LayoutReplaced::isSelected() const
-{
-    SelectionState s = selectionState();
-    if (s == SelectionNone)
-        return false;
-    if (s == SelectionInside)
-        return true;
-
-    int selectionStart, selectionEnd;
-    selectionStartEnd(selectionStart, selectionEnd);
-    if (s == SelectionStart)
-        return selectionStart == 0;
-
-    int end = node()->hasChildren() ? node()->countChildren() : 1;
-    if (s == SelectionEnd)
-        return selectionEnd == end;
-    if (s == SelectionBoth)
-        return selectionStart == 0 && selectionEnd == end;
-
-    ASSERT(0);
-    return false;
-}
-LayoutRect LayoutReplaced::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
-{
-    if (style()->visibility() != VISIBLE && !enclosingLayer()->hasVisibleContent())
-        return LayoutRect();
-
-    // The selectionRect can project outside of the overflowRect, so take their union
-    // for paint invalidation to avoid selection painting glitches.
-    LayoutRect r = isSelected() ? localSelectionRect() : visualOverflowRect();
-    mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, paintInvalidationState);
-    return r;
+        inlineBoxWrapper()->root().setHasSelectedChildren(state != SelectionNone);
 }
 
 }

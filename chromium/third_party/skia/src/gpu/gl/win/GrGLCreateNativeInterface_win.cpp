@@ -5,6 +5,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
 
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
@@ -15,7 +17,7 @@
 class AutoLibraryUnload {
 public:
     AutoLibraryUnload(const char* moduleName) {
-        fModule = LoadLibrary(moduleName);
+        fModule = LoadLibraryA(moduleName);
     }
     ~AutoLibraryUnload() {
         if (fModule) {
@@ -85,3 +87,5 @@ const GrGLInterface* GrGLCreateNativeInterface() {
     }
     return nullptr;
 }
+
+#endif//defined(SK_BUILD_FOR_WIN32)

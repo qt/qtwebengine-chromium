@@ -27,20 +27,25 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 
 #include "bindings/core/v8/V8Binding.h"
 #include "core/inspector/AsyncCallTracker.h"
+#include "core/inspector/InspectorState.h"
+#include "core/inspector/MuteConsoleScope.h"
 #include "core/inspector/ScriptAsyncCallStack.h"
 #include "core/inspector/v8/V8Debugger.h"
 #include "platform/ScriptForbiddenScope.h"
 
 namespace blink {
 
+namespace DebuggerAgentState {
+static const char debuggerEnabled[] = "debuggerEnabled";
+}
+
 InspectorDebuggerAgent::InspectorDebuggerAgent(InjectedScriptManager* injectedScriptManager, V8Debugger* debugger, int contextGroupId)
     : InspectorBaseAgent<InspectorDebuggerAgent, InspectorFrontend::Debugger>("Debugger")
-    , m_v8DebuggerAgent(V8DebuggerAgent::create(injectedScriptManager, debugger, this, contextGroupId))
+    , m_v8DebuggerAgent(V8DebuggerAgent::create(injectedScriptManager, debugger, contextGroupId))
 {
 }
 
@@ -61,10 +66,15 @@ DEFINE_TRACE(InspectorDebuggerAgent)
 void InspectorDebuggerAgent::enable(ErrorString* errorString)
 {
     m_v8DebuggerAgent->enable(errorString);
+    m_instrumentingAgents->setInspectorDebuggerAgent(this);
+    m_state->setBoolean(DebuggerAgentState::debuggerEnabled, true);
 }
 
 void InspectorDebuggerAgent::disable(ErrorString* errorString)
 {
+    setTrackingAsyncCalls(false);
+    m_state->setBoolean(DebuggerAgentState::debuggerEnabled, false);
+    m_instrumentingAgents->setInspectorDebuggerAgent(nullptr);
     m_v8DebuggerAgent->disable(errorString);
 }
 
@@ -175,16 +185,22 @@ void InspectorDebuggerAgent::setPauseOnExceptions(ErrorString* errorString, cons
 
 void InspectorDebuggerAgent::evaluateOnCallFrame(ErrorString* errorString, const String& inCallFrameId, const String& inExpression, const String* inObjectGroup, const bool* inIncludeCommandLineAPI, const bool* inDoNotPauseOnExceptionsAndMuteConsole, const bool* inReturnByValue, const bool* inGeneratePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& outResult, TypeBuilder::OptOutput<bool>* optOutWasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& optOutExceptionDetails)
 {
+    MuteConsoleScope<InspectorDebuggerAgent> muteScope;
+    if (asBool(inDoNotPauseOnExceptionsAndMuteConsole))
+        muteScope.enter(this);
     m_v8DebuggerAgent->evaluateOnCallFrame(errorString, inCallFrameId, inExpression, inObjectGroup, inIncludeCommandLineAPI, inDoNotPauseOnExceptionsAndMuteConsole, inReturnByValue, inGeneratePreview, outResult, optOutWasThrown, optOutExceptionDetails);
 }
 
-void InspectorDebuggerAgent::compileScript(ErrorString* errorString, const String& inExpression, const String& inSourceURL, bool inPersistScript, const int* inExecutionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>* optOutScriptId, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& optOutExceptionDetails)
+void InspectorDebuggerAgent::compileScript(ErrorString* errorString, const String& inExpression, const String& inSourceURL, bool inPersistScript, int inExecutionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>* optOutScriptId, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& optOutExceptionDetails)
 {
     m_v8DebuggerAgent->compileScript(errorString, inExpression, inSourceURL, inPersistScript, inExecutionContextId, optOutScriptId, optOutExceptionDetails);
 }
 
-void InspectorDebuggerAgent::runScript(ErrorString* errorString, const String& inScriptId, const int* inExecutionContextId, const String* inObjectGroup, const bool* inDoNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& outResult, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& optOutExceptionDetails)
+void InspectorDebuggerAgent::runScript(ErrorString* errorString, const String& inScriptId, int inExecutionContextId, const String* inObjectGroup, const bool* inDoNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& outResult, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& optOutExceptionDetails)
 {
+    MuteConsoleScope<InspectorDebuggerAgent> muteScope;
+    if (asBool(inDoNotPauseOnExceptionsAndMuteConsole))
+        muteScope.enter(this);
     m_v8DebuggerAgent->runScript(errorString, inScriptId, inExecutionContextId, inObjectGroup, inDoNotPauseOnExceptionsAndMuteConsole, outResult, optOutExceptionDetails);
 }
 
@@ -211,6 +227,7 @@ void InspectorDebuggerAgent::skipStackFrames(ErrorString* errorString, const Str
 void InspectorDebuggerAgent::setAsyncCallStackDepth(ErrorString* errorString, int inMaxDepth)
 {
     m_v8DebuggerAgent->setAsyncCallStackDepth(errorString, inMaxDepth);
+    setTrackingAsyncCalls(m_v8DebuggerAgent->trackingAsyncCalls());
 }
 
 void InspectorDebuggerAgent::enablePromiseTracker(ErrorString* errorString, const bool* inCaptureStacks)
@@ -241,27 +258,6 @@ void InspectorDebuggerAgent::setAsyncOperationBreakpoint(ErrorString* errorStrin
 void InspectorDebuggerAgent::removeAsyncOperationBreakpoint(ErrorString* errorString, int inOperationId)
 {
     m_v8DebuggerAgent->removeAsyncOperationBreakpoint(errorString, inOperationId);
-}
-
-// V8DebuggerAgent::Client implementation.
-void InspectorDebuggerAgent::debuggerAgentEnabled()
-{
-    m_instrumentingAgents->setInspectorDebuggerAgent(this);
-}
-
-void InspectorDebuggerAgent::debuggerAgentDisabled()
-{
-    m_instrumentingAgents->setInspectorDebuggerAgent(nullptr);
-}
-
-void InspectorDebuggerAgent::asyncCallTrackingStateChanged(bool tracking)
-{
-    m_asyncCallTracker->asyncCallTrackingStateChanged(tracking);
-}
-
-void InspectorDebuggerAgent::resetAsyncOperations()
-{
-    m_asyncCallTracker->resetAsyncOperations();
 }
 
 bool InspectorDebuggerAgent::isPaused()
@@ -303,17 +299,31 @@ void InspectorDebuggerAgent::init()
 
 void InspectorDebuggerAgent::setFrontend(InspectorFrontend* frontend)
 {
+    InspectorBaseAgent::setFrontend(frontend);
     m_v8DebuggerAgent->setFrontend(InspectorFrontend::Debugger::from(frontend));
 }
 
 void InspectorDebuggerAgent::clearFrontend()
 {
     m_v8DebuggerAgent->clearFrontend();
+    InspectorBaseAgent::clearFrontend();
 }
 
 void InspectorDebuggerAgent::restore()
 {
+    if (!m_state->getBoolean(DebuggerAgentState::debuggerEnabled))
+        return;
     m_v8DebuggerAgent->restore();
+    ErrorString errorString;
+    enable(&errorString);
+    setTrackingAsyncCalls(m_v8DebuggerAgent->trackingAsyncCalls());
+}
+
+void InspectorDebuggerAgent::setTrackingAsyncCalls(bool tracking)
+{
+    m_asyncCallTracker->asyncCallTrackingStateChanged(tracking);
+    if (!tracking)
+        m_asyncCallTracker->resetAsyncOperations();
 }
 
 } // namespace blink

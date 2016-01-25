@@ -5,7 +5,9 @@
 #ifndef NET_QUIC_QUIC_DEFAULT_PACKET_WRITER_H_
 #define NET_QUIC_QUIC_DEFAULT_PACKET_WRITER_H_
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/quic_connection.h"
@@ -35,14 +37,10 @@ class NET_EXPORT_PRIVATE QuicDefaultPacketWriter : public QuicPacketWriter {
   QuicByteCount GetMaxPacketSize(const IPEndPoint& peer_address) const override;
 
   void OnWriteComplete(int rv);
-  void SetConnection(QuicConnection* connection) {
-    connection_ = connection;
-  }
+  void SetConnection(QuicConnection* connection) { connection_ = connection; }
 
  protected:
-  void set_write_blocked(bool is_blocked) {
-    write_blocked_ = is_blocked;
-  }
+  void set_write_blocked(bool is_blocked) { write_blocked_ = is_blocked; }
 
  private:
   Socket* socket_;

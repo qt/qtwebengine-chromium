@@ -18,31 +18,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGPathElement.h"
 
 #include "core/layout/svg/LayoutSVGPath.h"
-#include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGMPathElement.h"
-#include "core/svg/SVGPathSegArcAbs.h"
-#include "core/svg/SVGPathSegArcRel.h"
-#include "core/svg/SVGPathSegClosePath.h"
-#include "core/svg/SVGPathSegCurvetoCubicAbs.h"
-#include "core/svg/SVGPathSegCurvetoCubicRel.h"
-#include "core/svg/SVGPathSegCurvetoCubicSmoothAbs.h"
-#include "core/svg/SVGPathSegCurvetoCubicSmoothRel.h"
-#include "core/svg/SVGPathSegCurvetoQuadraticAbs.h"
-#include "core/svg/SVGPathSegCurvetoQuadraticRel.h"
-#include "core/svg/SVGPathSegCurvetoQuadraticSmoothAbs.h"
-#include "core/svg/SVGPathSegCurvetoQuadraticSmoothRel.h"
-#include "core/svg/SVGPathSegLinetoAbs.h"
-#include "core/svg/SVGPathSegLinetoHorizontalAbs.h"
-#include "core/svg/SVGPathSegLinetoHorizontalRel.h"
-#include "core/svg/SVGPathSegLinetoRel.h"
-#include "core/svg/SVGPathSegLinetoVerticalAbs.h"
-#include "core/svg/SVGPathSegLinetoVerticalRel.h"
-#include "core/svg/SVGPathSegMovetoAbs.h"
-#include "core/svg/SVGPathSegMovetoRel.h"
+#include "core/svg/SVGPathQuery.h"
 #include "core/svg/SVGPathUtilities.h"
 #include "core/svg/SVGPointTearOff.h"
 
@@ -55,13 +35,12 @@ public:
         return adoptRefWillBeNoop(new SVGAnimatedPathLength(contextElement));
     }
 
-    void setBaseValueAsString(const String& value, SVGParsingError& parseError) override
+    SVGParsingError setBaseValueAsString(const String& value) override
     {
-        SVGAnimatedNumber::setBaseValueAsString(value, parseError);
-
-        ASSERT(contextElement());
-        if (parseError == NoError && baseValue()->value() < 0)
-            contextElement()->document().accessSVGExtensions().reportError("A negative value for path attribute <pathLength> is not allowed");
+        SVGParsingError parseStatus = SVGAnimatedNumber::setBaseValueAsString(value);
+        if (parseStatus == NoError && baseValue()->value() < 0)
+            parseStatus = NegativeValueForbiddenError;
+        return parseStatus;
     }
 
 private:
@@ -74,16 +53,16 @@ private:
 inline SVGPathElement::SVGPathElement(Document& document)
     : SVGGeometryElement(SVGNames::pathTag, document)
     , m_pathLength(SVGAnimatedPathLength::create(this))
-    , m_pathSegList(SVGAnimatedPath::create(this, SVGNames::dAttr))
+    , m_path(SVGAnimatedPath::create(this, SVGNames::dAttr))
 {
     addToPropertyMap(m_pathLength);
-    addToPropertyMap(m_pathSegList);
+    addToPropertyMap(m_path);
 }
 
 DEFINE_TRACE(SVGPathElement)
 {
     visitor->trace(m_pathLength);
-    visitor->trace(m_pathSegList);
+    visitor->trace(m_path);
     SVGGeometryElement::trace(visitor);
 }
 
@@ -91,143 +70,97 @@ DEFINE_NODE_FACTORY(SVGPathElement)
 
 Path SVGPathElement::asPath() const
 {
-    Path path;
-    buildPathFromByteStream(*pathByteStream(), path);
-    return path;
+    if (layoutObject()) {
+        const SVGComputedStyle& svgStyle = layoutObject()->styleRef().svgStyle();
+        return svgStyle.d()->path();
+    }
+
+    return m_path->currentValue()->pathValue()->cachedPath()->path();
+}
+
+const SVGPathByteStream& SVGPathElement::pathByteStream() const
+{
+    if (layoutObject()) {
+        const SVGComputedStyle& svgStyle = layoutObject()->styleRef().svgStyle();
+        return svgStyle.d()->byteStream();
+    }
+
+    return m_path->currentValue()->byteStream();
 }
 
 float SVGPathElement::getTotalLength()
 {
-    return getTotalLengthOfSVGPathByteStream(*pathByteStream());
+    document().updateLayoutIgnorePendingStylesheets();
+    return SVGPathQuery(pathByteStream()).getTotalLength();
 }
 
 PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGPathElement::getPointAtLength(float length)
 {
-    FloatPoint point = getPointAtLengthOfSVGPathByteStream(*pathByteStream(), length);
+    document().updateLayoutIgnorePendingStylesheets();
+    FloatPoint point = SVGPathQuery(pathByteStream()).getPointAtLength(length);
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
 unsigned SVGPathElement::getPathSegAtLength(float length)
 {
-    return getSVGPathSegAtLengthFromSVGPathByteStream(*pathByteStream(), length);
+    document().updateLayoutIgnorePendingStylesheets();
+    return SVGPathQuery(pathByteStream()).getPathSegIndexAtLength(length);
 }
 
-PassRefPtrWillBeRawPtr<SVGPathSegClosePath> SVGPathElement::createSVGPathSegClosePath()
+bool SVGPathElement::isPresentationAttribute(const QualifiedName& attrName) const
 {
-    return SVGPathSegClosePath::create(0);
+    if (attrName == SVGNames::dAttr)
+        return true;
+    return SVGGeometryElement::isPresentationAttribute(attrName);
 }
 
-PassRefPtrWillBeRawPtr<SVGPathSegMovetoAbs> SVGPathElement::createSVGPathSegMovetoAbs(float x, float y)
+bool SVGPathElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrName) const
 {
-    return SVGPathSegMovetoAbs::create(0, x, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegMovetoRel> SVGPathElement::createSVGPathSegMovetoRel(float x, float y)
-{
-    return SVGPathSegMovetoRel::create(0, x, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoAbs> SVGPathElement::createSVGPathSegLinetoAbs(float x, float y)
-{
-    return SVGPathSegLinetoAbs::create(0, x, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoRel> SVGPathElement::createSVGPathSegLinetoRel(float x, float y)
-{
-    return SVGPathSegLinetoRel::create(0, x, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicAbs> SVGPathElement::createSVGPathSegCurvetoCubicAbs(float x, float y, float x1, float y1, float x2, float y2)
-{
-    return SVGPathSegCurvetoCubicAbs::create(0, x, y, x1, y1, x2, y2);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicRel> SVGPathElement::createSVGPathSegCurvetoCubicRel(float x, float y, float x1, float y1, float x2, float y2)
-{
-    return SVGPathSegCurvetoCubicRel::create(0, x, y, x1, y1, x2, y2);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticAbs> SVGPathElement::createSVGPathSegCurvetoQuadraticAbs(float x, float y, float x1, float y1)
-{
-    return SVGPathSegCurvetoQuadraticAbs::create(0, x, y, x1, y1);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticRel> SVGPathElement::createSVGPathSegCurvetoQuadraticRel(float x, float y, float x1, float y1)
-{
-    return SVGPathSegCurvetoQuadraticRel::create(0, x, y, x1, y1);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegArcAbs> SVGPathElement::createSVGPathSegArcAbs(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
-{
-    return SVGPathSegArcAbs::create(0, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegArcRel> SVGPathElement::createSVGPathSegArcRel(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
-{
-    return SVGPathSegArcRel::create(0, x, y, r1, r2, angle, largeArcFlag, sweepFlag);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoHorizontalAbs> SVGPathElement::createSVGPathSegLinetoHorizontalAbs(float x)
-{
-    return SVGPathSegLinetoHorizontalAbs::create(0, x);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoHorizontalRel> SVGPathElement::createSVGPathSegLinetoHorizontalRel(float x)
-{
-    return SVGPathSegLinetoHorizontalRel::create(0, x);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoVerticalAbs> SVGPathElement::createSVGPathSegLinetoVerticalAbs(float y)
-{
-    return SVGPathSegLinetoVerticalAbs::create(0, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegLinetoVerticalRel> SVGPathElement::createSVGPathSegLinetoVerticalRel(float y)
-{
-    return SVGPathSegLinetoVerticalRel::create(0, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicSmoothAbs> SVGPathElement::createSVGPathSegCurvetoCubicSmoothAbs(float x, float y, float x2, float y2)
-{
-    return SVGPathSegCurvetoCubicSmoothAbs::create(0, x, y, x2, y2);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicSmoothRel> SVGPathElement::createSVGPathSegCurvetoCubicSmoothRel(float x, float y, float x2, float y2)
-{
-    return SVGPathSegCurvetoCubicSmoothRel::create(0, x, y, x2, y2);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticSmoothAbs> SVGPathElement::createSVGPathSegCurvetoQuadraticSmoothAbs(float x, float y)
-{
-    return SVGPathSegCurvetoQuadraticSmoothAbs::create(0, x, y);
-}
-
-PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticSmoothRel> SVGPathElement::createSVGPathSegCurvetoQuadraticSmoothRel(float x, float y)
-{
-    return SVGPathSegCurvetoQuadraticSmoothRel::create(0, x, y);
+    if (attrName == SVGNames::dAttr)
+        return true;
+    return SVGGeometryElement::isPresentationAttributeWithSVGDOM(attrName);
 }
 
 void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (attrName == SVGNames::dAttr || attrName == SVGNames::pathLengthAttr) {
+    if (attrName == SVGNames::dAttr) {
         SVGElement::InvalidationGuard invalidationGuard(this);
+        invalidateSVGPresentationAttributeStyle();
+        setNeedsStyleRecalc(LocalStyleChange,
+            StyleChangeReasonForTracing::fromAttribute(attrName));
 
-        LayoutSVGShape* layoutObject = toLayoutSVGShape(this->layoutObject());
+        if (LayoutSVGShape* layoutPath = toLayoutSVGShape(this->layoutObject()))
+            layoutPath->setNeedsShapeUpdate();
 
-        if (attrName == SVGNames::dAttr) {
-            if (layoutObject)
-                layoutObject->setNeedsShapeUpdate();
-
-            invalidateMPathDependencies();
-        }
-
-        if (layoutObject)
-            markForLayoutAndParentResourceInvalidation(layoutObject);
+        invalidateMPathDependencies();
+        if (layoutObject())
+            markForLayoutAndParentResourceInvalidation(layoutObject());
 
         return;
     }
 
+    if (attrName == SVGNames::pathLengthAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+        if (layoutObject())
+            markForLayoutAndParentResourceInvalidation(layoutObject());
+        return;
+    }
+
     SVGGeometryElement::svgAttributeChanged(attrName);
+}
+
+void SVGPathElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+{
+    SVGAnimatedPropertyBase* property = propertyFromAttribute(name);
+    if (property == m_path) {
+        SVGAnimatedPath* path = this->path();
+        // If this is a <use> instance, return the referenced path to maximize geometry sharing.
+        if (const SVGElement* element = correspondingElement())
+            path = toSVGPathElement(element)->path();
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyD, path->currentValue()->pathValue());
+        return;
+    }
+    SVGGeometryElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void SVGPathElement::invalidateMPathDependencies()
@@ -253,21 +186,6 @@ void SVGPathElement::removedFrom(ContainerNode* rootParent)
 {
     SVGGeometryElement::removedFrom(rootParent);
     invalidateMPathDependencies();
-}
-
-void SVGPathElement::pathSegListChanged(ListModification listModification)
-{
-    m_pathSegList->baseValue()->clearByteStream();
-
-    invalidateSVGAttributes();
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-    LayoutSVGShape* layoutObject = toLayoutSVGShape(this->layoutObject());
-    if (!layoutObject)
-        return;
-
-    layoutObject->setNeedsShapeUpdate();
-    markForLayoutAndParentResourceInvalidation(layoutObject);
 }
 
 } // namespace blink

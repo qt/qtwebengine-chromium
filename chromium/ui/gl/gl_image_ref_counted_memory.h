@@ -5,6 +5,9 @@
 #ifndef UI_GL_GL_IMAGE_REF_COUNTED_MEMORY_H_
 #define UI_GL_GL_IMAGE_REF_COUNTED_MEMORY_H_
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "ui/gl/gl_image_memory.h"
 
@@ -12,9 +15,9 @@ namespace base {
 class RefCountedMemory;
 }
 
-namespace gfx {
+namespace gl {
 
-class GL_EXPORT GLImageRefCountedMemory : public GLImageMemory {
+class GL_EXPORT GLImageRefCountedMemory : public gl::GLImageMemory {
  public:
   GLImageRefCountedMemory(const gfx::Size& size, unsigned internalformat);
 
@@ -36,6 +39,6 @@ class GL_EXPORT GLImageRefCountedMemory : public GLImageMemory {
   DISALLOW_COPY_AND_ASSIGN(GLImageRefCountedMemory);
 };
 
-}  // namespace gfx
+}  // namespace gl
 
 #endif  // UI_GL_GL_IMAGE_REF_COUNTED_MEMORY_H_

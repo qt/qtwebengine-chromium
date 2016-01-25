@@ -5,12 +5,52 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include <EGL/egl.h>
-
 #include "SkOnce.h"
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
 #include "gl/command_buffer/SkCommandBufferGLContext.h"
+#include "../ports/SkOSEnvironment.h"
+#include "../ports/SkOSLibrary.h"
+
+#if defined SK_BUILD_FOR_MAC
+
+// EGL doesn't exist on the mac, so expose what we need to get the command buffer's EGL running.
+typedef void *EGLDisplay;
+typedef unsigned int EGLBoolean;
+typedef void *EGLConfig;
+typedef void *EGLSurface;
+typedef void *EGLContext;
+typedef int32_t EGLint;
+typedef void* EGLNativeDisplayType;
+typedef void* EGLNativeWindowType;
+typedef void (*__eglMustCastToProperFunctionPointerType)(void);
+#define EGL_FALSE 0
+#define EGL_OPENGL_ES2_BIT 0x0004
+#define EGL_CONTEXT_CLIENT_VERSION 0x3098
+#define EGL_NO_SURFACE ((EGLSurface)0)
+#define EGL_NO_DISPLAY ((EGLDisplay)0)
+#define EGL_NO_CONTEXT ((EGLContext)0)
+#define EGL_DEFAULT_DISPLAY ((EGLNativeDisplayType)0)
+#define EGL_SURFACE_TYPE 0x3033
+#define EGL_PBUFFER_BIT 0x0001
+#define EGL_RENDERABLE_TYPE 0x3040
+#define EGL_RED_SIZE 0x3024
+#define EGL_GREEN_SIZE 0x3023
+#define EGL_BLUE_SIZE 0x3022
+#define EGL_ALPHA_SIZE 0x3021
+#define EGL_DEPTH_SIZE 0x3025
+#define EGL_STENCIL_SIZE 0x3025
+#define EGL_SAMPLES 0x3031
+#define EGL_SAMPLE_BUFFERS 0x3032
+#define EGL_NONE 0x3038
+#define EGL_WIDTH 0x3057
+#define EGL_HEIGHT 0x3056
+
+#else
+
+#include <EGL/egl.h>
+
+#endif
 
 typedef EGLDisplay (*GetDisplayProc)(EGLNativeDisplayType display_id);
 typedef EGLBoolean (*InitializeProc)(EGLDisplay dpy, EGLint *major, EGLint *minor);
@@ -40,27 +80,32 @@ static MakeCurrentProc gfMakeCurrent = nullptr;
 static SwapBuffersProc gfSwapBuffers = nullptr;
 static GetProcAddressProc gfGetProcAddress = nullptr;
 
-static HMODULE ghLibrary = nullptr;
+static void* gLibrary = nullptr;
 static bool gfFunctionsLoadedSuccessfully = false;
 
 static void load_command_buffer_functions() {
-    if (!ghLibrary) {
-        ghLibrary = LoadLibrary("command_buffer_gles2.dll");
-
-        if (ghLibrary) {
-            gfGetDisplay = (GetDisplayProc)::GetProcAddress(ghLibrary, "eglGetDisplay");
-            gfInitialize = (InitializeProc)::GetProcAddress(ghLibrary, "eglInitialize");
-            gfTerminate = (TerminateProc)::GetProcAddress(ghLibrary, "eglTerminate");
-            gfChooseConfig = (ChooseConfigProc)::GetProcAddress(ghLibrary, "eglChooseConfig");
-            gfGetConfigAttrib = (GetConfigAttrib)::GetProcAddress(ghLibrary, "eglGetConfigAttrib");
-            gfCreateWindowSurface = (CreateWindowSurfaceProc)::GetProcAddress(ghLibrary, "eglCreateWindowSurface");
-            gfCreatePbufferSurface = (CreatePbufferSurfaceProc)::GetProcAddress(ghLibrary, "eglCreatePbufferSurface");
-            gfDestroySurface = (DestroySurfaceProc)::GetProcAddress(ghLibrary, "eglDestroySurface");
-            gfCreateContext = (CreateContextProc)::GetProcAddress(ghLibrary, "eglCreateContext");
-            gfDestroyContext = (DestroyContextProc)::GetProcAddress(ghLibrary, "eglDestroyContext");
-            gfMakeCurrent = (MakeCurrentProc)::GetProcAddress(ghLibrary, "eglMakeCurrent");
-            gfSwapBuffers = (SwapBuffersProc)::GetProcAddress(ghLibrary, "eglSwapBuffers");
-            gfGetProcAddress = (GetProcAddressProc)::GetProcAddress(ghLibrary, "eglGetProcAddress");
+    if (!gLibrary) {
+#if defined _WIN32
+        gLibrary = DynamicLoadLibrary("command_buffer_gles2.dll");
+#elif defined SK_BUILD_FOR_MAC
+        gLibrary = DynamicLoadLibrary("libcommand_buffer_gles2.dylib");
+#else
+        gLibrary = DynamicLoadLibrary("libcommand_buffer_gles2.so");
+#endif // defined _WIN32
+        if (gLibrary) {
+            gfGetDisplay = (GetDisplayProc)GetProcedureAddress(gLibrary, "eglGetDisplay");
+            gfInitialize = (InitializeProc)GetProcedureAddress(gLibrary, "eglInitialize");
+            gfTerminate = (TerminateProc)GetProcedureAddress(gLibrary, "eglTerminate");
+            gfChooseConfig = (ChooseConfigProc)GetProcedureAddress(gLibrary, "eglChooseConfig");
+            gfGetConfigAttrib = (GetConfigAttrib)GetProcedureAddress(gLibrary, "eglGetConfigAttrib");
+            gfCreateWindowSurface = (CreateWindowSurfaceProc)GetProcedureAddress(gLibrary, "eglCreateWindowSurface");
+            gfCreatePbufferSurface = (CreatePbufferSurfaceProc)GetProcedureAddress(gLibrary, "eglCreatePbufferSurface");
+            gfDestroySurface = (DestroySurfaceProc)GetProcedureAddress(gLibrary, "eglDestroySurface");
+            gfCreateContext = (CreateContextProc)GetProcedureAddress(gLibrary, "eglCreateContext");
+            gfDestroyContext = (DestroyContextProc)GetProcedureAddress(gLibrary, "eglDestroyContext");
+            gfMakeCurrent = (MakeCurrentProc)GetProcedureAddress(gLibrary, "eglMakeCurrent");
+            gfSwapBuffers = (SwapBuffersProc)GetProcedureAddress(gLibrary, "eglSwapBuffers");
+            gfGetProcAddress = (GetProcAddressProc)GetProcedureAddress(gLibrary, "eglGetProcAddress");
 
             gfFunctionsLoadedSuccessfully = gfGetDisplay && gfInitialize && gfTerminate &&
                                             gfChooseConfig && gfCreateWindowSurface &&
@@ -68,15 +113,11 @@ static void load_command_buffer_functions() {
                                             gfCreateContext && gfDestroyContext && gfMakeCurrent &&
                                             gfSwapBuffers && gfGetProcAddress;
 
-        }                        
-    }                            
+        }
+    }
 }
 
 static GrGLFuncPtr command_buffer_get_gl_proc(void* ctx, const char name[]) {
-    GrGLFuncPtr proc = (GrGLFuncPtr) GetProcAddress((HMODULE)ctx, name);
-    if (proc) {
-        return proc;
-    }
     if (!gfFunctionsLoadedSuccessfully) {
         return nullptr;
     }
@@ -93,7 +134,7 @@ const GrGLInterface* GrGLCreateCommandBufferInterface() {
     if (!gfFunctionsLoadedSuccessfully) {
         return nullptr;
     }
-    return GrGLAssembleGLESInterface(ghLibrary, command_buffer_get_gl_proc);
+    return GrGLAssembleGLESInterface(gLibrary, command_buffer_get_gl_proc);
 }
 
 SkCommandBufferGLContext::SkCommandBufferGLContext()
@@ -145,46 +186,75 @@ void SkCommandBufferGLContext::initializeGLContext(void* nativeWindow, const int
                                                    const int* surfaceAttribs) {
     LoadCommandBufferOnce();
     if (!gfFunctionsLoadedSuccessfully) {
+        SkDebugf("Command Buffer: Could not load EGL functions.\n");
         return;
     }
 
-    fDisplay = gfGetDisplay(static_cast<EGLNativeDisplayType>(EGL_DEFAULT_DISPLAY));
+    // Make sure CHROMIUM_path_rendering is enabled for NVPR support.
+    sk_setenv("CHROME_COMMAND_BUFFER_GLES2_ARGS", "--enable-gl-path-rendering");
+    fDisplay = gfGetDisplay(EGL_DEFAULT_DISPLAY);
     if (EGL_NO_DISPLAY == fDisplay) {
-        SkDebugf("Could not create EGL display!");
+        SkDebugf("Command Buffer: Could not create EGL display.\n");
         return;
     }
 
     EGLint majorVersion;
     EGLint minorVersion;
-    gfInitialize(fDisplay, &majorVersion, &minorVersion);
+    if (!gfInitialize(fDisplay, &majorVersion, &minorVersion)) {
+        SkDebugf("Command Buffer: Could not initialize EGL display.\n");
+        this->destroyGLContext();
+        return;
+    }
 
-    EGLConfig surfaceConfig = static_cast<EGLConfig>(fConfig);
     EGLint numConfigs;
-    gfChooseConfig(fDisplay, configAttribs, &surfaceConfig, 1, &numConfigs);
+    if (!gfChooseConfig(fDisplay, configAttribs, static_cast<EGLConfig*>(&fConfig), 1,
+                        &numConfigs) || numConfigs != 1) {
+        SkDebugf("Command Buffer: Could not choose EGL config.\n");
+        this->destroyGLContext();
+        return;
+    }
 
     if (nativeWindow) {
-        fSurface = gfCreateWindowSurface(fDisplay, surfaceConfig, 
-                                         (EGLNativeWindowType)nativeWindow, surfaceAttribs);
+        fSurface = gfCreateWindowSurface(fDisplay,
+                                         static_cast<EGLConfig>(fConfig),
+                                         (EGLNativeWindowType)nativeWindow,
+                                         surfaceAttribs);
     } else {
-        fSurface = gfCreatePbufferSurface(fDisplay, surfaceConfig, surfaceAttribs);
+        fSurface = gfCreatePbufferSurface(fDisplay,
+                                          static_cast<EGLConfig>(fConfig),
+                                          surfaceAttribs);
+    }
+    if (EGL_NO_SURFACE == fSurface) {
+        SkDebugf("Command Buffer: Could not create EGL surface.\n");
+        this->destroyGLContext();
+        return;
     }
 
     static const EGLint contextAttribs[] = {
         EGL_CONTEXT_CLIENT_VERSION, 2,
         EGL_NONE
     };
-    fContext = gfCreateContext(fDisplay, surfaceConfig, nullptr, contextAttribs);
+    fContext = gfCreateContext(fDisplay, static_cast<EGLConfig>(fConfig), nullptr, contextAttribs);
+    if (EGL_NO_CONTEXT == fContext) {
+        SkDebugf("Command Buffer: Could not create EGL context.\n");
+        this->destroyGLContext();
+        return;
+    }
 
-    gfMakeCurrent(fDisplay, fSurface, fSurface, fContext);
+    if (!gfMakeCurrent(fDisplay, fSurface, fSurface, fContext)) {
+        SkDebugf("Command Buffer: Could not make EGL context current.\n");
+        this->destroyGLContext();
+        return;
+    }
 
     SkAutoTUnref<const GrGLInterface> gl(GrGLCreateCommandBufferInterface());
     if (nullptr == gl.get()) {
-        SkDebugf("Could not create CommandBuffer GL interface!\n");
+        SkDebugf("Command Buffer: Could not create CommandBuffer GL interface.\n");
         this->destroyGLContext();
         return;
     }
     if (!gl->validate()) {
-        SkDebugf("Could not validate CommandBuffer GL interface!\n");
+        SkDebugf("Command Buffer: Could not validate CommandBuffer GL interface.\n");
         this->destroyGLContext();
         return;
     }
@@ -224,7 +294,7 @@ void SkCommandBufferGLContext::onPlatformMakeCurrent() const {
         return;
     }
     if (!gfMakeCurrent(fDisplay, fSurface, fSurface, fContext)) {
-        SkDebugf("Could not set the context.\n");
+        SkDebugf("Command Buffer: Could not make EGL context current.\n");
     }
 }
 
@@ -233,7 +303,7 @@ void SkCommandBufferGLContext::onPlatformSwapBuffers() const {
         return;
     }
     if (!gfSwapBuffers(fDisplay, fSurface)) {
-        SkDebugf("Could not complete gfSwapBuffers.\n");
+        SkDebugf("Command Buffer: Could not complete gfSwapBuffers.\n");
     }
 }
 
@@ -258,14 +328,12 @@ bool SkCommandBufferGLContext::makeCurrent() {
 
 int SkCommandBufferGLContext::getStencilBits() {
     EGLint result = 0;
-    EGLConfig surfaceConfig = static_cast<EGLConfig>(fConfig);
-    gfGetConfigAttrib(fDisplay, surfaceConfig, EGL_STENCIL_SIZE, &result);
+    gfGetConfigAttrib(fDisplay, static_cast<EGLConfig>(fConfig), EGL_STENCIL_SIZE, &result);
     return result;
 }
 
 int SkCommandBufferGLContext::getSampleCount() {
     EGLint result = 0;
-    EGLConfig surfaceConfig = static_cast<EGLConfig>(fConfig);
-    gfGetConfigAttrib(fDisplay, surfaceConfig, EGL_SAMPLES, &result);
+    gfGetConfigAttrib(fDisplay, static_cast<EGLConfig>(fConfig), EGL_SAMPLES, &result);
     return result;
 }

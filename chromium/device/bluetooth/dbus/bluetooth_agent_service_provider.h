@@ -5,10 +5,12 @@
 #ifndef DEVICE_BLUETOOTH_DBUS_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
 #define DEVICE_BLUETOOTH_DBUS_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
 
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "dbus/bus.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_export.h"
@@ -21,10 +23,10 @@ namespace bluez {
 //
 // Instantiate with a chosen D-Bus object path and delegate object, and pass
 // the D-Bus object path as the |agent_path| argument to the
-// chromeos::BluetoothAgentManagerClient::RegisterAgent() method.
+// bluez::BluetoothAgentManagerClient::RegisterAgent() method.
 //
 // After initiating the pairing process with a device, using the
-// chromeos::BluetoothDeviceClient::Pair() method, the Bluetooth daemon will
+// bluez::BluetoothDeviceClient::Pair() method, the Bluetooth daemon will
 // make calls to this agent object and they will be passed on to your Delegate
 // object for handling. Responses should be returned using the callbacks
 // supplied to those methods.
@@ -51,7 +53,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAgentServiceProvider {
     // be called with two arguments, the |status| of the request (success,
     // rejected or cancelled) and the |passkey| requested, a numeric in the
     // range 0-999999,
-    typedef base::Callback<void(Status, uint32)> PasskeyCallback;
+    typedef base::Callback<void(Status, uint32_t)> PasskeyCallback;
 
     // The ConfirmationCallback is used for methods which request confirmation
     // or authorization, it should be called with one argument, the |status|
@@ -113,8 +115,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAgentServiceProvider {
     // As the user enters the passkey onto the device, |entered| will be
     // updated to reflect the number of digits entered so far.
     virtual void DisplayPasskey(const dbus::ObjectPath& device_path,
-                                uint32 passkey,
-                                uint16 entered) = 0;
+                                uint32_t passkey,
+                                uint16_t entered) = 0;
 
     // This method will be called when the Bluetooth daemon requires that the
     // user confirm that the Passkey |passkey| is displayed on the screen
@@ -128,7 +130,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAgentServiceProvider {
     // range 0-999999 and should be always present zero-padded to six
     // digits.
     virtual void RequestConfirmation(const dbus::ObjectPath& device_path,
-                                     uint32 passkey,
+                                     uint32_t passkey,
                                      const ConfirmationCallback& callback) = 0;
 
     // This method will be called when the Bluetooth daemon requires

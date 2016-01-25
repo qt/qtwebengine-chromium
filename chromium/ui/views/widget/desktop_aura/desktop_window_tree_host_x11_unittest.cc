@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include <stddef.h>
 #include <X11/extensions/shape.h>
 #include <X11/Xlib.h>
 
@@ -15,6 +16,7 @@
 #undef None
 
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "ui/aura/window.h"
@@ -149,7 +151,7 @@ scoped_ptr<Widget> CreateWidget(WidgetDelegate* delegate) {
   params.native_widget = new DesktopNativeWidgetAura(widget.get());
   params.bounds = gfx::Rect(100, 100, 100, 100);
   widget->Init(params);
-  return widget.Pass();
+  return widget;
 }
 
 // Returns the list of rectangles which describe |xid|'s bounding region via the

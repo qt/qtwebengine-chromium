@@ -892,6 +892,9 @@ static void long_filter_high_3800(int32_t *buffer, int order, int shift, int len
     int32_t dotprod, sign;
     int32_t coeffs[256], delay[256];
 
+    if (order >= length)
+        return;
+
     memset(coeffs, 0, order * sizeof(*coeffs));
     for (i = 0; i < order; i++)
         delay[i] = buffer[i];
@@ -1281,7 +1284,7 @@ static void do_apply_filter(APEContext *ctx, int version, APEFilter *f,
             /* Update the adaption coefficients */
             absres = FFABS(res);
             if (absres)
-                *f->adaptcoeffs = ((res & (-1<<31)) ^ (-1<<30)) >>
+                *f->adaptcoeffs = ((res & INT32_MIN) ^ (-(1<<30))) >>
                                   (25 + (absres <= f->avg*3) + (absres <= f->avg*4/3));
             else
                 *f->adaptcoeffs = 0;

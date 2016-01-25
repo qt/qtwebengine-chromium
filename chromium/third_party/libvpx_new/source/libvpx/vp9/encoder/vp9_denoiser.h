@@ -12,6 +12,7 @@
 #define VP9_ENCODER_DENOISER_H_
 
 #include "vp9/encoder/vp9_block.h"
+#include "vp9/encoder/vp9_skin_detection.h"
 #include "vpx_scale/yv12config.h"
 
 #ifdef __cplusplus
@@ -22,26 +23,40 @@ extern "C" {
 
 typedef enum vp9_denoiser_decision {
   COPY_BLOCK,
-  FILTER_BLOCK
+  FILTER_BLOCK,
+  FILTER_ZEROMV_BLOCK
 } VP9_DENOISER_DECISION;
+
+typedef enum vp9_denoiser_level {
+  kDenLowLow,
+  kDenLow,
+  kDenMedium,
+  kDenHigh
+} VP9_DENOISER_LEVEL;
 
 typedef struct vp9_denoiser {
   YV12_BUFFER_CONFIG running_avg_y[MAX_REF_FRAMES];
   YV12_BUFFER_CONFIG mc_running_avg_y;
+  YV12_BUFFER_CONFIG last_source;
   int increase_denoising;
   int frame_buffer_initialized;
+  VP9_DENOISER_LEVEL denoising_level;
 } VP9_DENOISER;
+
+struct VP9_COMP;
 
 void vp9_denoiser_update_frame_info(VP9_DENOISER *denoiser,
                                     YV12_BUFFER_CONFIG src,
                                     FRAME_TYPE frame_type,
                                     int refresh_alt_ref_frame,
                                     int refresh_golden_frame,
-                                    int refresh_last_frame);
+                                    int refresh_last_frame,
+                                    int resized);
 
 void vp9_denoiser_denoise(VP9_DENOISER *denoiser, MACROBLOCK *mb,
                           int mi_row, int mi_col, BLOCK_SIZE bs,
-                          PICK_MODE_CONTEXT *ctx);
+                          PICK_MODE_CONTEXT *ctx ,
+                          VP9_DENOISER_DECISION *denoiser_decision);
 
 void vp9_denoiser_reset_frame_stats(PICK_MODE_CONTEXT *ctx);
 
@@ -66,6 +81,9 @@ static int total_adj_strong_thresh(BLOCK_SIZE bs, int increase_denoising) {
 #endif
 
 void vp9_denoiser_free(VP9_DENOISER *denoiser);
+
+void vp9_denoiser_set_noise_level(VP9_DENOISER *denoiser,
+                                  int noise_level);
 
 #ifdef __cplusplus
 }  // extern "C"

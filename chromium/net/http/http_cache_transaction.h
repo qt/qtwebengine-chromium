@@ -13,7 +13,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -22,6 +22,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/load_states.h"
+#include "net/base/net_error_details.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 #include "net/http/http_cache.h"
@@ -39,6 +40,7 @@ namespace net {
 class PartialData;
 struct HttpRequestInfo;
 struct LoadTimingInfo;
+class SSLPrivateKey;
 
 // This is the transaction that is returned by the HttpCache transaction
 // factory.
@@ -134,6 +136,7 @@ class HttpCache::Transaction : public HttpTransaction {
             const BoundNetLog& net_log) override;
   int RestartIgnoringLastError(const CompletionCallback& callback) override;
   int RestartWithCertificate(X509Certificate* client_cert,
+                             SSLPrivateKey* client_private_key,
                              const CompletionCallback& callback) override;
   int RestartWithAuth(const AuthCredentials& credentials,
                       const CompletionCallback& callback) override;
@@ -152,6 +155,7 @@ class HttpCache::Transaction : public HttpTransaction {
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
+  void PopulateNetErrorDetails(NetErrorDetails* details) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
@@ -333,7 +337,8 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Called to restart a network transaction with a client certificate.
   // Returns network error code.
-  int RestartNetworkRequestWithCertificate(X509Certificate* client_cert);
+  int RestartNetworkRequestWithCertificate(X509Certificate* client_cert,
+                                           SSLPrivateKey* client_private_key);
 
   // Called to restart a network transaction with authentication credentials.
   // Returns network error code.

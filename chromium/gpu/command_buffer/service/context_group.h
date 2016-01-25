@@ -5,9 +5,11 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
 #define GPU_COMMAND_BUFFER_SERVICE_CONTEXT_GROUP_H_
 
+#include <stdint.h>
+
 #include <vector>
-#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -34,6 +36,7 @@ class MailboxManager;
 class RenderbufferManager;
 class PathManager;
 class ProgramManager;
+class SamplerManager;
 class ShaderManager;
 class TextureManager;
 class SubscriptionRefSet;
@@ -87,40 +90,32 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
     return bind_generates_resource_;
   }
 
-  uint32 max_vertex_attribs() const {
-    return max_vertex_attribs_;
-  }
+  uint32_t max_vertex_attribs() const { return max_vertex_attribs_; }
 
-  uint32 max_texture_units() const {
-    return max_texture_units_;
-  }
+  uint32_t max_texture_units() const { return max_texture_units_; }
 
-  uint32 max_texture_image_units() const {
-    return max_texture_image_units_;
-  }
+  uint32_t max_texture_image_units() const { return max_texture_image_units_; }
 
-  uint32 max_vertex_texture_image_units() const {
+  uint32_t max_vertex_texture_image_units() const {
     return max_vertex_texture_image_units_;
   }
 
-  uint32 max_fragment_uniform_vectors() const {
+  uint32_t max_fragment_uniform_vectors() const {
     return max_fragment_uniform_vectors_;
   }
 
-  uint32 max_varying_vectors() const {
-    return max_varying_vectors_;
-  }
+  uint32_t max_varying_vectors() const { return max_varying_vectors_; }
 
-  uint32 max_vertex_uniform_vectors() const {
+  uint32_t max_vertex_uniform_vectors() const {
     return max_vertex_uniform_vectors_;
   }
 
-  uint32 max_color_attachments() const {
-    return max_color_attachments_;
-  }
+  uint32_t max_color_attachments() const { return max_color_attachments_; }
 
-  uint32 max_draw_buffers() const {
-    return max_draw_buffers_;
+  uint32_t max_draw_buffers() const { return max_draw_buffers_; }
+
+  uint32_t max_dual_source_draw_buffers() const {
+    return max_dual_source_draw_buffers_;
   }
 
   FeatureInfo* feature_info() {
@@ -173,30 +168,16 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
     return transfer_buffer_manager_.get();
   }
 
-  uint32 GetMemRepresented() const;
+  SamplerManager* sampler_manager() const {
+    return sampler_manager_.get();
+  }
+
+  uint32_t GetMemRepresented() const;
 
   // Loses all the context associated with this group.
   void LoseContexts(error::ContextLostReason reason);
 
   bool GetBufferServiceId(GLuint client_id, GLuint* service_id) const;
-
-  void AddSamplerId(GLuint client_id, GLuint service_id) {
-    samplers_id_map_[client_id] = service_id;
-  }
-
-  bool GetSamplerServiceId(GLuint client_id, GLuint* service_id) const {
-    base::hash_map<GLuint, GLuint>::const_iterator iter =
-        samplers_id_map_.find(client_id);
-    if (iter == samplers_id_map_.end())
-      return false;
-    if (service_id)
-      *service_id = iter->second;
-    return true;
-  }
-
-  void RemoveSamplerId(GLuint client_id) {
-    samplers_id_map_.erase(client_id);
-  }
 
   void AddTransformFeedbackId(GLuint client_id, GLuint service_id) {
     transformfeedbacks_id_map_[client_id] = service_id;
@@ -246,9 +227,9 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   ~ContextGroup();
 
   bool CheckGLFeature(GLint min_required, GLint* v);
-  bool CheckGLFeatureU(GLint min_required, uint32* v);
+  bool CheckGLFeatureU(GLint min_required, uint32_t* v);
   bool QueryGLFeature(GLenum pname, GLint min_required, GLint* v);
-  bool QueryGLFeatureU(GLenum pname, GLint min_required, uint32* v);
+  bool QueryGLFeatureU(GLenum pname, GLint min_required, uint32_t* v);
   bool HaveContexts();
 
   scoped_refptr<MailboxManager> mailbox_manager_;
@@ -262,15 +243,16 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   bool enforce_gl_minimums_;
   bool bind_generates_resource_;
 
-  uint32 max_vertex_attribs_;
-  uint32 max_texture_units_;
-  uint32 max_texture_image_units_;
-  uint32 max_vertex_texture_image_units_;
-  uint32 max_fragment_uniform_vectors_;
-  uint32 max_varying_vectors_;
-  uint32 max_vertex_uniform_vectors_;
-  uint32 max_color_attachments_;
-  uint32 max_draw_buffers_;
+  uint32_t max_vertex_attribs_;
+  uint32_t max_texture_units_;
+  uint32_t max_texture_image_units_;
+  uint32_t max_vertex_texture_image_units_;
+  uint32_t max_fragment_uniform_vectors_;
+  uint32_t max_varying_vectors_;
+  uint32_t max_vertex_uniform_vectors_;
+  uint32_t max_color_attachments_;
+  uint32_t max_draw_buffers_;
+  uint32_t max_dual_source_draw_buffers_;
 
   ProgramCache* program_cache_;
 
@@ -288,6 +270,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   scoped_ptr<ShaderManager> shader_manager_;
 
+  scoped_ptr<SamplerManager> sampler_manager_;
+
   scoped_ptr<ValuebufferManager> valuebuffer_manager_;
 
   scoped_refptr<FeatureInfo> feature_info_;
@@ -295,7 +279,6 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   std::vector<base::WeakPtr<gles2::GLES2Decoder> > decoders_;
 
   // Mappings from client side IDs to service side IDs.
-  base::hash_map<GLuint, GLuint> samplers_id_map_;
   base::hash_map<GLuint, GLuint> transformfeedbacks_id_map_;
   base::hash_map<GLuint, GLsync> syncs_id_map_;
 

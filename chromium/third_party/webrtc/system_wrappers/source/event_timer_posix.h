@@ -11,12 +11,12 @@
 #ifndef WEBRTC_SYSTEM_WRAPPERS_SOURCE_EVENT_POSIX_H_
 #define WEBRTC_SYSTEM_WRAPPERS_SOURCE_EVENT_POSIX_H_
 
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
+#include "webrtc/system_wrappers/include/event_wrapper.h"
 
 #include <pthread.h>
 #include <time.h>
 
-#include "webrtc/system_wrappers/interface/thread_wrapper.h"
+#include "webrtc/base/platform_thread.h"
 
 namespace webrtc {
 
@@ -46,7 +46,8 @@ class EventTimerPosix : public EventTimerWrapper {
   pthread_mutex_t mutex_;
   bool event_set_;
 
-  rtc::scoped_ptr<ThreadWrapper> timer_thread_;
+  // TODO(pbos): Remove scoped_ptr and use PlatformThread directly.
+  rtc::scoped_ptr<rtc::PlatformThread> timer_thread_;
   rtc::scoped_ptr<EventTimerPosix> timer_event_;
   timespec       created_at_;
 

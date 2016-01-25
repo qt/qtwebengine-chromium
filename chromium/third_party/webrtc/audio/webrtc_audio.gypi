@@ -16,6 +16,13 @@
     'webrtc_audio_sources': [
       'audio/audio_receive_stream.cc',
       'audio/audio_receive_stream.h',
+      'audio/audio_send_stream.cc',
+      'audio/audio_send_stream.h',
+      'audio/audio_sink.h',
+      'audio/audio_state.cc',
+      'audio/audio_state.h',
+      'audio/conversion.h',
+      'audio/scoped_voe_interface.h',
     ],
   },
 }

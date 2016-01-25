@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSStyleSheet.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -314,7 +313,7 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
 
 unsigned CSSStyleSheet::insertRule(const String& rule, ExceptionState& exceptionState)
 {
-    UseCounter::countDeprecation(callingExecutionContext(V8PerIsolateData::mainThreadIsolate()), UseCounter::CSSStyleSheetInsertRuleOptionalArg);
+    UseCounter::countDeprecation(currentExecutionContext(V8PerIsolateData::mainThreadIsolate()), UseCounter::CSSStyleSheetInsertRuleOptionalArg);
     return insertRule(rule, 0, exceptionState);
 }
 

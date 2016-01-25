@@ -26,10 +26,12 @@
 #include "platform/PlatformExport.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/WritingMode.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class PLATFORM_EXPORT LengthBox {
+    DISALLOW_NEW();
 public:
     LengthBox()
     {
@@ -79,6 +81,8 @@ public:
     const Length& after(WritingMode) const;
     const Length& start(WritingMode, TextDirection) const;
     const Length& end(WritingMode, TextDirection) const;
+    const Length& over(WritingMode) const;
+    const Length& under(WritingMode) const;
 
     bool operator==(const LengthBox& o) const
     {

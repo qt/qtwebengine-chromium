@@ -21,8 +21,10 @@ namespace blink {
 // to create a reference cycle. When an client is garbage collected, making
 // the client own the handle is the right way.
 class MODULES_EXPORT FetchDataConsumerHandle : public WebDataConsumerHandle {
+    USING_FAST_MALLOC(FetchDataConsumerHandle);
 public:
     class Reader : public WebDataConsumerHandle::Reader {
+        USING_FAST_MALLOC(Reader);
     public:
         enum BlobSizePolicy {
             // The returned blob must have a valid size (i.e. != kuint64max).
@@ -50,6 +52,7 @@ public:
         // function.
         // When |policy| is DisallowBlobWithInvalidSize, this function doesn't
         // return a non-null blob handle with unspecified size.
+        // The type of the returned handle may not be meaningful.
         virtual PassRefPtr<BlobDataHandle> drainAsBlobDataHandle(BlobSizePolicy = DisallowBlobWithInvalidSize) { return nullptr; }
 
         // Drains the data as an EncodedFormData.

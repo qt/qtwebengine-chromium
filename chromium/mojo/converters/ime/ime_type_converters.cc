@@ -4,15 +4,16 @@
 
 #include "mojo/converters/ime/ime_type_converters.h"
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "base/macros.h"
 
 namespace mojo {
 
-#define TEXT_INPUT_TYPE_ASSERT(NAME) \
-  COMPILE_ASSERT(static_cast<int32>(TEXT_INPUT_TYPE_##NAME) == \
-                 static_cast<int32>(ui::TEXT_INPUT_TYPE_##NAME), \
-                 text_input_type_should_match)
+#define TEXT_INPUT_TYPE_ASSERT(NAME)                                  \
+  static_assert(static_cast<int32_t>(TEXT_INPUT_TYPE_##NAME) ==       \
+                    static_cast<int32_t>(ui::TEXT_INPUT_TYPE_##NAME), \
+                "TEXT_INPUT_TYPE must match")
 TEXT_INPUT_TYPE_ASSERT(NONE);
 TEXT_INPUT_TYPE_ASSERT(TEXT);
 TEXT_INPUT_TYPE_ASSERT(PASSWORD);
@@ -29,10 +30,10 @@ TEXT_INPUT_TYPE_ASSERT(TIME);
 TEXT_INPUT_TYPE_ASSERT(WEEK);
 TEXT_INPUT_TYPE_ASSERT(TEXT_AREA);
 
-#define TEXT_INPUT_FLAG_ASSERT(NAME) \
-  COMPILE_ASSERT(static_cast<int32>(TEXT_INPUT_FLAG_##NAME) == \
-                 static_cast<int32>(ui::TEXT_INPUT_FLAG_##NAME), \
-                 text_input_flag_should_match)
+#define TEXT_INPUT_FLAG_ASSERT(NAME)                                  \
+  static_assert(static_cast<int32_t>(TEXT_INPUT_FLAG_##NAME) ==       \
+                    static_cast<int32_t>(ui::TEXT_INPUT_FLAG_##NAME), \
+                "TEXT_INPUT_FLAG must match")
 TEXT_INPUT_FLAG_ASSERT(NONE);
 TEXT_INPUT_FLAG_ASSERT(AUTOCOMPLETE_ON);
 TEXT_INPUT_FLAG_ASSERT(AUTOCOMPLETE_OFF);

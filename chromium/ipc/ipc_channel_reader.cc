@@ -4,8 +4,11 @@
 
 #include "ipc/ipc_channel_reader.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
+#include "base/message_loop/message_loop.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message.h"
@@ -15,7 +18,9 @@
 namespace IPC {
 namespace internal {
 
-ChannelReader::ChannelReader(Listener* listener) : listener_(listener) {
+ChannelReader::ChannelReader(Listener* listener)
+  : listener_(listener),
+    max_input_buffer_size_(Channel::kMaximumReadBufferSize) {
   memset(input_buf_, 0, sizeof(input_buf_));
 }
 
@@ -68,6 +73,12 @@ void ChannelReader::CleanUp() {
   }
 }
 
+void ChannelReader::DispatchMessage(Message* m) {
+  EmitLogBeforeDispatch(*m);
+  listener_->OnMessageReceived(*m);
+  HandleDispatchError(*m);
+}
+
 bool ChannelReader::TranslateInputData(const char* input_data,
                                        int input_data_len) {
   const char* p;
@@ -95,33 +106,9 @@ bool ChannelReader::TranslateInputData(const char* input_data,
       int pickle_len = static_cast<int>(info.pickle_end - p);
       Message translated_message(p, pickle_len);
 
-      for (const auto& id : info.attachment_ids)
-        translated_message.AddPlaceholderBrokerableAttachmentWithId(id);
-
-      if (!GetNonBrokeredAttachments(&translated_message))
+      if (!HandleTranslatedMessage(&translated_message, info.attachment_ids))
         return false;
 
-      // If there are no queued messages, attempt to immediately dispatch the
-      // newly translated message.
-      if (queued_messages_.empty()) {
-        DCHECK(blocked_ids_.empty());
-        AttachmentIdSet blocked_ids =
-            GetBrokeredAttachments(&translated_message);
-
-        if (blocked_ids.empty()) {
-          // Dispatch the message and continue the loop.
-          DispatchMessage(&translated_message);
-          p = info.message_end;
-          continue;
-        }
-
-        blocked_ids_.swap(blocked_ids);
-        StartObservingAttachmentBroker();
-      }
-
-      // Make a deep copy of |translated_message| to add to the queue.
-      scoped_ptr<Message> m(new Message(translated_message));
-      queued_messages_.push_back(m.release());
       p = info.message_end;
     } else {
       // Last message is partial.
@@ -132,23 +119,133 @@ bool ChannelReader::TranslateInputData(const char* input_data,
     }
   }
 
+  // Account for the case where last message's byte is in the next data chunk.
+  size_t next_message_buffer_size = next_message_size ?
+      next_message_size + Channel::kReadBufferSize - 1:
+      0;
+
   // Save any partial data in the overflow buffer.
-  input_overflow_buf_.assign(p, end - p);
+  if (p != input_overflow_buf_.data())
+    input_overflow_buf_.assign(p, end - p);
 
   if (!input_overflow_buf_.empty()) {
     // We have something in the overflow buffer, which means that we will
     // append the next data chunk (instead of parsing it directly). So we
     // resize the buffer to fit the next message, to avoid repeatedly
     // growing the buffer as we receive all message' data chunks.
-    next_message_size += Channel::kReadBufferSize - 1;
-    if (next_message_size > input_overflow_buf_.capacity()) {
-      input_overflow_buf_.reserve(next_message_size);
+    if (next_message_buffer_size > input_overflow_buf_.capacity()) {
+      input_overflow_buf_.reserve(next_message_buffer_size);
     }
+  }
+
+  // Trim the buffer if we can
+  if (next_message_buffer_size < max_input_buffer_size_ &&
+      input_overflow_buf_.size() < max_input_buffer_size_ &&
+      input_overflow_buf_.capacity() > max_input_buffer_size_) {
+    // std::string doesn't really have a method to shrink capacity to
+    // a specific value, so we have to swap with another string.
+    std::string trimmed_buf;
+    trimmed_buf.reserve(max_input_buffer_size_);
+    if (trimmed_buf.capacity() > max_input_buffer_size_) {
+      // Since we don't control how much space reserve() actually reserves,
+      // we have to go other way around and change the max size to avoid
+      // getting into the outer if() again.
+      max_input_buffer_size_ = trimmed_buf.capacity();
+    }
+    trimmed_buf.assign(input_overflow_buf_.data(),
+                       input_overflow_buf_.size());
+    input_overflow_buf_.swap(trimmed_buf);
   }
 
   if (input_overflow_buf_.empty() && !DidEmptyInputBuffers())
     return false;
   return true;
+}
+
+bool ChannelReader::HandleTranslatedMessage(
+    Message* translated_message,
+    const AttachmentIdVector& attachment_ids) {
+  // Immediately handle internal messages.
+  if (IsInternalMessage(*translated_message)) {
+    EmitLogBeforeDispatch(*translated_message);
+    HandleInternalMessage(*translated_message);
+    HandleDispatchError(*translated_message);
+    return true;
+  }
+
+  translated_message->set_sender_pid(GetSenderPID());
+
+  // Immediately handle attachment broker messages.
+  if (DispatchAttachmentBrokerMessage(*translated_message)) {
+    // Ideally, the log would have been emitted prior to dispatching the
+    // message, but that would require this class to know more about the
+    // internals of attachment brokering, which should be avoided.
+    EmitLogBeforeDispatch(*translated_message);
+    HandleDispatchError(*translated_message);
+    return true;
+  }
+
+  return HandleExternalMessage(translated_message, attachment_ids);
+}
+
+bool ChannelReader::HandleExternalMessage(
+    Message* external_message,
+    const AttachmentIdVector& attachment_ids) {
+  for (const auto& id : attachment_ids)
+    external_message->AddPlaceholderBrokerableAttachmentWithId(id);
+
+  if (!GetNonBrokeredAttachments(external_message))
+    return false;
+
+  // If there are no queued messages, attempt to immediately dispatch the
+  // newly translated message.
+  if (queued_messages_.empty()) {
+    DCHECK(blocked_ids_.empty());
+    AttachmentIdSet blocked_ids = GetBrokeredAttachments(external_message);
+
+    if (blocked_ids.empty()) {
+      DispatchMessage(external_message);
+      return true;
+    }
+
+    blocked_ids_.swap(blocked_ids);
+    StartObservingAttachmentBroker();
+  }
+
+  // Make a deep copy of |external_message| to add to the queue.
+  scoped_ptr<Message> m(new Message(*external_message));
+  queued_messages_.push_back(m.release());
+  return true;
+}
+
+void ChannelReader::HandleDispatchError(const Message& message) {
+  if (message.dispatch_error())
+    listener_->OnBadMessageReceived(message);
+}
+
+void ChannelReader::EmitLogBeforeDispatch(const Message& message) {
+#ifdef IPC_MESSAGE_LOG_ENABLED
+  std::string name;
+  Logging::GetInstance()->GetMessageText(message.type(), &name, &message, NULL);
+  TRACE_EVENT_WITH_FLOW1("ipc,toplevel", "ChannelReader::DispatchInputData",
+                         message.flags(), TRACE_EVENT_FLAG_FLOW_IN, "name",
+                         name);
+#else
+  TRACE_EVENT_WITH_FLOW2("ipc,toplevel", "ChannelReader::DispatchInputData",
+                         message.flags(), TRACE_EVENT_FLAG_FLOW_IN, "class",
+                         IPC_MESSAGE_ID_CLASS(message.type()), "line",
+                         IPC_MESSAGE_ID_LINE(message.type()));
+#endif
+}
+
+bool ChannelReader::DispatchAttachmentBrokerMessage(const Message& message) {
+#if USE_ATTACHMENT_BROKER
+  if (IsAttachmentBrokerEndpoint() && GetAttachmentBroker()) {
+    return GetAttachmentBroker()->OnMessageReceived(message);
+  }
+#endif  // USE_ATTACHMENT_BROKER
+
+  return false;
 }
 
 ChannelReader::DispatchState ChannelReader::DispatchMessages() {
@@ -171,53 +268,18 @@ ChannelReader::DispatchState ChannelReader::DispatchMessages() {
   return DISPATCH_FINISHED;
 }
 
-void ChannelReader::DispatchMessage(Message* m) {
-  m->set_sender_pid(GetSenderPID());
-
-#ifdef IPC_MESSAGE_LOG_ENABLED
-  std::string name;
-  Logging::GetInstance()->GetMessageText(m->type(), &name, m, NULL);
-  TRACE_EVENT_WITH_FLOW1("ipc,toplevel",
-                         "ChannelReader::DispatchInputData",
-                         m->flags(),
-                         TRACE_EVENT_FLAG_FLOW_IN,
-                         "name", name);
-#else
-  TRACE_EVENT_WITH_FLOW2("ipc,toplevel",
-                         "ChannelReader::DispatchInputData",
-                         m->flags(),
-                         TRACE_EVENT_FLAG_FLOW_IN,
-                         "class", IPC_MESSAGE_ID_CLASS(m->type()),
-                         "line", IPC_MESSAGE_ID_LINE(m->type()));
-#endif
-
-  bool handled = false;
-  if (IsInternalMessage(*m)) {
-    HandleInternalMessage(*m);
-    handled = true;
-  }
-#if USE_ATTACHMENT_BROKER
-  if (!handled && IsAttachmentBrokerEndpoint() && GetAttachmentBroker()) {
-    handled = GetAttachmentBroker()->OnMessageReceived(*m);
-  }
-#endif  // USE_ATTACHMENT_BROKER
-  if (!handled)
-    listener_->OnMessageReceived(*m);
-  if (m->dispatch_error())
-    listener_->OnBadMessageReceived(*m);
-}
-
 ChannelReader::AttachmentIdSet ChannelReader::GetBrokeredAttachments(
     Message* msg) {
   std::set<BrokerableAttachment::AttachmentId> blocked_ids;
 
 #if USE_ATTACHMENT_BROKER
   MessageAttachmentSet* set = msg->attachment_set();
-  std::vector<const BrokerableAttachment*> brokerable_attachments_copy =
-      set->PeekBrokerableAttachments();
-  for (const BrokerableAttachment* attachment : brokerable_attachments_copy) {
+  std::vector<scoped_refptr<IPC::BrokerableAttachment>>
+      brokerable_attachments_copy(set->GetBrokerableAttachments());
+  for (const auto& attachment : brokerable_attachments_copy) {
     if (attachment->NeedsBrokering()) {
       AttachmentBroker* broker = GetAttachmentBroker();
+      DCHECK(broker);
       scoped_refptr<BrokerableAttachment> brokered_attachment;
       bool result = broker->GetAttachmentWithId(attachment->GetIdentifier(),
                                                 &brokered_attachment);
@@ -251,7 +313,8 @@ void ChannelReader::ReceivedBrokerableAttachmentWithId(
 
 void ChannelReader::StartObservingAttachmentBroker() {
 #if USE_ATTACHMENT_BROKER
-  GetAttachmentBroker()->AddObserver(this);
+  GetAttachmentBroker()->AddObserver(
+      this, base::MessageLoopForIO::current()->task_runner());
 #endif  // USE_ATTACHMENT_BROKER
 }
 

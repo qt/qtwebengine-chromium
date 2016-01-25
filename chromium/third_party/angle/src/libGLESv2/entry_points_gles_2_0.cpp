@@ -2082,6 +2082,7 @@ void GL_APIENTRY GetProgramiv(GLuint program, GLenum pname, GLint* params)
               case GL_TRANSFORM_FEEDBACK_BUFFER_MODE:
               case GL_TRANSFORM_FEEDBACK_VARYINGS:
               case GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH:
+              case GL_PROGRAM_BINARY_RETRIEVABLE_HINT:
                 context->recordError(Error(GL_INVALID_ENUM));
                 return;
             }
@@ -2134,6 +2135,9 @@ void GL_APIENTRY GetProgramiv(GLuint program, GLenum pname, GLint* params)
           case GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH:
             *params = programObject->getTransformFeedbackVaryingMaxLength();
             break;
+          case GL_PROGRAM_BINARY_RETRIEVABLE_HINT:
+              *params = programObject->getBinaryRetrievableHint();
+              break;
 
           default:
             context->recordError(Error(GL_INVALID_ENUM));
@@ -2246,7 +2250,7 @@ void GL_APIENTRY GetShaderiv(GLuint shader, GLenum pname, GLint* params)
             *params = shaderObject->getSourceLength();
             return;
           case GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE:
-            *params = shaderObject->getTranslatedSourceLength();
+            *params = shaderObject->getTranslatedSourceWithDebugInfoLength();
             return;
 
           default:
@@ -3148,37 +3152,37 @@ void GL_APIENTRY PixelStorei(GLenum pname, GLint param)
 
           case GL_UNPACK_IMAGE_HEIGHT:
             ASSERT(context->getClientVersion() >= 3);
-            state.getUnpackState().imageHeight = param;
+            state.setUnpackImageHeight(param);
             break;
 
           case GL_UNPACK_SKIP_IMAGES:
-            ASSERT(context->getClientVersion() >= 3);
-            state.getUnpackState().skipImages = param;
+              ASSERT(context->getClientVersion() >= 3);
+              state.setUnpackSkipImages(param);
             break;
 
           case GL_UNPACK_SKIP_ROWS:
               ASSERT((context->getClientVersion() >= 3) || context->getExtensions().unpackSubimage);
-            state.getUnpackState().skipRows = param;
+              state.setUnpackSkipRows(param);
             break;
 
           case GL_UNPACK_SKIP_PIXELS:
               ASSERT((context->getClientVersion() >= 3) || context->getExtensions().unpackSubimage);
-            state.getUnpackState().skipPixels = param;
+              state.setUnpackSkipPixels(param);
             break;
 
           case GL_PACK_ROW_LENGTH:
               ASSERT((context->getClientVersion() >= 3) || context->getExtensions().packSubimage);
-            state.getPackState().rowLength = param;
+              state.setPackRowLength(param);
             break;
 
           case GL_PACK_SKIP_ROWS:
               ASSERT((context->getClientVersion() >= 3) || context->getExtensions().packSubimage);
-            state.getPackState().skipRows = param;
+              state.setPackSkipRows(param);
             break;
 
           case GL_PACK_SKIP_PIXELS:
               ASSERT((context->getClientVersion() >= 3) || context->getExtensions().packSubimage);
-            state.getPackState().skipPixels = param;
+              state.setPackSkipPixels(param);
             break;
 
           default:

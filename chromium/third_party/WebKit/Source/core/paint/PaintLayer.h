@@ -50,6 +50,7 @@
 #include "core/paint/PaintLayerClipper.h"
 #include "core/paint/PaintLayerFilterInfo.h"
 #include "core/paint/PaintLayerFragment.h"
+#include "core/paint/PaintLayerPainter.h"
 #include "core/paint/PaintLayerReflectionInfo.h"
 #include "core/paint/PaintLayerScrollableArea.h"
 #include "core/paint/PaintLayerStackingNode.h"
@@ -61,14 +62,15 @@
 
 namespace blink {
 
+class CompositedLayerMapping;
+class ComputedStyle;
 class FilterEffectBuilder;
 class FilterOperations;
 class HitTestRequest;
 class HitTestResult;
 class HitTestingTransformState;
 class PaintLayerCompositor;
-class CompositedLayerMapping;
-class ComputedStyle;
+class PaintTiming;
 class TransformationMatrix;
 
 enum IncludeSelfOrNot { IncludeSelf, ExcludeSelf };
@@ -89,35 +91,81 @@ private:
 };
 
 // PaintLayer is an old object that handles lots of unrelated operations.
-// We want it to die at some point and be replaced by more focused objects. Removing
-// a lot of unneeded complexity.
-// Complex painting operations (opacity, clipping, filters, reflections, ...),
-// hardware acceleration (through PaintLayerCompositor),
-// scrolling (through PaintLayerScrollableArea)
-// along with some optimizations are all handled by PaintLayer.
 //
-// The class is central to painting and hit-testing: it implements the painting
-// order through PaintLayerStackingNode and handle lots of complex
-// graphics operations LayoutObjects don't handle (e.g. 'filter' and 'opacity').
+// We want it to die at some point and be replaced by more focused objects,
+// which would remove (or at least compartimentalize) a lot of complexity.
+// See the STATUS OF PAINTLAYER section below.
 //
-// The compositing code is also based on PaintLayer. The entry to it
-// is the PaintLayerCompositor, which fills
-// |m_compositedLayerMapping| for hardware accelerated layers.
+// The class is central to painting and hit-testing. That's because it handles
+// a lot of tasks (we included ones done by associated satellite objects for
+// historical reasons):
+// - Complex painting operations (opacity, clipping, filters, reflections, ...).
+// - hardware acceleration (through PaintLayerCompositor).
+// - scrolling (through PaintLayerScrollableArea).
+// - some performance optimizations.
+//
+// The compositing code is also based on PaintLayer. The entry to it is the
+// PaintLayerCompositor, which fills |m_compositedLayerMapping| for hardware
+// accelerated layers.
 //
 // TODO(jchaffraix): Expand the documentation about hardware acceleration.
 //
-// The class is DEPRECATED, which means that we would like to remove it. The
-// reason for removal is that it has been a dumping ground for features for too
-// long and is the wrong level of abstraction, bearing no correspondence to any
-// CSS concept. Its associated objects and some of its feature need to be
-// migrated to LayoutObject (or the appropriate sub-class).
-class CORE_EXPORT PaintLayer {
+//
+// ***** SELF-PAINTING LAYER *****
+// One important concept about PaintLayer is "self-painting"
+// (m_isSelfPaintingLayer).
+// PaintLayer started as the implementation of a stacking context. This meant
+// that we had to use PaintLayer's painting order (the code is now in
+// PaintLayerPainter and PaintLayerStackingNode) instead of the LayoutObject's
+// children order. Over the years, as more operations were handled by
+// PaintLayer, some LayoutObjects that were not stacking context needed to have
+// a PaintLayer for bookkeeping reasons. One such example is the overflow hidden
+// case that wanted hardware acceleration and thus had to allocate a PaintLayer
+// to get it. However overflow hidden is something LayoutObject can paint
+// without a PaintLayer, which includes a lot of painting overhead. Thus the
+// self-painting flag was introduced. The flag is a band-aid solution done for
+// performance reason only. It just brush over the underlying problem, which is
+// that its design doesn't match the system's requirements anymore.
+//
+// Note that the self-painting flag determines how we paint a LayoutObject:
+// - If the flag is true, the LayoutObject is painted through its PaintLayer,
+//   which is required to apply complex paint operations. The paint order is
+//   handled by PaintLayerPainter::paintChildren, where we look at children
+//   PaintLayers.
+// - If the flag is false, the LayoutObject is painted like normal children (ie
+//   as if it didn't have a PaintLayer). The paint order is handled by
+//   BlockPainter::paintChild that looks at children LayoutObjects.
+// This means that the self-painting flag changes the painting order in a subtle
+// way, which can potentially have visible consequences. Those bugs are called
+// painting inversion as we invert the order of painting for 2 elements
+// (painting one wrongly in front of the other).
+// See https://crbug.com/370604 for an example.
+//
+//
+// ***** STATUS OF PAINTLAYER *****
+// We would like to remove this class in the future. The reasons for the removal
+// are:
+// - it has been a dumping ground for features for too long.
+// - it is the wrong level of abstraction, bearing no correspondence to any CSS
+//   concept.
+//
+// Its features need to be migrated to helper objects. This was started with the
+// introduction of satellite objects: PaintLayer*. Those helper objects then
+// need to be moved to the appropriate LayoutObject class, probably to a rare
+// data field to avoid growing all the LayoutObjects.
+//
+// A good example of this is PaintLayerScrollableArea, which can only happen
+// be instanciated for LayoutBoxes. With the current design, it's hard to know
+// that by reading the code.
+class CORE_EXPORT PaintLayer : public DisplayItemClient {
     WTF_MAKE_NONCOPYABLE(PaintLayer);
 public:
     PaintLayer(LayoutBoxModelObject*, PaintLayerType);
     ~PaintLayer();
 
-    String debugName() const;
+    // DisplayItemClient methods
+    String debugName() const final;
+    IntRect visualRect() const override;
 
     LayoutBoxModelObject* layoutObject() const { return m_layoutObject; }
     LayoutBox* layoutBox() const { return m_layoutObject && m_layoutObject->isBox() ? toLayoutBox(m_layoutObject) : 0; }
@@ -214,14 +262,13 @@ public:
     bool hasVisibleNonLayerContent() const { return m_hasVisibleNonLayerContent; }
     bool hasNonCompositedChild() const { ASSERT(isAllowedToQueryCompositingState()); return m_hasNonCompositedChild; }
 
-    // Gets the ancestor layer that serves as the containing block of this layer. It is assumed
-    // that this layer is established by an out-of-flow positioned layout object (i.e. either
-    // absolutely or fixed positioned).
+    // Gets the ancestor layer that serves as the containing block of this layer. This is either
+    // another out of flow positioned layer, or one that contains paint.
     // If |ancestor| is specified, |*skippedAncestor| will be set to true if |ancestor| is found in
     // the ancestry chain between this layer and the containing block layer; if not found, it will
     // be set to false. Either both |ancestor| and |skippedAncestor| should be nullptr, or none of
     // them should.
-    PaintLayer* enclosingPositionedAncestor(const PaintLayer* ancestor = nullptr, bool* skippedAncestor = nullptr) const;
+    PaintLayer* containingLayerForOutOfFlowPositioned(const PaintLayer* ancestor = nullptr, bool* skippedAncestor = nullptr) const;
 
     bool isPaintInvalidationContainer() const;
 
@@ -358,7 +405,8 @@ public:
     static void mapRectToPaintInvalidationBacking(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState* = 0);
 
     // Computes the bounding paint invalidation rect for |layoutObject|, in the coordinate space of |paintInvalidationContainer|'s GraphicsLayer backing.
-    static LayoutRect computePaintInvalidationRect(const LayoutObject*, const PaintLayer* paintInvalidationContainer, const PaintInvalidationState* = 0);
+    // TODO(jchaffraix): |paintInvalidationContainer| should be a reference.
+    static LayoutRect computePaintInvalidationRect(const LayoutObject&, const PaintLayer* paintInvalidationContainer, const PaintInvalidationState* = 0);
 
     bool paintsWithTransparency(GlobalPaintFlags globalPaintFlags) const
     {
@@ -374,15 +422,12 @@ public:
     bool containsDirtyOverlayScrollbars() const { return m_containsDirtyOverlayScrollbars; }
     void setContainsDirtyOverlayScrollbars(bool dirtyScrollbars) { m_containsDirtyOverlayScrollbars = dirtyScrollbars; }
 
-    FilterOperations computeFilterOperations(const ComputedStyle&);
-    FilterOperations computeBackdropFilterOperations(const ComputedStyle&);
+    FilterOperations computeFilterOperations(const ComputedStyle&) const;
+    FilterOperations computeBackdropFilterOperations(const ComputedStyle&) const;
     bool paintsWithFilters() const;
     bool paintsWithBackdropFilters() const;
-    FilterEffectBuilder* filterEffectBuilder() const
-    {
-        PaintLayerFilterInfo* filterInfo = this->filterInfo();
-        return filterInfo ? filterInfo->builder() : 0;
-    }
+    FilterEffect* lastFilterEffect() const;
+    FilterOutsets filterOutsets() const;
 
     PaintLayerFilterInfo* filterInfo() const { return hasFilterInfo() ? PaintLayerFilterInfo::filterInfoForLayer(this) : 0; }
     PaintLayerFilterInfo* ensureFilterInfo() { return PaintLayerFilterInfo::createFilterInfoForLayerIfNeeded(this); }
@@ -397,7 +442,7 @@ public:
 
     void updateFilters(const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
 
-    Node* enclosingElement() const;
+    Node* enclosingNode() const;
 
     bool isInTopLayer() const;
 
@@ -414,15 +459,6 @@ public:
     PaintLayerClipper& clipper() { return m_clipper; }
     const PaintLayerClipper& clipper() const { return m_clipper; }
 
-    inline bool isPositionedContainer() const
-    {
-        // FIXME: This is not in sync with containingBlock.
-        // LayoutObject::canContainFixedPositionObjects() should probably be used
-        // instead.
-        LayoutBoxModelObject* layerlayoutObject = layoutObject();
-        return isRootLayer() || layerlayoutObject->isPositioned() || hasTransformRelatedProperty();
-    }
-
     bool scrollsOverflow() const;
 
     CompositingReasons potentialCompositingReasonsFromStyle() const { return m_potentialCompositingReasonsFromStyle; }
@@ -431,7 +467,7 @@ public:
     bool hasStyleDeterminedDirectCompositingReasons() const { return m_potentialCompositingReasonsFromStyle & CompositingReasonComboAllDirectStyleDeterminedReasons; }
 
     class AncestorDependentCompositingInputs {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         AncestorDependentCompositingInputs()
             : opacityAncestor(0)
@@ -472,7 +508,7 @@ public:
     };
 
     class DescendantDependentCompositingInputs {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         DescendantDependentCompositingInputs()
             : hasDescendantWithClipPath(false)
@@ -543,7 +579,7 @@ public:
         ASSERT(!m_hasSelfPaintingLayerDescendantDirty);
         return m_hasSelfPaintingLayerDescendant;
     }
-    LayoutRect paintingExtent(const PaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, GlobalPaintFlags);
+    LayoutRect paintingExtent(const PaintLayer* rootLayer, const LayoutSize& subPixelAccumulation, GlobalPaintFlags);
     void appendSingleFragmentIgnoringPagination(PaintLayerFragments&, const PaintLayer* rootLayer, const LayoutRect& dirtyRect, ClipRectsCacheSlot, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize, ShouldRespectOverflowClip = RespectOverflowClip, const LayoutPoint* offsetFromRoot = 0, const LayoutSize& subPixelAccumulation = LayoutSize());
     void collectFragments(PaintLayerFragments&, const PaintLayer* rootLayer, const LayoutRect& dirtyRect,
         ClipRectsCacheSlot, OverlayScrollbarSizeRelevancy inOverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize,
@@ -567,13 +603,25 @@ public:
 
     bool needsRepaint() const { return m_needsRepaint; }
     void setNeedsRepaint();
-    void clearNeedsRepaint() { m_needsRepaint = false; }
+    void clearNeedsRepaintRecursively();
+
+    // These previousXXX() functions are for subsequence caching. They save the painting status of the layer
+    // during the previous painting with subsequence. A painting without subsequence [1] doesn't change this status.
+    // [1] See shouldCreateSubsequence() in PaintLayerPainter.cpp for the cases we use subsequence when painting a PaintLayer.
 
     IntSize previousScrollOffsetAccumulationForPainting() const { return m_previousScrollOffsetAccumulationForPainting; }
     void setPreviousScrollOffsetAccumulationForPainting(const IntSize& s) { m_previousScrollOffsetAccumulationForPainting = s; }
 
-    // For subsequence display items.
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    ClipRects* previousPaintingClipRects() const { return m_previousPaintingClipRects.get(); }
+    void setPreviousPaintingClipRects(ClipRects* clipRects) { m_previousPaintingClipRects = clipRects; }
+
+    LayoutRect previousPaintDirtyRect() const { return m_previousPaintDirtyRect; }
+    void setPreviousPaintDirtyRect(const LayoutRect& rect) { m_previousPaintDirtyRect = rect; }
+
+    PaintLayerPainter::PaintResult previousPaintResult() const { return static_cast<PaintLayerPainter::PaintResult>(m_previousPaintResult); }
+    void setPreviousPaintResult(PaintLayerPainter::PaintResult result) { m_previousPaintResult = static_cast<unsigned>(result); ASSERT(m_previousPaintResult == static_cast<unsigned>(result)); }
+
+    PaintTiming* paintTiming();
 
 private:
     // Bounding box in the coordinates of this layer.
@@ -615,6 +663,7 @@ private:
     bool hitTestContentsForFragments(const PaintLayerFragments&, HitTestResult&, const HitTestLocation&, HitTestFilter, bool& insideClipRect) const;
     PaintLayer* hitTestTransformedLayerInFragments(PaintLayer* rootLayer, PaintLayer* containerLayer, HitTestResult&,
         const LayoutRect& hitTestRect, const HitTestLocation&, const HitTestingTransformState*, double* zOffset, ClipRectsCacheSlot);
+    bool hitTestClippedOutByClipPath(PaintLayer* rootLayer, const HitTestLocation&) const;
 
     bool childBackgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const;
 
@@ -625,6 +674,7 @@ private:
     void updateStackingNode();
 
     void updateReflectionInfo(const ComputedStyle*);
+    FilterEffectBuilder* updateFilterEffectBuilder() const;
 
     // FIXME: We could lazily allocate our ScrollableArea based on style properties ('overflow', ...)
     // but for now, we are always allocating it for LayoutBox as it's safer. crbug.com/467721.
@@ -647,7 +697,7 @@ private:
 
     void blockSelectionGapsBoundsChanged();
 
-    void markAncestorChainForNeedsRepaint();
+    void markCompositingContainerChainForNeedsRepaint();
 
     PaintLayerType m_layerType;
 
@@ -701,6 +751,7 @@ private:
     unsigned m_lostGroupedMapping : 1;
 
     unsigned m_needsRepaint : 1;
+    unsigned m_previousPaintResult : 1; // PaintLayerPainter::PaintResult
 
     LayoutBoxModelObject* m_layoutObject;
 
@@ -762,6 +813,8 @@ private:
     LayoutSize m_subpixelAccumulation; // The accumulated subpixel offset of a composited layer's composited bounds compared to absolute coordinates.
 
     IntSize m_previousScrollOffsetAccumulationForPainting;
+    RefPtr<ClipRects> m_previousPaintingClipRects;
+    LayoutRect m_previousPaintDirtyRect;
 };
 
 } // namespace blink

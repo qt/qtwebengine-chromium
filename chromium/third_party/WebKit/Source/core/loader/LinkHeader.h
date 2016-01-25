@@ -13,13 +13,14 @@
 namespace blink {
 
 class LinkHeader {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     template <typename CharType>
     LinkHeader(CharType*& position, CharType* end);
 
     const String& url() const { return m_url; }
     const String& rel() const { return m_rel; }
+    const String& as() const { return m_as; }
     CrossOriginAttributeValue crossOrigin() const { return m_crossOrigin; }
     bool valid() const { return m_isValid; }
 
@@ -34,6 +35,7 @@ public:
         // Beyond this point, only link-extension parameters
         LinkParameterUnknown,
         LinkParameterCrossOrigin,
+        LinkParameterAs,
     };
 
 private:
@@ -41,6 +43,7 @@ private:
 
     String m_url;
     String m_rel;
+    String m_as;
     CrossOriginAttributeValue m_crossOrigin;
     bool m_isValid;
 };

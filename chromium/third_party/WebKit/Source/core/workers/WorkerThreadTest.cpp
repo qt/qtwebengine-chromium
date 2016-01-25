@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/workers/WorkerThread.h"
 
 #include "bindings/core/v8/V8GCController.h"
@@ -12,8 +11,8 @@
 #include "platform/NotImplemented.h"
 #include "public/platform/WebScheduler.h"
 #include "public/platform/WebWaitableEvent.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 using testing::_;
 using testing::AtMost;
@@ -159,7 +158,7 @@ public:
 
     void run() override
     {
-        m_scheduler->timerTaskRunner()->postDelayedTask(FROM_HERE, new WakeupTask(), m_delay);
+        m_scheduler->timerTaskRunner()->postDelayedTask(BLINK_FROM_HERE, new WakeupTask(), m_delay);
     }
 
     WebScheduler* m_scheduler; // Not owned.
@@ -228,7 +227,7 @@ public:
     void waitForInit()
     {
         OwnPtr<WebWaitableEvent> completionEvent = adoptPtr(Platform::current()->createWaitableEvent());
-        m_workerThread->backingThread().postTask(FROM_HERE, new SignalTask(completionEvent.get()));
+        m_workerThread->backingThread().postTask(BLINK_FROM_HERE, new SignalTask(completionEvent.get()));
         completionEvent->wait();
     }
 

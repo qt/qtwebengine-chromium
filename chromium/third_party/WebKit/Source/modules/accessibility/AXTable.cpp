@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXTable.h"
 
 #include "core/dom/ElementTraversal.h"
@@ -359,6 +358,7 @@ void AXTable::clearChildren()
 
 void AXTable::addChildren()
 {
+    ASSERT(!isDetached());
     if (!isAXTable()) {
         AXLayoutObject::addChildren();
         return;
@@ -449,21 +449,21 @@ AXObject* AXTable::headerContainer()
     return m_headerContainer.get();
 }
 
-const AXObject::AccessibilityChildrenVector& AXTable::columns()
+const AXObject::AXObjectVector& AXTable::columns()
 {
     updateChildrenIfNecessary();
 
     return m_columns;
 }
 
-const AXObject::AccessibilityChildrenVector& AXTable::rows()
+const AXObject::AXObjectVector& AXTable::rows()
 {
     updateChildrenIfNecessary();
 
     return m_rows;
 }
 
-void AXTable::columnHeaders(AccessibilityChildrenVector& headers)
+void AXTable::columnHeaders(AXObjectVector& headers)
 {
     if (!m_layoutObject)
         return;
@@ -474,7 +474,7 @@ void AXTable::columnHeaders(AccessibilityChildrenVector& headers)
         toAXTableColumn(m_columns[c].get())->headerObjectsForColumn(headers);
 }
 
-void AXTable::rowHeaders(AccessibilityChildrenVector& headers)
+void AXTable::rowHeaders(AXObjectVector& headers)
 {
     if (!m_layoutObject)
         return;
@@ -483,19 +483,6 @@ void AXTable::rowHeaders(AccessibilityChildrenVector& headers)
     unsigned rowCount = m_rows.size();
     for (unsigned r = 0; r < rowCount; r++)
         toAXTableRow(m_rows[r].get())->headerObjectsForRow(headers);
-}
-
-void AXTable::cells(AXObject::AccessibilityChildrenVector& cells)
-{
-    if (!m_layoutObject)
-        return;
-
-    updateChildrenIfNecessary();
-
-    int numRows = m_rows.size();
-    for (int row = 0; row < numRows; ++row) {
-        cells.appendVector(m_rows[row]->children());
-    }
 }
 
 unsigned AXTable::columnCount()
@@ -566,30 +553,6 @@ bool AXTable::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReasons) cons
         return AXLayoutObject::computeAccessibilityIsIgnored(ignoredReasons);
 
     return false;
-}
-
-String AXTable::deprecatedTitle(TextUnderElementMode mode) const
-{
-    if (!isAXTable())
-        return AXLayoutObject::deprecatedTitle(mode);
-
-    String title;
-    if (!m_layoutObject)
-        return title;
-
-    // see if there is a caption
-    Node* tableElement = m_layoutObject->node();
-    if (isHTMLTableElement(tableElement)) {
-        HTMLTableCaptionElement* caption = toHTMLTableElement(tableElement)->caption();
-        if (caption)
-            title = caption->innerText();
-    }
-
-    // try the standard
-    if (title.isEmpty())
-        title = AXLayoutObject::deprecatedTitle(mode);
-
-    return title;
 }
 
 DEFINE_TRACE(AXTable)

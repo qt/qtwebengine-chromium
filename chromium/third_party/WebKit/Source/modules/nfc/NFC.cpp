@@ -2,42 +2,74 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/nfc/NFC.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/nfc/NFCMessage.h"
+#include "modules/nfc/NFCPushOptions.h"
 
 namespace blink {
 
-NFC::NFC(ExecutionContext* context, LocalFrame* frame)
-    : ActiveDOMObject(context)
-    , DOMWindowProperty(frame)
+NFC::NFC(LocalFrame* frame)
+    : LocalFrameLifecycleObserver(frame)
+    , PageLifecycleObserver(frame ? frame->page() : 0)
 {
 }
 
-NFC* NFC::create(ExecutionContext* context, LocalFrame* frame)
+NFC* NFC::create(LocalFrame* frame)
 {
-    NFC* nfc = new NFC(context, frame);
-    nfc->suspendIfNeeded();
+    NFC* nfc = new NFC(frame);
     return nfc;
 }
 
-NFC::~NFC()
+ScriptPromise NFC::push(ScriptState* scriptState, const NFCPushMessage& records, const NFCPushOptions& options)
 {
+    // TODO(shalamov): To be implemented.
+    return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 }
 
-ScriptPromise NFC::requestAdapter(ScriptState* scriptState)
+ScriptPromise NFC::cancelPush(ScriptState* scriptState, const String& target)
 {
-    // TODO(riju): To be implemented.
+    // TODO(shalamov): To be implemented.
     return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
+}
+
+ScriptPromise NFC::watch(ScriptState* scriptState, MessageCallback* callback, const NFCWatchOptions& options)
+{
+    // TODO(shalamov): To be implemented.
+    return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
+}
+
+ScriptPromise NFC::cancelWatch(ScriptState* scriptState, long id)
+{
+    // TODO(shalamov): To be implemented.
+    return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
+}
+
+ScriptPromise NFC::cancelWatch(ScriptState* scriptState)
+{
+    // TODO(shalamov): To be implemented.
+    return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
+}
+
+void NFC::willDetachFrameHost()
+{
+    // TODO(shalamov): To be implemented.
+}
+
+void NFC::pageVisibilityChanged()
+{
+    // TODO(shalamov): To be implemented. When visibility is lost,
+    // NFC operations should be suspended.
+    // https://w3c.github.io/web-nfc/#nfc-suspended
 }
 
 DEFINE_TRACE(NFC)
 {
-    ActiveDOMObject::trace(visitor);
-    DOMWindowProperty::trace(visitor);
+    LocalFrameLifecycleObserver::trace(visitor);
+    PageLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

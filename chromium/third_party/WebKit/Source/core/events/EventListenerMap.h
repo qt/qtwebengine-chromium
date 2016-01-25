@@ -34,6 +34,7 @@
 #define EventListenerMap_h
 
 #include "core/CoreExport.h"
+#include "core/events/EventListenerOptions.h"
 #include "core/events/RegisteredEventListener.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -47,7 +48,7 @@ using EventListenerVector = WillBeHeapVector<RegisteredEventListener, 1>;
 
 class CORE_EXPORT EventListenerMap {
     WTF_MAKE_NONCOPYABLE(EventListenerMap);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     EventListenerMap();
 
@@ -56,8 +57,8 @@ public:
     bool containsCapturing(const AtomicString& eventType) const;
 
     void clear();
-    bool add(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture);
-    bool remove(const AtomicString& eventType, EventListener*, bool useCapture, size_t& indexOfRemovedListener);
+    bool add(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&);
+    bool remove(const AtomicString& eventType, EventListener*, const EventListenerOptions&, size_t& indexOfRemovedListener);
     EventListenerVector* find(const AtomicString& eventType);
     Vector<AtomicString> eventTypes() const;
 

@@ -23,11 +23,11 @@
       'sources': [
         'device_info_impl.cc',
         'device_info_impl.h',
-        'include/video_capture.h',
-        'include/video_capture_defines.h',
-        'include/video_capture_factory.h',
+        'video_capture.h',
         'video_capture_config.h',
+        'video_capture_defines.h',
         'video_capture_delay.h',
+        'video_capture_factory.h',
         'video_capture_factory.cc',
         'video_capture_impl.cc',
         'video_capture_impl.h',
@@ -116,6 +116,23 @@
                 ],
               },
             }],  # win
+            ['OS=="win" and clang==1', {
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # Disable warnings failing when compiling with Clang on Windows.
+                    # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                    '-Wno-comment',
+                    '-Wno-ignored-attributes',
+                    '-Wno-microsoft-extra-qualification',
+                    '-Wno-missing-braces',
+                    '-Wno-overloaded-virtual',
+                    '-Wno-reorder',
+                    '-Wno-writable-strings',
+                  ],
+                },
+              },
+            }],
             ['OS=="ios"', {
               'sources': [
                 'ios/device_info_ios.h',

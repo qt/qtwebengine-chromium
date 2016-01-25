@@ -13,6 +13,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/port_util.h"
 #include "net/http/http_network_session.h"
+#include "net/quic/quic_protocol.h"
 #include "net/spdy/spdy_alt_svc_wire_format.h"
 #include "url/gurl.h"
 
@@ -54,6 +55,24 @@ void HttpStreamFactory::ProcessAlternativeService(
         !IsPortValid(alternative_service_entry.port)) {
       continue;
     }
+    // Check if QUIC version is supported.
+    if (protocol == QUIC && !alternative_service_entry.version.empty()) {
+      bool match_found = false;
+      for (QuicVersion supported : session.params().quic_supported_versions) {
+        for (uint16_t advertised : alternative_service_entry.version) {
+          if (supported == advertised) {
+            match_found = true;
+            break;
+          }
+        }
+        if (match_found) {
+          break;
+        }
+      }
+      if (!match_found) {
+        continue;
+      }
+    }
     AlternativeService alternative_service(protocol,
                                            alternative_service_entry.host,
                                            alternative_service_entry.port);
@@ -61,7 +80,7 @@ void HttpStreamFactory::ProcessAlternativeService(
         base::Time::Now() +
         base::TimeDelta::FromSeconds(alternative_service_entry.max_age);
     AlternativeServiceInfo alternative_service_info(
-        alternative_service, alternative_service_entry.p, expiration);
+        alternative_service, alternative_service_entry.probability, expiration);
     alternative_service_info_vector.push_back(alternative_service_info);
   }
 
@@ -133,8 +152,8 @@ void HttpStreamFactory::ProcessAlternateProtocol(
 
   http_server_properties->SetAlternativeService(
       RewriteHost(http_host_port_pair),
-      AlternativeService(protocol, "", static_cast<uint16>(port)), probability,
-      base::Time::Now() + base::TimeDelta::FromDays(1));
+      AlternativeService(protocol, "", static_cast<uint16_t>(port)),
+      probability, base::Time::Now() + base::TimeDelta::FromDays(30));
 }
 
 GURL HttpStreamFactory::ApplyHostMappingRules(const GURL& url,

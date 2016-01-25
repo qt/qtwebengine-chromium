@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
@@ -51,7 +52,8 @@ class TouchEmulatorTest : public testing::Test,
     EXPECT_EQ("", ExpectedEvents());
   }
 
-  void ForwardGestureEvent(const blink::WebGestureEvent& event) override {
+  void ForwardEmulatedGestureEvent(
+      const blink::WebGestureEvent& event) override {
     forwarded_events_.push_back(event.type);
   }
 

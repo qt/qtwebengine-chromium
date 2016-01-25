@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -72,8 +71,21 @@ using namespace std;
 
 DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
+String HTMLElement::debugNodeName() const
+{
+    if (document().isHTMLDocument()) {
+        return tagQName().hasPrefix()
+            ? Element::nodeName().upper()
+            : tagQName().localName().upper();
+    }
+    return Element::nodeName();
+}
+
 String HTMLElement::nodeName() const
 {
+    // localNameUpper may intern and cache an AtomicString.
+    ASSERT(isMainThread());
+
     // FIXME: Would be nice to have an atomicstring lookup based off uppercase
     // chars that does not have to copy the string on a hit in the hash.
     // FIXME: We should have a way to detect XHTML elements and replace the hasPrefix() check with it.
@@ -221,7 +233,7 @@ void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name
             else
                 addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, "ltr");
             if (!hasTagName(bdiTag) && !hasTagName(bdoTag) && !hasTagName(outputTag))
-                addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, CSSValueEmbed);
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, CSSValueIsolate);
         }
     } else if (name.matches(XMLNames::langAttr)) {
         mapLanguageAttributeToLocale(value, style);
@@ -344,13 +356,15 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
     return attributeNameToEventNameMap.get(attrName.localName());
 }
 
-void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
-    if (name == tabindexAttr)
-        return Element::parseAttribute(name, value);
+    if (name == tabindexAttr || name == XMLNames::langAttr)
+        return Element::parseAttribute(name, oldValue, value);
 
     if (name == dirAttr) {
         dirAttributeChanged(value);
+    } else if (name == langAttr) {
+        pseudoStateChanged(CSSSelector::PseudoLang);
     } else {
         const AtomicString& eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())

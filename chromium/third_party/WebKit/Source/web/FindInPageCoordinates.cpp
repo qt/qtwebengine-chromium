@@ -28,11 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/FindInPageCoordinates.h"
 
 #include "core/dom/Node.h"
 #include "core/dom/Range.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutBox.h"

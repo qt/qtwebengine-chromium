@@ -2,24 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/MemoryPurgeController.h"
 
+#include "base/sys_info.h"
+#include "platform/TraceEvent.h"
+#include "platform/graphics/ImageDecodingStore.h"
 #include "public/platform/Platform.h"
+#include "wtf/Partitions.h"
 
 namespace blink {
 
-MemoryPurgeController::MemoryPurgeController()
-    : m_deviceKind(Platform::current()->isLowEndDeviceMode() ? DeviceKind::LowEnd : DeviceKind::NotSpecified)
+void MemoryPurgeController::onMemoryPressure(WebMemoryPressureLevel level)
+{
+    if (level == WebMemoryPressureLevelCritical) {
+        // Clear the image cache.
+        ImageDecodingStore::instance().clear();
+    }
+}
+
+DEFINE_TRACE(MemoryPurgeClient)
 {
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MemoryPurgeController);
-
-void MemoryPurgeController::purgeMemory(MemoryPurgeMode purgeMode)
+MemoryPurgeController::MemoryPurgeController()
+    : m_deviceKind(base::SysInfo::IsLowEndDevice() ? DeviceKind::LowEnd : DeviceKind::NotSpecified)
 {
+}
+
+MemoryPurgeController::~MemoryPurgeController()
+{
+}
+
+void MemoryPurgeController::purgeMemory()
+{
+    // TODO(bashi): Add UMA
+    TRACE_EVENT0("blink", "MemoryPurgeController::purgeMemory");
     for (auto& client : m_clients)
-        client->purgeMemory(purgeMode, m_deviceKind);
+        client->purgeMemory(m_deviceKind);
+    WTF::Partitions::decommitFreeableMemory();
 }
 
 DEFINE_TRACE(MemoryPurgeController)

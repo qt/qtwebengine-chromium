@@ -12,6 +12,7 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/bitbuffer.h"
 
 namespace webrtc {
@@ -38,8 +39,8 @@ static const size_t kSpsBufferMaxSize = 256;
 // The fake SPS that this generates also always has at least one emulation byte
 // at offset 2, since the first two bytes are always 0, and has a 0x3 as the
 // level_idc, to make sure the parser doesn't eat all 0x3 bytes.
-void GenerateFakeSps(uint16 width, uint16 height, uint8 buffer[]) {
-  uint8 rbsp[kSpsBufferMaxSize] = {0};
+void GenerateFakeSps(uint16_t width, uint16_t height, uint8_t buffer[]) {
+  uint8_t rbsp[kSpsBufferMaxSize] = {0};
   rtc::BitBufferWriter writer(rbsp, kSpsBufferMaxSize);
   // Profile byte.
   writer.WriteUInt8(0);
@@ -63,11 +64,11 @@ void GenerateFakeSps(uint16 width, uint16 height, uint8 buffer[]) {
   // gaps_in_frame_num_value_allowed_flag: u(1).
   writer.WriteBits(0, 1);
   // Next are width/height. First, calculate the mbs/map_units versions.
-  uint16 width_in_mbs_minus1 = (width + 15) / 16 - 1;
+  uint16_t width_in_mbs_minus1 = (width + 15) / 16 - 1;
 
   // For the height, we're going to define frame_mbs_only_flag, so we need to
   // divide by 2. See the parser for the full calculation.
-  uint16 height_in_map_units_minus1 = ((height + 15) / 16 - 1) / 2;
+  uint16_t height_in_map_units_minus1 = ((height + 15) / 16 - 1) / 2;
   // Write each as ue(v).
   writer.WriteExponentialGolomb(width_in_mbs_minus1);
   writer.WriteExponentialGolomb(height_in_map_units_minus1);
@@ -118,10 +119,10 @@ void GenerateFakeSps(uint16 width, uint16 height, uint8 buffer[]) {
 TEST(H264SpsParserTest, TestSampleSPSHdLandscape) {
   // SPS for a 1280x720 camera capture from ffmpeg on osx. Contains
   // emulation bytes but no cropping.
-  const uint8 buffer[] = {0x7A, 0x00, 0x1F, 0xBC, 0xD9, 0x40, 0x50, 0x05,
-                          0xBA, 0x10, 0x00, 0x00, 0x03, 0x00, 0xC0, 0x00,
-                          0x00, 0x2A, 0xE0, 0xF1, 0x83, 0x19, 0x60};
-  H264SpsParser parser = H264SpsParser(buffer, ARRAY_SIZE(buffer));
+  const uint8_t buffer[] = {0x7A, 0x00, 0x1F, 0xBC, 0xD9, 0x40, 0x50, 0x05,
+                            0xBA, 0x10, 0x00, 0x00, 0x03, 0x00, 0xC0, 0x00,
+                            0x00, 0x2A, 0xE0, 0xF1, 0x83, 0x19, 0x60};
+  H264SpsParser parser = H264SpsParser(buffer, arraysize(buffer));
   EXPECT_TRUE(parser.Parse());
   EXPECT_EQ(1280u, parser.width());
   EXPECT_EQ(720u, parser.height());
@@ -130,10 +131,10 @@ TEST(H264SpsParserTest, TestSampleSPSHdLandscape) {
 TEST(H264SpsParserTest, TestSampleSPSVgaLandscape) {
   // SPS for a 640x360 camera capture from ffmpeg on osx. Contains emulation
   // bytes and cropping (360 isn't divisible by 16).
-  const uint8 buffer[] = {0x7A, 0x00, 0x1E, 0xBC, 0xD9, 0x40, 0xA0, 0x2F,
-                          0xF8, 0x98, 0x40, 0x00, 0x00, 0x03, 0x01, 0x80,
-                          0x00, 0x00, 0x56, 0x83, 0xC5, 0x8B, 0x65, 0x80};
-  H264SpsParser parser = H264SpsParser(buffer, ARRAY_SIZE(buffer));
+  const uint8_t buffer[] = {0x7A, 0x00, 0x1E, 0xBC, 0xD9, 0x40, 0xA0, 0x2F,
+                            0xF8, 0x98, 0x40, 0x00, 0x00, 0x03, 0x01, 0x80,
+                            0x00, 0x00, 0x56, 0x83, 0xC5, 0x8B, 0x65, 0x80};
+  H264SpsParser parser = H264SpsParser(buffer, arraysize(buffer));
   EXPECT_TRUE(parser.Parse());
   EXPECT_EQ(640u, parser.width());
   EXPECT_EQ(360u, parser.height());
@@ -142,28 +143,28 @@ TEST(H264SpsParserTest, TestSampleSPSVgaLandscape) {
 TEST(H264SpsParserTest, TestSampleSPSWeirdResolution) {
   // SPS for a 200x400 camera capture from ffmpeg on osx. Horizontal and
   // veritcal crop (neither dimension is divisible by 16).
-  const uint8 buffer[] = {0x7A, 0x00, 0x0D, 0xBC, 0xD9, 0x43, 0x43, 0x3E,
-                          0x5E, 0x10, 0x00, 0x00, 0x03, 0x00, 0x60, 0x00,
-                          0x00, 0x15, 0xA0, 0xF1, 0x42, 0x99, 0x60};
-  H264SpsParser parser = H264SpsParser(buffer, ARRAY_SIZE(buffer));
+  const uint8_t buffer[] = {0x7A, 0x00, 0x0D, 0xBC, 0xD9, 0x43, 0x43, 0x3E,
+                            0x5E, 0x10, 0x00, 0x00, 0x03, 0x00, 0x60, 0x00,
+                            0x00, 0x15, 0xA0, 0xF1, 0x42, 0x99, 0x60};
+  H264SpsParser parser = H264SpsParser(buffer, arraysize(buffer));
   EXPECT_TRUE(parser.Parse());
   EXPECT_EQ(200u, parser.width());
   EXPECT_EQ(400u, parser.height());
 }
 
 TEST(H264SpsParserTest, TestSyntheticSPSQvgaLandscape) {
-  uint8 buffer[kSpsBufferMaxSize] = {0};
+  uint8_t buffer[kSpsBufferMaxSize] = {0};
   GenerateFakeSps(320u, 180u, buffer);
-  H264SpsParser parser = H264SpsParser(buffer, ARRAY_SIZE(buffer));
+  H264SpsParser parser = H264SpsParser(buffer, arraysize(buffer));
   EXPECT_TRUE(parser.Parse());
   EXPECT_EQ(320u, parser.width());
   EXPECT_EQ(180u, parser.height());
 }
 
 TEST(H264SpsParserTest, TestSyntheticSPSWeirdResolution) {
-  uint8 buffer[kSpsBufferMaxSize] = {0};
+  uint8_t buffer[kSpsBufferMaxSize] = {0};
   GenerateFakeSps(156u, 122u, buffer);
-  H264SpsParser parser = H264SpsParser(buffer, ARRAY_SIZE(buffer));
+  H264SpsParser parser = H264SpsParser(buffer, arraysize(buffer));
   EXPECT_TRUE(parser.Parse());
   EXPECT_EQ(156u, parser.width());
   EXPECT_EQ(122u, parser.height());

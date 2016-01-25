@@ -64,7 +64,7 @@ struct FillSize {
 
 // FIXME(Oilpan): Move FillLayer to Oilpan's heap.
 class CORE_EXPORT FillLayer {
-    WTF_MAKE_FAST_ALLOCATED(FillLayer);
+    USING_FAST_MALLOC(FillLayer);
 public:
     FillLayer(EFillLayerType, bool useInitialValues = false);
     ~FillLayer();
@@ -183,6 +183,8 @@ public:
 
     void fillUnsetProperties();
     void cullEmptyLayers();
+
+    static bool imagesIdentical(const FillLayer*, const FillLayer*);
 
     EFillBox thisOrNextLayersClipMax() const { computeCachedPropertiesIfNeeded(); return static_cast<EFillBox>(m_thisOrNextLayersClipMax); }
     bool thisOrNextLayersUseContentBox() const { computeCachedPropertiesIfNeeded(); return m_thisOrNextLayersUseContentBox; }

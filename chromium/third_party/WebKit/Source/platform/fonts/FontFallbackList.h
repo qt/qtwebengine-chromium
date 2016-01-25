@@ -21,11 +21,15 @@
 #ifndef FontFallbackList_h
 #define FontFallbackList_h
 
+#include "platform/fonts/FallbackListCompositeKey.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/fonts/SimpleFontData.h"
-#include "platform/fonts/shaping/CachingWordShaper.h"
+#include "platform/fonts/shaping/ShapeCache.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/MainThread.h"
+#include "wtf/WeakPtr.h"
 
 namespace blink {
 
@@ -40,6 +44,7 @@ public:
     typedef HashMap<int, GlyphPageTreeNodeBase*, DefaultHash<int>::Hash> GlyphPages;
 
     class GlyphPagesStateSaver {
+        STACK_ALLOCATED();
     public:
         GlyphPagesStateSaver(FontFallbackList& fallbackList)
             : m_fallbackList(fallbackList)
@@ -74,7 +79,17 @@ public:
     unsigned fontSelectorVersion() const { return m_fontSelectorVersion; }
     unsigned generation() const { return m_generation; }
 
-    CachingWordShaper& cachingWordShaper() const { return m_cachingWordShaper; }
+    ShapeCache* shapeCache(const FontDescription& fontDescription) const
+    {
+        if (!m_shapeCache) {
+            FallbackListCompositeKey key = compositeKey(fontDescription);
+            m_shapeCache = FontCache::fontCache()->getShapeCache(key)->weakPtr();
+        }
+        ASSERT(m_shapeCache);
+        if (fontSelector())
+            m_shapeCache->clearIfVersionChanged(fontSelector()->version());
+        return m_shapeCache.get();
+    }
 
     const SimpleFontData* primarySimpleFontData(const FontDescription& fontDescription)
     {
@@ -100,6 +115,8 @@ public:
             m_pageZero = node;
     }
 
+    FallbackListCompositeKey compositeKey(const FontDescription&) const;
+
 private:
     FontFallbackList();
 
@@ -114,11 +131,11 @@ private:
     GlyphPageTreeNodeBase* m_pageZero;
     mutable const SimpleFontData* m_cachedPrimarySimpleFontData;
     RefPtrWillBePersistent<FontSelector> m_fontSelector;
-    mutable CachingWordShaper m_cachingWordShaper;
     unsigned m_fontSelectorVersion;
     mutable int m_familyIndex;
     unsigned short m_generation;
     mutable bool m_hasLoadingFallback : 1;
+    mutable WeakPtr<ShapeCache> m_shapeCache;
 };
 
 } // namespace blink

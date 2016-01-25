@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/audio/audio_manager_base.h"
 
@@ -27,7 +28,6 @@ class MEDIA_EXPORT AudioManagerCras : public AudioManagerBase {
   void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) override;
   AudioParameters GetInputStreamParameters(
       const std::string& device_id) override;
-  void SetHasKeyboardMic() override;
 
   // AudioManagerBase implementation.
   AudioOutputStream* MakeLinearOutputStream(
@@ -60,8 +60,6 @@ class MEDIA_EXPORT AudioManagerCras : public AudioManagerBase {
                                     const std::string& device_id);
 
   void AddBeamformingDevices(AudioDeviceNames* device_names);
-
-  bool has_keyboard_mic_;
 
   // Stores the mic positions field from the device.
   std::vector<Point> mic_positions_;

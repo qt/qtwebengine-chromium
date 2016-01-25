@@ -4,6 +4,9 @@
 
 #import "content/browser/renderer_host/text_input_client_mac.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
@@ -21,7 +24,7 @@
 namespace content {
 
 namespace {
-const int64 kTaskDelayMs = 200;
+const int64_t kTaskDelayMs = 200;
 
 class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
@@ -47,7 +50,7 @@ class TextInputClientMacTest : public testing::Test {
         thread_("TextInputClientMacTestThread") {
     RenderProcessHost* rph =
         process_factory_.CreateRenderProcessHost(&browser_context_, nullptr);
-    int32 routing_id = rph->GetNextRoutingID();
+    int32_t routing_id = rph->GetNextRoutingID();
     widget_.reset(new RenderWidgetHostImpl(&delegate_, rph, routing_id, false));
   }
 
@@ -139,7 +142,7 @@ TEST_F(TextInputClientMacTest, TimeoutCharacterIndex) {
   EXPECT_EQ(1U, ipc_sink().message_count());
   EXPECT_TRUE(ipc_sink().GetUniqueMessageMatching(
       TextInputClientMsg_CharacterIndexForPoint::ID));
-  EXPECT_EQ(NSNotFound, index);
+  EXPECT_EQ(static_cast<NSUInteger>(NSNotFound), index);
 }
 
 TEST_F(TextInputClientMacTest, NotFoundCharacterIndex) {
@@ -167,7 +170,7 @@ TEST_F(TextInputClientMacTest, NotFoundCharacterIndex) {
       widget(), gfx::Point(2, 2));
   EXPECT_EQ(kPreviousValue, index);
   index = service()->GetCharacterIndexAtPoint(widget(), gfx::Point(2, 2));
-  EXPECT_EQ(NSNotFound, index);
+  EXPECT_EQ(static_cast<NSUInteger>(NSNotFound), index);
 
   EXPECT_EQ(2U, ipc_sink().message_count());
   for (size_t i = 0; i < ipc_sink().message_count(); ++i) {

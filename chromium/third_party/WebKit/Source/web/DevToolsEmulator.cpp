@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/DevToolsEmulator.h"
 
 #include "core/frame/FrameHost.h"
@@ -11,7 +10,6 @@
 #include "core/page/Page.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebLayerTreeView.h"
-#include "public/web/WebDeviceEmulationParams.h"
 #include "web/InspectorEmulationAgent.h"
 #include "web/WebInputEventConversion.h"
 #include "web/WebLocalFrameImpl.h"
@@ -74,7 +72,6 @@ DevToolsEmulator::DevToolsEmulator(WebViewImpl* webViewImpl)
     , m_originalMaxTouchPoints(0)
     , m_embedderScriptEnabled(webViewImpl->page()->settings().scriptEnabled())
     , m_scriptExecutionDisabled(false)
-    , m_hidePinchScrollbarsNearMinScale(false)
 {
 }
 
@@ -160,13 +157,6 @@ bool DevToolsEmulator::doubleTapToZoomEnabled() const
     return m_touchEventEmulationEnabled ? true : m_doubleTapToZoomEnabled;
 }
 
-void DevToolsEmulator::setHidePinchScrollbarsNearMinScale(bool enabled)
-{
-    m_hidePinchScrollbarsNearMinScale = enabled;
-    if (m_webViewImpl->layerTreeView())
-        m_webViewImpl->layerTreeView()->setHidePinchScrollbarsNearMinScale(enabled);
-}
-
 void DevToolsEmulator::setAvailablePointerTypes(int types)
 {
     m_embedderAvailablePointerTypes = types;
@@ -201,6 +191,17 @@ void DevToolsEmulator::setPrimaryHoverType(HoverType hoverType)
 
 void DevToolsEmulator::enableDeviceEmulation(const WebDeviceEmulationParams& params)
 {
+    if (m_deviceMetricsEnabled
+        && m_emulationParams.viewSize == params.viewSize
+        && m_emulationParams.screenPosition == params.screenPosition
+        && m_emulationParams.deviceScaleFactor == params.deviceScaleFactor
+        && m_emulationParams.offset == params.offset
+        && m_emulationParams.scale == params.scale) {
+        return;
+    }
+
+    m_emulationParams = params;
+
     if (!m_deviceMetricsEnabled) {
         m_deviceMetricsEnabled = true;
         if (params.viewSize.width || params.viewSize.height)
@@ -238,6 +239,11 @@ void DevToolsEmulator::disableDeviceEmulation()
         document->mediaQueryAffectingValueChanged();
 }
 
+bool DevToolsEmulator::resizeIsDeviceSizeChange()
+{
+    return m_deviceMetricsEnabled && m_emulateMobileEnabled;
+}
+
 void DevToolsEmulator::enableMobileEmulation()
 {
     if (m_emulateMobileEnabled)
@@ -257,11 +263,13 @@ void DevToolsEmulator::enableMobileEmulation()
     m_webViewImpl->page()->settings().setPrimaryPointerType(PointerTypeCoarse);
     m_webViewImpl->page()->settings().setAvailableHoverTypes(HoverTypeOnDemand);
     m_webViewImpl->page()->settings().setPrimaryHoverType(HoverTypeOnDemand);
+    m_webViewImpl->page()->settings().setResizeIsDeviceSizeChange(true);
     m_webViewImpl->setZoomFactorOverride(1);
 
     m_originalDefaultMinimumPageScaleFactor = m_webViewImpl->defaultMinimumPageScaleFactor();
     m_originalDefaultMaximumPageScaleFactor = m_webViewImpl->defaultMaximumPageScaleFactor();
     m_webViewImpl->setDefaultPageScaleLimits(0.25f, 5);
+    m_webViewImpl->mainFrameImpl()->frameView()->layout();
 }
 
 void DevToolsEmulator::disableMobileEmulation()
@@ -281,11 +289,13 @@ void DevToolsEmulator::disableMobileEmulation()
     m_webViewImpl->page()->settings().setPrimaryPointerType(m_embedderPrimaryPointerType);
     m_webViewImpl->page()->settings().setAvailableHoverTypes(m_embedderAvailableHoverTypes);
     m_webViewImpl->page()->settings().setPrimaryHoverType(m_embedderPrimaryHoverType);
+    m_webViewImpl->page()->settings().setResizeIsDeviceSizeChange(false);
     m_webViewImpl->setZoomFactorOverride(0);
     m_emulateMobileEnabled = false;
     m_webViewImpl->setDefaultPageScaleLimits(
         m_originalDefaultMinimumPageScaleFactor,
         m_originalDefaultMaximumPageScaleFactor);
+    m_webViewImpl->mainFrameImpl()->frameView()->layout();
 }
 
 void DevToolsEmulator::setTouchEventEmulationEnabled(bool enabled)

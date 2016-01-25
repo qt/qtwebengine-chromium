@@ -18,11 +18,13 @@
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/char_iterator.h"
 #include "base/i18n/rtl.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "third_party/icu/source/common/unicode/rbbi.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/common/unicode/umachine.h"
@@ -198,6 +200,7 @@ base::string16 ElideText(const base::string16& text,
   DCHECK_NE(behavior, FADE_TAIL);
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetCursorEnabled(false);
+  // TODO(bshe): 5000 is out dated. We should remove it. See crbug.com/551660.
   // Do not bother accurately sizing strings over 5000 characters here, for
   // performance purposes. This matches the behavior of Canvas::SizeStringFloat.
   render_text->set_truncate_length(5000);

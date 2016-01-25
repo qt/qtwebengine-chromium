@@ -1,4 +1,9 @@
 {
+    "AsyncDNS": [
+        {
+            "group_name": "AsyncDNSA"
+        }
+    ],
     "AutofillClassifier": [
         {
             "group_name": "Enabled"
@@ -9,14 +14,38 @@
             "group_name": "Enabled"
         }
     ],
+    "AutofillProfileOrderByFrecency": [
+        {
+            "group_name": "EnabledLimitTo3",
+            "params": {
+                "limit": "3"
+            }
+        }
+    ],
     "CaptivePortalInterstitial": [
         {
             "group_name": "Enabled"
         }
     ],
+    "ChromeDashboard": [
+        {
+            "group_name": "Enabled"
+        },
+        {
+            "group_name": "Default"
+        }
+    ],
     "ChromotingQUIC": [
         {
             "group_name": "Enabled"
+        }
+    ],
+    "DataReductionProxyConfigService": [
+        {
+            "group_name": "Enabled",
+            "params": {
+                "minimum_refresh_interval_on_success_msec": "21600000"
+            }
         }
     ],
     "EnableGoogleCachedCopyTextExperiment": [
@@ -39,9 +68,14 @@
             "group_name": "Enabled"
         }
     ],
-    "PluginPowerSaver": [
+    "MaterialDesignDownloads": [
         {
             "group_name": "Enabled"
+        }
+    ],
+    "PasswordBranding": [
+        {
+            "group_name": "SmartLockBrandingSavePromptOnly"
         }
     ],
     "QUIC": [
@@ -97,7 +131,33 @@
             "group_name": "Disabled"
         }
     ],
+    "SafeBrowsingUnverifiedDownloads": [
+        {
+            "group_name": "DisableByParameterExe",
+            "params": {
+                "blacklist": ".exe"
+            }
+        }
+    ],
+    "SafeBrowsingUpdateFrequency": [
+        {
+            "group_name": "UpdateTime15m",
+            "params": {
+                "NextUpdateIntervalInMinutes": "15"
+            }
+        }
+    ],
     "SdchPersistence": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "SpdyEnableDependencies": [
+        {
+            "group_name": "Enable"
+        }
+    ],
+    "StrictSecureCookies": [
         {
             "group_name": "Enabled"
         }
@@ -126,6 +186,21 @@
             "params": {
                 "fetch_period_min": "30"
             }
+        }
+    ],
+    "WebFontsIntervention": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "WebRTC-LocalIPPermissionCheck": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "WebRTC-PeerConnectionDTLS1.2": [
+        {
+            "group_name": "Enabled"
         }
     ]
 }

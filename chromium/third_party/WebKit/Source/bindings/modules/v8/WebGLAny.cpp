@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/modules/v8/WebGLAny.h"
 
 #include "bindings/core/v8/ToV8.h"
@@ -20,6 +19,39 @@ ScriptValue WebGLAny(ScriptState* scriptState, const bool* value, size_t size)
     v8::Local<v8::Array> array = v8::Array::New(scriptState->isolate(), size);
     for (size_t i = 0; i < size; ++i) {
         if (!v8CallBoolean(array->Set(scriptState->context(), v8::Integer::New(scriptState->isolate(), i), v8Boolean(value[i], scriptState->isolate()))))
+            return ScriptValue();
+    }
+    return ScriptValue(scriptState, array);
+}
+
+ScriptValue WebGLAny(ScriptState* scriptState, const Vector<bool>& value)
+{
+    size_t size = value.size();
+    v8::Local<v8::Array> array = v8::Array::New(scriptState->isolate(), size);
+    for (size_t i = 0; i < size; ++i) {
+        if (!v8CallBoolean(array->Set(scriptState->context(), v8::Integer::New(scriptState->isolate(), i), v8Boolean(value[i], scriptState->isolate()))))
+            return ScriptValue();
+    }
+    return ScriptValue(scriptState, array);
+}
+
+ScriptValue WebGLAny(ScriptState* scriptState, const Vector<unsigned>& value)
+{
+    size_t size = value.size();
+    v8::Local<v8::Array> array = v8::Array::New(scriptState->isolate(), size);
+    for (size_t i = 0; i < size; ++i) {
+        if (!v8CallBoolean(array->CreateDataProperty(scriptState->context(), i, v8::Integer::NewFromUnsigned(scriptState->isolate(), value[i]))))
+            return ScriptValue();
+    }
+    return ScriptValue(scriptState, array);
+}
+
+ScriptValue WebGLAny(ScriptState* scriptState, const Vector<int>& value)
+{
+    size_t size = value.size();
+    v8::Local<v8::Array> array = v8::Array::New(scriptState->isolate(), size);
+    for (size_t i = 0; i < size; ++i) {
+        if (!v8CallBoolean(array->CreateDataProperty(scriptState->context(), i, v8::Integer::New(scriptState->isolate(), value[i]))))
             return ScriptValue();
     }
     return ScriptValue(scriptState, array);

@@ -131,7 +131,6 @@ public:
     // |m_createTime|). For more info see http://crbug.com/160524
     double timeStamp(ScriptState*) const;
     double platformTimeStamp() const { return m_platformTimeStamp; }
-    void setPlatformTimeStamp(double platformTimeStamp) { m_platformTimeStamp = platformTimeStamp; }
     DOMTimeStamp createTime() const { return m_createTime; }
 
     void stopPropagation() { m_propagationStopped = true; }
@@ -170,11 +169,7 @@ public:
     bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
 
     bool defaultPrevented() const { return m_defaultPrevented; }
-    virtual void preventDefault()
-    {
-        if (m_cancelable)
-            m_defaultPrevented = true;
-    }
+    virtual void preventDefault();
     void setDefaultPrevented(bool defaultPrevented) { m_defaultPrevented = defaultPrevented; }
 
     bool defaultHandled() const { return m_defaultHandled; }
@@ -202,11 +197,14 @@ public:
     bool isTrusted() const { return m_isTrusted; }
     void setTrusted(bool value) { m_isTrusted = value; }
 
+    void setHandlingPassive(bool value) { m_handlingPassive = value; }
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
     Event();
     Event(const AtomicString& type, bool canBubble, bool cancelable);
+    Event(const AtomicString& type, bool canBubble, bool cancelable, double platformTimeStamp);
     Event(const AtomicString& type, const EventInit&);
 
     virtual void receivedTarget();
@@ -225,6 +223,7 @@ private:
     unsigned m_defaultHandled:1;
     unsigned m_cancelBubble:1;
     unsigned m_isTrusted : 1;
+    unsigned m_handlingPassive : 1;
 
     unsigned short m_eventPhase;
     RefPtrWillBeMember<EventTarget> m_currentTarget;

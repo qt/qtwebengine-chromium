@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/shadow/ComposedTreeTraversal.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -16,13 +15,13 @@
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/geometry/IntSize.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -34,6 +33,11 @@ protected:
     // shadow root to child with |shadowHTML|, then update distribution for
     // calling member functions in |ComposedTreeTraversal|.
     void setupSampleHTML(const char* mainHTML, const char* shadowHTML, unsigned);
+
+    void setupDocumentTree(const char* mainHTML);
+
+    void attachV0ShadowRoot(Element& shadowHost, const char* shadowInnerHTML);
+    void attachOpenShadowRoot(Element& shadowHost, const char* shadowInnerHTML);
 
 private:
     void SetUp() override;
@@ -59,9 +63,29 @@ void ComposedTreeTraversalTest::setupSampleHTML(const char* mainHTML, const char
     RefPtrWillBeRawPtr<Element> body = document().body();
     body->setInnerHTML(String::fromUTF8(mainHTML), ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> shadowHost = toElement(NodeTraversal::childAt(*body, index));
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->createShadowRootInternal(ShadowRootType::OpenByDefault, ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost->createShadowRootInternal(ShadowRootType::V0, ASSERT_NO_EXCEPTION);
     shadowRoot->setInnerHTML(String::fromUTF8(shadowHTML), ASSERT_NO_EXCEPTION);
     body->updateDistribution();
+}
+
+void ComposedTreeTraversalTest::setupDocumentTree(const char* mainHTML)
+{
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    body->setInnerHTML(String::fromUTF8(mainHTML), ASSERT_NO_EXCEPTION);
+}
+
+void ComposedTreeTraversalTest::attachV0ShadowRoot(Element& shadowHost, const char* shadowInnerHTML)
+{
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost.createShadowRootInternal(ShadowRootType::V0, ASSERT_NO_EXCEPTION);
+    shadowRoot->setInnerHTML(String::fromUTF8(shadowInnerHTML), ASSERT_NO_EXCEPTION);
+    document().body()->updateDistribution();
+}
+
+void ComposedTreeTraversalTest::attachOpenShadowRoot(Element& shadowHost, const char* shadowInnerHTML)
+{
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = shadowHost.createShadowRootInternal(ShadowRootType::Open, ASSERT_NO_EXCEPTION);
+    shadowRoot->setInnerHTML(String::fromUTF8(shadowInnerHTML), ASSERT_NO_EXCEPTION);
+    document().body()->updateDistribution();
 }
 
 void testCommonAncestor(Node* expectedResult, const Node& nodeA, const Node& nodeB)
@@ -370,6 +394,180 @@ TEST_F(ComposedTreeTraversalTest, previousPostOrder)
     EXPECT_EQ(*s120->firstChild(), ComposedTreeTraversal::previousPostOrder(*s120));
     EXPECT_EQ(*s11, ComposedTreeTraversal::previousPostOrder(*s120->firstChild()));
     EXPECT_EQ(nullptr, ComposedTreeTraversal::previousPostOrder(*s120->firstChild(), s12.get()));
+}
+
+TEST_F(ComposedTreeTraversalTest, nextSiblingNotInDocumentComposedTree)
+{
+    const char* mainHTML =
+        "<div id='m0'>m0</div>"
+        "<div id='m1'>"
+            "<span id='m10'>m10</span>"
+            "<span id='m11'>m11</span>"
+        "</div>"
+        "<div id='m2'>m2</div>";
+    const char* shadowHTML =
+        "<content select='#m11'></content>";
+    setupSampleHTML(mainHTML, shadowHTML, 1);
+
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    RefPtrWillBeRawPtr<Element> m10 = body->querySelector("#m10", ASSERT_NO_EXCEPTION);
+
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::nextSibling(*m10));
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::previousSibling(*m10));
+}
+
+TEST_F(ComposedTreeTraversalTest, redistribution)
+{
+    const char* mainHTML =
+        "<div id='m0'>m0</div>"
+        "<div id='m1'>"
+        "<span id='m10'>m10</span>"
+        "<span id='m11'>m11</span>"
+        "</div>"
+        "<div id='m2'>m2</div>";
+    const char* shadowHTML1 =
+        "<div id='s1'>"
+        "<content></content>"
+        "</div>";
+
+    setupSampleHTML(mainHTML, shadowHTML1, 1);
+
+    const char* shadowHTML2 =
+        "<div id='s2'>"
+        "<content select='#m10'></content>"
+        "<span id='s21'>s21</span>"
+        "</div>";
+
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    RefPtrWillBeRawPtr<Element> m1 = body->querySelector("#m1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> m10 = body->querySelector("#m10", ASSERT_NO_EXCEPTION);
+
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot1 = m1->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> s1 = shadowRoot1->querySelector("#s1", ASSERT_NO_EXCEPTION);
+
+    attachV0ShadowRoot(*s1, shadowHTML2);
+
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot2 = s1->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> s21 = shadowRoot2->querySelector("#s21", ASSERT_NO_EXCEPTION);
+
+    EXPECT_EQ(s21.get(), ComposedTreeTraversal::nextSibling(*m10));
+    EXPECT_EQ(m10.get(), ComposedTreeTraversal::previousSibling(*s21));
+
+    // ComposedTreeTraversal::traverseSiblings does not work for a node which is not in a document composed tree.
+    // e.g. The following test fails. The result of ComposedTreeTraversal::previousSibling(*m11)) will be #m10, instead of nullptr.
+    // RefPtrWillBeRawPtr<Element> m11 = body->querySelector("#m11", ASSERT_NO_EXCEPTION);
+    // EXPECT_EQ(nullptr, ComposedTreeTraversal::previousSibling(*m11));
+}
+
+TEST_F(ComposedTreeTraversalTest, v1Simple)
+{
+    const char* mainHTML =
+        "<div id='host'>"
+        "<div id='child1' slot='slot1'></div>"
+        "<div id='child2' slot='slot2'></div>"
+        "</div>";
+    const char* shadowHTML =
+        "<div id='shadow-child1'></div>"
+        "<slot name='slot1'></slot>"
+        "<slot name='slot2'></slot>"
+        "<div id='shadow-child2'></div>";
+
+    setupDocumentTree(mainHTML);
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    RefPtrWillBeRawPtr<Element> host = body->querySelector("#host", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> child1 = body->querySelector("#child1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> child2 = body->querySelector("#child2", ASSERT_NO_EXCEPTION);
+
+    attachOpenShadowRoot(*host, shadowHTML);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = host->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> slot1 = shadowRoot->querySelector("[name=slot1]", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> slot2 = shadowRoot->querySelector("[name=slot2]", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> shadowChild1 = shadowRoot->querySelector("#shadow-child1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> shadowChild2 = shadowRoot->querySelector("#shadow-child2", ASSERT_NO_EXCEPTION);
+
+    EXPECT_TRUE(slot1);
+    EXPECT_TRUE(slot2);
+    EXPECT_EQ(shadowChild1.get(), ComposedTreeTraversal::firstChild(*host));
+    EXPECT_EQ(child1.get(), ComposedTreeTraversal::nextSibling(*shadowChild1));
+    EXPECT_EQ(child2.get(), ComposedTreeTraversal::nextSibling(*child1));
+    EXPECT_EQ(shadowChild2.get(), ComposedTreeTraversal::nextSibling(*child2));
+}
+
+TEST_F(ComposedTreeTraversalTest, v1Redistribution)
+{
+    const char* mainHTML =
+        "<div id='d1'>"
+        "<div id='d2' slot='d1-s1'></div>"
+        "<div id='d3' slot='d1-s2'></div>"
+        "<div id='d4' slot='nonexistent'></div>"
+        "<div id='d5'></div>"
+        "</div>"
+        "<div id='d6'></div>";
+    const char* shadowHTML1 =
+        "<div id='d1-1'>"
+        "<div id='d1-2'></div>"
+        "<slot id='d1-s0'></slot>"
+        "<slot name='d1-s1' slot='d1-1-s1'></slot>"
+        "<slot name='d1-s2'></slot>"
+        "<div id='d1-3'></div>"
+        "<div id='d1-4' slot='d1-1-s1'></div>"
+        "</div>";
+    const char* shadowHTML2 =
+        "<div id='d1-1-1'></div>"
+        "<slot name='d1-1-s1'></slot>"
+        "<slot name='d1-1-s2'></slot>"
+        "<div id='d1-1-2'></div>";
+
+    setupDocumentTree(mainHTML);
+
+    RefPtrWillBeRawPtr<Element> body = document().body();
+    RefPtrWillBeRawPtr<Element> d1 = body->querySelector("#d1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d2 = body->querySelector("#d2", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d3 = body->querySelector("#d3", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d4 = body->querySelector("#d4", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d5 = body->querySelector("#d5", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d6 = body->querySelector("#d6", ASSERT_NO_EXCEPTION);
+
+    attachOpenShadowRoot(*d1, shadowHTML1);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot1 = d1->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> d11 = shadowRoot1->querySelector("#d1-1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d12 = shadowRoot1->querySelector("#d1-2", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d13 = shadowRoot1->querySelector("#d1-3", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d14 = shadowRoot1->querySelector("#d1-4", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d1s0 = shadowRoot1->querySelector("#d1-s0", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d1s1 = shadowRoot1->querySelector("[name=d1-s1]", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d1s2 = shadowRoot1->querySelector("[name=d1-s2]", ASSERT_NO_EXCEPTION);
+
+    attachOpenShadowRoot(*d11, shadowHTML2);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot2 = d11->openShadowRoot();
+    RefPtrWillBeRawPtr<Element> d111 = shadowRoot2->querySelector("#d1-1-1", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d112 = shadowRoot2->querySelector("#d1-1-2", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d11s1 = shadowRoot2->querySelector("[name=d1-1-s1]", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> d11s2 = shadowRoot2->querySelector("[name=d1-1-s2]", ASSERT_NO_EXCEPTION);
+
+    EXPECT_TRUE(d5);
+    EXPECT_TRUE(d12);
+    EXPECT_TRUE(d13);
+    EXPECT_TRUE(d1s0);
+    EXPECT_TRUE(d1s1);
+    EXPECT_TRUE(d1s2);
+    EXPECT_TRUE(d11s1);
+    EXPECT_TRUE(d11s2);
+    EXPECT_EQ(d11.get(), ComposedTreeTraversal::next(*d1));
+    EXPECT_EQ(d111.get(), ComposedTreeTraversal::next(*d11));
+    EXPECT_EQ(d2.get(), ComposedTreeTraversal::next(*d111));
+    EXPECT_EQ(d14.get(), ComposedTreeTraversal::next(*d2));
+    EXPECT_EQ(d112.get(), ComposedTreeTraversal::next(*d14));
+    EXPECT_EQ(d6.get(), ComposedTreeTraversal::next(*d112));
+
+    EXPECT_EQ(d112.get(), ComposedTreeTraversal::previous(*d6));
+
+    EXPECT_EQ(d11.get(), ComposedTreeTraversal::parent(*d111));
+    EXPECT_EQ(d11.get(), ComposedTreeTraversal::parent(*d112));
+    EXPECT_EQ(d11.get(), ComposedTreeTraversal::parent(*d2));
+    EXPECT_EQ(d11.get(), ComposedTreeTraversal::parent(*d14));
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::parent(*d3));
+    EXPECT_EQ(nullptr, ComposedTreeTraversal::parent(*d4));
 }
 
 } // namespace blink

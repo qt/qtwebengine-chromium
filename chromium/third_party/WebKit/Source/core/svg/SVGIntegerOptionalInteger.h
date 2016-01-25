@@ -31,7 +31,8 @@
 #ifndef SVGIntegerOptionalInteger_h
 #define SVGIntegerOptionalInteger_h
 
-#include "core/svg/SVGAnimatedInteger.h"
+#include "core/svg/SVGInteger.h"
+#include "core/svg/SVGParsingError.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -51,7 +52,7 @@ public:
     PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
     String valueAsString() const override;
-    void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
 
     void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
     void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
@@ -59,8 +60,8 @@ public:
 
     static AnimatedPropertyType classType() { return AnimatedIntegerOptionalInteger; }
 
-    PassRefPtrWillBeRawPtr<SVGInteger> firstInteger() { return m_firstInteger; }
-    PassRefPtrWillBeRawPtr<SVGInteger> secondInteger() { return m_secondInteger; }
+    PassRefPtrWillBeRawPtr<SVGInteger> firstInteger() const { return m_firstInteger; }
+    PassRefPtrWillBeRawPtr<SVGInteger> secondInteger() const { return m_secondInteger; }
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -71,12 +72,7 @@ protected:
     RefPtrWillBeMember<SVGInteger> m_secondInteger;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGIntegerOptionalInteger> toSVGIntegerOptionalInteger(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGIntegerOptionalInteger::classType());
-    return static_pointer_cast<SVGIntegerOptionalInteger>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGIntegerOptionalInteger);
 
 } // namespace blink
 

@@ -14,14 +14,13 @@
 
 #include "minidump/minidump_misc_info_writer.h"
 
-#include <windows.h>
-#include <dbghelp.h>
 #include <string.h>
 
 #include <string>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
@@ -168,7 +167,7 @@ TEST(MinidumpMiscInfoWriter, Empty) {
   MinidumpFileWriter minidump_file_writer;
   auto misc_info_writer = make_scoped_ptr(new MinidumpMiscInfoWriter());
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -189,7 +188,7 @@ TEST(MinidumpMiscInfoWriter, ProcessId) {
 
   misc_info_writer->SetProcessID(kProcessId);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -215,7 +214,7 @@ TEST(MinidumpMiscInfoWriter, ProcessTimes) {
   misc_info_writer->SetProcessTimes(
       kProcessCreateTime, kProcessUserTime, kProcessKernelTime);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -248,7 +247,7 @@ TEST(MinidumpMiscInfoWriter, ProcessorPowerInfo) {
                                           kProcessorMaxIdleState,
                                           kProcessorCurrentIdleState);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -275,7 +274,7 @@ TEST(MinidumpMiscInfoWriter, ProcessIntegrityLevel) {
 
   misc_info_writer->SetProcessIntegrityLevel(kProcessIntegrityLevel);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -298,7 +297,7 @@ TEST(MinidumpMiscInfoWriter, ProcessExecuteFlags) {
 
   misc_info_writer->SetProcessExecuteFlags(kProcessExecuteFlags);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -321,7 +320,7 @@ TEST(MinidumpMiscInfoWriter, ProtectedProcess) {
 
   misc_info_writer->SetProtectedProcess(kProtectedProcess);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -358,7 +357,7 @@ TEST(MinidumpMiscInfoWriter, TimeZone) {
                                 kDaylightDate,
                                 kDaylightBias);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -419,7 +418,7 @@ TEST(MinidumpMiscInfoWriter, TimeZoneStringsOverflow) {
                                 kSystemTimeZero,
                                 kDaylightBias);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -460,7 +459,7 @@ TEST(MinidumpMiscInfoWriter, BuildStrings) {
 
   misc_info_writer->SetBuildString(kBuildString, kDebugBuildString);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -497,7 +496,7 @@ TEST(MinidumpMiscInfoWriter, BuildStringsOverflow) {
 
   misc_info_writer->SetBuildString(build_string, debug_build_string);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -567,7 +566,7 @@ TEST(MinidumpMiscInfoWriter, Everything) {
                                 kDaylightBias);
   misc_info_writer->SetBuildString(kBuildString, kDebugBuildString);
 
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -701,13 +700,13 @@ TEST(MinidumpMiscInfoWriter, InitializeFromSnapshot) {
   system_snapshot->SetOSVersionFull(kOSVersionFull);
   system_snapshot->SetMachineDescription(kMachineDescription);
 
-  process_snapshot.SetSystem(system_snapshot.Pass());
+  process_snapshot.SetSystem(std::move(system_snapshot));
 
   auto misc_info_writer = make_scoped_ptr(new MinidumpMiscInfoWriter());
   misc_info_writer->InitializeFromSnapshot(&process_snapshot);
 
   MinidumpFileWriter minidump_file_writer;
-  minidump_file_writer.AddStream(misc_info_writer.Pass());
+  minidump_file_writer.AddStream(std::move(misc_info_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));

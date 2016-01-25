@@ -15,6 +15,7 @@
 
 using std::string;
 using base::StringPiece;
+using net::SpdyPriority;
 
 namespace net {
 
@@ -51,15 +52,16 @@ void QuicCryptoStream::OnDataAvailable() {
     }
     StringPiece data(static_cast<char*>(iov.iov_base), iov.iov_len);
     if (!crypto_framer_.ProcessInput(data)) {
-      CloseConnection(crypto_framer_.error());
+      CloseConnectionWithDetails(crypto_framer_.error(),
+                                 crypto_framer_.error_detail());
       return;
     }
     sequencer()->MarkConsumed(iov.iov_len);
   }
 }
 
-QuicPriority QuicCryptoStream::EffectivePriority() const {
-  return QuicUtils::HighestPriority();
+SpdyPriority QuicCryptoStream::Priority() const {
+  return net::kV3HighestPriority;
 }
 
 void QuicCryptoStream::SendHandshakeMessage(
@@ -69,29 +71,25 @@ void QuicCryptoStream::SendHandshakeMessage(
 
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message,
-    QuicAckNotifier::DelegateInterface* delegate) {
+    QuicAckListenerInterface* listener) {
   DVLOG(1) << ENDPOINT << "Sending " << message.DebugString();
   session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
   // TODO(wtc): check the return value.
-  WriteOrBufferData(string(data.data(), data.length()), false, delegate);
+  WriteOrBufferData(string(data.data(), data.length()), false, listener);
 }
 
-bool QuicCryptoStream::ExportKeyingMaterial(
-    StringPiece label,
-    StringPiece context,
-    size_t result_len,
-    string* result) const {
+bool QuicCryptoStream::ExportKeyingMaterial(StringPiece label,
+                                            StringPiece context,
+                                            size_t result_len,
+                                            string* result) const {
   if (!handshake_confirmed()) {
     DLOG(ERROR) << "ExportKeyingMaterial was called before forward-secure"
                 << "encryption was established.";
     return false;
   }
   return CryptoUtils::ExportKeyingMaterial(
-      crypto_negotiated_params_.subkey_secret,
-      label,
-      context,
-      result_len,
+      crypto_negotiated_params_.subkey_secret, label, context, result_len,
       result);
 }
 

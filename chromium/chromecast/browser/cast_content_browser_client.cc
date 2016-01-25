@@ -4,14 +4,19 @@
 
 #include "chromecast/browser/cast_content_browser_client.h"
 
+#include <stddef.h>
 #include <string>
+#include <utility>
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/files/scoped_file.h"
 #include "base/i18n/rtl.h"
+#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
+#include "chromecast/base/cast_constants.h"
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/chromecast_switches.h"
 #include "chromecast/browser/cast_browser_context.h"
@@ -80,28 +85,17 @@ scoped_ptr<CastService> CastContentBrowserClient::CreateCastService(
   return make_scoped_ptr(new CastServiceSimple(browser_context, pref_service));
 }
 
+#if !defined(OS_ANDROID)
 scoped_ptr<::media::AudioManagerFactory>
 CastContentBrowserClient::CreateAudioManagerFactory() {
-#if defined(OS_ANDROID)
-  // Return nullptr. The factory will not be set, and the default
-  // implementation of AudioManager will be used.
-  return scoped_ptr<::media::AudioManagerFactory>();
-#else
   return make_scoped_ptr(new media::CastAudioManagerFactory());
-#endif
 }
 
-#if !defined(OS_ANDROID)
 scoped_refptr<media::CmaMediaPipelineClient>
 CastContentBrowserClient::CreateCmaMediaPipelineClient() {
   return make_scoped_refptr(new media::CmaMediaPipelineClient());
 }
-
-scoped_ptr<::media::BrowserCdmFactory>
-CastContentBrowserClient::CreateBrowserCdmFactory() {
-  return make_scoped_ptr(new media::CastBrowserCdmFactory());
-}
-#endif
+#endif  // OS_ANDROID
 
 void CastContentBrowserClient::ProcessExiting() {
   // Finalize CastMediaShlib on media thread to ensure it's not accessed
@@ -124,9 +118,8 @@ bool CastContentBrowserClient::EnableRemoteDebuggingImmediately() {
 
 content::BrowserMainParts* CastContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  content::BrowserMainParts* parts = new CastBrowserMainParts(
-      parameters, url_request_context_factory_.get(),
-      CreateAudioManagerFactory());
+  content::BrowserMainParts* parts =
+      new CastBrowserMainParts(parameters, url_request_context_factory_.get());
   CastBrowserProcess::GetInstance()->SetCastContentBrowserClient(this);
   return parts;
 }
@@ -171,9 +164,7 @@ net::URLRequestContextGetter* CastContentBrowserClient::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
   return url_request_context_factory_->CreateMainGetter(
-      browser_context,
-      protocol_handlers,
-      request_interceptors.Pass());
+      browser_context, protocol_handlers, std::move(request_interceptors));
 }
 
 bool CastContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -181,11 +172,12 @@ bool CastContentBrowserClient::IsHandledURL(const GURL& url) {
     return false;
 
   static const char* const kProtocolList[] = {
-      url::kBlobScheme,
-      url::kFileSystemScheme,
-      content::kChromeUIScheme,
-      content::kChromeDevToolsScheme,
-      url::kDataScheme,
+    content::kChromeUIScheme,
+    content::kChromeDevToolsScheme,
+    kChromeResourceScheme,
+    url::kBlobScheme,
+    url::kDataScheme,
+    url::kFileSystemScheme,
   };
 
   const std::string& scheme = url.scheme();
@@ -274,8 +266,7 @@ CastContentBrowserClient::CreateQuotaPermissionContext() {
 }
 
 void CastContentBrowserClient::AllowCertificateError(
-    int render_process_id,
-    int render_view_id,
+    content::WebContents* web_contents,
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
@@ -366,11 +357,12 @@ void CastContentBrowserClient::RegisterUnsandboxedOutOfProcessMojoApplications(
     std::map<GURL, base::string16>* apps) {
 #if defined(ENABLE_MOJO_MEDIA_IN_UTILITY_PROCESS)
   apps->insert(std::make_pair(GURL("mojo:media"),
-                              base::UTF8ToUTF16("Media Renderer")));
+                              base::ASCIIToUTF16("Media App")));
 #endif
 }
 
 #if defined(OS_ANDROID)
+
 void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
     int child_process_id,
@@ -396,7 +388,18 @@ void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     }
   }
 }
+
 #else
+
+scoped_ptr<::media::CdmFactory> CastContentBrowserClient::CreateCdmFactory() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCmaMediaPipeline)) {
+    return make_scoped_ptr(new media::CastBrowserCdmFactory());
+  }
+
+  return nullptr;
+}
+
 void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
     int child_process_id,
@@ -406,7 +409,13 @@ void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     mappings->Share(kCrashDumpSignal, crash_signal_fd);
   }
 }
+
 #endif  // defined(OS_ANDROID)
+
+void CastContentBrowserClient::GetAdditionalWebUISchemes(
+    std::vector<std::string>* additional_schemes) {
+  additional_schemes->push_back(kChromeResourceScheme);
+}
 
 #if defined(OS_ANDROID) && defined(VIDEO_HOLE)
 content::ExternalVideoSurfaceContainer*

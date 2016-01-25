@@ -14,7 +14,7 @@
 #include <stddef.h> // size_t, ptrdiff_t
 
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "webrtc/typedefs.h"
 
@@ -487,6 +487,6 @@ class RTCPPacketIterator {
 
   RtcpCommonHeader _header;
 };
-}  // RTCPUtility
+}  // namespace RTCPUtility
 }  // namespace webrtc
 #endif // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_UTILITY_H_

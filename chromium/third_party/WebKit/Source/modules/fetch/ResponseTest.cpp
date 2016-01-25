@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/Response.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -18,7 +17,7 @@
 #include "platform/blob/BlobData.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 namespace {

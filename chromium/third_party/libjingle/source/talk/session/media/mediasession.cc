@@ -45,11 +45,22 @@
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
 #else
-static const uint32 kMaxSctpSid = 1023;
+static const uint32_t kMaxSctpSid = 1023;
 #endif
 
 namespace {
 const char kInline[] = "inline:";
+
+void GetSupportedCryptoSuiteNames(void (*func)(std::vector<int>*),
+                                  std::vector<std::string>* names) {
+#ifdef HAVE_SRTP
+  std::vector<int> crypto_suites;
+  func(&crypto_suites);
+  for (const auto crypto : crypto_suites) {
+    names->push_back(rtc::SrtpCryptoSuiteToName(crypto));
+  }
+#endif
+}
 }
 
 namespace cricket {
@@ -152,28 +163,48 @@ bool FindMatchingCrypto(const CryptoParamsVec& cryptos,
 }
 
 // For audio, HMAC 32 is prefered because of the low overhead.
-void GetSupportedAudioCryptoSuites(
-    std::vector<std::string>* crypto_suites) {
+void GetSupportedAudioCryptoSuites(std::vector<int>* crypto_suites) {
 #ifdef HAVE_SRTP
-  crypto_suites->push_back(rtc::CS_AES_CM_128_HMAC_SHA1_32);
-  crypto_suites->push_back(rtc::CS_AES_CM_128_HMAC_SHA1_80);
+  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_32);
+  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
 #endif
 }
 
-void GetSupportedVideoCryptoSuites(
-    std::vector<std::string>* crypto_suites) {
-  GetDefaultSrtpCryptoSuiteNames(crypto_suites);
+void GetSupportedAudioCryptoSuiteNames(
+    std::vector<std::string>* crypto_suite_names) {
+  GetSupportedCryptoSuiteNames(GetSupportedAudioCryptoSuites,
+                               crypto_suite_names);
 }
 
-void GetSupportedDataCryptoSuites(
-    std::vector<std::string>* crypto_suites) {
-  GetDefaultSrtpCryptoSuiteNames(crypto_suites);
+void GetSupportedVideoCryptoSuites(std::vector<int>* crypto_suites) {
+  GetDefaultSrtpCryptoSuites(crypto_suites);
 }
 
-void GetDefaultSrtpCryptoSuiteNames(std::vector<std::string>* crypto_suites) {
+void GetSupportedVideoCryptoSuiteNames(
+    std::vector<std::string>* crypto_suite_names) {
+  GetSupportedCryptoSuiteNames(GetSupportedVideoCryptoSuites,
+                               crypto_suite_names);
+}
+
+void GetSupportedDataCryptoSuites(std::vector<int>* crypto_suites) {
+  GetDefaultSrtpCryptoSuites(crypto_suites);
+}
+
+void GetSupportedDataCryptoSuiteNames(
+    std::vector<std::string>* crypto_suite_names) {
+  GetSupportedCryptoSuiteNames(GetSupportedDataCryptoSuites,
+                               crypto_suite_names);
+}
+
+void GetDefaultSrtpCryptoSuites(std::vector<int>* crypto_suites) {
 #ifdef HAVE_SRTP
-  crypto_suites->push_back(rtc::CS_AES_CM_128_HMAC_SHA1_80);
+  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
 #endif
+}
+
+void GetDefaultSrtpCryptoSuiteNames(
+    std::vector<std::string>* crypto_suite_names) {
+  GetSupportedCryptoSuiteNames(GetDefaultSrtpCryptoSuites, crypto_suite_names);
 }
 
 // For video support only 80-bit SHA1 HMAC. For audio 32-bit HMAC is
@@ -250,9 +281,9 @@ static bool GenerateCname(const StreamParamsVec& params_vec,
 // |num_ssrcs| is the number of the SSRC will be generated.
 static void GenerateSsrcs(const StreamParamsVec& params_vec,
                           int num_ssrcs,
-                          std::vector<uint32>* ssrcs) {
+                          std::vector<uint32_t>* ssrcs) {
   for (int i = 0; i < num_ssrcs; i++) {
-    uint32 candidate;
+    uint32_t candidate;
     do {
       candidate = rtc::CreateRandomNonZeroId();
     } while (GetStreamBySsrc(params_vec, candidate) ||
@@ -262,15 +293,14 @@ static void GenerateSsrcs(const StreamParamsVec& params_vec,
 }
 
 // Returns false if we exhaust the range of SIDs.
-static bool GenerateSctpSid(const StreamParamsVec& params_vec,
-                            uint32* sid) {
+static bool GenerateSctpSid(const StreamParamsVec& params_vec, uint32_t* sid) {
   if (params_vec.size() > kMaxSctpSid) {
     LOG(LS_WARNING) <<
         "Could not generate an SCTP SID: too many SCTP streams.";
     return false;
   }
   while (true) {
-    uint32 candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
+    uint32_t candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
     if (!GetStreamBySsrc(params_vec, candidate)) {
       *sid = candidate;
       return true;
@@ -279,8 +309,8 @@ static bool GenerateSctpSid(const StreamParamsVec& params_vec,
 }
 
 static bool GenerateSctpSids(const StreamParamsVec& params_vec,
-                             std::vector<uint32>* sids) {
-  uint32 sid;
+                             std::vector<uint32_t>* sids) {
+  uint32_t sid;
   if (!GenerateSctpSid(params_vec, &sid)) {
     LOG(LS_WARNING) << "Could not generated an SCTP SID.";
     return false;
@@ -441,7 +471,7 @@ static bool AddStreamParams(
 
   if (streams.empty() && add_legacy_stream) {
     // TODO(perkj): Remove this legacy stream when all apps use StreamParams.
-    std::vector<uint32> ssrcs;
+    std::vector<uint32_t> ssrcs;
     if (IsSctp(content_description)) {
       GenerateSctpSids(*current_streams, &ssrcs);
     } else {
@@ -476,7 +506,7 @@ static bool AddStreamParams(
         return false;
       }
 
-      std::vector<uint32> ssrcs;
+      std::vector<uint32_t> ssrcs;
       if (IsSctp(content_description)) {
         GenerateSctpSids(*current_streams, &ssrcs);
       } else {
@@ -495,7 +525,7 @@ static bool AddStreamParams(
       // Generate extra ssrcs for include_rtx_streams case.
       if (include_rtx_streams) {
         // Generate an RTX ssrc for every ssrc in the group.
-        std::vector<uint32> rtx_ssrcs;
+        std::vector<uint32_t> rtx_ssrcs;
         GenerateSsrcs(*current_streams, static_cast<int>(ssrcs.size()),
                       &rtx_ssrcs);
         for (size_t i = 0; i < ssrcs.size(); ++i) {
@@ -519,8 +549,8 @@ static bool AddStreamParams(
 
 // Updates the transport infos of the |sdesc| according to the given
 // |bundle_group|. The transport infos of the content names within the
-// |bundle_group| should be updated to use the ufrag and pwd of the first
-// content within the |bundle_group|.
+// |bundle_group| should be updated to use the ufrag, pwd and DTLS role of the
+// first content within the |bundle_group|.
 static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
                                          SessionDescription* sdesc) {
   // The bundle should not be empty.
@@ -541,6 +571,8 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
       selected_transport_info->description.ice_ufrag;
   const std::string& selected_pwd =
       selected_transport_info->description.ice_pwd;
+  ConnectionRole selected_connection_role =
+      selected_transport_info->description.connection_role;
   for (TransportInfos::iterator it =
            sdesc->transport_infos().begin();
        it != sdesc->transport_infos().end(); ++it) {
@@ -548,6 +580,7 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
         it->content_name != selected_content_name) {
       it->description.ice_ufrag = selected_ufrag;
       it->description.ice_pwd = selected_pwd;
+      it->description.connection_role = selected_connection_role;
     }
   }
   return true;
@@ -603,6 +636,11 @@ static void PruneCryptos(const CryptoParamsVec& filter,
                         target_cryptos->end());
 }
 
+static bool IsRtpProtocol(const std::string& protocol) {
+  return protocol.empty() ||
+         (protocol.find(cricket::kMediaProtocolRtpPrefix) != std::string::npos);
+}
+
 static bool IsRtpContent(SessionDescription* sdesc,
                          const std::string& content_name) {
   bool is_rtp = false;
@@ -613,9 +651,7 @@ static bool IsRtpContent(SessionDescription* sdesc,
     if (!media_desc) {
       return false;
     }
-    is_rtp = media_desc->protocol().empty() ||
-             (media_desc->protocol().find(cricket::kMediaProtocolRtpPrefix) !=
-              std::string::npos);
+    is_rtp = IsRtpProtocol(media_desc->protocol());
   }
   return is_rtp;
 }
@@ -727,6 +763,11 @@ static bool CreateMediaContentOffer(
     offer->set_crypto_required(CT_SDES);
   }
   offer->set_rtcp_mux(options.rtcp_mux_enabled);
+  // TODO(deadbeef): Once we're sure this works correctly, enable it in
+  // CreateOffer.
+  // if (offer->type() == cricket::MEDIA_TYPE_VIDEO) {
+  //   offer->set_rtcp_reduced_size(true);
+  // }
   offer->set_multistream(options.is_muc);
   offer->set_rtp_header_extensions(rtp_extensions);
 
@@ -1005,6 +1046,11 @@ static bool CreateMediaContentAnswer(
   answer->set_rtp_header_extensions(negotiated_rtp_extensions);
 
   answer->set_rtcp_mux(options.rtcp_mux_enabled && offer->rtcp_mux());
+  // TODO(deadbeef): Once we're sure this works correctly, enable it in
+  // CreateAnswer.
+  // if (answer->type() == cricket::MEDIA_TYPE_VIDEO) {
+  //   answer->set_rtcp_reduced_size(offer->rtcp_reduced_size());
+  // }
 
   if (sdes_policy != SEC_DISABLED) {
     CryptoParams crypto;
@@ -1037,12 +1083,19 @@ static bool CreateMediaContentAnswer(
       answer->set_direction(MD_RECVONLY);
       break;
     case MD_RECVONLY:
-      answer->set_direction(MD_SENDONLY);
+      answer->set_direction(IsRtpProtocol(answer->protocol()) &&
+                                    answer->streams().empty()
+                                ? MD_INACTIVE
+                                : MD_SENDONLY);
       break;
     case MD_SENDRECV:
-      answer->set_direction(MD_SENDRECV);
+      answer->set_direction(IsRtpProtocol(answer->protocol()) &&
+                                    answer->streams().empty()
+                                ? MD_RECVONLY
+                                : MD_SENDRECV);
       break;
     default:
+      RTC_DCHECK(false && "MediaContentDescription has unexpected direction.");
       break;
   }
 
@@ -1506,13 +1559,18 @@ bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
     const AudioCodecs& audio_codecs,
     StreamParamsVec* current_streams,
     SessionDescription* desc) const {
+  const ContentInfo* current_audio_content =
+      GetFirstAudioContent(current_description);
+  std::string content_name =
+      current_audio_content ? current_audio_content->name : CN_AUDIO;
+
   cricket::SecurePolicy sdes_policy =
-      IsDtlsActive(CN_AUDIO, current_description) ?
-          cricket::SEC_DISABLED : secure();
+      IsDtlsActive(content_name, current_description) ? cricket::SEC_DISABLED
+                                                      : secure();
 
   scoped_ptr<AudioContentDescription> audio(new AudioContentDescription());
   std::vector<std::string> crypto_suites;
-  GetSupportedAudioCryptoSuites(&crypto_suites);
+  GetSupportedAudioCryptoSuiteNames(&crypto_suites);
   if (!CreateMediaContentOffer(
           options,
           audio_codecs,
@@ -1530,12 +1588,22 @@ bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, audio.get());
 
-  if (!options.recv_audio) {
-    audio->set_direction(MD_SENDONLY);
+  if (!audio->streams().empty()) {
+    if (options.recv_audio) {
+      audio->set_direction(MD_SENDRECV);
+    } else {
+      audio->set_direction(MD_SENDONLY);
+    }
+  } else {
+    if (options.recv_audio) {
+      audio->set_direction(MD_RECVONLY);
+    } else {
+      audio->set_direction(MD_INACTIVE);
+    }
   }
 
-  desc->AddContent(CN_AUDIO, NS_JINGLE_RTP, audio.release());
-  if (!AddTransportOffer(CN_AUDIO, options.transport_options,
+  desc->AddContent(content_name, NS_JINGLE_RTP, audio.release());
+  if (!AddTransportOffer(content_name, options.audio_transport_options,
                          current_description, desc)) {
     return false;
   }
@@ -1550,13 +1618,18 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
     const VideoCodecs& video_codecs,
     StreamParamsVec* current_streams,
     SessionDescription* desc) const {
+  const ContentInfo* current_video_content =
+      GetFirstVideoContent(current_description);
+  std::string content_name =
+      current_video_content ? current_video_content->name : CN_VIDEO;
+
   cricket::SecurePolicy sdes_policy =
-      IsDtlsActive(CN_VIDEO, current_description) ?
-          cricket::SEC_DISABLED : secure();
+      IsDtlsActive(content_name, current_description) ? cricket::SEC_DISABLED
+                                                      : secure();
 
   scoped_ptr<VideoContentDescription> video(new VideoContentDescription());
   std::vector<std::string> crypto_suites;
-  GetSupportedVideoCryptoSuites(&crypto_suites);
+  GetSupportedVideoCryptoSuiteNames(&crypto_suites);
   if (!CreateMediaContentOffer(
           options,
           video_codecs,
@@ -1575,12 +1648,22 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, video.get());
 
-  if (!options.recv_video) {
-    video->set_direction(MD_SENDONLY);
+  if (!video->streams().empty()) {
+    if (options.recv_video) {
+      video->set_direction(MD_SENDRECV);
+    } else {
+      video->set_direction(MD_SENDONLY);
+    }
+  } else {
+    if (options.recv_video) {
+      video->set_direction(MD_RECVONLY);
+    } else {
+      video->set_direction(MD_INACTIVE);
+    }
   }
 
-  desc->AddContent(CN_VIDEO, NS_JINGLE_RTP, video.release());
-  if (!AddTransportOffer(CN_VIDEO, options.transport_options,
+  desc->AddContent(content_name, NS_JINGLE_RTP, video.release());
+  if (!AddTransportOffer(content_name, options.video_transport_options,
                          current_description, desc)) {
     return false;
   }
@@ -1601,9 +1684,14 @@ bool MediaSessionDescriptionFactory::AddDataContentForOffer(
 
   FilterDataCodecs(data_codecs, is_sctp);
 
+  const ContentInfo* current_data_content =
+      GetFirstDataContent(current_description);
+  std::string content_name =
+      current_data_content ? current_data_content->name : CN_DATA;
+
   cricket::SecurePolicy sdes_policy =
-      IsDtlsActive(CN_DATA, current_description) ?
-          cricket::SEC_DISABLED : secure();
+      IsDtlsActive(content_name, current_description) ? cricket::SEC_DISABLED
+                                                      : secure();
   std::vector<std::string> crypto_suites;
   if (is_sctp) {
     // SDES doesn't make sense for SCTP, so we disable it, and we only
@@ -1616,7 +1704,7 @@ bool MediaSessionDescriptionFactory::AddDataContentForOffer(
     data->set_protocol(
         secure_transport ? kMediaProtocolDtlsSctp : kMediaProtocolSctp);
   } else {
-    GetSupportedDataCryptoSuites(&crypto_suites);
+    GetSupportedDataCryptoSuiteNames(&crypto_suites);
   }
 
   if (!CreateMediaContentOffer(
@@ -1633,13 +1721,13 @@ bool MediaSessionDescriptionFactory::AddDataContentForOffer(
   }
 
   if (is_sctp) {
-    desc->AddContent(CN_DATA, NS_JINGLE_DRAFT_SCTP, data.release());
+    desc->AddContent(content_name, NS_JINGLE_DRAFT_SCTP, data.release());
   } else {
     data->set_bandwidth(options.data_bandwidth);
     SetMediaProtocol(secure_transport, data.get());
-    desc->AddContent(CN_DATA, NS_JINGLE_RTP, data.release());
+    desc->AddContent(content_name, NS_JINGLE_RTP, data.release());
   }
-  if (!AddTransportOffer(CN_DATA, options.transport_options,
+  if (!AddTransportOffer(content_name, options.data_transport_options,
                          current_description, desc)) {
     return false;
   }
@@ -1654,10 +1742,9 @@ bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
     SessionDescription* answer) const {
   const ContentInfo* audio_content = GetFirstAudioContent(offer);
 
-  scoped_ptr<TransportDescription> audio_transport(
-      CreateTransportAnswer(audio_content->name, offer,
-                            options.transport_options,
-                            current_description));
+  scoped_ptr<TransportDescription> audio_transport(CreateTransportAnswer(
+      audio_content->name, offer, options.audio_transport_options,
+      current_description));
   if (!audio_transport) {
     return false;
   }
@@ -1713,10 +1800,9 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
     StreamParamsVec* current_streams,
     SessionDescription* answer) const {
   const ContentInfo* video_content = GetFirstVideoContent(offer);
-  scoped_ptr<TransportDescription> video_transport(
-      CreateTransportAnswer(video_content->name, offer,
-                            options.transport_options,
-                            current_description));
+  scoped_ptr<TransportDescription> video_transport(CreateTransportAnswer(
+      video_content->name, offer, options.video_transport_options,
+      current_description));
   if (!video_transport) {
     return false;
   }
@@ -1769,10 +1855,9 @@ bool MediaSessionDescriptionFactory::AddDataContentForAnswer(
     StreamParamsVec* current_streams,
     SessionDescription* answer) const {
   const ContentInfo* data_content = GetFirstDataContent(offer);
-  scoped_ptr<TransportDescription> data_transport(
-      CreateTransportAnswer(data_content->name, offer,
-                            options.transport_options,
-                            current_description));
+  scoped_ptr<TransportDescription> data_transport(CreateTransportAnswer(
+      data_content->name, offer, options.data_transport_options,
+      current_description));
   if (!data_transport) {
     return false;
   }

@@ -9,6 +9,7 @@
 
 #include "base/mac/dispatch_source_mach.h"
 #include "base/mac/scoped_mach_port.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/mac/message_server.h"
 #include "sandbox/mac/xpc.h"
@@ -30,6 +31,7 @@ class SANDBOX_EXPORT XPCMessageServer : public MessageServer {
 
   // MessageServer:
   bool Initialize() override;
+  void Shutdown() override;
   pid_t GetMessageSenderPID(IPCMessage request) override;
   IPCMessage CreateReply(IPCMessage request) override;
   bool SendReply(IPCMessage reply) override;

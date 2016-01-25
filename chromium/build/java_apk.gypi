@@ -77,6 +77,7 @@
     'tested_apk_obfuscated_jar_path%': '/',
     'tested_apk_dex_path%': '/',
     'tested_apk_is_multidex%': 0,
+    'tested_apk_generated_multidex_config%': 0,
     'additional_input_paths': [],
     'additional_locale_input_paths': [],
     'create_density_splits%': 0,
@@ -84,8 +85,6 @@
     'library_jars_paths': [],
     'input_jars_paths': [],
     'library_dexed_jars_paths': [],
-    'main_dex_list_path': '<(intermediate_dir)/main_dex_list.txt',
-    'main_dex_list_paths': ['<(main_dex_list_path)'],
     'additional_src_dirs': [],
     'generated_src_dirs': [],
     'app_manifest_version_name%': '<(android_app_version_name)',
@@ -93,6 +92,7 @@
     # aapt generates this proguard.txt.
     'generated_proguard_file': '<(intermediate_dir)/proguard.txt',
     'proguard_enabled%': 'false',
+    'debug_build_proguard_enabled%': 'false',
     'proguard_flags_paths': ['<(generated_proguard_file)'],
     'jar_name': 'chromium_apk_<(_target_name).jar',
     'resource_dir%':'<(DEPTH)/build/android/ant/empty/res',
@@ -122,6 +122,11 @@
     'native_libraries_template_data_dir': '<(intermediate_dir)/native_libraries/',
     'native_libraries_template_data_file': '<(native_libraries_template_data_dir)/native_libraries_array.h',
     'native_libraries_template_version_file': '<(native_libraries_template_data_dir)/native_libraries_version.h',
+    'generate_multidex_config%': 0,
+    'multidex_config_template': '<(DEPTH)/base/android/java/templates/ChromiumMultiDex.template',
+    'multidex_config_java_dir': '<(intermediate_dir)/multidex_config/',
+    'multidex_config_java_file': '<(multidex_config_java_dir)/ChromiumMultiDex.java',
+    'multidex_config_java_stamp': '<(intermediate_dir)/multidex_config_java.stamp',
     'compile_stamp': '<(intermediate_dir)/compile.stamp',
     'lint_stamp': '<(intermediate_dir)/lint.stamp',
     'lint_result': '<(intermediate_dir)/lint_result.xml',
@@ -130,7 +135,7 @@
     'findbugs_stamp': '<(intermediate_dir)/findbugs.stamp',
     'run_findbugs%': 0,
     'java_in_dir_suffix%': '/src',
-    'instr_stamp': '<(intermediate_dir)/instr.stamp',
+    'emma_instr_stamp': '<(intermediate_dir)/emma_instr.stamp',
     'jar_stamp': '<(intermediate_dir)/jar.stamp',
     'obfuscate_stamp': '<(intermediate_dir)/obfuscate.stamp',
     'pack_relocations_stamp': '<(intermediate_dir)/pack_relocations.stamp',
@@ -145,6 +150,9 @@
     'obfuscated_jar_path': '<(intermediate_dir)/obfuscated.jar',
     'test_jar_path': '<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
     'enable_multidex%': 0,
+    'enable_multidex_configurations%': [],
+    'multidex_configuration_path': '<(intermediate_dir)/multidex_config.json',
+    'main_dex_list_path': '<(intermediate_dir)/main_dex_list.txt',
     'emma_device_jar': '<(android_sdk_root)/tools/lib/emma_device.jar',
     'android_manifest_path%': '<(java_in_dir)/AndroidManifest.xml',
     'split_android_manifest_path': '<(intermediate_dir)/split-manifests/<(android_app_abi)/AndroidManifest.xml',
@@ -153,7 +161,6 @@
     'resource_zip_path': '<(intermediate_dir)/<(_target_name).resources.zip',
     'shared_resources%': 0,
     'app_as_shared_library%': 0,
-    'final_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name).apk',
     'final_apk_path_no_extension%': '<(PRODUCT_DIR)/apks/<(apk_name)',
     'final_abi_split_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name)-abi-<(android_app_abi).apk',
     'incomplete_apk_path': '<(intermediate_dir)/<(apk_name)-incomplete.apk',
@@ -179,6 +186,7 @@
       'unsigned_apk_path': '<(unsigned_apk_path)',
       'unsigned_abi_split_apk_path': '<(unsigned_abi_split_apk_path)',
       'create_abi_split%': '<(create_abi_split)',
+      'final_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name).apk',
       'conditions': [
         ['gyp_managed_install == 1 and native_lib_target != ""', {
           'conditions': [
@@ -241,6 +249,7 @@
     ],
     'enable_errorprone%': 0,
     'errorprone_exe_path': '<(PRODUCT_DIR)/bin.java/chromium_errorprone',
+    'final_apk_path%': '<(final_apk_path)',
   },
   # Pass the jar path to the apk's "fake" jar target.  This would be better as
   # direct_dependent_settings, but a variable set by a direct_dependent_settings
@@ -252,12 +261,23 @@
           'proguard_enabled': 'true',
         }
       }],
+      ['debug_build_proguard_enabled == "true"', {
+        'variables': {
+          'debug_build_proguard_enabled': 'true',
+        }
+      }],
+      ['is_test_apk == 0', {
+        'variables': {
+          'tested_apk_path': '<(final_apk_path)',
+          'tested_apk_obfuscated_jar_path': '<(obfuscated_jar_path)',
+          'tested_apk_dex_path': '<(dex_path)',
+          'tested_apk_is_multidex': '<(enable_multidex)',
+          'tested_apk_generated_multidex_config': '>(generate_multidex_config)',
+        }
+      }]
     ],
     'variables': {
       'apk_output_jar_path': '<(jar_path)',
-      'tested_apk_obfuscated_jar_path': '<(obfuscated_jar_path)',
-      'tested_apk_dex_path': '<(dex_path)',
-      'tested_apk_is_multidex': '<(enable_multidex)',
     },
   },
   'conditions': [
@@ -503,7 +523,6 @@
             'libraries_top_dir': '<(intermediate_dir)/lib.stripped',
             'libraries_source_dir': '<(libraries_top_dir)/lib/<(android_app_abi)',
             'device_library_dir': '<(device_intermediate_dir)/lib.stripped',
-            'configuration_name': '<(CONFIGURATION_NAME)',
           },
           'dependencies': [
             '<(DEPTH)/build/android/setup.gyp:get_build_device_configurations',
@@ -536,6 +555,7 @@
                 '--apk=<(incomplete_apk_path)',
                 '--stamp=<(link_stamp)',
                 '--configuration-name=<(CONFIGURATION_NAME)',
+                '--output-directory=<(PRODUCT_DIR)',
               ],
             },
           ],
@@ -683,6 +703,7 @@
             '--install-record=<(apk_install_record)',
             '--configuration-name=<(CONFIGURATION_NAME)',
             '--android-sdk-tools', '<(android_sdk_tools)',
+            '--output-directory', '<(PRODUCT_DIR)',
           ],
           'conditions': [
             ['create_abi_split == 1', {
@@ -741,7 +762,7 @@
       'dependencies': [
         '<(DEPTH)/build/android/pylib/device/commands/commands.gyp:chromium_commands',
         '<(DEPTH)/tools/android/android_tools.gyp:android_tools',
-      ]
+      ],
     }],
     ['run_findbugs == 1', {
       'actions': [
@@ -778,6 +799,59 @@
             '<(jar_path)',
           ],
         },
+      ],
+    }],
+  ],
+  'target_conditions': [
+    ['generate_multidex_config == 1 and tested_apk_generated_multidex_config == 0', {
+      'variables': {
+        'generated_src_dirs': ['<(multidex_config_java_dir)'],
+      },
+      'actions': [
+        {
+          'action_name': 'configure_multidex_for_<(_target_name)',
+          'inputs': [
+            '<(DEPTH)/build/android/gyp/configure_multidex.py',
+            '<(multidex_config_template)',
+          ],
+          'outputs': [
+            '<(multidex_configuration_path)',
+            '<(multidex_config_java_stamp)',
+          ],
+          'variables': {
+            'additional_multidex_config_options': [],
+            'enabled_configurations': '>(enable_multidex_configurations)',
+            'conditions': [
+              ['enable_multidex == 1', {
+                'additional_multidex_config_options': ['--enable-multidex'],
+              }],
+            ],
+          },
+          'action': [
+            'python', '<(DEPTH)/build/android/gyp/configure_multidex.py',
+            '--configuration-name', '<(CONFIGURATION_NAME)',
+            '--enabled-configurations', '<(enabled_configurations)',
+            '--multidex-configuration-path', '<(multidex_configuration_path)',
+            '--multidex-config-java-template', '<(multidex_config_template)',
+            '--multidex-config-java-file', '<(multidex_config_java_file)',
+            '--multidex-config-java-stamp', '<(multidex_config_java_stamp)',
+            '>@(additional_multidex_config_options)',
+          ],
+        },
+      ],
+      'conditions': [
+        ['enable_multidex == 1', {
+          'actions': [
+            {
+              'action_name': 'main_dex_list_for_<(_target_name)',
+              'variables': {
+                'jar_paths': ['>@(input_jars_paths)', '<(javac_jar_path)'],
+                'output_path': '<(main_dex_list_path)',
+              },
+              'includes': [ 'android/main_dex_action.gypi' ],
+            },
+          ]
+        }]
       ],
     }],
   ],
@@ -846,7 +920,7 @@
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/process_resources.py',
-        '--android-sdk', '<(android_sdk)',
+        '--android-sdk-jar', '<(android_sdk_jar)',
         '--aapt-path', '<(android_aapt_path)',
 
         '--android-manifest', '<(android_manifest_path)',
@@ -910,6 +984,11 @@
           'inputs': [ '<(native_libraries_java_stamp)' ],
         }],
       ],
+      'target_conditions': [
+        ['generate_multidex_config == 1 and tested_apk_generated_multidex_config == 0', {
+          'inputs': [ '<(multidex_config_java_stamp)' ],
+        }],
+      ],
       'outputs': [
         '<(compile_stamp)',
         '<(javac_jar_path)',
@@ -929,30 +1008,23 @@
       ],
     },
     {
-      'action_name': 'main_dex_list_for_<(_target_name)',
-      'variables': {
-        'jar_path': '<(javac_jar_path)',
-        'output_path': '<(main_dex_list_path)',
-      },
-      'includes': [ 'android/main_dex_action.gypi' ],
-    },
-    {
-      'action_name': 'instr_jar_<(_target_name)',
+      'action_name': 'emma_instr_jar_<(_target_name)',
       'message': 'Instrumenting <(_target_name) jar',
       'variables': {
         'input_path': '<(javac_jar_path)',
         'output_path': '<(jar_path)',
-        'stamp_path': '<(instr_stamp)',
-        'instr_type': 'jar',
+        'coverage_file': '<(PRODUCT_DIR)/lib.java/<(_target_name).em',
+        'sources_list_file': '<(PRODUCT_DIR)/lib.java/<(_target_name)_sources.txt',
+        'stamp_path': '<(emma_instr_stamp)',
       },
       'outputs': [
-        '<(instr_stamp)',
+        '<(emma_instr_stamp)',
         '<(jar_path)',
       ],
       'inputs': [
         '<(javac_jar_path)',
       ],
-      'includes': [ 'android/instr_action.gypi' ],
+      'includes': [ 'android/emma_instr_action.gypi' ],
     },
     {
       'variables': {
@@ -1000,6 +1072,11 @@
               '--proguard-enabled',
             ],
           }],
+          ['debug_build_proguard_enabled == "true"', {
+            'additional_obfuscate_options': [
+              '--debug-build-proguard-enabled',
+            ],
+          }],
         ],
         'obfuscate_input_jars_paths': [
           '>@(input_jars_paths)',
@@ -1012,6 +1089,18 @@
             '<(test_jar_path)',
           ],
         }],
+        ['enable_multidex == 1', {
+          'inputs': [
+            '<(main_dex_list_path)',
+            '<(multidex_configuration_path)',
+          ],
+          'variables': {
+            'additional_obfuscate_options': [
+              '--main-dex-list-path', '<(main_dex_list_path)',
+              '--multidex-configuration-path', '<(multidex_configuration_path)',
+            ],
+          },
+        }],
       ],
       'inputs': [
         '<(DEPTH)/build/android/gyp/apk_obfuscate.py',
@@ -1019,7 +1108,7 @@
         '>@(proguard_flags_paths)',
         '>@(obfuscate_input_jars_paths)',
         '>@(additional_obfuscate_input_paths)',
-        '<(instr_stamp)',
+        '<(emma_instr_stamp)',
       ],
       'outputs': [
         '<(obfuscate_stamp)',
@@ -1066,16 +1155,17 @@
       },
       'conditions': [
         ['enable_multidex == 1', {
+          'inputs': [
+            '<(main_dex_list_path)',
+            '<(multidex_configuration_path)',
+          ],
           'variables': {
             'dex_additional_options': [
-              '--multi-dex',
-              '--main-dex-list-paths', '>@(main_dex_list_paths)',
+              '--main-dex-list-path', '<(main_dex_list_path)',
+              '--multidex-configuration-path', '<(multidex_configuration_path)',
             ],
           },
-          'inputs': [
-            '>@(main_dex_list_paths)',
-          ],
-        }]
+        }],
       ],
       'target_conditions': [
         ['enable_multidex == 1 or tested_apk_is_multidex == 1', {
@@ -1109,10 +1199,10 @@
             '>(tested_apk_dex_path).inputs',
           ],
         }],
-        ['proguard_enabled == "true"', {
+        ['proguard_enabled == "true" or debug_build_proguard_enabled == "true"', {
           'inputs': [ '<(obfuscate_stamp)' ]
         }, {
-          'inputs': [ '<(instr_stamp)' ]
+          'inputs': [ '<(emma_instr_stamp)' ]
         }],
       ],
       'includes': [ 'android/dex_action.gypi' ],

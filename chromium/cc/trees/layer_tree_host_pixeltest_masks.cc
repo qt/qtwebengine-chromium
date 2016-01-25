@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "build/build_config.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_image_layer.h"
@@ -32,18 +34,9 @@ class MaskContentLayerClient : public ContentLayerClient {
   bool FillsBoundsCompletely() const override { return false; }
   size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
 
-  // TODO(pdr): Remove PaintContents as all calls should go through
-  // PaintContentsToDisplayList.
-  void PaintContents(SkCanvas* canvas,
-                     const gfx::Rect& rect,
-                     PaintingControlSetting picture_control) override {
-    scoped_refptr<DisplayItemList> contents =
-        PaintContentsToDisplayList(rect, picture_control);
-    contents->Raster(canvas, nullptr, rect, 1.0f);
-  }
+  gfx::Rect PaintableRegion() override { return gfx::Rect(bounds_); }
 
   scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
-      const gfx::Rect& clip,
       PaintingControlSetting picture_control) override {
     SkPictureRecorder recorder;
     skia::RefPtr<SkCanvas> canvas = skia::SharePtr(
@@ -66,12 +59,9 @@ class MaskContentLayerClient : public ContentLayerClient {
     }
 
     scoped_refptr<DisplayItemList> display_list =
-        DisplayItemList::Create(clip, DisplayItemListSettings());
-    auto* item = display_list->CreateAndAppendItem<DrawingDisplayItem>();
-
-    skia::RefPtr<SkPicture> picture =
-        skia::AdoptRef(recorder.endRecordingAsPicture());
-    item->SetNew(picture.Pass());
+        DisplayItemList::Create(PaintableRegion(), DisplayItemListSettings());
+    display_list->CreateAndAppendItem<DrawingDisplayItem>(
+        PaintableRegion(), skia::AdoptRef(recorder.endRecordingAsPicture()));
 
     display_list->Finalize();
     return display_list;
@@ -119,11 +109,13 @@ TEST_P(LayerTreeHostMasksPixelTest, ImageMaskOfLayer) {
   SkCanvas* canvas = surface->getCanvas();
   canvas->scale(SkIntToScalar(4), SkIntToScalar(4));
   MaskContentLayerClient client(mask_bounds);
-  client.PaintContents(canvas, gfx::Rect(mask_bounds),
-                       ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  scoped_refptr<DisplayItemList> mask_display_list =
+      client.PaintContentsToDisplayList(
+          ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  mask_display_list->Raster(canvas, nullptr, gfx::Rect(mask_bounds), 1.0f);
   skia::RefPtr<const SkImage> image =
       skia::AdoptRef(surface->newImageSnapshot());
-  mask->SetImage(image.Pass());
+  mask->SetImage(std::move(image));
 
   scoped_refptr<SolidColorLayer> green = CreateSolidColorLayerWithBorder(
       gfx::Rect(25, 25, 50, 50), kCSSGreen, 1, SK_ColorBLACK);
@@ -140,7 +132,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskOfClippedLayer) {
 
   // Clip to the top half of the green layer.
   scoped_refptr<Layer> clip = Layer::Create(layer_settings());
-  clip->SetPosition(gfx::Point(0, 0));
+  clip->SetPosition(gfx::PointF());
   clip->SetBounds(gfx::Size(100, 50));
   clip->SetMasksToBounds(true);
   background->AddChild(clip);
@@ -185,7 +177,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskWithReplica) {
 
   scoped_refptr<Layer> replica = Layer::Create(layer_settings());
   replica->SetTransformOrigin(gfx::Point3F(25.f, 25.f, 0.f));
-  replica->SetPosition(gfx::Point(50, 50));
+  replica->SetPosition(gfx::PointF(50.f, 50.f));
   replica->SetTransform(replica_transform);
   green->SetReplicaLayer(replica.get());
 
@@ -208,7 +200,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskWithReplicaOfClippedLayer) {
   // Clip to the bottom half of the green layer, and the left half of the
   // replica.
   scoped_refptr<Layer> clip = Layer::Create(layer_settings());
-  clip->SetPosition(gfx::Point(0, 25));
+  clip->SetPosition(gfx::PointF(0.f, 25.f));
   clip->SetBounds(gfx::Size(75, 75));
   clip->SetMasksToBounds(true);
   background->AddChild(clip);
@@ -223,7 +215,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskWithReplicaOfClippedLayer) {
 
   scoped_refptr<Layer> replica = Layer::Create(layer_settings());
   replica->SetTransformOrigin(gfx::Point3F(25.f, 25.f, 0.f));
-  replica->SetPosition(gfx::Point(50, 50));
+  replica->SetPosition(gfx::PointF(50.f, 50.f));
   replica->SetTransform(replica_transform);
   green->SetReplicaLayer(replica.get());
 
@@ -258,7 +250,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskOfReplica) {
 
   scoped_refptr<Layer> replica = Layer::Create(layer_settings());
   replica->SetTransformOrigin(gfx::Point3F(50.f, 50.f, 0.f));
-  replica->SetPosition(gfx::Point());
+  replica->SetPosition(gfx::PointF());
   replica->SetTransform(replica_transform);
   replica->SetMaskLayer(mask.get());
   green->SetReplicaLayer(replica.get());
@@ -281,7 +273,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskOfReplicaOfClippedLayer) {
 
   // Clip to the bottom 3/4 of the green layer, and the top 3/4 of the replica.
   scoped_refptr<Layer> clip = Layer::Create(layer_settings());
-  clip->SetPosition(gfx::Point(0, 12));
+  clip->SetPosition(gfx::PointF(0.f, 12.f));
   clip->SetBounds(gfx::Size(100, 75));
   clip->SetMasksToBounds(true);
   background->AddChild(clip);
@@ -300,7 +292,7 @@ TEST_P(LayerTreeHostMasksPixelTest, MaskOfReplicaOfClippedLayer) {
 
   scoped_refptr<Layer> replica = Layer::Create(layer_settings());
   replica->SetTransformOrigin(gfx::Point3F(50.f, 50.f, 0.f));
-  replica->SetPosition(gfx::Point());
+  replica->SetPosition(gfx::PointF());
   replica->SetTransform(replica_transform);
   replica->SetMaskLayer(mask.get());
   green->SetReplicaLayer(replica.get());
@@ -319,17 +311,8 @@ class CheckerContentLayerClient : public ContentLayerClient {
   ~CheckerContentLayerClient() override {}
   bool FillsBoundsCompletely() const override { return false; }
   size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
-  // TODO(pdr): Remove PaintContents as all calls should go through
-  // PaintContentsToDisplayList.
-  void PaintContents(SkCanvas* canvas,
-                     const gfx::Rect& rect,
-                     PaintingControlSetting picture_control) override {
-    scoped_refptr<DisplayItemList> contents =
-        PaintContentsToDisplayList(rect, picture_control);
-    contents->Raster(canvas, nullptr, rect, 1.0f);
-  }
+  gfx::Rect PaintableRegion() override { return gfx::Rect(bounds_); }
   scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
-      const gfx::Rect& clip,
       PaintingControlSetting picture_control) override {
     SkPictureRecorder recorder;
     skia::RefPtr<SkCanvas> canvas = skia::SharePtr(
@@ -351,12 +334,9 @@ class CheckerContentLayerClient : public ContentLayerClient {
     }
 
     scoped_refptr<DisplayItemList> display_list =
-        DisplayItemList::Create(clip, DisplayItemListSettings());
-    auto* item = display_list->CreateAndAppendItem<DrawingDisplayItem>();
-
-    skia::RefPtr<SkPicture> picture =
-        skia::AdoptRef(recorder.endRecordingAsPicture());
-    item->SetNew(picture.Pass());
+        DisplayItemList::Create(PaintableRegion(), DisplayItemListSettings());
+    display_list->CreateAndAppendItem<DrawingDisplayItem>(
+        PaintableRegion(), skia::AdoptRef(recorder.endRecordingAsPicture()));
 
     display_list->Finalize();
     return display_list;
@@ -375,17 +355,8 @@ class CircleContentLayerClient : public ContentLayerClient {
   ~CircleContentLayerClient() override {}
   bool FillsBoundsCompletely() const override { return false; }
   size_t GetApproximateUnsharedMemoryUsage() const override { return 0; }
-  // TODO(pdr): Remove PaintContents as all calls should go through
-  // PaintContentsToDisplayList.
-  void PaintContents(SkCanvas* canvas,
-                     const gfx::Rect& rect,
-                     PaintingControlSetting picture_control) override {
-    scoped_refptr<DisplayItemList> contents =
-        PaintContentsToDisplayList(rect, picture_control);
-    contents->Raster(canvas, nullptr, rect, 1.0f);
-  }
+  gfx::Rect PaintableRegion() override { return gfx::Rect(bounds_); }
   scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
-      const gfx::Rect& clip,
       PaintingControlSetting picture_control) override {
     SkPictureRecorder recorder;
     skia::RefPtr<SkCanvas> canvas = skia::SharePtr(
@@ -401,11 +372,9 @@ class CircleContentLayerClient : public ContentLayerClient {
                        paint);
 
     scoped_refptr<DisplayItemList> display_list =
-        DisplayItemList::Create(clip, DisplayItemListSettings());
-    auto* item = display_list->CreateAndAppendItem<DrawingDisplayItem>();
-    skia::RefPtr<SkPicture> picture =
-        skia::AdoptRef(recorder.endRecordingAsPicture());
-    item->SetNew(picture.Pass());
+        DisplayItemList::Create(PaintableRegion(), DisplayItemListSettings());
+    display_list->CreateAndAppendItem<DrawingDisplayItem>(
+        PaintableRegion(), skia::AdoptRef(recorder.endRecordingAsPicture()));
 
     display_list->Finalize();
     return display_list;

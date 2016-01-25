@@ -13,11 +13,12 @@
 
 #include <list>
 #include <limits>
+#include <set>
 #include <string>
 
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/interface/module.h"
+#include "webrtc/modules/include/module.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_framework.h"
 
@@ -149,7 +150,7 @@ class TcpSender : public PacketSender {
  private:
   struct InFlight {
    public:
-    InFlight(const MediaPacket& packet)
+    explicit InFlight(const MediaPacket& packet)
         : sequence_number(packet.header().sequenceNumber),
           time_ms(packet.send_time_ms()) {}
 

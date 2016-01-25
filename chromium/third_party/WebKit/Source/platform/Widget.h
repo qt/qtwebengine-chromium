@@ -38,6 +38,7 @@
 
 namespace blink {
 
+class CullRect;
 class Event;
 class GraphicsContext;
 class HostWindow;
@@ -65,10 +66,8 @@ public:
 
     void resize(int w, int h) { setFrameRect(IntRect(x(), y(), w, h)); }
     void resize(const IntSize& s) { setFrameRect(IntRect(location(), s)); }
-    void move(int x, int y) { setFrameRect(IntRect(x, y, width(), height())); }
-    void move(const IntPoint& p) { setFrameRect(IntRect(p, size())); }
 
-    virtual void paint(GraphicsContext*, const IntRect&) const { }
+    virtual void paint(GraphicsContext&, const CullRect&) const { }
     void invalidate() { invalidateRect(boundsRect()); }
     virtual void invalidateRect(const IntRect&) = 0;
 
@@ -88,7 +87,6 @@ public:
     virtual bool isPluginContainer() const { return false; }
     virtual bool isScrollbar() const { return false; }
 
-    virtual HostWindow* hostWindow() const { ASSERT_NOT_REACHED(); return 0; }
     virtual void setParent(Widget*);
     Widget* parent() const { return m_parent; }
     Widget* root() const;
@@ -96,26 +94,24 @@ public:
     virtual void handleEvent(Event*) { }
 
     // It is important for cross-platform code to realize that Mac has flipped coordinates. Therefore any code
-    // that tries to convert the location of a rect using the point-based convertFromContainingWindow will end
-    // up with an inaccurate rect. Always make sure to use the rect-based convertFromContainingWindow method
+    // that tries to convert the location of a rect using the point-based convertFromRootFrame will end
+    // up with an inaccurate rect. Always make sure to use the rect-based convertFromRootFrame method
     // when converting window rects.
-    IntRect convertToContainingWindow(const IntRect&) const;
-    IntRect convertFromContainingWindow(const IntRect&) const;
+    IntRect convertToRootFrame(const IntRect&) const;
+    IntRect convertFromRootFrame(const IntRect&) const;
 
-    IntPoint convertToContainingWindow(const IntPoint&) const;
-    IntPoint convertFromContainingWindow(const IntPoint&) const;
-    FloatPoint convertFromContainingWindow(const FloatPoint&) const;
+    IntPoint convertToRootFrame(const IntPoint&) const;
+    IntPoint convertFromRootFrame(const IntPoint&) const;
+    FloatPoint convertFromRootFrame(const FloatPoint&) const;
 
     virtual void frameRectsChanged() { }
 
-    // Notifies this widget that other widgets on the page have been repositioned.
-    virtual void widgetPositionsUpdated() { }
+    virtual void widgetGeometryMayHaveChanged() { }
 
-    // Virtual methods to convert points to/from the containing Widget
-    virtual IntRect convertToContainingView(const IntRect&) const;
-    virtual IntRect convertFromContainingView(const IntRect&) const;
-    virtual IntPoint convertToContainingView(const IntPoint&) const;
-    virtual IntPoint convertFromContainingView(const IntPoint&) const;
+    virtual IntRect convertToContainingWidget(const IntRect&) const;
+    virtual IntRect convertFromContainingWidget(const IntRect&) const;
+    virtual IntPoint convertToContainingWidget(const IntPoint&) const;
+    virtual IntPoint convertFromContainingWidget(const IntPoint&) const;
 
     // Virtual methods to convert points to/from child widgets
     virtual IntPoint convertChildToSelf(const Widget*, const IntPoint&) const;

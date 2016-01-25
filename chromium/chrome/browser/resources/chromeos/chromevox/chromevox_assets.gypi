@@ -4,11 +4,16 @@
 
 {
   'variables': {
-    'chromevox_assets_chromevox': [
-      'chromevox/chromevox-128.png',
-      'chromevox/chromevox-16.png',
-      'chromevox/chromevox-19.png',
-      'chromevox/chromevox-48.png',
+    'chromevox_assets_images': [
+      'images/chromevox-128.png',
+      'images/chromevox-16.png',
+      'images/chromevox-19.png',
+      'images/chromevox-48.png',
+      'images/close-19.png',
+      'images/close-hover-19.png',
+      'images/options-19.png',
+      'images/options-hover-19.png',
+      'images/triangle-6.png',
     ],
     'chromevox_assets_chromevox_background_earcons': [
       'chromevox/background/earcons/alert_modal.ogg',
@@ -41,6 +46,7 @@
       'chromevox/background/keymaps/classic_keymap.json',
       'chromevox/background/keymaps/experimental.json',
       'chromevox/background/keymaps/flat_keymap.json',
+      'chromevox/background/keymaps/next_keymap.json',
     ],
     'chromevox_assets_chromevox_background_mathmaps_functions': [
       'chromevox/background/mathmaps/functions/algebra.json',
@@ -91,9 +97,9 @@
       'type': 'none',
       'copies': [
         {
-          'destination': '<(chromevox_dest_dir)/chromevox',
+          'destination': '<(chromevox_dest_dir)/images',
           'files': [
-            '<@(chromevox_assets_chromevox)',
+            '<@(chromevox_assets_images)',
           ],
         },
         {

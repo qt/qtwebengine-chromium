@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/thread_task_runner_handle.h"
@@ -10,7 +13,7 @@
 #include "cc/raster/raster_buffer.h"
 #include "cc/test/begin_frame_args_test.h"
 #include "cc/test/fake_display_list_raster_source.h"
-#include "cc/test/fake_impl_proxy.h"
+#include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -37,12 +40,10 @@ static const int kTimeCheckInterval = 10;
 class FakeTileTaskRunnerImpl : public TileTaskRunner, public TileTaskClient {
  public:
   // Overridden from TileTaskRunner:
-  void SetClient(TileTaskRunnerClient* client) override {}
   void Shutdown() override {}
-  void ScheduleTasks(TileTaskQueue* queue) override {
-    for (TileTaskQueue::Item::Vector::const_iterator it = queue->items.begin();
-         it != queue->items.end(); ++it) {
-      RasterTask* task = it->task;
+  void ScheduleTasks(TaskGraph* graph) override {
+    for (auto& node : graph->nodes) {
+      TileTask* task = static_cast<TileTask*>(node.task);
 
       task->WillSchedule();
       task->ScheduleOnOriginThread(this);
@@ -52,10 +53,9 @@ class FakeTileTaskRunnerImpl : public TileTaskRunner, public TileTaskClient {
     }
   }
   void CheckForCompletedTasks() override {
-    for (RasterTask::Vector::iterator it = completed_tasks_.begin();
-         it != completed_tasks_.end();
-         ++it) {
-      RasterTask* task = it->get();
+    for (TileTask::Vector::iterator it = completed_tasks_.begin();
+         it != completed_tasks_.end(); ++it) {
+      TileTask* task = it->get();
 
       task->WillComplete();
       task->CompleteOnOriginThread(this);
@@ -81,7 +81,7 @@ class FakeTileTaskRunnerImpl : public TileTaskRunner, public TileTaskClient {
   void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) override {}
 
  private:
-  RasterTask::Vector completed_tasks_;
+  TileTask::Vector completed_tasks_;
 };
 base::LazyInstance<FakeTileTaskRunnerImpl> g_fake_tile_task_runner =
     LAZY_INSTANCE_INITIALIZER;
@@ -92,10 +92,10 @@ class TileManagerPerfTest : public testing::Test {
       : memory_limit_policy_(ALLOW_ANYTHING),
         max_tiles_(10000),
         id_(7),
-        proxy_(base::ThreadTaskRunnerHandle::Get()),
+        task_runner_provider_(base::ThreadTaskRunnerHandle::Get()),
         output_surface_(FakeOutputSurface::Create3d()),
         host_impl_(LayerTreeSettings(),
-                   &proxy_,
+                   &task_runner_provider_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_),
         timer_(kWarmupRuns,
@@ -124,6 +124,7 @@ class TileManagerPerfTest : public testing::Test {
   }
 
   virtual void InitializeRenderer() {
+    host_impl_.SetVisible(true);
     host_impl_.InitializeRenderer(output_surface_.get());
     tile_manager()->SetTileTaskRunnerForTesting(
         g_fake_tile_task_runner.Pointer());
@@ -153,14 +154,14 @@ class TileManagerPerfTest : public testing::Test {
     active_root_layer_->set_fixed_tile_size(tile_size);
   }
 
-  void SetupTrees(scoped_refptr<RasterSource> pending_raster_source,
-                  scoped_refptr<RasterSource> active_raster_source) {
+  void SetupTrees(scoped_refptr<DisplayListRasterSource> pending_raster_source,
+                  scoped_refptr<DisplayListRasterSource> active_raster_source) {
     SetupPendingTree(active_raster_source);
     ActivateTree();
     SetupPendingTree(pending_raster_source);
   }
 
-  void SetupPendingTree(scoped_refptr<RasterSource> raster_source) {
+  void SetupPendingTree(scoped_refptr<DisplayListRasterSource> raster_source) {
     host_impl_.CreatePendingTree();
     LayerTreeImpl* pending_tree = host_impl_.pending_tree();
     // Clear recycled tree.
@@ -170,8 +171,9 @@ class TileManagerPerfTest : public testing::Test {
         FakePictureLayerImpl::CreateWithRasterSource(pending_tree, id_,
                                                      raster_source);
     pending_layer->SetDrawsContent(true);
-    pending_layer->SetHasRenderSurface(true);
-    pending_tree->SetRootLayer(pending_layer.Pass());
+    pending_layer->SetForceRenderSurface(true);
+    pending_tree->SetRootLayer(std::move(pending_layer));
+    pending_tree->BuildPropertyTreesForTesting();
 
     pending_root_layer_ = static_cast<FakePictureLayerImpl*>(
         host_impl_.pending_tree()->LayerById(id_));
@@ -359,10 +361,13 @@ class TileManagerPerfTest : public testing::Test {
       layer->SetBounds(layer_bounds);
       layer->SetDrawsContent(true);
       layers.push_back(layer.get());
-      pending_root_layer_->AddChild(layer.Pass());
+      pending_root_layer_->AddChild(std::move(layer));
       ++next_id;
     }
 
+    // Property trees need to be rebuilt because layers were added above.
+    host_impl_.pending_tree()->property_trees()->needs_rebuild = true;
+    host_impl_.pending_tree()->BuildPropertyTreesForTesting();
     bool update_lcd_text = false;
     host_impl_.pending_tree()->UpdateDrawProperties(update_lcd_text);
     for (FakePictureLayerImpl* layer : layers)
@@ -417,7 +422,7 @@ class TileManagerPerfTest : public testing::Test {
   TileMemoryLimitPolicy memory_limit_policy_;
   int max_tiles_;
   int id_;
-  FakeImplProxy proxy_;
+  FakeImplTaskRunnerProvider task_runner_provider_;
   scoped_ptr<OutputSurface> output_surface_;
   FakeLayerTreeHostImpl host_impl_;
   FakePictureLayerImpl* pending_root_layer_;

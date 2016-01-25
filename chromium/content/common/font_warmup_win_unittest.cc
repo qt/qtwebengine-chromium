@@ -4,6 +4,9 @@
 
 #include "content/common/font_warmup_win.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -256,9 +259,9 @@ TEST(GDIFontEmulationTest, CreateDeleteDCSuccess) {
 
   HDC hdc = CreateCompatibleDC(0);
   EXPECT_NE(hdc, nullptr);
-  EXPECT_EQ(GetEmulatedGdiHandleCountForTesting(), 1);
+  EXPECT_EQ(1u, GetEmulatedGdiHandleCountForTesting());
   EXPECT_TRUE(DeleteDC(hdc));
-  EXPECT_EQ(GetEmulatedGdiHandleCountForTesting(), 0);
+  EXPECT_EQ(0u, GetEmulatedGdiHandleCountForTesting());
 }
 
 TEST(GDIFontEmulationTest, CreateUniqueDCSuccess) {
@@ -274,9 +277,9 @@ TEST(GDIFontEmulationTest, CreateUniqueDCSuccess) {
   EXPECT_NE(hdc2, nullptr);
   EXPECT_NE(hdc1, hdc2);
   EXPECT_TRUE(DeleteDC(hdc2));
-  EXPECT_EQ(GetEmulatedGdiHandleCountForTesting(), 1);
+  EXPECT_EQ(1u, GetEmulatedGdiHandleCountForTesting());
   EXPECT_TRUE(DeleteDC(hdc1));
-  EXPECT_EQ(GetEmulatedGdiHandleCountForTesting(), 0);
+  EXPECT_EQ(0u, GetEmulatedGdiHandleCountForTesting());
 }
 
 TEST(GDIFontEmulationTest, CreateFontSuccess) {
@@ -290,7 +293,7 @@ TEST(GDIFontEmulationTest, CreateFontSuccess) {
   HFONT font = CreateFontIndirectW(&logfont);
   EXPECT_NE(font, nullptr);
   EXPECT_TRUE(DeleteObject(font));
-  EXPECT_EQ(GetEmulatedGdiHandleCountForTesting(), 0);
+  EXPECT_EQ(0u, GetEmulatedGdiHandleCountForTesting());
 }
 
 TEST(GDIFontEmulationTest, CreateFontFailure) {

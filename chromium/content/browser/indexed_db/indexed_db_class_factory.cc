@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 #include "content/browser/indexed_db/indexed_db_class_factory.h"
+
+#include <utility>
+
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/leveldb/leveldb_iterator_impl.h"
 #include "content/browser/indexed_db/leveldb/leveldb_transaction.h"
@@ -33,9 +36,9 @@ IndexedDBDatabase* IndexedDBClassFactory::CreateIndexedDBDatabase(
 }
 
 IndexedDBTransaction* IndexedDBClassFactory::CreateIndexedDBTransaction(
-    int64 id,
+    int64_t id,
     scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-    const std::set<int64>& scope,
+    const std::set<int64_t>& scope,
     blink::WebIDBTransactionMode mode,
     IndexedDBDatabase* db,
     IndexedDBBackingStore::Transaction* backing_store_transaction) {
@@ -50,7 +53,7 @@ LevelDBTransaction* IndexedDBClassFactory::CreateLevelDBTransaction(
 
 content::LevelDBIteratorImpl* IndexedDBClassFactory::CreateIteratorImpl(
     scoped_ptr<leveldb::Iterator> iterator) {
-  return new LevelDBIteratorImpl(iterator.Pass());
+  return new LevelDBIteratorImpl(std::move(iterator));
 }
 
 }  // namespace content

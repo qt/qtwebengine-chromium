@@ -5,12 +5,16 @@
 #ifndef DEVICE_SERIAL_SERIAL_IO_HANDLER_H_
 #define DEVICE_SERIAL_SERIAL_IO_HANDLER_H_
 
+#include <stdint.h>
+
 #include "base/callback.h"
 #include "base/files/file.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/non_thread_safe.h"
+#include "build/build_config.h"
 #include "device/serial/buffer.h"
 #include "device/serial/serial.mojom.h"
 
@@ -190,6 +194,16 @@ class SerialIoHandler : public base::NonThreadSafe,
   // Possibly fixes up a serial port path name in a platform-specific manner.
   static std::string MaybeFixUpPortName(const std::string& port_name);
 
+  base::SingleThreadTaskRunner* file_thread_task_runner() const {
+    return file_thread_task_runner_.get();
+  }
+
+  base::SingleThreadTaskRunner* ui_thread_task_runner() const {
+    return ui_thread_task_runner_.get();
+  }
+
+  const std::string& port() const { return port_; }
+
  private:
   friend class base::RefCounted<SerialIoHandler>;
 
@@ -228,6 +242,8 @@ class SerialIoHandler : public base::NonThreadSafe,
   scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner_;
   // On Chrome OS, PermissionBrokerClient should be called on the UI thread.
   scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner_;
+
+  std::string port_;
 
   DISALLOW_COPY_AND_ASSIGN(SerialIoHandler);
 };

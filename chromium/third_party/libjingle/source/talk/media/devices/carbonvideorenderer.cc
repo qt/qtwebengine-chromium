@@ -40,7 +40,6 @@ CarbonVideoRenderer::CarbonVideoRenderer(int x, int y)
       image_height_(0),
       x_(x),
       y_(y),
-      image_ref_(NULL),
       window_ref_(NULL) {
 }
 
@@ -116,7 +115,7 @@ bool CarbonVideoRenderer::SetSize(int width, int height, int reserved) {
     rtc::CritScope cs(&image_crit_);
     image_width_ = width;
     image_height_ = height;
-    image_.reset(new uint8[width * height * 4]);
+    image_.reset(new uint8_t[width * height * 4]);
     memset(image_.get(), 255, width * height * 4);
   }
   return true;

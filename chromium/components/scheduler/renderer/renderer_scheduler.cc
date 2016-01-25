@@ -4,13 +4,22 @@
 
 #include "components/scheduler/renderer/renderer_scheduler.h"
 
+#include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/message_loop/message_loop.h"
+#include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_impl.h"
-#include "components/scheduler/child/scheduler_task_runner_delegate_impl.h"
+#include "components/scheduler/child/scheduler_tqm_delegate_impl.h"
+#include "components/scheduler/child/virtual_time_tqm_delegate.h"
+#include "components/scheduler/common/scheduler_switches.h"
 #include "components/scheduler/renderer/renderer_scheduler_impl.h"
 
 namespace scheduler {
+namespace {
+const base::Feature kExpensiveTaskBlockingPolicyFeature{
+    "SchedulerExpensiveTaskBlocking", base::FEATURE_DISABLED_BY_DEFAULT};
+}
 
 RendererScheduler::RendererScheduler() {
 }
@@ -29,9 +38,23 @@ scoped_ptr<RendererScheduler> RendererScheduler::Create() {
   base::trace_event::TraceLog::GetCategoryGroupEnabled(
       TRACE_DISABLED_BY_DEFAULT("renderer.scheduler.debug"));
 
+  scoped_ptr<RendererSchedulerImpl> scheduler;
   base::MessageLoop* message_loop = base::MessageLoop::current();
-  return make_scoped_ptr(new RendererSchedulerImpl(
-      SchedulerTaskRunnerDelegateImpl::Create(message_loop)));
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableVirtualizedTime)) {
+    scheduler.reset(new RendererSchedulerImpl(
+        VirtualTimeTqmDelegate::Create(message_loop, base::TimeTicks::Now())));
+  } else {
+    scheduler.reset(new RendererSchedulerImpl(SchedulerTqmDelegateImpl::Create(
+        message_loop, make_scoped_ptr(new base::DefaultTickClock()))));
+  }
+
+  // Runtime features are not currently available in html_viewer.
+  if (base::FeatureList::GetInstance()) {
+    scheduler->SetExpensiveTaskBlockingAllowed(
+        base::FeatureList::IsEnabled(kExpensiveTaskBlockingPolicyFeature));
+  }
+  return make_scoped_ptr<RendererScheduler>(scheduler.release());
 }
 
 // static
@@ -43,6 +66,8 @@ const char* RendererScheduler::UseCaseToString(UseCase use_case) {
       return "compositor_gesture";
     case UseCase::MAIN_THREAD_GESTURE:
       return "main_thread_gesture";
+    case UseCase::SYNCHRONIZED_GESTURE:
+      return "synchronized_gesture";
     case UseCase::TOUCHSTART:
       return "touchstart";
     case UseCase::LOADING:

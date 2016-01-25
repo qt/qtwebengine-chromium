@@ -31,6 +31,8 @@
 #ifndef PickerIndicatorElement_h
 #define PickerIndicatorElement_h
 
+#include "wtf/build_config.h"
+
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/HTMLDivElement.h"
 #include "core/html/forms/DateTimeChooser.h"
@@ -41,6 +43,7 @@ namespace blink {
 class HTMLInputElement;
 
 class PickerIndicatorElement final : public HTMLDivElement, public DateTimeChooserClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PickerIndicatorElement);
 public:
     // PickerIndicatorOwner implementer must call removePickerIndicatorOwner when
     // it doesn't handle event, e.g. at destruction.
@@ -83,7 +86,7 @@ private:
     HTMLInputElement* hostInput();
 
     RawPtrWillBeMember<PickerIndicatorOwner> m_pickerIndicatorOwner;
-    RefPtr<DateTimeChooser> m_chooser;
+    RefPtrWillBeMember<DateTimeChooser> m_chooser;
 };
 
 DEFINE_TYPE_CASTS(PickerIndicatorElement, Element, element, element->isPickerIndicatorElement(), element.isPickerIndicatorElement());

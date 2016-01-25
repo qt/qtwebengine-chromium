@@ -28,45 +28,28 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebOptionElement.h"
 
 #include "core/HTMLNames.h"
 #include "core/html/HTMLOptionElement.h"
-#include "core/html/HTMLSelectElement.h"
 #include "public/platform/WebString.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
-
-void WebOptionElement::setValue(const WebString& newValue)
-{
-    unwrap<HTMLOptionElement>()->setValue(newValue);
-}
 
 WebString WebOptionElement::value() const
 {
     return constUnwrap<HTMLOptionElement>()->value();
 }
 
-int WebOptionElement::index() const
-{
-    return constUnwrap<HTMLOptionElement>()->index();
-}
-
 WebString WebOptionElement::text() const
 {
-    return constUnwrap<HTMLOptionElement>()->text();
+    return constUnwrap<HTMLOptionElement>()->displayLabel();
 }
 
 WebString WebOptionElement::label() const
 {
     return constUnwrap<HTMLOptionElement>()->label();
-}
-
-bool WebOptionElement::isEnabled() const
-{
-    return !(constUnwrap<HTMLOptionElement>()->isDisabledFormControl());
 }
 
 WebOptionElement::WebOptionElement(const PassRefPtrWillBeRawPtr<HTMLOptionElement>& elem)

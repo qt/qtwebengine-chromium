@@ -23,10 +23,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/events/CustomEvent.h"
 
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValueFactory.h"
 
 namespace blink {
 
@@ -37,18 +37,15 @@ CustomEvent::CustomEvent()
 CustomEvent::CustomEvent(const AtomicString& type, const CustomEventInit& initializer)
     : Event(type, initializer)
 {
-    if (initializer.hasDetail())
-        m_detail = initializer.detail();
 }
 
 CustomEvent::~CustomEvent()
 {
 }
 
-void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, const ScriptValue& detail)
+void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, const ScriptValue&)
 {
     initEvent(type, canBubble, cancelable);
-    m_detail = detail;
 }
 
 void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> serializedDetail)

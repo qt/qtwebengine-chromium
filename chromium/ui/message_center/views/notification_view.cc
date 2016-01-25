@@ -4,14 +4,19 @@
 
 #include "ui/message_center/views/notification_view.h"
 
+#include <stddef.h>
+
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "components/url_formatter/elide_url.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/base/cursor/cursor.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/size.h"
@@ -25,6 +30,7 @@
 #include "ui/message_center/views/constants.h"
 #include "ui/message_center/views/message_center_controller.h"
 #include "ui/message_center/views/notification_button.h"
+#include "ui/message_center/views/notification_progress_bar.h"
 #include "ui/message_center/views/padded_button.h"
 #include "ui/message_center/views/proportional_image_view.h"
 #include "ui/native_theme/native_theme.h"
@@ -44,11 +50,13 @@
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
+#endif
+
 namespace {
 
 // Dimensions.
-const int kProgressBarWidth = message_center::kNotificationWidth -
-    message_center::kTextLeftPadding - message_center::kTextRightPadding;
 const int kProgressBarBottomPadding = 0;
 
 // static
@@ -156,67 +164,6 @@ void ItemView::SetVisible(bool visible) {
     child_at(i)->SetVisible(visible);
 }
 
-// NotificationProgressBar /////////////////////////////////////////////////////
-
-class NotificationProgressBar : public views::ProgressBar {
- public:
-  NotificationProgressBar();
-  ~NotificationProgressBar() override;
-
- private:
-  // Overriden from View
-  gfx::Size GetPreferredSize() const override;
-  void OnPaint(gfx::Canvas* canvas) override;
-
-  DISALLOW_COPY_AND_ASSIGN(NotificationProgressBar);
-};
-
-NotificationProgressBar::NotificationProgressBar() {
-}
-
-NotificationProgressBar::~NotificationProgressBar() {
-}
-
-gfx::Size NotificationProgressBar::GetPreferredSize() const {
-  gfx::Size pref_size(kProgressBarWidth, message_center::kProgressBarThickness);
-  gfx::Insets insets = GetInsets();
-  pref_size.Enlarge(insets.width(), insets.height());
-  return pref_size;
-}
-
-void NotificationProgressBar::OnPaint(gfx::Canvas* canvas) {
-  gfx::Rect content_bounds = GetContentsBounds();
-
-  // Draw background.
-  SkPath background_path;
-  background_path.addRoundRect(gfx::RectToSkRect(content_bounds),
-                               message_center::kProgressBarCornerRadius,
-                               message_center::kProgressBarCornerRadius);
-  SkPaint background_paint;
-  background_paint.setStyle(SkPaint::kFill_Style);
-  background_paint.setFlags(SkPaint::kAntiAlias_Flag);
-  background_paint.setColor(message_center::kProgressBarBackgroundColor);
-  canvas->DrawPath(background_path, background_paint);
-
-  // Draw slice.
-  const int slice_width =
-      static_cast<int>(content_bounds.width() * GetNormalizedValue() + 0.5);
-  if (slice_width < 1)
-    return;
-
-  gfx::Rect slice_bounds = content_bounds;
-  slice_bounds.set_width(slice_width);
-  SkPath slice_path;
-  slice_path.addRoundRect(gfx::RectToSkRect(slice_bounds),
-                          message_center::kProgressBarCornerRadius,
-                          message_center::kProgressBarCornerRadius);
-  SkPaint slice_paint;
-  slice_paint.setStyle(SkPaint::kFill_Style);
-  slice_paint.setFlags(SkPaint::kAntiAlias_Flag);
-  slice_paint.setColor(message_center::kProgressBarSliceColor);
-  canvas->DrawPath(slice_path, slice_paint);
-}
-
 }  // namespace
 
 namespace message_center {
@@ -255,6 +202,13 @@ NotificationView* NotificationView::Create(MessageCenterController* controller,
     return notification_view;
 #endif
 
+#if defined(OS_WIN)
+  // Don't create shadows for notifications on Windows under classic theme.
+  if (top_level && !ui::win::IsAeroGlassEnabled()) {
+    return notification_view;
+  }
+#endif  // OS_WIN
+
   notification_view->CreateShadowBorder();
   return notification_view;
 }
@@ -272,6 +226,8 @@ views::View* NotificationView::TargetForRect(views::View* root,
   // called. But buttons are exceptions, they'll have their own event handlings.
   std::vector<views::View*> buttons(action_buttons_.begin(),
                                     action_buttons_.end());
+  if (settings_button_view_)
+    buttons.push_back(settings_button_view_);
   buttons.push_back(close_button());
 
   for (size_t i = 0; i < buttons.size(); ++i) {
@@ -292,6 +248,7 @@ void NotificationView::CreateOrUpdateViews(const Notification& notification) {
   CreateOrUpdateIconView(notification);
   CreateOrUpdateImageView(notification);
   CreateOrUpdateContextMessageView(notification);
+  CreateOrUpdateSettingsButtonView(notification);
   CreateOrUpdateActionButtonViews(notification);
 }
 
@@ -322,6 +279,7 @@ NotificationView::NotificationView(MessageCenterController* controller,
       title_view_(NULL),
       message_view_(NULL),
       context_message_view_(NULL),
+      settings_button_view_(NULL),
       icon_view_(NULL),
       bottom_view_(NULL),
       image_container_(NULL),
@@ -423,9 +381,18 @@ void NotificationView::Layout() {
   // Icon.
   icon_view_->SetBounds(insets.left(), insets.top(), kIconSize, kIconSize);
 
-  // Bottom views.
+  // Settings & Bottom views.
   int bottom_y = insets.top() + std::max(top_height, kIconSize);
   int bottom_height = bottom_view_->GetHeightForWidth(content_width);
+
+  if (settings_button_view_) {
+    gfx::Size settings_size(settings_button_view_->GetPreferredSize());
+    settings_button_view_->SetBounds(content_width - settings_size.width(),
+                                     bottom_y - settings_size.height(),
+                                     settings_size.width(),
+                                     settings_size.height());
+  }
+
   bottom_view_->SetBounds(insets.left(), bottom_y,
                           content_width, bottom_height);
 }
@@ -464,6 +431,12 @@ void NotificationView::ButtonPressed(views::Button* sender,
   // we send to other parts of the code.
   // TODO(dewittj): Remove this hack.
   std::string id(notification_id());
+
+  if (sender == settings_button_view_) {
+    controller_->ClickOnSettingsButton(id);
+    return;
+  }
+
   // See if the button pressed was an action button.
   for (size_t i = 0; i < action_buttons_.size(); ++i) {
     if (sender == action_buttons_[i]) {
@@ -472,7 +445,7 @@ void NotificationView::ButtonPressed(views::Button* sender,
     }
   }
 
-  // Let the superclass handled anything other than action buttons.
+  // Let the superclass handle everything else.
   // Warning: This may cause the NotificationView itself to be deleted,
   // so don't do anything afterwards.
   MessageView::ButtonPressed(sender, event);
@@ -603,6 +576,33 @@ void NotificationView::CreateOrUpdateContextMessageView(
   }
 }
 
+void NotificationView::CreateOrUpdateSettingsButtonView(
+    const Notification& notification) {
+  if (settings_button_view_) {
+    delete settings_button_view_;
+    settings_button_view_ = NULL;
+  }
+
+  if (!settings_button_view_ && notification.delegate() &&
+      notification.delegate()->ShouldDisplaySettingsButton()) {
+    PaddedButton* settings = new PaddedButton(this);
+    settings->SetPadding(-kNotificationSettingsPadding,
+                         kNotificationSettingsPadding);
+    settings->SetNormalImage(IDR_NOTIFICATION_SETTINGS_BUTTON_ICON);
+    settings->SetHoveredImage(IDR_NOTIFICATION_SETTINGS_BUTTON_ICON_HOVER);
+    settings->SetPressedImage(IDR_NOTIFICATION_SETTINGS_BUTTON_ICON_PRESSED);
+    settings->set_animate_on_state_change(false);
+    settings->SetAccessibleName(l10n_util::GetStringUTF16(
+        IDS_MESSAGE_NOTIFICATION_SETTINGS_BUTTON_ACCESSIBLE_NAME));
+    settings->SetTooltipText(l10n_util::GetStringUTF16(
+        IDS_MESSAGE_NOTIFICATION_SETTINGS_BUTTON_ACCESSIBLE_NAME));
+    settings->SetFocusPainter(views::Painter::CreateSolidFocusPainter(
+        kFocusBorderColor, gfx::Insets(1, 2, 2, 2)));
+    settings_button_view_ = settings;
+    AddChildView(settings_button_view_);
+  }
+}
+
 void NotificationView::CreateOrUpdateProgressBarView(
     const Notification& notification) {
   if (notification.type() != NOTIFICATION_TYPE_PROGRESS) {
@@ -616,14 +616,27 @@ void NotificationView::CreateOrUpdateProgressBarView(
 
   DCHECK(top_view_ != NULL);
 
+  bool is_indeterminate = (notification.progress() < 0);
+  if (progress_bar_view_ &&
+      progress_bar_view_->is_indeterminate() != is_indeterminate) {
+    delete progress_bar_view_;
+    progress_bar_view_ = NULL;
+  }
+
   if (!progress_bar_view_) {
-    progress_bar_view_ = new NotificationProgressBar();
+    if (!is_indeterminate)
+      progress_bar_view_ = new NotificationProgressBar();
+    else
+      progress_bar_view_ = new NotificationIndeterminateProgressBar();
+
     progress_bar_view_->SetBorder(MakeProgressBarBorder(
         message_center::kProgressBarTopPadding, kProgressBarBottomPadding));
     top_view_->AddChildView(progress_bar_view_);
   }
 
-  progress_bar_view_->SetValue(notification.progress() / 100.0);
+  if (!is_indeterminate)
+    progress_bar_view_->SetValue(notification.progress() / 100.0);
+
   progress_bar_view_->SetVisible(!notification.items().size());
 }
 

@@ -5,6 +5,7 @@
 #include "content/renderer/presentation/presentation_dispatcher.h"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "base/logging.h"
@@ -39,16 +40,19 @@ blink::WebPresentationError::ErrorType GetWebPresentationErrorTypeFromMojo(
 }
 
 blink::WebPresentationConnectionState GetWebPresentationConnectionStateFromMojo(
-        presentation::PresentationSessionState mojoSessionState) {
+    presentation::PresentationConnectionState mojoSessionState) {
   switch (mojoSessionState) {
-    case presentation::PRESENTATION_SESSION_STATE_CONNECTED:
+    // TODO(imcheng): Add Connecting state to Blink (crbug.com/575351).
+    case presentation::PRESENTATION_CONNECTION_STATE_CONNECTED:
       return blink::WebPresentationConnectionState::Connected;
-    case presentation::PRESENTATION_SESSION_STATE_DISCONNECTED:
-      return blink::WebPresentationConnectionState::Disconnected;
+    case presentation::PRESENTATION_CONNECTION_STATE_CLOSED:
+      return blink::WebPresentationConnectionState::Closed;
+    case presentation::PRESENTATION_CONNECTION_STATE_TERMINATED:
+      return blink::WebPresentationConnectionState::Terminated;
+    default:
+      NOTREACHED();
+      return blink::WebPresentationConnectionState::Terminated;
   }
-
-  NOTREACHED();
-  return blink::WebPresentationConnectionState::Disconnected;
 }
 
 }  // namespace
@@ -123,7 +127,7 @@ void PresentationDispatcher::sendString(
     return;
   }
 
-  message_request_queue_.push(make_linked_ptr(
+  message_request_queue_.push(make_scoped_ptr(
       CreateSendTextMessageRequest(presentationUrl, presentationId, message)));
   // Start processing request if only one in the queue.
   if (message_request_queue_.size() == 1)
@@ -133,7 +137,7 @@ void PresentationDispatcher::sendString(
 void PresentationDispatcher::sendArrayBuffer(
     const blink::WebString& presentationUrl,
     const blink::WebString& presentationId,
-    const uint8* data,
+    const uint8_t* data,
     size_t length) {
   DCHECK(data);
   if (length > kMaxPresentationSessionMessageSize) {
@@ -142,7 +146,7 @@ void PresentationDispatcher::sendArrayBuffer(
     return;
   }
 
-  message_request_queue_.push(make_linked_ptr(
+  message_request_queue_.push(make_scoped_ptr(
       CreateSendBinaryMessageRequest(presentationUrl, presentationId,
                                      presentation::PresentationMessageType::
                                          PRESENTATION_MESSAGE_TYPE_ARRAY_BUFFER,
@@ -155,7 +159,7 @@ void PresentationDispatcher::sendArrayBuffer(
 void PresentationDispatcher::sendBlobData(
     const blink::WebString& presentationUrl,
     const blink::WebString& presentationId,
-    const uint8* data,
+    const uint8_t* data,
     size_t length) {
   DCHECK(data);
   if (length > kMaxPresentationSessionMessageSize) {
@@ -164,7 +168,7 @@ void PresentationDispatcher::sendBlobData(
     return;
   }
 
-  message_request_queue_.push(make_linked_ptr(CreateSendBinaryMessageRequest(
+  message_request_queue_.push(make_scoped_ptr(CreateSendBinaryMessageRequest(
       presentationUrl, presentationId,
       presentation::PresentationMessageType::PRESENTATION_MESSAGE_TYPE_BLOB,
       data, length)));
@@ -177,7 +181,7 @@ void PresentationDispatcher::DoSendMessage(SendMessageRequest* request) {
   ConnectToPresentationServiceIfNeeded();
 
   presentation_service_->SendSessionMessage(
-      request->session_info.Pass(), request->message.Pass(),
+      std::move(request->session_info), std::move(request->message),
       base::Bind(&PresentationDispatcher::HandleSendMessageRequests,
                  base::Unretained(this)));
 }
@@ -208,9 +212,17 @@ void PresentationDispatcher::closeSession(
     const blink::WebString& presentationId) {
   ConnectToPresentationServiceIfNeeded();
 
-  presentation_service_->CloseSession(
-      presentationUrl.utf8(),
-      presentationId.utf8());
+  presentation_service_->CloseConnection(presentationUrl.utf8(),
+                                         presentationId.utf8());
+}
+
+void PresentationDispatcher::terminateSession(
+    const blink::WebString& presentationUrl,
+    const blink::WebString& presentationId) {
+  ConnectToPresentationServiceIfNeeded();
+
+  presentation_service_->Terminate(presentationUrl.utf8(),
+                                   presentationId.utf8());
 }
 
 void PresentationDispatcher::getAvailability(
@@ -221,9 +233,9 @@ void PresentationDispatcher::getAvailability(
   auto status_it = availability_status_.find(availability_url);
   if (status_it == availability_status_.end()) {
     status = new AvailabilityStatus(availability_url);
-    availability_status_.set(availability_url, make_scoped_ptr(status));
+    availability_status_[availability_url] = make_scoped_ptr(status);
   } else {
-    status = status_it->second;
+    status = status_it->second.get();
   }
   DCHECK(status);
 
@@ -247,7 +259,7 @@ void PresentationDispatcher::startListening(
     return;
   }
   status_it->second->availability_observers.insert(observer);
-  UpdateListeningState(status_it->second);
+  UpdateListeningState(status_it->second.get());
 }
 
 void PresentationDispatcher::stopListening(
@@ -260,7 +272,7 @@ void PresentationDispatcher::stopListening(
     return;
   }
   status_it->second->availability_observers.erase(observer);
-  UpdateListeningState(status_it->second);
+  UpdateListeningState(status_it->second.get());
 }
 
 void PresentationDispatcher::setDefaultPresentationUrl(
@@ -288,7 +300,7 @@ void PresentationDispatcher::OnScreenAvailabilityUpdated(
   auto status_it = availability_status_.find(availability_url);
   if (status_it == availability_status_.end())
     return;
-  AvailabilityStatus* status = status_it->second;
+  AvailabilityStatus* status = status_it->second.get();
   DCHECK(status);
 
   if (status->listening_state == ListeningState::WAITING)
@@ -312,7 +324,7 @@ void PresentationDispatcher::OnScreenAvailabilityNotSupported(
   auto status_it = availability_status_.find(availability_url);
   if (status_it == availability_status_.end())
     return;
-  AvailabilityStatus* status = status_it->second;
+  AvailabilityStatus* status = status_it->second.get();
   DCHECK(status);
   DCHECK(status->listening_state == ListeningState::WAITING);
 
@@ -335,15 +347,10 @@ void PresentationDispatcher::OnDefaultSessionStarted(
   if (!controller_)
     return;
 
-  // Reset the callback to get the next event.
-  presentation_service_->ListenForDefaultSessionStart(base::Bind(
-      &PresentationDispatcher::OnDefaultSessionStarted,
-      base::Unretained(this)));
-
   if (!session_info.is_null()) {
+    presentation_service_->ListenForSessionMessages(session_info.Clone());
     controller_->didStartDefaultSession(
-        new PresentationConnectionClient(session_info.Clone()));
-    presentation_service_->ListenForSessionMessages(session_info.Pass());
+        new PresentationConnectionClient(std::move(session_info)));
   }
 }
 
@@ -361,21 +368,21 @@ void PresentationDispatcher::OnSessionCreated(
   }
 
   DCHECK(!session_info.is_null());
+  presentation_service_->ListenForSessionMessages(session_info.Clone());
   callback->onSuccess(blink::adoptWebPtr(
-      new PresentationConnectionClient(session_info.Clone())));
-  presentation_service_->ListenForSessionMessages(session_info.Pass());
+      new PresentationConnectionClient(std::move(session_info))));
 }
 
-void PresentationDispatcher::OnSessionStateChanged(
-    presentation::PresentationSessionInfoPtr session_info,
-    presentation::PresentationSessionState session_state) {
+void PresentationDispatcher::OnConnectionStateChanged(
+    presentation::PresentationSessionInfoPtr connection,
+    presentation::PresentationConnectionState state) {
   if (!controller_)
     return;
 
-  DCHECK(!session_info.is_null());
+  DCHECK(!connection.is_null());
   controller_->didChangeSessionState(
-      new PresentationConnectionClient(session_info.Pass()),
-      GetWebPresentationConnectionStateFromMojo(session_state));
+      new PresentationConnectionClient(std::move(connection)),
+      GetWebPresentationConnectionStateFromMojo(state));
 }
 
 void PresentationDispatcher::OnSessionMessagesReceived(
@@ -422,12 +429,7 @@ void PresentationDispatcher::ConnectToPresentationServiceIfNeeded() {
       mojo::GetProxy(&presentation_service_));
   presentation::PresentationServiceClientPtr client_ptr;
   binding_.Bind(GetProxy(&client_ptr));
-  presentation_service_->SetClient(client_ptr.Pass());
-
-  presentation_service_->ListenForDefaultSessionStart(base::Bind(
-      &PresentationDispatcher::OnDefaultSessionStarted,
-      base::Unretained(this)));
-  presentation_service_->ListenForSessionStateChange();
+  presentation_service_->SetClient(std::move(client_ptr));
 }
 
 void PresentationDispatcher::UpdateListeningState(AvailabilityStatus* status) {
@@ -451,7 +453,7 @@ void PresentationDispatcher::UpdateListeningState(AvailabilityStatus* status) {
 PresentationDispatcher::SendMessageRequest::SendMessageRequest(
     presentation::PresentationSessionInfoPtr session_info,
     presentation::SessionMessagePtr message)
-    : session_info(session_info.Pass()), message(message.Pass()) {}
+    : session_info(std::move(session_info)), message(std::move(message)) {}
 
 PresentationDispatcher::SendMessageRequest::~SendMessageRequest() {}
 
@@ -471,7 +473,8 @@ PresentationDispatcher::CreateSendTextMessageRequest(
   session_message->type =
       presentation::PresentationMessageType::PRESENTATION_MESSAGE_TYPE_TEXT;
   session_message->message = message.utf8();
-  return new SendMessageRequest(session_info.Pass(), session_message.Pass());
+  return new SendMessageRequest(std::move(session_info),
+                                std::move(session_message));
 }
 
 // static
@@ -480,7 +483,7 @@ PresentationDispatcher::CreateSendBinaryMessageRequest(
     const blink::WebString& presentationUrl,
     const blink::WebString& presentationId,
     presentation::PresentationMessageType type,
-    const uint8* data,
+    const uint8_t* data,
     size_t length) {
   presentation::PresentationSessionInfoPtr session_info =
       presentation::PresentationSessionInfo::New();
@@ -490,9 +493,10 @@ PresentationDispatcher::CreateSendBinaryMessageRequest(
   presentation::SessionMessagePtr session_message =
       presentation::SessionMessage::New();
   session_message->type = type;
-  std::vector<uint8> tmp_data_vector(data, data + length);
+  std::vector<uint8_t> tmp_data_vector(data, data + length);
   session_message->data.Swap(&tmp_data_vector);
-  return new SendMessageRequest(session_info.Pass(), session_message.Pass());
+  return new SendMessageRequest(std::move(session_info),
+                                std::move(session_message));
 }
 
 PresentationDispatcher::AvailabilityStatus::AvailabilityStatus(

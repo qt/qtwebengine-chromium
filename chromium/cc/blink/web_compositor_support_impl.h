@@ -5,6 +5,7 @@
 #ifndef CC_BLINK_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 #define CC_BLINK_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebCompositorAnimationCurve.h"
@@ -26,6 +27,7 @@ class CC_BLINK_EXPORT WebCompositorSupportImpl
   ~WebCompositorSupportImpl() override;
 
   blink::WebLayer* createLayer() override;
+  blink::WebLayer* createLayerFromCCLayer(cc::Layer*) override;
   blink::WebContentLayer* createContentLayer(
       blink::WebContentLayerClient* client) override;
   blink::WebExternalTextureLayer* createExternalTextureLayer(
@@ -49,8 +51,9 @@ class CC_BLINK_EXPORT WebCompositorSupportImpl
   blink::WebFloatAnimationCurve* createFloatAnimationCurve() override;
   blink::WebScrollOffsetAnimationCurve* createScrollOffsetAnimationCurve(
       blink::WebFloatPoint target_value,
-      blink::WebCompositorAnimationCurve::TimingFunctionType timing_function)
-      override;
+      blink::WebCompositorAnimationCurve::TimingFunctionType timing_function,
+      blink::WebScrollOffsetAnimationCurve::ScrollDurationBehavior
+          duration_behavior) override;
   blink::WebTransformAnimationCurve* createTransformAnimationCurve() override;
   blink::WebTransformOperations* createTransformOperations() override;
   blink::WebFilterOperations* createFilterOperations() override;

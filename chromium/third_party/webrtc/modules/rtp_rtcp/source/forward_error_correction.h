@@ -15,8 +15,8 @@
 #include <vector>
 
 #include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
-#include "webrtc/system_wrappers/interface/ref_count.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/system_wrappers/include/ref_count.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {

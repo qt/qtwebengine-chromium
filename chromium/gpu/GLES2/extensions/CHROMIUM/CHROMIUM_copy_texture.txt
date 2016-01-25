@@ -33,16 +33,14 @@ New Procedures and Functions
 
     The command
 
-        void glCopyTextureCHROMIUM (GLenum target, GLenum source_id,
+        void glCopyTextureCHROMIUM (GLenum source_id,
                                     GLenum dest_id,
                                     GLint internal_format, GLenum dest_type,
                                     GLboolean unpack_flip_y,
                                     GLboolean unpack_premultiply_alpha,
                                     GLboolean unpack_unmultiply_alpha)
 
-    Copies the contents of texture referred to by <source_id> to <dest_id>
-    texture. If <source_id> texture is not defined or has different dimension
-    to <dest_id> texture, define <source_id> texture same to <dest_id> texture.
+    Copies the contents of <source_id> texture to <dest_id> texture.
 
     Texture level 0 is copied from the source image to level 0 of the
     destination texture.
@@ -70,8 +68,6 @@ New Procedures and Functions
     The format type of the destination texture is converted to that specified
     by <dest_type>.
 
-    <target> uses the same parameters as TexImage2D.
-
     If <flip_y> is true, vertically flip texture image data.
 
     If <unpack_premultiply_alpha> and <unpack_unmultiply_alpha> are true,
@@ -84,13 +80,11 @@ New Procedures and Functions
     INVALID_OPERATION is generated if the internal format of <source_id> is not one of
     formats from the table above.
 
-    INVALID_VALUE is generated if <target> is not GL_TEXTURE_2D.
-
     INVALID_VALUE is generated if <source_id> or <dest_id> are not valid texture
     objects.
 
     INVALID_VALUE is generated if textures corresponding to <dest_id> have not
-    been bound as GL_TEXTURE_2D object.
+    been bound as GL_TEXTURE_2D or GL_TEXTURE_RECTANGLE_ARB objects.
 
     INVALID_VALUE is generated if textures corresponding to <source_id> have not
     been bound as GL_TEXTURE_2D, GL_TEXTURE_RECTANGLE_ARB or
@@ -100,7 +94,7 @@ New Procedures and Functions
 
     The command
 
-        void glCopySubTextureCHROMIUM (GLenum target, GLenum source_id,
+        void glCopySubTextureCHROMIUM (GLenum source_id,
                                        GLenum dest_id,
                                        GLint xoffset, GLint yoffset,
                                        GLint x, GLint y,
@@ -112,7 +106,7 @@ New Procedures and Functions
     Copies the sub contents of texture referred to by <source_id> to <dest_id>
     texture without redefining <dest_id> texture.
 
-    See CopyTextureCHROMIUM for the interpretation of the <target>, <flip_y>,
+    See CopyTextureCHROMIUM for the interpretation of the <flip_y>,
     <premultiply_alpha>, and <unmultiply_alpha> arguments.
 
     <xoffset> and <yoffset> specify a texel offset in the x and y direction
@@ -125,13 +119,17 @@ New Procedures and Functions
 
     <height> specifies the width of the texture subimage.
 
+    INVALID_VALUE is generated if either <source_id> texture or <dest_id>
+    texture is not defined.
+
     INVALID_OPERATION is generated if source internal_format and destination
     internal_format are not one of the valid formats described above.
 
-    INVALID_VALUE is generated if <target> is not GL_TEXTURE_2D.
-
     INVALID_OPERATION is generated if the destination texture has not been
     defined.
+
+    INVALID_VALUE is generated if <dest_id> texture is not bound as
+    GL_TEXTURE_2D or GL_TEXTURE_RECTANGLE_ARB.
 
     INVALID_VALUE is generated if level 0 of the source texture or
     the destination texture is not defined.
@@ -170,3 +168,5 @@ Revision History
     16/7/2014   Add GL_TEXTURE_RECTANGLE_ARB as valid source_id target
     19/6/2015   Add arguments unpack_flip_y, unpack_premultiply_alpha, and
                 unpack_unmultiply_alpha to both commands.
+    4/1/2016    Removed the argument target.
+    4/1/2016    Added GL_TEXTURE_RECTANGLE_ARB as valid dest_id target

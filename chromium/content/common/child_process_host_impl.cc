@@ -10,7 +10,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/hash.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_math.h"
@@ -20,11 +19,14 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "build/build_config.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/attachment_broker.h"
+#include "ipc/attachment_broker_privileged.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/message_filter.h"
@@ -33,36 +35,9 @@
 #include "base/linux_util.h"
 #elif defined(OS_WIN)
 #include "content/common/font_cache_dispatcher_win.h"
-#include "ipc/attachment_broker_privileged_win.h"
 #endif  // OS_LINUX
 
 namespace {
-
-#if USE_ATTACHMENT_BROKER
-// This class is wrapped in a singleton to ensure that its constructor is only
-// called once. The constructor creates an attachment broker and
-// sets it as the global broker.
-class AttachmentBrokerWrapper {
- public:
-  AttachmentBrokerWrapper() {
-    IPC::AttachmentBroker::SetGlobal(&attachment_broker_);
-  }
-
-  IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
-    return &attachment_broker_;
-  }
-
- private:
-  IPC::AttachmentBrokerPrivilegedWin attachment_broker_;
-};
-
-base::LazyInstance<AttachmentBrokerWrapper>::Leaky
-    g_attachment_broker_wrapper = LAZY_INSTANCE_INITIALIZER;
-
-IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
-  return g_attachment_broker_wrapper.Get().GetAttachmentBroker();
-}
-#endif  // USE_ATTACHMENT_BROKER
 
 // Global atomic to generate child process unique IDs.
 base::StaticAtomicSequenceNumber g_unique_id;
@@ -73,8 +48,8 @@ namespace content {
 
 int ChildProcessHost::kInvalidUniqueID = -1;
 
-uint64 ChildProcessHost::kBrowserTracingProcessId =
-    std::numeric_limits<uint64>::max();
+uint64_t ChildProcessHost::kBrowserTracingProcessId =
+    std::numeric_limits<uint64_t>::max();
 
 // static
 ChildProcessHost* ChildProcessHost::Create(ChildProcessHostDelegate* delegate) {
@@ -111,18 +86,31 @@ ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
 #if defined(OS_WIN)
   AddFilter(new FontCacheDispatcher());
 #endif
+
 #if USE_ATTACHMENT_BROKER
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // On Mac, the privileged AttachmentBroker needs a reference to the Mach port
+  // Provider, which is only available in the chrome/ module. The attachment
+  // broker must already be created.
+  DCHECK(IPC::AttachmentBroker::GetGlobal());
+#else
   // Construct the privileged attachment broker early in the life cycle of a
-  // child process. This ensures that when a test is being run in one of the
-  // single process modes, the global attachment broker is the privileged
-  // attachment broker, rather than an unprivileged attachment broker.
-  GetAttachmentBroker();
-#endif
+  // child process.
+  IPC::AttachmentBrokerPrivileged::CreateBrokerIfNeeded();
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+#endif  // USE_ATTACHMENT_BROKER
 }
 
 ChildProcessHostImpl::~ChildProcessHostImpl() {
+  // If a channel was never created than it wasn't registered and the filters
+  // weren't notified. For the sake of symmetry don't call the matching teardown
+  // functions. This is analogous to how RenderProcessHostImpl handles things.
+  if (!channel_)
+    return;
+
 #if USE_ATTACHMENT_BROKER
-  GetAttachmentBroker()->DeregisterCommunicationChannel(channel_.get());
+  IPC::AttachmentBroker::GetGlobal()->DeregisterCommunicationChannel(
+      channel_.get());
 #endif
   for (size_t i = 0; i < filters_.size(); ++i) {
     filters_[i]->OnChannelClosing();
@@ -147,7 +135,8 @@ std::string ChildProcessHostImpl::CreateChannel() {
   if (!channel_->Connect())
     return std::string();
 #if USE_ATTACHMENT_BROKER
-  GetAttachmentBroker()->RegisterCommunicationChannel(channel_.get());
+  IPC::AttachmentBroker::GetGlobal()->RegisterCommunicationChannel(
+      channel_.get());
 #endif
 
   for (size_t i = 0; i < filters_.size(); ++i)
@@ -208,7 +197,7 @@ int ChildProcessHostImpl::GenerateChildProcessUniqueId() {
   return id;
 }
 
-uint64 ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
+uint64_t ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
     int child_process_id) {
   // In single process mode, all the children are hosted in the same process,
   // therefore the generated memory dump guids should not be conditioned by the
@@ -221,7 +210,7 @@ uint64 ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
 
   // The hash value is incremented so that the tracing id is never equal to
   // MemoryDumpManager::kInvalidTracingProcessId.
-  return static_cast<uint64>(
+  return static_cast<uint64_t>(
              base::Hash(reinterpret_cast<const char*>(&child_process_id),
                         sizeof(child_process_id))) +
          1;
@@ -276,7 +265,7 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void ChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
+void ChildProcessHostImpl::OnChannelConnected(int32_t peer_pid) {
   if (!peer_process_.IsValid()) {
     peer_process_ = base::Process::OpenWithExtraPrivileges(peer_pid);
     if (!peer_process_.IsValid())
@@ -305,7 +294,7 @@ void ChildProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
 }
 
 void ChildProcessHostImpl::OnAllocateSharedMemory(
-    uint32 buffer_size,
+    uint32_t buffer_size,
     base::SharedMemoryHandle* handle) {
   AllocateSharedMemory(buffer_size, peer_process_.Handle(), handle);
 }
@@ -317,8 +306,8 @@ void ChildProcessHostImpl::OnShutdownRequest() {
 
 void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
-    uint32 width,
-    uint32 height,
+    uint32_t width,
+    uint32_t height,
     gfx::BufferFormat format,
     gfx::BufferUsage usage,
     gfx::GpuMemoryBufferHandle* handle) {
@@ -326,9 +315,8 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
 
   // AllocateForChildProcess() will check if |width| and |height| are valid
   // and handle failure in a controlled way when not. We just need to make
-  // sure |format| and |usage| are supported here.
-  if (GpuMemoryBufferImplSharedMemory::IsFormatSupported(format) &&
-      GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
+  // sure |usage| is supported here.
+  if (GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
     *handle = GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
         id, gfx::Size(width, height), format, peer_process_.Handle());
   }
@@ -336,7 +324,7 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
 
 void ChildProcessHostImpl::OnDeletedGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   // Note: Nothing to do here as ownership of shared memory backed
   // GpuMemoryBuffers is passed with IPC.
 }

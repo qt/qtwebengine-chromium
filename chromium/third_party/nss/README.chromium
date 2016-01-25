@@ -1,28 +1,27 @@
 Name: Network Security Services (NSS)
 Short Name: nss
 URL: http://www.mozilla.org/projects/security/pki/nss/
-Version: 3.16.5
+Version: 3.21
 License: MPL 2
 License File: nss/COPYING
 Security Critical: yes
 
 Description:
-NSS 3.19 with NSPR 4.10.8
+NSS 3.21 with NSPR 4.11
 
 This copy of NSS has been customized for Chromium.  NSPR is also put here
 rather than in a separate directory to emphasize the fact that Chromium is
 using NSPR strictly as an NSS dependency.
 
-We took a subset of NSS, omitting the SSL and SMIME libraries and the
-built-in root CA certificates module.  This NSS subset satisfies the
-dependencies of the NSS SSL library in src/net/third_party/nss.  Do NOT use
-this copy of NSS on platforms that have NSS as system libraries, such as
-Linux.
+We took a subset of NSS, omitting the SSL and SMIME libraries.
+This NSS subset satisfies the dependencies of the NSS SSL library in
+src/net/third_party/nss.  Do NOT use this copy of NSS on platforms that
+have NSS as system libraries, such as Linux.
 
 The source code was checked out from the mozilla.org CVS or hg repository using
 the nspr-checkout.sh and nss-checkout.sh scripts in the scripts directory.
-The current source code was checked out with the hg tag NSS_3_19_RTM
-and the hg tag NSPR_4_10_8_RTM.
+The current source code was checked out with the hg tag NSS_3_21_RTM
+and the hg tag NSPR_4_11_RTM.
 
 Local Modifications:
 
@@ -47,6 +46,8 @@ We made the following local changes to NSPR.
   bug 1126408 (https://bugzilla.mozilla.org/show_bug.cgi?id=1126408).
 
 We made the following local changes to NSS.
+
+Files Added:
 - nss/exports_win.def: The list of exports to use when building nss as a
   dynamic library (crnss.dll).
 - nss/lib/ckfw/builtins/certdata.c: a generated file. Do an upstream NSS
@@ -59,6 +60,8 @@ We made the following local changes to NSS.
 - nss/lib/freebl/mpi/mpi_arm_mac.c: a wrapper file for mpi_arm.c for iOS
   and Mac OS X. This works around the inability to specify target arch
   specific source files in Xcode.
+
+Patches Applied:
 - patches/nss-remove-fortezza.patch: remove Fortezza certificate support
   from PK11_ImportPublicKey.  See NSS bug 668397
   (https://bugzilla.mozilla.org/show_bug.cgi?id=668397).

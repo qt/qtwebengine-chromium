@@ -26,11 +26,11 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBFactory.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/modules/v8/V8BindingForModules.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -83,7 +83,7 @@ IDBRequest* IDBFactory::getDatabaseNames(ScriptState* scriptState, ExceptionStat
     IDBRequest* request = IDBRequest::create(scriptState, IDBAny::createNull(), nullptr);
 
     if (!m_permissionClient->allowIndexedDB(scriptState->executionContext(), "Database Listing")) {
-        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        request->onError(DOMException::create(UnknownError, permissionDeniedErrorMessage));
         return request;
     }
 
@@ -117,7 +117,7 @@ IDBOpenDBRequest* IDBFactory::openInternal(ScriptState* scriptState, const Strin
     IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState, databaseCallbacks, transactionId, version);
 
     if (!m_permissionClient->allowIndexedDB(scriptState->executionContext(), name)) {
-        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        request->onError(DOMException::create(UnknownError, permissionDeniedErrorMessage));
         return request;
     }
 
@@ -145,7 +145,7 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
     IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState, nullptr, 0, IDBDatabaseMetadata::DefaultIntVersion);
 
     if (!m_permissionClient->allowIndexedDB(scriptState->executionContext(), name)) {
-        request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
+        request->onError(DOMException::create(UnknownError, permissionDeniedErrorMessage));
         return request;
     }
 

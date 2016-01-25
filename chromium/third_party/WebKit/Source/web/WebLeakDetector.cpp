@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "public/web/WebLeakDetector.h"
 
 #include "bindings/core/v8/ScriptPromise.h"
@@ -38,7 +36,6 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/Document.h"
 #include "core/fetch/MemoryCache.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InstanceCounters.h"
 #include "core/layout/LayoutObject.h"
 #include "core/workers/WorkerThread.h"
@@ -65,7 +62,8 @@ public:
 
     ~WebLeakDetectorImpl() override {}
 
-    void collectGarbageAndGetDOMCounts(WebLocalFrame*) override;
+    void prepareForLeakDetection() override;
+    void collectGarbageAndReport() override;
 
 private:
     void delayedGCAndReport(Timer<WebLeakDetectorImpl>*);
@@ -77,7 +75,7 @@ private:
     int m_numberOfGCNeeded;
 };
 
-void WebLeakDetectorImpl::collectGarbageAndGetDOMCounts(WebLocalFrame* frame)
+void WebLeakDetectorImpl::prepareForLeakDetection()
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
@@ -92,25 +90,22 @@ void WebLeakDetectorImpl::collectGarbageAndGetDOMCounts(WebLocalFrame* frame)
     WorkerThread::terminateAndWaitForAllWorkers();
     memoryCache()->evictResources();
 
-    {
-        RefPtrWillBeRawPtr<Document> document = PassRefPtrWillBeRawPtr<Document>(frame->document());
-        if (ResourceFetcher* fetcher = document->fetcher())
-            fetcher->garbageCollectDocumentResources();
-    }
-
     // FIXME: HTML5 Notification should be closed because notification affects the result of number of DOM objects.
 
-    V8GCController::collectAllGarbageForTesting(isolate);
-    // Note: Oilpan precise GC is scheduled at the end of the event loop.
-
     V8PerIsolateData::from(isolate)->clearScriptRegexpContext();
+}
+
+void WebLeakDetectorImpl::collectGarbageAndReport()
+{
+    V8GCController::collectAllGarbageForTesting(V8PerIsolateData::mainThreadIsolate());
+    // Note: Oilpan precise GC is scheduled at the end of the event loop.
 
     // Task queue may contain delayed object destruction tasks.
     // This method is called from navigation hook inside FrameLoader,
     // so previous document is still held by the loader until the next event loop.
     // Complete all pending tasks before proceeding to gc.
     m_numberOfGCNeeded = 2;
-    m_delayedGCAndReportTimer.startOneShot(0, FROM_HERE);
+    m_delayedGCAndReportTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void WebLeakDetectorImpl::delayedGCAndReport(Timer<WebLeakDetectorImpl>*)
@@ -124,9 +119,9 @@ void WebLeakDetectorImpl::delayedGCAndReport(Timer<WebLeakDetectorImpl>*)
 
     // Inspect counters on the next event loop.
     if (--m_numberOfGCNeeded)
-        m_delayedGCAndReportTimer.startOneShot(0, FROM_HERE);
+        m_delayedGCAndReportTimer.startOneShot(0, BLINK_FROM_HERE);
     else
-        m_delayedReportTimer.startOneShot(0, FROM_HERE);
+        m_delayedReportTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void WebLeakDetectorImpl::delayedReport(Timer<WebLeakDetectorImpl>*)

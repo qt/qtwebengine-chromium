@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "10.16",
+  "version": "10.17",
   "entries": [
     {
       "id": 1,
@@ -29,6 +29,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x1002",
       "device_id": ["0x7249"],
+      "multi_gpu_category": "any",
       "features": [
         "webgl",
         "flash_3d",
@@ -114,6 +115,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0393"],
+      "multi_gpu_category": "any",
       "features": [
         "webgl",
         "flash_3d",
@@ -367,16 +369,12 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "type": "linux"
       },
       "multi_gpu_style": "optimus",
-      "exceptions": [
-        {
-          "driver_vendor": "Mesa",
-          "driver_version": {
-            "op": ">=",
-            "value": "10.1"
-          },
-          "gl_vendor": "Intel.*"
-        }
-      ],
+      "driver_vendor": "Mesa",
+      "driver_version": {
+        "op": "<",
+        "value": "10.1"
+      },
+      "gl_vendor": "Intel.*",
       "features": [
         "all"
       ]
@@ -394,6 +392,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0863"],
+      "multi_gpu_category": "any",
       "features": [
         "accelerated_2d_canvas"
       ]
@@ -411,6 +410,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x1002",
       "device_id": ["0x6760", "0x6720"],
+      "multi_gpu_category": "any",
       "features": [
         "webgl"
       ]
@@ -506,6 +506,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "multi_gpu_style": "optimus",
       "vendor_id": "0x10de",
       "device_id": ["0x0fd5"],
+      "multi_gpu_category": "any",
       "features": [
         "flash_3d",
         "flash_stage3d"
@@ -707,6 +708,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0a29", "0x0861", "0x0863"],
+      "multi_gpu_category": "any",
       "features": [
         "webgl"
       ]
@@ -797,6 +799,7 @@ LONG_STRING_CONST(
         }
       },
       "vendor_id": "0x15ad",
+      "multi_gpu_category": "any",
       "features": [
         "all"
       ]
@@ -1039,6 +1042,12 @@ LONG_STRING_CONST(
             "op": ">=",
             "value": "3.0"
           }
+        },
+        {
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": ".*Google.*"
         }
       ],
       "features": [
@@ -1101,6 +1110,7 @@ LONG_STRING_CONST(
       },
       "vendor_id": "0x8086",
       "device_id": ["0x2a02"],
+      "multi_gpu_category": "any",
       "features": [
         "all"
       ]

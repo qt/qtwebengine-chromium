@@ -5,6 +5,9 @@
 # This file contains common system config stuff for the Android build.
 
 if (is_android) {
+  assert(rebase_path("//", root_build_dir) == "../../",
+         "Android output directory must be nested 2 levels within src/ (" +
+             "e.g.: out-gn/Debug). http://crbug.com/412935")
   has_chrome_android_internal =
       exec_script("//build/dir_exists.py",
                   [ rebase_path("//clank", root_build_dir) ],
@@ -17,7 +20,7 @@ if (is_android) {
   if (!defined(default_android_sdk_root)) {
     default_android_sdk_root = "//third_party/android_tools/sdk"
     default_android_sdk_version = "23"
-    default_android_sdk_build_tools_version = "23.0.0"
+    default_android_sdk_build_tools_version = "23.0.1"
   }
 
   if (!defined(default_android_keystore_path)) {
@@ -37,10 +40,21 @@ if (is_android) {
         "//third_party/android_tools:google_play_services_default_resources"
   }
 
+  if (!defined(webview_framework_jar)) {
+    webview_framework_jar =
+        "//third_party/android_platform/webview/frameworks_6.0.jar"
+  }
+
   declare_args() {
     android_sdk_root = default_android_sdk_root
     android_sdk_version = default_android_sdk_version
     android_sdk_build_tools_version = default_android_sdk_build_tools_version
+
+    # Android versionCode for android_apk()s that don't expclitly set one.
+    android_default_version_code = "1"
+
+    # Android versionName for android_apk()s that don't expclitly set one.
+    android_default_version_name = "Developer Build"
 
     # The path to the keystore to use for signing builds.
     android_keystore_path = default_android_keystore_path
@@ -63,8 +77,20 @@ if (is_android) {
     # run_findbugs is false.
     findbugs_verbose = false
 
+    # Enables verbose proguard output (summaries and unfiltered output).
+    proguard_verbose = false
+
     # Set to true to enable the Errorprone compiler
     use_errorprone_java_compiler = false
+
+    # Enables EMMA Java code coverage. Instruments classes during build to
+    # produce .ec files during runtime
+    emma_coverage = false
+
+    # EMMA filter string consisting of a list of inclusion/exclusion patterns
+    # separated with whitespace and/or comma. Only has effect if
+    # emma_coverage==true
+    emma_filter = ""
 
     # Disables process isolation when building _incremental targets.
     # Required for Android M+ due to SELinux policies (stronger sandboxing).
@@ -121,8 +147,6 @@ if (is_android) {
   android_ndk_root = "//third_party/android_tools/ndk"
   android_ndk_include_dir = "$android_ndk_root/usr/include"
 
-  android_sdk = "${android_sdk_root}/platforms/android-${android_sdk_version}"
-
   android_sdk_tools = "${android_sdk_root}/tools"
   android_sdk_build_tools =
       "${android_sdk_root}/build-tools/$android_sdk_build_tools_version"
@@ -156,8 +180,8 @@ if (is_android) {
   arm_android_toolchain_root = "$android_ndk_root/toolchains/arm-linux-androideabi-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
   mips_android_toolchain_root = "$android_ndk_root/toolchains/mipsel-linux-android-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
   x86_64_android_toolchain_root = "$android_ndk_root/toolchains/x86_64-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
-  arm64_android_toolchain_root = "$android_ndk_root/toolchains/aarch64-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
-  mips64_android_toolchain_root = "$android_ndk_root/toolchains/mips64el-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
+  arm64_android_toolchain_root = "$android_ndk_root/toolchains/aarch64-linux-android-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
+  mips64_android_toolchain_root = "$android_ndk_root/toolchains/mips64el-linux-android-${_android_toolchain_version}/prebuilt/${android_host_os}-${android_host_arch}"
 
   # Location of libgcc. This is only needed for the current GN toolchain, so we
   # only need to define the current one, rather than one for every platform

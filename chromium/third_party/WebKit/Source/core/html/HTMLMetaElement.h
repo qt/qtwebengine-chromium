@@ -26,6 +26,7 @@
 #include "core/CoreExport.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/html/HTMLElement.h"
+#include "wtf/text/TextEncoding.h"
 
 namespace blink {
 
@@ -44,6 +45,10 @@ public:
 
     static void getViewportDescriptionFromContentAttribute(const String& content, ViewportDescription&, Document*, bool viewportMetaZeroValuesQuirk);
 
+    // Encoding computed from processing the http-equiv, charset and content
+    // attributes.
+    WTF::TextEncoding computeEncoding() const;
+
     const AtomicString& content() const;
     const AtomicString& httpEquiv() const;
     const AtomicString& name() const;
@@ -54,7 +59,7 @@ private:
     static void processViewportKeyValuePair(Document*, const String& key, const String& value, bool viewportMetaZeroValuesQuirk, void* data);
     static void parseContentAttribute(const String& content, void* data, Document*, bool viewportMetaZeroValuesQuirk);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void didNotifySubtreeInsertionsToDocument() override;
 

@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "../../../../../../mojo/edk/embedder/embedder_internal.h"
+#include "../../../../../../mojo/edk/system/core.h"
 #include "base/command_line.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/functions.h"
 #include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/wait_set.h"
 #include "third_party/mojo/src/mojo/edk/embedder/embedder_internal.h"
 #include "third_party/mojo/src/mojo/edk/system/core.h"
-#include "../../../../../../mojo/edk/system/core.h"
-#include "../../../../../../mojo/edk/embedder/embedder_internal.h"
 
 using mojo::embedder::internal::g_core;
 using mojo::system::MakeUserPointer;
@@ -64,6 +65,42 @@ MojoResult MojoWaitMany(const MojoHandle* handles,
   return g_core->WaitMany(MakeUserPointer(handles), MakeUserPointer(signals),
                           num_handles, deadline, MakeUserPointer(result_index),
                           MakeUserPointer(signals_states));
+}
+
+MojoResult MojoCreateWaitSet(MojoHandle* wait_set_handle) {
+  if (UseNewEDK())
+    return mojo::edk::internal::g_core->CreateWaitSet(wait_set_handle);
+  return g_core->CreateWaitSet(MakeUserPointer(wait_set_handle));
+}
+
+MojoResult MojoAddHandle(MojoHandle wait_set_handle,
+                         MojoHandle handle,
+                         MojoHandleSignals signals) {
+  if (UseNewEDK())
+    return mojo::edk::internal::g_core->AddHandle(wait_set_handle, handle,
+                                                  signals);
+  return g_core->AddHandle(wait_set_handle, handle, signals);
+}
+
+MojoResult MojoRemoveHandle(MojoHandle wait_set_handle,
+                            MojoHandle handle) {
+  if (UseNewEDK())
+    return mojo::edk::internal::g_core->RemoveHandle(wait_set_handle, handle);
+  return g_core->RemoveHandle(wait_set_handle, handle);
+}
+
+MojoResult MojoGetReadyHandles(MojoHandle wait_set_handle,
+                               uint32_t* count,
+                               MojoHandle* handles,
+                               MojoResult* results,
+                               struct MojoHandleSignalsState *signals_states) {
+  if (UseNewEDK())
+    return mojo::edk::internal::g_core->GetReadyHandles(
+        wait_set_handle, count, handles, results, signals_states);
+  return g_core->GetReadyHandles(wait_set_handle, MakeUserPointer(count),
+                                 MakeUserPointer(handles),
+                                 MakeUserPointer(results),
+                                 MakeUserPointer(signals_states));
 }
 
 MojoResult MojoCreateMessagePipe(const MojoCreateMessagePipeOptions* options,

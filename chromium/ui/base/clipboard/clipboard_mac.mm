@@ -5,8 +5,10 @@
 #include "ui/base/clipboard/clipboard_mac.h"
 
 #import <Cocoa/Cocoa.h>
+#include <stdint.h>
 
-#include "base/basictypes.h"
+#include <limits>
+
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
@@ -183,7 +185,7 @@ ClipboardMac::~ClipboardMac() {
   DCHECK(CalledOnValidThread());
 }
 
-uint64 ClipboardMac::GetSequenceNumber(ClipboardType type) const {
+uint64_t ClipboardMac::GetSequenceNumber(ClipboardType type) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
@@ -264,8 +266,8 @@ void ClipboardMac::ReadAsciiText(ClipboardType type,
 void ClipboardMac::ReadHTML(ClipboardType type,
                             base::string16* markup,
                             std::string* src_url,
-                            uint32* fragment_start,
-                            uint32* fragment_end) const {
+                            uint32_t* fragment_start,
+                            uint32_t* fragment_end) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 
@@ -288,8 +290,8 @@ void ClipboardMac::ReadHTML(ClipboardType type,
   }
 
   *fragment_start = 0;
-  DCHECK(markup->length() <= kuint32max);
-  *fragment_end = static_cast<uint32>(markup->length());
+  DCHECK(markup->length() <= std::numeric_limits<uint32_t>::max());
+  *fragment_end = static_cast<uint32_t>(markup->length());
 }
 
 void ClipboardMac::ReadRTF(ClipboardType type, std::string* result) const {
@@ -307,14 +309,27 @@ SkBitmap ClipboardMac::ReadImage(ClipboardType type) const {
   // may throw, and that exception will leak. Prevent a crash in that case;
   // a blank image is better.
   base::scoped_nsobject<NSImage> image;
+  NSPasteboard* pb = GetPasteboard();
   @try {
-    image.reset([[NSImage alloc] initWithPasteboard:GetPasteboard()]);
+    if ([[pb types] containsObject:NSFilenamesPboardType]) {
+      // -[NSImage initWithPasteboard:] gets confused with copies of a single
+      // file from the Finder, so extract the path ourselves.
+      // http://crbug.com/553686
+      NSArray* paths = [pb propertyListForType:NSFilenamesPboardType];
+      if ([paths count]) {
+        // If N number of files are selected from finder, choose the last one.
+        image.reset([[NSImage alloc]
+            initWithContentsOfURL:[NSURL fileURLWithPath:[paths lastObject]]]);
+      }
+    } else {
+      image.reset([[NSImage alloc] initWithPasteboard:pb]);
+    }
   } @catch (id exception) {
   }
 
   SkBitmap bitmap;
   if (image.get()) {
-    bitmap = gfx::NSImageToSkBitmapWithColorSpace(
+    bitmap = skia::NSImageToSkBitmapWithColorSpace(
         image.get(), /*is_opaque=*/ false, base::mac::GetSystemColorSpace());
   }
   return bitmap;
@@ -425,7 +440,7 @@ void ClipboardMac::WriteBookmark(const char* title_data,
 }
 
 void ClipboardMac::WriteBitmap(const SkBitmap& bitmap) {
-  NSImage* image = gfx::SkBitmapToNSImageWithColorSpace(
+  NSImage* image = skia::SkBitmapToNSImageWithColorSpace(
       bitmap, base::mac::GetSystemColorSpace());
   // An API to ask the NSImage to write itself to the clipboard comes in 10.6 :(
   // For now, spit out the image as a TIFF.

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-#include "ServiceWorkerRegistration.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ScriptPromise.h"
@@ -19,12 +18,6 @@
 
 namespace blink {
 
-static void deleteIfNoExistingOwner(WebServiceWorker* serviceWorker)
-{
-    if (serviceWorker && !serviceWorker->proxy())
-        delete serviceWorker;
-}
-
 const AtomicString& ServiceWorkerRegistration::interfaceName() const
 {
     return EventTargetNames::ServiceWorkerRegistration;
@@ -35,31 +28,25 @@ void ServiceWorkerRegistration::dispatchUpdateFoundEvent()
     dispatchEvent(Event::create(EventTypeNames::updatefound));
 }
 
-void ServiceWorkerRegistration::setInstalling(WebServiceWorker* serviceWorker)
+void ServiceWorkerRegistration::setInstalling(WebPassOwnPtr<WebServiceWorker::Handle> handle)
 {
-    if (!executionContext()) {
-        deleteIfNoExistingOwner(serviceWorker);
+    if (!executionContext())
         return;
-    }
-    m_installing = ServiceWorker::from(executionContext(), serviceWorker);
+    m_installing = ServiceWorker::from(executionContext(), handle.release());
 }
 
-void ServiceWorkerRegistration::setWaiting(WebServiceWorker* serviceWorker)
+void ServiceWorkerRegistration::setWaiting(WebPassOwnPtr<WebServiceWorker::Handle> handle)
 {
-    if (!executionContext()) {
-        deleteIfNoExistingOwner(serviceWorker);
+    if (!executionContext())
         return;
-    }
-    m_waiting = ServiceWorker::from(executionContext(), serviceWorker);
+    m_waiting = ServiceWorker::from(executionContext(), handle.release());
 }
 
-void ServiceWorkerRegistration::setActive(WebServiceWorker* serviceWorker)
+void ServiceWorkerRegistration::setActive(WebPassOwnPtr<WebServiceWorker::Handle> handle)
 {
-    if (!executionContext()) {
-        deleteIfNoExistingOwner(serviceWorker);
+    if (!executionContext())
         return;
-    }
-    m_active = ServiceWorker::from(executionContext(), serviceWorker);
+    m_active = ServiceWorker::from(executionContext(), handle.release());
 }
 
 ServiceWorkerRegistration* ServiceWorkerRegistration::getOrCreate(ExecutionContext* executionContext, PassOwnPtr<WebServiceWorkerRegistration::Handle> handle)

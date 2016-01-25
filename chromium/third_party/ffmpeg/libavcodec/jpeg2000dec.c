@@ -30,6 +30,7 @@
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
+#include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
@@ -38,6 +39,7 @@
 #include "thread.h"
 #include "jpeg2000.h"
 #include "jpeg2000dsp.h"
+#include "profiles.h"
 
 #define JP2_SIG_TYPE    0x6A502020
 #define JP2_SIG_VALUE   0x0D0A870A
@@ -277,6 +279,10 @@ static int get_siz(Jpeg2000DecoderContext *s)
 
     if (s->image_offset_x || s->image_offset_y) {
         avpriv_request_sample(s->avctx, "Support for image offsets");
+        return AVERROR_PATCHWELCOME;
+    }
+    if (av_image_check_size(s->width, s->height, 0, s->avctx)) {
+        avpriv_request_sample(s->avctx, "Large Dimensions");
         return AVERROR_PATCHWELCOME;
     }
 
@@ -826,10 +832,10 @@ static int init_tile(Jpeg2000DecoderContext *s, int tileno)
     if (!tile->comp)
         return AVERROR(ENOMEM);
 
-    tile->coord[0][0] = FFMAX(tilex       * s->tile_width  + s->tile_offset_x, s->image_offset_x);
-    tile->coord[0][1] = FFMIN((tilex + 1) * s->tile_width  + s->tile_offset_x, s->width);
-    tile->coord[1][0] = FFMAX(tiley       * s->tile_height + s->tile_offset_y, s->image_offset_y);
-    tile->coord[1][1] = FFMIN((tiley + 1) * s->tile_height + s->tile_offset_y, s->height);
+    tile->coord[0][0] = av_clip(tilex       * (int64_t)s->tile_width  + s->tile_offset_x, s->image_offset_x, s->width);
+    tile->coord[0][1] = av_clip((tilex + 1) * (int64_t)s->tile_width  + s->tile_offset_x, s->image_offset_x, s->width);
+    tile->coord[1][0] = av_clip(tiley       * (int64_t)s->tile_height + s->tile_offset_y, s->image_offset_y, s->height);
+    tile->coord[1][1] = av_clip((tiley + 1) * (int64_t)s->tile_height + s->tile_offset_y, s->image_offset_y, s->height);
 
     for (compno = 0; compno < s->ncomponents; compno++) {
         Jpeg2000Component *comp = tile->comp + compno;
@@ -1244,6 +1250,10 @@ static int jpeg2000_decode_packets_po_iteration(Jpeg2000DecoderContext *s, Jpeg2
                 step_y = FFMIN(step_y, rlevel->log2_prec_height + reducedresno);
             }
         }
+        if (step_x >= 31 || step_y >= 31){
+            avpriv_request_sample(s->avctx, "PCRL with large step");
+            return AVERROR_PATCHWELCOME;
+        }
         step_x = 1<<step_x;
         step_y = 1<<step_y;
 
@@ -1484,6 +1494,10 @@ static int decode_cblk(Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *codsty,
     ff_mqc_initdec(&t1->mqc, cblk->data, 0, 1);
 
     while (passno--) {
+        if (bpno < 0) {
+            av_log(s->avctx, AV_LOG_ERROR, "bpno became negative\n");
+            return AVERROR_INVALIDDATA;
+        }
         switch(pass_t) {
         case 0:
             decode_sigpass(t1, width, height, bpno + 1, bandpos,
@@ -1616,7 +1630,7 @@ static inline void mct_decode(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
     s->dsp.mct_decode[tile->codsty[0].transform](src[0], src[1], src[2], csize);
 }
 
-static void tile_codeblocks(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
+static inline void tile_codeblocks(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
 {
     Jpeg2000T1Context t1;
 
@@ -1650,7 +1664,9 @@ static void tile_codeblocks(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
                     Jpeg2000Prec *prec = band->prec + precno;
 
                     /* Loop on codeblocks */
-                    for (cblkno = 0; cblkno < prec->nb_codeblocks_width * prec->nb_codeblocks_height; cblkno++) {
+                    for (cblkno = 0;
+                         cblkno < prec->nb_codeblocks_width * prec->nb_codeblocks_height;
+                         cblkno++) {
                         int x, y;
                         Jpeg2000Cblk *cblk = prec->cblk + cblkno;
                         decode_cblk(s, codsty, &t1, cblk,
@@ -1677,17 +1693,72 @@ static void tile_codeblocks(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile)
     } /*end comp */
 }
 
+#define WRITE_FRAME(D, PIXEL)                                                                     \
+    static inline void write_frame_ ## D(Jpeg2000DecoderContext * s, Jpeg2000Tile * tile,         \
+                                         AVFrame * picture, int precision)                        \
+    {                                                                                             \
+        const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->avctx->pix_fmt);               \
+        int planar    = !!(pixdesc->flags & AV_PIX_FMT_FLAG_PLANAR);                              \
+        int pixelsize = planar ? 1 : pixdesc->nb_components;                                      \
+                                                                                                  \
+        int compno;                                                                               \
+        int x, y;                                                                                 \
+                                                                                                  \
+        for (compno = 0; compno < s->ncomponents; compno++) {                                     \
+            Jpeg2000Component *comp     = tile->comp + compno;                                    \
+            Jpeg2000CodingStyle *codsty = tile->codsty + compno;                                  \
+            PIXEL *line;                                                                          \
+            float *datap     = comp->f_data;                                                      \
+            int32_t *i_datap = comp->i_data;                                                      \
+            int cbps         = s->cbps[compno];                                                   \
+            int w            = tile->comp[compno].coord[0][1] - s->image_offset_x;                \
+            int plane        = 0;                                                                 \
+                                                                                                  \
+            if (planar)                                                                           \
+                plane = s->cdef[compno] ? s->cdef[compno]-1 : (s->ncomponents-1);                 \
+                                                                                                  \
+            y    = tile->comp[compno].coord[1][0] - s->image_offset_y / s->cdy[compno];           \
+            line = (PIXEL *)picture->data[plane] + y * (picture->linesize[plane] / sizeof(PIXEL));\
+            for (; y < tile->comp[compno].coord[1][1] - s->image_offset_y; y++) {                 \
+                PIXEL *dst;                                                                       \
+                                                                                                  \
+                x   = tile->comp[compno].coord[0][0] - s->image_offset_x / s->cdx[compno];        \
+                dst = line + x * pixelsize + compno*!planar;                                      \
+                                                                                                  \
+                if (codsty->transform == FF_DWT97) {                                              \
+                    for (; x < w; x++) {                                                          \
+                        int val = lrintf(*datap) + (1 << (cbps - 1));                             \
+                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */                  \
+                        val  = av_clip(val, 0, (1 << cbps) - 1);                                  \
+                        *dst = val << (precision - cbps);                                         \
+                        datap++;                                                                  \
+                        dst += pixelsize;                                                         \
+                    }                                                                             \
+                } else {                                                                          \
+                    for (; x < w; x++) {                                                          \
+                        int val = *i_datap + (1 << (cbps - 1));                                   \
+                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */                  \
+                        val  = av_clip(val, 0, (1 << cbps) - 1);                                  \
+                        *dst = val << (precision - cbps);                                         \
+                        i_datap++;                                                                \
+                        dst += pixelsize;                                                         \
+                    }                                                                             \
+                }                                                                                 \
+                line += picture->linesize[plane] / sizeof(PIXEL);                                 \
+            }                                                                                     \
+        }                                                                                         \
+                                                                                                  \
+    }
+
+WRITE_FRAME(8, uint8_t)
+WRITE_FRAME(16, uint16_t)
+
+#undef WRITE_FRAME
+
 static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                                 AVFrame *picture)
 {
-    const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->avctx->pix_fmt);
-    int planar    = !!(pixdesc->flags & AV_PIX_FMT_FLAG_PLANAR);
-    int pixelsize = planar ? 1 : pixdesc->nb_components;
-
-    int compno;
-    int x, y;
-
-    uint8_t *line;
+    int x;
 
     tile_codeblocks(s, tile);
 
@@ -1703,99 +1774,14 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
     }
 
     if (s->precision <= 8) {
-        for (compno = 0; compno < s->ncomponents; compno++) {
-            Jpeg2000Component *comp = tile->comp + compno;
-            Jpeg2000CodingStyle *codsty = tile->codsty + compno;
-            float *datap = comp->f_data;
-            int32_t *i_datap = comp->i_data;
-            int cbps = s->cbps[compno];
-            int w = tile->comp[compno].coord[0][1] - s->image_offset_x;
-            int plane = 0;
-
-            if (planar)
-                plane = s->cdef[compno] ? s->cdef[compno]-1 : (s->ncomponents-1);
-
-
-            y    = tile->comp[compno].coord[1][0] - s->image_offset_y / s->cdy[compno];
-            line = picture->data[plane] + y * picture->linesize[plane];
-            for (; y < tile->comp[compno].coord[1][1] - s->image_offset_y; y ++) {
-                uint8_t *dst;
-
-                x   = tile->comp[compno].coord[0][0] - s->image_offset_x / s->cdx[compno];
-                dst = line + x * pixelsize + compno*!planar;
-
-                if (codsty->transform == FF_DWT97) {
-                    for (; x < w; x ++) {
-                        int val = lrintf(*datap) + (1 << (cbps - 1));
-                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
-                        val = av_clip(val, 0, (1 << cbps) - 1);
-                        *dst = val << (8 - cbps);
-                        datap++;
-                        dst += pixelsize;
-                    }
-                } else {
-                    for (; x < w; x ++) {
-                        int val = *i_datap + (1 << (cbps - 1));
-                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
-                        val = av_clip(val, 0, (1 << cbps) - 1);
-                        *dst = val << (8 - cbps);
-                        i_datap++;
-                        dst += pixelsize;
-                    }
-                }
-                line += picture->linesize[plane];
-            }
-        }
+        write_frame_8(s, tile, picture, 8);
     } else {
         int precision = picture->format == AV_PIX_FMT_XYZ12 ||
                         picture->format == AV_PIX_FMT_RGB48 ||
                         picture->format == AV_PIX_FMT_RGBA64 ||
                         picture->format == AV_PIX_FMT_GRAY16 ? 16 : s->precision;
 
-        for (compno = 0; compno < s->ncomponents; compno++) {
-            Jpeg2000Component *comp = tile->comp + compno;
-            Jpeg2000CodingStyle *codsty = tile->codsty + compno;
-            float *datap = comp->f_data;
-            int32_t *i_datap = comp->i_data;
-            uint16_t *linel;
-            int cbps = s->cbps[compno];
-            int w = tile->comp[compno].coord[0][1] - s->image_offset_x;
-            int plane = 0;
-
-            if (planar)
-                plane = s->cdef[compno] ? s->cdef[compno]-1 : (s->ncomponents-1);
-
-            y     = tile->comp[compno].coord[1][0] - s->image_offset_y / s->cdy[compno];
-            linel = (uint16_t *)picture->data[plane] + y * (picture->linesize[plane] >> 1);
-            for (; y < tile->comp[compno].coord[1][1] - s->image_offset_y; y ++) {
-                uint16_t *dst;
-
-                x   = tile->comp[compno].coord[0][0] - s->image_offset_x / s->cdx[compno];
-                dst = linel + (x * pixelsize + compno*!planar);
-                if (codsty->transform == FF_DWT97) {
-                    for (; x < w; x ++) {
-                        int  val = lrintf(*datap) + (1 << (cbps - 1));
-                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
-                        val = av_clip(val, 0, (1 << cbps) - 1);
-                        /* align 12 bit values in little-endian mode */
-                        *dst = val << (precision - cbps);
-                        datap++;
-                        dst += pixelsize;
-                    }
-                } else {
-                    for (; x < w; x ++) {
-                        int val = *i_datap + (1 << (cbps - 1));
-                        /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
-                        val = av_clip(val, 0, (1 << cbps) - 1);
-                        /* align 12 bit values in little-endian mode */
-                        *dst = val << (precision - cbps);
-                        i_datap++;
-                        dst += pixelsize;
-                    }
-                }
-                linel += picture->linesize[plane] >> 1;
-            }
-        }
+        write_frame_16(s, tile, picture, precision);
     }
 
     return 0;
@@ -1818,8 +1804,10 @@ static void jpeg2000_dec_cleanup(Jpeg2000DecoderContext *s)
     av_freep(&s->tile);
     memset(s->codsty, 0, sizeof(s->codsty));
     memset(s->qntsty, 0, sizeof(s->qntsty));
+    memset(s->properties, 0, sizeof(s->properties));
     memset(&s->poc  , 0, sizeof(s->poc));
     s->numXtiles = s->numYtiles = 0;
+    s->ncomponents = 0;
 }
 
 static int jpeg2000_read_main_headers(Jpeg2000DecoderContext *s)
@@ -1877,6 +1865,10 @@ static int jpeg2000_read_main_headers(Jpeg2000DecoderContext *s)
 
         switch (marker) {
         case JPEG2000_SIZ:
+            if (s->ncomponents) {
+                av_log(s->avctx, AV_LOG_ERROR, "Duplicate SIZ\n");
+                return AVERROR_INVALIDDATA;
+            }
             ret = get_siz(s);
             if (!s->tile)
                 s->numXtiles = s->numYtiles = 0;
@@ -2151,15 +2143,6 @@ static const AVOption options[] = {
     { NULL },
 };
 
-static const AVProfile profiles[] = {
-    { FF_PROFILE_JPEG2000_CSTREAM_RESTRICTION_0,  "JPEG 2000 codestream restriction 0"   },
-    { FF_PROFILE_JPEG2000_CSTREAM_RESTRICTION_1,  "JPEG 2000 codestream restriction 1"   },
-    { FF_PROFILE_JPEG2000_CSTREAM_NO_RESTRICTION, "JPEG 2000 no codestream restrictions" },
-    { FF_PROFILE_JPEG2000_DCINEMA_2K,             "JPEG 2000 digital cinema 2K"          },
-    { FF_PROFILE_JPEG2000_DCINEMA_4K,             "JPEG 2000 digital cinema 4K"          },
-    { FF_PROFILE_UNKNOWN },
-};
-
 static const AVClass jpeg2000_class = {
     .class_name = "jpeg2000",
     .item_name  = av_default_item_name,
@@ -2179,5 +2162,5 @@ AVCodec ff_jpeg2000_decoder = {
     .decode           = jpeg2000_decode_frame,
     .priv_class       = &jpeg2000_class,
     .max_lowres       = 5,
-    .profiles         = NULL_IF_CONFIG_SMALL(profiles)
+    .profiles         = NULL_IF_CONFIG_SMALL(ff_jpeg2000_profiles)
 };

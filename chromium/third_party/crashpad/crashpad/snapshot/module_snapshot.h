@@ -109,11 +109,28 @@ class ModuleSnapshot {
   //! \brief Returns the module’s type.
   virtual ModuleType GetModuleType() const = 0;
 
-  //! \brief Returns the module’s UUID in the \a uuid parameter.
+  //! \brief Returns the module’s UUID in the \a uuid parameter, and the age of
+  //!     that UUID in \a age.
   //!
   //! A snapshot module’s UUID is taken directly from the module itself. If the
   //! module does not have a UUID, the \a uuid parameter will be zeroed out.
-  virtual void UUID(crashpad::UUID* uuid) const = 0;
+  //!
+  //! \a age is the number of times the UUID has been reused. This occurs on
+  //! Windows with incremental linking. On other platforms \a age will always be
+  //! `0`.
+  //!
+  //! \sa DebugFileName()
+  virtual void UUIDAndAge(crashpad::UUID* uuid, uint32_t* age) const = 0;
+
+  //! \brief Returns the module’s debug file info name.
+  //!
+  //! On Windows, this references the PDB file, which contains symbol
+  //! information held separately from the module itself. On other platforms,
+  //! this is normally just be the basename of the module, because the debug
+  //! info file’s name is not relevant even in split-debug scenarios.
+  //!
+  //! \sa UUIDAndAge()
+  virtual std::string DebugFileName() const = 0;
 
   //! \brief Returns string annotations recorded in the module.
   //!

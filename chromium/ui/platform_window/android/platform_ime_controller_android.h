@@ -7,11 +7,13 @@
 
 #include "base/android/jni_weak_ref.h"
 #include "base/macros.h"
+#include "ui/platform_window/android/android_window_export.h"
 #include "ui/platform_window/platform_ime_controller.h"
 
 namespace ui {
 
-class PlatformImeControllerAndroid : public PlatformImeController {
+class ANDROID_WINDOW_EXPORT PlatformImeControllerAndroid :
+    public PlatformImeController {
  public:
   static bool Register(JNIEnv* env);
 
@@ -19,7 +21,7 @@ class PlatformImeControllerAndroid : public PlatformImeController {
   ~PlatformImeControllerAndroid() override;
 
   // Native methods called by Java code.
-  void Init(JNIEnv* env, jobject jobj);
+  void Init(JNIEnv* env, const base::android::JavaParamRef<jobject>& jobj);
 
  private:
   // Overridden from PlatformImeController:

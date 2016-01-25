@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_frame_host.h"
@@ -33,7 +34,7 @@ SocketPermissionRequest CreateSocketPermissionRequest(
     const PP_NetAddress_Private& net_addr) {
   std::string host =
       ppapi::NetAddressPrivateImpl::DescribeNetAddress(net_addr, false);
-  uint16 port = 0;
+  uint16_t port = 0;
   std::vector<unsigned char> address;
   ppapi::NetAddressPrivateImpl::NetAddressToIPEndPoint(
       net_addr, &address, &port);
@@ -145,7 +146,7 @@ const unsigned char kIPv6Empty[] =
 const unsigned char kIPv6Loopback[] =
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
 
-bool isLoopbackAddress(const net::IPAddressNumber& address) {
+bool IsLoopbackAddress(const net::IPAddressNumber& address) {
   if (address.size() == net::kIPv4AddressSize) {
     // The entire IPv4 subnet 127.0.0.0/8 is for loopback. See RFC3330.
     return address[0] == 0x7f;
@@ -157,7 +158,7 @@ bool isLoopbackAddress(const net::IPAddressNumber& address) {
   return false;
 }
 
-std::string addressToFirewallString(const net::IPAddressNumber& address) {
+std::string AddressToFirewallString(const net::IPAddressNumber& address) {
   if (address.empty()) {
     return std::string();
   }
@@ -180,11 +181,11 @@ std::string addressToFirewallString(const net::IPAddressNumber& address) {
 void OpenFirewallHole(const net::IPEndPoint& address,
                       chromeos::FirewallHole::PortType type,
                       FirewallHoleOpenCallback callback) {
-  if (isLoopbackAddress(address.address())) {
+  if (IsLoopbackAddress(address.address())) {
     callback.Run(nullptr);
     return;
   }
-  std::string address_string = addressToFirewallString(address.address());
+  std::string address_string = AddressToFirewallString(address.address());
 
   chromeos::FirewallHole::Open(type, address.port(), address_string, callback);
 }

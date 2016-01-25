@@ -5,6 +5,8 @@
 #ifndef CC_QUADS_IO_SURFACE_DRAW_QUAD_H_
 #define CC_QUADS_IO_SURFACE_DRAW_QUAD_H_
 
+#include <stddef.h>
+
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/quads/draw_quad.h"
@@ -28,8 +30,7 @@ class CC_EXPORT IOSurfaceDrawQuad : public DrawQuad {
               const gfx::Rect& visible_rect,
               const gfx::Size& io_surface_size,
               unsigned io_surface_resource_id,
-              Orientation orientation,
-              bool allow_overlay);
+              Orientation orientation);
 
   void SetAll(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -38,12 +39,10 @@ class CC_EXPORT IOSurfaceDrawQuad : public DrawQuad {
               bool needs_blending,
               const gfx::Size& io_surface_size,
               unsigned io_surface_resource_id,
-              Orientation orientation,
-              bool allow_overlay);
+              Orientation orientation);
 
   gfx::Size io_surface_size;
   Orientation orientation;
-  bool allow_overlay;
 
   ResourceId io_surface_resource_id() const {
     return resources.ids[kIOSurfaceResourceIdIndex];

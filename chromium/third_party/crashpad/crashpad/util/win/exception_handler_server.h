@@ -18,8 +18,9 @@
 #include <set>
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
+#include "util/file/file_io.h"
 #include "util/win/address_types.h"
 #include "util/win/scoped_handle.h"
 
@@ -49,24 +50,49 @@ class ExceptionHandlerServer {
     //!     lifetime of this handle is not passed to the delegate.
     //! \param[in] exception_information_address The address in the client's
     //!     address space of an ExceptionInformation structure.
+    //! \param[in] debug_critical_section_address The address in the client's
+    //!     address space of a `CRITICAL_SECTION` allocated with a valid
+    //!     `.DebugInfo` field, or `0` if unavailable.
     //! \return The exit code that should be used when terminating the client
     //!     process.
     virtual unsigned int ExceptionHandlerServerException(
         HANDLE process,
-        WinVMAddress exception_information_address) = 0;
+        WinVMAddress exception_information_address,
+        WinVMAddress debug_critical_section_address) = 0;
   };
 
   //! \brief Constructs the exception handling server.
-  ExceptionHandlerServer();
+  //!
+  //! \param[in] persistent `true` if Run() should not return until Stop() is
+  //!     called. If `false`, Run() will return when all clients have exited,
+  //!     although Run() will always wait for the first client to connect.
+  explicit ExceptionHandlerServer(bool persistent);
+
   ~ExceptionHandlerServer();
+
+  //! \brief Sets the pipe name to listen for client registrations on.
+  //!
+  //! Either this method or CreatePipe(), but not both, must be called before
+  //! Run().
+  //!
+  //! \param[in] pipe_name The name of the pipe to listen on. Must be of the
+  //!     form "\\.\pipe\<some_name>".
+  void SetPipeName(const std::wstring& pipe_name);
+
+  //! \brief Creates a randomized pipe name to listen for client registrations
+  //!     on and returns its name.
+  //!
+  //! Either this method or CreatePipe(), but not both, must be called before
+  //! Run().
+  //!
+  //! \return The pipe name that will be listened on.
+  std::wstring CreatePipe();
 
   //! \brief Runs the exception-handling server.
   //!
   //! \param[in] delegate The interface to which the exceptions are delegated
   //!     when they are caught in Run(). Ownership is not transferred.
-  //! \param[in] pipe_name The name of the pipe to listen on. Must be of the
-  //!     form "\\.\pipe\<some_name>".
-  void Run(Delegate* delegate, const std::string& pipe_name);
+  void Run(Delegate* delegate);
 
   //! \brief Stops the exception-handling server. Returns immediately. The
   //!     object must not be destroyed until Run() returns.
@@ -80,10 +106,14 @@ class ExceptionHandlerServer {
   static void __stdcall OnNonCrashDumpEvent(void* ctx, BOOLEAN);
   static void __stdcall OnProcessEnd(void* ctx, BOOLEAN);
 
+  std::wstring pipe_name_;
   ScopedKernelHANDLE port_;
+  ScopedFileHandle first_pipe_instance_;
 
   base::Lock clients_lock_;
   std::set<internal::ClientData*> clients_;
+
+  bool persistent_;
 
   DISALLOW_COPY_AND_ASSIGN(ExceptionHandlerServer);
 };

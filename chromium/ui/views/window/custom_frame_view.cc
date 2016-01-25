@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -181,7 +182,8 @@ void CustomFrameView::GetWindowMask(const gfx::Size& size,
   if (frame_->IsMaximized() || !ShouldShowTitleBarAndBorder())
     return;
 
-  GetDefaultWindowMask(size, window_mask);
+  GetDefaultWindowMask(size, frame_->GetCompositor()->device_scale_factor(),
+                       window_mask);
 }
 
 void CustomFrameView::ResetWindowControls() {

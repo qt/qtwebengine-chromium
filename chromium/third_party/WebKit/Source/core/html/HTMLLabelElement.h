@@ -54,11 +54,9 @@ private:
     explicit HTMLLabelElement(Document&, HTMLFormElement*);
     bool isInInteractiveContent(Node*) const;
 
-    bool layoutObjectIsFocusable() const override;
     bool isInteractiveContent() const override;
     void accessKeyAction(bool sendMouseEvents) override;
 
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void removedFrom(ContainerNode*) override;
 
@@ -69,7 +67,7 @@ private:
     // Overridden to either click() or focus() the corresponding control.
     void defaultEventHandler(Event*) override;
 
-    void focus(bool restorePreviousSelection, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void focus(const FocusParams&) override;
 
     // FormAssociatedElement methods
     bool isFormControlElement() const override { return false; }
@@ -80,7 +78,7 @@ private:
     void derefFormAssociatedElement() override { deref(); }
 #endif
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
 
     void updateLabel(TreeScope&, const AtomicString& oldForAttributeValue, const AtomicString& newForAttributeValue);
 

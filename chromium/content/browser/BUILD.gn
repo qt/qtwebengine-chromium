@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//content/browser/browser.gni")
@@ -13,7 +12,10 @@ source_set("browser") {
   # internal content ones) should depend on the public one.
   visibility = [ "//content/public/browser:browser_sources" ]
 
-  configs += [ "//build/config:precompiled_headers" ]
+  configs += [
+    "//build/config:precompiled_headers",
+    "//content/public/common:mojo_shell_client",
+  ]
   defines = []
   libs = []
   ldflags = []
@@ -36,19 +38,20 @@ source_set("browser") {
     "//device/battery",
     "//device/vibration",
     "//google_apis",
-    "//mojo/application/public/cpp:cpp_for_chromium",
-    "//mojo/application/public/interfaces",
     "//mojo/common",
-    "//mojo/package_manager",
+    "//mojo/public/cpp/bindings",
     "//mojo/shell",
+    "//mojo/shell/package_manager",
+    "//mojo/shell/public/cpp:cpp_for_chromium",
+    "//mojo/shell/public/interfaces",
     "//net",
     "//net:extras",
     "//skia",
     "//sql",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/WebKit/public:blink_headers",
+    "//third_party/kasko:kasko_features",
     "//third_party/npapi",
     "//third_party/re2",
-    "//third_party/WebKit/public:blink_headers",
     "//third_party/zlib",
     "//third_party/zlib:zip",
     "//ui/accessibility",
@@ -105,10 +108,17 @@ source_set("browser") {
             ],
             ".")
 
+    sources += [
+      "mojo/mojo_shell_client_host.cc",
+      "mojo/mojo_shell_client_host.h",
+      "mojo/renderer_capability_filter.cc",
+    ]
+
     # Non-iOS deps.
     deps += [
       "//cc",
       "//cc/surfaces",
+      "//components/scheduler:common",
       "//content/app/resources",
       "//content/app/strings",
       "//content/browser/devtools:gen_devtools_protocol_handler",
@@ -117,9 +127,11 @@ source_set("browser") {
       "//content/public/common:mojo_bindings",
       "//device/bluetooth",
       "//gin",
-      "//mojo/application/public/interfaces",
       "//mojo/common:url_type_converters",
       "//mojo/converters/geometry",
+      "//mojo/public/cpp/bindings",
+      "//mojo/public/js",
+      "//mojo/shell/public/interfaces",
       "//skia/public",
       "//storage/browser",
       "//storage/common",
@@ -129,13 +141,13 @@ source_set("browser") {
       "//third_party/icu",
       "//third_party/leveldatabase",
       "//third_party/libyuv",
-      "//third_party/mojo/src/mojo/public/cpp/bindings",
-      "//third_party/mojo/src/mojo/public/js",
       "//ui/events/blink",
       "//ui/resources",
       "//ui/surface",
       "//ui/touch_selection",
     ]
+
+    configs += [ "//v8:external_startup_data" ]
   }
 
   configs += [
@@ -147,17 +159,10 @@ source_set("browser") {
     deps += [ "//ui/events" ]
   }
 
-  if (is_win) {
-    sources += [
-      "power_profiler/power_data_provider_ia_win.cc",
-      "power_profiler/power_data_provider_ia_win.h",
-    ]
-    deps += [ "//third_party/power_gadget" ]
-  } else {
+  if (!is_win) {
     sources += [
       "file_descriptor_info_impl.cc",
       "file_descriptor_info_impl.h",
-      "power_profiler/power_data_provider_dummy.cc",
     ]
     sources -= [ "renderer_host/web_input_event_aurawin.cc" ]
   }
@@ -342,7 +347,6 @@ source_set("browser") {
       "geolocation/network_location_request.h",
       "power_usage_monitor_impl.cc",
       "power_usage_monitor_impl.h",
-      "renderer_host/begin_frame_observer_proxy.cc",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -368,13 +372,28 @@ source_set("browser") {
       "speech/speech_recognizer_impl.cc",
       "speech/speech_recognizer_impl.h",
     ]
+
+    if (!use_aura) {
+      sources += rebase_path(
+              content_browser_gypi_values.android_non_aura_browser_sources,
+              ".",
+              "//content")
+      sources += rebase_path(
+              content_browser_gypi_values.android_in_process_browser_sources,
+              ".",
+              "//content")
+      sources -= [ "renderer_host/begin_frame_observer_proxy.cc" ]
+      deps += [ "//ui/android" ]
+    }
+
     deps -= [ "//device/battery" ]
     deps += [
       "//content/public/android:jni",
       "//media",
+      "//media/mojo/interfaces",
       "//mojo/android:libsystem_java",
-      "//ui/android",
     ]
+    defines += [ "APPCACHE_USE_SIMPLE_CACHE" ]
     libs += [ "jnigraphics" ]
   }
 
@@ -398,6 +417,10 @@ source_set("browser") {
 
   if (is_chromeos) {
     sources -= [ "device_sensors/data_fetcher_shared_memory_default.cc" ]
+    sources += [
+      "gpu/gpu_arc_video_service_host.cc",
+      "gpu/gpu_arc_video_service_host.h",
+    ]
     deps += [
       "//chromeos",
       "//chromeos:power_manager_proto",
@@ -406,13 +429,32 @@ source_set("browser") {
 
   if (use_aura) {
     deps += [
+      "//components/bitmap_uploader",
+      "//components/mus/public/cpp",
+      "//components/mus/public/interfaces",
       "//ui/aura",
       "//ui/aura_extra",
       "//ui/strings",
+      "//ui/views/mus:for_component",
       "//ui/wm",
     ]
+    sources += [
+      "compositor/software_output_device_mus.cc",
+      "compositor/software_output_device_mus.h",
+      "renderer_host/render_widget_host_view_mus.cc",
+      "renderer_host/render_widget_host_view_mus.h",
+      "web_contents/web_contents_view_mus.cc",
+      "web_contents/web_contents_view_mus.h",
+    ]
+    if (toolkit_views) {
+      defines += [ "MOJO_RUNNER_CLIENT" ]
+    }
   } else {  # Not aura.
     sources -= [
+      "media/capture/cursor_renderer_aura.cc",
+      "media/capture/cursor_renderer_aura.h",
+      "media/capture/window_activity_tracker_aura.cc",
+      "media/capture/window_activity_tracker_aura.h",
       "renderer_host/compositor_resize_lock_aura.cc",
       "renderer_host/compositor_resize_lock_aura.h",
       "renderer_host/input/synthetic_gesture_target_aura.cc",
@@ -483,13 +525,15 @@ source_set("browser") {
     sources += [
       "media/cdm/browser_cdm_manager.cc",
       "media/cdm/browser_cdm_manager.h",
-      "media/media_web_contents_observer.cc",
-      "media/media_web_contents_observer.h",
     ]
   }
 
   if (is_linux) {
     deps += [ "//third_party/boringssl" ]
+  }
+
+  if (enable_mojo_media != "none") {
+    configs += [ "//media/mojo/services:enable_mojo_media_config" ]
   }
 
   if (enable_mojo_media == "browser") {

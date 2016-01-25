@@ -7,17 +7,24 @@
 #include <IOKit/IOCFPlugIn.h>
 #include <IOKit/usb/IOUSBLib.h>
 #include <IOKit/usb/USBSpec.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <limits>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/mac/scoped_ioobject.h"
 #include "base/mac/scoped_ioplugininterface.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #import "media/base/mac/avfoundation_glue.h"
+#include "media/base/timestamp_constants.h"
 #import "media/capture/video/mac/platform_video_capturing_mac.h"
 #import "media/capture/video/mac/video_capture_device_avfoundation_mac.h"
 #import "media/capture/video/mac/video_capture_device_qtkit_mac.h"
@@ -95,7 +102,7 @@ typedef struct IOUSBInterfaceDescriptor {
 } IOUSBInterfaceDescriptor;
 
 static void GetBestMatchSupportedResolution(gfx::Size* resolution) {
-  int min_diff = kint32max;
+  int min_diff = std::numeric_limits<int32_t>::max();
   const int desired_area = resolution->GetArea();
   for (size_t i = 0; i < arraysize(kWellSupportedResolutions); ++i) {
     const int area = kWellSupportedResolutions[i]->width *
@@ -189,7 +196,7 @@ static bool FindVideoControlInterfaceInDeviceInterface(
 // set the appropriate Power Line frequency for flicker removal.
 static void SetAntiFlickerInVideoControlInterface(
     IOCFPlugInInterface** plugin_interface,
-    const int frequency) {
+    const PowerLineFrequency frequency) {
   // Create, the control interface for the found plugin, and release
   // the intermediate plugin.
   IOUSBInterfaceInterface** control_interface = NULL;
@@ -249,7 +256,8 @@ static void SetAntiFlickerInVideoControlInterface(
   command.wValue = (selector << 8);
   command.wLength = kPuPowerLineFrequencyControlCommandSize;
   command.wLenDone = 0;
-  int power_line_flag_value = (frequency == 50) ? k50Hz : k60Hz;
+  int power_line_flag_value =
+      (frequency == PowerLineFrequency::FREQUENCY_50HZ) ? k50Hz : k60Hz;
   command.pData = &power_line_flag_value;
 
   IOReturn ret =
@@ -257,8 +265,8 @@ static void SetAntiFlickerInVideoControlInterface(
   DLOG_IF(ERROR, ret != kIOReturnSuccess) << "Anti-flicker control request"
                                           << " failed (0x" << std::hex << ret
                                           << "), unit id: " << real_unit_id;
-  DVLOG_IF(1, ret == kIOReturnSuccess) << "Anti-flicker set to " << frequency
-                                       << "Hz";
+  DVLOG_IF(1, ret == kIOReturnSuccess) << "Anti-flicker set to "
+                                       << static_cast<int>(frequency) << "Hz";
 
   (*control_interface)->USBInterfaceClose(control_interface);
 }
@@ -270,11 +278,11 @@ static void SetAntiFlickerInVideoControlInterface(
 // are created. The latter is used to a send a power frequency setting command.
 static void SetAntiFlickerInUsbDevice(const int vendor_id,
                                       const int product_id,
-                                      const int frequency) {
-  if (frequency == 0)
+                                      const PowerLineFrequency frequency) {
+  if (frequency == PowerLineFrequency::FREQUENCY_DEFAULT)
     return;
-  DVLOG(1) << "Setting Power Line Frequency to " << frequency << " Hz, device "
-           << std::hex << vendor_id << "-" << product_id;
+  DVLOG(1) << "Setting Power Line Frequency to " << static_cast<int>(frequency)
+           << " Hz, device " << std::hex << vendor_id << "-" << product_id;
 
   // Compose a search dictionary with vendor and product ID.
   CFMutableDictionaryRef query_dictionary =
@@ -343,6 +351,7 @@ VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       state_(kNotInitialized),
       capture_device_(nil),
+      first_timestamp_(media::kNoTimestamp()),
       weak_factory_(this) {
   // Avoid reconfiguring AVFoundation or blacklisted devices.
   final_resolution_selected_ = AVFoundationGlue::IsAVFoundationSupported() ||
@@ -369,7 +378,7 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   if (!AVFoundationGlue::IsAVFoundationSupported())
     GetBestMatchSupportedResolution(&resolution);
 
-  client_ = client.Pass();
+  client_ = std::move(client);
   if (device_name_.capture_api_type() == Name::AVFOUNDATION)
     LogMessage("Using AVFoundation for device: " + device_name_.name());
   else
@@ -380,7 +389,7 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   [capture_device_ setFrameReceiver:this];
 
   if (![capture_device_ setCaptureDevice:deviceId]) {
-    SetErrorState("Could not open capture device.");
+    SetErrorState(FROM_HERE, "Could not open capture device.");
     return;
   }
 
@@ -421,7 +430,7 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   }
 
   if (![capture_device_ startCapture]) {
-    SetErrorState("Could not start capture device.");
+    SetErrorState(FROM_HERE, "Could not start capture device.");
     return;
   }
 
@@ -459,11 +468,12 @@ bool VideoCaptureDeviceMac::Init(
   return true;
 }
 
-void VideoCaptureDeviceMac::ReceiveFrame(const uint8* video_frame,
+void VideoCaptureDeviceMac::ReceiveFrame(const uint8_t* video_frame,
                                          int video_frame_length,
                                          const VideoCaptureFormat& frame_format,
                                          int aspect_numerator,
-                                         int aspect_denominator) {
+                                         int aspect_denominator,
+                                         base::TimeDelta timestamp) {
   // This method is safe to call from a device capture thread, i.e. any thread
   // controlled by QTKit/AVFoundation.
   if (!final_resolution_selected_) {
@@ -529,25 +539,40 @@ void VideoCaptureDeviceMac::ReceiveFrame(const uint8* video_frame,
   if (!AVFoundationGlue::IsAVFoundationSupported()) {
     capture_format_.frame_size = frame_format.frame_size;
   } else if (capture_format_.frame_size != frame_format.frame_size) {
-    ReceiveError("Captured resolution " + frame_format.frame_size.ToString() +
-                 ", and expected " + capture_format_.frame_size.ToString());
+    ReceiveError(FROM_HERE,
+                 "Captured resolution " + frame_format.frame_size.ToString() +
+                     ", and expected " + capture_format_.frame_size.ToString());
     return;
   }
 
+  base::TimeTicks aligned_timestamp;
+  if (timestamp == media::kNoTimestamp()) {
+    aligned_timestamp = base::TimeTicks::Now();
+  } else {
+    if (first_timestamp_ == media::kNoTimestamp()) {
+      first_timestamp_ = timestamp;
+      first_aligned_timestamp_ = base::TimeTicks::Now();
+    }
+    aligned_timestamp = first_aligned_timestamp_ + timestamp - first_timestamp_;
+  }
   client_->OnIncomingCapturedData(video_frame, video_frame_length, frame_format,
-                                  0, base::TimeTicks::Now());
+                                  0, aligned_timestamp);
 }
 
-void VideoCaptureDeviceMac::ReceiveError(const std::string& reason) {
-  task_runner_->PostTask(FROM_HERE,
-                         base::Bind(&VideoCaptureDeviceMac::SetErrorState,
-                                    weak_factory_.GetWeakPtr(), reason));
+void VideoCaptureDeviceMac::ReceiveError(
+    const tracked_objects::Location& from_here,
+    const std::string& reason) {
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&VideoCaptureDeviceMac::SetErrorState,
+                            weak_factory_.GetWeakPtr(), from_here, reason));
 }
 
-void VideoCaptureDeviceMac::SetErrorState(const std::string& reason) {
+void VideoCaptureDeviceMac::SetErrorState(
+    const tracked_objects::Location& from_here,
+    const std::string& reason) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   state_ = kError;
-  client_->OnError(reason);
+  client_->OnError(from_here, reason);
 }
 
 void VideoCaptureDeviceMac::LogMessage(const std::string& message) {
@@ -560,7 +585,7 @@ bool VideoCaptureDeviceMac::UpdateCaptureResolution() {
   if (![capture_device_ setCaptureHeight:capture_format_.frame_size.height()
                                    width:capture_format_.frame_size.width()
                                frameRate:capture_format_.frame_rate]) {
-    ReceiveError("Could not configure capture device.");
+    ReceiveError(FROM_HERE, "Could not configure capture device.");
     return false;
   }
   return true;

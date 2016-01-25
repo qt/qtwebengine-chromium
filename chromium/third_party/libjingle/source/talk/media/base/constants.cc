@@ -90,6 +90,7 @@ const int kPreferredUseInbandFec = 0;
 const char kRtcpFbParamNack[] = "nack";
 const char kRtcpFbNackParamPli[] = "pli";
 const char kRtcpFbParamRemb[] = "goog-remb";
+const char kRtcpFbParamTransportCc[] = "transport-cc";
 
 const char kRtcpFbParamCcm[] = "ccm";
 const char kRtcpFbCcmParamFir[] = "fir";
@@ -123,6 +124,10 @@ const int kRtpVideoRotationHeaderExtensionDefaultId = 4;
 const char kRtpVideoRotationHeaderExtension[] = "urn:3gpp:video-orientation";
 const char kRtpVideoRotation6BitsHeaderExtensionForTesting[] =
     "urn:3gpp:video-orientation:6";
+
+const int kRtpTransportSequenceNumberHeaderExtensionDefaultId = 5;
+const char kRtpTransportSequenceNumberHeaderExtension[] =
+    "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions";
 
 const int kNumDefaultUnsignalledVideoRecvStreams = 0;
 

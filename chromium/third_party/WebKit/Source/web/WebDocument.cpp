@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebDocument.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -38,6 +37,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/CSSSelectorWatch.h"
 #include "core/dom/Document.h"
+#include "core/dom/DocumentStatisticsCollector.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/Fullscreen.h"
@@ -56,14 +56,13 @@
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebDistillability.h"
 #include "public/platform/WebURL.h"
 #include "public/web/WebAXObject.h"
 #include "public/web/WebDOMEvent.h"
-#include "public/web/WebDocumentType.h"
 #include "public/web/WebElement.h"
 #include "public/web/WebElementCollection.h"
 #include "public/web/WebFormElement.h"
-#include "public/web/WebNodeList.h"
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
@@ -210,18 +209,13 @@ WebElement WebDocument::focusedElement() const
     return WebElement(constUnwrap<Document>()->focusedElement());
 }
 
-WebDocumentType WebDocument::doctype() const
-{
-    return WebDocumentType(constUnwrap<Document>()->doctype());
-}
-
 void WebDocument::insertStyleSheet(const WebString& sourceCode)
 {
     RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
     ASSERT(document);
     RefPtrWillBeRawPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(CSSParserContext(*document, 0));
     parsedSheet->parseString(sourceCode);
-    document->styleEngine().addAuthorSheet(parsedSheet);
+    document->styleEngine().injectAuthorSheet(parsedSheet);
 }
 
 void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
@@ -320,6 +314,23 @@ bool WebDocument::manifestUseCredentials() const
     if (!linkElement)
         return false;
     return equalIgnoringCase(linkElement->fastGetAttribute(HTMLNames::crossoriginAttr), "use-credentials");
+}
+
+WebDistillabilityFeatures WebDocument::distillabilityFeatures()
+{
+    return DocumentStatisticsCollector::collectStatistics(*unwrap<Document>());
+}
+
+bool WebDocument::attemptedToDetermineEncodingFromContentSniffing() const
+{
+    const Document* document = constUnwrap<Document>();
+    return document->attemptedToDetermineEncodingFromContentSniffing();
+}
+
+bool WebDocument::encodingWasDetectedFromContentSniffing() const
+{
+    const Document* document = constUnwrap<Document>();
+    return document->encodingWasDetectedFromContentSniffing();
 }
 
 WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)

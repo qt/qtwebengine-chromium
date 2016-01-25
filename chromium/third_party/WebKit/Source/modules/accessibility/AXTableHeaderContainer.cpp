@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXTableHeaderContainer.h"
 
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -69,6 +68,7 @@ bool AXTableHeaderContainer::computeAccessibilityIsIgnored(IgnoredReasons* ignor
 
 void AXTableHeaderContainer::addChildren()
 {
+    ASSERT(!isDetached());
     ASSERT(!m_haveChildren);
 
     m_haveChildren = true;

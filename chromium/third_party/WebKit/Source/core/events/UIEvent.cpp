@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/events/UIEvent.h"
 
 
@@ -35,6 +34,14 @@ UIEvent::UIEvent()
 // TODO(lanwei): Will add sourceCapabilities to all the subclass of UIEvent later, see https://crbug.com/476530.
 UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg, InputDeviceCapabilities* sourceCapabilitiesArg)
     : Event(eventType, canBubbleArg, cancelableArg)
+    , m_view(viewArg)
+    , m_detail(detailArg)
+    , m_sourceCapabilities(sourceCapabilitiesArg)
+{
+}
+
+UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, double platformTimeStamp, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg, InputDeviceCapabilities* sourceCapabilitiesArg)
+    : Event(eventType, canBubbleArg, cancelableArg, platformTimeStamp)
     , m_view(viewArg)
     , m_detail(detailArg)
     , m_sourceCapabilities(sourceCapabilitiesArg)

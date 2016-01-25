@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/TextAutosizer.h"
 
 #include "core/dom/Document.h"
@@ -531,10 +530,7 @@ void TextAutosizer::updatePageInfo()
         if (frame->isRemoteFrame())
             return;
 
-        LocalFrame* mainFrame = m_document->page()->deprecatedLocalMainFrame();
-        if (!mainFrame->view())
-            return;
-
+        LocalFrame* mainFrame = toLocalFrame(frame);
         IntSize frameSize = m_document->settings()->textAutosizingWindowSizeOverride();
         if (frameSize.isEmpty())
             frameSize = windowSize();

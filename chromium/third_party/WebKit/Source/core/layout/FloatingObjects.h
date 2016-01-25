@@ -39,7 +39,7 @@ class LayoutBox;
 enum ShapeOutsideFloatOffsetMode { ShapeOutsideFloatShapeOffset, ShapeOutsideFloatMarginBoxOffset };
 
 class FloatingObject {
-    WTF_MAKE_NONCOPYABLE(FloatingObject); WTF_MAKE_FAST_ALLOCATED(FloatingObject);
+    WTF_MAKE_NONCOPYABLE(FloatingObject); USING_FAST_MALLOC(FloatingObject);
 public:
 #ifndef NDEBUG
     // Used by the PODIntervalTree for debugging the FloatingObject.
@@ -132,13 +132,13 @@ struct FloatingObjectHashTranslator {
 };
 typedef ListHashSet<OwnPtr<FloatingObject>, 4, FloatingObjectHashFunctions> FloatingObjectSet;
 typedef FloatingObjectSet::const_iterator FloatingObjectSetIterator;
-typedef PODInterval<int, FloatingObject*> FloatingObjectInterval;
-typedef PODIntervalTree<int, FloatingObject*> FloatingObjectTree;
+typedef PODInterval<LayoutUnit, FloatingObject*> FloatingObjectInterval;
+typedef PODIntervalTree<LayoutUnit, FloatingObject*> FloatingObjectTree;
 typedef PODFreeListArena<PODRedBlackTree<FloatingObjectInterval>::Node> IntervalArena;
 typedef HashMap<LayoutBox*, OwnPtr<FloatingObject>> LayoutBoxToFloatInfoMap;
 
 class FloatingObjects {
-    WTF_MAKE_NONCOPYABLE(FloatingObjects); WTF_MAKE_FAST_ALLOCATED(FloatingObjects);
+    WTF_MAKE_NONCOPYABLE(FloatingObjects); USING_FAST_MALLOC(FloatingObjects);
 public:
     FloatingObjects(const LayoutBlockFlow*, bool horizontalWritingMode);
     ~FloatingObjects();
@@ -200,8 +200,8 @@ private:
 
 #ifndef NDEBUG
 // These structures are used by PODIntervalTree for debugging purposes.
-template <> struct ValueToString<int> {
-    static String string(const int value);
+template <> struct ValueToString<LayoutUnit> {
+    static String string(const LayoutUnit value);
 };
 template<> struct ValueToString<FloatingObject*> {
     static String string(const FloatingObject*);

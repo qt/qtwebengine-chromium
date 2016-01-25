@@ -261,11 +261,9 @@ WebInspector.ElementsTreeElement.prototype = {
 
         if (!this.selectionElement) {
             this.selectionElement = createElement("div");
-            this.selectionElement.className = "selection selected";
+            this.selectionElement.className = "selection fill";
             listItemElement.insertBefore(this.selectionElement, listItemElement.firstChild);
         }
-
-        this.selectionElement.style.height = listItemElement.offsetHeight + "px";
     },
 
     /**
@@ -353,20 +351,6 @@ WebInspector.ElementsTreeElement.prototype = {
 
     /**
      * @override
-     */
-    onreveal: function()
-    {
-        if (this.listItemElement) {
-            var tagSpans = this.listItemElement.getElementsByClassName("webkit-html-tag-name");
-            if (tagSpans.length)
-                tagSpans[0].scrollIntoViewIfNeeded(true);
-            else
-                this.listItemElement.scrollIntoViewIfNeeded(true);
-        }
-    },
-
-    /**
-     * @override
      * @param {boolean=} omitFocus
      * @param {boolean=} selectedByUser
      * @return {boolean}
@@ -375,8 +359,6 @@ WebInspector.ElementsTreeElement.prototype = {
     {
         if (this._editing)
             return false;
-        if (selectedByUser && this.treeOutline.handlePickNode(this.title, this._node))
-            return true;
         return TreeElement.prototype.select.call(this, omitFocus, selectedByUser);
     },
 
@@ -486,9 +468,6 @@ WebInspector.ElementsTreeElement.prototype = {
             return false;
 
         if (this._node.nodeType() != Node.ELEMENT_NODE && this._node.nodeType() != Node.TEXT_NODE)
-            return false;
-
-        if (this.treeOutline.pickNodeMode())
             return false;
 
         var textNode = eventTarget.enclosingNodeOrSelfWithClass("webkit-html-text-node");
@@ -1100,16 +1079,30 @@ WebInspector.ElementsTreeElement.prototype = {
 
     updateDecorations: function()
     {
+        var treeElement = this.parent;
+        var depth = 0;
+        while (treeElement != null) {
+            depth++;
+            treeElement = treeElement.parent;
+        }
+
+        /** Keep it in sync with elementsTreeOutline.css **/
+        this._gutterContainer.style.left = (-12 * (depth - 2) - (this.isExpandable() ? 1 : 12)) + "px";
+
         if (this.isClosingTag())
             return;
+
         var node = this._node;
         if (node.nodeType() !== Node.ELEMENT_NODE)
             return;
 
-        var extensions = runtime.extensions(WebInspector.DOMPresentationUtils.MarkerDecorator);
+        if (!this.treeOutline._decoratorExtensions)
+            /** @type {!Array.<!Runtime.Extension>} */
+            this.treeOutline._decoratorExtensions = runtime.extensions(WebInspector.DOMPresentationUtils.MarkerDecorator);
+
         var markerToExtension = new Map();
-        for (var extension of extensions)
-            markerToExtension.set(extension.descriptor()["marker"], extension);
+        for (var i = 0; i < this.treeOutline._decoratorExtensions.length; ++i)
+            markerToExtension.set(this.treeOutline._decoratorExtensions[i].descriptor()["marker"], this.treeOutline._decoratorExtensions[i]);
 
         var promises = [];
         var decorations = [];

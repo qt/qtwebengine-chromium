@@ -48,7 +48,7 @@ using ActiveInterpolationsMap = HashMap<PropertyHandle, ActiveInterpolations>;
 class InertEffect;
 
 class CORE_EXPORT AnimationStack {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(AnimationStack);
 public:
     AnimationStack();
@@ -56,7 +56,9 @@ public:
     void add(SampledEffect* effect) { m_effects.append(effect); }
     bool isEmpty() const { return m_effects.isEmpty(); }
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
-    static ActiveInterpolationsMap activeInterpolations(AnimationStack*, const HeapVector<Member<InertEffect>>* newAnimations, const HeapHashSet<Member<const Animation>>* suppressedAnimations, KeyframeEffect::Priority, double timelineCurrentTime);
+
+    using PropertyHandleFilter = bool (*)(const PropertyHandle&);
+    static ActiveInterpolationsMap activeInterpolations(AnimationStack*, const HeapVector<Member<const InertEffect>>* newAnimations, const HeapHashSet<Member<const Animation>>* suppressedAnimations, KeyframeEffect::Priority, PropertyHandleFilter = nullptr);
 
     bool getAnimatedBoundingBox(FloatBox&, CSSPropertyID) const;
     DECLARE_TRACE();

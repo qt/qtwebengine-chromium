@@ -24,10 +24,9 @@
 #include "wtf/Alignment.h"
 #include "wtf/ConditionalDestructor.h"
 #include "wtf/ContainerAnnotations.h"
-#include "wtf/DefaultAllocator.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/NotFound.h"
+#include "wtf/PartitionAllocator.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/VectorTraits.h"
 #include <algorithm>
@@ -128,16 +127,16 @@ struct VectorMover;
 
 template <typename T>
 struct VectorMover<false, T> {
-    static void move(const T* src, const T* srcEnd, T* dst)
+    static void move(T* src, T* srcEnd, T* dst)
     {
         while (src != srcEnd) {
-            new (NotNull, dst) T(*src);
+            new (NotNull, dst) T(std::move(*src));
             src->~T();
             ++dst;
             ++src;
         }
     }
-    static void moveOverlapping(const T* src, const T* srcEnd, T* dst)
+    static void moveOverlapping(T* src, T* srcEnd, T* dst)
     {
         if (src > dst) {
             move(src, srcEnd, dst);
@@ -146,12 +145,12 @@ struct VectorMover<false, T> {
             while (src != srcEnd) {
                 --srcEnd;
                 --dstEnd;
-                new (NotNull, dstEnd) T(*srcEnd);
+                new (NotNull, dstEnd) T(std::move(*srcEnd));
                 srcEnd->~T();
             }
         }
     }
-    static void swap(T* src, T* srcEnd, T* dst) 
+    static void swap(T* src, T* srcEnd, T* dst)
     {
         std::swap_ranges(src, srcEnd, dst);
     }
@@ -268,12 +267,12 @@ struct VectorTypeOperations {
         VectorInitializer<VectorTraits<T>::canInitializeWithMemset, T>::initialize(begin, end);
     }
 
-    static void move(const T* src, const T* srcEnd, T* dst)
+    static void move(T* src, T* srcEnd, T* dst)
     {
         VectorMover<VectorTraits<T>::canMoveWithMemcpy, T>::move(src, srcEnd, dst);
     }
 
-    static void moveOverlapping(const T* src, const T* srcEnd, T* dst)
+    static void moveOverlapping(T* src, T* srcEnd, T* dst)
     {
         VectorMover<VectorTraits<T>::canMoveWithMemcpy, T>::moveOverlapping(src, srcEnd, dst);
     }
@@ -287,7 +286,7 @@ struct VectorTypeOperations {
     {
         VectorCopier<VectorTraits<T>::canCopyWithMemcpy, T>::uninitializedCopy(src, srcEnd, dst);
     }
-    
+
     static void uninitializedFill(T* dst, T* dstEnd, const T& val)
     {
         VectorFiller<VectorTraits<T>::canFillWithMemset, T>::uninitializedFill(dst, dstEnd, val);
@@ -339,13 +338,13 @@ public:
         // If the vector backing is garbage-collected and needs tracing or
         // finalizing, we clear out the unused slots so that the visitor or the
         // finalizer does not cause a problem when visiting the unused slots.
-        VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T>>::value), T>::clear(from, to);
+        VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || NeedsTracingTrait<VectorTraits<T>>::value), T>::clear(from, to);
     }
 
     void checkUnusedSlots(const T* from, const T* to)
     {
 #if ENABLE(ASSERT) && !defined(ANNOTATE_CONTIGUOUS_CONTAINER)
-        VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T>>::value), T>::checkCleared(from, to);
+        VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || NeedsTracingTrait<VectorTraits<T>>::value), T>::checkCleared(from, to);
 #endif
     }
 
@@ -367,7 +366,7 @@ protected:
     unsigned m_size;
 };
 
-template <typename T, size_t inlineCapacity, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity, typename Allocator = PartitionAllocator>
 class VectorBuffer;
 
 template <typename T, typename Allocator>
@@ -615,7 +614,7 @@ private:
     friend class Deque;
 };
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator> // Heap-allocated vectors with no inlineCapacity never need a destructor.
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator> // Heap-allocated vectors with no inlineCapacity never need a destructor.
 class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator>, public ConditionalDestructor<Vector<T, INLINE_CAPACITY, Allocator>, (INLINE_CAPACITY == 0) && Allocator::isGarbageCollected> {
     WTF_USE_ALLOCATOR(Vector, Allocator);
     typedef VectorBuffer<T, INLINE_CAPACITY, Allocator> Base;
@@ -623,6 +622,7 @@ class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator>, public Condi
 
 public:
     typedef T ValueType;
+    typedef T value_type;
 
     typedef T* iterator;
     typedef const T* const_iterator;
@@ -631,10 +631,12 @@ public:
 
     Vector()
     {
-        static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+        static_assert(!std::is_polymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
 #if ENABLE(OILPAN)
-        static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Vector");
+        static_assert(Allocator::isGarbageCollected || !AllowsOnlyPlacementNew<T>::value || !NeedsTracing<T>::value, "Cannot put DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects that have trace methods into an off-heap Vector");
 #endif
+        static_assert(Allocator::isGarbageCollected || !IsPointerToGarbageCollectedType<T>::value, "Cannot put raw pointers to garbage-collected classes into an off-heap Vector.  Use HeapVector<Member<T>> instead.");
+
         ANNOTATE_NEW_BUFFER(begin(), capacity(), 0);
         m_size = 0;
     }
@@ -642,10 +644,12 @@ public:
     explicit Vector(size_t size)
         : Base(size)
     {
-        static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+        static_assert(!std::is_polymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
 #if ENABLE(OILPAN)
-        static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Vector");
+        static_assert(Allocator::isGarbageCollected || !AllowsOnlyPlacementNew<T>::value || !NeedsTracing<T>::value, "Cannot put DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects that have trace methods into an off-heap Vector");
 #endif
+        static_assert(Allocator::isGarbageCollected || !IsPointerToGarbageCollectedType<T>::value, "Cannot put raw pointers to garbage-collected classes into an off-heap Vector.  Use HeapVector<Member<T>> instead.");
+
         ANNOTATE_NEW_BUFFER(begin(), capacity(), size);
         m_size = size;
         TypeOperations::initialize(begin(), end());
@@ -741,16 +745,16 @@ public:
     void clear() { shrinkCapacity(0); }
 
     template <typename U> void append(const U*, size_t);
-    template <typename U> void append(const U&);
-    template <typename U> void uncheckedAppend(const U& val);
+    template <typename U> void append(U&&);
+    template <typename U> void uncheckedAppend(U&& val);
     template <typename U, size_t otherCapacity, typename V> void appendVector(const Vector<U, otherCapacity, V>&);
 
     template <typename U> void insert(size_t position, const U*, size_t);
-    template <typename U> void insert(size_t position, const U&);
+    template <typename U> void insert(size_t position, U&&);
     template <typename U, size_t c, typename V> void insert(size_t position, const Vector<U, c, V>&);
 
     template <typename U> void prepend(const U*, size_t);
-    template <typename U> void prepend(const U&);
+    template <typename U> void prepend(U&&);
     template <typename U, size_t c, typename V> void prepend(const Vector<U, c, V>&);
 
     void remove(size_t position);
@@ -785,12 +789,21 @@ public:
 
     template <typename VisitorDispatcher> void trace(VisitorDispatcher);
 
+protected:
+    using Base::checkUnusedSlots;
+    using Base::clearUnusedSlots;
+
 private:
     void expandCapacity(size_t newMinCapacity);
-    const T* expandCapacity(size_t newMinCapacity, const T*);
+    T* expandCapacity(size_t newMinCapacity, T*);
+    T* expandCapacity(size_t newMinCapacity, const T* data)
+    {
+        return expandCapacity(newMinCapacity, const_cast<T*>(data));
+    }
+
     template <typename U> U* expandCapacity(size_t newMinCapacity, U*);
     void shrinkCapacity(size_t newCapacity);
-    template <typename U> void appendSlowCase(const U&);
+    template <typename U> void appendSlowCase(U&&);
 
     using Base::m_size;
     using Base::buffer;
@@ -798,8 +811,6 @@ private:
     using Base::swapVectorBuffer;
     using Base::allocateBuffer;
     using Base::allocationSize;
-    using Base::clearUnusedSlots;
-    using Base::checkUnusedSlots;
 };
 
 template <typename T, size_t inlineCapacity, typename Allocator>
@@ -972,7 +983,7 @@ void Vector<T, inlineCapacity, Allocator>::expandCapacity(size_t newMinCapacity)
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
-const T* Vector<T, inlineCapacity, Allocator>::expandCapacity(size_t newMinCapacity, const T* ptr)
+T* Vector<T, inlineCapacity, Allocator>::expandCapacity(size_t newMinCapacity, T* ptr)
 {
     if (ptr < begin() || ptr >= end()) {
         expandCapacity(newMinCapacity);
@@ -1044,7 +1055,7 @@ void Vector<T, inlineCapacity, Allocator>::reserveCapacity(size_t newCapacity)
 #endif
     // The Allocator::isGarbageCollected check is not needed.  The check is just
     // a static hint for a compiler to indicate that Base::expandBuffer returns
-    // false if Allocator is a DefaultAllocator.
+    // false if Allocator is a PartitionAllocator.
     if (Allocator::isGarbageCollected && Base::expandBuffer(newCapacity)) {
         ANNOTATE_CHANGE_CAPACITY(begin(), oldCapacity, m_size, capacity());
         return;
@@ -1133,31 +1144,31 @@ void Vector<T, inlineCapacity, Allocator>::append(const U* data, size_t dataSize
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-ALWAYS_INLINE void Vector<T, inlineCapacity, Allocator>::append(const U& val)
+ALWAYS_INLINE void Vector<T, inlineCapacity, Allocator>::append(U&& val)
 {
     ASSERT(Allocator::isAllocationAllowed());
     if (LIKELY(size() != capacity())) {
         ANNOTATE_CHANGE_SIZE(begin(), capacity(), m_size, m_size + 1);
-        new (NotNull, end()) T(val);
+        new (NotNull, end()) T(std::forward<U>(val));
         ++m_size;
         return;
     }
 
-    appendSlowCase(val);
+    appendSlowCase(std::forward<U>(val));
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-NEVER_INLINE void Vector<T, inlineCapacity, Allocator>::appendSlowCase(const U& val)
+NEVER_INLINE void Vector<T, inlineCapacity, Allocator>::appendSlowCase(U&& val)
 {
     ASSERT(size() == capacity());
 
-    const U* ptr = &val;
+    typename std::remove_reference<U>::type* ptr = &val;
     ptr = expandCapacity(size() + 1, ptr);
     ASSERT(begin());
 
     ANNOTATE_CHANGE_SIZE(begin(), capacity(), m_size, m_size + 1);
-    new (NotNull, end()) T(*ptr);
+    new (NotNull, end()) T(std::forward<U>(*ptr));
     ++m_size;
 }
 
@@ -1166,16 +1177,15 @@ NEVER_INLINE void Vector<T, inlineCapacity, Allocator>::appendSlowCase(const U& 
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-ALWAYS_INLINE void Vector<T, inlineCapacity, Allocator>::uncheckedAppend(const U& val)
+ALWAYS_INLINE void Vector<T, inlineCapacity, Allocator>::uncheckedAppend(U&& val)
 {
 #ifdef ANNOTATE_CONTIGUOUS_CONTAINER
     // Vectors in ASAN builds don't have inlineCapacity.
-    append(val);
+    append(std::forward<U>(val));
 #else
     ASSERT(size() < capacity());
     ANNOTATE_CHANGE_SIZE(begin(), capacity(), m_size, m_size + 1);
-    const U* ptr = &val;
-    new (NotNull, end()) T(*ptr);
+    new (NotNull, end()) T(std::forward<U>(val));
     ++m_size;
 #endif
 }
@@ -1208,11 +1218,11 @@ void Vector<T, inlineCapacity, Allocator>::insert(size_t position, const U* data
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-inline void Vector<T, inlineCapacity, Allocator>::insert(size_t position, const U& val)
+inline void Vector<T, inlineCapacity, Allocator>::insert(size_t position, U&& val)
 {
     ASSERT(Allocator::isAllocationAllowed());
     RELEASE_ASSERT(position <= size());
-    const U* data = &val;
+    typename std::remove_reference<U>::type* data = &val;
     if (size() == capacity()) {
         data = expandCapacity(size() + 1, data);
         ASSERT(begin());
@@ -1220,7 +1230,7 @@ inline void Vector<T, inlineCapacity, Allocator>::insert(size_t position, const 
     ANNOTATE_CHANGE_SIZE(begin(), capacity(), m_size, m_size + 1);
     T* spot = begin() + position;
     TypeOperations::moveOverlapping(spot, end(), spot + 1);
-    new (NotNull, spot) T(*data);
+    new (NotNull, spot) T(std::forward<U>(*data));
     ++m_size;
 }
 
@@ -1240,9 +1250,9 @@ void Vector<T, inlineCapacity, Allocator>::prepend(const U* data, size_t dataSiz
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-inline void Vector<T, inlineCapacity, Allocator>::prepend(const U& val)
+inline void Vector<T, inlineCapacity, Allocator>::prepend(U&& val)
 {
-    insert(0, val);
+    insert(0, std::forward<U>(val));
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
@@ -1329,7 +1339,7 @@ void Vector<T, inlineCapacity, Allocator>::trace(VisitorDispatcher visitor)
     }
     const T* bufferBegin = buffer();
     const T* bufferEnd = buffer() + size();
-    if (ShouldBeTraced<VectorTraits<T>>::value) {
+    if (NeedsTracingTrait<VectorTraits<T>>::value) {
         for (const T* bufferEntry = bufferBegin; bufferEntry != bufferEnd; bufferEntry++)
             Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));
         checkUnusedSlots(buffer() + size(), buffer() + capacity());

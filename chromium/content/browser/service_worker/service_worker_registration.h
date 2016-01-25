@@ -5,10 +5,12 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_H_
 
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/service_worker/service_worker_version.h"
@@ -50,10 +52,10 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   };
 
   ServiceWorkerRegistration(const GURL& pattern,
-                            int64 registration_id,
+                            int64_t registration_id,
                             base::WeakPtr<ServiceWorkerContextCore> context);
 
-  int64 id() const { return registration_id_; }
+  int64_t id() const { return registration_id_; }
   const GURL& pattern() const { return pattern_; }
 
   bool is_deleted() const { return is_deleted_; }
@@ -90,6 +92,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void RemoveListener(Listener* listener);
   void NotifyRegistrationFailed();
   void NotifyUpdateFound();
+  void NotifyVersionAttributesChanged(ChangedVersionAttributesMask mask);
 
   ServiceWorkerRegistrationInfo GetInfo();
 
@@ -128,20 +131,12 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   base::Time last_update_check() const { return last_update_check_; }
   void set_last_update_check(base::Time last) { last_update_check_ = last; }
 
-  // Provide a storage mechanism to read/write arbitrary data associated with
-  // this registration in the storage. Stored data is deleted when this
-  // registration is deleted from the storage.
-  void GetUserData(const std::string& key,
-                   const GetUserDataCallback& callback);
-  void StoreUserData(const std::string& key,
-                     const std::string& data,
-                     const StatusCallback& callback);
-  void ClearUserData(const std::string& key,
-                     const StatusCallback& callback);
-
   // Unsets the version and deletes its resources. Also deletes this
   // registration from storage if there is no longer a stored version.
   void DeleteVersion(const scoped_refptr<ServiceWorkerVersion>& version);
+
+  void RegisterRegistrationFinishedCallback(const base::Closure& callback);
+  void NotifyRegistrationFinished();
 
   bool force_update_on_page_load() const { return force_update_on_page_load_; }
   void set_force_update_on_page_load(bool force_update_on_page_load) {
@@ -175,7 +170,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
                          ServiceWorkerStatusCode status);
 
   const GURL pattern_;
-  const int64 registration_id_;
+  const int64_t registration_id_;
   bool is_deleted_;
   bool is_uninstalling_;
   bool is_uninstalled_;
@@ -190,6 +185,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   scoped_refptr<ServiceWorkerVersion> installing_version_;
 
   base::ObserverList<Listener> listeners_;
+  std::vector<base::Closure> registration_finished_callbacks_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistration);

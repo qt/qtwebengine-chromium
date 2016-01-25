@@ -7,10 +7,6 @@ module media.interfaces;
 import "media/mojo/interfaces/demuxer_stream.mojom";
 import "media/mojo/interfaces/media_types.mojom";
 
-// TODO(xhwang): Add mojo types for AudioBuffer and VideoFrame.
-struct AudioBuffer {};
-struct VideoFrame {};
-
 // Interface for decrypting (and decoding) encrypted streams.
 // See media/base/decryptor.h for details.
 interface Decryptor {
@@ -22,6 +18,15 @@ interface Decryptor {
     NEED_MORE_DATA,  // Decoder needs more data to produce an output.
     ERROR  // Key is available but an error occurred during decryption.
   };
+
+  // Pass the two data pipes used to transfer DecoderBuffer contents to and
+  // from the Decryptor. |receive_pipe| will be used to receive DecoderBuffer
+  // data on Decrypt(), DecryptAndDecodeAudio(), and DecryptAndDecodeVideo()
+  // calls. |transmit_pipe| will be used to pass the DecoderBuffer data
+  // back with OnDecryptDone() calls. This method must be called before any
+  // methods listed are called.
+  Initialize(handle<data_pipe_consumer> receive_pipe,
+             handle<data_pipe_producer> transmit_pipe);
 
   // Decrypts the |encrypted| buffer and returns the decrypt |status| and
   // decrypted |buffer|.
@@ -64,10 +69,4 @@ interface Decryptor {
   // After this operation, the decoder is set to an uninitialized state.
   // The decoder can be reinitialized after it is deinitialized.
   DeinitializeDecoder(DemuxerStream.Type stream_type);
-};
-
-interface DecryptorClient {
-  // Indicates that a new usable key is available in the CDM associated with the
-  // Decryptor.
-  OnNewUsableKey();
 };

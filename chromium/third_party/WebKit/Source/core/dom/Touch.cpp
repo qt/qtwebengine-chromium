@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/dom/Touch.h"
 
 #include "core/frame/FrameView.h"
@@ -69,6 +67,20 @@ Touch::Touch(EventTarget* target, int identifier, const FloatPoint& clientPos, c
     , m_force(force)
     , m_absoluteLocation(absoluteLocation)
 {
+}
+
+Touch::Touch(LocalFrame* frame, const TouchInit& initializer)
+    : m_target(initializer.target())
+    , m_identifier(initializer.identifier())
+    , m_clientPos(FloatPoint(initializer.clientX(), initializer.clientY()))
+    , m_screenPos(FloatPoint(initializer.screenX(), initializer.screenY()))
+    , m_pagePos(FloatPoint(initializer.pageX(), initializer.pageY()))
+    , m_radius(FloatSize(initializer.radiusX(), initializer.radiusY()))
+    , m_rotationAngle(initializer.rotationAngle())
+    , m_force(initializer.force())
+{
+    float scaleFactor = frame ? frame->pageZoomFactor() : 1.0f;
+    m_absoluteLocation = roundedLayoutPoint(m_pagePos.scaledBy(scaleFactor));
 }
 
 PassRefPtrWillBeRawPtr<Touch> Touch::cloneWithNewTarget(EventTarget* eventTarget) const

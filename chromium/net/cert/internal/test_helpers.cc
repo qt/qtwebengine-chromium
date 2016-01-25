@@ -9,6 +9,8 @@
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "net/cert/pem_tokenizer.h"
+#include "net/der/parser.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
 
@@ -30,8 +32,18 @@ bool operator==(const Input& a, const Input& b) {
 
 }  // namespace der
 
-der::Input InputFromString(const std::string* s) {
-  return der::Input(reinterpret_cast<const uint8_t*>(s->data()), s->size());
+der::Input SequenceValueFromString(const std::string* s) {
+  der::Parser parser((der::Input(s)));
+  der::Input data;
+  if (!parser.ReadTag(der::kSequence, &data)) {
+    ADD_FAILURE();
+    return der::Input();
+  }
+  if (parser.HasMore()) {
+    ADD_FAILURE();
+    return der::Input();
+  }
+  return data;
 }
 
 ::testing::AssertionResult ReadTestDataFromPemFile(

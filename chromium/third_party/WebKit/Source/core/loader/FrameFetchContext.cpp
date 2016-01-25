@@ -28,12 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/FrameFetchContext.h"
 
 #include "bindings/core/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/fetch/ClientHintsPreferences.h"
+#include "core/fetch/ResourceLoader.h"
 #include "core/fetch/UniqueIdentifier.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
@@ -64,6 +64,7 @@
 #include "platform/network/ResourceTimingInfo.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/WebFrameScheduler.h"
 
 #include <algorithm>
 
@@ -97,16 +98,17 @@ void FrameFetchContext::addAdditionalRequestHeaders(ResourceRequest& request, Fe
 {
     bool isMainResource = type == FetchMainResource;
     if (!isMainResource) {
-        String outgoingOrigin;
+        RefPtr<SecurityOrigin> outgoingOrigin;
         if (!request.didSetHTTPReferrer()) {
-            outgoingOrigin = m_document->outgoingOrigin();
+            ASSERT(m_document);
+            outgoingOrigin = m_document->securityOrigin();
             request.setHTTPReferrer(SecurityPolicy::generateReferrer(m_document->referrerPolicy(), request.url(), m_document->outgoingReferrer()));
         } else {
             RELEASE_ASSERT(SecurityPolicy::generateReferrer(request.referrerPolicy(), request.url(), request.httpReferrer()).referrer == request.httpReferrer());
-            outgoingOrigin = SecurityOrigin::createFromString(request.httpReferrer())->toString();
+            outgoingOrigin = SecurityOrigin::createFromString(request.httpReferrer());
         }
 
-        request.addHTTPOriginIfNeeded(AtomicString(outgoingOrigin));
+        request.addHTTPOriginIfNeeded(outgoingOrigin);
     }
 
     if (m_document)
@@ -115,6 +117,9 @@ void FrameFetchContext::addAdditionalRequestHeaders(ResourceRequest& request, Fe
     // The remaining modifications are only necessary for HTTP and HTTPS.
     if (!request.url().isEmpty() && !request.url().protocolIsInHTTPFamily())
         return;
+
+    if (frame()->settings() && frame()->settings()->dataSaverEnabled())
+        request.addHTTPHeaderField("Save-Data", "on");
 
     frame()->loader().applyUserAgent(request);
 }
@@ -165,6 +170,7 @@ static ResourceRequestCachePolicy memoryCachePolicyToResourceRequestCachePolicy(
 
 ResourceRequestCachePolicy FrameFetchContext::resourceRequestCachePolicy(const ResourceRequest& request, Resource::Type type) const
 {
+    ASSERT(frame());
     if (type == Resource::MainResource) {
         FrameLoadType frameLoadType = frame()->loader().loadType();
         if (request.httpMethod() == "POST" && frameLoadType == FrameLoadTypeBackForward)
@@ -186,6 +192,21 @@ ResourceRequestCachePolicy FrameFetchContext::resourceRequestCachePolicy(const R
                 return ReloadIgnoringCacheData;
         }
         return UseProtocolCachePolicy;
+    }
+
+    // For users on slow connections, we want to avoid blocking the parser in
+    // the main frame on script loads inserted via document.write, since it can
+    // add significant delays before page content is displayed on the screen.
+    // For now, as a prototype, we block fetches for main frame scripts
+    // inserted via document.write as long as the
+    // disallowFetchForDocWrittenScriptsInMainFrame setting is enabled. In the
+    // future, we'll extend this logic to only block if estimated network RTT
+    // is above some threshold.
+    if (type == Resource::Script && isMainFrame()) {
+        const bool isInDocumentWrite = m_document && m_document->isInDocumentWrite();
+        const bool disallowFetchForDocWriteScripts = frame()->settings() && frame()->settings()->disallowFetchForDocWrittenScriptsInMainFrame();
+        if (isInDocumentWrite && disallowFetchForDocWriteScripts)
+            return ReturnCacheDataDontLoad;
     }
 
     if (request.isConditional())
@@ -230,13 +251,16 @@ void FrameFetchContext::dispatchWillSendRequest(unsigned long identifier, Resour
 void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     MixedContentChecker::checkMixedPrivatePublic(frame(), response.remoteIPAddress());
-    LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), frame()->document(), NetworkHintsInterfaceImpl());
+    LinkLoader::loadLinkFromHeader(response.httpHeaderField(HTTPNames::Link), frame()->document(), NetworkHintsInterfaceImpl(), LinkLoader::DoNotLoadResources);
     if (m_documentLoader == frame()->loader().provisionalDocumentLoader()) {
         ResourceFetcher* fetcher = nullptr;
         if (frame()->document())
             fetcher = frame()->document()->fetcher();
-        m_documentLoader->clientHintsPreferences().updateFromAcceptClientHintsHeader(response.httpHeaderField("accept-ch"), fetcher);
+        m_documentLoader->clientHintsPreferences().updateFromAcceptClientHintsHeader(response.httpHeaderField(HTTPNames::Accept_CH), fetcher);
     }
+
+    if (response.hasMajorCertificateErrors() && resourceLoader)
+        MixedContentChecker::handleCertificateError(frame(), resourceLoader->originalRequest(), response);
 
     frame()->loader().progress().incrementProgress(identifier, response);
     frame()->loader().client()->dispatchDidReceiveResponse(m_documentLoader, identifier, response);
@@ -314,9 +338,10 @@ void FrameFetchContext::willStartLoadingResource(ResourceRequest& request)
         m_documentLoader->applicationCacheHost()->willStartLoadingResource(request);
 }
 
-void FrameFetchContext::didLoadResource()
+void FrameFetchContext::didLoadResource(Resource* resource)
 {
-    frame()->loader().checkCompleted();
+    if (resource->isLoadEventBlockingResourceType())
+        frame()->loader().checkCompleted();
 }
 
 void FrameFetchContext::addResourceTiming(const ResourceTimingInfo& info)
@@ -350,7 +375,11 @@ void FrameFetchContext::printAccessDeniedMessage(const KURL& url) const
 
 bool FrameFetchContext::canRequest(Resource::Type type, const ResourceRequest& resourceRequest, const KURL& url, const ResourceLoaderOptions& options, bool forPreload, FetchRequest::OriginRestriction originRestriction) const
 {
-    ResourceRequestBlockedReason reason = canRequestInternal(type, resourceRequest, url, options, forPreload, originRestriction);
+    // As of CSP2, for requests that are the results of redirects, the match
+    // algorithm should ignore the path component of the URL.
+    ContentSecurityPolicy::RedirectStatus redirectStatus = resourceRequest.followedRedirect() ? ContentSecurityPolicy::DidRedirect : ContentSecurityPolicy::DidNotRedirect;
+
+    ResourceRequestBlockedReason reason = canRequestInternal(type, resourceRequest, url, options, forPreload, originRestriction, redirectStatus);
     if (reason != ResourceRequestBlockedReasonNone) {
         if (!forPreload)
             InspectorInstrumentation::didBlockRequest(frame(), resourceRequest, ensureLoaderForNotifications(), options.initiatorInfo, reason);
@@ -359,7 +388,17 @@ bool FrameFetchContext::canRequest(Resource::Type type, const ResourceRequest& r
     return true;
 }
 
-ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Type type, const ResourceRequest& resourceRequest, const KURL& url, const ResourceLoaderOptions& options, bool forPreload, FetchRequest::OriginRestriction originRestriction) const
+bool FrameFetchContext::allowResponse(Resource::Type type, const ResourceRequest& resourceRequest, const KURL& url, const ResourceLoaderOptions& options) const
+{
+    ResourceRequestBlockedReason reason = canRequestInternal(type, resourceRequest, url, options, false, FetchRequest::UseDefaultOriginRestrictionForType, ContentSecurityPolicy::DidRedirect);
+    if (reason != ResourceRequestBlockedReasonNone) {
+        InspectorInstrumentation::didBlockRequest(frame(), resourceRequest, ensureLoaderForNotifications(), options.initiatorInfo, reason);
+        return false;
+    }
+    return true;
+}
+
+ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Type type, const ResourceRequest& resourceRequest, const KURL& url, const ResourceLoaderOptions& options, bool forPreload, FetchRequest::OriginRestriction originRestriction, ContentSecurityPolicy::RedirectStatus redirectStatus) const
 {
     InstrumentingAgents* agents = InspectorInstrumentation::instrumentingAgentsFor(frame());
     if (agents && agents->inspectorResourceAgent()) {
@@ -390,10 +429,10 @@ ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Typ
     case Resource::Raw:
     case Resource::LinkPrefetch:
     case Resource::LinkSubresource:
-    case Resource::LinkPreload:
     case Resource::TextTrack:
     case Resource::ImportResource:
     case Resource::Media:
+    case Resource::Manifest:
         // By default these types of resources can be loaded from any origin.
         // FIXME: Are we sure about Resource::Font?
         if (originRestriction == FetchRequest::RestrictToSameOrigin && !securityOrigin->canRequest(url)) {
@@ -418,31 +457,29 @@ ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Typ
     ContentSecurityPolicy::ReportingStatus cspReporting = forPreload ?
         ContentSecurityPolicy::SuppressReport : ContentSecurityPolicy::SendReport;
 
-    // As of CSP2, for requests that are the results of redirects, the match
-    // algorithm should ignore the path component of the URL.
-    ContentSecurityPolicy::RedirectStatus redirectStatus = resourceRequest.followedRedirect() ? ContentSecurityPolicy::DidRedirect : ContentSecurityPolicy::DidNotRedirect;
-
     // m_document can be null, but not in any of the cases where csp is actually used below.
     // ImageResourceTest.MultipartImage crashes w/o the m_document null check.
     // I believe it's the Resource::Raw case.
     const ContentSecurityPolicy* csp = m_document ? m_document->contentSecurityPolicy() : nullptr;
 
-    // FIXME: This would be cleaner if moved this switch into an allowFromSource()
+    // TODO(mkwst): This would be cleaner if moved this switch into an allowFromSource()
     // helper on this object which took a Resource::Type, then this block would
     // collapse to about 10 lines for handling Raw and Script special cases.
     switch (type) {
     case Resource::XSLStyleSheet:
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
         ASSERT(ContentSecurityPolicy::isScriptResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowScriptFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
         break;
     case Resource::Script:
     case Resource::ImportResource:
         ASSERT(ContentSecurityPolicy::isScriptResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowScriptFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
-
+        ASSERT(frame());
         if (!frame()->loader().client()->allowScriptFromSource(!frame()->settings() || frame()->settings()->scriptEnabled(), url)) {
             frame()->loader().client()->didNotAllowScript();
             return ResourceRequestBlockedReasonCSP;
@@ -450,17 +487,20 @@ ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Typ
         break;
     case Resource::CSSStyleSheet:
         ASSERT(ContentSecurityPolicy::isStyleResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowStyleFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
         break;
     case Resource::SVGDocument:
     case Resource::Image:
         ASSERT(ContentSecurityPolicy::isImageResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowImageFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
         break;
     case Resource::Font: {
         ASSERT(ContentSecurityPolicy::isFontResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowFontFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
         break;
@@ -469,11 +509,12 @@ ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Typ
     case Resource::Raw:
     case Resource::LinkPrefetch:
     case Resource::LinkSubresource:
-    case Resource::LinkPreload:
+    case Resource::Manifest:
         break;
     case Resource::Media:
     case Resource::TextTrack:
         ASSERT(ContentSecurityPolicy::isMediaResource(resourceRequest));
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowMediaFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
 
@@ -489,6 +530,7 @@ ResourceRequestBlockedReason FrameFetchContext::canRequestInternal(Resource::Typ
 
     // FIXME: Once we use RequestContext for CSP (http://crbug.com/390497), remove this extra check.
     if (resourceRequest.requestContext() == WebURLRequest::RequestContextManifest) {
+        ASSERT(csp);
         if (!shouldBypassMainWorldCSP && !csp->allowManifestFromSource(url, redirectStatus, cspReporting))
             return ResourceRequestBlockedReasonCSP;
     }
@@ -677,12 +719,7 @@ void FrameFetchContext::countClientHintsViewportWidth()
     UseCounter::count(frame(), UseCounter::ClientHintsViewportWidth);
 }
 
-bool FrameFetchContext::fetchIncreasePriorities() const
-{
-    return frame()->settings() && frame()->settings()->fetchIncreasePriorities();
-}
-
-ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoadPriority priority, Resource::Type type, const FetchRequest& request)
+ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoadPriority priority, Resource::Type type, const FetchRequest& request, ResourcePriority::VisibilityStatus visibility)
 {
     // An image fetch is used to distinguish between "early" and "late" scripts in a document
     if (type == Resource::Image)
@@ -711,8 +748,15 @@ ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoa
     // of "layout-blocking" resources and provide a boost to resources that are needed
     // as soon as possible for something currently on the screen.
     int modifiedPriority = static_cast<int>(priority);
-    if (fetchIncreasePriorities()) {
+    if (frame()->settings()->fetchIncreasePriorities()) {
         if (type == Resource::CSSStyleSheet || type == Resource::Script || type == Resource::Font || type == Resource::Image)
+            modifiedPriority++;
+    }
+
+    // Always give visible resources a bump, and an additional bump if generally increasing priorities.
+    if (visibility == ResourcePriority::Visible) {
+        modifiedPriority++;
+        if (frame()->settings()->fetchIncreasePriorities())
             modifiedPriority++;
     }
 
@@ -724,13 +768,18 @@ ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoa
         if (frame()->settings()->fetchDeferLateScripts() && request.forPreload() && m_imageFetched)
             modifiedPriority--;
         // Parser-blocking scripts.
-        if (fetchIncreasePriorities() && !request.forPreload())
+        if (frame()->settings()->fetchIncreasePriorities() && !request.forPreload())
             modifiedPriority++;
     }
 
     // Clamp priority
     modifiedPriority = std::min(static_cast<int>(ResourceLoadPriorityHighest), std::max(static_cast<int>(ResourceLoadPriorityLowest), modifiedPriority));
     return static_cast<ResourceLoadPriority>(modifiedPriority);
+}
+
+WebTaskRunner* FrameFetchContext::loadingTaskRunner() const
+{
+    return frame()->frameScheduler()->loadingTaskRunner();
 }
 
 DEFINE_TRACE(FrameFetchContext)

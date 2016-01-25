@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/image-decoders/jpeg/JPEGImageDecoder.h"
 
 #include "platform/SharedBuffer.h"
@@ -36,9 +35,9 @@
 #include "platform/image-decoders/ImageDecoderTestHelpers.h"
 #include "public/platform/WebData.h"
 #include "public/platform/WebSize.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -231,21 +230,19 @@ TEST(JPEGImageDecoderTest, yuv)
     ASSERT_FALSE(decoder->canDecodeToYUV());
 }
 
-TEST(JPEGImageDecoderTest, byteByByte)
+TEST(JPEGImageDecoderTest, byteByByteBaselineJPEGWithColorProfileAndRestartMarkers)
 {
-    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/lenna.jpg", 1u, cAnimationNone);
-    // Progressive image
-    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/flowchart.jpg", 1u, cAnimationNone);
-    // Image with restart markers
-    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/red-at-12-oclock-with-color-profile.jpg", 1u, cAnimationNone);
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/small-square-with-colorspin-profile.jpg", 1u, cAnimationNone);
 }
 
-static unsigned createDecodingBaseline(SharedBuffer* data)
+TEST(JPEGImageDecoderTest, byteByByteProgressiveJPEG)
 {
-    OwnPtr<ImageDecoder> decoder = createDecoder();
-    decoder->setData(data, true);
-    ImageFrame* frame = decoder->frameBufferAtIndex(0);
-    return hashBitmap(frame->bitmap());
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/bug106024.jpg", 1u, cAnimationNone);
+}
+
+TEST(JPEGImageDecoderTest, byteByByteRGBJPEGWithAdobeMarkers)
+{
+    testByteByByteDecode(&createDecoder, "/LayoutTests/fast/images/resources/rgb-jpeg-with-adobe-marker-only.jpg", 1u, cAnimationNone);
 }
 
 // This test verifies that calling SharedBuffer::mergeSegmentsIntoBuffer() does
@@ -255,33 +252,7 @@ static unsigned createDecodingBaseline(SharedBuffer* data)
 TEST(JPEGImageDecoderTest, mergeBuffer)
 {
     const char* jpegFile = "/LayoutTests/fast/images/resources/lenna.jpg";
-    RefPtr<SharedBuffer> data = readFile(jpegFile);
-    ASSERT_TRUE(data);
-
-    const unsigned hash = createDecodingBaseline(data.get());
-
-    // In order to do any verification, this test needs to move the data owned
-    // by the SharedBuffer. A way to guarantee that is to create a new one, and
-    // then append a string of characters greater than kSegmentSize. This
-    // results in writing the data into a segment, skipping the internal
-    // contiguous buffer.
-    RefPtr<SharedBuffer> segmentedData = SharedBuffer::create();
-    segmentedData->append(data->data(), data->size());
-
-    OwnPtr<ImageDecoder> decoder = createDecoder();
-    decoder->setData(segmentedData.get(), true);
-
-    ASSERT_TRUE(decoder->isSizeAvailable());
-
-    // This will call SharedBuffer::mergeSegmentsIntoBuffer, copying all
-    // segments into the contiguous buffer. If JPEGImageDecoder was pointing to
-    // data in a segment, its pointer would no longer be valid.
-    segmentedData->data();
-
-    ImageFrame* frame = decoder->frameBufferAtIndex(0);
-    ASSERT_FALSE(decoder->failed());
-    EXPECT_EQ(frame->status(), ImageFrame::FrameComplete);
-    EXPECT_EQ(hashBitmap(frame->bitmap()), hash);
+    testMergeBuffer(&createDecoder, jpegFile);
 }
 
 } // namespace blink

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/page/ContextMenuController.h"
 
 #include "core/clipboard/DataTransfer.h"
@@ -12,8 +11,8 @@
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/ContextMenu.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -42,7 +41,7 @@ TEST_F(ContextMenuControllerTest, TestCustomMenu)
     // Load the the test page.
     setBodyInnerHTML(
         "<button id=\"button_id\" contextmenu=\"menu_id\" style=\"height: 100px; width: 100px;\">"
-        "<menu type=\"popup\" id=\"menu_id\">"
+        "<menu type=\"context\" id=\"menu_id\">"
         "<menuitem label=\"Item1\" onclick='document.title = \"Title 1\";'>"
         "<menuitem label=\"Item2\" onclick='document.title = \"Title 2\";'>"
         "<menuitem label=\"Item3\" onclick='document.title = \"Title 3\";'>"
@@ -70,7 +69,7 @@ TEST_F(ContextMenuControllerTest, TestCustomMenu)
 
     // Create right button click event and pass it to context menu controller.
     RefPtrWillBeRawPtr<Event> event = MouseEvent::create(EventTypeNames::click, false, false,
-        document().domWindow(), 50, 50, 0, 0, 0, 0, 0, false, false, false, false, 1, 0, nullptr);
+        document().domWindow(), 50, 50, 0, 0, 0, 0, 0, PlatformEvent::NoModifiers, 1, 0, nullptr, 0);
     document().getElementById("button_id")->focus();
     event->setTarget(document().getElementById("button_id"));
     document().page()->contextMenuController().handleContextMenuEvent(event.get());

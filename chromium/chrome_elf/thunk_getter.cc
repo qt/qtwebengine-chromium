@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <windows.h>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "sandbox/win/src/interception_internal.h"
 #include "sandbox/win/src/internal_types.h"
 #include "sandbox/win/src/sandbox_utils.h"
@@ -132,7 +132,9 @@ sandbox::ServiceResolverThunk* GetThunk(bool relaxed) {
   thunk = new sandbox::ServiceResolverThunk(current_process, relaxed);
 #else
   if (GetWOW64StatusForCurrentProcess() == WOW64_ENABLED) {
-    if (os_info.version() >= VERSION_WIN8)
+    if (os_info.version() >= VERSION_WIN10)
+      thunk = new sandbox::Wow64W10ResolverThunk(current_process, relaxed);
+    else if (os_info.version() >= VERSION_WIN8)
       thunk = new sandbox::Wow64W8ResolverThunk(current_process, relaxed);
     else
       thunk = new sandbox::Wow64ResolverThunk(current_process, relaxed);

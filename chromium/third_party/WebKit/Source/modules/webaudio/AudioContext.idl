@@ -32,7 +32,6 @@ enum AudioContextState {
 [
     GarbageCollected,
     ActiveDOMObject,
-    Conditional=WEB_AUDIO,
     Constructor,
     ConstructorCallWith=Document,
     ImplementedAs=AbstractAudioContext,
@@ -57,29 +56,30 @@ enum AudioContextState {
     [RaisesException] AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate);
 
     // Asynchronous audio file data decoding.
-    [RaisesException, MeasureAs=AudioContextDecodeAudioData] void decodeAudioData(ArrayBuffer audioData, AudioBufferCallback successCallback, optional AudioBufferCallback errorCallback);
+    [RaisesException, MeasureAs=AudioContextDecodeAudioData, CallWith=ScriptState] Promise<AudioBuffer> decodeAudioData(ArrayBuffer audioData, optional AudioBufferCallback successCallback, optional AudioBufferCallback errorCallback);
 
     // Sources
     [RaisesException, MeasureAs=AudioContextCreateBufferSource] AudioBufferSourceNode createBufferSource();
 
     [RaisesException, MeasureAs=AudioContextCreateMediaElementSource] MediaElementAudioSourceNode createMediaElementSource(HTMLMediaElement mediaElement);
 
-    [RaisesException, MeasureAs=AudioContextCreateMediaStreamSource, RaisesException] MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
+    [RaisesException, MeasureAs=AudioContextCreateMediaStreamSource] MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
     [RaisesException, MeasureAs=AudioContextCreateMediaStreamDestination] MediaStreamAudioDestinationNode createMediaStreamDestination();
 
     // Processing nodes
     [RaisesException, MeasureAs=AudioContextCreateGain] GainNode createGain();
     [RaisesException, MeasureAs=AudioContextCreateDelay] DelayNode createDelay(optional double maxDelayTime);
     [RaisesException, MeasureAs=AudioContextCreateBiquadFilter] BiquadFilterNode createBiquadFilter();
+    [RaisesException, MeasureAs=AudioContextCreateIIRFilter] IIRFilterNode createIIRFilter(sequence<double> feedForward, sequence<double> feedBack);
     [RaisesException, MeasureAs=AudioContextCreateWaveShaper] WaveShaperNode createWaveShaper();
     [RaisesException, MeasureAs=AudioContextCreatePanner] PannerNode createPanner();
     [RaisesException, MeasureAs=AudioContextCreateConvolver] ConvolverNode createConvolver();
     [RaisesException, MeasureAs=AudioContextCreateDynamicsCompressor] DynamicsCompressorNode createDynamicsCompressor();
     [RaisesException, MeasureAs=AudioContextCreateAnalyser] AnalyserNode createAnalyser();
-    [RaisesException, MeasureAs=AudioContextCreateScriptProcessor, RaisesException] ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
+    [RaisesException, MeasureAs=AudioContextCreateScriptProcessor] ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
     [RaisesException, MeasureAs=AudioContextCreateStereoPanner] StereoPannerNode createStereoPanner();
     [RaisesException, MeasureAs=AudioContextCreateOscillator] OscillatorNode createOscillator();
-    [RaisesException, MeasureAs=AudioContextCreatePeriodicWave, RaisesException] PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag, optional Dictionary options);
+    [RaisesException, MeasureAs=AudioContextCreatePeriodicWave] PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag, optional Dictionary options);
 
     // Channel splitting and merging
     [RaisesException, MeasureAs=AudioContextCreateChannelSplitter] ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs);

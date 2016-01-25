@@ -20,19 +20,17 @@
 #ifndef SVGPathStringBuilder_h
 #define SVGPathStringBuilder_h
 
+#include "core/CoreExport.h"
 #include "core/svg/SVGPathConsumer.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
-class SVGPathStringBuilder final : public SVGPathConsumer {
+class CORE_EXPORT SVGPathStringBuilder final : public SVGPathConsumer {
 public:
     String result();
 
 private:
-    void incrementPathSegmentCount() override { }
-    bool continueConsuming() override { return true; }
-
     void emitSegment(const PathSegmentData&) override;
 
     StringBuilder m_stringBuilder;

@@ -29,6 +29,7 @@
 #define TALK_APP_WEBRTC_MEDIASTREAMPROVIDER_H_
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/scoped_ptr.h"
 
 namespace cricket {
 
@@ -42,6 +43,8 @@ struct VideoOptions;
 
 namespace webrtc {
 
+class AudioSinkInterface;
+
 // TODO(deadbeef): Change the key from an ssrc to a "sender_id" or
 // "receiver_id" string, which will be the MSID in the short term and MID in
 // the long term.
@@ -50,39 +53,47 @@ namespace webrtc {
 // RtpSenders/Receivers to get to the BaseChannels. These interfaces should be
 // refactored away eventually, as the classes converge.
 
-// This interface is called by AudioTrackHandler classes in mediastreamhandler.h
-// to change the settings of an audio track connected to certain PeerConnection.
+// This interface is called by AudioRtpSender/Receivers to change the settings
+// of an audio track connected to certain PeerConnection.
 class AudioProviderInterface {
  public:
   // Enable/disable the audio playout of a remote audio track with |ssrc|.
-  virtual void SetAudioPlayout(uint32 ssrc, bool enable,
-                               cricket::AudioRenderer* renderer) = 0;
+  virtual void SetAudioPlayout(uint32_t ssrc, bool enable) = 0;
   // Enable/disable sending audio on the local audio track with |ssrc|.
   // When |enable| is true |options| should be applied to the audio track.
-  virtual void SetAudioSend(uint32 ssrc, bool enable,
+  virtual void SetAudioSend(uint32_t ssrc,
+                            bool enable,
                             const cricket::AudioOptions& options,
                             cricket::AudioRenderer* renderer) = 0;
 
   // Sets the audio playout volume of a remote audio track with |ssrc|.
   // |volume| is in the range of [0, 10].
-  virtual void SetAudioPlayoutVolume(uint32 ssrc, double volume) = 0;
+  virtual void SetAudioPlayoutVolume(uint32_t ssrc, double volume) = 0;
+
+  // Allows for setting a direct audio sink for an incoming audio source.
+  // Only one audio sink is supported per ssrc and ownership of the sink is
+  // passed to the provider.
+  virtual void SetRawAudioSink(
+      uint32_t ssrc,
+      rtc::scoped_ptr<webrtc::AudioSinkInterface> sink) = 0;
 
  protected:
   virtual ~AudioProviderInterface() {}
 };
 
-// This interface is called by VideoTrackHandler classes in mediastreamhandler.h
-// to change the settings of a video track connected to a certain
-// PeerConnection.
+// This interface is called by VideoRtpSender/Receivers to change the settings
+// of a video track connected to a certain PeerConnection.
 class VideoProviderInterface {
  public:
-  virtual bool SetCaptureDevice(uint32 ssrc,
+  virtual bool SetCaptureDevice(uint32_t ssrc,
                                 cricket::VideoCapturer* camera) = 0;
   // Enable/disable the video playout of a remote video track with |ssrc|.
-  virtual void SetVideoPlayout(uint32 ssrc, bool enable,
+  virtual void SetVideoPlayout(uint32_t ssrc,
+                               bool enable,
                                cricket::VideoRenderer* renderer) = 0;
   // Enable sending video on the local video track with |ssrc|.
-  virtual void SetVideoSend(uint32 ssrc, bool enable,
+  virtual void SetVideoSend(uint32_t ssrc,
+                            bool enable,
                             const cricket::VideoOptions* options) = 0;
 
  protected:

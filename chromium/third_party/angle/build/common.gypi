@@ -24,15 +24,23 @@
             '-Wextra',
             '-Wformat=2',
             '-Winit-self',
+            '-Wnon-virtual-dtor',
+            '-Wno-format-nonliteral',
+            '-Wno-unknown-pragmas',
             '-Wno-unused-function',
             '-Wno-unused-parameter',
-            '-Wno-unknown-pragmas',
             '-Wpacked',
             '-Wpointer-arith',
             '-Wundef',
             '-Wwrite-strings',
-            '-Wno-format-nonliteral',
-            '-Wnon-virtual-dtor',
+        ],
+
+        # TODO: Pull chromium's clang dep.
+        'clang%': 0,
+
+        'clang_only_warnings':
+        [
+            '-Wshorten-64-to-32',
         ],
     },
     'target_defaults':
@@ -51,6 +59,10 @@
                     'VCCLCompilerTool':
                     {
                         'WarnAsError': 'true',
+                    },
+                    'VCLinkerTool':
+                    {
+                        'TreatLinkerWarningAsErrors': 'true',
                     },
                 },
             }],
@@ -95,7 +107,6 @@
                         'ExceptionHandling': '0',
                         'EnableFunctionLevelLinking': 'true',
                         'MinimalRebuild': 'false',
-                        'RuntimeTypeInfo': 'true',
                         'WarningLevel': '4',
                     },
                     'VCLinkerTool':
@@ -138,6 +149,7 @@
                     {
                         'Optimization': '0',    # /Od
                         'BasicRuntimeChecks': '3',
+                        'RuntimeTypeInfo': 'true',
                         'conditions':
                         [
                             ['angle_build_winrt==1',
@@ -172,7 +184,9 @@
                                 'AdditionalDependencies':
                                 [
                                     'dxgi.lib',
-                                ]
+                                ],
+                                'EnableCOMDATFolding': '1', # disable
+                                'OptimizeReferences': '1', # disable
                             }],
                         ],
                     },
@@ -195,11 +209,18 @@
                 {
                     'VCCLCompilerTool':
                     {
-                        'Optimization': '2',    # /Os
+                        'RuntimeTypeInfo': 'false',
+
                         'conditions':
                         [
                             ['angle_build_winrt==1',
                             {
+                                # Use Chromium's settings for 'Official' builds
+                                # to optimize WinRT release builds
+                                'Optimization': '1', # /O1, minimize size
+                                'FavorSizeOrSpeed': '2', # /Os
+                                'WholeProgramOptimization': 'true',
+
                                 # Use the dynamic C runtime to match
                                 # Windows Application Store requirements
 
@@ -210,6 +231,8 @@
                                 'RuntimeLibrary': '2', # /MD (nondebug dll)
                             },
                             {
+                                'Optimization': '2', # /O2, maximize speed
+
                                 # Use the static C runtime to
                                 # match chromium and make sure
                                 # we don't depend on the dynamic
@@ -221,6 +244,17 @@
                     {
                         'GenerateDebugInformation': '<(release_symbols)',
                         'LinkIncremental': '1',
+
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                # Use Chromium's settings for 'Official' builds
+                                # to optimize WinRT release builds
+                                'LinkTimeCodeGeneration': '1',
+                                'AdditionalOptions': ['/cgthreads:8'],
+                            }],
+                        ],
                     },
                 },
             },    # Release_Base
@@ -408,6 +442,10 @@
                     ['OS != "win" and OS != "mac"',
                     {
                         'cflags': ['<@(gcc_or_clang_warnings)']
+                    }],
+                    ['clang==1',
+                    {
+                        'cflags': ['<@(clang_only_warnings)']
                     }],
                 ]
             }

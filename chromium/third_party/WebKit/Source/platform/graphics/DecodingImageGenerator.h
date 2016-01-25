@@ -26,10 +26,11 @@
 #ifndef DecodingImageGenerator_h
 #define DecodingImageGenerator_h
 
-#include "SkImageGenerator.h"
-#include "SkImageInfo.h"
-
 #include "platform/PlatformExport.h"
+#include "third_party/skia/include/core/SkImageGenerator.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
 
 class SkData;
@@ -38,12 +39,12 @@ namespace blink {
 
 class ImageFrameGenerator;
 
-// Implements SkImageGenerator and used by SkPixelRef to populate a discardable
-// memory with decoded pixels.
+// Implements SkImageGenerator, used by SkPixelRef to populate a discardable memory
+// with a decoded image frame. ImageFrameGenerator does the actual decoding.
 //
-// This class does not own an ImageDecode. It does not own encoded data. It serves
-// as and adapter to ImageFrameGenerator which actually performs decoding.
 class PLATFORM_EXPORT DecodingImageGenerator final : public SkImageGenerator {
+    USING_FAST_MALLOC(DecodingImageGenerator);
+    WTF_MAKE_NONCOPYABLE(DecodingImageGenerator);
 public:
     static SkImageGenerator* create(SkData*);
 
@@ -51,12 +52,12 @@ public:
     ~DecodingImageGenerator() override;
 
     void setGenerationId(size_t id) { m_generationId = id; }
+    void setCanYUVDecode(bool yes) { m_canYUVDecode = yes; }
 
 protected:
     SkData* onRefEncodedData() override;
 
-    bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes,
-        SkPMColor ctable[], int* ctableCount) override;
+    bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkPMColor table[], int* tableCount) override;
 
     bool onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3], SkYUVColorSpace*) override;
 
@@ -64,6 +65,7 @@ private:
     RefPtr<ImageFrameGenerator> m_frameGenerator;
     size_t m_frameIndex;
     size_t m_generationId;
+    bool m_canYUVDecode;
 };
 
 } // namespace blink

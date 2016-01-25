@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/paint/PaintLayerStackingNodeIterator.h"
 
 // FIXME: We should build our primitive on top of
-// DeprecatedLayerStackingNode and remove this include.
+// PaintLayerStackingNode and remove this include.
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintLayerStackingNode.h"
 

@@ -31,6 +31,7 @@
 #ifndef BlobData_h
 #define BlobData_h
 
+#include "base/gtest_prod_util.h"
 #include "platform/FileMetadata.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
@@ -62,6 +63,7 @@ private:
 };
 
 struct PLATFORM_EXPORT BlobDataItem {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     static const long long toEndOfFile;
 
     // Default constructor.
@@ -159,7 +161,8 @@ private:
 typedef Vector<BlobDataItem> BlobDataItemList;
 
 class PLATFORM_EXPORT BlobData {
-    WTF_MAKE_FAST_ALLOCATED(BlobData);
+    USING_FAST_MALLOC(BlobData);
+    WTF_MAKE_NONCOPYABLE(BlobData);
 public:
     static PassOwnPtr<BlobData> create();
 
@@ -173,6 +176,7 @@ public:
 
     void appendBytes(const void*, size_t length);
     void appendData(PassRefPtr<RawData>, long long offset, long long length);
+    // Do not use this version, please provide an offset and length (crbug.com/548512).
     void appendFile(const String& path);
     void appendFile(const String& path, long long offset, long long length, double expectedModificationTime);
     void appendBlob(PassRefPtr<BlobDataHandle>, long long offset, long long length);
@@ -184,17 +188,11 @@ public:
     long long length() const;
 
 private:
-    friend class BlobDataTest_Consolidation_Test;
+    FRIEND_TEST_ALL_PREFIXES(BlobDataTest, Consolidation);
 
     BlobData() { }
 
     bool canConsolidateData(size_t length);
-
-    // Make this private so that the otherwise-generated implicit assignment
-    // operator doesn't reference BlobDataItemList's operator=, which would
-    // require BlobDataItem to have an implicit operator= which it can't have
-    // because it has a const member.
-    BlobData& operator=(const BlobData&);
 
     String m_contentType;
     BlobDataItemList m_items;
@@ -212,7 +210,7 @@ public:
     // For initial creation.
     static PassRefPtr<BlobDataHandle> create(PassOwnPtr<BlobData> data, long long size)
     {
-        return adoptRef(new BlobDataHandle(data, size));
+        return adoptRef(new BlobDataHandle(std::move(data), size));
     }
 
     // For deserialization of script values and ipc messages.
@@ -223,7 +221,7 @@ public:
 
     String uuid() const { return m_uuid.isolatedCopy(); }
     String type() const { return m_type.isolatedCopy(); }
-    unsigned long long size() { return m_size; }
+    unsigned long long size() const { return m_size; }
 
     ~BlobDataHandle();
 

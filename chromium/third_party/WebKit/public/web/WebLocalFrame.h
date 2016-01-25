@@ -33,6 +33,13 @@ public:
     // It is valid to pass a null client pointer.
     BLINK_EXPORT static WebLocalFrame* create(WebTreeScopeType, WebFrameClient*);
 
+    // Used to create a provisional local frame in prepration for replacing a
+    // remote frame if the load commits. The returned frame is only partially
+    // attached to the frame tree: it has the same parent as its potential
+    // replacee but is invisible to the rest of the frames in the frame tree.
+    // If the load commits, call swap() to fully attach this frame.
+    BLINK_EXPORT static WebLocalFrame* createProvisional(WebFrameClient*, WebRemoteFrame*, WebSandboxFlags, const WebFrameOwnerProperties&);
+
     // Returns the WebFrame associated with the current V8 context. This
     // function can return 0 if the context is associated with a Document that
     // is not currently being displayed in a Frame.
@@ -49,15 +56,24 @@ public:
 
     // Initialization ---------------------------------------------------------
 
-    // Used when we might swap from a remote frame to a local frame.
-    // Creates a provisional, semi-attached frame that will be fully
-    // swapped into the frame tree if it commits.
-    virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*, const WebString& name, WebSandboxFlags) = 0;
-
     virtual void setAutofillClient(WebAutofillClient*) = 0;
     virtual WebAutofillClient* autofillClient() = 0;
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
     virtual WebDevToolsAgent* devToolsAgent() = 0;
+
+    // Basic properties ---------------------------------------------------
+
+    // Updates the scrolling and margin properties in the frame's FrameOwner.
+    // This is used when this frame's parent is in another process and it
+    // dynamically updates these properties.
+    // TODO(dcheng): Currently, the update only takes effect on next frame
+    // navigation.  This matches the in-process frame behavior.
+    virtual void setFrameOwnerProperties(const WebFrameOwnerProperties&) = 0;
+
+    // Hierarchy ----------------------------------------------------------
+
+    // Get the highest-level LocalFrame in this frame's in-process subtree.
+    virtual WebLocalFrame* localRoot() = 0;
 
     // Navigation Ping --------------------------------------------------------
     virtual void sendPings(const WebNode& contextNode, const WebURL& destinationURL) = 0;
@@ -148,11 +164,11 @@ public:
     // selection to collapse. If the new extent is set to the same position as
     // the current base, this function will do nothing.
     virtual void moveRangeSelectionExtent(const WebPoint&) = 0;
+    // Replaces the selection with the input string.
+    virtual void replaceSelection(const WebString&) = 0;
 
-    // Focus ------------------------------------------------------------------
-
-    // Called when this frame loses focus to a frame in another process.
-    virtual void clearFocus() = 0;
+    // Spell-checking support -------------------------------------------------
+    virtual void replaceMisspelledRange(const WebString&) = 0;
 
     // Content Settings -------------------------------------------------------
 
@@ -167,8 +183,13 @@ public:
 
     // Image reload -----------------------------------------------------------
 
-    // If the provided node is an image, reload the image bypassing the cache.
+    // If the provided node is an image, reload the image disabling Lo-Fi.
     virtual void reloadImage(const WebNode&) = 0;
+
+    // Feature usage logging --------------------------------------------------
+
+    virtual void didCallAddSearchProvider() = 0;
+    virtual void didCallIsSearchProviderInstalled() = 0;
 
     // Testing ----------------------------------------------------------------
 

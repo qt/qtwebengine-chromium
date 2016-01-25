@@ -28,11 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/testing/URLTestHelpers.h"
 
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/WebURLError.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
 
@@ -60,15 +61,27 @@ void registerMockedURLLoad(const WebURL& fullURL, const WebString& fileName, con
     registerMockedURLLoadWithCustomResponse(fullURL, fileName, relativeBaseDirectory, response);
 }
 
+void registerMockedErrorURLLoad(const WebURL& fullURL)
+{
+    WebURLResponse response;
+    response.initialize();
+    response.setMIMEType("image/png");
+    response.setHTTPStatusCode(404);
+
+    WebURLError error;
+    error.reason = 404;
+    Platform::current()->unitTestSupport()->registerMockedErrorURL(fullURL, response, error);
+}
+
 void registerMockedURLLoadWithCustomResponse(const WebURL& fullURL, const WebString& fileName, const WebString& relativeBaseDirectory, WebURLResponse response)
 {
     // Physical file path for the mock = <webkitRootDir> + relativeBaseDirectory + fileName.
-    std::string filePath = std::string(Platform::current()->unitTestSupport()->webKitRootDir().utf8().data());
+    String filePath = testing::blinkRootDir();
     filePath.append("/Source/web/tests/data/");
-    filePath.append(std::string(relativeBaseDirectory.utf8().data()));
-    filePath.append(std::string(fileName.utf8().data()));
+    filePath.append(relativeBaseDirectory);
+    filePath.append(fileName);
 
-    Platform::current()->unitTestSupport()->registerMockedURL(fullURL, response, WebString::fromUTF8(filePath.c_str()));
+    Platform::current()->unitTestSupport()->registerMockedURL(fullURL, response, filePath);
 }
 
 } // namespace URLTestHelpers

@@ -30,20 +30,17 @@ test("device_unittests") {
     "battery/battery_status_manager_win_unittest.cc",
     "battery/battery_status_service_unittest.cc",
     "bluetooth/bluetooth_adapter_mac_unittest.mm",
-    "bluetooth/bluetooth_adapter_profile_chromeos_unittest.cc",
     "bluetooth/bluetooth_adapter_unittest.cc",
     "bluetooth/bluetooth_adapter_win_unittest.cc",
-    "bluetooth/bluetooth_advertisement_chromeos_unittest.cc",
     "bluetooth/bluetooth_advertisement_unittest.cc",
-    "bluetooth/bluetooth_audio_sink_chromeos_unittest.cc",
-    "bluetooth/bluetooth_chromeos_unittest.cc",
     "bluetooth/bluetooth_device_unittest.cc",
     "bluetooth/bluetooth_device_win_unittest.cc",
     "bluetooth/bluetooth_discovery_filter_unittest.cc",
-    "bluetooth/bluetooth_gatt_chromeos_unittest.cc",
+    "bluetooth/bluetooth_gatt_characteristic_unittest.cc",
+    "bluetooth/bluetooth_gatt_descriptor_unittest.cc",
+    "bluetooth/bluetooth_gatt_service_unittest.cc",
     "bluetooth/bluetooth_low_energy_win_unittest.cc",
     "bluetooth/bluetooth_service_record_win_unittest.cc",
-    "bluetooth/bluetooth_socket_chromeos_unittest.cc",
     "bluetooth/bluetooth_task_manager_win_unittest.cc",
     "bluetooth/bluetooth_uuid_unittest.cc",
     "bluetooth/test/bluetooth_test.cc",
@@ -64,13 +61,15 @@ test("device_unittests") {
     "//device/battery",
     "//device/battery:mojo_bindings",
     "//device/bluetooth",
+    "//device/bluetooth:mocks",
     "//device/nfc",
+    "//mojo/common",
     "//mojo/environment:chromium",
+    "//mojo/public/cpp/bindings",
     "//net",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/mojo/src/mojo/edk/system",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//url",
   ]
 
@@ -107,8 +106,8 @@ test("device_unittests") {
     deps += [ "//device/udev_linux" ]
   }
 
-  # USB does not compile on mobile platforms.
-  if (!is_android && !is_ios) {
+  # USB does not compile on iOS.
+  if (!is_ios) {
     sources += [
       "devices_app/usb/device_impl_unittest.cc",
       "devices_app/usb/device_manager_impl_unittest.cc",
@@ -117,7 +116,6 @@ test("device_unittests") {
       "test/test_device_client.cc",
       "test/test_device_client.h",
       "test/usb_test_gadget_impl.cc",
-      "usb/usb_context_unittest.cc",
       "usb/usb_descriptors_unittest.cc",
       "usb/usb_device_filter_unittest.cc",
       "usb/usb_device_handle_unittest.cc",
@@ -127,34 +125,50 @@ test("device_unittests") {
     ]
     deps += [
       "//device/core",
+      "//device/core:mocks",
       "//device/devices_app:lib",
       "//device/devices_app/usb/public/interfaces",
       "//device/usb",
       "//device/usb:mocks",
-      "//third_party/libusb",
     ]
+  }
+
+  # UsbContext is a libusb-specific object.
+  if (!is_android && !is_ios) {
+    sources += [ "usb/usb_context_unittest.cc" ]
+    deps += [ "//third_party/libusb" ]
   }
 
   if (is_android) {
     sources -= [ "battery/battery_status_service_unittest.cc" ]
+    deps += [
+      ":bluetooth_test_java",
+      ":bluetooth_test_jni_headers",
+    ]
     deps -= [ "//device/battery" ]
-    deps += [ ":bluetooth_test_jni_headers" ]
-    apk_deps = [ ":bluetooth_test_java" ]
   }
 
   if (is_chromeos) {
-    configs += [ "//build/config/linux:dbus" ]
-
     deps += [
       "//chromeos",
       "//chromeos:test_support",
       "//chromeos:test_support_without_gmock",
-      "//dbus",
     ]
   }
 
-  if (is_posix && !is_android && !is_mac) {
-    libs = [ "rt" ]
+  if ((is_chromeos || is_linux) && use_dbus) {
+    configs += [ "//build/config/linux:dbus" ]
+
+    sources += [
+      "bluetooth/bluetooth_adapter_profile_bluez_unittest.cc",
+      "bluetooth/bluetooth_advertisement_bluez_unittest.cc",
+      "bluetooth/bluetooth_audio_sink_bluez_unittest.cc",
+      "bluetooth/bluetooth_bluez_unittest.cc",
+      "bluetooth/bluetooth_gatt_bluez_unittest.cc",
+      "bluetooth/bluetooth_socket_bluez_unittest.cc",
+    ]
+
+    deps += [ "//dbus" ]
   }
 
   if (is_mac) {
@@ -167,7 +181,10 @@ test("device_unittests") {
     # OSes older than OSX 10.10, the top level CoreBluetooth framework must be
     # weakly linked.
     if (mac_sdk_version == "10.10") {
-      ldflags += [ "-weak_framework CoreBluetooth" ]
+      ldflags += [
+        "-weak_framework",
+        "CoreBluetooth",
+      ]
     }
   }
 }

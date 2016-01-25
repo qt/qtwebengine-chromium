@@ -83,7 +83,7 @@ Polymer({
    */
   deviceStateChanged_: function() {
     this.updateSelectable_();
-    if (!this.deviceIsEnabled_(this.deviceState))
+    if (this.expanded && !this.deviceIsEnabled_(this.deviceState))
       this.expanded = false;
   },
 
@@ -168,11 +168,11 @@ Polymer({
   },
 
   /**
-   * Event triggered when the details div is clicked.
+   * Event triggered when the details div is tapped.
    * @param {Event} event The enable button event.
    * @private
    */
-  onDetailsClicked_: function(event) {
+  onDetailsTap_: function(event) {
     if ((event.target.id == 'expandListButton') ||
         (this.deviceState && !this.deviceIsEnabled_(this.deviceState))) {
       // Already handled or disabled, do nothing.
@@ -188,34 +188,24 @@ Polymer({
   },
 
   /**
-   * Event triggered when the known networks button is clicked.
+   * Event triggered when the known networks button is tapped.
    * @private
    */
-  onKnownNetworksClicked_: function() {
+  onKnownNetworksTap_: function() {
     this.fire('show-known-networks', {type: CrOnc.Type.WI_FI});
   },
 
   /**
-   * Event triggered when a network-list-item is the network list is selected.
-   * @param {!{detail: !CrOnc.NetworkStateProperties}} event
-   * @private
-   */
-  onListItemSelected_: function(event) {
-    var state = event.detail;
-    this.fire('selected', state);
-  },
-
-  /**
    * Event triggered when the enable button is toggled.
-   * @param {!Object} event The enable button event.
+   * @param {!Event} event
    * @private
    */
-  onDeviceEnabledToggled_: function(event) {
+  onDeviceEnabledTap_: function(event) {
     var deviceIsEnabled = this.deviceIsEnabled_(this.deviceState);
     var type = this.deviceState ? this.deviceState.Type : '';
     this.fire('device-enabled-toggled',
               {enabled: !deviceIsEnabled, type: type});
-    // Make sure this does not propagate to onDetailsClicked_.
+    // Make sure this does not propagate to onDetailsTap_.
     event.stopPropagation();
   },
 

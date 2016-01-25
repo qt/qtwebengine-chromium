@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/loader/LinkHeader.h"
 
 #include "platform/ParsingUtilities.h"
@@ -146,6 +145,8 @@ static LinkHeader::LinkParameterName paramterNameFromString(String name)
         return LinkHeader::LinkParameterRev;
     if (equalIgnoringCase(name, "hreflang"))
         return LinkHeader::LinkParameterHreflang;
+    if (equalIgnoringCase(name, "as"))
+        return LinkHeader::LinkParameterAs;
     return LinkHeader::LinkParameterUnknown;
 }
 
@@ -253,6 +254,8 @@ void LinkHeader::setValue(LinkParameterName name, String value)
         m_isValid = false;
     else if (name == LinkParameterCrossOrigin)
         m_crossOrigin = crossOriginAttributeValue(value);
+    else if (name == LinkParameterAs)
+        m_as = value.lower();
 }
 
 template <typename CharType>

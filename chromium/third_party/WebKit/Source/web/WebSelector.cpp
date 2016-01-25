@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebSelector.h"
 
 #include "core/css/CSSSelectorList.h"
@@ -39,8 +38,7 @@ namespace blink {
 
 WebString canonicalizeSelector(WebString webSelector, WebSelectorType restriction)
 {
-    CSSSelectorList selectorList;
-    CSSParser::parseSelector(strictCSSParserContext(), webSelector, selectorList);
+    CSSSelectorList selectorList = CSSParser::parseSelector(strictCSSParserContext(), webSelector);
 
     if (restriction == WebSelectorTypeCompound) {
         for (const CSSSelector* selector = selectorList.first(); selector; selector = selectorList.next(*selector)) {

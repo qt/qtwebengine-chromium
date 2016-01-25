@@ -28,17 +28,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/image-decoders/gif/GIFImageDecoder.h"
 
 #include "platform/SharedBuffer.h"
 #include "platform/image-decoders/ImageDecoderTestHelpers.h"
 #include "public/platform/WebData.h"
 #include "public/platform/WebSize.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

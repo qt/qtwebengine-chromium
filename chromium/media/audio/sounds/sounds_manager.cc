@@ -6,6 +6,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
@@ -64,19 +65,13 @@ bool SoundsManagerImpl::Initialize(SoundKey key,
 bool SoundsManagerImpl::Play(SoundKey key) {
   DCHECK(CalledOnValidThread());
   linked_ptr<AudioStreamHandler> handler = GetHandler(key);
-  if (!handler.get())
-    return false;
-  if (!handler->IsInitialized())
-    return false;
-  return handler->Play();
+  return handler.get() && handler->IsInitialized() && handler->Play();
 }
 
 bool SoundsManagerImpl::Stop(SoundKey key) {
   DCHECK(CalledOnValidThread());
   linked_ptr<AudioStreamHandler> handler = GetHandler(key);
-  if (!handler.get())
-    return false;
-  if (!handler->IsInitialized())
+  if (!handler.get() || !handler->IsInitialized())
     return false;
   handler->Stop();
   return true;
@@ -85,12 +80,9 @@ bool SoundsManagerImpl::Stop(SoundKey key) {
 base::TimeDelta SoundsManagerImpl::GetDuration(SoundKey key) {
   DCHECK(CalledOnValidThread());
   linked_ptr<AudioStreamHandler> handler = GetHandler(key);
-  if (!handler.get())
+  if (!handler.get() || !handler->IsInitialized())
       return base::TimeDelta();
-  if (!handler->IsInitialized())
-    return base::TimeDelta();
-  const WavAudioHandler& wav_audio = handler->wav_audio_handler();
-  return wav_audio.GetDuration();
+  return handler->duration();
 }
 
 linked_ptr<AudioStreamHandler> SoundsManagerImpl::GetHandler(SoundKey key) {

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/mhtml/MHTMLParser.h"
 
 #include "platform/MIMETypeRegistry.h"
@@ -71,6 +70,7 @@ public:
     String charset() const { return m_charset; }
     Encoding contentTransferEncoding() const { return m_contentTransferEncoding; }
     String contentLocation() const { return m_contentLocation; }
+    String contentID() const { return m_contentID; }
 
     // Multi-part type and boundaries are only valid for multipart MIME headers.
     String multiPartType() const { return m_multipartType; }
@@ -88,6 +88,7 @@ private:
     String m_charset;
     Encoding m_contentTransferEncoding;
     String m_contentLocation;
+    String m_contentID;
     String m_multipartType;
     String m_endOfPartBoundary;
     String m_endOfDocumentBoundary;
@@ -161,6 +162,11 @@ PassRefPtrWillBeRawPtr<MIMEHeader> MIMEHeader::parseHeader(SharedBufferChunkRead
     mimeParametersIterator = keyValuePairs.find("content-location");
     if (mimeParametersIterator != keyValuePairs.end())
         mimeHeader->m_contentLocation = mimeParametersIterator->value;
+
+    // See rfc2557 - section 8.3 - Use of the Content-ID header and CID URLs.
+    mimeParametersIterator = keyValuePairs.find("content-id");
+    if (mimeParametersIterator != keyValuePairs.end())
+        mimeHeader->m_contentID = mimeParametersIterator->value;
 
     return mimeHeader.release();
 }
@@ -335,7 +341,7 @@ PassRefPtrWillBeRawPtr<ArchiveResource> MHTMLParser::parseNextPart(const MIMEHea
             content->append(line.utf8().data(), line.length());
             if (contentTransferEncoding == MIMEHeader::QuotedPrintable) {
                 // The line reader removes the \r\n, but we need them for the content in this case as the QuotedPrintable decoder expects CR-LF terminated lines.
-                content->append("\r\n", 2);
+                content->append("\r\n", 2u);
             }
         }
     }
@@ -369,7 +375,8 @@ PassRefPtrWillBeRawPtr<ArchiveResource> MHTMLParser::parseNextPart(const MIMEHea
     // The specs mentions 5 ways to resolve a URL: http://tools.ietf.org/html/rfc2557#section-5
     // IE and Firefox (UNMht) seem to generate only absolute URLs.
     KURL location = KURL(KURL(), mimeHeader.contentLocation());
-    return ArchiveResource::create(contentBuffer, location, AtomicString(mimeHeader.contentType()), AtomicString(mimeHeader.charset()), String());
+    return ArchiveResource::create(
+        contentBuffer, location, mimeHeader.contentID(), AtomicString(mimeHeader.contentType()), AtomicString(mimeHeader.charset()), String());
 }
 
 size_t MHTMLParser::frameCount() const
@@ -390,6 +397,28 @@ size_t MHTMLParser::subResourceCount() const
 ArchiveResource* MHTMLParser::subResourceAt(size_t index) const
 {
     return m_resources[index].get();
+}
+
+// static
+KURL MHTMLParser::convertContentIDToURI(const String& contentID)
+{
+    // This function is based primarily on an example from rfc2557 in section
+    // 9.5, but also based on more normative parts of specs like:
+    // - rfc2557 - MHTML - section 8.3 - "Use of the Content-ID header and CID URLs"
+    // - rfc1738 - URL - section 4 (reserved scheme names;  includes "cid")
+    // - rfc2387 - multipart/related - section 3.4 - "Syntax" (cid := msg-id)
+    // - rfc0822 - msg-id = "<" addr-spec ">"; addr-spec = local-part "@" domain
+
+    if (contentID.length() <= 2)
+        return KURL();
+
+    if (!contentID.startsWith('<') || !contentID.endsWith('>'))
+        return KURL();
+
+    StringBuilder uriBuilder;
+    uriBuilder.append("cid:");
+    uriBuilder.append(contentID, 1, contentID.length() - 2);
+    return KURL(KURL(), uriBuilder.toString());
 }
 
 } // namespace blink

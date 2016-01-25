@@ -4,6 +4,7 @@
 
 #include "ui/events/event_dispatcher.h"
 
+#include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
 #include "ui/events/event_dispatcher.h"
@@ -15,9 +16,12 @@ namespace ui {
 
 namespace {
 
-class TestTarget : public EventTarget {
+class TestTarget : public EventTarget,
+                   public EventHandler {
  public:
-  TestTarget() : parent_(NULL), valid_(true) {}
+  TestTarget() : parent_(NULL), valid_(true) {
+    SetTargetHandler(this);
+  }
   ~TestTarget() override {}
 
   void set_parent(TestTarget* parent) { parent_ = parent; }

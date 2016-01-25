@@ -43,7 +43,6 @@
 #include "wtf/HashTraits.h"
 #include "wtf/InstanceCounter.h"
 #include "wtf/TypeTraits.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -188,7 +187,7 @@ public:
     void trace(const T& t)
     {
         static_assert(sizeof(T), "T must be fully defined");
-        if (WTF::IsPolymorphic<T>::value) {
+        if (std::is_polymorphic<T>::value) {
             intptr_t vtable = *reinterpret_cast<const intptr_t*>(&t);
             if (!vtable)
                 return;
@@ -346,10 +345,12 @@ public:
     // to find out whether some pointers are pointing to dying objects. When
     // the WeakCallback is done the object must have purged all pointers
     // to objects where isAlive returned false. In the weak callback it is not
-    // allowed to touch other objects (except using isAlive) or to allocate on
-    // the GC heap. Note that even removing things from HeapHashSet or
-    // HeapHashMap can cause an allocation if the backing store resizes, but
-    // these collections know to remove WeakMember elements safely.
+    // allowed to do anything that adds or extends the object graph (e.g.,
+    // allocate a new object, add a new reference revive a dead object etc.)
+    // Clearing out pointers to other heap objects is allowed, however. Note
+    // that even removing things from HeapHashSet or HeapHashMap can cause
+    // an allocation if the backing store resizes, but these collections know
+    // how to remove WeakMember elements safely.
     //
     // The weak pointer callbacks are run on the thread that owns the
     // object and other threads are not stopped during the
@@ -384,7 +385,7 @@ private:
     bool m_isGlobalMarkingVisitor;
 };
 
-#if ENABLE(DETAILED_MEMORY_INFRA) || ENABLE(GC_PROFILING)
+#if ENABLE(DETAILED_MEMORY_INFRA)
 template<typename T>
 struct TypenameStringTrait {
     static const String get()

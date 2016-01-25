@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/input_messages.h"
 #include "content/public/test/mock_render_thread.h"
@@ -27,14 +28,17 @@ class InteractiveRenderWidget : public RenderWidget {
                      false,
                      false,
                      false),
-        always_overscroll_(false) {}
+        always_overscroll_(false) {
+    // A RenderWidget is not fully initialized until it has a routing ID.
+    SetRoutingID(++next_routing_id_);
+  }
 
   void SetTouchRegion(const std::vector<gfx::Rect>& rects) {
     rects_ = rects;
   }
 
   void SendInputEvent(const blink::WebInputEvent& event) {
-    OnHandleInputEvent(&event, ui::LatencyInfo(), false);
+    OnHandleInputEvent(&event, ui::LatencyInfo());
   }
 
   void set_always_overscroll(bool overscroll) {
@@ -82,9 +86,12 @@ class InteractiveRenderWidget : public RenderWidget {
   std::vector<gfx::Rect> rects_;
   IPC::TestSink sink_;
   bool always_overscroll_;
+  static int next_routing_id_;
 
   DISALLOW_COPY_AND_ASSIGN(InteractiveRenderWidget);
 };
+
+int InteractiveRenderWidget::next_routing_id_ = 0;
 
 class RenderWidgetUnittest : public testing::Test {
  public:

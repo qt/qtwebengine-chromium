@@ -8,26 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/g711/include/audio_encoder_pcm.h"
+#include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
 
 #include <limits>
 
 #include "webrtc/base/checks.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/codecs/g711/include/g711_interface.h"
+#include "webrtc/modules/audio_coding/codecs/g711/g711_interface.h"
 
 namespace webrtc {
 
 namespace {
-
-int16_t NumSamplesPerFrame(int num_channels,
-                           int frame_size_ms,
-                           int sample_rate_hz) {
-  int samples_per_frame = num_channels * frame_size_ms * sample_rate_hz / 1000;
-  RTC_CHECK_LE(samples_per_frame, std::numeric_limits<int16_t>::max())
-      << "Frame size too large.";
-  return static_cast<int16_t>(samples_per_frame);
-}
 
 template <typename T>
 typename T::Config CreateConfig(const CodecInst& codec_inst) {
@@ -50,9 +41,8 @@ AudioEncoderPcm::AudioEncoderPcm(const Config& config, int sample_rate_hz)
       payload_type_(config.payload_type),
       num_10ms_frames_per_packet_(
           static_cast<size_t>(config.frame_size_ms / 10)),
-      full_frame_samples_(NumSamplesPerFrame(config.num_channels,
-                                             config.frame_size_ms,
-                                             sample_rate_hz_)),
+      full_frame_samples_(
+          config.num_channels * config.frame_size_ms * sample_rate_hz / 1000),
       first_timestamp_in_buffer_(0) {
   RTC_CHECK_GT(sample_rate_hz, 0) << "Sample rate must be larger than 0 Hz";
   RTC_CHECK_EQ(config.frame_size_ms % 10, 0)
@@ -70,7 +60,7 @@ int AudioEncoderPcm::SampleRateHz() const {
   return sample_rate_hz_;
 }
 
-int AudioEncoderPcm::NumChannels() const {
+size_t AudioEncoderPcm::NumChannels() const {
   return num_channels_;
 }
 
@@ -83,21 +73,19 @@ size_t AudioEncoderPcm::Max10MsFramesInAPacket() const {
 }
 
 int AudioEncoderPcm::GetTargetBitrate() const {
-  return 8 * BytesPerSample() * SampleRateHz() * NumChannels();
+  return static_cast<int>(
+      8 * BytesPerSample() * SampleRateHz() * NumChannels());
 }
 
 AudioEncoder::EncodedInfo AudioEncoderPcm::EncodeInternal(
     uint32_t rtp_timestamp,
-    const int16_t* audio,
+    rtc::ArrayView<const int16_t> audio,
     size_t max_encoded_bytes,
     uint8_t* encoded) {
-  const int num_samples = SampleRateHz() / 100 * NumChannels();
   if (speech_buffer_.empty()) {
     first_timestamp_in_buffer_ = rtp_timestamp;
   }
-  for (int i = 0; i < num_samples; ++i) {
-    speech_buffer_.push_back(audio[i]);
-  }
+  speech_buffer_.insert(speech_buffer_.end(), audio.begin(), audio.end());
   if (speech_buffer_.size() < full_frame_samples_) {
     return EncodedInfo();
   }
@@ -125,7 +113,7 @@ size_t AudioEncoderPcmA::EncodeCall(const int16_t* audio,
   return WebRtcG711_EncodeA(audio, input_len, encoded);
 }
 
-int AudioEncoderPcmA::BytesPerSample() const {
+size_t AudioEncoderPcmA::BytesPerSample() const {
   return 1;
 }
 
@@ -138,7 +126,7 @@ size_t AudioEncoderPcmU::EncodeCall(const int16_t* audio,
   return WebRtcG711_EncodeU(audio, input_len, encoded);
 }
 
-int AudioEncoderPcmU::BytesPerSample() const {
+size_t AudioEncoderPcmU::BytesPerSample() const {
   return 1;
 }
 

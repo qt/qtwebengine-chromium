@@ -33,6 +33,8 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+#import "webrtc/base/objc/RTCDispatcher.h"
+
 // TODO(tkchin): support other formats.
 static NSString* const kDefaultPreset = AVCaptureSessionPreset640x480;
 static cricket::VideoFormat const kDefaultFormat =
@@ -40,11 +42,6 @@ static cricket::VideoFormat const kDefaultFormat =
                          480,
                          cricket::VideoFormat::FpsToInterval(30),
                          cricket::FOURCC_NV12);
-
-// This queue is used to start and stop the capturer without blocking the
-// calling thread. -[AVCaptureSession startRunning] blocks until the camera is
-// running.
-static dispatch_queue_t kBackgroundQueue = nil;
 
 // This class used to capture frames using AVFoundation APIs on iOS. It is meant
 // to be owned by an instance of AVFoundationVideoCapturer. The reason for this
@@ -79,15 +76,6 @@ static dispatch_queue_t kBackgroundQueue = nil;
 @synthesize captureSession = _captureSession;
 @synthesize useBackCamera = _useBackCamera;
 @synthesize isRunning = _isRunning;
-
-+ (void)initialize {
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    kBackgroundQueue = dispatch_queue_create(
-        "com.google.webrtc.RTCAVFoundationCapturerBackground",
-        DISPATCH_QUEUE_SERIAL);
-  });
-}
 
 - (instancetype)initWithCapturer:(webrtc::AVFoundationVideoCapturer*)capturer {
   NSParameterAssert(capturer);
@@ -132,9 +120,10 @@ static dispatch_queue_t kBackgroundQueue = nil;
   _orientationHasChanged = NO;
   [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
   AVCaptureSession* session = _captureSession;
-  dispatch_async(kBackgroundQueue, ^{
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
     [session startRunning];
-  });
+  }];
   _isRunning = YES;
 }
 
@@ -144,9 +133,10 @@ static dispatch_queue_t kBackgroundQueue = nil;
   }
   [_videoOutput setSampleBufferDelegate:nil queue:nullptr];
   AVCaptureSession* session = _captureSession;
-  dispatch_async(kBackgroundQueue, ^{
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
     [session stopRunning];
-  });
+  }];
   [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
   _isRunning = NO;
 }
@@ -415,13 +405,13 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
       uvPlaneAddress == yPlaneAddress + yPlaneHeight * yPlaneBytesPerRow);
 
   // Stuff data into a cricket::CapturedFrame.
-  int64 currentTime = rtc::TimeNanos();
+  int64_t currentTime = rtc::TimeNanos();
   cricket::CapturedFrame frame;
   frame.width = yPlaneWidth;
   frame.height = yPlaneHeight;
   frame.pixel_width = 1;
   frame.pixel_height = 1;
-  frame.fourcc = static_cast<uint32>(cricket::FOURCC_NV12);
+  frame.fourcc = static_cast<uint32_t>(cricket::FOURCC_NV12);
   frame.time_stamp = currentTime;
   frame.data = yPlaneAddress;
   frame.data_size = frameSize;

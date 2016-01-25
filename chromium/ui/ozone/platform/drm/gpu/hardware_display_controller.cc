@@ -7,8 +7,8 @@
 #include <drm.h>
 #include <string.h>
 #include <xf86drm.h>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -23,12 +23,18 @@
 
 namespace ui {
 
+namespace {
+
+void EmptyFlipCallback(gfx::SwapResult) {}
+
+}  // namespace
+
 HardwareDisplayController::HardwareDisplayController(
     scoped_ptr<CrtcController> controller,
     const gfx::Point& origin)
     : origin_(origin),
       is_disabled_(controller->is_disabled()) {
-  AddCrtc(controller.Pass());
+  AddCrtc(std::move(controller));
 }
 
 HardwareDisplayController::~HardwareDisplayController() {
@@ -41,8 +47,8 @@ bool HardwareDisplayController::Modeset(const OverlayPlane& primary,
   TRACE_EVENT0("drm", "HDC::Modeset");
   DCHECK(primary.buffer.get());
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->Modeset(primary, mode);
+  for (const auto& controller : crtc_controllers_)
+    status &= controller->Modeset(primary, mode);
 
   is_disabled_ = false;
 
@@ -53,10 +59,8 @@ bool HardwareDisplayController::Enable(const OverlayPlane& primary) {
   TRACE_EVENT0("drm", "HDC::Enable");
   DCHECK(primary.buffer.get());
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i) {
-    status &=
-        crtc_controllers_[i]->Modeset(primary, crtc_controllers_[i]->mode());
-  }
+  for (const auto& controller : crtc_controllers_)
+    status &= controller->Modeset(primary, controller->mode());
 
   is_disabled_ = false;
 
@@ -65,14 +69,25 @@ bool HardwareDisplayController::Enable(const OverlayPlane& primary) {
 
 void HardwareDisplayController::Disable() {
   TRACE_EVENT0("drm", "HDC::Disable");
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    crtc_controllers_[i]->Disable();
-
+  for (const auto& controller : crtc_controllers_)
+    controller->Disable();
 
   is_disabled_ = true;
 }
 
-bool HardwareDisplayController::SchedulePageFlip(
+void HardwareDisplayController::SchedulePageFlip(
+    const OverlayPlaneList& plane_list,
+    const PageFlipCallback& callback) {
+  ActualSchedulePageFlip(plane_list, false /* test_only */, callback);
+}
+
+bool HardwareDisplayController::TestPageFlip(
+    const OverlayPlaneList& plane_list) {
+  return ActualSchedulePageFlip(plane_list, true /* test_only */,
+                                base::Bind(&EmptyFlipCallback));
+}
+
+bool HardwareDisplayController::ActualSchedulePageFlip(
     const OverlayPlaneList& plane_list,
     bool test_only,
     const PageFlipCallback& callback) {
@@ -103,10 +118,10 @@ bool HardwareDisplayController::SchedulePageFlip(
     planes.first->plane_manager()->BeginFrame(planes.second);
 
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i) {
-    status &= crtc_controllers_[i]->SchedulePageFlip(
-        owned_hardware_planes_.get(crtc_controllers_[i]->drm().get()),
-        pending_planes, test_only, page_flip_request);
+  for (const auto& controller : crtc_controllers_) {
+    status &= controller->SchedulePageFlip(
+        owned_hardware_planes_.get(controller->drm().get()), pending_planes,
+        test_only, page_flip_request);
   }
 
   for (const auto& planes : owned_hardware_planes_) {
@@ -118,24 +133,15 @@ bool HardwareDisplayController::SchedulePageFlip(
   return status;
 }
 
-std::vector<uint32_t> HardwareDisplayController::GetCompatibleHardwarePlaneIds(
-    const OverlayPlane& plane) const {
-  std::vector<uint32_t> plane_ids =
-      crtc_controllers_[0]->GetCompatibleHardwarePlaneIds(plane);
-
-  if (plane_ids.empty())
-    return plane_ids;
-
-  for (size_t i = 1; i < crtc_controllers_.size(); ++i) {
-    // Make sure all mirrored displays have overlays to support this
-    // plane.
-    if (crtc_controllers_[i]->GetCompatibleHardwarePlaneIds(plane).empty())
-      return std::vector<uint32_t>();
+bool HardwareDisplayController::IsFormatSupported(uint32_t fourcc_format,
+                                                  uint32_t z_order) const {
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i) {
+    // Make sure all displays have overlay to support this format.
+    if (!crtc_controllers_[i]->IsFormatSupported(fourcc_format, z_order))
+      return false;
   }
 
-  // TODO(kalyank): We Should ensure that this list doesn't contain any planes
-  // which mirrored displays share with primary.
-  return plane_ids;
+  return true;
 }
 
 bool HardwareDisplayController::SetCursor(
@@ -145,16 +151,16 @@ bool HardwareDisplayController::SetCursor(
   if (is_disabled_)
     return true;
 
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->SetCursor(buffer);
+  for (const auto& controller : crtc_controllers_)
+    status &= controller->SetCursor(buffer);
 
   return status;
 }
 
 bool HardwareDisplayController::UnsetCursor() {
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->SetCursor(nullptr);
+  for (const auto& controller : crtc_controllers_)
+    status &= controller->SetCursor(nullptr);
 
   return status;
 }
@@ -164,8 +170,8 @@ bool HardwareDisplayController::MoveCursor(const gfx::Point& location) {
     return true;
 
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->MoveCursor(location);
+  for (const auto& controller : crtc_controllers_)
+    status &= controller->MoveCursor(location);
 
   return status;
 }
@@ -176,32 +182,32 @@ void HardwareDisplayController::AddCrtc(scoped_ptr<CrtcController> controller) {
                                             new HardwareDisplayPlaneList()));
 
   // Check if this controller owns any planes and ensure we keep track of them.
-  const ScopedVector<HardwareDisplayPlane>& all_planes =
+  const std::vector<scoped_ptr<HardwareDisplayPlane>>& all_planes =
       drm->plane_manager()->planes();
   HardwareDisplayPlaneList* crtc_plane_list =
       owned_hardware_planes_.get(drm.get());
   uint32_t crtc = controller->crtc();
-  for (auto* plane : all_planes) {
+  for (const auto& plane : all_planes) {
     if (plane->in_use() && (plane->owning_crtc() == crtc))
-      crtc_plane_list->old_plane_list.push_back(plane);
+      crtc_plane_list->old_plane_list.push_back(plane.get());
   }
 
-  crtc_controllers_.push_back(controller.Pass());
+  crtc_controllers_.push_back(std::move(controller));
 }
 
 scoped_ptr<CrtcController> HardwareDisplayController::RemoveCrtc(
     const scoped_refptr<DrmDevice>& drm,
     uint32_t crtc) {
-  for (ScopedVector<CrtcController>::iterator it = crtc_controllers_.begin();
-       it != crtc_controllers_.end(); ++it) {
+  for (auto it = crtc_controllers_.begin(); it != crtc_controllers_.end();
+       ++it) {
     if ((*it)->drm() == drm && (*it)->crtc() == crtc) {
-      scoped_ptr<CrtcController> controller(*it);
-      crtc_controllers_.weak_erase(it);
+      scoped_ptr<CrtcController> controller(std::move(*it));
+      crtc_controllers_.erase(it);
+
       // Remove entry from |owned_hardware_planes_| iff no other crtcs share it.
       bool found = false;
-      for (ScopedVector<CrtcController>::iterator it =
-               crtc_controllers_.begin();
-           it != crtc_controllers_.end(); ++it) {
+      for (auto it = crtc_controllers_.begin(); it != crtc_controllers_.end();
+           ++it) {
         if ((*it)->drm() == controller->drm()) {
           found = true;
           break;
@@ -220,7 +226,7 @@ scoped_ptr<CrtcController> HardwareDisplayController::RemoveCrtc(
         owned_hardware_planes_.erase(controller->drm().get());
       }
 
-      return controller.Pass();
+      return controller;
     }
   }
 
@@ -229,10 +235,10 @@ scoped_ptr<CrtcController> HardwareDisplayController::RemoveCrtc(
 
 bool HardwareDisplayController::HasCrtc(const scoped_refptr<DrmDevice>& drm,
                                         uint32_t crtc) const {
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    if (crtc_controllers_[i]->drm() == drm &&
-        crtc_controllers_[i]->crtc() == crtc)
+  for (const auto& controller : crtc_controllers_) {
+    if (controller->drm() == drm && controller->crtc() == crtc)
       return true;
+  }
 
   return false;
 }
@@ -253,9 +259,10 @@ gfx::Size HardwareDisplayController::GetModeSize() const {
 
 uint64_t HardwareDisplayController::GetTimeOfLastFlip() const {
   uint64_t time = 0;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    if (time < crtc_controllers_[i]->time_of_last_flip())
-      time = crtc_controllers_[i]->time_of_last_flip();
+  for (const auto& controller : crtc_controllers_) {
+    if (time < controller->time_of_last_flip())
+      time = controller->time_of_last_flip();
+  }
 
   return time;
 }

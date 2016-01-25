@@ -4,6 +4,8 @@
 
 #include "content/common/gpu/gpu_channel.h"
 
+#include <utility>
+
 #if defined(OS_WIN)
 #include <windows.h>
 #endif
@@ -17,6 +19,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -26,6 +29,7 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -53,65 +57,65 @@ namespace {
 
 // Number of milliseconds between successive vsync. Many GL commands block
 // on vsync, so thresholds for preemption should be multiples of this.
-const int64 kVsyncIntervalMs = 17;
+const int64_t kVsyncIntervalMs = 17;
 
 // Amount of time that we will wait for an IPC to be processed before
 // preempting. After a preemption, we must wait this long before triggering
 // another preemption.
-const int64 kPreemptWaitTimeMs = 2 * kVsyncIntervalMs;
+const int64_t kPreemptWaitTimeMs = 2 * kVsyncIntervalMs;
 
 // Once we trigger a preemption, the maximum duration that we will wait
 // before clearing the preemption.
-const int64 kMaxPreemptTimeMs = kVsyncIntervalMs;
+const int64_t kMaxPreemptTimeMs = kVsyncIntervalMs;
 
 // Stop the preemption once the time for the longest pending IPC drops
 // below this threshold.
-const int64 kStopPreemptThresholdMs = kVsyncIntervalMs;
+const int64_t kStopPreemptThresholdMs = kVsyncIntervalMs;
 
 }  // anonymous namespace
 
 scoped_refptr<GpuChannelMessageQueue> GpuChannelMessageQueue::Create(
     const base::WeakPtr<GpuChannel>& gpu_channel,
-    base::SingleThreadTaskRunner* task_runner) {
-  return new GpuChannelMessageQueue(gpu_channel, task_runner);
+    base::SingleThreadTaskRunner* task_runner,
+    gpu::SyncPointManager* sync_point_manager) {
+  return new GpuChannelMessageQueue(gpu_channel, task_runner,
+                                    sync_point_manager);
 }
 
-scoped_refptr<gpu::SyncPointClientState>
-    GpuChannelMessageQueue::GetSyncPointClientState() {
-  return sync_point_client_state_;
+scoped_refptr<gpu::SyncPointOrderData>
+GpuChannelMessageQueue::GetSyncPointOrderData() {
+  return sync_point_order_data_;
 }
 
 GpuChannelMessageQueue::GpuChannelMessageQueue(
     const base::WeakPtr<GpuChannel>& gpu_channel,
-    base::SingleThreadTaskRunner* task_runner)
+    base::SingleThreadTaskRunner* task_runner,
+    gpu::SyncPointManager* sync_point_manager)
     : enabled_(true),
-      sync_point_client_state_(gpu::SyncPointClientState::Create()),
+      sync_point_order_data_(gpu::SyncPointOrderData::Create()),
       gpu_channel_(gpu_channel),
-      task_runner_(task_runner) {}
+      task_runner_(task_runner),
+      sync_point_manager_(sync_point_manager) {}
 
 GpuChannelMessageQueue::~GpuChannelMessageQueue() {
   DCHECK(channel_messages_.empty());
 }
 
 uint32_t GpuChannelMessageQueue::GetUnprocessedOrderNum() const {
-  return sync_point_client_state_->unprocessed_order_num();
+  return sync_point_order_data_->unprocessed_order_num();
 }
 
 uint32_t GpuChannelMessageQueue::GetProcessedOrderNum() const {
-  return sync_point_client_state_->processed_order_num();
+  return sync_point_order_data_->processed_order_num();
 }
 
-void GpuChannelMessageQueue::PushBackMessage(
-    gpu::SyncPointManager* sync_point_manager, const IPC::Message& message) {
+void GpuChannelMessageQueue::PushBackMessage(const IPC::Message& message) {
   base::AutoLock auto_lock(channel_messages_lock_);
-  if (enabled_) {
-    PushMessageHelper(sync_point_manager,
-                      make_scoped_ptr(new GpuChannelMessage(message)));
-  }
+  if (enabled_)
+    PushMessageHelper(make_scoped_ptr(new GpuChannelMessage(message)));
 }
 
 bool GpuChannelMessageQueue::GenerateSyncPointMessage(
-    gpu::SyncPointManager* sync_point_manager,
     const IPC::Message& message,
     bool retire_sync_point,
     uint32_t* sync_point) {
@@ -119,13 +123,13 @@ bool GpuChannelMessageQueue::GenerateSyncPointMessage(
   DCHECK(sync_point);
   base::AutoLock auto_lock(channel_messages_lock_);
   if (enabled_) {
-    *sync_point = sync_point_manager->GenerateSyncPoint();
+    *sync_point = sync_point_manager_->GenerateSyncPoint();
 
     scoped_ptr<GpuChannelMessage> msg(new GpuChannelMessage(message));
     msg->retire_sync_point = retire_sync_point;
     msg->sync_point = *sync_point;
 
-    PushMessageHelper(sync_point_manager, msg.Pass());
+    PushMessageHelper(std::move(msg));
     return true;
   }
   return false;
@@ -147,9 +151,9 @@ GpuChannelMessage* GpuChannelMessageQueue::GetNextMessage() const {
   base::AutoLock auto_lock(channel_messages_lock_);
   if (!channel_messages_.empty()) {
     DCHECK_GT(channel_messages_.front()->order_number,
-              sync_point_client_state_->processed_order_num());
+              sync_point_order_data_->processed_order_num());
     DCHECK_LE(channel_messages_.front()->order_number,
-              sync_point_client_state_->unprocessed_order_num());
+              sync_point_order_data_->unprocessed_order_num());
 
     return channel_messages_.front();
   }
@@ -158,7 +162,12 @@ GpuChannelMessage* GpuChannelMessageQueue::GetNextMessage() const {
 
 void GpuChannelMessageQueue::BeginMessageProcessing(
     const GpuChannelMessage* msg) {
-  sync_point_client_state_->BeginProcessingOrderNumber(msg->order_number);
+  sync_point_order_data_->BeginProcessingOrderNumber(msg->order_number);
+}
+
+void GpuChannelMessageQueue::PauseMessageProcessing(
+    const GpuChannelMessage* msg) {
+  sync_point_order_data_->PauseProcessingOrderNumber(msg->order_number);
 }
 
 bool GpuChannelMessageQueue::MessageProcessed() {
@@ -166,12 +175,11 @@ bool GpuChannelMessageQueue::MessageProcessed() {
   DCHECK(!channel_messages_.empty());
   scoped_ptr<GpuChannelMessage> msg(channel_messages_.front());
   channel_messages_.pop_front();
-  sync_point_client_state_->FinishProcessingOrderNumber(msg->order_number);
+  sync_point_order_data_->FinishProcessingOrderNumber(msg->order_number);
   return !channel_messages_.empty();
 }
 
-void GpuChannelMessageQueue::DeleteAndDisableMessages(
-    GpuChannelManager* gpu_channel_manager) {
+void GpuChannelMessageQueue::DeleteAndDisableMessages() {
   {
     base::AutoLock auto_lock(channel_messages_lock_);
     DCHECK(enabled_);
@@ -188,10 +196,13 @@ void GpuChannelMessageQueue::DeleteAndDisableMessages(
     // This needs to clean up both GpuCommandBufferMsg_InsertSyncPoint and
     // GpuCommandBufferMsg_RetireSyncPoint messages, safer to just check
     // if we have a sync point number here.
-    if (msg->sync_point) {
-      gpu_channel_manager->sync_point_manager()->RetireSyncPoint(
-          msg->sync_point);
-    }
+    if (msg->sync_point)
+      sync_point_manager_->RetireSyncPoint(msg->sync_point);
+  }
+
+  if (sync_point_order_data_) {
+    sync_point_order_data_->Destroy();
+    sync_point_order_data_ = nullptr;
   }
 }
 
@@ -201,14 +212,12 @@ void GpuChannelMessageQueue::ScheduleHandleMessage() {
 }
 
 void GpuChannelMessageQueue::PushMessageHelper(
-    gpu::SyncPointManager* sync_point_manager,
     scoped_ptr<GpuChannelMessage> msg) {
   channel_messages_lock_.AssertAcquired();
   DCHECK(enabled_);
 
-  msg->order_number =
-      sync_point_client_state_->GenerateUnprocessedOrderNumber(
-          sync_point_manager);
+  msg->order_number = sync_point_order_data_->GenerateUnprocessedOrderNumber(
+      sync_point_manager_);
   msg->time_received = base::TimeTicks::Now();
 
   bool had_messages = !channel_messages_.empty();
@@ -220,7 +229,6 @@ void GpuChannelMessageQueue::PushMessageHelper(
 GpuChannelMessageFilter::GpuChannelMessageFilter(
     const base::WeakPtr<GpuChannel>& gpu_channel,
     GpuChannelMessageQueue* message_queue,
-    gpu::SyncPointManager* sync_point_manager,
     base::SingleThreadTaskRunner* task_runner,
     gpu::PreemptionFlag* preempting_flag,
     bool future_sync_points)
@@ -229,7 +237,6 @@ GpuChannelMessageFilter::GpuChannelMessageFilter(
       message_queue_(message_queue),
       sender_(nullptr),
       peer_pid_(base::kNullProcessId),
-      sync_point_manager_(sync_point_manager),
       task_runner_(task_runner),
       preempting_flag_(preempting_flag),
       a_stub_is_descheduled_(false),
@@ -256,7 +263,7 @@ void GpuChannelMessageFilter::OnFilterRemoved() {
   timer_ = nullptr;
 }
 
-void GpuChannelMessageFilter::OnChannelConnected(int32 peer_pid) {
+void GpuChannelMessageFilter::OnChannelConnected(int32_t peer_pid) {
   DCHECK(peer_pid_ == base::kNullProcessId);
   peer_pid_ = peer_pid;
   for (scoped_refptr<IPC::MessageFilter>& filter : channel_filters_) {
@@ -301,6 +308,12 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
     return true;
   }
 
+  if (message.type() == GpuChannelMsg_Nop::ID) {
+    IPC::Message* reply = IPC::SyncMessage::GenerateReply(&message);
+    Send(reply);
+    return true;
+  }
+
   for (scoped_refptr<IPC::MessageFilter>& filter : channel_filters_) {
     if (filter->OnMessageReceived(message)) {
       return true;
@@ -335,8 +348,8 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
     // Message queue must handle the entire sync point generation because the
     // message queue could be disabled from the main thread during generation.
     uint32_t sync_point = 0u;
-    if (!message_queue_->GenerateSyncPointMessage(
-            sync_point_manager_, message, retire_sync_point, &sync_point)) {
+    if (!message_queue_->GenerateSyncPointMessage(message, retire_sync_point,
+                                                  &sync_point)) {
       DLOG(ERROR) << "GpuChannel has been destroyed.";
       reply->set_reply_error();
       Send(reply);
@@ -357,7 +370,7 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
                              base::Bind(&GpuChannel::HandleOutOfOrderMessage,
                                         gpu_channel_, message));
     } else {
-      message_queue_->PushBackMessage(sync_point_manager_, message);
+      message_queue_->PushBackMessage(message);
     }
     handled = true;
   }
@@ -520,19 +533,19 @@ void GpuChannelMessageFilter::TransitionToWouldPreemptDescheduled() {
   UpdatePreemptionState();
 }
 
-GpuChannel::StreamState::StreamState(int32 id, GpuStreamPriority priority)
+GpuChannel::StreamState::StreamState(int32_t id, GpuStreamPriority priority)
     : id_(id), priority_(priority) {}
 
 GpuChannel::StreamState::~StreamState() {}
 
-void GpuChannel::StreamState::AddRoute(int32 route_id) {
+void GpuChannel::StreamState::AddRoute(int32_t route_id) {
   routes_.insert(route_id);
 }
-void GpuChannel::StreamState::RemoveRoute(int32 route_id) {
+void GpuChannel::StreamState::RemoveRoute(int32_t route_id) {
   routes_.erase(route_id);
 }
 
-bool GpuChannel::StreamState::HasRoute(int32 route_id) const {
+bool GpuChannel::StreamState::HasRoute(int32_t route_id) const {
   return routes_.find(route_id) != routes_.end();
 }
 
@@ -541,6 +554,7 @@ bool GpuChannel::StreamState::HasRoutes() const {
 }
 
 GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
+                       gpu::SyncPointManager* sync_point_manager,
                        GpuWatchdog* watchdog,
                        gfx::GLShareGroup* share_group,
                        gpu::gles2::MailboxManager* mailbox,
@@ -552,6 +566,7 @@ GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
                        bool allow_future_sync_points,
                        bool allow_real_time_streams)
     : gpu_channel_manager_(gpu_channel_manager),
+      sync_point_manager_(sync_point_manager),
       channel_id_(IPC::Channel::GenerateVerifiedChannelID("gpu")),
       preempting_flag_(preempting_flag),
       client_id_(client_id),
@@ -570,13 +585,12 @@ GpuChannel::GpuChannel(GpuChannelManager* gpu_channel_manager,
   DCHECK(gpu_channel_manager);
   DCHECK(client_id);
 
-  message_queue_ =
-      GpuChannelMessageQueue::Create(weak_factory_.GetWeakPtr(), task_runner);
+  message_queue_ = GpuChannelMessageQueue::Create(
+      weak_factory_.GetWeakPtr(), task_runner, sync_point_manager);
 
   filter_ = new GpuChannelMessageFilter(
-      weak_factory_.GetWeakPtr(), message_queue_.get(),
-      gpu_channel_manager_->sync_point_manager(), task_runner_.get(),
-      preempting_flag, allow_future_sync_points_);
+      weak_factory_.GetWeakPtr(), message_queue_.get(), task_runner,
+      preempting_flag, allow_future_sync_points);
 
   subscription_ref_set_->AddObserver(this);
 }
@@ -585,7 +599,7 @@ GpuChannel::~GpuChannel() {
   // Clear stubs first because of dependencies.
   stubs_.clear();
 
-  message_queue_->DeleteAndDisableMessages(gpu_channel_manager_);
+  message_queue_->DeleteAndDisableMessages();
 
   subscription_ref_set_->RemoveObserver(this);
   if (preempting_flag_.get())
@@ -607,7 +621,7 @@ IPC::ChannelHandle GpuChannel::Init(base::WaitableEvent* shutdown_event) {
   // that it gets closed after it has been sent.
   base::ScopedFD renderer_fd = channel_->TakeClientFileDescriptor();
   DCHECK(renderer_fd.is_valid());
-  channel_handle.socket = base::FileDescriptor(renderer_fd.Pass());
+  channel_handle.socket = base::FileDescriptor(std::move(renderer_fd));
 #endif
 
   channel_->AddFilter(filter_.get());
@@ -688,17 +702,17 @@ void GpuChannel::OnStubSchedulingChanged(GpuCommandBufferStub* stub,
 CreateCommandBufferResult GpuChannel::CreateViewCommandBuffer(
     const gfx::GLSurfaceHandle& window,
     const GPUCreateCommandBufferConfig& init_params,
-    int32 route_id) {
+    int32_t route_id) {
   TRACE_EVENT1("gpu", "GpuChannel::CreateViewCommandBuffer", "route_id",
                route_id);
 
-  int32 share_group_id = init_params.share_group_id;
+  int32_t share_group_id = init_params.share_group_id;
   GpuCommandBufferStub* share_group = stubs_.get(share_group_id);
 
   if (!share_group && share_group_id != MSG_ROUTING_NONE)
     return CREATE_COMMAND_BUFFER_FAILED;
 
-  int32 stream_id = init_params.stream_id;
+  int32_t stream_id = init_params.stream_id;
   GpuStreamPriority stream_priority = init_params.stream_priority;
 
   if (share_group && stream_id != share_group->stream_id())
@@ -717,11 +731,12 @@ CreateCommandBufferResult GpuChannel::CreateViewCommandBuffer(
 
   bool offscreen = false;
   scoped_ptr<GpuCommandBufferStub> stub(new GpuCommandBufferStub(
-      this, task_runner_.get(), share_group, window, mailbox_manager_.get(),
-      preempted_flag_.get(), subscription_ref_set_.get(),
-      pending_valuebuffer_state_.get(), gfx::Size(), disallowed_features_,
-      init_params.attribs, init_params.gpu_preference, stream_id, route_id,
-      offscreen, watchdog_, init_params.active_url));
+      this, sync_point_manager_, task_runner_.get(), share_group, window,
+      mailbox_manager_.get(), preempted_flag_.get(),
+      subscription_ref_set_.get(), pending_valuebuffer_state_.get(),
+      gfx::Size(), disallowed_features_, init_params.attribs,
+      init_params.gpu_preference, stream_id, route_id, offscreen, watchdog_,
+      init_params.active_url));
 
   if (!router_.AddRoute(route_id, stub.get())) {
     DLOG(ERROR) << "GpuChannel::CreateViewCommandBuffer(): "
@@ -737,11 +752,11 @@ CreateCommandBufferResult GpuChannel::CreateViewCommandBuffer(
     streams_.insert(std::make_pair(stream_id, stream));
   }
 
-  stubs_.set(route_id, stub.Pass());
+  stubs_.set(route_id, std::move(stub));
   return CREATE_COMMAND_BUFFER_SUCCEEDED;
 }
 
-GpuCommandBufferStub* GpuChannel::LookupCommandBuffer(int32 route_id) {
+GpuCommandBufferStub* GpuChannel::LookupCommandBuffer(int32_t route_id) {
   return stubs_.get(route_id);
 }
 
@@ -754,11 +769,11 @@ void GpuChannel::MarkAllContextsLost() {
     kv.second->MarkContextLost();
 }
 
-bool GpuChannel::AddRoute(int32 route_id, IPC::Listener* listener) {
+bool GpuChannel::AddRoute(int32_t route_id, IPC::Listener* listener) {
   return router_.AddRoute(route_id, listener);
 }
 
-void GpuChannel::RemoveRoute(int32 route_id) {
+void GpuChannel::RemoveRoute(int32_t route_id) {
   router_.RemoveRoute(route_id);
 }
 
@@ -788,8 +803,8 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-scoped_refptr<gpu::SyncPointClientState> GpuChannel::GetSyncPointClientState() {
-  return message_queue_->GetSyncPointClientState();
+scoped_refptr<gpu::SyncPointOrderData> GpuChannel::GetSyncPointOrderData() {
+  return message_queue_->GetSyncPointOrderData();
 }
 
 void GpuChannel::HandleMessage() {
@@ -827,10 +842,9 @@ void GpuChannel::HandleMessage() {
     // deleted, invalid routing id), we need to retire the sync point
     // immediately.
     if (stub) {
-      stub->AddSyncPoint(m->sync_point, m->retire_sync_point);
+      stub->InsertSyncPoint(m->sync_point, m->retire_sync_point);
     } else {
-      gpu_channel_manager_->sync_point_manager()->RetireSyncPoint(
-          m->sync_point);
+      sync_point_manager_->RetireSyncPoint(m->sync_point);
     }
     handled = true;
   } else {
@@ -849,6 +863,7 @@ void GpuChannel::HandleMessage() {
   // a flush. In this case we should not pop the message from the queue.
   if (stub && stub->HasUnprocessedCommands()) {
     DCHECK_EQ((uint32_t)GpuCommandBufferMsg_AsyncFlush::ID, message.type());
+    message_queue_->PauseMessageProcessing(m);
     // If the stub is still scheduled then we were preempted and need to
     // schedule a wakeup otherwise some other event will wake us up e.g. sync
     // point completion. No DCHECK for preemption flag because that can change
@@ -898,12 +913,12 @@ const GpuCommandBufferStub* GpuChannel::GetOneStub() const {
 void GpuChannel::OnCreateOffscreenCommandBuffer(
     const gfx::Size& size,
     const GPUCreateCommandBufferConfig& init_params,
-    int32 route_id,
+    int32_t route_id,
     bool* succeeded) {
   TRACE_EVENT1("gpu", "GpuChannel::OnCreateOffscreenCommandBuffer", "route_id",
                route_id);
 
-  int32 share_group_id = init_params.share_group_id;
+  int32_t share_group_id = init_params.share_group_id;
   GpuCommandBufferStub* share_group = stubs_.get(share_group_id);
 
   if (!share_group && share_group_id != MSG_ROUTING_NONE) {
@@ -911,7 +926,7 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
     return;
   }
 
-  int32 stream_id = init_params.stream_id;
+  int32_t stream_id = init_params.stream_id;
   GpuStreamPriority stream_priority = init_params.stream_priority;
 
   if (share_group && stream_id != share_group->stream_id()) {
@@ -935,8 +950,8 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
 
   bool offscreen = true;
   scoped_ptr<GpuCommandBufferStub> stub(new GpuCommandBufferStub(
-      this, task_runner_.get(), share_group, gfx::GLSurfaceHandle(),
-      mailbox_manager_.get(), preempted_flag_.get(),
+      this, sync_point_manager_, task_runner_.get(), share_group,
+      gfx::GLSurfaceHandle(), mailbox_manager_.get(), preempted_flag_.get(),
       subscription_ref_set_.get(), pending_valuebuffer_state_.get(), size,
       disallowed_features_, init_params.attribs, init_params.gpu_preference,
       init_params.stream_id, route_id, offscreen, watchdog_,
@@ -957,11 +972,11 @@ void GpuChannel::OnCreateOffscreenCommandBuffer(
     streams_.insert(std::make_pair(stream_id, stream));
   }
 
-  stubs_.set(route_id, stub.Pass());
+  stubs_.set(route_id, std::move(stub));
   *succeeded = true;
 }
 
-void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
+void GpuChannel::OnDestroyCommandBuffer(int32_t route_id) {
   TRACE_EVENT1("gpu", "GpuChannel::OnDestroyCommandBuffer",
                "route_id", route_id);
 
@@ -972,7 +987,7 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
 
   router_.RemoveRoute(route_id);
 
-  int32 stream_id = stub->stream_id();
+  int32_t stream_id = stub->stream_id();
   auto stream_it = streams_.find(stream_id);
   DCHECK(stream_it != streams_.end());
   stream_it->second.RemoveRoute(route_id);
@@ -987,7 +1002,8 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
   }
 }
 
-void GpuChannel::OnCreateJpegDecoder(int32 route_id, IPC::Message* reply_msg) {
+void GpuChannel::OnCreateJpegDecoder(int32_t route_id,
+                                     IPC::Message* reply_msg) {
   if (!jpeg_decoder_) {
     jpeg_decoder_.reset(new GpuJpegDecodeAccelerator(this, io_task_runner_));
   }
@@ -1012,14 +1028,14 @@ void GpuChannel::RemoveFilter(IPC::MessageFilter* filter) {
                             filter_, make_scoped_refptr(filter)));
 }
 
-uint64 GpuChannel::GetMemoryUsage() {
+uint64_t GpuChannel::GetMemoryUsage() {
   // Collect the unique memory trackers in use by the |stubs_|.
   std::set<gpu::gles2::MemoryTracker*> unique_memory_trackers;
   for (auto& kv : stubs_)
     unique_memory_trackers.insert(kv.second->GetMemoryTracker());
 
   // Sum the memory usage for all unique memory trackers.
-  uint64 size = 0;
+  uint64_t size = 0;
   for (auto* tracker : unique_memory_trackers) {
     size += gpu_channel_manager()->gpu_memory_manager()->GetTrackerMemoryUsage(
         tracker);
@@ -1028,24 +1044,28 @@ uint64 GpuChannel::GetMemoryUsage() {
   return size;
 }
 
-scoped_refptr<gfx::GLImage> GpuChannel::CreateImageForGpuMemoryBuffer(
+scoped_refptr<gl::GLImage> GpuChannel::CreateImageForGpuMemoryBuffer(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
     gfx::BufferFormat format,
-    uint32 internalformat) {
+    uint32_t internalformat) {
   switch (handle.type) {
     case gfx::SHARED_MEMORY_BUFFER: {
-      scoped_refptr<gfx::GLImageSharedMemory> image(
-          new gfx::GLImageSharedMemory(size, internalformat));
-      if (!image->Initialize(handle, format))
-        return scoped_refptr<gfx::GLImage>();
+      if (!base::IsValueInRangeForNumericType<size_t>(handle.stride))
+        return nullptr;
+      scoped_refptr<gl::GLImageSharedMemory> image(
+          new gl::GLImageSharedMemory(size, internalformat));
+      if (!image->Initialize(handle.handle, handle.id, format, handle.offset,
+                             handle.stride)) {
+        return nullptr;
+      }
 
       return image;
     }
     default: {
       GpuChannelManager* manager = gpu_channel_manager();
       if (!manager->gpu_memory_buffer_factory())
-        return scoped_refptr<gfx::GLImage>();
+        return nullptr;
 
       return manager->gpu_memory_buffer_factory()
           ->AsImageFactory()

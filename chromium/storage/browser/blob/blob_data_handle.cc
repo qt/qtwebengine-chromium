@@ -4,9 +4,12 @@
 
 #include "storage/browser/blob/blob_data_handle.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner.h"
 #include "base/time/time.h"
@@ -44,12 +47,8 @@ class FileStreamReaderProviderImpl
       int64_t max_bytes_to_read,
       const base::Time& expected_modification_time) override {
     return file_system_context_->CreateFileStreamReader(
-                                   storage::FileSystemURL(
-                                       file_system_context_->CrackURL(
-                                           filesystem_url)),
-                                   offset, max_bytes_to_read,
-                                   expected_modification_time)
-        .Pass();
+        storage::FileSystemURL(file_system_context_->CrackURL(filesystem_url)),
+        offset, max_bytes_to_read, expected_modification_time);
   }
 
  private:
@@ -82,7 +81,7 @@ scoped_ptr<BlobReader> BlobDataHandle::CreateReader(
 
 scoped_ptr<BlobDataSnapshot>
 BlobDataHandle::BlobDataHandleShared::CreateSnapshot() const {
-  return context_->CreateSnapshot(uuid_).Pass();
+  return context_->CreateSnapshot(uuid_);
 }
 
 BlobDataHandle::BlobDataHandleShared::~BlobDataHandleShared() {
@@ -118,7 +117,7 @@ BlobDataHandle::~BlobDataHandle() {
 
 scoped_ptr<BlobDataSnapshot> BlobDataHandle::CreateSnapshot() const {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
-  return shared_->CreateSnapshot().Pass();
+  return shared_->CreateSnapshot();
 }
 
 const std::string& BlobDataHandle::uuid() const {

@@ -5,13 +5,15 @@
 #include "content/browser/service_worker/service_worker_info.h"
 
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/child_process_host.h"
 #include "ipc/ipc_message.h"
 
 namespace content {
 
 ServiceWorkerVersionInfo::ClientInfo::ClientInfo()
-    : ClientInfo(-1, MSG_ROUTING_NONE, SERVICE_WORKER_PROVIDER_UNKNOWN) {
-}
+    : ClientInfo(ChildProcessHost::kInvalidUniqueID,
+                 MSG_ROUTING_NONE,
+                 SERVICE_WORKER_PROVIDER_UNKNOWN) {}
 
 ServiceWorkerVersionInfo::ClientInfo::ClientInfo(int process_id,
                                                  int route_id,
@@ -27,17 +29,16 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo()
       status(ServiceWorkerVersion::NEW),
       registration_id(kInvalidServiceWorkerRegistrationId),
       version_id(kInvalidServiceWorkerVersionId),
-      process_id(-1),
-      thread_id(-1),
-      devtools_agent_route_id(MSG_ROUTING_NONE) {
-}
+      process_id(ChildProcessHost::kInvalidUniqueID),
+      thread_id(kInvalidEmbeddedWorkerThreadId),
+      devtools_agent_route_id(MSG_ROUTING_NONE) {}
 
 ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
     ServiceWorkerVersion::RunningStatus running_status,
     ServiceWorkerVersion::Status status,
     const GURL& script_url,
-    int64 registration_id,
-    int64 version_id,
+    int64_t registration_id,
+    int64_t version_id,
     int process_id,
     int thread_id,
     int devtools_agent_route_id)
@@ -48,8 +49,7 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
       version_id(version_id),
       process_id(process_id),
       thread_id(thread_id),
-      devtools_agent_route_id(devtools_agent_route_id) {
-}
+      devtools_agent_route_id(devtools_agent_route_id) {}
 
 ServiceWorkerVersionInfo::~ServiceWorkerVersionInfo() {}
 
@@ -61,7 +61,7 @@ ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo()
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
     const GURL& pattern,
-    int64 registration_id,
+    int64_t registration_id,
     DeleteFlag delete_flag)
     : pattern(pattern),
       registration_id(registration_id),
@@ -71,7 +71,7 @@ ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
     const GURL& pattern,
-    int64 registration_id,
+    int64_t registration_id,
     DeleteFlag delete_flag,
     ForceUpdateOnPageLoad force_update_on_page_load,
     const ServiceWorkerVersionInfo& active_version,

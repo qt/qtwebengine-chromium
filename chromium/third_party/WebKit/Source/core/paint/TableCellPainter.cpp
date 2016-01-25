@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/TableCellPainter.h"
 
 #include "core/layout/LayoutTableCell.h"
@@ -96,19 +95,20 @@ void TableCellPainter::paintCollapsedBorders(const PaintInfo& paintInfo, const L
     int rightWidth = rightBorderValue.width();
 
     LayoutRect paintRect = paintBounds(paintOffset, AddOffsetFromParent);
+    LayoutPoint adjustedPaintOffset = paintRect.location();
     IntRect borderRect = pixelSnappedIntRect(paintRect.x() - leftWidth / 2,
         paintRect.y() - topWidth / 2,
         paintRect.width() + leftWidth / 2 + (rightWidth + 1) / 2,
         paintRect.height() + topWidth / 2 + (bottomWidth + 1) / 2);
 
-    if (!borderRect.intersects(paintInfo.rect))
+    if (!paintInfo.cullRect().intersectsCullRect(borderRect))
         return;
 
-    GraphicsContext* graphicsContext = paintInfo.context;
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*graphicsContext, m_layoutTableCell, static_cast<DisplayItem::Type>(displayItemType), paintOffset))
+    GraphicsContext& graphicsContext = paintInfo.context;
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(graphicsContext, m_layoutTableCell, static_cast<DisplayItem::Type>(displayItemType), adjustedPaintOffset))
         return;
 
-    LayoutObjectDrawingRecorder recorder(*graphicsContext, m_layoutTableCell, static_cast<DisplayItem::Type>(displayItemType), borderRect, paintOffset);
+    LayoutObjectDrawingRecorder recorder(graphicsContext, m_layoutTableCell, static_cast<DisplayItem::Type>(displayItemType), borderRect, adjustedPaintOffset);
     Color cellColor = m_layoutTableCell.resolveColor(CSSPropertyColor);
 
     // We never paint diagonals at the joins.  We simply let the border with the highest
@@ -131,7 +131,7 @@ void TableCellPainter::paintCollapsedBorders(const PaintInfo& paintInfo, const L
     }
 }
 
-void TableCellPainter::paintBackgroundsBehindCell(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, const LayoutObject* backgroundObject)
+void TableCellPainter::paintBackgroundsBehindCell(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, const LayoutObject* backgroundObject, DisplayItem::Type type)
 {
     if (!paintInfo.shouldPaintWithinRoot(&m_layoutTableCell))
         return;
@@ -146,20 +146,30 @@ void TableCellPainter::paintBackgroundsBehindCell(const PaintInfo& paintInfo, co
     if (!tableElt->collapseBorders() && m_layoutTableCell.style()->emptyCells() == HIDE && !m_layoutTableCell.firstChild())
         return;
 
-    Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
-    const FillLayer& bgLayer = backgroundObject->style()->backgroundLayers();
-
     LayoutRect paintRect = paintBounds(paintOffset, backgroundObject != &m_layoutTableCell ? AddOffsetFromParent : DoNotAddOffsetFromParent);
 
+    // Record drawing only if the cell is painting background from containers.
+    Optional<LayoutObjectDrawingRecorder> recorder;
+    if (backgroundObject != &m_layoutTableCell) {
+        LayoutPoint adjustedPaintOffset = paintRect.location();
+        if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutTableCell, type, adjustedPaintOffset))
+            return;
+        recorder.emplace(paintInfo.context, m_layoutTableCell, type, paintRect, adjustedPaintOffset);
+    } else {
+        ASSERT(paintRect.location() == paintOffset);
+    }
+
+    Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
+    const FillLayer& bgLayer = backgroundObject->style()->backgroundLayers();
     if (bgLayer.hasImage() || c.alpha()) {
         // We have to clip here because the background would paint
         // on top of the borders otherwise.  This only matters for cells and rows.
         bool shouldClip = backgroundObject->hasLayer() && (backgroundObject == &m_layoutTableCell || backgroundObject == m_layoutTableCell.parent()) && tableElt->collapseBorders();
-        GraphicsContextStateSaver stateSaver(*paintInfo.context, shouldClip);
+        GraphicsContextStateSaver stateSaver(paintInfo.context, shouldClip);
         if (shouldClip) {
             LayoutRect clipRect(paintRect.location(), m_layoutTableCell.size());
             clipRect.expand(m_layoutTableCell.borderInsets());
-            paintInfo.context->clip(pixelSnappedIntRect(clipRect));
+            paintInfo.context.clip(pixelSnappedIntRect(clipRect));
         }
         BoxPainter(m_layoutTableCell).paintFillLayers(paintInfo, c, bgLayer, paintRect, BackgroundBleedNone, SkXfermode::kSrcOver_Mode, backgroundObject);
     }
@@ -178,20 +188,20 @@ void TableCellPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, 
     if (!m_layoutTableCell.hasBackground() && !m_layoutTableCell.styleRef().boxShadow() && !needsToPaintBorder)
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, paintOffset))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, paintOffset))
         return;
 
     LayoutRect visualOverflowRect = m_layoutTableCell.visualOverflowRect();
     visualOverflowRect.moveBy(paintOffset);
     // TODO(chrishtr): the pixel-snapping here is likely incorrect.
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(visualOverflowRect), paintOffset);
+    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(visualOverflowRect), paintOffset);
 
     LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
 
     BoxPainter::paintBoxShadow(paintInfo, paintRect, m_layoutTableCell.styleRef(), Normal);
 
     // Paint our cell background.
-    paintBackgroundsBehindCell(paintInfo, paintOffset, &m_layoutTableCell);
+    paintBackgroundsBehindCell(paintInfo, paintOffset, &m_layoutTableCell, DisplayItem::BoxDecorationBackground);
 
     BoxPainter::paintBoxShadow(paintInfo, paintRect, m_layoutTableCell.styleRef(), Inset);
 
@@ -210,11 +220,11 @@ void TableCellPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& 
     if (!tableElt->collapseBorders() && m_layoutTableCell.style()->emptyCells() == HIDE && !m_layoutTableCell.firstChild())
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTableCell, paintInfo.phase, paintOffset))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutTableCell, paintInfo.phase, paintOffset))
         return;
 
     LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, paintInfo.phase, paintRect, paintOffset);
+    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutTableCell, paintInfo.phase, paintRect, paintOffset);
     BoxPainter(m_layoutTableCell).paintMaskImages(paintInfo, paintRect);
 }
 

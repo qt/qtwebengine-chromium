@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 
 #include "bindings/core/v8/ScriptFunction.h"
@@ -123,7 +122,7 @@ void WaitUntilObserver::waitUntil(ScriptState* scriptState, ScriptPromise script
     // timeframe specified by windowInteractionTimeout(), otherwise the calls
     // will fail.
     if (m_type == NotificationClick)
-        m_consumeWindowInteractionTimer.startOneShot(windowInteractionTimeout(), FROM_HERE);
+        m_consumeWindowInteractionTimer.startOneShot(windowInteractionTimeout(), BLINK_FROM_HERE);
 
     incrementPendingActivity();
     scriptPromise.then(

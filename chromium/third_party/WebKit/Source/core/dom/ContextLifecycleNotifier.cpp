@@ -25,7 +25,6 @@
  *
  */
 
-#include "config.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 
 #include "core/dom/ActiveDOMObject.h"
@@ -36,7 +35,7 @@ namespace blink {
 void ContextLifecycleNotifier::notifyResumingActiveDOMObjects()
 {
     TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
-    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    Vector<RawPtrWillBeUntracedMember<ContextLifecycleObserver>> snapshotOfObservers;
     copyToVector(m_observers, snapshotOfObservers);
     for (ContextLifecycleObserver* observer : snapshotOfObservers) {
         // FIXME: Oilpan: At the moment, it's possible that a ActiveDOMObject
@@ -59,7 +58,7 @@ void ContextLifecycleNotifier::notifyResumingActiveDOMObjects()
 void ContextLifecycleNotifier::notifySuspendingActiveDOMObjects()
 {
     TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
-    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    Vector<RawPtrWillBeUntracedMember<ContextLifecycleObserver>> snapshotOfObservers;
     copyToVector(m_observers, snapshotOfObservers);
     for (ContextLifecycleObserver* observer : snapshotOfObservers) {
         // It's possible that the ActiveDOMObject is already destructed.
@@ -78,7 +77,7 @@ void ContextLifecycleNotifier::notifySuspendingActiveDOMObjects()
 void ContextLifecycleNotifier::notifyStoppingActiveDOMObjects()
 {
     TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
-    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    Vector<RawPtrWillBeUntracedMember<ContextLifecycleObserver>> snapshotOfObservers;
     copyToVector(m_observers, snapshotOfObservers);
     for (ContextLifecycleObserver* observer : snapshotOfObservers) {
         // It's possible that the ActiveDOMObject is already destructed.

@@ -175,7 +175,7 @@ WebInspector.DOMStorageItemsView.prototype = {
             return;
 
         this._dataGrid = this._dataGridForDOMStorageItems(items);
-        this._dataGrid.show(this.element);
+        this._dataGrid.asWidget().show(this.element);
         this.deleteButton.setVisible(this._dataGrid.rootNode().children.length > 1);
     },
 
@@ -216,7 +216,6 @@ WebInspector.DOMStorageItemsView.prototype = {
             return;
 
         this._deleteCallback(this._dataGrid.selectedNode);
-        this._dataGrid.changeNodeAfterDeletion();
     },
 
     _refreshButtonClicked: function(event)

@@ -25,8 +25,6 @@
 #ifndef MediaElementAudioSourceNode_h
 #define MediaElementAudioSourceNode_h
 
-#if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioSourceNode.h"
 #include "platform/audio/AudioSourceProviderClient.h"
 #include "platform/audio/MultiChannelResampler.h"
@@ -119,7 +117,5 @@ private:
 };
 
 } // namespace blink
-
-#endif // ENABLE(WEB_AUDIO)
 
 #endif // MediaElementAudioSourceNode_h

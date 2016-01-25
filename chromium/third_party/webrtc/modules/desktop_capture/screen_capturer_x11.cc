@@ -18,6 +18,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
@@ -25,21 +26,10 @@
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
 #include "webrtc/modules/desktop_capture/x11/x_server_pixel_buffer.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
-
-// TODO(sergeyu): Move this to a header where it can be shared.
-#if defined(NDEBUG)
-#define RTC_DCHECK(condition) (void)(condition)
-#else  // NDEBUG
-#define RTC_DCHECK(condition) \
-  if (!(condition)) {         \
-    abort();                  \
-  }
-#endif
+#include "webrtc/system_wrappers/include/logging.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
-
 namespace {
 
 // A class to perform video frame capturing for Linux.

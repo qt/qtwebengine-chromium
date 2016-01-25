@@ -5,15 +5,24 @@
 #ifndef MEDIA_VIDEO_CAPTURE_LINUX_V4L2_VIDEO_CAPTURE_DELEGATE_H_
 #define MEDIA_VIDEO_CAPTURE_LINUX_V4L2_VIDEO_CAPTURE_DELEGATE_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/files/scoped_file.h"
+#include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "build/build_config.h"
+#include "media/capture/video/video_capture_device.h"
+
 #if defined(OS_OPENBSD)
 #include <sys/videoio.h>
 #else
 #include <linux/videodev2.h>
 #endif
 
-#include "base/files/scoped_file.h"
-#include "base/memory/ref_counted.h"
-#include "media/capture/video/video_capture_device.h"
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -61,7 +70,7 @@ class V4L2CaptureDelegate
     // specific.
     virtual bool Init(int fd, const v4l2_buffer& buffer) = 0;
 
-    uint8_t* const GetPlaneStart(size_t plane) const {
+    const uint8_t* GetPlaneStart(size_t plane) const {
       DCHECK_LT(plane, planes_.size());
       return planes_[plane].start;
     }
@@ -137,7 +146,8 @@ class V4L2CaptureDelegate
   // for filling in the planar-dependent parts.
   void FillV4L2Buffer(v4l2_buffer* buffer, int i) const;
   void DoCapture();
-  void SetErrorState(const std::string& reason);
+  void SetErrorState(const tracked_objects::Location& from_here,
+                     const std::string& reason);
 
   const v4l2_buf_type capture_type_;
   const scoped_refptr<base::SingleThreadTaskRunner> v4l2_task_runner_;

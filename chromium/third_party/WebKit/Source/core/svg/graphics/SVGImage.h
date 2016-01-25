@@ -42,7 +42,7 @@ class LayoutBox;
 class SVGImageChromeClient;
 class SVGImageForContainer;
 
-class SVGImage final : public Image {
+class SVGImage final : public Image, public DisplayItemClient {
 public:
     static PassRefPtr<SVGImage> create(ImageObserver* observer)
     {
@@ -54,8 +54,8 @@ public:
     LayoutBox* embeddedContentBox() const;
 
     bool isSVGImage() const override { return true; }
+    bool isTextureBacked() override { return false; }
     IntSize size() const override { return m_intrinsicSize; }
-    void setURL(const KURL& url) { m_url = url; }
 
     bool currentFrameHasSingleSecurityOrigin() const override;
 
@@ -77,8 +77,9 @@ public:
 
     void updateUseCounters(Document&) const;
 
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-    String debugName() const { return "SVGImage"; }
+    // DisplayItemClient methods.
+    String debugName() const final { return "SVGImage"; }
+    IntRect visualRect() const override;
 
 private:
     friend class AXLayoutObject;
@@ -89,7 +90,7 @@ private:
 
     String filenameExtension() const override;
 
-    void setContainerSize(const IntSize&) override;
+    void setContainerSize(const IntSize&);
     IntSize containerSize() const;
     bool usesContainerSize() const override { return true; }
     void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) override;
@@ -101,18 +102,20 @@ private:
     void destroyDecodedData(bool) override { }
 
     // FIXME: Implement this to be less conservative.
-    bool currentFrameKnownToBeOpaque() override { return false; }
+    bool currentFrameKnownToBeOpaque(MetadataMode = UseCurrentMetadata) override { return false; }
 
     SVGImage(ImageObserver*);
     void draw(SkCanvas*, const SkPaint&, const FloatRect& fromRect, const FloatRect& toRect, RespectImageOrientationEnum, ImageClampingMode) override;
-    void drawForContainer(SkCanvas*, const SkPaint&, const FloatSize, float, const FloatRect&, const FloatRect&);
-    void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
-        SkXfermode::Mode, const FloatRect&, const IntSize& repeatSpacing);
+    void drawForContainer(SkCanvas*, const SkPaint&, const FloatSize, float, const FloatRect&, const FloatRect&, const KURL&);
+    void drawPatternForContainer(GraphicsContext&, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
+        SkXfermode::Mode, const FloatRect&, const FloatSize& repeatSpacing, const KURL&);
+    PassRefPtr<SkImage> imageForCurrentFrameForContainer(const KURL&);
+    void drawInternal(SkCanvas*, const SkPaint&, const FloatRect& fromRect, const FloatRect& toRect, RespectImageOrientationEnum,
+        ImageClampingMode, const KURL&);
 
     OwnPtrWillBePersistent<SVGImageChromeClient> m_chromeClient;
     OwnPtrWillBePersistent<Page> m_page;
     IntSize m_intrinsicSize;
-    KURL m_url;
 };
 
 DEFINE_IMAGE_TYPE_CASTS(SVGImage);

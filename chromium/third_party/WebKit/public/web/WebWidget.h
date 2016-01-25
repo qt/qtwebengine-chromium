@@ -36,11 +36,11 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebFloatSize.h"
 #include "../platform/WebFrameTimingEvent.h"
+#include "../platform/WebInputEventResult.h"
 #include "../platform/WebPoint.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"
 #include "../platform/WebTopControlsState.h"
-#include "WebBeginFrameArgs.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
@@ -79,10 +79,6 @@ public:
     // keyboard to overlay over content but allow scrolling it into view.
     virtual void resizeVisualViewport(const WebSize&) { }
 
-    // TODO(bokan): Renamed to visual viewport above. Remove once chromium-side
-    // callers are renamed.
-    virtual void resizePinchViewport(const WebSize&) { }
-
     // Ends a group of resize events that was started with a call to
     // willStartLiveResize.
     virtual void willEndLiveResize() { }
@@ -93,11 +89,12 @@ public:
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
-    virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
+    virtual void beginFrame(double lastFrameTimeMonotonic) { }
 
-    // Called to layout the WebWidget. This MUST be called before Paint,
+    // Called to run through the entire set of document lifecycle phases needed
+    // to render a frame of the web widget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
-    virtual void layout() { }
+    virtual void updateAllLifecyclePhases() { }
 
     // Called to paint the rectangular region within the WebWidget
     // onto the specified canvas at (viewPort.x,viewPort.y). You MUST call
@@ -125,9 +122,8 @@ public:
     // on receiving this message
     virtual void themeChanged() { }
 
-    // Called to inform the WebWidget of an input event. Returns true if
-    // the event has been processed, false otherwise.
-    virtual bool handleInputEvent(const WebInputEvent&) { return false; }
+    // Called to inform the WebWidget of an input event.
+    virtual WebInputEventResult handleInputEvent(const WebInputEvent&) { return WebInputEventResult::NotHandled; }
 
     // Called to inform the WebWidget of the mouse cursor's visibility.
     virtual void setCursorVisibilityState(bool isVisible) { }

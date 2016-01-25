@@ -22,9 +22,9 @@
 #include <new>
 
 #include "webrtc/modules/video_capture/linux/video_capture_linux.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/ref_count.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/ref_count.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc
 {
@@ -280,10 +280,10 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
     //start capture thread;
     if (!_captureThread)
     {
-        _captureThread = ThreadWrapper::CreateThread(
-            VideoCaptureModuleV4L2::CaptureThread, this, "CaptureThread");
+        _captureThread.reset(new rtc::PlatformThread(
+            VideoCaptureModuleV4L2::CaptureThread, this, "CaptureThread"));
         _captureThread->Start();
-        _captureThread->SetPriority(kHighPriority);
+        _captureThread->SetPriority(rtc::kHighPriority);
     }
 
     // Needed to start UVC camera - from the uvcview application

@@ -5,10 +5,13 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 
+#include <stdint.h>
+
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/i18n/rtl.h"
+#include "build/build_config.h"
+#include "content/browser/webui/web_ui_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_message_enums.h"
 #include "content/public/browser/site_instance.h"
@@ -28,7 +31,9 @@ class Message;
 
 namespace content {
 class GeolocationServiceContext;
+class PageState;
 class RenderFrameHost;
+class WakeLockServiceContext;
 class WebContents;
 struct AXEventNotificationDetails;
 struct ContextMenuParams;
@@ -47,9 +52,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual const GURL& GetMainFrameLastCommittedURL() const;
 
   // A message was added to to the console.
-  virtual bool AddMessageToConsole(int32 level,
+  virtual bool AddMessageToConsole(int32_t level,
                                    const base::string16& message,
-                                   int32 line_no,
+                                   int32_t line_no,
                                    const base::string16& source_id);
 
   // Informs the delegate whenever a RenderFrameHost is created.
@@ -91,10 +96,14 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // level frame.
   virtual void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) {}
 
+  // The state for the page changed and should be updated in session history.
+  virtual void UpdateStateForFrame(RenderFrameHost* render_frame_host,
+                                   const PageState& page_state) {}
+
   // The page's title was changed and should be updated. Only called for the
   // top-level frame.
   virtual void UpdateTitle(RenderFrameHost* render_frame_host,
-                           int32 page_id,
+                           int32_t page_id,
                            const base::string16& title,
                            base::i18n::TextDirection title_direction) {}
 
@@ -136,6 +145,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Gets the GeolocationServiceContext associated with this delegate.
   virtual GeolocationServiceContext* GetGeolocationServiceContext();
 
+  // Gets the WakeLockServiceContext associated with this delegate.
+  virtual WakeLockServiceContext* GetWakeLockServiceContext();
+
   // Notification that the frame wants to go into fullscreen mode.
   // |origin| represents the origin of the frame that requests fullscreen.
   virtual void EnterFullscreenMode(const GURL& origin) {}
@@ -162,6 +174,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // refactoring for --site-per-process mode is further along.  See
   // https://crbug.com/330264.
   virtual void EnsureOpenerProxiesExist(RenderFrameHost* source_rfh) {}
+
+  // Creates a WebUI object for a frame navigating to |url|. If no WebUI
+  // applies, returns null.
+  virtual scoped_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(const GURL& url);
 
 #if defined(OS_WIN)
   // Returns the frame's parent's NativeViewAccessible.

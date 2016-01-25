@@ -6,51 +6,40 @@
  */
 #include "GrGLProgramDesc.h"
 
-#include "GrGLFragmentProcessor.h"
 #include "GrProcessor.h"
-#include "GrGLGpu.h"
 #include "GrPipeline.h"
 #include "SkChecksum.h"
-#include "gl/builders/GrGLFragmentShaderBuilder.h"
+#include "gl/GrGLDefines.h"
+#include "gl/GrGLTexture.h"
+#include "gl/GrGLTypes.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLCaps.h"
 
-/**
- * Do we need to either map r,g,b->a or a->r. configComponentMask indicates which channels are
- * present in the texture's config. swizzleComponentMask indicates the channels present in the
- * shader swizzle.
- */
-static bool swizzle_requires_alpha_remapping(const GrGLCaps& caps,
-                                             uint32_t configComponentMask,
-                                             uint32_t swizzleComponentMask) {
-    if (caps.textureSwizzleSupport()) {
-        // Any remapping is handled using texture swizzling not shader modifications.
-        return false;
-    }
-    // check if the texture is alpha-only
-    if (kA_GrColorComponentFlag == configComponentMask) {
-        if (caps.textureRedSupport() && (kA_GrColorComponentFlag & swizzleComponentMask)) {
-            // we must map the swizzle 'a's to 'r'.
-            return true;
-        }
-        if (kRGB_GrColorComponentFlags & swizzleComponentMask) {
-            // The 'r', 'g', and/or 'b's must be mapped to 'a' according to our semantics that
-            // alpha-only textures smear alpha across all four channels when read.
-            return true;
-        }
-    }
-    return false;
+static uint16_t texture_target_key(GrGLenum target) {
+    SkASSERT((uint32_t)target < SK_MaxU16);
+    return target;
 }
 
-static uint32_t gen_texture_key(const GrProcessor& proc, const GrGLCaps& caps) {
-    uint32_t key = 0;
+static void add_texture_key(GrProcessorKeyBuilder* b, const GrProcessor& proc,
+                            const GrGLSLCaps& caps) {
     int numTextures = proc.numTextures();
-    for (int t = 0; t < numTextures; ++t) {
-        const GrTextureAccess& access = proc.textureAccess(t);
-        uint32_t configComponentMask = GrPixelConfigComponentMask(access.getTexture()->config());
-        if (swizzle_requires_alpha_remapping(caps, configComponentMask, access.swizzleMask())) {
-            key |= 1 << t;
-        }
+    // Need two bytes per key (swizzle and target).
+    int word32Count = (proc.numTextures() + 1) / 2;
+    if (0 == word32Count) {
+        return;
     }
-    return key;
+    uint16_t* k16 = SkTCast<uint16_t*>(b->add32n(word32Count));
+    for (int i = 0; i < numTextures; ++i) {
+        const GrTextureAccess& access = proc.textureAccess(i);
+        GrGLTexture* texture = static_cast<GrGLTexture*>(access.getTexture());
+        k16[i] = caps.configTextureSwizzle(texture->config()).asKey() |
+                 (texture_target_key(texture->target()) << 16);
+    }
+    // zero the last 16 bits if the number of textures is odd.
+    if (numTextures & 0x1) {
+        k16[numTextures] = 0;
+    }
 }
 
 /**
@@ -59,59 +48,50 @@ static uint32_t gen_texture_key(const GrProcessor& proc, const GrGLCaps& caps) {
  * in its key (e.g. the pixel format of textures used). So we create a meta-key for
  * every effect using this function. It is also responsible for inserting the effect's class ID
  * which must be different for every GrProcessor subclass. It can fail if an effect uses too many
- * textures, transforms, etc, for the space allotted in the meta-key.  NOTE, both FPs and GPs share
- * this function because it is hairy, though FPs do not have attribs, and GPs do not have transforms
- *
- * TODO: A better name for this function  would be "compute" instead of "get".
+ * transforms, etc, for the space allotted in the meta-key.  NOTE, both FPs and GPs share this
+ * function because it is hairy, though FPs do not have attribs, and GPs do not have transforms
  */
-static bool get_meta_key(const GrProcessor& proc,
-                         const GrGLCaps& caps,
+static bool gen_meta_key(const GrProcessor& proc,
+                         const GrGLSLCaps& glslCaps,
                          uint32_t transformKey,
                          GrProcessorKeyBuilder* b) {
     size_t processorKeySize = b->size();
-    uint32_t textureKey = gen_texture_key(proc, caps);
     uint32_t classID = proc.classID();
 
-    // Currently we allow 16 bits for each of the above portions of the meta-key. Fail if they
-    // don't fit.
+    // Currently we allow 16 bits for the class id and the overall processor key size.
     static const uint32_t kMetaKeyInvalidMask = ~((uint32_t) SK_MaxU16);
-    if ((textureKey | transformKey | classID) & kMetaKeyInvalidMask) {
-        return false;
-    }
-    if (processorKeySize > SK_MaxU16) {
+    if ((processorKeySize | classID) & kMetaKeyInvalidMask) {
         return false;
     }
 
+    add_texture_key(b, proc, glslCaps);
+
     uint32_t* key = b->add32n(2);
-    key[0] = (textureKey << 16 | transformKey);
-    key[1] = (classID << 16 | SkToU16(processorKeySize));
+    key[0] = (classID << 16) | SkToU32(processorKeySize);
+    key[1] = transformKey;
     return true;
 }
 
-/*
- * TODO: A better name for this function  would be "compute" instead of "get".
- */
-static bool get_frag_proc_and_meta_keys(const GrPrimitiveProcessor& primProc,
+static bool gen_frag_proc_and_meta_keys(const GrPrimitiveProcessor& primProc,
                                         const GrFragmentProcessor& fp,
-                                        const GrGLCaps& caps,
+                                        const GrGLSLCaps& glslCaps,
                                         GrProcessorKeyBuilder* b) {
     for (int i = 0; i < fp.numChildProcessors(); ++i) {
-        if (!get_frag_proc_and_meta_keys(primProc, fp.childProcessor(i), caps, b)) {
+        if (!gen_frag_proc_and_meta_keys(primProc, fp.childProcessor(i), glslCaps, b)) {
             return false;
         }
     }
 
-    fp.getGLProcessorKey(*caps.glslCaps(), b);
+    fp.getGLSLProcessorKey(glslCaps, b);
 
-    //**** use glslCaps here?
-    return get_meta_key(fp, caps, primProc.getTransformKey(fp.coordTransforms(),
-                                                           fp.numTransformsExclChildren()), b);
+    return gen_meta_key(fp, glslCaps, primProc.getTransformKey(fp.coordTransforms(),
+                                                               fp.numTransformsExclChildren()), b);
 }
 
 bool GrGLProgramDescBuilder::Build(GrProgramDesc* desc,
                                    const GrPrimitiveProcessor& primProc,
                                    const GrPipeline& pipeline,
-                                   const GrGLGpu* gpu) {
+                                   const GrGLSLCaps& glslCaps) {
     // The descriptor is used as a cache key. Thus when a field of the
     // descriptor will not affect program generation (because of the attribute
     // bindings in use or other descriptor field settings) it should be set
@@ -126,25 +106,23 @@ bool GrGLProgramDescBuilder::Build(GrProgramDesc* desc,
 
     GrProcessorKeyBuilder b(&glDesc->key());
 
-    primProc.getGLProcessorKey(*gpu->glCaps().glslCaps(), &b);
-    //**** use glslCaps here?
-    if (!get_meta_key(primProc, gpu->glCaps(), 0, &b)) {
+    primProc.getGLSLProcessorKey(glslCaps, &b);
+    if (!gen_meta_key(primProc, glslCaps, 0, &b)) {
         glDesc->key().reset();
         return false;
     }
 
     for (int i = 0; i < pipeline.numFragmentProcessors(); ++i) {
         const GrFragmentProcessor& fp = pipeline.getFragmentProcessor(i);
-        if (!get_frag_proc_and_meta_keys(primProc, fp, gpu->glCaps(), &b)) {
+        if (!gen_frag_proc_and_meta_keys(primProc, fp, glslCaps, &b)) {
             glDesc->key().reset();
             return false;
         }
     }
 
-    const GrXferProcessor& xp = *pipeline.getXferProcessor();
-    xp.getGLProcessorKey(*gpu->glCaps().glslCaps(), &b);
-    //**** use glslCaps here?
-    if (!get_meta_key(xp, gpu->glCaps(), 0, &b)) {
+    const GrXferProcessor& xp = pipeline.getXferProcessor();
+    xp.getGLSLProcessorKey(glslCaps, &b);
+    if (!gen_meta_key(xp, glslCaps, 0, &b)) {
         glDesc->key().reset();
         return false;
     }
@@ -159,11 +137,20 @@ bool GrGLProgramDescBuilder::Build(GrProgramDesc* desc,
 
     if (pipeline.readsFragPosition()) {
         header->fFragPosKey =
-                GrGLFragmentShaderBuilder::KeyForFragmentPosition(pipeline.getRenderTarget(),
-                                                                  gpu->glCaps());
+                GrGLSLFragmentShaderBuilder::KeyForFragmentPosition(pipeline.getRenderTarget());
     } else {
         header->fFragPosKey = 0;
     }
+
+    header->fOutputSwizzle =
+        glslCaps.configOutputSwizzle(pipeline.getRenderTarget()->config()).asKey();
+
+    if (pipeline.ignoresCoverage()) {
+        header->fIgnoresCoverage = 1;
+    } else {
+        header->fIgnoresCoverage = 0;
+    }
+
     header->fSnapVerticesToPixelCenters = pipeline.snapVerticesToPixelCenters();
     header->fColorEffectCnt = pipeline.numColorFragmentProcessors();
     header->fCoverageEffectCnt = pipeline.numCoverageFragmentProcessors();

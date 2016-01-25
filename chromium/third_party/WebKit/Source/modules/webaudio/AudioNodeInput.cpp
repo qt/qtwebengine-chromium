@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioNodeInput.h"
-
 #include "modules/webaudio/AudioNodeOutput.h"
 #include <algorithm>
 
@@ -223,4 +220,3 @@ AudioBus* AudioNodeInput::pull(AudioBus* inPlaceBus, size_t framesToProcess)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

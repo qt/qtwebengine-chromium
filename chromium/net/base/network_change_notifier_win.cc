@@ -9,10 +9,12 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "net/base/winsock_init.h"
+#include "net/base/winsock_util.h"
 #include "net/dns/dns_config_service.h"
 
 #pragma comment(lib, "iphlpapi.lib")
@@ -291,6 +293,7 @@ bool NetworkChangeNotifierWin::WatchForAddressChangeInternal() {
       base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
   }
 
+  ResetEventIfSignaled(addr_overlapped_.hEvent);
   HANDLE handle = NULL;
   DWORD ret = NotifyAddrChange(&handle, &addr_overlapped_);
   if (ret != ERROR_IO_PENDING)

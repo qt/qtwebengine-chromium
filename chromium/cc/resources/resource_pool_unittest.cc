@@ -4,6 +4,8 @@
 
 #include "cc/resources/resource_pool.h"
 
+#include <stddef.h>
+
 #include "base/run_loop.h"
 #include "base/thread_task_runner_handle.h"
 #include "cc/resources/resource_util.h"
@@ -26,8 +28,8 @@ class ResourcePoolTest : public testing::Test {
     resource_provider_ = FakeResourceProvider::Create(
         output_surface_.get(), shared_bitmap_manager_.get());
     task_runner_ = base::ThreadTaskRunnerHandle::Get();
-    resource_pool_ = ResourcePool::Create(resource_provider_.get(),
-                                          task_runner_.get(), GL_TEXTURE_2D);
+    resource_pool_ =
+        ResourcePool::Create(resource_provider_.get(), task_runner_.get());
   }
 
  protected:

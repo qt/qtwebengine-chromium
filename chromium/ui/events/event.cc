@@ -4,6 +4,8 @@
 
 #include "ui/events/event.h"
 
+#include <utility>
+
 #if defined(USE_X11)
 #include <X11/extensions/XInput2.h>
 #include <X11/keysym.h>
@@ -15,6 +17,7 @@
 
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/dom/dom_code.h"
@@ -30,8 +33,8 @@
 #if defined(USE_X11)
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #elif defined(USE_OZONE)
-#include "ui/events/ozone/layout/keyboard_layout_engine.h"
-#include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+#include "ui/events/ozone/layout/keyboard_layout_engine.h"  // nogncheck
+#include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"  // nogncheck
 #endif
 
 namespace {
@@ -320,18 +323,22 @@ void LocatedEvent::UpdateForRootTransform(
 MouseEvent::MouseEvent(const base::NativeEvent& native_event)
     : LocatedEvent(native_event),
       changed_button_flags_(GetChangedMouseButtonFlagsFromNative(native_event)),
-      pointer_details_(PointerDetails(EventPointerType::POINTER_TYPE_MOUSE)) {
+      pointer_details_(GetMousePointerDetailsFromNative(native_event)) {
   if (type() == ET_MOUSE_PRESSED || type() == ET_MOUSE_RELEASED)
     SetClickCount(GetRepeatCount(*this));
 }
 
 MouseEvent::MouseEvent(EventType type,
-                       const gfx::PointF& location,
-                       const gfx::PointF& root_location,
+                       const gfx::Point& location,
+                       const gfx::Point& root_location,
                        base::TimeDelta time_stamp,
                        int flags,
                        int changed_button_flags)
-    : LocatedEvent(type, location, root_location, time_stamp, flags),
+    : LocatedEvent(type,
+                   gfx::PointF(location),
+                   gfx::PointF(root_location),
+                   time_stamp,
+                   flags),
       changed_button_flags_(changed_button_flags),
       pointer_details_(PointerDetails(EventPointerType::POINTER_TYPE_MOUSE)) {
   if (this->type() == ET_MOUSE_MOVED && IsAnyButton())
@@ -485,8 +492,8 @@ MouseWheelEvent::MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event)
 }
 
 MouseWheelEvent::MouseWheelEvent(const gfx::Vector2d& offset,
-                                 const gfx::PointF& location,
-                                 const gfx::PointF& root_location,
+                                 const gfx::Point& location,
+                                 const gfx::Point& root_location,
                                  base::TimeDelta time_stamp,
                                  int flags,
                                  int changed_button_flags)
@@ -496,8 +503,7 @@ MouseWheelEvent::MouseWheelEvent(const gfx::Vector2d& offset,
                  time_stamp,
                  flags,
                  changed_button_flags),
-      offset_(offset) {
-}
+      offset_(offset) {}
 
 #if defined(OS_WIN)
 // This value matches windows WHEEL_DELTA.
@@ -535,10 +541,14 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
 }
 
 TouchEvent::TouchEvent(EventType type,
-                       const gfx::PointF& location,
+                       const gfx::Point& location,
                        int touch_id,
                        base::TimeDelta time_stamp)
-    : LocatedEvent(type, location, location, time_stamp, 0),
+    : LocatedEvent(type,
+                   gfx::PointF(location),
+                   gfx::PointF(location),
+                   time_stamp,
+                   0),
       touch_id_(touch_id),
       unique_event_id_(ui::GetNextTouchEventId()),
       rotation_angle_(0.0f),
@@ -549,7 +559,7 @@ TouchEvent::TouchEvent(EventType type,
 }
 
 TouchEvent::TouchEvent(EventType type,
-                       const gfx::PointF& location,
+                       const gfx::Point& location,
                        int flags,
                        int touch_id,
                        base::TimeDelta time_stamp,
@@ -557,7 +567,11 @@ TouchEvent::TouchEvent(EventType type,
                        float radius_y,
                        float angle,
                        float force)
-    : LocatedEvent(type, location, location, time_stamp, flags),
+    : LocatedEvent(type,
+                   gfx::PointF(location),
+                   gfx::PointF(location),
+                   time_stamp,
+                   flags),
       touch_id_(touch_id),
       unique_event_id_(ui::GetNextTouchEventId()),
       rotation_angle_(angle),
@@ -750,7 +764,7 @@ KeyEvent& KeyEvent::operator=(const KeyEvent& rhs) {
 KeyEvent::~KeyEvent() {}
 
 void KeyEvent::SetExtendedKeyEventData(scoped_ptr<ExtendedKeyEventData> data) {
-  extended_key_event_data_ = data.Pass();
+  extended_key_event_data_ = std::move(data);
 }
 
 void KeyEvent::ApplyLayout() const {
@@ -759,7 +773,7 @@ void KeyEvent::ApplyLayout() const {
     // Catch old code that tries to do layout without a physical key, and try
     // to recover using the KeyboardCode. Once key events are fully defined
     // on construction (see TODO in event.h) this will go away.
-    LOG(WARNING) << "DomCode::NONE keycode=" << key_code_;
+    VLOG(2) << "DomCode::NONE keycode=" << key_code_;
     code = UsLayoutKeyboardCodeToDomCode(key_code_);
     if (code == DomCode::NONE) {
       key_ = DomKey::UNIDENTIFIED;
@@ -812,6 +826,21 @@ base::char16 KeyEvent::GetCharacter() const {
     DomKey::Base utf32_character = key_.ToCharacter();
     base::char16 ucs2_character = static_cast<base::char16>(utf32_character);
     DCHECK(static_cast<DomKey::Base>(ucs2_character) == utf32_character);
+    // Check if the control character is down. Note that ALTGR is represented
+    // on Windows as CTRL|ALT, so we need to make sure that is not set.
+    if ((flags() & (EF_ALTGR_DOWN | EF_CONTROL_DOWN)) == EF_CONTROL_DOWN) {
+      // For a control character, key_ contains the corresponding printable
+      // character. To preserve existing behaviour for now, return the control
+      // character here; this will likely change -- see e.g. crbug.com/471488.
+      if (ucs2_character >= 0x40 && ucs2_character <= 0x7A)
+        return ucs2_character & 0x1F;
+      if (ucs2_character == '\r')
+        return '\n';
+      // Transitionally, if key_ contains another control character, return it.
+      if (ucs2_character >= 0 && ucs2_character <= 0x1F)
+        return ucs2_character;
+      return 0;
+    }
     return ucs2_character;
   }
   return 0;
@@ -843,7 +872,7 @@ bool KeyEvent::IsUnicodeKeyCode() const {
   // Check whether the user is using the numeric keypad with num-lock off.
   // In that case, EF_EXTENDED will not be set; if it is set, the key event
   // originated from the relevant non-numpad dedicated key, e.g. [Insert].
-  return (!(flags() & EF_EXTENDED) &&
+  return (!(flags() & EF_IS_EXTENDED_KEY) &&
           (key == VKEY_INSERT || key == VKEY_END  || key == VKEY_DOWN ||
            key == VKEY_NEXT   || key == VKEY_LEFT || key == VKEY_CLEAR ||
            key == VKEY_RIGHT  || key == VKEY_HOME || key == VKEY_UP ||
@@ -865,9 +894,6 @@ void KeyEvent::NormalizeFlags() {
     case VKEY_MENU:
       mask = EF_ALT_DOWN;
       break;
-    case VKEY_CAPITAL:
-      mask = EF_CAPS_LOCK_DOWN;
-      break;
     default:
       return;
   }
@@ -881,7 +907,7 @@ KeyboardCode KeyEvent::GetLocatedWindowsKeyboardCode() const {
   return NonLocatedToLocatedKeyboardCode(key_code_, code_);
 }
 
-uint16 KeyEvent::GetConflatedWindowsKeyCode() const {
+uint16_t KeyEvent::GetConflatedWindowsKeyCode() const {
   if (is_char_)
     return key_.ToCharacter();
   return key_code_;
@@ -895,7 +921,12 @@ std::string KeyEvent::GetCodeString() const {
 // ScrollEvent
 
 ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
-    : MouseEvent(native_event) {
+    : MouseEvent(native_event),
+      x_offset_(0.0f),
+      y_offset_(0.0f),
+      x_offset_ordinal_(0.0f),
+      y_offset_ordinal_(0.0f),
+      finger_count_(0) {
   if (type() == ET_SCROLL) {
     GetScrollOffsets(native_event,
                      &x_offset_, &y_offset_,
@@ -914,7 +945,7 @@ ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
 }
 
 ScrollEvent::ScrollEvent(EventType type,
-                         const gfx::PointF& location,
+                         const gfx::Point& location,
                          base::TimeDelta time_stamp,
                          int flags,
                          float x_offset,

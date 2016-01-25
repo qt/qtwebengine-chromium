@@ -4,13 +4,18 @@
 
 #include "mojo/services/network/network_context.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "mojo/common/user_agent.h"
@@ -43,8 +48,8 @@ const char kLogNetLog[] = "log-net-log";
 const char kTestingFixedHttpPort[] = "testing-fixed-http-port";
 const char kTestingFixedHttpsPort[] = "testing-fixed-https-port";
 
-uint16 GetPortNumber(const base::CommandLine& command_line,
-                     const base::StringPiece& switch_name) {
+uint16_t GetPortNumber(const base::CommandLine& command_line,
+                       const base::StringPiece& switch_name) {
   std::string port_str = command_line.GetSwitchValueASCII(switch_name);
   unsigned port;
   if (!base::StringToUint(port_str, &port) || port > 65535) {
@@ -52,7 +57,7 @@ uint16 GetPortNumber(const base::CommandLine& command_line,
                << port_str << "' is not a valid port number.";
     return 0;
   }
-  return static_cast<uint16>(port);
+  return static_cast<uint16_t>(port);
 }
 
 }  // namespace
@@ -79,7 +84,7 @@ class NetworkContext::MojoNetLog : public net::NetLog {
       write_to_file_observer_.reset(new net::WriteToFileNetLogObserver());
       write_to_file_observer_->set_capture_mode(
           net::NetLogCaptureMode::IncludeCookiesAndCredentials());
-      write_to_file_observer_->StartObserving(this, file.Pass(), nullptr,
+      write_to_file_observer_->StartObserving(this, std::move(file), nullptr,
                                               nullptr);
     }
   }
@@ -98,7 +103,7 @@ class NetworkContext::MojoNetLog : public net::NetLog {
 NetworkContext::NetworkContext(
     scoped_ptr<net::URLRequestContext> url_request_context)
     : net_log_(new MojoNetLog),
-      url_request_context_(url_request_context.Pass()),
+      url_request_context_(std::move(url_request_context)),
       in_shutdown_(false) {
   url_request_context_->set_net_log(net_log_.get());
 }
@@ -165,10 +170,10 @@ scoped_ptr<net::URLRequestContext> NetworkContext::MakeURLRequestContext(
     scoped_ptr<net::HostResolver> host_resolver(
         net::HostResolver::CreateDefaultResolver(nullptr));
     scoped_ptr<net::MappedHostResolver> remapped_host_resolver(
-        new net::MappedHostResolver(host_resolver.Pass()));
+        new net::MappedHostResolver(std::move(host_resolver)));
     remapped_host_resolver->SetRulesFromString(
         command_line->GetSwitchValueASCII(kHostResolverRules));
-    builder.set_host_resolver(remapped_host_resolver.Pass());
+    builder.set_host_resolver(std::move(remapped_host_resolver));
   }
 
   builder.set_accept_language("en-us,en");
@@ -209,7 +214,7 @@ scoped_ptr<net::URLRequestContext> NetworkContext::MakeURLRequestContext(
         new net::CookieMonster(cookie_store, nullptr), nullptr);
   }
 
-  return builder.Build().Pass();
+  return builder.Build();
 }
 
 }  // namespace mojo

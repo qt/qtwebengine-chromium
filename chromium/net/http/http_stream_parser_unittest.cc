@@ -5,15 +5,16 @@
 #include "net/http/http_stream_parser.h"
 
 #include <stdint.h>
-
 #include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
@@ -51,14 +52,13 @@ scoped_ptr<ClientSocketHandle> CreateConnectedSocketHandle(
 
   scoped_ptr<MockTCPClientSocket> socket(
       new MockTCPClientSocket(net::AddressList(), nullptr, data));
-  data->set_socket(socket.get());
 
   TestCompletionCallback callback;
   EXPECT_EQ(OK, socket->Connect(callback.callback()));
 
   scoped_ptr<ClientSocketHandle> socket_handle(new ClientSocketHandle);
-  socket_handle->SetSocket(socket.Pass());
-  return socket_handle.Pass();
+  socket_handle->SetSocket(std::move(socket));
+  return socket_handle;
 }
 
 // The empty payload is how the last chunk is encoded.
@@ -126,9 +126,9 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_NoBody) {
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_EmptyBody) {
-  ScopedVector<UploadElementReader> element_readers;
-  scoped_ptr<UploadDataStream> body(
-      new ElementsUploadDataStream(element_readers.Pass(), 0));
+  std::vector<scoped_ptr<UploadElementReader>> element_readers;
+  scoped_ptr<UploadDataStream> body(make_scoped_ptr(
+      new ElementsUploadDataStream(std::move(element_readers), 0)));
   ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Shouldn't be merged if upload data is empty.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
@@ -146,22 +146,21 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_ChunkedBody) {
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_FileBody) {
+  // Create an empty temporary file.
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath temp_file_path;
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(), &temp_file_path));
+
   {
-    ScopedVector<UploadElementReader> element_readers;
+    std::vector<scoped_ptr<UploadElementReader>> element_readers;
 
-    // Create an empty temporary file.
-    base::ScopedTempDir temp_dir;
-    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-    base::FilePath temp_file_path;
-    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(),
-                                               &temp_file_path));
-
-    element_readers.push_back(
+    element_readers.push_back(make_scoped_ptr(
         new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
-                                    temp_file_path, 0, 0, base::Time()));
+                                    temp_file_path, 0, 0, base::Time())));
 
     scoped_ptr<UploadDataStream> body(
-        new ElementsUploadDataStream(element_readers.Pass(), 0));
+        new ElementsUploadDataStream(std::move(element_readers), 0));
     TestCompletionCallback callback;
     ASSERT_EQ(ERR_IO_PENDING, body->Init(callback.callback()));
     ASSERT_EQ(OK, callback.WaitForResult());
@@ -169,18 +168,19 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_FileBody) {
     ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
         "some header", body.get()));
   }
+
   // UploadFileElementReaders may post clean-up tasks on destruction.
   base::RunLoop().RunUntilIdle();
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_SmallBodyInMemory) {
-  ScopedVector<UploadElementReader> element_readers;
+  std::vector<scoped_ptr<UploadElementReader>> element_readers;
   const std::string payload = "123";
-  element_readers.push_back(new UploadBytesElementReader(
-      payload.data(), payload.size()));
+  element_readers.push_back(make_scoped_ptr(
+      new UploadBytesElementReader(payload.data(), payload.size())));
 
   scoped_ptr<UploadDataStream> body(
-      new ElementsUploadDataStream(element_readers.Pass(), 0));
+      new ElementsUploadDataStream(std::move(element_readers), 0));
   ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Yes, should be merged if the in-memory body is small here.
   ASSERT_TRUE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
@@ -188,13 +188,13 @@ TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_SmallBodyInMemory) {
 }
 
 TEST(HttpStreamParser, ShouldMergeRequestHeadersAndBody_LargeBodyInMemory) {
-  ScopedVector<UploadElementReader> element_readers;
+  std::vector<scoped_ptr<UploadElementReader>> element_readers;
   const std::string payload(10000, 'a');  // 'a' x 10000.
-  element_readers.push_back(new UploadBytesElementReader(
-      payload.data(), payload.size()));
+  element_readers.push_back(make_scoped_ptr(
+      new UploadBytesElementReader(payload.data(), payload.size())));
 
   scoped_ptr<UploadDataStream> body(
-      new ElementsUploadDataStream(element_readers.Pass(), 0));
+      new ElementsUploadDataStream(std::move(element_readers), 0));
   ASSERT_EQ(OK, body->Init(CompletionCallback()));
   // Shouldn't be merged if the in-memory body is large here.
   ASSERT_FALSE(HttpStreamParser::ShouldMergeRequestHeadersAndBody(
@@ -333,9 +333,10 @@ TEST(HttpStreamParser, SentBytesPost) {
   scoped_ptr<ClientSocketHandle> socket_handle =
       CreateConnectedSocketHandle(&data);
 
-  ScopedVector<UploadElementReader> element_readers;
-  element_readers.push_back(new UploadBytesElementReader("hello world!", 12));
-  ElementsUploadDataStream upload_data_stream(element_readers.Pass(), 0);
+  std::vector<scoped_ptr<UploadElementReader>> element_readers;
+  element_readers.push_back(
+      make_scoped_ptr(new UploadBytesElementReader("hello world!", 12)));
+  ElementsUploadDataStream upload_data_stream(std::move(element_readers), 0);
   ASSERT_EQ(OK, upload_data_stream.Init(TestCompletionCallback().callback()));
 
   HttpRequestInfo request;
@@ -1034,12 +1035,12 @@ TEST(HttpStreamParser, ReceivedBytesNormal) {
   get_runner.AddRead(response);
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
-  int64 headers_size = headers.size();
+  int64_t headers_size = headers.size();
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
   int body_size = body.size();
   int read_lengths[] = {body_size, 0};
   get_runner.ReadBody(body_size, read_lengths);
-  int64 response_size = response.size();
+  int64_t response_size = response.size();
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
 }
 
@@ -1058,14 +1059,14 @@ TEST(HttpStreamParser, ReceivedBytesExcludesNextResponse) {
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
   EXPECT_EQ(39, get_runner.parser()->received_bytes());
-  int64 headers_size = headers.size();
+  int64_t headers_size = headers.size();
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
   int body_size = body.size();
   int read_lengths[] = {body_size, 0};
   get_runner.ReadBody(body_size, read_lengths);
-  int64 response_size = response.size();
+  int64_t response_size = response.size();
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
-  int64 next_response_size = next_response.size();
+  int64_t next_response_size = next_response.size();
   EXPECT_EQ(next_response_size, get_runner.read_buffer()->offset());
 }
 
@@ -1079,7 +1080,7 @@ TEST(HttpStreamParser, ReceivedBytesExcludesNextResponse) {
 TEST(HttpStreamParser, ReceivedBytesMultiReadExcludesNextResponse) {
   std::string headers = "HTTP/1.1 200 OK\r\n"
       "Content-Length: 36\r\n\r\n";
-  int64 user_buf_len = 32;
+  int64_t user_buf_len = 32;
   std::string body_start = std::string(user_buf_len, '#');
   int body_start_size = body_start.size();
   EXPECT_EQ(user_buf_len, body_start_size);
@@ -1093,14 +1094,14 @@ TEST(HttpStreamParser, ReceivedBytesMultiReadExcludesNextResponse) {
   get_runner.AddRead(response_end);
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
-  int64 headers_size = headers.size();
+  int64_t headers_size = headers.size();
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
   int body_end_size = body_end.size();
   int read_lengths[] = {body_start_size, body_end_size, 0};
   get_runner.ReadBody(body_start_size, read_lengths);
-  int64 response_size = response_start.size() + body_end_size;
+  int64_t response_size = response_start.size() + body_end_size;
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
-  int64 next_response_size = next_response.size();
+  int64_t next_response_size = next_response.size();
   EXPECT_EQ(next_response_size, get_runner.read_buffer()->offset());
 }
 
@@ -1120,14 +1121,14 @@ TEST(HttpStreamParser, ReceivedBytesFromReadBufExcludesNextResponse) {
   get_runner.AddInitialData(data);
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
-  int64 headers_size = headers.size();
+  int64_t headers_size = headers.size();
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
   int body_size = body.size();
   int read_lengths[] = {body_size, 0};
   get_runner.ReadBody(body_size, read_lengths);
-  int64 response_size = response.size();
+  int64_t response_size = response.size();
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
-  int64 next_response_size = next_response.size();
+  int64_t next_response_size = next_response.size();
   EXPECT_EQ(next_response_size, get_runner.read_buffer()->offset());
 }
 
@@ -1136,7 +1137,7 @@ TEST(HttpStreamParser, ReceivedBytesFromReadBufExcludesNextResponse) {
 TEST(HttpStreamParser, ReceivedBytesUseReadBuf) {
   std::string buffer = "HTTP/1.1 200 OK\r\n";
   std::string remaining_headers = "Content-Length: 7\r\n\r\n";
-  int64 headers_size = buffer.size() + remaining_headers.size();
+  int64_t headers_size = buffer.size() + remaining_headers.size();
   std::string body = "content";
   std::string response = remaining_headers + body;
 
@@ -1171,9 +1172,9 @@ TEST(HttpStreamParser, ReceivedBytesChunkedTransferExcludesNextResponse) {
   get_runner.ReadHeaders();
   int read_lengths[] = {4, 3, 6, 2, 6, 0};
   get_runner.ReadBody(7, read_lengths);
-  int64 response_size = response.size();
+  int64_t response_size = response.size();
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
-  int64 next_response_size = next_response.size();
+  int64_t next_response_size = next_response.size();
   EXPECT_EQ(next_response_size, get_runner.read_buffer()->offset());
 }
 
@@ -1199,11 +1200,11 @@ TEST(HttpStreamParser, ReceivedBytesMultipleReads) {
     get_runner.AddRead(blocks[i]);
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
-  int64 headers_size = headers.size();
+  int64_t headers_size = headers.size();
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
   int read_lengths[] = {1, 4, 4, 4, 4, 4, 4, 4, 4, 0};
   get_runner.ReadBody(receive_length + 1, read_lengths);
-  int64 response_size = response.size();
+  int64_t response_size = response.size();
   EXPECT_EQ(response_size, get_runner.parser()->received_bytes());
 }
 
@@ -1212,7 +1213,7 @@ TEST(HttpStreamParser, ReceivedBytesIncludesContinueHeader) {
   std::string status100 = "HTTP/1.1 100 OK\r\n\r\n";
   std::string headers = "HTTP/1.1 200 OK\r\n"
       "Content-Length: 7\r\n\r\n";
-  int64 headers_size = status100.size() + headers.size();
+  int64_t headers_size = status100.size() + headers.size();
   std::string body = "content";
   std::string response = headers + body;
 
@@ -1222,12 +1223,12 @@ TEST(HttpStreamParser, ReceivedBytesIncludesContinueHeader) {
   get_runner.SetupParserAndSendRequest();
   get_runner.ReadHeaders();
   EXPECT_EQ(100, get_runner.response_info()->headers->response_code());
-  int64 status100_size = status100.size();
+  int64_t status100_size = status100.size();
   EXPECT_EQ(status100_size, get_runner.parser()->received_bytes());
   get_runner.ReadHeaders();
   EXPECT_EQ(200, get_runner.response_info()->headers->response_code());
   EXPECT_EQ(headers_size, get_runner.parser()->received_bytes());
-  int64 response_size = headers_size + body.size();
+  int64_t response_size = headers_size + body.size();
   int body_size = body.size();
   int read_lengths[] = {body_size, 0};
   get_runner.ReadBody(body_size, read_lengths);

@@ -8,14 +8,17 @@
 #include "base/android/jni_android.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
 class Size;
 }
 
 namespace blimp {
+namespace client {
 
 class BlimpCompositorAndroid;
+class RenderWidgetFeature;
 
 // The native component of org.chromium.blimp.BlimpView.  This builds and
 // maintains a BlimpCompositorAndroid and handles notifying the compositor of
@@ -33,26 +36,65 @@ class BlimpView {
             const base::android::JavaParamRef<jobject>& jobj,
             const gfx::Size& real_size,
             const gfx::Size& size,
-            float dp_to_px);
+            float dp_to_px,
+            RenderWidgetFeature* render_widget_feature);
 
   // Methods called from Java via JNI.
-  void Destroy(JNIEnv* env, jobject jobj);
-  void SetNeedsComposite(JNIEnv* env, jobject jobj);
+  void Destroy(JNIEnv* env, const base::android::JavaParamRef<jobject>& jobj);
+  void SetNeedsComposite(JNIEnv* env,
+                         const base::android::JavaParamRef<jobject>& jobj);
   void OnSurfaceChanged(JNIEnv* env,
-                        jobject jobj,
+                        const base::android::JavaParamRef<jobject>& jobj,
                         jint format,
                         jint width,
                         jint height,
-                        jobject jsurface);
-  void OnSurfaceCreated(JNIEnv* env, jobject jobj);
-  void OnSurfaceDestroyed(JNIEnv* env, jobject jobj);
-  void SetVisibility(JNIEnv* env, jobject jobj, jboolean visible);
+                        const base::android::JavaParamRef<jobject>& jsurface);
+  void OnSurfaceCreated(JNIEnv* env,
+                        const base::android::JavaParamRef<jobject>& jobj);
+  void OnSurfaceDestroyed(JNIEnv* env,
+                          const base::android::JavaParamRef<jobject>& jobj);
+  void SetVisibility(JNIEnv* env,
+                     const base::android::JavaParamRef<jobject>& jobj,
+                     jboolean visible);
+  jboolean OnTouchEvent(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      const base::android::JavaParamRef<jobject>& motion_event,
+      jlong time_ms,
+      jint android_action,
+      jint pointer_count,
+      jint history_size,
+      jint action_index,
+      jfloat pos_x_0,
+      jfloat pos_y_0,
+      jfloat pos_x_1,
+      jfloat pos_y_1,
+      jint pointer_id_0,
+      jint pointer_id_1,
+      jfloat touch_major_0,
+      jfloat touch_major_1,
+      jfloat touch_minor_0,
+      jfloat touch_minor_1,
+      jfloat orientation_0,
+      jfloat orientation_1,
+      jfloat tilt_0,
+      jfloat tilt_1,
+      jfloat raw_pos_x,
+      jfloat raw_pos_y,
+      jint android_tool_type_0,
+      jint android_tool_type_1,
+      jint android_button_state,
+      jint android_meta_state);
 
  private:
   virtual ~BlimpView();
 
+  void ReleaseAcceleratedWidget();
+
   // Reference to the Java object which owns this class.
   base::android::ScopedJavaGlobalRef<jobject> java_obj_;
+
+  const float device_scale_factor_;
 
   scoped_ptr<BlimpCompositorAndroid> compositor_;
 
@@ -60,9 +102,12 @@ class BlimpView {
   // android.graphics.PixelFormat.java.
   int current_surface_format_;
 
+  gfx::AcceleratedWidget window_;
+
   DISALLOW_COPY_AND_ASSIGN(BlimpView);
 };
 
+}  // namespace client
 }  // namespace blimp
 
 #endif  // BLIMP_CLIENT_ANDROID_BLIMP_VIEW_H_

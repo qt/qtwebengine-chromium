@@ -1,6 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="fa">
+<translation id="111910763555783249">تنظیمات اعلان</translation>
 <translation id="1127811143501539442">{DAYS,plural, =1{۱ روز قبل}one{# روز قبل}other{# روز قبل}}</translation>
 <translation id="1167268268675672572">حرکت به ابتدای خط و اصلاح انتخاب</translation>
 <translation id="1190609913194133056">مرکز اعلان</translation>
@@ -129,7 +130,7 @@
 <translation id="8328145009876646418">حاشیه چپ</translation>
 <translation id="8331626408530291785">پیمایش به بالا</translation>
 <translation id="8371695176452482769">اکنون صحبت کنید</translation>
-<translation id="8394908167088220973">پخش/توقف موقت رسانه</translation>
+<translation id="8394908167088220973">پخش/مکث رسانه</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8428213095426709021">تنظیمات</translation>
 <translation id="8447116497070723931">PgUp</translation>

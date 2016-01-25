@@ -116,9 +116,9 @@ public:
     Color inactiveListBoxSelectionBackgroundColor() const;
     Color inactiveListBoxSelectionForegroundColor() const;
 
-    // Highlighting colors for TextMatches.
-    virtual Color platformActiveTextSearchHighlightColor() const;
-    virtual Color platformInactiveTextSearchHighlightColor() const;
+    // Highlight and text colors for TextMatches.
+    Color platformTextSearchHighlightColor(bool activeMatch) const;
+    Color platformTextSearchColor(bool activeMatch) const;
 
     Color focusRingColor() const;
     virtual Color platformFocusRingColor() const { return Color(0, 0, 0); }
@@ -200,8 +200,7 @@ protected:
     virtual Color platformActiveListBoxSelectionForegroundColor() const;
     virtual Color platformInactiveListBoxSelectionForegroundColor() const;
 
-    // A method asking if the theme is able to draw the focus ring.
-    virtual bool supportsFocusRing(const ComputedStyle&) const = 0;
+    virtual bool themeDrawsFocusRing(const ComputedStyle&) const = 0;
 
 #if !USE(NEW_THEME)
     // Methods for each appearance value.

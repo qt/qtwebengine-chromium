@@ -39,6 +39,15 @@ WebInspector.SourcesPanel = function(workspaceForTest)
     this._workspace = workspaceForTest || WebInspector.workspace;
     this._networkMapping = WebInspector.networkMapping;
 
+    this._runSnippetAction = WebInspector.actionRegistry.action("debugger.run-snippet");
+    this._togglePauseAction = WebInspector.actionRegistry.action("debugger.toggle-pause");
+    this._stepOverAction = WebInspector.actionRegistry.action("debugger.step-over");
+    this._stepIntoAction = WebInspector.actionRegistry.action("debugger.step-into");
+    this._stepOutAction = WebInspector.actionRegistry.action("debugger.step-out");
+    this._toggleBreakpointsActiveAction = WebInspector.actionRegistry.action("debugger.toggle-breakpoints-active");
+    this._toggleBreakpointsActiveAction.setToggled(false);
+    this._toggleBreakpointsActiveAction.setTitle(WebInspector.UIString("Deactivate breakpoints"));
+
     this._debugToolbar = this._createDebugToolbar();
     this._debugToolbarDrawer = this._createDebugToolbarDrawer();
 
@@ -98,7 +107,6 @@ WebInspector.SourcesPanel = function(workspaceForTest)
     WebInspector.breakpointManager.addEventListener(WebInspector.BreakpointManager.Events.BreakpointsActiveStateChanged, this._breakpointsActiveStateChanged, this);
     WebInspector.context.addFlavorChangeListener(WebInspector.Target, this._onCurrentTargetChanged, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerWasEnabled, this._debuggerWasEnabled, this);
-    WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerWasDisabled, this._debuggerReset, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerPaused, this._debuggerPaused, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.DebuggerResumed, this._debuggerResumed, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.CallFrameSelected, this._callFrameSelected, this);
@@ -108,6 +116,8 @@ WebInspector.SourcesPanel = function(workspaceForTest)
     WebInspector.extensionServer.addEventListener(WebInspector.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
     WebInspector.DataSaverInfobar.maybeShowInPanel(this);
 }
+
+WebInspector.SourcesPanel._lastModificationTimeout = 200;
 
 WebInspector.SourcesPanel.minToolbarWidth = 215;
 
@@ -372,6 +382,11 @@ WebInspector.SourcesPanel.prototype = {
         this._ignoreExecutionLineEvents = ignoreExecutionLineEvents;
     },
 
+    updateLastModificationTime: function()
+    {
+        this._lastModificationTime = window.performance.now();
+    },
+
     /**
      * @param {!WebInspector.UILocation} uiLocation
      */
@@ -379,9 +394,19 @@ WebInspector.SourcesPanel.prototype = {
     {
         this._sourcesView.clearCurrentExecutionLine();
         this._sourcesView.setExecutionLocation(uiLocation);
-        if (this._ignoreExecutionLineEvents)
+        if (window.performance.now() - this._lastModificationTime < WebInspector.SourcesPanel._lastModificationTimeout)
             return;
         this._sourcesView.showSourceLocation(uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, undefined, true);
+    },
+
+    _lastModificationTimeoutPassedForTest: function()
+    {
+        WebInspector.SourcesPanel._lastModificationTimeout = Number.MIN_VALUE;
+    },
+
+    _updateLastModificationTimeForTest: function()
+    {
+        WebInspector.SourcesPanel._lastModificationTimeout = Number.MAX_VALUE;
     },
 
     /**
@@ -439,28 +464,24 @@ WebInspector.SourcesPanel.prototype = {
         var currentTarget = WebInspector.context.flavor(WebInspector.Target);
         var currentDebuggerModel = WebInspector.DebuggerModel.fromTarget(currentTarget);
         if (!currentDebuggerModel) {
-            this._pauseButton.setEnabled(false);
-            this._stepOverButton.setEnabled(false);
-            this._stepIntoButton.setEnabled(false);
-            this._stepOutButton.setEnabled(false);
+            this._togglePauseAction.setEnabled(false);
+            this._stepOverAction.setEnabled(false);
+            this._stepIntoAction.setEnabled(false);
+            this._stepOutAction.setEnabled(false);
         } else if (this._paused) {
-            this._pauseButton.setTitle(WebInspector.UIString("Resume script execution"));
-            this._pauseButton.setToggled(true);
-            this._pauseButton.setLongClickOptionsEnabled((function() { return [ this._longResumeButton ]; }).bind(this));
-
-            this._pauseButton.setEnabled(true);
-            this._stepOverButton.setEnabled(true);
-            this._stepIntoButton.setEnabled(true);
-            this._stepOutButton.setEnabled(true);
+            this._togglePauseAction.setTitle(WebInspector.UIString("Resume script execution"));
+            this._togglePauseAction.setToggled(true);
+            this._togglePauseAction.setEnabled(true);
+            this._stepOverAction.setEnabled(true);
+            this._stepIntoAction.setEnabled(true);
+            this._stepOutAction.setEnabled(true);
         } else {
-            this._pauseButton.setTitle(WebInspector.UIString("Pause script execution"));
-            this._pauseButton.setToggled(false);
-            this._pauseButton.setLongClickOptionsEnabled(null);
-
-            this._pauseButton.setEnabled(!currentDebuggerModel.isPausing());
-            this._stepOverButton.setEnabled(false);
-            this._stepIntoButton.setEnabled(false);
-            this._stepOutButton.setEnabled(false);
+            this._togglePauseAction.setTitle(WebInspector.UIString("Pause script execution"));
+            this._togglePauseAction.setToggled(false);
+            this._togglePauseAction.setEnabled(!currentDebuggerModel.isPausing());
+            this._stepOverAction.setEnabled(false);
+            this._stepIntoAction.setEnabled(false);
+            this._stepOutAction.setEnabled(false);
         }
     },
 
@@ -549,13 +570,13 @@ WebInspector.SourcesPanel.prototype = {
     _editorChanged: function(uiSourceCode)
     {
         var isSnippet = uiSourceCode && uiSourceCode.project().type() === WebInspector.projectTypes.Snippets;
-        this._runSnippetButton.element.classList.toggle("hidden", !isSnippet);
+        this._runSnippetButton.setVisible(isSnippet);
     },
 
     /**
      * @return {boolean}
      */
-    togglePause: function()
+    _togglePause: function()
     {
         var target = WebInspector.context.flavor(WebInspector.Target);
         if (!target)
@@ -608,7 +629,7 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @return {boolean}
      */
-    _stepOverClicked: function()
+    _stepOver: function()
     {
         var debuggerModel = this._prepareToResume();
         if (!debuggerModel)
@@ -621,7 +642,7 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @return {boolean}
      */
-    _stepIntoClicked: function()
+    _stepInto: function()
     {
         var debuggerModel = this._prepareToResume();
         if (!debuggerModel)
@@ -634,7 +655,7 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @return {boolean}
      */
-    _stepIntoAsyncClicked: function()
+    _stepIntoAsync: function()
     {
         var debuggerModel = this._prepareToResume();
         if (!debuggerModel)
@@ -647,7 +668,7 @@ WebInspector.SourcesPanel.prototype = {
     /**
      * @return {boolean}
      */
-    _stepOutClicked: function()
+    _stepOut: function()
     {
         var debuggerModel = this._prepareToResume();
         if (!debuggerModel)
@@ -700,13 +721,13 @@ WebInspector.SourcesPanel.prototype = {
     _breakpointsActiveStateChanged: function(event)
     {
         var active = event.data;
-        this._toggleBreakpointsButton.setToggled(!active);
+        this._toggleBreakpointsActiveAction.setToggled(!active);
         this.sidebarPanes.jsBreakpoints.listElement.classList.toggle("breakpoints-list-deactivated", !active);
         this._sourcesView.toggleBreakpointsActiveState(active);
         if (active)
-            this._toggleBreakpointsButton.setTitle(WebInspector.UIString("Deactivate breakpoints"));
+            this._toggleBreakpointsActiveAction.setTitle(WebInspector.UIString("Deactivate breakpoints"));
         else
-            this._toggleBreakpointsButton.setTitle(WebInspector.UIString("Activate breakpoints"));
+            this._toggleBreakpointsActiveAction.setTitle(WebInspector.UIString("Activate breakpoints"));
     },
 
     /**
@@ -714,57 +735,27 @@ WebInspector.SourcesPanel.prototype = {
      */
     _createDebugToolbar: function()
     {
-        var debugToolbar = new WebInspector.Toolbar();
-        debugToolbar.element.classList.add("scripts-debug-toolbar");
+        var debugToolbar = new WebInspector.Toolbar("scripts-debug-toolbar");
 
-        var title, handler;
-
-        // Run snippet.
-        title = WebInspector.UIString("Run snippet");
-        handler = this._runSnippet.bind(this);
-        this._runSnippetButton = this._createButtonAndRegisterShortcutsForAction("play-toolbar-item", title, "debugger.run-snippet");
+        this._runSnippetButton = WebInspector.Toolbar.createActionButton(this._runSnippetAction);
         debugToolbar.appendToolbarItem(this._runSnippetButton);
-        this._runSnippetButton.element.classList.add("hidden");
+        this._runSnippetButton.setVisible(false);
 
-        // Continue.
-        this._pauseButton = this._createButtonAndRegisterShortcutsForAction("pause-toolbar-item", "", "debugger.toggle-pause");
-        debugToolbar.appendToolbarItem(this._pauseButton);
+        var longResumeButton = new WebInspector.ToolbarButton(WebInspector.UIString("Resume with all pauses blocked for 500 ms"), "play-toolbar-item");
+        longResumeButton.addEventListener("click", this._longResume.bind(this), this);
+        debugToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._togglePauseAction, [longResumeButton], []));
 
-        // Long resume.
-        title = WebInspector.UIString("Resume with all pauses blocked for 500 ms");
-        this._longResumeButton = new WebInspector.ToolbarButton(title, "play-toolbar-item");
-        this._longResumeButton.addEventListener("click", this._longResume.bind(this), this);
-
-        // Step over.
-        title = WebInspector.UIString("Step over next function call");
-        this._stepOverButton = this._createButtonAndRegisterShortcutsForAction("step-over-toolbar-item", title, "debugger.step-over");
-        debugToolbar.appendToolbarItem(this._stepOverButton);
-
-        // Step into.
-        title = WebInspector.UIString("Step into next function call");
-        this._stepIntoButton = this._createButtonAndRegisterShortcutsForAction("step-in-toolbar-item", title, "debugger.step-into");
-        debugToolbar.appendToolbarItem(this._stepIntoButton);
-
-        // Step out.
-        title = WebInspector.UIString("Step out of current function");
-        this._stepOutButton = this._createButtonAndRegisterShortcutsForAction("step-out-toolbar-item", title, "debugger.step-out");
-        debugToolbar.appendToolbarItem(this._stepOutButton);
-
+        debugToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._stepOverAction));
+        debugToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._stepIntoAction));
+        debugToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._stepOutAction));
         debugToolbar.appendSeparator();
+        debugToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._toggleBreakpointsActiveAction));
 
-        // Toggle Breakpoints
-        this._toggleBreakpointsButton = WebInspector.ToolbarButton.createActionButton("debugger.toggle-breakpoints-active");
-        this._toggleBreakpointsButton.setToggled(false);
-        debugToolbar.appendToolbarItem(this._toggleBreakpointsButton);
-
-        // Pause on Exception
-        this._pauseOnExceptionButton = new WebInspector.ToolbarButton("", "pause-on-exceptions-toolbar-item");
+        this._pauseOnExceptionButton = new WebInspector.ToolbarToggle("", "pause-on-exceptions-toolbar-item");
         this._pauseOnExceptionButton.addEventListener("click", this._togglePauseOnExceptions, this);
         debugToolbar.appendToolbarItem(this._pauseOnExceptionButton);
 
         debugToolbar.appendSeparator();
-
-        // Async operations
         debugToolbar.appendToolbarItem(new WebInspector.ToolbarCheckbox(WebInspector.UIString("Async"), WebInspector.UIString("Capture async stack traces"), WebInspector.moduleSetting("enableAsyncStackTraces")));
 
         return debugToolbar;
@@ -779,21 +770,6 @@ WebInspector.SourcesPanel.prototype = {
         debugToolbarDrawer.appendChild(WebInspector.SettingsUI.createSettingCheckbox(label, setting, true));
 
         return debugToolbarDrawer;
-    },
-
-    /**
-     * @param {string} buttonId
-     * @param {string} buttonTitle
-     * @param {string} actionId
-     * @return {!WebInspector.ToolbarButton}
-     */
-    _createButtonAndRegisterShortcutsForAction: function(buttonId, buttonTitle, actionId)
-    {
-        var button = new WebInspector.ToolbarButton(buttonTitle, buttonId);
-        button.setAction(actionId);
-        button._shortcuts = WebInspector.shortcutRegistry.shortcutDescriptorsForAction(actionId);
-        button.setTitle(buttonTitle);
-        return button;
     },
 
     addToWatch: function(expression)
@@ -829,12 +805,6 @@ WebInspector.SourcesPanel.prototype = {
         this._appendNetworkRequestItems(contextMenu, target);
     },
 
-    _suggestReload: function()
-    {
-        if (window.confirm(WebInspector.UIString("It is recommended to restart inspector after making these changes. Would you like to restart it?")))
-            WebInspector.reload();
-    },
-
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
      */
@@ -851,7 +821,6 @@ WebInspector.SourcesPanel.prototype = {
             if (!networkUISourceCode)
                 return;
             this._networkMapping.addMapping(networkUISourceCode, uiSourceCode);
-            this._suggestReload();
         }
     },
 
@@ -871,7 +840,6 @@ WebInspector.SourcesPanel.prototype = {
             if (!uiSourceCode)
                 return;
             this._networkMapping.addMapping(networkUISourceCode, uiSourceCode);
-            this._suggestReload();
         }
     },
 
@@ -880,10 +848,7 @@ WebInspector.SourcesPanel.prototype = {
      */
     _removeNetworkMapping: function(uiSourceCode)
     {
-        if (confirm(WebInspector.UIString("Are you sure you want to remove network mapping?"))) {
-            this._networkMapping.removeMapping(uiSourceCode);
-            this._suggestReload();
-        }
+        this._networkMapping.removeMapping(uiSourceCode);
     },
 
     /**
@@ -953,16 +918,16 @@ WebInspector.SourcesPanel.prototype = {
         var projectType = uiSourceCode.project().type();
 
         var contentType = uiSourceCode.contentType();
-        if (contentType === WebInspector.resourceTypes.Script || contentType === WebInspector.resourceTypes.Document) {
+        if (contentType.hasScripts()) {
             var target = WebInspector.context.flavor(WebInspector.Target);
             var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
             if (debuggerModel && debuggerModel.isPaused())
                 contextMenu.appendItem(WebInspector.UIString.capitalize("Continue to ^here"), this._continueToLocation.bind(this, uiLocation));
         }
 
-        if ((contentType === WebInspector.resourceTypes.Script || contentType === WebInspector.resourceTypes.Document) && projectType !== WebInspector.projectTypes.Snippets) {
+        if (contentType.hasScripts() && projectType !== WebInspector.projectTypes.Snippets) {
             var networkURL = this._networkMapping.networkURL(uiSourceCode);
-            var url = projectType === WebInspector.projectTypes.Formatter ? uiSourceCode.originURL() : networkURL;
+            var url = projectType === WebInspector.projectTypes.Formatter ? uiSourceCode.url() : networkURL;
             this.sidebarPanes.callstack.appendBlackboxURLContextMenuItems(contextMenu, url, projectType === WebInspector.projectTypes.ContentScripts);
         }
     },
@@ -1367,19 +1332,22 @@ WebInspector.SourcesPanel.RevealingActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var panel = WebInspector.SourcesPanel.instance();
-        WebInspector.inspectorView.setCurrentPanel(panel);
+        if (panel !== WebInspector.inspectorView.setCurrentPanel(panel))
+            return false;
         switch (actionId) {
         case "debugger.toggle-pause":
-            panel.togglePause();
-            break;
+            panel._togglePause();
+            return true;
         case "sources.go-to-source":
             panel.showGoToSourceDialog();
-            break;
+            return true;
         }
+        return false;
     }
 }
 
@@ -1396,30 +1364,32 @@ WebInspector.SourcesPanel.DebuggingActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var panel = WebInspector.SourcesPanel.instance();
         switch (actionId) {
         case "debugger.step-over":
-            panel._stepOverClicked();
-            break;
+            panel._stepOver();
+            return true;
         case "debugger.step-into":
-            panel._stepIntoClicked();
-            break;
+            panel._stepInto();
+            return true;
         case "debugger.step-into-async":
-            panel._stepIntoAsyncClicked();
-            break;
+            panel._stepIntoAsync();
+            return true;
         case "debugger.step-out":
-            panel._stepOutClicked();
-            break;
+            panel._stepOut();
+            return true;
         case "debugger.run-snippet":
             panel._runSnippet();
-            break;
+            return true;
         case "debugger.toggle-breakpoints-active":
             panel._toggleBreakpointsActive();
-            break;
+            return true;
         }
+        return false;
     }
 }
 

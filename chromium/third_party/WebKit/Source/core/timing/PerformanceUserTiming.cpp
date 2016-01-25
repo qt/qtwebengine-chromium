@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/timing/PerformanceUserTiming.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -70,7 +69,7 @@ RestrictedKeyMap* createRestrictedKeyMap()
 
 const RestrictedKeyMap& restrictedKeyMap()
 {
-    AtomicallyInitializedStaticReference(RestrictedKeyMap, map, createRestrictedKeyMap());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(RestrictedKeyMap, map, createRestrictedKeyMap());
     return map;
 }
 

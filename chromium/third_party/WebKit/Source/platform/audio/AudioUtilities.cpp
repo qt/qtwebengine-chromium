@@ -22,12 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioUtilities.h"
-
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
 
@@ -82,4 +77,3 @@ float maxAudioBufferSampleRate()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

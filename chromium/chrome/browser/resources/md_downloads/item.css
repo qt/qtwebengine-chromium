@@ -5,15 +5,18 @@
 :host {
   display: flex;
   flex-direction: column;
-  margin: 12px 0;
 }
 
 #date {
-  color: #7c7c7c;
+  color: rgb(104, 113, 116);
   font-size: 100%;
   font-weight: 500;
-  margin: 18px auto 16px;  /* This top margin + :host top margin = 30px. */
+  margin: 24px auto 10px;
   width: var(--downloads-item-width);
+}
+
+#date:empty {
+  display: none;
 }
 
 #content {
@@ -21,8 +24,9 @@
   border-radius: 2px;
   display: flex;
   flex: none;
-  margin: 0 auto;
+  margin: 6px auto;
   min-height: 103px;
+  position: relative;
   width: var(--downloads-item-width);
 }
 
@@ -42,6 +46,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;  /* This allows #url to ellide correctly. */
   padding-bottom: 12px;
   padding-top: 16px;
 }
@@ -77,11 +82,17 @@
   opacity: .5;
 }
 
-#warning {
-  -webkit-mask-image: url(../../../../ui/webui/resources/images/warning.svg);
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: 100%;
-  background: rgb(255, 193, 7);
+#danger-icon {
+  height: 32px;
+  width: 32px;
+}
+
+#danger-icon[icon='warning'] {
+  color: rgb(255, 193, 7);
+}
+
+#danger-icon[icon='remove-circle'] {
+  color: rgb(244, 67, 54);
 }
 
 #name,
@@ -112,6 +123,7 @@
 #url {
   color: inherit;
   margin-top: 6px;
+  min-height: 0;
   overflow: hidden;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -180,21 +192,19 @@
 }
 
 #remove {
-  --iron-icon-height: 16px;
-  --iron-icon-width: 16px;
-  --layout-inline: {
-    /* HACK(dbeam): we probably shouldn't be overriding Polymer like this. */
-  };
   color: #969696;
+  font-size: 16px;
   height: 16px;
+  line-height: 17px;  /* TODO(dbeam): why is this necesssary? */
   padding: 8px;
   width: 16px;
 }
 
 #incognito {
   bottom: 20px;
-  content: -webkit-image-set(url(1x/incognito_marker.png) 1x,
-                             url(2x/incognito_marker.png) 2x);
+  content: -webkit-image-set(
+      url(chrome://downloads/1x/incognito_marker.png) 1x,
+      url(chrome://downloads/2x/incognito_marker.png) 2x);
   position: absolute;
   right: 10px;
 }

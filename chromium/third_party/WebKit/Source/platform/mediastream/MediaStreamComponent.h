@@ -33,6 +33,7 @@
 #define MediaStreamComponent_h
 
 #include "platform/audio/AudioSourceProvider.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -44,15 +45,21 @@ namespace blink {
 class MediaStreamSource;
 class WebAudioSourceProvider;
 
-class PLATFORM_EXPORT MediaStreamComponent final : public RefCounted<MediaStreamComponent> {
+class PLATFORM_EXPORT MediaStreamComponent final : public GarbageCollectedFinalized<MediaStreamComponent> {
+    USING_PRE_FINALIZER(MediaStreamComponent, dispose);
 public:
     class ExtraData {
     public:
         virtual ~ExtraData() { }
     };
 
-    static PassRefPtr<MediaStreamComponent> create(PassRefPtr<MediaStreamSource>);
-    static PassRefPtr<MediaStreamComponent> create(const String& id, PassRefPtr<MediaStreamSource>);
+    static MediaStreamComponent* create(MediaStreamSource*);
+    static MediaStreamComponent* create(const String& id, MediaStreamSource*);
+
+    // |m_extraData| may hold pointers to GC objects indirectly, and it may touch
+    // eagerly finalized objects in destruction.
+    // So this class runs pre-finalizer to finalize |m_extraData| promptly.
+    void dispose();
 
     MediaStreamSource* source() const { return m_source.get(); }
 
@@ -61,19 +68,17 @@ public:
     void setEnabled(bool enabled) { m_enabled = enabled; }
     bool muted() const { return m_muted; }
     void setMuted(bool muted) { m_muted = muted; }
-
-#if ENABLE(WEB_AUDIO)
     AudioSourceProvider* audioSourceProvider() { return &m_sourceProvider; }
     void setSourceProvider(WebAudioSourceProvider* provider) { m_sourceProvider.wrap(provider); }
-#endif // ENABLE(WEB_AUDIO)
 
     ExtraData* extraData() const { return m_extraData.get(); }
-    void setExtraData(PassOwnPtr<ExtraData> extraData) { m_extraData = extraData; }
+    void setExtraData(PassOwnPtr<ExtraData> extraData) { m_extraData = std::move(extraData); }
+
+    DECLARE_TRACE();
 
 private:
-    MediaStreamComponent(const String& id, PassRefPtr<MediaStreamSource>);
+    MediaStreamComponent(const String& id, MediaStreamSource*);
 
-#if ENABLE(WEB_AUDIO)
     // AudioSourceProviderImpl wraps a WebAudioSourceProvider::provideInput()
     // calls into chromium to get a rendered audio stream.
 
@@ -98,16 +103,14 @@ private:
     };
 
     AudioSourceProviderImpl m_sourceProvider;
-#endif // ENABLE(WEB_AUDIO)
-
-    RefPtr<MediaStreamSource> m_source;
+    Member<MediaStreamSource> m_source;
     String m_id;
     bool m_enabled;
     bool m_muted;
     OwnPtr<ExtraData> m_extraData;
 };
 
-typedef Vector<RefPtr<MediaStreamComponent>> MediaStreamComponentVector;
+typedef HeapVector<Member<MediaStreamComponent>> MediaStreamComponentVector;
 
 } // namespace blink
 

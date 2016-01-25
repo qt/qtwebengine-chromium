@@ -9,8 +9,8 @@
 
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/base/ime/input_method_base.h"
 #include "ui/base/ime/win/imm32_manager.h"
 
@@ -50,6 +50,7 @@ class UI_BASE_IME_EXPORT InputMethodWin : public InputMethodBase {
                  UINT message,
                  WPARAM wparam,
                  LPARAM lparam,
+                 const base::NativeEvent& event,
                  BOOL* handled);
 
   LRESULT OnImeSetContext(HWND window_handle,
@@ -128,10 +129,6 @@ class UI_BASE_IME_EXPORT InputMethodWin : public InputMethodBase {
   // Window handle where composition is on-going. NULL when there is no
   // composition.
   HWND composing_window_handle_;
-
-  // Set to true to suppress the next WM_CHAR, when the WM_KEYDOWN gets stopped
-  // propagation (e.g. triggered an accelerator).
-  bool suppress_next_char_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodWin);
 };

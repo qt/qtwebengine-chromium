@@ -32,7 +32,7 @@
 #define AudioProcessor_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -43,7 +43,7 @@ class AudioBus;
 // or as the processor for a basic (one input - one output) AudioNode.
 
 class PLATFORM_EXPORT AudioProcessor {
-    WTF_MAKE_FAST_ALLOCATED(AudioProcessor);
+    USING_FAST_MALLOC(AudioProcessor);
 public:
     AudioProcessor(float sampleRate, unsigned numberOfChannels)
         : m_initialized(false)

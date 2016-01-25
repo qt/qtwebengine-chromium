@@ -44,7 +44,7 @@ public:
 
     Color systemColor(CSSValueID) const override;
 
-    bool supportsFocusRing(const ComputedStyle&) const override;
+    bool themeDrawsFocusRing(const ComputedStyle&) const override;
 
     // List Box selection color
     virtual Color activeListBoxSelectionBackgroundColor() const;
@@ -131,7 +131,6 @@ protected:
     LayoutThemeDefault();
     ~LayoutThemeDefault() override;
     bool shouldUseFallbackTheme(const ComputedStyle&) const override;
-    virtual int menuListArrowPadding() const;
 
     IntRect determinateProgressValueRectFor(LayoutProgress*, const IntRect&) const;
     IntRect indeterminateProgressValueRectFor(LayoutProgress*, const IntRect&) const;

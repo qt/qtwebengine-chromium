@@ -38,7 +38,7 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   CryptoHandshakeMessage msg;
   config_.ToHandshakeMessage(&msg);
 
-  uint32 value;
+  uint32_t value;
   QuicErrorCode error = msg.GetUint32(kICSL, &value);
   EXPECT_EQ(QUIC_NO_ERROR, error);
   EXPECT_EQ(5u, value);
@@ -67,8 +67,8 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
   client_config.SetIdleConnectionStateLifetime(
       QuicTime::Delta::FromSeconds(2 * kMaximumIdleTimeoutSecs),
       QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs));
-  client_config.SetMaxStreamsPerConnection(
-      2 * kDefaultMaxStreamsPerConnection, kDefaultMaxStreamsPerConnection);
+  client_config.SetMaxStreamsPerConnection(2 * kDefaultMaxStreamsPerConnection,
+                                           kDefaultMaxStreamsPerConnection);
   client_config.SetInitialRoundTripTimeUsToSend(10 * kNumMicrosPerMilli);
   client_config.SetInitialStreamFlowControlWindowToSend(
       2 * kInitialStreamFlowControlWindowForTest);
@@ -99,8 +99,7 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
   EXPECT_TRUE(config_.negotiated());
   EXPECT_EQ(QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs),
             config_.IdleConnectionStateLifetime());
-  EXPECT_EQ(kDefaultMaxStreamsPerConnection,
-            config_.MaxStreamsPerConnection());
+  EXPECT_EQ(kDefaultMaxStreamsPerConnection, config_.MaxStreamsPerConnection());
   EXPECT_EQ(10 * kNumMicrosPerMilli, config_.ReceivedInitialRoundTripTimeUs());
   EXPECT_TRUE(config_.HasReceivedConnectionOptions());
   EXPECT_EQ(3u, config_.ReceivedConnectionOptions().size());
@@ -111,8 +110,7 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
             2 * kInitialStreamFlowControlWindowForTest);
   EXPECT_EQ(config_.ReceivedInitialSessionFlowControlWindowBytes(),
             2 * kInitialSessionFlowControlWindowForTest);
-  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(),
-            kDefaultSocketReceiveBuffer);
+  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(), kDefaultSocketReceiveBuffer);
 }
 
 TEST_F(QuicConfigTest, ProcessServerHello) {
@@ -122,9 +120,8 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
   server_config.SetIdleConnectionStateLifetime(
       QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs / 2),
       QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs / 2));
-  server_config.SetMaxStreamsPerConnection(
-      kDefaultMaxStreamsPerConnection / 2,
-      kDefaultMaxStreamsPerConnection / 2);
+  server_config.SetMaxStreamsPerConnection(kDefaultMaxStreamsPerConnection / 2,
+                                           kDefaultMaxStreamsPerConnection / 2);
   server_config.SetInitialRoundTripTimeUsToSend(10 * kNumMicrosPerMilli);
   server_config.SetInitialStreamFlowControlWindowToSend(
       2 * kInitialStreamFlowControlWindowForTest);
@@ -147,8 +144,7 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
             2 * kInitialStreamFlowControlWindowForTest);
   EXPECT_EQ(config_.ReceivedInitialSessionFlowControlWindowBytes(),
             2 * kInitialSessionFlowControlWindowForTest);
-  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(),
-            kDefaultSocketReceiveBuffer);
+  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(), kDefaultSocketReceiveBuffer);
 }
 
 TEST_F(QuicConfigTest, MissingOptionalValuesInCHLO) {
@@ -220,7 +216,7 @@ TEST_F(QuicConfigTest, InvalidFlowControlWindow) {
   // QuicConfig should not accept an invalid flow control window to send to the
   // peer: the receive window must be at least the default of 16 Kb.
   QuicConfig config;
-  const uint64 kInvalidWindow = kMinimumFlowControlSendWindow - 1;
+  const uint64_t kInvalidWindow = kMinimumFlowControlSendWindow - 1;
   EXPECT_DFATAL(config.SetInitialStreamFlowControlWindowToSend(kInvalidWindow),
                 "Initial stream flow control receive window");
 

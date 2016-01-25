@@ -9,24 +9,27 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT StaticBitmapImage : public Image {
+class PLATFORM_EXPORT StaticBitmapImage final : public Image {
 public:
     ~StaticBitmapImage() override;
 
     bool currentFrameIsComplete() override { return true; }
 
-    static PassRefPtr<Image> create(PassRefPtr<SkImage>);
+    static PassRefPtr<StaticBitmapImage> create(PassRefPtr<SkImage>);
     virtual void destroyDecodedData(bool destroyAll) { }
-    virtual bool currentFrameKnownToBeOpaque();
+    virtual bool currentFrameKnownToBeOpaque(MetadataMode = UseCurrentMetadata);
     virtual IntSize size() const;
     void draw(SkCanvas*, const SkPaint&, const FloatRect& dstRect, const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode) override;
 
-    PassRefPtr<SkImage> imageForCurrentFrame() override { return m_image; }
+    PassRefPtr<SkImage> imageForCurrentFrame() override;
 
+    bool originClean() const { return m_isOriginClean; }
+    void setOriginClean(bool flag) { m_isOriginClean = flag; }
 protected:
     StaticBitmapImage(PassRefPtr<SkImage>);
 
     RefPtr<SkImage> m_image;
+    bool m_isOriginClean = true;
 };
 
 } // namespace blink

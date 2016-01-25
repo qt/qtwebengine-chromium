@@ -23,8 +23,8 @@
 #include "wtf/Alignment.h"
 #include "wtf/Assertions.h"
 #include "wtf/ConditionalDestructor.h"
-#include "wtf/DefaultAllocator.h"
 #include "wtf/HashTraits.h"
+#include "wtf/PartitionAllocator.h"
 
 #define DUMP_HASHTABLE_STATS 0
 #define DUMP_HASHTABLE_STATS_PER_TABLE 0
@@ -412,10 +412,14 @@ public:
         ASSERT(!Allocator::isGarbageCollected);
         if (LIKELY(!m_table))
             return;
-        RELEASE_ASSERT(!m_accessForbidden);
+        ASSERT(!m_accessForbidden);
+#if ENABLE(ASSERT)
         m_accessForbidden = true;
+#endif
         deleteAllBucketsAndDeallocate(m_table, m_tableSize);
+#if ENABLE(ASSERT)
         m_accessForbidden = false;
+#endif
         m_table = nullptr;
     }
 
@@ -434,17 +438,17 @@ public:
 
     unsigned size() const
     {
-        RELEASE_ASSERT(!m_accessForbidden);
+        ASSERT(!m_accessForbidden);
         return m_keyCount;
     }
     unsigned capacity() const
     {
-        RELEASE_ASSERT(!m_accessForbidden);
+        ASSERT(!m_accessForbidden);
         return m_tableSize;
     }
     bool isEmpty() const
     {
-        RELEASE_ASSERT(!m_accessForbidden);
+        ASSERT(!m_accessForbidden);
         return !m_keyCount;
     }
 
@@ -484,8 +488,8 @@ public:
 
     template <typename VisitorDispatcher> void trace(VisitorDispatcher);
 
-    bool accessForbidden() const { return m_accessForbidden; }
 #if ENABLE(ASSERT)
+    bool accessForbidden() const { return m_accessForbidden; }
     int64_t modifications() const { return m_modifications; }
     void registerModification() { m_modifications++; }
     // HashTable and collections that build on it do not support modifications
@@ -561,11 +565,14 @@ private:
     ValueType* m_table;
     unsigned m_tableSize;
     unsigned m_keyCount;
+#if ENABLE(ASSERT)
     unsigned m_deletedCount:30;
     unsigned m_queueFlag:1;
     unsigned m_accessForbidden:1;
-#if ENABLE(ASSERT)
     unsigned m_modifications;
+#else
+    unsigned m_deletedCount:31;
+    unsigned m_queueFlag:1;
 #endif
 
 #if DUMP_HASHTABLE_STATS_PER_TABLE
@@ -577,46 +584,6 @@ public:
     template <typename T, typename U, typename V, typename W> friend class LinkedHashSet;
 };
 
-// Set all the bits to one after the most significant bit:
-// 00110101010 -> 00111111111.
-template <unsigned size> struct OneifyLowBits;
-template <>
-struct OneifyLowBits<0> {
-    static const unsigned value = 0;
-};
-template <unsigned number>
-struct OneifyLowBits {
-    static const unsigned value = number | OneifyLowBits<(number >> 1)>::value;
-};
-// Compute the first power of two integer that is an upper bound of the
-// parameter 'number'.
-template <unsigned number>
-struct UpperPowerOfTwoBound {
-    static const unsigned value = (OneifyLowBits<number - 1>::value + 1) * 2;
-};
-
-// Because power of two numbers are the limit of maxLoad, their capacity is
-// twice the UpperPowerOfTwoBound, or 4 times their values.
-template <unsigned size, bool isPowerOfTwo> struct HashTableCapacityForSizeSplitter;
-template <unsigned size>
-struct HashTableCapacityForSizeSplitter<size, true> {
-    static const unsigned value = size * 4;
-};
-template <unsigned size>
-struct HashTableCapacityForSizeSplitter<size, false> {
-    static const unsigned value = UpperPowerOfTwoBound<size>::value;
-};
-
-// HashTableCapacityForSize computes the upper power of two capacity to hold the
-// size parameter.  This is done at compile time to initialize the HashTraits.
-template <unsigned size>
-struct HashTableCapacityForSize {
-    static const unsigned value = HashTableCapacityForSizeSplitter<size, !(size & (size - 1))>::value;
-    static_assert(size > 0, "HashTable minimum capacity should be > 0");
-    static_assert(!static_cast<int>(value >> 31), "HashTable capacity should not overflow 32bit int");
-    static_assert(value > (2 * size), "HashTable capacity should be able to hold content size");
-};
-
 template <typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
 inline HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::HashTable()
     : m_table(nullptr)
@@ -624,14 +591,15 @@ inline HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Alloca
     , m_keyCount(0)
     , m_deletedCount(0)
     , m_queueFlag(false)
-    , m_accessForbidden(false)
 #if ENABLE(ASSERT)
+    , m_accessForbidden(false)
     , m_modifications(0)
 #endif
 #if DUMP_HASHTABLE_STATS_PER_TABLE
     , m_stats(adoptPtr(new Stats))
 #endif
 {
+    static_assert(Allocator::isGarbageCollected || (!IsPointerToGarbageCollectedType<Key>::value && !IsPointerToGarbageCollectedType<Value>::value), "Cannot put raw pointers to garbage-collected classes into an off-heap collection.");
 }
 
 inline unsigned doubleHash(unsigned key)
@@ -675,7 +643,7 @@ template <typename Key, typename Value, typename Extractor, typename HashFunctio
 template <typename HashTranslator, typename T>
 inline const Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::lookup(T key) const
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     ASSERT((HashTableKeyChecker<HashTranslator, KeyTraits, HashFunctions::safeToCompareToEmptyOrDeleted>::checkKey(key)));
     const ValueType* table = m_table;
     if (!table)
@@ -715,7 +683,7 @@ template <typename Key, typename Value, typename Extractor, typename HashFunctio
 template <typename HashTranslator, typename T>
 inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::LookupType HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::lookupForWriting(const T& key)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     ASSERT(m_table);
     registerModification();
 
@@ -758,7 +726,7 @@ template <typename Key, typename Value, typename Extractor, typename HashFunctio
 template <typename HashTranslator, typename T>
 inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::FullLookupType HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::fullLookupForWriting(const T& key)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     ASSERT(m_table);
     registerModification();
 
@@ -827,7 +795,7 @@ template <typename Key, typename Value, typename Extractor, typename HashFunctio
 template <typename HashTranslator, typename T, typename Extra>
 typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::add(const T& key, const Extra& extra)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     ASSERT(Allocator::isAllocationAllowed());
     if (!m_table)
         expand();
@@ -893,7 +861,7 @@ template <typename Key, typename Value, typename Extractor, typename HashFunctio
 template <typename HashTranslator, typename T, typename Extra>
 typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::addPassingHashCode(const T& key, const Extra& extra)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     ASSERT(Allocator::isAllocationAllowed());
     if (!m_table)
         expand();
@@ -975,7 +943,6 @@ bool HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocato
 template <typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
 void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::remove(ValueType* pos)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
     registerModification();
 #if DUMP_HASHTABLE_STATS
     atomicIncrement(&HashTableStats::numRemoves);
@@ -984,10 +951,14 @@ void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocato
     ++m_stats->numRemoves;
 #endif
 
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
+#if ENABLE(ASSERT)
     m_accessForbidden = true;
+#endif
     deleteBucket(*pos);
+#if ENABLE(ASSERT)
     m_accessForbidden = false;
+#endif
     ++m_deletedCount;
     --m_keyCount;
 
@@ -1024,16 +995,16 @@ Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Alloca
     ValueType* result;
     // Assert that we will not use memset on things with a vtable entry.  The
     // compiler will also check this on some platforms. We would like to check
-    // this on the whole value (key-value pair), but IsPolymorphic will return
+    // this on the whole value (key-value pair), but std::is_polymorphic will return
     // false for a pair of two types, even if one of the components is
     // polymorphic.
-    static_assert(!Traits::emptyValueIsZero || !IsPolymorphic<KeyType>::value, "empty value cannot be zero for things with a vtable");
+    static_assert(!Traits::emptyValueIsZero || !std::is_polymorphic<KeyType>::value, "empty value cannot be zero for things with a vtable");
 
 #if ENABLE(OILPAN)
     static_assert(Allocator::isGarbageCollected
-        || ((!IsAllowOnlyInlineAllocation<KeyType>::value || !NeedsTracing<KeyType>::value)
-        && (!IsAllowOnlyInlineAllocation<ValueType>::value || !NeedsTracing<ValueType>::value))
-        , "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap HashTable");
+        || ((!AllowsOnlyPlacementNew<KeyType>::value || !NeedsTracing<KeyType>::value)
+        && (!AllowsOnlyPlacementNew<ValueType>::value || !NeedsTracing<ValueType>::value))
+        , "Cannot put DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects that have trace methods into an off-heap HashTable");
 #endif
     if (Traits::emptyValueIsZero) {
         result = Allocator::template allocateZeroedHashTableBacking<ValueType, HashTable>(allocSize);
@@ -1125,10 +1096,14 @@ Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Alloca
     }
     newEntry = rehashTo(originalTable, newTableSize, newEntry);
 
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
+#if ENABLE(ASSERT)
     m_accessForbidden = true;
+#endif
     deleteAllBucketsAndDeallocate(temporaryTable, oldTableSize);
+#if ENABLE(ASSERT)
     m_accessForbidden = false;
+#endif
 
     return newEntry;
 }
@@ -1188,7 +1163,7 @@ Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Alloca
 
     // The Allocator::isGarbageCollected check is not needed.  The check is just
     // a static hint for a compiler to indicate that Base::expandBuffer returns
-    // false if Allocator is a DefaultAllocator.
+    // false if Allocator is a PartitionAllocator.
     if (Allocator::isGarbageCollected && newTableSize > oldTableSize) {
         bool success;
         Value* newEntry = expandBuffer(newTableSize, entry, success);
@@ -1199,10 +1174,14 @@ Value* HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Alloca
     ValueType* newTable = allocateTable(newTableSize);
     Value* newEntry = rehashTo(newTable, newTableSize, entry);
 
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
+#if ENABLE(ASSERT)
     m_accessForbidden = true;
+#endif
     deleteAllBucketsAndDeallocate(oldTable, oldTableSize);
+#if ENABLE(ASSERT)
     m_accessForbidden = false;
+#endif
 
     return newEntry;
 }
@@ -1214,10 +1193,14 @@ void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocato
     if (!m_table)
         return;
 
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
+#if ENABLE(ASSERT)
     m_accessForbidden = true;
+#endif
     deleteAllBucketsAndDeallocate(m_table, m_tableSize);
+#if ENABLE(ASSERT)
     m_accessForbidden = false;
+#endif
     m_table = nullptr;
     m_tableSize = 0;
     m_keyCount = 0;
@@ -1230,8 +1213,8 @@ HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::H
     , m_keyCount(0)
     , m_deletedCount(0)
     , m_queueFlag(false)
-    , m_accessForbidden(false)
 #if ENABLE(ASSERT)
+    , m_accessForbidden(false)
     , m_modifications(0)
 #endif
 #if DUMP_HASHTABLE_STATS_PER_TABLE
@@ -1249,7 +1232,7 @@ HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::H
 template <typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
 void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::swap(HashTable& other)
 {
-    RELEASE_ASSERT(!m_accessForbidden);
+    ASSERT(!m_accessForbidden);
     std::swap(m_table, other.m_table);
     std::swap(m_tableSize, other.m_tableSize);
     std::swap(m_keyCount, other.m_keyCount);
@@ -1294,7 +1277,8 @@ struct WeakProcessingHashTableHelper<WeakHandlingInCollections, Key, Value, Extr
     {
         typedef HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> HashTableType;
         HashTableType* table = reinterpret_cast<HashTableType*>(closure);
-        ASSERT(table->m_table);
+        if (!table->m_table)
+            return;
         // Now perform weak processing (this is a no-op if the backing was
         // accessible through an iterator and was already marked strongly).
         typedef typename HashTableType::ValueType ValueType;
@@ -1378,7 +1362,7 @@ void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocato
         // cases). However, it shouldn't cause any issue.
         Allocator::registerWeakMembers(visitor, this, m_table, WeakProcessingHashTableHelper<Traits::weakHandlingFlag, Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::process);
     }
-    if (ShouldBeTraced<Traits>::value) {
+    if (NeedsTracingTrait<Traits>::value) {
         if (Traits::weakHandlingFlag == WeakHandlingInCollections) {
             // If we have both strong and weak pointers in the collection then
             // we queue up the collection for fixed point iteration a la

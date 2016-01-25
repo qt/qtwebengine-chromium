@@ -5,6 +5,8 @@
 #import "ui/views/cocoa/bridged_native_widget.h"
 
 #import <objc/runtime.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "base/logging.h"
 #import "base/mac/foundation_util.h"
@@ -85,6 +87,11 @@ const CGFloat kMavericksMenuOpacity = 251.0 / 255.0;
 const CGFloat kYosemiteMenuOpacity = 194.0 / 255.0;
 const int kYosemiteMenuBlur = 80;
 
+// Margin at edge and corners of the window that trigger resizing. These match
+// actual Cocoa resize margins.
+const int kResizeAreaEdgeSize = 3;
+const int kResizeAreaCornerSize = 12;
+
 int kWindowPropertiesKey;
 
 float GetDeviceScaleFactorFromView(NSView* view) {
@@ -114,6 +121,36 @@ gfx::Size GetClientSizeForWindowSize(NSWindow* window,
   // be zero at this point, because Widget::GetMinimumSize() may later increase
   // the size.
   return gfx::Size([window contentRectForFrameRect:frame_rect].size);
+}
+
+// Determine whether a point is within the resize area at the edges and corners
+// of a window. This is used to ensure that mouse downs which would resize the
+// window are not reposted. As there's no way to determine this from Cocoa APIs,
+// this should aim to match Cocoa behavior as closely as possible.
+bool IsPointInResizeArea(NSPoint point, NSWindow* window) {
+  if (!([window styleMask] & NSResizableWindowMask))
+    return false;
+
+  bool can_resize_x = [window maxSize].width > [window minSize].width;
+  bool can_resize_y = [window maxSize].height > [window minSize].height;
+  NSSize window_size = [window frame].size;
+
+  if (can_resize_x && (point.x < kResizeAreaEdgeSize ||
+                       point.x >= window_size.width - kResizeAreaEdgeSize))
+    return true;
+
+  if (can_resize_y && (point.y < kResizeAreaEdgeSize ||
+                       point.y >= window_size.height - kResizeAreaEdgeSize))
+    return true;
+
+  if (can_resize_x && can_resize_y &&
+      (point.x < kResizeAreaCornerSize ||
+       point.x >= window_size.width - kResizeAreaCornerSize) &&
+      (point.y < kResizeAreaCornerSize ||
+       point.y >= window_size.height - kResizeAreaCornerSize))
+    return true;
+
+  return false;
 }
 
 BOOL WindowWantsMouseDownReposted(NSEvent* ns_event) {
@@ -718,6 +755,9 @@ bool BridgedNativeWidget::ShouldRepostPendingLeftMouseDown(
     return false;
   }
 
+  if (IsPointInResizeArea(location_in_window, window_))
+    return false;
+
   gfx::Point point(location_in_window.x,
                    NSHeight([window_ frame]) - location_in_window.y);
   bool should_move_window =
@@ -873,7 +913,8 @@ void BridgedNativeWidget::OnDelegatedFrameDamage(
 
 void BridgedNativeWidget::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
-  NOTIMPLEMENTED();
+  native_widget_mac_->GetWidget()->DeviceScaleFactorChanged(
+      device_scale_factor);
 }
 
 base::Closure BridgedNativeWidget::PrepareForLayerBoundsChange() {
@@ -888,10 +929,6 @@ NSView* BridgedNativeWidget::AcceleratedWidgetGetNSView() const {
   return compositor_superview_;
 }
 
-bool BridgedNativeWidget::AcceleratedWidgetShouldIgnoreBackpressure() const {
-  return true;
-}
-
 void BridgedNativeWidget::AcceleratedWidgetGetVSyncParameters(
   base::TimeTicks* timebase, base::TimeDelta* interval) const {
   // TODO(tapted): Add vsync support.
@@ -899,8 +936,7 @@ void BridgedNativeWidget::AcceleratedWidgetGetVSyncParameters(
   *interval = base::TimeDelta();
 }
 
-void BridgedNativeWidget::AcceleratedWidgetSwapCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
+void BridgedNativeWidget::AcceleratedWidgetSwapCompleted() {
   // Ignore frames arriving "late" for an old size. A frame at the new size
   // should arrive soon.
   if (!compositor_widget_->HasFrameOfSize(GetClientAreaSize()))
@@ -910,10 +946,6 @@ void BridgedNativeWidget::AcceleratedWidgetSwapCompleted(
     invalidate_shadow_on_frame_swap_ = false;
     [window_ invalidateShadow];
   }
-}
-
-void BridgedNativeWidget::AcceleratedWidgetHitError() {
-  compositor_->ScheduleFullRedraw();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1028,8 +1060,7 @@ void BridgedNativeWidget::CreateCompositor() {
       new ui::AcceleratedWidgetMac(needs_gl_finish_workaround));
   compositor_.reset(
       new ui::Compositor(context_factory, GetCompositorTaskRunner()));
-  compositor_->SetAcceleratedWidgetAndStartCompositor(
-      compositor_widget_->accelerated_widget());
+  compositor_->SetAcceleratedWidget(compositor_widget_->accelerated_widget());
   compositor_widget_->SetNSView(this);
 }
 

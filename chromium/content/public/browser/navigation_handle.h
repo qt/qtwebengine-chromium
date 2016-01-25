@@ -39,6 +39,10 @@ class CONTENT_EXPORT NavigationHandle {
   // The WebContents the navigation is taking place in.
   WebContents* GetWebContents();
 
+  // The time the navigation started, recorded either in the renderer or in the
+  // browser process. Corresponds to Navigation Timing API.
+  virtual const base::TimeTicks& NavigationStart() = 0;
+
   // Parameters available at network request start time ------------------------
   //
   // The following parameters are only available when the network request is
@@ -90,14 +94,22 @@ class CONTENT_EXPORT NavigationHandle {
   // Whether the navigation resulted in an error page.
   virtual bool IsErrorPage() = 0;
 
+  // Resumes a navigation that was previously deferred by a NavigationThrottle.
+  virtual void Resume() = 0;
+
+  // Cancels a navigation that was previously deferred by a NavigationThrottle.
+  // |result| should be equal to NavigationThrottle::CANCEL or
+  // NavigationThrottle::CANCEL_AND_IGNORE.
+  virtual void CancelDeferredNavigation(
+      NavigationThrottle::ThrottleCheckResult result) = 0;
+
   // Testing methods ----------------------------------------------------------
   //
   // The following methods should be used exclusively for writing unit tests.
 
   static scoped_ptr<NavigationHandle> CreateNavigationHandleForTesting(
       const GURL& url,
-      bool is_main_frame,
-      WebContents* web_contents);
+      RenderFrameHost* render_frame_host);
 
   // Registers a NavigationThrottle for tests. The throttle can
   // modify the request, pause the request or cancel the request. This will

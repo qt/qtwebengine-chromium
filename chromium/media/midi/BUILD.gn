@@ -117,8 +117,8 @@ component("midi") {
     defines += [ "EXPORT_USB_MIDI" ]
 
     deps += [
-      "//base:i18n",
       ":midi_jni_headers",
+      "//base:i18n",
     ]
   }
 
@@ -179,6 +179,7 @@ test("midi_unittests") {
   ]
 
   if (is_android) {
+    deps += [ ":midi_java" ]
     isolate_file = "midi_unittests.isolate"
   }
 

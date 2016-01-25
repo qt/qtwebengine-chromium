@@ -6,11 +6,13 @@
 #define SubsequenceRecorder_h
 
 #include "platform/graphics/paint/DisplayItem.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
-class DisplayItemList;
 class GraphicsContext;
+class PaintController;
 
 // SubsequenceRecorder records BeginSubsequenceDisplayItem and EndSubsequenceDisplayItem
 // sentinels at either end of a continguous sequence of DisplayItems, and supports
@@ -20,20 +22,19 @@ class GraphicsContext;
 // CachedSubsequence can be used. In particular, the client is responsible for checking that
 // none of the DisplayItemClients that contribute to the subsequence have been invalidated.
 //
-class PLATFORM_EXPORT SubsequenceRecorder {
+class PLATFORM_EXPORT SubsequenceRecorder final {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
+    WTF_MAKE_NONCOPYABLE(SubsequenceRecorder);
 public:
-    static bool useCachedSubsequenceIfPossible(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type);
+    static bool useCachedSubsequenceIfPossible(GraphicsContext&, const DisplayItemClient&);
 
-    SubsequenceRecorder(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type);
+    SubsequenceRecorder(GraphicsContext&, const DisplayItemClient&);
     ~SubsequenceRecorder();
 
-    void setUncacheable();
-
 private:
-    DisplayItemList* m_displayItemList;
-    DisplayItemClientWrapper m_client;
+    PaintController& m_paintController;
+    const DisplayItemClient& m_client;
     size_t m_beginSubsequenceIndex;
-    DisplayItem::Type m_type;
 };
 
 } // namespace blink

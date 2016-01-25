@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/ScriptRunner.h"
 
 #include "core/dom/Document.h"
@@ -37,12 +36,20 @@
 
 namespace blink {
 
-
 ScriptRunner::ScriptRunner(Document* document)
     : m_document(document)
-    , m_executeScriptsTaskFactory(CancellableTaskFactory::create(this, &ScriptRunner::executeScripts))
+    , m_taskRunner(Platform::current()->currentThread()->scheduler()->loadingTaskRunner())
+    , m_numberOfInOrderScriptsWithPendingNotification(0)
+    , m_isSuspended(false)
+#if !ENABLE(OILPAN)
+    , m_isDisposed(false)
+    , m_weakPointerFactoryForTasks(this)
+#endif
 {
     ASSERT(document);
+#ifndef NDEBUG
+    m_hasEverBeenSuspended = false;
+#endif
 }
 
 ScriptRunner::~ScriptRunner()
@@ -52,20 +59,46 @@ ScriptRunner::~ScriptRunner()
 #endif
 }
 
+class ScriptRunner::Task : public WebTaskRunner::Task {
+    WTF_MAKE_NONCOPYABLE(Task);
+
+public:
+    explicit Task(WeakPtrWillBeRawPtr<ScriptRunner> scriptRunner)
+        : m_scriptRunner(scriptRunner)
+    {
+    }
+
+    virtual ~Task() { };
+
+    void run() override
+    {
+        if (!m_scriptRunner)
+            return;
+        m_scriptRunner->executeTask();
+    }
+
+private:
+    WeakPtrWillBeWeakPersistent<ScriptRunner> m_scriptRunner;
+};
+
 #if !ENABLE(OILPAN)
 void ScriptRunner::dispose()
 {
     // Make sure that ScriptLoaders don't keep their PendingScripts alive.
-    for (ScriptLoader* scriptLoader : m_scriptsToExecuteInOrder)
-        scriptLoader->detach();
-    for (ScriptLoader* scriptLoader : m_scriptsToExecuteSoon)
+    for (ScriptLoader* scriptLoader : m_pendingInOrderScripts)
         scriptLoader->detach();
     for (ScriptLoader* scriptLoader : m_pendingAsyncScripts)
         scriptLoader->detach();
+    for (ScriptLoader* scriptLoader : m_inOrderScriptsToExecuteSoon)
+        scriptLoader->detach();
+    for (ScriptLoader* scriptLoader : m_asyncScriptsToExecuteSoon)
+        scriptLoader->detach();
 
-    m_scriptsToExecuteInOrder.clear();
-    m_scriptsToExecuteSoon.clear();
+    m_pendingInOrderScripts.clear();
     m_pendingAsyncScripts.clear();
+    m_inOrderScriptsToExecuteSoon.clear();
+    m_asyncScriptsToExecuteSoon.clear();
+    m_isDisposed = true;
 }
 #endif
 
@@ -86,20 +119,45 @@ void ScriptRunner::queueScriptForExecution(ScriptLoader* scriptLoader, Execution
 
     case IN_ORDER_EXECUTION:
         m_document->incrementLoadEventDelayCount();
-        m_scriptsToExecuteInOrder.append(scriptLoader);
+        m_pendingInOrderScripts.append(scriptLoader);
+        m_numberOfInOrderScriptsWithPendingNotification++;
         break;
     }
 }
 
+void ScriptRunner::postTask(const WebTraceLocation& webTraceLocation)
+{
+    // TODO(altimin): Replace all this with `new Task(this)` when Oilpan is here.
+    WeakPtrWillBeRawPtr<ScriptRunner> scriptRunnerForTask;
+#if !ENABLE(OILPAN)
+    scriptRunnerForTask = m_weakPointerFactoryForTasks.createWeakPtr();
+#else
+    scriptRunnerForTask = this;
+#endif
+    m_taskRunner->postTask(webTraceLocation, new Task(scriptRunnerForTask));
+}
+
 void ScriptRunner::suspend()
 {
-    m_executeScriptsTaskFactory->cancel();
+#ifndef NDEBUG
+    m_hasEverBeenSuspended = true;
+#endif
+
+    m_isSuspended = true;
 }
 
 void ScriptRunner::resume()
 {
-    if (hasPendingScripts())
-        postTaskIfOneIsNotAlreadyInFlight();
+    ASSERT(m_isSuspended);
+
+    m_isSuspended = false;
+
+    for (size_t i = 0; i < m_asyncScriptsToExecuteSoon.size(); ++i) {
+        postTask(BLINK_FROM_HERE);
+    }
+    for (size_t i = 0; i < m_inOrderScriptsToExecuteSoon.size(); ++i) {
+        postTask(BLINK_FROM_HERE);
+    }
 }
 
 void ScriptRunner::notifyScriptReady(ScriptLoader* scriptLoader, ExecutionType executionType)
@@ -112,35 +170,65 @@ void ScriptRunner::notifyScriptReady(ScriptLoader* scriptLoader, ExecutionType e
         // (otherwise we'd cause a use-after-free in ~ScriptRunner when it tries
         // to detach).
         RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_pendingAsyncScripts.contains(scriptLoader));
-        m_scriptsToExecuteSoon.append(scriptLoader);
+
         m_pendingAsyncScripts.remove(scriptLoader);
+        m_asyncScriptsToExecuteSoon.append(scriptLoader);
+
+        postTask(BLINK_FROM_HERE);
+
         break;
 
     case IN_ORDER_EXECUTION:
-        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(!m_scriptsToExecuteInOrder.isEmpty());
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_numberOfInOrderScriptsWithPendingNotification > 0);
+        m_numberOfInOrderScriptsWithPendingNotification--;
+
+        while (!m_pendingInOrderScripts.isEmpty() && m_pendingInOrderScripts.first()->isReady()) {
+            m_inOrderScriptsToExecuteSoon.append(m_pendingInOrderScripts.takeFirst());
+            postTask(BLINK_FROM_HERE);
+        }
+
         break;
     }
-    postTaskIfOneIsNotAlreadyInFlight();
 }
 
 void ScriptRunner::notifyScriptLoadError(ScriptLoader* scriptLoader, ExecutionType executionType)
 {
     switch (executionType) {
-    case ASYNC_EXECUTION:
+    case ASYNC_EXECUTION: {
+        bool foundLoader = m_pendingAsyncScripts.contains(scriptLoader);
+#if !ENABLE(OILPAN)
+        // If the document and ScriptRunner has been disposed of, there's
+        // no bookkeeping to be done here.
+        foundLoader = foundLoader || m_isDisposed;
+#endif
         // RELEASE_ASSERT makes us crash in a controlled way in error cases
         // where the ScriptLoader is associated with the wrong ScriptRunner
         // (otherwise we'd cause a use-after-free in ~ScriptRunner when it tries
         // to detach).
-        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_pendingAsyncScripts.contains(scriptLoader));
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(foundLoader);
         m_pendingAsyncScripts.remove(scriptLoader);
-        scriptLoader->detach();
-        m_document->decrementLoadEventDelayCount();
-        break;
-
-    case IN_ORDER_EXECUTION:
-        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(!m_scriptsToExecuteInOrder.isEmpty());
         break;
     }
+    case IN_ORDER_EXECUTION:
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_numberOfInOrderScriptsWithPendingNotification > 0);
+        m_numberOfInOrderScriptsWithPendingNotification--;
+
+        bool foundPendingScript = false;
+        for (auto it = m_pendingInOrderScripts.begin(); it != m_pendingInOrderScripts.end(); ++it) {
+            if (*it == scriptLoader) {
+                m_pendingInOrderScripts.remove(it);
+                foundPendingScript = true;
+                break;
+            }
+        }
+#if !ENABLE(OILPAN)
+        foundPendingScript = foundPendingScript || m_isDisposed;
+#endif
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(foundPendingScript);
+        break;
+    }
+    scriptLoader->detach();
+    m_document->decrementLoadEventDelayCount();
 }
 
 void ScriptRunner::movePendingAsyncScript(Document& oldDocument, Document& newDocument, ScriptLoader* scriptLoader)
@@ -178,66 +266,42 @@ void ScriptRunner::movePendingAsyncScript(ScriptRunner* newRunner, ScriptLoader*
     }
 }
 
-void ScriptRunner::executeScripts()
+// Returns true if task was run, and false otherwise.
+bool ScriptRunner::executeTaskFromQueue(WillBeHeapDeque<RawPtrWillBeMember<ScriptLoader>>* taskQueue)
 {
-    RefPtrWillBeRawPtr<Document> protect(m_document.get());
-
-    WillBeHeapDeque<RawPtrWillBeMember<ScriptLoader>> scriptLoaders;
-    scriptLoaders.swap(m_scriptsToExecuteSoon);
-
-    WillBeHeapHashSet<RawPtrWillBeMember<ScriptLoader>> inorderSet;
-    while (!m_scriptsToExecuteInOrder.isEmpty() && m_scriptsToExecuteInOrder.first()->isReady()) {
-        ScriptLoader* script = m_scriptsToExecuteInOrder.takeFirst();
-        inorderSet.add(script);
-        scriptLoaders.append(script);
-    }
-
-    while (!scriptLoaders.isEmpty()) {
-        scriptLoaders.takeFirst()->execute();
-        m_document->decrementLoadEventDelayCount();
-
-        if (yieldForHighPriorityWork())
-            break;
-    }
-
-    // If we have to yield, we must re-enqueue any scriptLoaders back onto the front of
-    // m_scriptsToExecuteInOrder or m_scriptsToExecuteSoon depending on where the script
-    // came from.
-    // NOTE a yield followed by a notifyScriptReady(... ASYNC_EXECUTION) will result in that script executing
-    // before any pre-existing ScriptsToExecuteInOrder.
-    while (!scriptLoaders.isEmpty()) {
-        ScriptLoader* script = scriptLoaders.takeLast();
-        if (inorderSet.contains(script))
-            m_scriptsToExecuteInOrder.prepend(script);
-        else
-            m_scriptsToExecuteSoon.prepend(script);
-    }
-}
-
-bool ScriptRunner::yieldForHighPriorityWork()
-{
-    if (!Platform::current()->currentThread()->scheduler()->shouldYieldForHighPriorityWork())
+    if (taskQueue->isEmpty())
         return false;
+    taskQueue->takeFirst()->execute();
 
-    postTaskIfOneIsNotAlreadyInFlight();
+    m_document->decrementLoadEventDelayCount();
     return true;
 }
 
-void ScriptRunner::postTaskIfOneIsNotAlreadyInFlight()
+void ScriptRunner::executeTask()
 {
-    if (m_executeScriptsTaskFactory->isPending())
+    if (m_isSuspended)
         return;
 
-    Platform::current()->currentThread()->scheduler()->loadingTaskRunner()->postTask(FROM_HERE, m_executeScriptsTaskFactory->cancelAndCreate());
+    if (executeTaskFromQueue(&m_asyncScriptsToExecuteSoon))
+        return;
+
+    if (executeTaskFromQueue(&m_inOrderScriptsToExecuteSoon))
+        return;
+
+#ifndef NDEBUG
+    // Extra tasks should be posted only when we resume after suspending.
+    ASSERT(m_hasEverBeenSuspended);
+#endif
 }
 
 DEFINE_TRACE(ScriptRunner)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);
-    visitor->trace(m_scriptsToExecuteInOrder);
-    visitor->trace(m_scriptsToExecuteSoon);
+    visitor->trace(m_pendingInOrderScripts);
     visitor->trace(m_pendingAsyncScripts);
+    visitor->trace(m_asyncScriptsToExecuteSoon);
+    visitor->trace(m_inOrderScriptsToExecuteSoon);
 #endif
 }
 

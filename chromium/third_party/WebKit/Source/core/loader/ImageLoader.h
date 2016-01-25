@@ -56,11 +56,11 @@ class ImageLoader;
 class LayoutImageResource;
 
 template<typename T> class EventSender;
-typedef EventSender<ImageLoader> ImageEventSender;
+using ImageEventSender = EventSender<ImageLoader>;
 
 class CORE_EXPORT ImageLoader : public NoBaseWillBeGarbageCollectedFinalized<ImageLoader>, public ImageResourceClient {
     WILL_BE_USING_PRE_FINALIZER(ImageLoader, dispose);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ImageLoader);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ImageLoader);
 public:
     explicit ImageLoader(Element*);
     ~ImageLoader() override;
@@ -176,7 +176,7 @@ private:
     RefPtrWillBePersistent<Element> m_keepAlive;
 
     // Oilpan: the client references are weak, and managed as such via clearWeakMembers();
-    HashSet<ImageLoaderClient*> m_clients;
+    HashSet<RawPtrWillBeUntracedMember<ImageLoaderClient>> m_clients;
     Timer<ImageLoader> m_derefElementTimer;
     AtomicString m_failedLoadURL;
     WeakPtr<Task> m_pendingTask; // owned by Microtask

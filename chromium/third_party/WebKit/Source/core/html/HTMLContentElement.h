@@ -39,7 +39,7 @@
 namespace blink {
 
 class HTMLContentSelectFilter : public NoBaseWillBeGarbageCollectedFinalized<HTMLContentSelectFilter> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLContentSelectFilter);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLContentSelectFilter);
 public:
     virtual ~HTMLContentSelectFilter() { }
     virtual bool canSelectNode(const WillBeHeapVector<RawPtrWillBeMember<Node>, 32>& siblings, int nth) const = 0;
@@ -65,7 +65,7 @@ public:
 private:
     HTMLContentElement(Document&, PassOwnPtrWillBeRawPtr<HTMLContentSelectFilter>);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
 
     bool validateSelect() const;
     void parseSelect();

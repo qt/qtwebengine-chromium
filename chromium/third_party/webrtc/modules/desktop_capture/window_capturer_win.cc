@@ -17,7 +17,7 @@
 #include "webrtc/base/win32.h"
 #include "webrtc/modules/desktop_capture/desktop_frame_win.h"
 #include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/logging.h"
 
 namespace webrtc {
 
@@ -156,15 +156,16 @@ void WindowCapturerWin::Capture(const DesktopRegion& region) {
     return;
   }
 
-  // Stop capturing if the window has been closed or hidden.
-  if (!IsWindow(window_) || !IsWindowVisible(window_)) {
+  // Stop capturing if the window has been closed.
+  if (!IsWindow(window_)) {
     callback_->OnCaptureCompleted(NULL);
     return;
   }
 
-  // Return a 1x1 black frame if the window is minimized, to match the behavior
-  // on Mac.
-  if (IsIconic(window_)) {
+  // Return a 1x1 black frame if the window is minimized or invisible, to match
+  // behavior on mace. Window can be temporarily invisible during the
+  // transition of full screen mode on/off.
+  if (IsIconic(window_) || !IsWindowVisible(window_)) {
     BasicDesktopFrame* frame = new BasicDesktopFrame(DesktopSize(1, 1));
     memset(frame->data(), 0, frame->stride() * frame->size().height());
 

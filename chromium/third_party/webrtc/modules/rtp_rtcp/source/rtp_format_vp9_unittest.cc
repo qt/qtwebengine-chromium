@@ -55,7 +55,7 @@ void VerifyHeader(const RTPVideoHeaderVP9& expected,
                 actual.gof.temporal_up_switch[i]);
       EXPECT_EQ(expected.gof.temporal_idx[i], actual.gof.temporal_idx[i]);
       EXPECT_EQ(expected.gof.num_ref_pics[i], actual.gof.num_ref_pics[i]);
-      for (size_t j = 0; j < expected.gof.num_ref_pics[i]; j++) {
+      for (uint8_t j = 0; j < expected.gof.num_ref_pics[i]; j++) {
         EXPECT_EQ(expected.gof.pid_diff[i][j], actual.gof.pid_diff[i][j]);
       }
     }
@@ -97,9 +97,7 @@ void ParseAndCheckPacket(const uint8_t* packet,
 //        +-+-+-+-+-+-+-+-+
 //   L:   |  T  |U|  S  |D| (CONDITIONALLY RECOMMENDED)
 //        +-+-+-+-+-+-+-+-+                             -|
-//   P,F: | P_DIFF    |X|N| (CONDITIONALLY RECOMMENDED)  .
-//        +-+-+-+-+-+-+-+-+                              . up to 3 times
-//   X:   |EXTENDED P_DIFF| (OPTIONAL)                   .
+//   P,F: | P_DIFF      |N| (CONDITIONALLY RECOMMENDED)  . up to 3 times
 //        +-+-+-+-+-+-+-+-+                             -|
 //   V:   | SS            |
 //        | ..            |
@@ -114,7 +112,7 @@ void ParseAndCheckPacket(const uint8_t* packet,
 //        +-+-+-+-+-+-+-+-+
 //   M:   | EXTENDED PID  | (RECOMMENDED)
 //        +-+-+-+-+-+-+-+-+
-//   L:   |GOF_IDX|  S  |D| (CONDITIONALLY RECOMMENDED)
+//   L:   |  T  |U|  S  |D| (CONDITIONALLY RECOMMENDED)
 //        +-+-+-+-+-+-+-+-+
 //        |   TL0PICIDX   | (CONDITIONALLY REQUIRED)
 //        +-+-+-+-+-+-+-+-+
@@ -257,7 +255,8 @@ TEST_F(RtpPacketizerVp9Test, TestLayerInfoWithNonFlexibleMode) {
   const size_t kFrameSize = 30;
   const size_t kPacketSize = 25;
 
-  expected_.gof_idx = 3;
+  expected_.temporal_idx = 3;
+  expected_.temporal_up_switch = true;  // U
   expected_.num_spatial_layers = 3;
   expected_.spatial_idx = 2;
   expected_.inter_layer_predicted = true;  // D
@@ -266,9 +265,9 @@ TEST_F(RtpPacketizerVp9Test, TestLayerInfoWithNonFlexibleMode) {
 
   // Two packets:
   //    | I:0, P:0, L:1, F:0, B:1, E:0, V:0 | (3hdr + 15 payload)
-  // L: | GOF_IDX:3, S:2, D:1 | TL0PICIDX:117 |
+  // L: | T:3, U:1, S:2, D:1 | TL0PICIDX:117 |
   //    | I:0, P:0, L:1, F:0, B:0, E:1, V:0 | (3hdr + 15 payload)
-  // L: | GOF_IDX:3, S:2, D:1 | TL0PICIDX:117 |
+  // L: | T:3, U:1, S:2, D:1 | TL0PICIDX:117 |
   const size_t kExpectedHdrSizes[] = {3, 3};
   const size_t kExpectedSizes[] = {18, 18};
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
@@ -298,32 +297,37 @@ TEST_F(RtpPacketizerVp9Test, TestLayerInfoWithFlexibleMode) {
 
 TEST_F(RtpPacketizerVp9Test, TestRefIdx) {
   const size_t kFrameSize = 16;
-  const size_t kPacketSize = 22;
+  const size_t kPacketSize = 21;
 
   expected_.inter_pic_predicted = true;  // P
   expected_.flexible_mode = true;        // F
-  expected_.picture_id = 100;
-  expected_.num_ref_pics = 2;
-  expected_.pid_diff[0] = 3;
-  expected_.pid_diff[1] = 1171;
-  expected_.ref_picture_id[0] = 97;     // 100 - 3 = 97
-  expected_.ref_picture_id[1] = 31697;  // 0x7FFF + 1 + 100 - 1171 = 31697
+  expected_.picture_id = 2;
+  expected_.max_picture_id = kMaxOneBytePictureId;
+
+  expected_.num_ref_pics = 3;
+  expected_.pid_diff[0] = 1;
+  expected_.pid_diff[1] = 3;
+  expected_.pid_diff[2] = 127;
+  expected_.ref_picture_id[0] = 1;    // 2 - 1 = 1
+  expected_.ref_picture_id[1] = 127;  // (kMaxPictureId + 1) + 2 - 3 = 127
+  expected_.ref_picture_id[2] = 3;    // (kMaxPictureId + 1) + 2 - 127 = 3
   Init(kFrameSize, kPacketSize);
 
   // Two packets:
-  // I:1, P:1, L:0, F:1, B:1, E:1, V:0 (6hdr + 16 payload)
-  // I:   100 (2 bytes)
-  // P,F: P_DIFF:3, X:0, N:1
-  //      P_DIFF:1171, X:1, N:0 (2 bytes)
-  const size_t kExpectedHdrSizes[] = {6};
-  const size_t kExpectedSizes[] = {22};
+  // I:1, P:1, L:0, F:1, B:1, E:1, V:0 (5hdr + 16 payload)
+  // I:   2
+  // P,F: P_DIFF:1,   N:1
+  //      P_DIFF:3,   N:1
+  //      P_DIFF:127, N:0
+  const size_t kExpectedHdrSizes[] = {5};
+  const size_t kExpectedSizes[] = {21};
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CreateParseAndCheckPackets(kExpectedHdrSizes, kExpectedSizes, kExpectedNum);
 }
 
 TEST_F(RtpPacketizerVp9Test, TestRefIdxFailsWithoutPictureId) {
   const size_t kFrameSize = 16;
-  const size_t kPacketSize = 22;
+  const size_t kPacketSize = 21;
 
   expected_.inter_pic_predicted = true;
   expected_.flexible_mode = true;
@@ -337,7 +341,7 @@ TEST_F(RtpPacketizerVp9Test, TestRefIdxFailsWithoutPictureId) {
 
 TEST_F(RtpPacketizerVp9Test, TestSsDataWithoutSpatialResolutionPresent) {
   const size_t kFrameSize = 21;
-  const size_t kPacketSize = 25;
+  const size_t kPacketSize = 26;
 
   expected_.ss_data_available = true;
   expected_.num_spatial_layers = 1;
@@ -350,18 +354,38 @@ TEST_F(RtpPacketizerVp9Test, TestSsDataWithoutSpatialResolutionPresent) {
   Init(kFrameSize, kPacketSize);
 
   // One packet:
-  // I:0, P:0, L:0, F:0, B:1, E:1, V:1 (4hdr + 21 payload)
-  // N_S:0, Y:0, N_G:0
+  // I:0, P:0, L:0, F:0, B:1, E:1, V:1 (5hdr + 21 payload)
+  // N_S:0, Y:0, G:1
+  // N_G:1
   // T:0, U:1, R:1 | P_DIFF[0][0]:4
-  const size_t kExpectedHdrSizes[] = {4};
-  const size_t kExpectedSizes[] = {25};
+  const size_t kExpectedHdrSizes[] = {5};
+  const size_t kExpectedSizes[] = {26};
+  const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
+  CreateParseAndCheckPackets(kExpectedHdrSizes, kExpectedSizes, kExpectedNum);
+}
+
+TEST_F(RtpPacketizerVp9Test, TestSsDataWithoutGbitPresent) {
+  const size_t kFrameSize = 21;
+  const size_t kPacketSize = 23;
+
+  expected_.ss_data_available = true;
+  expected_.num_spatial_layers = 1;
+  expected_.spatial_layer_resolution_present = false;
+  expected_.gof.num_frames_in_gof = 0;
+  Init(kFrameSize, kPacketSize);
+
+  // One packet:
+  // I:0, P:0, L:0, F:0, B:1, E:1, V:1 (2hdr + 21 payload)
+  // N_S:0, Y:0, G:0
+  const size_t kExpectedHdrSizes[] = {2};
+  const size_t kExpectedSizes[] = {23};
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CreateParseAndCheckPackets(kExpectedHdrSizes, kExpectedSizes, kExpectedNum);
 }
 
 TEST_F(RtpPacketizerVp9Test, TestSsData) {
   const size_t kFrameSize = 21;
-  const size_t kPacketSize = 39;
+  const size_t kPacketSize = 40;
 
   expected_.ss_data_available = true;
   expected_.num_spatial_layers = 2;
@@ -388,17 +412,18 @@ TEST_F(RtpPacketizerVp9Test, TestSsData) {
   Init(kFrameSize, kPacketSize);
 
   // One packet:
-  // I:0, P:0, L:0, F:0, B:1, E:1, V:1 (18hdr + 21 payload)
-  // N_S:1, Y:1, N_G:2
+  // I:0, P:0, L:0, F:0, B:1, E:1, V:1 (19hdr + 21 payload)
+  // N_S:1, Y:1, G:1
   // WIDTH:640   // 2 bytes
   // HEIGHT:360  // 2 bytes
   // WIDTH:1280  // 2 bytes
   // HEIGHT:720  // 2 bytes
+  // N_G:3
   // T:0, U:1, R:0
   // T:1, U:1, R:3 | P_DIFF[1][0]:5 | P_DIFF[1][1]:6 | P_DIFF[1][2]:7
   // T:2, U:0, R:2 | P_DIFF[2][0]:8 | P_DIFF[2][0]:9
-  const size_t kExpectedHdrSizes[] = {18};
-  const size_t kExpectedSizes[] = {39};
+  const size_t kExpectedHdrSizes[] = {19};
+  const size_t kExpectedSizes[] = {40};
   const size_t kExpectedNum = GTEST_ARRAY_SIZE_(kExpectedSizes);
   CreateParseAndCheckPackets(kExpectedHdrSizes, kExpectedSizes, kExpectedNum);
 }
@@ -481,16 +506,20 @@ TEST_F(RtpDepacketizerVp9Test, ParseTwoBytePictureId) {
 
 TEST_F(RtpDepacketizerVp9Test, ParseLayerInfoWithNonFlexibleMode) {
   const uint8_t kHeaderLength = 3;
-  const uint8_t kGofIdx = 7;
+  const uint8_t kTemporalIdx = 2;
+  const uint8_t kUbit = 1;
   const uint8_t kSpatialIdx = 1;
   const uint8_t kDbit = 1;
   const uint8_t kTl0PicIdx = 17;
   uint8_t packet[13] = {0};
   packet[0] = 0x20;  // I:0 P:0 L:1 F:0 B:0 E:0 V:0 R:0
-  packet[1] = (kGofIdx << 4) | (kSpatialIdx << 1) | kDbit;  // GOF_IDX:7 S:1 D:1
-  packet[2] = kTl0PicIdx;                                   // TL0PICIDX:17
+  packet[1] = (kTemporalIdx << 5) | (kUbit << 4) | (kSpatialIdx << 1) | kDbit;
+  packet[2] = kTl0PicIdx;
 
-  expected_.gof_idx = kGofIdx;
+  // T:2 U:1 S:1 D:1
+  // TL0PICIDX:17
+  expected_.temporal_idx = kTemporalIdx;
+  expected_.temporal_up_switch = kUbit ? true : false;
   expected_.spatial_idx = kSpatialIdx;
   expected_.inter_layer_predicted = kDbit ? true : false;
   expected_.tl0_pic_idx = kTl0PicIdx;
@@ -519,26 +548,25 @@ TEST_F(RtpDepacketizerVp9Test, ParseLayerInfoWithFlexibleMode) {
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseRefIdx) {
-  const uint8_t kHeaderLength = 7;
+  const uint8_t kHeaderLength = 6;
   const int16_t kPictureId = 17;
-  const int16_t kPdiff1 = 17;
-  const int16_t kPdiff2 = 18;
-  const int16_t kExtPdiff3 = 2171;
+  const uint8_t kPdiff1 = 17;
+  const uint8_t kPdiff2 = 18;
+  const uint8_t kPdiff3 = 127;
   uint8_t packet[13] = {0};
   packet[0] = 0xD8;  // I:1 P:1 L:0 F:1 B:1 E:0 V:0 R:0
   packet[1] = 0x80 | ((kPictureId >> 8) & 0x7F);  // Two byte pictureID.
   packet[2] = kPictureId;
-  packet[3] = (kPdiff1 << 2) | (0 << 1) | 1;            // P_DIFF X:0 N:1
-  packet[4] = (kPdiff2 << 2) | (0 << 1) | 1;            // P_DIFF X:0 N:1
-  packet[5] = ((kExtPdiff3 >> 8) << 2) | (1 << 1) | 0;  // P_DIFF X:1 N:0
-  packet[6] = kExtPdiff3 & 0xff;                        // EXTENDED P_DIFF
+  packet[3] = (kPdiff1 << 1) | 1;  // P_DIFF N:1
+  packet[4] = (kPdiff2 << 1) | 1;  // P_DIFF N:1
+  packet[5] = (kPdiff3 << 1) | 0;  // P_DIFF N:0
 
   // I:1 P:1 L:0 F:1 B:1 E:0 V:0
   // I:    PICTURE ID:17
   // I:
-  // P,F:  P_DIFF:17 X:0 N:1   => refPictureId = 17 - 17 = 0
-  // P,F:  P_DIFF:18 X:0 N:1   => refPictureId = 0x7FFF + 1 + 17 - 18 = 0x7FFF
-  // P,F:  P_DIFF:2171 X:1 N:0 => refPictureId = 0x7FFF + 1 + 17 - 2171 = 30614
+  // P,F:  P_DIFF:17  N:1 => refPicId = 17 - 17 = 0
+  // P,F:  P_DIFF:18  N:1 => refPicId = (kMaxPictureId + 1) + 17 - 18 = 0x7FFF
+  // P,F:  P_DIFF:127 N:0 => refPicId = (kMaxPictureId + 1) + 17 - 127 = 32658
   expected_.beginning_of_frame = true;
   expected_.inter_pic_predicted = true;
   expected_.flexible_mode = true;
@@ -546,48 +574,49 @@ TEST_F(RtpDepacketizerVp9Test, ParseRefIdx) {
   expected_.num_ref_pics = 3;
   expected_.pid_diff[0] = kPdiff1;
   expected_.pid_diff[1] = kPdiff2;
-  expected_.pid_diff[2] = kExtPdiff3;
+  expected_.pid_diff[2] = kPdiff3;
   expected_.ref_picture_id[0] = 0;
   expected_.ref_picture_id[1] = 0x7FFF;
-  expected_.ref_picture_id[2] = 30614;
+  expected_.ref_picture_id[2] = 32658;
   ParseAndCheckPacket(packet, expected_, kHeaderLength, sizeof(packet));
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseRefIdxFailsWithNoPictureId) {
-  const int16_t kPdiff = 3;
+  const uint8_t kPdiff = 3;
   uint8_t packet[13] = {0};
-  packet[0] = 0x58;                          // I:0 P:1 L:0 F:1 B:1 E:0 V:0 R:0
-  packet[1] = (kPdiff << 2) | (0 << 1) | 0;  // P,F:  P_DIFF:3 X:0 N:0
+  packet[0] = 0x58;            // I:0 P:1 L:0 F:1 B:1 E:0 V:0 R:0
+  packet[1] = (kPdiff << 1);   // P,F:  P_DIFF:3 N:0
 
   RtpDepacketizer::ParsedPayload parsed;
   EXPECT_FALSE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseRefIdxFailsWithTooManyRefPics) {
-  const int16_t kPdiff = 3;
+  const uint8_t kPdiff = 3;
   uint8_t packet[13] = {0};
-  packet[0] = 0xD8;                          // I:1 P:1 L:0 F:1 B:1 E:0 V:0 R:0
-  packet[1] = kMaxOneBytePictureId;          // I:    PICTURE ID:127
-  packet[2] = (kPdiff << 2) | (0 << 1) | 1;  // P,F:  P_DIFF:3 X:0 N:1
-  packet[3] = (kPdiff << 2) | (0 << 1) | 1;  // P,F:  P_DIFF:3 X:0 N:1
-  packet[4] = (kPdiff << 2) | (0 << 1) | 1;  // P,F:  P_DIFF:3 X:0 N:1
-  packet[5] = (kPdiff << 2) | (0 << 1) | 0;  // P,F:  P_DIFF:3 X:0 N:0
+  packet[0] = 0xD8;                  // I:1 P:1 L:0 F:1 B:1 E:0 V:0 R:0
+  packet[1] = kMaxOneBytePictureId;  // I:    PICTURE ID:127
+  packet[2] = (kPdiff << 1) | 1;     // P,F:  P_DIFF:3 N:1
+  packet[3] = (kPdiff << 1) | 1;     // P,F:  P_DIFF:3 N:1
+  packet[4] = (kPdiff << 1) | 1;     // P,F:  P_DIFF:3 N:1
+  packet[5] = (kPdiff << 1) | 0;     // P,F:  P_DIFF:3 N:0
 
   RtpDepacketizer::ParsedPayload parsed;
   EXPECT_FALSE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));
 }
 
 TEST_F(RtpDepacketizerVp9Test, ParseSsData) {
-  const uint8_t kHeaderLength = 5;
+  const uint8_t kHeaderLength = 6;
   const uint8_t kYbit = 0;
   const size_t kNs = 2;
   const size_t kNg = 2;
   uint8_t packet[23] = {0};
   packet[0] = 0x0A;  // I:0 P:0 L:0 F:0 B:1 E:0 V:1 R:0
-  packet[1] = ((kNs - 1) << 5) | (kYbit << 4) | (kNg - 1);  // N_S Y N_G
-  packet[2] = (0 << 5) | (1 << 4) | (0 << 2) | 0;           // T:0 U:1 R:0 -
-  packet[3] = (2 << 5) | (0 << 4) | (1 << 2) | 0;           // T:2 U:0 R:1 -
-  packet[4] = 33;
+  packet[1] = ((kNs - 1) << 5) | (kYbit << 4) | (1 << 3);  // N_S Y G:1 -
+  packet[2] = kNg;                                         // N_G
+  packet[3] = (0 << 5) | (1 << 4) | (0 << 2) | 0;          // T:0 U:1 R:0 -
+  packet[4] = (2 << 5) | (0 << 4) | (1 << 2) | 0;          // T:2 U:0 R:1 -
+  packet[5] = 33;
 
   expected_.beginning_of_frame = true;
   expected_.ss_data_available = true;
@@ -629,7 +658,7 @@ TEST_F(RtpDepacketizerVp9Test, ParseResolution) {
   const uint16_t kHeight[2] = {360, 720};
   uint8_t packet[20] = {0};
   packet[0] = 0x0A;  // I:0 P:0 L:0 F:0 B:1 E:0 V:1 R:0
-  packet[1] = (1 << 5) | (1 << 4) | 0;  // N_S:1 Y:1 N_G:0
+  packet[1] = (1 << 5) | (1 << 4) | 0;  // N_S:1 Y:1 G:0
   packet[2] = kWidth[0] >> 8;
   packet[3] = kWidth[0] & 0xFF;
   packet[4] = kHeight[0] >> 8;
@@ -638,7 +667,6 @@ TEST_F(RtpDepacketizerVp9Test, ParseResolution) {
   packet[7] = kWidth[1] & 0xFF;
   packet[8] = kHeight[1] >> 8;
   packet[9] = kHeight[1] & 0xFF;
-  packet[10] = 0;  // T:0 U:0 R:0 -
 
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer_->Parse(&parsed, packet, sizeof(packet)));

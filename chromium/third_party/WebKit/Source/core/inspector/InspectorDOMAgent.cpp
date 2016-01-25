@@ -28,7 +28,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorDOMAgent.h"
 
 #include "bindings/core/v8/BindingSecurity.h"
@@ -68,9 +67,9 @@
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorHighlight.h"
 #include "core/inspector/InspectorHistory.h"
-#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/RemoteObjectId.h"
@@ -160,7 +159,7 @@ ScriptValue nodeAsScriptValue(ScriptState* scriptState, Node* node)
     ScriptState::Scope scope(scriptState);
     v8::Isolate* isolate = scriptState->isolate();
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "nodeAsScriptValue", "InjectedScriptHost", scriptState->context()->Global(), isolate);
-    if (!BindingSecurity::shouldAllowAccessToNode(isolate, node, exceptionState))
+    if (!BindingSecurity::shouldAllowAccessTo(isolate, callingDOMWindow(isolate), node, exceptionState))
         return ScriptValue(scriptState, v8::Null(isolate));
     return ScriptValue(scriptState, toV8(node, scriptState->context()->Global(), isolate));
 }
@@ -168,7 +167,7 @@ ScriptValue nodeAsScriptValue(ScriptState* scriptState, Node* node)
 } // namespace
 
 class InspectorRevalidateDOMTask final : public NoBaseWillBeGarbageCollectedFinalized<InspectorRevalidateDOMTask> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorRevalidateDOMTask);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorRevalidateDOMTask);
 public:
     explicit InspectorRevalidateDOMTask(InspectorDOMAgent*);
     void scheduleStyleAttrRevalidationFor(Element*);
@@ -192,7 +191,7 @@ void InspectorRevalidateDOMTask::scheduleStyleAttrRevalidationFor(Element* eleme
 {
     m_styleAttrInvalidatedElements.add(element);
     if (!m_timer.isActive())
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void InspectorRevalidateDOMTask::onTimer(Timer<InspectorRevalidateDOMTask>*)
@@ -273,9 +272,9 @@ bool InspectorDOMAgent::getPseudoElementType(PseudoId pseudoId, TypeBuilder::DOM
     }
 }
 
-InspectorDOMAgent::InspectorDOMAgent(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, Client* client)
+InspectorDOMAgent::InspectorDOMAgent(InspectedFrames* inspectedFrames, InjectedScriptManager* injectedScriptManager, Client* client)
     : InspectorBaseAgent<InspectorDOMAgent, InspectorFrontend::DOM>("DOM")
-    , m_pageAgent(pageAgent)
+    , m_inspectedFrames(inspectedFrames)
     , m_injectedScriptManager(injectedScriptManager)
     , m_client(client)
     , m_domListener(nullptr)
@@ -303,13 +302,11 @@ void InspectorDOMAgent::restore()
 WillBeHeapVector<RawPtrWillBeMember<Document> > InspectorDOMAgent::documents()
 {
     WillBeHeapVector<RawPtrWillBeMember<Document> > result;
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().traverseNext()) {
-        if (!frame->isLocalFrame())
-            continue;
-        Document* document = toLocalFrame(frame)->document();
-        if (!document)
-            continue;
-        result.append(document);
+    if (m_document) {
+        for (LocalFrame* frame : *m_inspectedFrames) {
+            if (Document* document = frame->document())
+                result.append(document);
+        }
     }
     return result;
 }
@@ -516,7 +513,7 @@ void InspectorDOMAgent::innerEnable()
     m_state->setBoolean(DOMAgentState::domAgentEnabled, true);
     m_history = adoptPtrWillBeNoop(new InspectorHistory());
     m_domEditor = adoptPtrWillBeNoop(new DOMEditor(m_history.get()));
-    m_document = m_pageAgent->inspectedFrame()->document();
+    m_document = m_inspectedFrames->root()->document();
     m_instrumentingAgents->setInspectorDOMAgent(this);
     if (m_backendNodeIdToInspect)
         frontend()->inspectNodeRequested(m_backendNodeIdToInspect);
@@ -915,11 +912,10 @@ static Node* nextNodeWithShadowDOMInMind(const Node& current, const Node* stayWi
         const Element& element = toElement(current);
         ElementShadow* elementShadow = element.shadow();
         if (elementShadow) {
-            ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
-            if (shadowRoot) {
-                if (shadowRoot->type() != ShadowRootType::UserAgent || includeUserAgentShadowDOM)
-                    return shadowRoot;
-            }
+            ShadowRoot& shadowRoot = elementShadow->youngestShadowRoot();
+            if (shadowRoot.type() != ShadowRootType::UserAgent || includeUserAgentShadowDOM)
+                return &shadowRoot;
+
         }
     }
     if (current.hasChildren())
@@ -1111,6 +1107,21 @@ void InspectorDOMAgent::inspect(Node* inspectedNode)
     frontend()->inspectNodeRequested(backendNodeId);
 }
 
+void InspectorDOMAgent::nodeHighlightedInOverlay(Node* node)
+{
+    if (!frontend() || !enabled())
+        return;
+
+    while (node && !node->isElementNode() && !node->isDocumentNode() && !node->isDocumentFragment())
+        node = node->parentOrShadowHostNode();
+
+    if (!node)
+        return;
+
+    int nodeId = pushNodePathToFrontend(node);
+    frontend()->nodeHighlightRequested(nodeId);
+}
+
 void InspectorDOMAgent::setSearchingForNode(ErrorString* errorString, SearchMode searchMode, JSONObject* highlightInspectorObject)
 {
     if (m_client)
@@ -1145,6 +1156,9 @@ PassOwnPtr<InspectorHighlightConfig> InspectorDOMAgent::highlightConfigFromInspe
     highlightConfig->eventTarget = parseConfigColor("eventTargetColor", highlightInspectorObject);
     highlightConfig->shape = parseConfigColor("shapeColor", highlightInspectorObject);
     highlightConfig->shapeMargin = parseConfigColor("shapeMarginColor", highlightInspectorObject);
+    String selectorList;
+    highlightInspectorObject->getString("selectorList", &selectorList);
+    highlightConfig->selectorList = selectorList;
 
     return highlightConfig.release();
 }
@@ -1254,7 +1268,7 @@ void InspectorDOMAgent::highlightFrame(
     const RefPtr<JSONObject>* color,
     const RefPtr<JSONObject>* outlineColor)
 {
-    LocalFrame* frame = IdentifiersFactory::frameById(m_pageAgent->inspectedFrame(), frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, frameId);
     // FIXME: Inspector doesn't currently work cross process.
     if (frame && frame->deprecatedLocalOwner()) {
         OwnPtr<InspectorHighlightConfig> highlightConfig = adoptPtr(new InspectorHighlightConfig());
@@ -1460,7 +1474,7 @@ String InspectorDOMAgent::documentURLString(Document* document)
 
 static String documentBaseURLString(Document* document)
 {
-    return document->completeURL("").string();
+    return document->baseURLForOverride(document->baseURL()).string();
 }
 
 static TypeBuilder::DOM::ShadowRootType::Enum shadowRootType(ShadowRoot* shadowRoot)
@@ -1468,7 +1482,7 @@ static TypeBuilder::DOM::ShadowRootType::Enum shadowRootType(ShadowRoot* shadowR
     switch (shadowRoot->type()) {
     case ShadowRootType::UserAgent:
         return TypeBuilder::DOM::ShadowRootType::User_agent;
-    case ShadowRootType::OpenByDefault:
+    case ShadowRootType::V0:
     case ShadowRootType::Open:
         return TypeBuilder::DOM::ShadowRootType::Open;
     case ShadowRootType::Closed:
@@ -1525,7 +1539,7 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
         ElementShadow* shadow = element->shadow();
         if (shadow) {
             RefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > shadowRoots = TypeBuilder::Array<TypeBuilder::DOM::Node>::create();
-            for (ShadowRoot* root = shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
+            for (ShadowRoot* root = &shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
                 shadowRoots->addItem(buildObjectForNode(root, 0, nodesMap));
             value->setShadowRoots(shadowRoots);
             forcePushChildren = true;
@@ -1553,13 +1567,14 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
                 value->setPseudoElements(pseudoElements.release());
                 forcePushChildren = true;
             }
+            if (!element->ownerDocument()->xmlVersion().isEmpty())
+                value->setXmlVersion(element->ownerDocument()->xmlVersion());
         }
 
         if (element->isInsertionPoint()) {
             value->setDistributedNodes(buildArrayForDistributedNodes(toInsertionPoint(element)));
             forcePushChildren = true;
         }
-
     } else if (node->isDocumentNode()) {
         Document* document = toDocument(node);
         value->setDocumentURL(documentURLString(document));
@@ -1713,7 +1728,7 @@ bool InspectorDOMAgent::isWhitespace(Node* node)
 
 void InspectorDOMAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
-    if (frame != m_pageAgent->inspectedFrame())
+    if (frame != m_inspectedFrames->root())
         return;
 
     // Re-push document once it is loaded.
@@ -1745,7 +1760,7 @@ void InspectorDOMAgent::invalidateFrameOwnerElement(LocalFrame* frame)
 
 void InspectorDOMAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
 {
-    LocalFrame* inspectedFrame = m_pageAgent->inspectedFrame();
+    LocalFrame* inspectedFrame = m_inspectedFrames->root();
     if (loader->frame() != inspectedFrame) {
         invalidateFrameOwnerElement(loader->frame());
         return;
@@ -1936,7 +1951,7 @@ void InspectorDOMAgent::frameDocumentUpdated(LocalFrame* frame)
     if (!document)
         return;
 
-    if (frame != m_pageAgent->inspectedFrame())
+    if (frame != m_inspectedFrames->root())
         return;
 
     // Only update the main frame document, nested frame document updates are not required
@@ -2042,7 +2057,7 @@ void InspectorDOMAgent::pushNodesByBackendIdsToFrontend(ErrorString* errorString
         }
 
         Node* node = DOMNodeIds::nodeForId(backendNodeId);
-        if (node && node->document().frame() && node->document().frame()->instrumentingAgents() == m_pageAgent->inspectedFrame()->instrumentingAgents())
+        if (node && node->document().frame() && m_inspectedFrames->contains(node->document().frame()))
             result->addItem(pushNodePathToFrontend(node));
         else
             result->addItem(0);
@@ -2107,12 +2122,14 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(No
     if (!frame)
         return nullptr;
 
-    ScriptState* state = ScriptState::forMainWorld(frame);
-    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(state);
+    ScriptState* scriptState = ScriptState::forMainWorld(frame);
+    if (!scriptState)
+        return nullptr;
+    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(scriptState);
     if (injectedScript.isEmpty())
         return nullptr;
 
-    ScriptValue scriptValue = nodeAsScriptValue(state, node);
+    ScriptValue scriptValue = nodeAsScriptValue(scriptState, node);
     return injectedScript.wrapObject(scriptValue, objectGroup);
 }
 
@@ -2129,7 +2146,7 @@ bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorSt
 DEFINE_TRACE(InspectorDOMAgent)
 {
     visitor->trace(m_domListener);
-    visitor->trace(m_pageAgent);
+    visitor->trace(m_inspectedFrames);
     visitor->trace(m_injectedScriptManager);
 #if ENABLE(OILPAN)
     visitor->trace(m_documentNodeToIdMap);

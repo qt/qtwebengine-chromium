@@ -29,8 +29,7 @@ static_library("zlib_x86_simd") {
 }
 
 config("zlib_warnings") {
-  if (is_clang && !is_ios &&
-      (current_cpu == "x86" || current_cpu == "x64")) {
+  if (is_clang && !is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
     cflags = [ "-Wno-incompatible-pointer-types" ]
   }
 }
@@ -148,5 +147,15 @@ static_library("zip") {
   deps = [
     ":minizip",
     "//base",
+  ]
+}
+
+static_library("compression_utils") {
+  sources = [
+    "google/compression_utils.cc",
+    "google/compression_utils.h",
+  ]
+  deps = [
+    ":zlib",
   ]
 }

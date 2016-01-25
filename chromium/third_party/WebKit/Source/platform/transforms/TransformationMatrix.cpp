@@ -25,7 +25,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/transforms/TransformationMatrix.h"
 
 #include "platform/geometry/FloatBox.h"
@@ -37,6 +36,9 @@
 
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
+
+#include <cmath>
+#include <cstdlib>
 
 #if CPU(X86_64)
 #include <emmintrin.h>
@@ -146,6 +148,7 @@ static double determinant4x4(const TransformationMatrix::Matrix4& m)
          - d1 * determinant3x3(a2, a3, a4, b2, b3, b4, c2, c3, c4);
 }
 
+#if !CPU(ARM64)
 // adjoint( original_matrix, inverse_matrix )
 //
 //   calculate the adjoint of a 4x4 matrix
@@ -207,6 +210,7 @@ static inline void adjoint(const TransformationMatrix::Matrix4& matrix, Transfor
     result[2][3]  = - determinant3x3(a1, a2, a3, b1, b2, b3, d1, d2, d3);
     result[3][3]  =   determinant3x3(a1, a2, a3, b1, b2, b3, c1, c2, c3);
 }
+#endif
 
 // Returns false if the matrix is not invertible
 static bool inverse(const TransformationMatrix::Matrix4& matrix, TransformationMatrix::Matrix4& result)
@@ -597,8 +601,7 @@ static void slerp(double qa[4], const double qb[4], double t)
 
     product = ax * bx + ay * by + az * bz + aw * bw;
 
-    // Clamp product to -1.0 <= product <= 1.0.
-    product = std::min(std::max(product, -1.0), 1.0);
+    product = clampTo(product, -1.0, 1.0);
 
     const double epsilon = 1e-5;
     if (std::abs(product - 1.0) < epsilon) {
@@ -711,7 +714,7 @@ FloatQuad TransformationMatrix::projectQuad(const FloatQuad& q, bool* clamped) c
 static float clampEdgeValue(float f)
 {
     ASSERT(!std::isnan(f));
-    return std::min<float>(std::max<float>(f, (-LayoutUnit::max() / 2).toFloat()), (LayoutUnit::max() / 2).toFloat());
+    return clampTo(f, (-LayoutUnit::max() / 2).toFloat(), (LayoutUnit::max() / 2).toFloat());
 }
 
 LayoutRect TransformationMatrix::clampedBoundsOfProjectedQuad(const FloatQuad& q) const

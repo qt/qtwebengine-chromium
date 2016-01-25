@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "content/child/child_process.h"
@@ -33,34 +36,13 @@ class MockVideoCaptureMessageFilter : public VideoCaptureMessageFilter {
   DISALLOW_COPY_AND_ASSIGN(MockVideoCaptureMessageFilter);
 };
 
-struct BufferReceivedTestArg {
-  BufferReceivedTestArg(media::VideoPixelFormat pixel_format,
-                        const std::vector<gpu::MailboxHolder>& mailbox_holders)
-      : pixel_format(pixel_format), mailbox_holders(mailbox_holders) {}
-
-  BufferReceivedTestArg(media::VideoPixelFormat pixel_format)
-      : pixel_format(pixel_format) {}
-
-  media::VideoPixelFormat pixel_format;
-  std::vector<gpu::MailboxHolder> mailbox_holders;
-};
-
-static const BufferReceivedTestArg kBufferFormats[]  = {
-  BufferReceivedTestArg(media::PIXEL_FORMAT_I420),
-  BufferReceivedTestArg(
-      media::PIXEL_FORMAT_ARGB,
-      std::vector<gpu::MailboxHolder>(
-          1, gpu::MailboxHolder(gpu::Mailbox::Generate(), 0, 0)))};
-
-class VideoCaptureImplTest :
-    public ::testing::TestWithParam<BufferReceivedTestArg> {
+class VideoCaptureImplTest : public ::testing::Test {
  public:
   class MockVideoCaptureImpl : public VideoCaptureImpl {
    public:
     MockVideoCaptureImpl(const media::VideoCaptureSessionId id,
                          VideoCaptureMessageFilter* filter)
-        : VideoCaptureImpl(id, filter), received_buffer_count_(0) {
-    }
+        : VideoCaptureImpl(id, filter), received_buffer_count_(0) {}
     ~MockVideoCaptureImpl() override {}
 
     // Override Send() to mimic device to send events.
@@ -101,7 +83,7 @@ class VideoCaptureImplTest :
 
     void DeviceReceiveEmptyBuffer(int device_id,
                                   int buffer_id,
-                                  uint32 sync_point,
+                                  const gpu::SyncToken& release_sync_token,
                                   double consumer_resource_utilization) {
       received_buffer_count_++;
     }
@@ -185,13 +167,11 @@ class VideoCaptureImplTest :
         shm.mapped_size(), buffer_id);
   }
 
-  void BufferReceived(int buffer_id, const gfx::Size& size,
-                      media::VideoPixelFormat pixel_format,
-                      const std::vector<gpu::MailboxHolder>& mailbox_holders) {
+  void BufferReceived(int buffer_id, const gfx::Size& size) {
     video_capture_impl_->OnBufferReceived(
         buffer_id, base::TimeTicks::Now(), base::DictionaryValue(),
-        pixel_format, media::VideoFrame::STORAGE_SHMEM, size,
-        gfx::Rect(size), mailbox_holders);
+        media::PIXEL_FORMAT_I420, media::VideoFrame::STORAGE_SHMEM, size,
+        gfx::Rect(size));
   }
 
   void BufferDestroyed(int buffer_id) {
@@ -308,39 +288,32 @@ TEST_F(VideoCaptureImplTest, GetDeviceFormatsInUse) {
   DeInit();
 }
 
-// NEW TEST
-TEST_P(VideoCaptureImplTest, BufferReceivedWithFormat) {
+TEST_F(VideoCaptureImplTest, BufferReceived) {
   EXPECT_CALL(*this, OnStateUpdate(VIDEO_CAPTURE_STATE_STARTED)).Times(1);
   EXPECT_CALL(*this, OnStateUpdate(VIDEO_CAPTURE_STATE_STOPPED)).Times(1);
   EXPECT_CALL(*this, OnFrameReady(_, _)).Times(1);
 
-  const BufferReceivedTestArg& buffer_arg = GetParam();
   const gfx::Size size(1280, 720);
 
   // Create a fake shared memory for buffer.
   base::SharedMemory shm;
   const size_t frame_size = media::VideoFrame::AllocationSize(
-      buffer_arg.pixel_format, size);
+      media::PIXEL_FORMAT_I420, size);
   ASSERT_TRUE(shm.CreateAndMapAnonymous(frame_size));
 
   media::VideoCaptureParams params;
   params.requested_format = media::VideoCaptureFormat(
-      size, 30, buffer_arg.pixel_format);
+      size, 30, media::PIXEL_FORMAT_I420);
 
   Init();
   StartCapture(0, params);
   NewBuffer(0, shm);
-  BufferReceived(0, size, buffer_arg.pixel_format, buffer_arg.mailbox_holders);
+  BufferReceived(0, size);
   StopCapture(0);
   BufferDestroyed(0);
   DeInit();
 }
 
-INSTANTIATE_TEST_CASE_P(I420AndARGB,
-                        VideoCaptureImplTest,
-                        testing::ValuesIn(kBufferFormats));
-
-// NEW TEST
 TEST_F(VideoCaptureImplTest, BufferReceivedAfterStop) {
   EXPECT_CALL(*this, OnStateUpdate(VIDEO_CAPTURE_STATE_STARTED)).Times(1);
   EXPECT_CALL(*this, OnStateUpdate(VIDEO_CAPTURE_STATE_STOPPED)).Times(1);
@@ -356,8 +329,7 @@ TEST_F(VideoCaptureImplTest, BufferReceivedAfterStop) {
   StartCapture(0, params_large_);
   NewBuffer(0, shm);
   StopCapture(0);
-  BufferReceived(0, params_large_.requested_format.frame_size,
-                 media::PIXEL_FORMAT_I420, std::vector<gpu::MailboxHolder>());
+  BufferReceived(0, params_large_.requested_format.frame_size);
   BufferDestroyed(0);
   DeInit();
 

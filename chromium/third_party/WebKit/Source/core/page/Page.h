@@ -32,6 +32,7 @@
 #include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PageLifecycleObserver.h"
 #include "core/page/PageVisibilityState.h"
+#include "platform/MemoryPurgeController.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
@@ -46,7 +47,6 @@ namespace blink {
 class AutoscrollController;
 class ChromeClient;
 class ClientRectList;
-class CompositedDisplayList;
 class ContextMenuClient;
 class ContextMenuController;
 class Document;
@@ -57,7 +57,6 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
-class MemoryPurgeController;
 class PluginData;
 class PointerLockController;
 class ScrollingCoordinator;
@@ -65,19 +64,18 @@ class Settings;
 class SpellCheckerClient;
 class UndoStack;
 class ValidationMessageClient;
+class WebLayerTreeView;
 
 typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
+class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate, public MemoryPurgeClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Page);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
-    static void platformColorsChanged();
-
     // It is up to the platform to ensure that non-null clients are provided where required.
     struct CORE_EXPORT PageClients final {
         STACK_ALLOCATED();
@@ -93,16 +91,29 @@ public:
         SpellCheckerClient* spellCheckerClient;
     };
 
-    explicit Page(PageClients&);
+    static PassOwnPtrWillBeRawPtr<Page> create(PageClients& pageClients)
+    {
+        return adoptPtrWillBeNoop(new Page(pageClients));
+    }
+
+    // An "ordinary" page is a fully-featured page owned by a web view.
+    static PassOwnPtrWillBeRawPtr<Page> createOrdinary(PageClients&);
+
     ~Page() override;
 
-    void makeOrdinary();
+    void willBeClosed();
 
-    // This method returns all pages, incl. private ones associated with
-    // inspector overlay, popups, SVGImage, etc.
-    static HashSet<Page*>& allPages();
-    // This method returns all ordinary pages.
-    static HashSet<Page*>& ordinaryPages();
+    using PageSet = WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>;
+
+    // Return the current set of full-fledged, ordinary pages.
+    // Each created and owned by a WebView.
+    //
+    // This set does not include Pages created for other, internal purposes
+    // (SVGImages, inspector overlays, page popups etc.)
+    static PageSet& ordinaryPages();
+
+    static void platformColorsChanged();
+    static void onMemoryPressure();
 
     FrameHost& frameHost() const { return *m_frameHost; }
 
@@ -170,9 +181,9 @@ public:
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float);
     void setDeviceColorProfile(const Vector<char>&);
-    void resetDeviceColorProfile();
+    void resetDeviceColorProfileForTesting();
 
-    static void allVisitedStateChanged();
+    static void allVisitedStateChanged(bool invalidateVisitedLinkHashes);
     static void visitedStateChanged(LinkHash visitedHash);
 
     PageVisibilityState visibilityState() const;
@@ -186,34 +197,37 @@ public:
     bool isPainting() const { return m_isPainting; }
 #endif
 
-    double timerAlignmentInterval() const;
-
     class CORE_EXPORT MultisamplingChangedObserver : public WillBeGarbageCollectedMixin {
     public:
         virtual void multisamplingChanged(bool) = 0;
     };
 
     void addMultisamplingChangedObserver(MultisamplingChangedObserver*);
+#if !ENABLE(OILPAN)
     void removeMultisamplingChangedObserver(MultisamplingChangedObserver*);
+#endif
 
     void didCommitLoad(LocalFrame*);
 
     void acceptLanguagesChanged();
 
-    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>);
-    CompositedDisplayList* compositedDisplayListForTesting();
-
     static void networkStateChanged(bool online);
 
     MemoryPurgeController& memoryPurgeController();
 
+    void purgeMemory(DeviceKind) override;
+
     DECLARE_TRACE();
+
+    void layerTreeViewInitialized(WebLayerTreeView&);
+    void willCloseLayerTreeView(WebLayerTreeView&);
+
     void willBeDestroyed();
 
 private:
-    void initGroup();
+    explicit Page(PageClients&);
 
-    void setTimerAlignmentInterval(double);
+    void initGroup();
 
     void setNeedsLayoutInAllFrames();
 
@@ -222,7 +236,7 @@ private:
 
     RefPtrWillBeMember<PageAnimator> m_animator;
     const OwnPtrWillBeMember<AutoscrollController> m_autoscrollController;
-    ChromeClient* m_chromeClient;
+    RawPtrWillBeMember<ChromeClient> m_chromeClient;
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtrWillBeMember<FocusController> m_focusController;
@@ -260,8 +274,6 @@ private:
     bool m_defersLoading;
 
     float m_deviceScaleFactor;
-
-    double m_timerAlignmentInterval;
 
     PageVisibilityState m_visibilityState;
 

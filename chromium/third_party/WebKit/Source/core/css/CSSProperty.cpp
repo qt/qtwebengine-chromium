@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSProperty.h"
 
 #include "core/StylePropertyShorthand.h"
@@ -28,7 +27,7 @@ namespace blink {
 
 struct SameSizeAsCSSProperty {
     uint32_t bitfields;
-    void* value;
+    RawPtrWillBeMember<void*> value;
 };
 
 static_assert(sizeof(CSSProperty) == sizeof(SameSizeAsCSSProperty), "CSSProperty should stay small");
@@ -54,20 +53,6 @@ static CSSPropertyID resolveToPhysicalProperty(TextDirection direction, WritingM
             // The common case. The logical and physical box sides match.
             // Left = Start, Right = End, Before = Top, After = Bottom
             return shorthand.properties()[logicalSide];
-        }
-
-        if (writingMode == BottomToTopWritingMode) {
-            // Start = Left, End = Right, Before = Bottom, After = Top.
-            switch (logicalSide) {
-            case StartSide:
-                return shorthand.properties()[LeftSide];
-            case EndSide:
-                return shorthand.properties()[RightSide];
-            case BeforeSide:
-                return shorthand.properties()[BottomSide];
-            default:
-                return shorthand.properties()[TopSide];
-            }
         }
 
         if (writingMode == LeftToRightWritingMode) {
@@ -111,20 +96,6 @@ static CSSPropertyID resolveToPhysicalProperty(TextDirection direction, WritingM
         }
     }
 
-    if (writingMode == BottomToTopWritingMode) {
-        // Start = Right, End = Left, Before = Bottom, After = Top
-        switch (logicalSide) {
-        case StartSide:
-            return shorthand.properties()[RightSide];
-        case EndSide:
-            return shorthand.properties()[LeftSide];
-        case BeforeSide:
-            return shorthand.properties()[BottomSide];
-        default:
-            return shorthand.properties()[TopSide];
-        }
-    }
-
     if (writingMode == LeftToRightWritingMode) {
         // Start = Bottom, End = Top, Before = Left, After = Right
         switch (logicalSide) {
@@ -156,7 +127,7 @@ enum LogicalExtent { LogicalWidth, LogicalHeight };
 
 static CSSPropertyID resolveToPhysicalProperty(WritingMode writingMode, LogicalExtent logicalSide, const CSSPropertyID* properties)
 {
-    if (writingMode == TopToBottomWritingMode || writingMode == BottomToTopWritingMode)
+    if (isHorizontalWritingMode(writingMode))
         return properties[logicalSide];
     return logicalSide == LogicalWidth ? properties[1] : properties[0];
 }
@@ -254,6 +225,9 @@ bool CSSProperty::isAffectedByAllProperty(CSSPropertyID propertyID)
         return false;
 
     if (!CSSPropertyMetadata::isEnabledProperty(propertyID))
+        return false;
+
+    if (propertyID == CSSPropertyVariable)
         return false;
 
     // all shorthand spec says:

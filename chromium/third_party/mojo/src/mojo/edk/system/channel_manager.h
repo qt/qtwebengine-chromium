@@ -10,6 +10,7 @@
 #include "base/callback_forward.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "third_party/mojo/src/mojo/edk/embedder/scoped_platform_handle.h"
 #include "third_party/mojo/src/mojo/edk/system/channel_id.h"
@@ -138,7 +139,8 @@ class MOJO_SYSTEM_IMPL_EXPORT ChannelManager {
       scoped_refptr<system::ChannelEndpoint> bootstrap_channel_endpoint);
 
   // Used by |CreateChannel()|. Called on the I/O thread.
-  void CreateChannelHelper(
+  static void CreateChannelHelper(
+      base::WeakPtr<ChannelManager> channel_manager,
       ChannelId channel_id,
       embedder::ScopedPlatformHandle platform_handle,
       scoped_refptr<system::ChannelEndpoint> bootstrap_channel_endpoint,
@@ -159,6 +161,13 @@ class MOJO_SYSTEM_IMPL_EXPORT ChannelManager {
   using ChannelIdToChannelMap =
       base::hash_map<ChannelId, scoped_refptr<Channel>>;
   ChannelIdToChannelMap channels_ MOJO_GUARDED_BY(mutex_);
+
+  // Weak pointer for posting a task to the IO thread. Must only be dereferenced
+  // on the IO thread.
+  base::WeakPtr<ChannelManager> weak_ptr_;
+  // Factory for weak pointer. Must be invalidated on the IO thread prior to
+  // destruction.
+  base::WeakPtrFactory<ChannelManager> weak_factory_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(ChannelManager);
 };

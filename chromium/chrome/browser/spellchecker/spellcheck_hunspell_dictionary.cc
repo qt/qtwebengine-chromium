@@ -4,10 +4,15 @@
 
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
 
+#include <stddef.h>
+
+#include <utility>
+
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "build/build_config.h"
 #include "chrome/browser/spellchecker/spellcheck_platform.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/chrome_paths.h"
@@ -79,17 +84,15 @@ SpellcheckHunspellDictionary::DictionaryFile::~DictionaryFile() {
   }
 }
 
-SpellcheckHunspellDictionary::DictionaryFile::DictionaryFile(RValue other)
-    : path(other.object->path),
-      file(other.object->file.Pass()) {
-}
+SpellcheckHunspellDictionary::DictionaryFile::DictionaryFile(
+    DictionaryFile&& other)
+    : path(other.path), file(std::move(other.file)) {}
 
 SpellcheckHunspellDictionary::DictionaryFile&
-SpellcheckHunspellDictionary::DictionaryFile::operator=(RValue other) {
-  if (this != other.object) {
-    path = other.object->path;
-    file = other.object->file.Pass();
-  }
+    SpellcheckHunspellDictionary::DictionaryFile::
+    operator=(DictionaryFile&& other) {
+  path = other.path;
+  file = std::move(other.file);
   return *this;
 }
 
@@ -303,7 +306,7 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(const base::FilePath& path) {
     base::DeleteFile(dictionary.path, false);
   }
 
-  return dictionary.Pass();
+  return dictionary;
 }
 
 // The default place where the spellcheck dictionary resides is
@@ -326,7 +329,7 @@ SpellcheckHunspellDictionary::InitializeDictionaryLocation(
 void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
     DictionaryFile file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  dictionary_file_ = file.Pass();
+  dictionary_file_ = std::move(file);
 
   if (!dictionary_file_.file.IsValid()) {
     // Notify browser tests that this dictionary is corrupted. Skip downloading

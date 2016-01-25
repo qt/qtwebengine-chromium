@@ -12,15 +12,15 @@
 
 #include <assert.h>
 
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 
 const uint32_t KEventMaxWaitTimeMs = 200;
 const uint32_t kMinRenderDelayMs = 10;
-const uint32_t kMaxRenderDelayMs= 500;
+const uint32_t kMaxRenderDelayMs = 500;
 
 VideoRenderFrames::VideoRenderFrames()
     : render_delay_ms_(10) {

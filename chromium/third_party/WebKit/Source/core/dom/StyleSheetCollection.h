@@ -30,7 +30,7 @@
 
 #include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
@@ -42,7 +42,7 @@ class StyleSheet;
 class CORE_EXPORT StyleSheetCollection : public NoBaseWillBeGarbageCollected<StyleSheetCollection> {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(StyleSheetCollection);
     WTF_MAKE_NONCOPYABLE(StyleSheetCollection);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleSheetCollection);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(StyleSheetCollection);
 public:
     friend class ActiveDocumentStyleSheetCollector;
     friend class ImportedDocumentStyleSheetCollector;

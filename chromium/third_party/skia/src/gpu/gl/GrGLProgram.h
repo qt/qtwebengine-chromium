@@ -13,13 +13,14 @@
 #include "GrGLProgramDesc.h"
 #include "GrGLTexture.h"
 #include "GrGLProgramDataManager.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
 
 #include "SkString.h"
 #include "SkXfermode.h"
 
 #include "builders/GrGLProgramBuilder.h"
 
-class GrGLProcessor;
 class GrGLInstalledProcessors;
 class GrGLProgramBuilder;
 class GrPipeline;
@@ -35,7 +36,7 @@ class GrPipeline;
  */
 class GrGLProgram : public SkRefCnt {
 public:
-    typedef GrGLProgramBuilder::BuiltinUniformHandles BuiltinUniformHandles;
+    typedef GrGLSLProgramBuilder::BuiltinUniformHandles BuiltinUniformHandles;
 
     ~GrGLProgram();
 
@@ -74,7 +75,7 @@ public:
          * pos.x = dot(v.xy, pos.xz)
          * pos.y = dot(v.zw, pos.yz)
          */
-        void getRTAdjustmentVec(GrGLfloat* destVec) {
+        void getRTAdjustmentVec(float* destVec) {
             destVec[0] = 2.f / fRenderTargetSize.fWidth;
             destVec[1] = -1.f;
             if (kBottomLeft_GrSurfaceOrigin == fRenderTargetOrigin) {
@@ -88,7 +89,7 @@ public:
     };
 
     /**
-     * This function uploads uniforms, calls each GrGLProcessor's setData, and retrieves the
+     * This function uploads uniforms, calls each GrGL*Processor's setData, and retrieves the
      * textures that need to be bound on each unit. It is the caller's responsibility to ensure
      * the program is bound before calling, and to bind the outgoing textures to their respective
      * units upon return. (Each index in the array corresponds to its matching GL texture unit.)
@@ -97,19 +98,19 @@ public:
                  SkTArray<const GrTextureAccess*>* textureBindings);
 
 protected:
-    typedef GrGLProgramDataManager::UniformHandle UniformHandle;
+    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
     typedef GrGLProgramDataManager::UniformInfoArray UniformInfoArray;
-    typedef GrGLProgramDataManager::SeparableVaryingInfoArray SeparableVaryingInfoArray;
+    typedef GrGLProgramDataManager::VaryingInfoArray VaryingInfoArray;
 
     GrGLProgram(GrGLGpu*,
                 const GrProgramDesc&,
                 const BuiltinUniformHandles&,
                 GrGLuint programID,
                 const UniformInfoArray&,
-                const SeparableVaryingInfoArray&,
-                GrGLInstalledGeoProc* geometryProcessor,
-                GrGLInstalledXferProc* xferProcessor,
-                GrGLInstalledFragProcs* fragmentProcessors,
+                const VaryingInfoArray&, // used for NVPR only currently
+                GrGLSLPrimitiveProcessor* geometryProcessor,
+                GrGLSLXferProcessor* xferProcessor,
+                const GrGLSLFragProcs& fragmentProcessors,
                 SkTArray<UniformHandle>* passSamplerUniforms);
 
     // A templated helper to loop over effects, set the transforms(via subclass) and bind textures
@@ -117,24 +118,20 @@ protected:
                          SkTArray<const GrTextureAccess*>* textureBindings);
     void setTransformData(const GrPrimitiveProcessor&,
                           const GrFragmentProcessor&,
-                          int index,
-                          GrGLInstalledFragProc*);
+                          int index);
 
     // Helper for setData() that sets the view matrix and loads the render target height uniform
     void setRenderTargetState(const GrPrimitiveProcessor&, const GrPipeline&);
 
     // these reflect the current values of uniforms (GL uniform values travel with program)
     RenderTargetState fRenderTargetState;
-    GrColor fColor;
-    uint8_t fCoverage;
-    int fDstTextureUnit;
     BuiltinUniformHandles fBuiltinUniformHandles;
     GrGLuint fProgramID;
 
     // the installed effects
-    SkAutoTDelete<GrGLInstalledGeoProc> fGeometryProcessor;
-    SkAutoTDelete<GrGLInstalledXferProc> fXferProcessor;
-    SkAutoTUnref<GrGLInstalledFragProcs> fFragmentProcessors;
+    SkAutoTDelete<GrGLSLPrimitiveProcessor> fGeometryProcessor;
+    SkAutoTDelete<GrGLSLXferProcessor> fXferProcessor;
+    GrGLSLFragProcs fFragmentProcessors;
 
     GrProgramDesc fDesc;
     GrGLGpu* fGpu;

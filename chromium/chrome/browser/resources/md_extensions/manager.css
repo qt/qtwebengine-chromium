@@ -11,3 +11,14 @@
     display: flex;
   };
 }
+
+#items {
+  -webkit-margin-start: 30px;
+  overflow-y: auto;
+  padding-bottom: 30px;
+  width: 100%;
+}
+
+extensions-item {
+  display: inline-block;
+}

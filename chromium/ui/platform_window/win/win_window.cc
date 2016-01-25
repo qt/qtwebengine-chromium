@@ -4,6 +4,7 @@
 
 #include "ui/platform_window/win/win_window.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
@@ -89,8 +90,8 @@ void WinWindow::SetTitle(const base::string16& title) {
 }
 
 void WinWindow::SetCapture() {
-  DCHECK(::GetCapture() != hwnd());
-  ::SetCapture(hwnd());
+  if (::GetCapture() != hwnd())
+    ::SetCapture(hwnd());
 }
 
 void WinWindow::ReleaseCapture() {
@@ -106,7 +107,9 @@ void WinWindow::Minimize() {}
 
 void WinWindow::Restore() {}
 
-void WinWindow::SetCursor(PlatformCursor cursor) {}
+void WinWindow::SetCursor(PlatformCursor cursor) {
+  ::SetCursor(cursor);
+}
 
 void WinWindow::MoveCursorTo(const gfx::Point& location) {}
 
@@ -121,12 +124,12 @@ LRESULT WinWindow::OnMouseRange(UINT message, WPARAM w_param, LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param,
               static_cast<DWORD>(GetMessageTime()),
               { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
-  MouseEvent event(msg);
+  scoped_ptr<Event> event = EventFromNative(msg);
   if (IsMouseEventFromTouch(message))
-    event.set_flags(event.flags() | EF_FROM_TOUCH);
-  if (!(event.flags() & ui::EF_IS_NON_CLIENT))
-    delegate_->DispatchEvent(&event);
-  SetMsgHandled(event.handled());
+    event->set_flags(event->flags() | EF_FROM_TOUCH);
+  if (!(event->flags() & ui::EF_IS_NON_CLIENT))
+    delegate_->DispatchEvent(event.get());
+  SetMsgHandled(event->handled());
   return 0;
 }
 

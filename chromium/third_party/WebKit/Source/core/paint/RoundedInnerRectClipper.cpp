@@ -2,21 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 
 #include "core/layout/LayoutBox.h"
 #include "core/paint/PaintInfo.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
 RoundedInnerRectClipper::RoundedInnerRectClipper(const LayoutObject& layoutObject, const PaintInfo& paintInfo, const LayoutRect& rect, const FloatRoundedRect& clipRect, RoundedInnerRectClipperBehavior behavior)
     : m_layoutObject(layoutObject)
     , m_paintInfo(paintInfo)
-    , m_useDisplayItemList(behavior == ApplyToDisplayListIfEnabled)
-    , m_clipType(m_useDisplayItemList ? m_paintInfo.displayItemTypeForClipping() : DisplayItem::ClipBoxPaintPhaseFirst)
+    , m_usePaintController(behavior == ApplyToDisplayList)
+    , m_clipType(m_usePaintController ? m_paintInfo.displayItemTypeForClipping() : DisplayItem::ClipBoxPaintPhaseFirst)
 {
     Vector<FloatRoundedRect> roundedRectClips;
     if (clipRect.isRenderable()) {
@@ -48,31 +47,22 @@ RoundedInnerRectClipper::RoundedInnerRectClipper(const LayoutObject& layoutObjec
         }
     }
 
-    if (m_useDisplayItemList) {
-        ASSERT(m_paintInfo.context->displayItemList());
-        if (m_paintInfo.context->displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        m_paintInfo.context->displayItemList()->createAndAppend<ClipDisplayItem>(layoutObject, m_clipType, LayoutRect::infiniteIntRect(), roundedRectClips);
+    if (m_usePaintController) {
+        m_paintInfo.context.paintController().createAndAppend<ClipDisplayItem>(layoutObject, m_clipType, LayoutRect::infiniteIntRect(), roundedRectClips);
     } else {
         ClipDisplayItem clipDisplayItem(layoutObject, m_clipType, LayoutRect::infiniteIntRect(), roundedRectClips);
-        clipDisplayItem.replay(*paintInfo.context);
+        clipDisplayItem.replay(paintInfo.context);
     }
 }
 
 RoundedInnerRectClipper::~RoundedInnerRectClipper()
 {
     DisplayItem::Type endType = DisplayItem::clipTypeToEndClipType(m_clipType);
-    if (m_useDisplayItemList) {
-        ASSERT(m_paintInfo.context->displayItemList());
-        if (!m_paintInfo.context->displayItemList()->displayItemConstructionIsDisabled()) {
-            if (m_paintInfo.context->displayItemList()->lastDisplayItemIsNoopBegin())
-                m_paintInfo.context->displayItemList()->removeLastDisplayItem();
-            else
-                m_paintInfo.context->displayItemList()->createAndAppend<EndClipDisplayItem>(m_layoutObject, endType);
-        }
+    if (m_usePaintController) {
+        m_paintInfo.context.paintController().endItem<EndClipDisplayItem>(m_layoutObject, endType);
     } else {
         EndClipDisplayItem endClipDisplayItem(m_layoutObject, endType);
-        endClipDisplayItem.replay(*m_paintInfo.context);
+        endClipDisplayItem.replay(m_paintInfo.context);
     }
 }
 

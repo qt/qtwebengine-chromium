@@ -25,6 +25,7 @@
 #ifndef ScriptProcessorNode_h
 #define ScriptProcessorNode_h
 
+#include "base/gtest_prod_util.h"
 #include "modules/webaudio/AudioNode.h"
 #include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
@@ -64,13 +65,13 @@ private:
     double tailTime() const override;
     double latencyTime() const override;
 
-    void fireProcessEvent();
+    void fireProcessEvent(unsigned);
 
     // Double buffering
     unsigned doubleBufferIndex() const { return m_doubleBufferIndex; }
     void swapBuffers() { m_doubleBufferIndex = 1 - m_doubleBufferIndex; }
     unsigned m_doubleBufferIndex;
-    unsigned m_doubleBufferIndexForEvent;
+
     // These Persistent don't make reference cycles including the owner
     // ScriptProcessorNode.
     PersistentHeapVector<Member<AudioBuffer>> m_inputBuffers;
@@ -86,8 +87,7 @@ private:
     // Synchronize process() with fireProcessEvent().
     mutable Mutex m_processEventLock;
 
-    // TODO(tkent): Use FRIEND_TEST macro provided by gtest_prod.h
-    friend class ScriptProcessorNodeTest_BufferLifetime_Test;
+    FRIEND_TEST_ALL_PREFIXES(ScriptProcessorNodeTest, BufferLifetime);
 };
 
 class ScriptProcessorNode final : public AudioNode {

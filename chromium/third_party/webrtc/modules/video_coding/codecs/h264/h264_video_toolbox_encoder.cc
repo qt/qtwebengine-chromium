@@ -99,11 +99,7 @@ struct FrameEncodeParams {
                     int32_t h,
                     int64_t rtms,
                     uint32_t ts)
-      : callback(cb),
-        width(w),
-        height(h),
-        render_time_ms(rtms),
-        timestamp(ts) {
+      : callback(cb), width(w), height(h), render_time_ms(rtms), timestamp(ts) {
     if (csi) {
       codec_specific_info = *csi;
     } else {
@@ -136,19 +132,18 @@ bool CopyVideoFrameToPixelBuffer(const webrtc::VideoFrame& frame,
     LOG(LS_ERROR) << "Failed to lock base address: " << cvRet;
     return false;
   }
-  uint8* dst_y = reinterpret_cast<uint8*>(
+  uint8_t* dst_y = reinterpret_cast<uint8_t*>(
       CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0));
   int dst_stride_y = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0);
-  uint8* dst_uv = reinterpret_cast<uint8*>(
+  uint8_t* dst_uv = reinterpret_cast<uint8_t*>(
       CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1));
   int dst_stride_uv = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1);
   // Convert I420 to NV12.
   int ret = libyuv::I420ToNV12(
       frame.buffer(webrtc::kYPlane), frame.stride(webrtc::kYPlane),
       frame.buffer(webrtc::kUPlane), frame.stride(webrtc::kUPlane),
-      frame.buffer(webrtc::kVPlane), frame.stride(webrtc::kVPlane),
-      dst_y, dst_stride_y, dst_uv, dst_stride_uv,
-      frame.width(), frame.height());
+      frame.buffer(webrtc::kVPlane), frame.stride(webrtc::kVPlane), dst_y,
+      dst_stride_y, dst_uv, dst_stride_uv, frame.width(), frame.height());
   CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
   if (ret) {
     LOG(LS_ERROR) << "Error converting I420 VideoFrame to NV12 :" << ret;
@@ -188,17 +183,16 @@ void VTCompressionOutputCallback(void* encoder,
   // TODO(tkchin): Allocate buffers through a pool.
   rtc::scoped_ptr<rtc::Buffer> buffer(new rtc::Buffer());
   rtc::scoped_ptr<webrtc::RTPFragmentationHeader> header;
-  if (!H264CMSampleBufferToAnnexBBuffer(sample_buffer,
-                                        is_keyframe,
-                                        buffer.get(),
-                                        header.accept())) {
+  if (!H264CMSampleBufferToAnnexBBuffer(sample_buffer, is_keyframe,
+                                        buffer.get(), header.accept())) {
     return;
   }
   webrtc::EncodedImage frame(buffer->data(), buffer->size(), buffer->size());
   frame._encodedWidth = encode_params->width;
   frame._encodedHeight = encode_params->height;
   frame._completeFrame = true;
-  frame._frameType = is_keyframe ? webrtc::kKeyFrame : webrtc::kDeltaFrame;
+  frame._frameType =
+      is_keyframe ? webrtc::kVideoFrameKey : webrtc::kVideoFrameDelta;
   frame.capture_time_ms_ = encode_params->render_time_ms;
   frame._timeStamp = encode_params->timestamp;
 
@@ -214,8 +208,7 @@ void VTCompressionOutputCallback(void* encoder,
 namespace webrtc {
 
 H264VideoToolboxEncoder::H264VideoToolboxEncoder()
-    : callback_(nullptr), compression_session_(nullptr) {
-}
+    : callback_(nullptr), compression_session_(nullptr) {}
 
 H264VideoToolboxEncoder::~H264VideoToolboxEncoder() {
   DestroyCompressionSession();
@@ -242,7 +235,7 @@ int H264VideoToolboxEncoder::InitEncode(const VideoCodec* codec_settings,
 int H264VideoToolboxEncoder::Encode(
     const VideoFrame& input_image,
     const CodecSpecificInfo* codec_specific_info,
-    const std::vector<VideoFrameType>* frame_types) {
+    const std::vector<FrameType>* frame_types) {
   if (input_image.IsZeroSize()) {
     // It's possible to get zero sizes as a signal to produce keyframes (this
     // happens for internal sources). But this shouldn't happen in
@@ -277,7 +270,7 @@ int H264VideoToolboxEncoder::Encode(
   bool is_keyframe_required = false;
   if (frame_types) {
     for (auto frame_type : *frame_types) {
-      if (frame_type == kKeyFrame) {
+      if (frame_type == kVideoFrameKey) {
         is_keyframe_required = true;
         break;
       }
@@ -288,8 +281,8 @@ int H264VideoToolboxEncoder::Encode(
       CMTimeMake(input_image.render_time_ms(), 1000);
   CFDictionaryRef frame_properties = nullptr;
   if (is_keyframe_required) {
-    CFTypeRef keys[] = { kVTEncodeFrameOptionKey_ForceKeyFrame };
-    CFTypeRef values[] = { kCFBooleanTrue };
+    CFTypeRef keys[] = {kVTEncodeFrameOptionKey_ForceKeyFrame};
+    CFTypeRef values[] = {kCFBooleanTrue};
     frame_properties = internal::CreateCFDictionary(keys, values, 1);
   }
   rtc::scoped_ptr<internal::FrameEncodeParams> encode_params;
@@ -358,11 +351,8 @@ int H264VideoToolboxEncoder::ResetCompressionSession() {
   int64_t nv12type = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
   CFNumberRef pixel_format =
       CFNumberCreate(nullptr, kCFNumberLongType, &nv12type);
-  CFTypeRef values[attributes_size] = {
-    kCFBooleanTrue,
-    io_surface_value,
-    pixel_format
-  };
+  CFTypeRef values[attributes_size] = {kCFBooleanTrue, io_surface_value,
+                                       pixel_format};
   CFDictionaryRef source_attributes =
       internal::CreateCFDictionary(keys, values, attributes_size);
   if (io_surface_value) {
@@ -375,15 +365,11 @@ int H264VideoToolboxEncoder::ResetCompressionSession() {
   }
   OSStatus status = VTCompressionSessionCreate(
       nullptr,  // use default allocator
-      width_,
-      height_,
-      kCMVideoCodecType_H264,
+      width_, height_, kCMVideoCodecType_H264,
       nullptr,  // use default encoder
       source_attributes,
       nullptr,  // use default compressed data allocator
-      internal::VTCompressionOutputCallback,
-      this,
-      &compression_session_);
+      internal::VTCompressionOutputCallback, this, &compression_session_);
   if (source_attributes) {
     CFRelease(source_attributes);
     source_attributes = nullptr;
@@ -431,6 +417,10 @@ void H264VideoToolboxEncoder::DestroyCompressionSession() {
     CFRelease(compression_session_);
     compression_session_ = nullptr;
   }
+}
+
+const char* H264VideoToolboxEncoder::ImplementationName() const {
+  return "VideoToolbox";
 }
 
 }  // namespace webrtc

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/TableRowPainter.h"
 
 #include "core/layout/LayoutTableCell.h"
@@ -18,28 +17,33 @@ void TableRowPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
 {
     ASSERT(m_layoutTableRow.hasSelfPaintingLayer());
 
+    // Table rows don't paint self background. The cells paint table section's background
+    // behind them when needed during PaintPhaseBlockBackground or PaintPhaseDescendantBlockBackgroundOnly.
+    if (paintInfo.phase == PaintPhaseSelfBlockBackgroundOnly)
+        return;
+
+    // TODO(wangxianzhu): This painting order is inconsistent with other outlines. crbug.com/577282.
     paintOutlineForRowIfNeeded(paintInfo, paintOffset);
+    if (paintInfo.phase == PaintPhaseSelfOutlineOnly)
+        return;
+
+    PaintInfo paintInfoForCells = paintInfo.forDescendants();
     for (LayoutTableCell* cell = m_layoutTableRow.firstCell(); cell; cell = cell->nextCell()) {
         // Paint the row background behind the cell.
-        if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground) {
-            if (m_layoutTableRow.hasBackground()) {
-                TableCellPainter tableCellPainter(*cell);
-                if (!LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow, paintOffset)) {
-                    LayoutObjectDrawingRecorder recorder(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent), paintOffset);
-                    tableCellPainter.paintBackgroundsBehindCell(paintInfo, paintOffset, &m_layoutTableRow);
-                }
-            }
+        if (shouldPaintSelfBlockBackground(paintInfoForCells.phase)) {
+            if (m_layoutTableRow.hasBackground())
+                TableCellPainter(*cell).paintBackgroundsBehindCell(paintInfoForCells, paintOffset, &m_layoutTableRow, DisplayItem::TableCellBackgroundFromRow);
         }
 
         if (!cell->hasSelfPaintingLayer())
-            cell->paint(paintInfo, paintOffset);
+            cell->paint(paintInfoForCells, paintOffset);
     }
 }
 
 void TableRowPainter::paintOutlineForRowIfNeeded(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     PaintPhase paintPhase = paintInfo.phase;
-    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutTableRow.style()->visibility() == VISIBLE) {
+    if (shouldPaintSelfOutline(paintPhase)) {
         LayoutPoint adjustedPaintOffset = paintOffset + m_layoutTableRow.location();
         ObjectPainter(m_layoutTableRow).paintOutline(paintInfo, adjustedPaintOffset);
     }

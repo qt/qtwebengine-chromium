@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/loader/ImageLoader.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -38,6 +37,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
+#include "core/html/CrossOriginAttribute.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutImage.h"
@@ -54,14 +54,14 @@ namespace blink {
 
 static ImageEventSender& loadEventSender()
 {
-    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (EventTypeNames::load));
-    return sender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<ImageEventSender>, sender, (ImageEventSender::create(EventTypeNames::load)));
+    return *sender;
 }
 
 static ImageEventSender& errorEventSender()
 {
-    DEFINE_STATIC_LOCAL(ImageEventSender, sender, (EventTypeNames::error));
-    return sender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<ImageEventSender>, sender, (ImageEventSender::create(EventTypeNames::error)));
+    return *sender;
 }
 
 static inline bool pageIsBeingDismissed(Document* document)
@@ -96,10 +96,12 @@ public:
         v8::HandleScope scope(isolate);
         // If we're invoked from C++ without a V8 context on the stack, we should
         // run the microtask in the context of the element's document's main world.
-        if (ScriptState::hasCurrentScriptState(isolate))
+        if (ScriptState::hasCurrentScriptState(isolate)) {
             m_scriptState = ScriptState::current(isolate);
-        else
+        } else {
             m_scriptState = ScriptState::forMainWorld(loader->element()->document().frame());
+            ASSERT(m_scriptState);
+        }
     }
 
     ~Task() override
@@ -181,6 +183,7 @@ void ImageLoader::dispose()
     if (m_image)
         m_image->removeClient(this);
 
+#if !ENABLE(OILPAN)
     ASSERT(m_hasPendingLoadEvent || !loadEventSender().hasPendingEvents(this));
     if (m_hasPendingLoadEvent)
         loadEventSender().cancelEvent(this);
@@ -188,12 +191,13 @@ void ImageLoader::dispose()
     ASSERT(m_hasPendingErrorEvent || !errorEventSender().hasPendingEvents(this));
     if (m_hasPendingErrorEvent)
         errorEventSender().cancelEvent(this);
+#endif
 }
 
 #if ENABLE(OILPAN)
 void ImageLoader::clearWeakMembers(Visitor* visitor)
 {
-    Vector<ImageLoaderClient*> deadClients;
+    Vector<UntracedMember<ImageLoaderClient>> deadClients;
     for (const auto& client : m_clients) {
         if (!Heap::isHeapObjectAlive(client)) {
             willRemoveClient(*client);
@@ -253,9 +257,9 @@ static void configureRequest(FetchRequest& request, ImageLoader::BypassMainWorld
     if (bypassBehavior == ImageLoader::BypassMainWorldCSP)
         request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
 
-    AtomicString crossOriginMode = element.fastGetAttribute(HTMLNames::crossoriginAttr);
-    if (!crossOriginMode.isNull())
-        request.setCrossOriginAccessControl(element.document().securityOrigin(), crossOriginMode);
+    CrossOriginAttributeValue crossOrigin = crossOriginAttributeValue(element.fastGetAttribute(HTMLNames::crossoriginAttr));
+    if (crossOrigin != CrossOriginAttributeNotSet)
+        request.setCrossOriginAccessControl(element.document().securityOrigin(), crossOrigin);
 
     if (clientHintsPreferences.shouldSendResourceWidth() && isHTMLImageElement(element))
         request.setResourceWidth(toHTMLImageElement(element).resourceWidth());
@@ -315,7 +319,9 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
         resourceRequest.setFetchCredentialsMode(WebURLRequest::FetchCredentialsModeSameOrigin);
         if (updateBehavior == UpdateForcedReload) {
             resourceRequest.setCachePolicy(ResourceRequestCachePolicy::ReloadBypassingCache);
-            // ImageLoader defers the load of images when in an ImageDocument. Don't defer this load on a forced reload.
+            resourceRequest.setLoFiState(WebURLRequest::LoFiOff);
+            // ImageLoader defers the load of images when in an ImageDocument.
+            // Don't defer this load on a forced reload.
             m_loadingImageDocument = false;
         }
 
@@ -571,7 +577,7 @@ void ImageLoader::updatedHasPendingEvent()
             m_keepAlive = m_element;
     } else {
         ASSERT(!m_derefElementTimer.isActive());
-        m_derefElementTimer.startOneShot(0, FROM_HERE);
+        m_derefElementTimer.startOneShot(0, BLINK_FROM_HERE);
     }
 }
 

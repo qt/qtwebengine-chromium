@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebFileSystemCallbacks.h"
 
 #include "platform/AsyncFileSystemCallbacks.h"
@@ -98,7 +97,7 @@ void WebFileSystemCallbacks::didCreateSnapshotFile(const WebFileInfo& webFileInf
     // It's important to create a BlobDataHandle that refers to the platform file path prior
     // to return from this method so the underlying file will not be deleted.
     OwnPtr<BlobData> blobData = BlobData::create();
-    blobData->appendFile(webFileInfo.platformPath);
+    blobData->appendFile(webFileInfo.platformPath, 0, webFileInfo.length, invalidFileTime());
     RefPtr<BlobDataHandle> snapshotBlob = BlobDataHandle::create(blobData.release(), webFileInfo.length);
 
     FileMetadata fileMetadata;

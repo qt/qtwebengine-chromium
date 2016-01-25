@@ -5,11 +5,12 @@
 #ifndef CONTENT_RENDERER_RENDER_FRAME_PROXY_H_
 #define CONTENT_RENDERER_RENDER_FRAME_PROXY_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/web/WebRemoteFrame.h"
 #include "third_party/WebKit/public/web/WebRemoteFrameClient.h"
 #include "url/origin.h"
@@ -131,7 +132,11 @@ class CONTENT_EXPORT RenderFrameProxy
                 bool should_replace_current_entry) override;
   void forwardInputEvent(const blink::WebInputEvent* event) override;
   void frameRectsChanged(const blink::WebRect& frame_rect) override;
+  void visibilityChanged(bool visible) override;
   void didChangeOpener(blink::WebFrame* opener) override;
+  void advanceFocus(blink::WebFocusType type,
+                    blink::WebLocalFrame* source) override;
+  void frameFocused() override;
 
   // IPC handlers
   void OnDidStartLoading();
@@ -157,7 +162,10 @@ class CONTENT_EXPORT RenderFrameProxy
   void OnDidUpdateSandboxFlags(blink::WebSandboxFlags flags);
   void OnDispatchLoad();
   void OnDidUpdateName(const std::string& name);
+  void OnEnforceStrictMixedContentChecking(bool should_enforce);
   void OnDidUpdateOrigin(const url::Origin& origin);
+  void OnSetPageFocus(bool is_focused);
+  void OnSetFocusedFrame();
 
   // The routing ID by which this RenderFrameProxy is known.
   const int routing_id_;

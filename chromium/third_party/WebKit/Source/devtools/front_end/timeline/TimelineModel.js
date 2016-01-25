@@ -39,7 +39,6 @@
 WebInspector.TimelineModel = function(tracingModel, eventFilter)
 {
     WebInspector.Object.call(this);
-    this._filters = [];
     this._tracingModel = tracingModel;
     this._eventFilter = eventFilter;
     this._targets = [];
@@ -97,6 +96,7 @@ WebInspector.TimelineModel.RecordType = {
 
     XHRReadyStateChange: "XHRReadyStateChange",
     XHRLoad: "XHRLoad",
+    CompileScript: "v8.compile",
     EvaluateScript: "EvaluateScript",
 
     CommitLoad: "CommitLoad",
@@ -155,6 +155,8 @@ WebInspector.TimelineModel.RecordType = {
     LayerTreeHostImplSnapshot: "cc::LayerTreeHostImpl",
     PictureSnapshot: "cc::Picture",
     DisplayItemListSnapshot: "cc::DisplayItemList",
+    LatencyInfo: "LatencyInfo",
+    InputLatencyMouseMove: "InputLatency::MouseMove",
 
     // CpuProfile is a virtual event created on frontend to support
     // serialization of CPU Profiles within tracing timeline data.
@@ -165,9 +167,23 @@ WebInspector.TimelineModel.Events = {
     RecordsCleared: "RecordsCleared",
     RecordingStarted: "RecordingStarted",
     RecordingStopped: "RecordingStopped",
-    RecordFilterChanged: "RecordFilterChanged",
     BufferUsage: "BufferUsage",
     RetrieveEventsProgress: "RetrieveEventsProgress"
+}
+
+WebInspector.TimelineModel.Category = {
+    Console: "blink.console",
+    LatencyInfo: "latencyInfo"
+};
+
+/**
+ * @enum {string}
+ */
+WebInspector.TimelineModel.WarningType = {
+    ForcedStyle: "ForcedStyle",
+    ForcedLayout: "ForcedLayout",
+    IdleDeadlineExceeded: "IdleDeadlineExceeded",
+    V8Deopt: "V8Deopt"
 }
 
 WebInspector.TimelineModel.MainThreadName = "main";
@@ -178,13 +194,21 @@ WebInspector.TimelineModel.RendererMainThreadName = "CrRendererMain";
  * @param {!Array.<!WebInspector.TracingModel.Event>} events
  * @param {function(!WebInspector.TracingModel.Event)} onStartEvent
  * @param {function(!WebInspector.TracingModel.Event)} onEndEvent
- * @param {function(!WebInspector.TracingModel.Event,?WebInspector.TracingModel.Event)=} onInstantEvent
+ * @param {function(!WebInspector.TracingModel.Event,?WebInspector.TracingModel.Event)|undefined=} onInstantEvent
+ * @param {number=} startTime
+ * @param {number=} endTime
  */
-WebInspector.TimelineModel.forEachEvent = function(events, onStartEvent, onEndEvent, onInstantEvent)
+WebInspector.TimelineModel.forEachEvent = function(events, onStartEvent, onEndEvent, onInstantEvent, startTime, endTime)
 {
+    startTime = startTime || 0;
+    endTime = endTime || Infinity;
     var stack = [];
     for (var i = 0; i < events.length; ++i) {
         var e = events[i];
+        if ((e.endTime || e.startTime) < startTime)
+            continue;
+        if (e.startTime >= endTime)
+            break;
         if (WebInspector.TracingModel.isAsyncPhase(e.phase) || WebInspector.TracingModel.isFlowPhase(e.phase))
             continue;
         while (stack.length && stack.peekLast().endTime <= e.startTime)
@@ -381,8 +405,10 @@ WebInspector.TimelineModel.MetadataEvents;
  */
 WebInspector.TimelineModel._eventType = function(event)
 {
-    if (event.hasCategory(WebInspector.TracingModel.ConsoleEventCategory))
+    if (event.hasCategory(WebInspector.TimelineModel.Category.Console))
         return WebInspector.TimelineModel.RecordType.ConsoleTime;
+    if (event.hasCategory(WebInspector.TimelineModel.Category.LatencyInfo))
+        return WebInspector.TimelineModel.RecordType.LatencyInfo;
     return /** @type !WebInspector.TimelineModel.RecordType */ (event.name);
 }
 
@@ -406,8 +432,11 @@ WebInspector.TimelineModel.prototype = {
             disabledByDefault("devtools.timeline"),
             disabledByDefault("devtools.timeline.frame"),
             WebInspector.TracingModel.TopLevelEventCategory,
-            WebInspector.TracingModel.ConsoleEventCategory
+            WebInspector.TimelineModel.Category.Console
         ];
+        if (Runtime.experiments.isEnabled("timelineLatencyInfo"))
+            categoriesArray.push(WebInspector.TimelineModel.Category.LatencyInfo)
+
         if (Runtime.experiments.isEnabled("timelineFlowEvents")) {
             categoriesArray.push(disabledByDefault("toplevel.flow"),
                                  disabledByDefault("ipc.flow"));
@@ -451,18 +480,10 @@ WebInspector.TimelineModel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Filter} filter
-     */
-    addFilter: function(filter)
-    {
-        this._filters.push(filter);
-        filter.addEventListener(WebInspector.TimelineModel.Filter.Events.Changed, this._filterChanged, this);
-    },
-
-    /**
+     * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
      * @param {function(!WebInspector.TimelineModel.Record)|function(!WebInspector.TimelineModel.Record,number)} callback
      */
-    forAllFilteredRecords: function(callback)
+    forAllFilteredRecords: function(filters, callback)
     {
         /**
          * @param {!WebInspector.TimelineModel.Record} record
@@ -472,11 +493,9 @@ WebInspector.TimelineModel.prototype = {
          */
         function processRecord(record, depth)
         {
-            var visible = this.isVisible(record.traceEvent());
-            if (visible) {
-                if (callback(record, depth))
-                    return true;
-            }
+            var visible = WebInspector.TimelineModel.isVisible(filters, record.traceEvent());
+            if (visible && callback(record, depth))
+                return true;
 
             for (var i = 0; i < record.children().length; ++i) {
                 if (processRecord.call(this, record.children()[i], visible ? depth + 1 : depth))
@@ -489,23 +508,6 @@ WebInspector.TimelineModel.prototype = {
             processRecord.call(this, this._records[i], 0);
     },
 
-    /**
-     * @param {!WebInspector.TracingModel.Event} event
-     * @return {boolean}
-     */
-    isVisible: function(event)
-    {
-        for (var i = 0; i < this._filters.length; ++i) {
-            if (!this._filters[i].accept(event))
-                return false;
-        }
-        return true;
-    },
-
-    _filterChanged: function()
-    {
-        this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordFilterChanged);
-    },
 
     /**
      * @return {!Array.<!WebInspector.TimelineModel.Record>}
@@ -735,6 +737,7 @@ WebInspector.TimelineModel.prototype = {
         this._inspectedTargetEvents.sort(WebInspector.TracingModel.Event.compareStartTime);
 
         this._cpuProfiles = null;
+        this._processBrowserEvents();
         this._buildTimelineRecords();
         this._buildGPUTasks();
         this._insertFirstPaintEvent();
@@ -880,6 +883,14 @@ WebInspector.TimelineModel.prototype = {
         this._eventDividerRecords.splice(insertionIndexForObjectInListSortedByFunction(firstPaintRecord, this._eventDividerRecords, WebInspector.TimelineModel.Record._compareStartTime), 0, firstPaintRecord);
     },
 
+    _processBrowserEvents: function()
+    {
+        var browserMain = this._tracingModel.threadByName("Browser", "CrBrowserMain");
+        if (!browserMain)
+            return;
+        this._processAsyncEvents(this._mainThreadAsyncEventsByGroup, browserMain.asyncEvents());
+    },
+
     _buildTimelineRecords: function()
     {
         var topLevelRecords = this._buildTimelineRecordsForThread(this.mainThreadEvents());
@@ -904,10 +915,7 @@ WebInspector.TimelineModel.prototype = {
 
     _buildGPUTasks: function()
     {
-        var gpuProcess = this._tracingModel.processByName("GPU Process");
-        if (!gpuProcess)
-            return;
-        var mainThread = gpuProcess.threadByName("CrGpuMain");
+        var mainThread = this._tracingModel.threadByName("GPU Process", "CrGpuMain");
         if (!mainThread)
             return;
         var events = mainThread.events();
@@ -971,7 +979,7 @@ WebInspector.TimelineModel.prototype = {
 
     /**
      * @param {number} startTime
-     * @param {?number} endTime
+     * @param {number} endTime
      * @param {!WebInspector.TracingModel.Thread} mainThread
      * @param {!WebInspector.TracingModel.Thread} thread
      */
@@ -992,10 +1000,12 @@ WebInspector.TimelineModel.prototype = {
             }
         }
 
-        if (jsSamples) {
+        if (jsSamples && jsSamples.length)
             events = events.mergeOrdered(jsSamples, WebInspector.TracingModel.Event.orderedCompareStartTime);
+        if (jsSamples || events.some(function(e) { return e.name === WebInspector.TimelineModel.RecordType.JSSample; })) {
             var jsFrameEvents = WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents(events);
-            events = jsFrameEvents.mergeOrdered(events, WebInspector.TracingModel.Event.orderedCompareStartTime);
+            if (jsFrameEvents && jsFrameEvents.length)
+                events = jsFrameEvents.mergeOrdered(events, WebInspector.TracingModel.Event.orderedCompareStartTime);
         }
 
         var threadEvents;
@@ -1022,7 +1032,18 @@ WebInspector.TimelineModel.prototype = {
             threadEvents.push(event);
             this._inspectedTargetEvents.push(event);
         }
-        i = asyncEvents.lowerBound(startTime, function (time, asyncEvent) { return time - asyncEvent.startTime });
+        this._processAsyncEvents(threadAsyncEventsByGroup, asyncEvents, startTime, endTime);
+    },
+
+    /**
+     * @param {!Map<!WebInspector.AsyncEventGroup, !Array<!WebInspector.TracingModel.AsyncEvent>>} asyncEventsByGroup
+     * @param {!Array<!WebInspector.TracingModel.AsyncEvent>} asyncEvents
+     * @param {number=} startTime
+     * @param {number=} endTime
+     */
+    _processAsyncEvents: function(asyncEventsByGroup, asyncEvents, startTime, endTime)
+    {
+        var i = startTime ? asyncEvents.lowerBound(startTime, function (time, asyncEvent) { return time - asyncEvent.startTime }) : 0;
         for (; i < asyncEvents.length; ++i) {
             var asyncEvent = asyncEvents[i];
             if (endTime && asyncEvent.startTime >= endTime)
@@ -1030,10 +1051,10 @@ WebInspector.TimelineModel.prototype = {
             var asyncGroup = this._processAsyncEvent(asyncEvent);
             if (!asyncGroup)
                 continue;
-            var groupAsyncEvents = threadAsyncEventsByGroup.get(asyncGroup);
+            var groupAsyncEvents = asyncEventsByGroup.get(asyncGroup);
             if (!groupAsyncEvents) {
                 groupAsyncEvents = [];
-                threadAsyncEventsByGroup.set(asyncGroup, groupAsyncEvents);
+                asyncEventsByGroup.set(asyncGroup, groupAsyncEvents);
             }
             groupAsyncEvents.push(asyncEvent);
         }
@@ -1079,6 +1100,8 @@ WebInspector.TimelineModel.prototype = {
             if (event.args["beginData"])
                 event.initiator = this._lastScheduleStyleRecalculation[event.args["beginData"]["frame"]];
             this._lastRecalculateStylesEvent = event;
+            if (this._currentScriptEvent)
+                event.warning = WebInspector.TimelineModel.WarningType.ForcedStyle;
             break;
 
         case recordTypes.ScheduleStyleInvalidationTracking:
@@ -1112,7 +1135,7 @@ WebInspector.TimelineModel.prototype = {
             }
             this._layoutInvalidate[frameId] = null;
             if (this._currentScriptEvent)
-                event.warning = WebInspector.UIString("Forced synchronous layout is a possible performance bottleneck.");
+                event.warning = WebInspector.TimelineModel.WarningType.ForcedLayout;
             break;
 
         case recordTypes.EvaluateScript:
@@ -1129,13 +1152,11 @@ WebInspector.TimelineModel.prototype = {
             this._invalidationTracker.didPaint(event);
             event.highlightQuad = event.args["data"]["clip"];
             event.backendNodeId = event.args["data"]["nodeId"];
-            var layerUpdateEvent = this._findAncestorEvent(recordTypes.UpdateLayer);
-            if (!layerUpdateEvent || layerUpdateEvent.args["layerTreeId"] !== this._inspectedTargetLayerTreeId)
-                break;
             // Only keep layer paint events, skip paints for subframes that get painted to the same layer as parent.
             if (!event.args["data"]["layerId"])
                 break;
-            this._lastPaintForLayer[layerUpdateEvent.args["layerId"]] = event;
+            var layerId = event.args["data"]["layerId"];
+            this._lastPaintForLayer[layerId] = event;
             break;
 
         case recordTypes.DisplayItemListSnapshot:
@@ -1203,8 +1224,7 @@ WebInspector.TimelineModel.prototype = {
 
         case recordTypes.FireIdleCallback:
             if (event.duration > eventData["allottedMilliseconds"]) {
-                event.warning = WebInspector.UIString("Idle callback execution extended beyond deadline by " +
-                    Number.millisToString(event.duration - eventData["allottedMilliseconds"], true));
+                event.warning = WebInspector.TimelineModel.WarningType.IdleDeadlineExceeded;
             }
             break;
 
@@ -1239,9 +1259,18 @@ WebInspector.TimelineModel.prototype = {
     _processAsyncEvent: function(asyncEvent)
     {
         var groups = WebInspector.TimelineUIUtils.asyncEventGroups();
-        if (asyncEvent.hasCategory(WebInspector.TracingModel.ConsoleEventCategory))
+        if (asyncEvent.hasCategory(WebInspector.TimelineModel.Category.Console))
             return groups.console;
-
+        if (asyncEvent.hasCategory(WebInspector.TimelineModel.Category.LatencyInfo)) {
+            if (!Runtime.experiments.isEnabled("timelineLatencyInfo"))
+                return null;
+            // FIXME: fix event termination on the back-end instead.
+            if (asyncEvent.steps.peekLast().phase !== WebInspector.TracingModel.Phase.AsyncEnd)
+                return null;
+            if (asyncEvent.name === WebInspector.TimelineModel.RecordType.InputLatencyMouseMove)
+                return null;
+            return groups.input;
+        }
         return null;
     },
 
@@ -1440,187 +1469,17 @@ WebInspector.TimelineModel.prototype = {
 }
 
 /**
- * @constructor
- */
-WebInspector.TimelineModel.ProfileTreeNode = function()
-{
-    /** @type {number} */
-    this.totalTime;
-    /** @type {number} */
-    this.selfTime;
-    /** @type {string} */
-    this.name;
-    /** @type {string} */
-    this.color;
-    /** @type {string} */
-    this.id;
-    /** @type {!WebInspector.TracingModel.Event} */
-    this.event;
-    /** @type {?Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */
-    this.children;
-    /** @type {?WebInspector.TimelineModel.ProfileTreeNode} */
-    this.parent;
-}
-
-/**
- * @param {!Array<!WebInspector.TracingModel.Event>} events
- * @param {number} startTime
- * @param {number} endTime
  * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
- * @param {function(!WebInspector.TracingModel.Event):string} eventIdCallback
- * @return {!WebInspector.TimelineModel.ProfileTreeNode}
+ * @param {!WebInspector.TracingModel.Event} event
+ * @return {boolean}
  */
-WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTime, filters, eventIdCallback)
+WebInspector.TimelineModel.isVisible = function(filters, event)
 {
-    // Temporarily deposit a big enough value that exceeds the max recording time.
-    var /** @const */ initialTime = 1e7;
-    var root = new WebInspector.TimelineModel.ProfileTreeNode();
-    root.totalTime = initialTime;
-    root.selfTime = initialTime;
-    root.name = WebInspector.UIString("Top-Down Chart");
-    var parent = root;
-
-    /**
-     * @param {!WebInspector.TracingModel.Event} e
-     * @return {boolean}
-     */
-    function filter(e)
-    {
-        if (!e.endTime && e.phase !== WebInspector.TracingModel.Phase.Instant)
+    for (var i = 0; i < filters.length; ++i) {
+        if (!filters[i].accept(event))
             return false;
-        if (e.endTime <= startTime || e.startTime >= endTime)
-            return false;
-        if (WebInspector.TracingModel.isAsyncPhase(e.phase))
-            return false;
-        for (var i = 0, l = filters.length; i < l; ++i) {
-            if (!filters[i].accept(e))
-                return false;
-        }
-        return true;
     }
-
-    /**
-     * @param {!WebInspector.TracingModel.Event} e
-     */
-    function onStartEvent(e)
-    {
-        if (!filter(e))
-            return;
-        var time = Math.min(endTime, e.endTime) - Math.max(startTime, e.startTime);
-        var id = eventIdCallback(e);
-        if (!parent.children)
-            parent.children = /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
-        var node = parent.children.get(id);
-        if (node) {
-            node.selfTime += time;
-            node.totalTime += time;
-        } else {
-            node = new WebInspector.TimelineModel.ProfileTreeNode();
-            node.totalTime = time;
-            node.selfTime = time;
-            node.parent = parent;
-            node.id = id;
-            node.event = e;
-            parent.children.set(id, node);
-        }
-        parent.selfTime -= time;
-        if (parent.selfTime < 0) {
-            console.log("Error: Negative self of " + parent.selfTime, e);
-            parent.selfTime = 0;
-        }
-        parent = node;
-    }
-
-    /**
-     * @param {!WebInspector.TracingModel.Event} e
-     */
-    function onEndEvent(e)
-    {
-        if (!filter(e))
-            return;
-        parent = parent.parent;
-    }
-
-    WebInspector.TimelineModel.forEachEvent(events, onStartEvent, onEndEvent);
-    root.totalTime -= root.selfTime;
-    root.selfTime = 0;
-    return root;
-}
-
-/**
- * @param {!WebInspector.TimelineModel.ProfileTreeNode} topDownTree
- * @param {?function(!WebInspector.TimelineModel.ProfileTreeNode):!WebInspector.TimelineModel.ProfileTreeNode=} groupingCallback
- * @return {!WebInspector.TimelineModel.ProfileTreeNode}
- */
-WebInspector.TimelineModel.buildBottomUpTree = function(topDownTree, groupingCallback)
-{
-    var buRoot = new WebInspector.TimelineModel.ProfileTreeNode();
-    buRoot.selfTime = 0;
-    buRoot.totalTime = 0;
-    buRoot.name = WebInspector.UIString("Bottom-Up Chart");
-    /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */
-    buRoot.children = new Map();
-    var nodesOnStack = /** @type {!Set<string>} */ (new Set());
-    if (topDownTree.children)
-        topDownTree.children.forEach(processNode);
-
-    /**
-     * @param {!WebInspector.TimelineModel.ProfileTreeNode} tdNode
-     */
-    function processNode(tdNode)
-    {
-        var buParent = groupingCallback && groupingCallback(tdNode) || buRoot;
-        appendNode(tdNode, buParent);
-        var hadNode = nodesOnStack.has(tdNode.id);
-        if (!hadNode)
-            nodesOnStack.add(tdNode.id);
-        if (tdNode.children)
-            tdNode.children.forEach(processNode);
-        if (!hadNode)
-            nodesOnStack.delete(tdNode.id);
-    }
-
-    /**
-     * @param {!WebInspector.TimelineModel.ProfileTreeNode} tdNode
-     * @param {!WebInspector.TimelineModel.ProfileTreeNode} buParent
-     */
-    function appendNode(tdNode, buParent)
-    {
-        var selfTime = tdNode.selfTime;
-        var totalTime = tdNode.totalTime;
-        buParent.selfTime += selfTime;
-        buParent.totalTime += selfTime;
-        while (tdNode.parent) {
-            if (!buParent.children)
-                buParent.children = /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
-            var id = tdNode.id;
-            var buNode = buParent.children.get(id);
-            if (!buNode) {
-                buNode = new WebInspector.TimelineModel.ProfileTreeNode();
-                buNode.selfTime = selfTime;
-                buNode.totalTime = totalTime;
-                buNode.name = tdNode.name;
-                buNode.event = tdNode.event;
-                buNode.id = id;
-                buParent.children.set(id, buNode);
-            } else {
-                buNode.selfTime += selfTime;
-                if (!nodesOnStack.has(id))
-                    buNode.totalTime += totalTime;
-            }
-            tdNode = tdNode.parent;
-            buParent = buNode;
-        }
-    }
-
-    // Purge zero self time nodes.
-    var rootChildren = buRoot.children;
-    for (var item of rootChildren.entries()) {
-        if (item[1].selfTime === 0)
-            rootChildren.delete(item[0]);
-    }
-
-    return buRoot;
+    return true;
 }
 
 /**
@@ -1645,6 +1504,8 @@ WebInspector.TimelineModel.NetworkRequest.prototype = {
         var eventData = event.args["data"];
         if (eventData["mimeType"])
             this.mimeType = eventData["mimeType"];
+        if ("priority" in eventData)
+            this.priority = eventData["priority"];
         if (event.name === recordType.ResourceFinish)
             this.endTime = event.startTime;
         if (!this.responseTime && (event.name === recordType.ResourceReceiveResponse || event.name === recordType.ResourceReceivedData))
@@ -1658,15 +1519,9 @@ WebInspector.TimelineModel.NetworkRequest.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.Object}
  */
 WebInspector.TimelineModel.Filter = function()
 {
-    WebInspector.Object.call(this);
-}
-
-WebInspector.TimelineModel.Filter.Events = {
-    Changed: "Changed"
 }
 
 WebInspector.TimelineModel.Filter.prototype = {
@@ -1677,14 +1532,7 @@ WebInspector.TimelineModel.Filter.prototype = {
     accept: function(event)
     {
         return true;
-    },
-
-    notifyFilterChanged: function()
-    {
-        this.dispatchEventToListeners(WebInspector.TimelineModel.Filter.Events.Changed, this);
-    },
-
-    __proto__: WebInspector.Object.prototype
+    }
 }
 
 /**

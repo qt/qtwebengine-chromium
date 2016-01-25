@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/ReplaceSelectionCommand.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -570,9 +569,9 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
 
             // Mutate using the CSSOM wrapper so we get the same event behavior as a script.
             if (isEnclosingBlock(element))
-                element->style()->setPropertyInternal(CSSPropertyDisplay, "inline", false, IGNORE_EXCEPTION);
+                element->style()->setPropertyInternal(CSSPropertyDisplay, String(), "inline", false, IGNORE_EXCEPTION);
             if (element->layoutObject() && element->layoutObject()->style()->isFloating())
-                element->style()->setPropertyInternal(CSSPropertyFloat, "none", false, IGNORE_EXCEPTION);
+                element->style()->setPropertyInternal(CSSPropertyFloat, String(), "none", false, IGNORE_EXCEPTION);
         }
     }
 }
@@ -848,7 +847,7 @@ void ReplaceSelectionCommand::mergeEndIfNeeded()
     // Merging forward could result in deleting the destination anchor node.
     // To avoid this, we add a placeholder node before the start of the paragraph.
     if (endOfParagraph(startOfParagraphToMove).deepEquivalent() == destination.deepEquivalent()) {
-        RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBreakElement(document());
+        RefPtrWillBeRawPtr<HTMLBRElement> placeholder = HTMLBRElement::create(document());
         insertNodeBefore(placeholder, startOfParagraphToMove.deepEquivalent().anchorNode());
         destination = createVisiblePosition(positionBeforeNode(placeholder.get()));
     }
@@ -1158,7 +1157,7 @@ void ReplaceSelectionCommand::doApply()
     // We inserted before the enclosingBlockOfInsertionPos to prevent nesting, and the content before the enclosingBlockOfInsertionPos wasn't in its own block and
     // didn't have a br after it, so the inserted content ended up in the same paragraph.
     if (!startOfInsertedContent.isNull() && enclosingBlockOfInsertionPos && insertionPos.anchorNode() == enclosingBlockOfInsertionPos->parentNode() && (unsigned)insertionPos.computeEditingOffset() < enclosingBlockOfInsertionPos->nodeIndex() && !isStartOfParagraph(startOfInsertedContent))
-        insertNodeAt(createBreakElement(document()).get(), startOfInsertedContent.deepEquivalent());
+        insertNodeAt(HTMLBRElement::create(document()).get(), startOfInsertedContent.deepEquivalent());
 
     if (endBR && (plainTextFragment || (shouldRemoveEndBR(endBR, originalVisPosBeforeEndBR) && !(fragment.hasInterchangeNewlineAtEnd() && selectionIsPlainText)))) {
         RefPtrWillBeRawPtr<ContainerNode> parent = endBR->parentNode();
@@ -1193,7 +1192,7 @@ void ReplaceSelectionCommand::doApply()
         // We insert a placeholder before the newly inserted content to avoid being merged into the inline.
         Node* destinationNode = destination.deepEquivalent().anchorNode();
         if (m_shouldMergeEnd && destinationNode != enclosingInline(destinationNode) && enclosingInline(destinationNode)->nextSibling())
-            insertNodeBefore(createBreakElement(document()), refNode.get());
+            insertNodeBefore(HTMLBRElement::create(document()), refNode.get());
 
         // Merging the the first paragraph of inserted content with the content that came
         // before the selection that was pasted into would also move content after
@@ -1204,7 +1203,7 @@ void ReplaceSelectionCommand::doApply()
         // comes after and prevent that from happening.
         VisiblePosition endOfInsertedContent = positionAtEndOfInsertedContent();
         if (startOfParagraph(endOfInsertedContent).deepEquivalent() == startOfParagraphToMove.deepEquivalent()) {
-            insertNodeAt(createBreakElement(document()).get(), endOfInsertedContent.deepEquivalent());
+            insertNodeAt(HTMLBRElement::create(document()).get(), endOfInsertedContent.deepEquivalent());
             // Mutation events (bug 22634) triggered by inserting the <br> might have removed the content we're about to move
             if (!startOfParagraphToMove.deepEquivalent().inDocument())
                 return;
@@ -1228,7 +1227,7 @@ void ReplaceSelectionCommand::doApply()
                 setEndingSelection(endOfInsertedContent);
                 Element* enclosingBlockElement = enclosingBlock(endOfInsertedContent.deepEquivalent().anchorNode());
                 if (isListItem(enclosingBlockElement)) {
-                    RefPtrWillBeRawPtr<HTMLLIElement> newListItem = createListItemElement(document());
+                    RefPtrWillBeRawPtr<HTMLLIElement> newListItem = HTMLLIElement::create(document());
                     insertNodeAfter(newListItem, enclosingBlockElement);
                     setEndingSelection(createVisiblePosition(firstPositionInNode(newListItem.get())));
                 } else {

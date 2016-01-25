@@ -4,11 +4,13 @@
 
 #include "content/browser/indexed_db/leveldb/leveldb_database.h"
 
+#include <stdint.h>
 #include <cerrno>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/files/file.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
@@ -16,6 +18,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "build/build_config.h"
 #include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/leveldb/leveldb_comparator.h"
@@ -165,7 +168,7 @@ static int CheckFreeSpace(const char* const type,
                           const base::FilePath& file_name) {
   std::string name =
       std::string("WebCore.IndexedDB.LevelDB.Open") + type + "FreeDiskSpace";
-  int64 free_disk_space_in_k_bytes =
+  int64_t free_disk_space_in_k_bytes =
       base::SysInfo::AmountOfFreeDiskSpace(file_name) / 1024;
   if (free_disk_space_in_k_bytes < 0) {
     base::Histogram::FactoryGet(
@@ -179,7 +182,7 @@ static int CheckFreeSpace(const char* const type,
   int clamped_disk_space_k_bytes = free_disk_space_in_k_bytes > INT_MAX
                                        ? INT_MAX
                                        : free_disk_space_in_k_bytes;
-  const uint64 histogram_max = static_cast<uint64>(1e9);
+  const uint64_t histogram_max = static_cast<uint64_t>(1e9);
   static_assert(histogram_max <= INT_MAX, "histogram_max too big");
   base::Histogram::FactoryGet(name,
                               1,
@@ -305,9 +308,9 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
 
   (*result).reset(new LevelDBDatabase);
   (*result)->db_ = make_scoped_ptr(db);
-  (*result)->comparator_adapter_ = comparator_adapter.Pass();
+  (*result)->comparator_adapter_ = std::move(comparator_adapter);
   (*result)->comparator_ = comparator;
-  (*result)->filter_policy_ = filter_policy.Pass();
+  (*result)->filter_policy_ = std::move(filter_policy);
 
   return s;
 }
@@ -332,13 +335,13 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   }
 
   scoped_ptr<LevelDBDatabase> result(new LevelDBDatabase);
-  result->env_ = in_memory_env.Pass();
+  result->env_ = std::move(in_memory_env);
   result->db_ = make_scoped_ptr(db);
-  result->comparator_adapter_ = comparator_adapter.Pass();
+  result->comparator_adapter_ = std::move(comparator_adapter);
   result->comparator_ = comparator;
-  result->filter_policy_ = filter_policy.Pass();
+  result->filter_policy_ = std::move(filter_policy);
 
-  return result.Pass();
+  return result;
 }
 
 leveldb::Status LevelDBDatabase::Put(const StringPiece& key,
@@ -416,7 +419,7 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
 
   scoped_ptr<leveldb::Iterator> i(db_->NewIterator(read_options));
   return scoped_ptr<LevelDBIterator>(
-      IndexedDBClassFactory::Get()->CreateIteratorImpl(i.Pass()));
+      IndexedDBClassFactory::Get()->CreateIteratorImpl(std::move(i)));
 }
 
 const LevelDBComparator* LevelDBDatabase::Comparator() const {

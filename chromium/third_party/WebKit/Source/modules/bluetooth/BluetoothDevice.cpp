@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/bluetooth/BluetoothDevice.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -19,6 +18,8 @@ namespace blink {
 
 BluetoothDevice::BluetoothDevice(PassOwnPtr<WebBluetoothDevice> webDevice)
     : m_webDevice(webDevice)
+    , m_adData(BluetoothAdvertisingData::create(m_webDevice->txPower,
+        m_webDevice->rssi))
 {
 }
 
@@ -26,6 +27,11 @@ BluetoothDevice* BluetoothDevice::take(ScriptPromiseResolver*, PassOwnPtr<WebBlu
 {
     ASSERT(webDevice);
     return new BluetoothDevice(webDevice);
+}
+
+DEFINE_TRACE(BluetoothDevice)
+{
+    visitor->trace(m_adData);
 }
 
 unsigned BluetoothDevice::deviceClass(bool& isNull)
@@ -63,11 +69,6 @@ unsigned BluetoothDevice::productVersion(bool& isNull)
     return m_webDevice->productVersion;
 }
 
-bool BluetoothDevice::paired()
-{
-    return m_webDevice->paired;
-}
-
 Vector<String> BluetoothDevice::uuids()
 {
     Vector<String> uuids(m_webDevice->uuids.size());
@@ -78,12 +79,12 @@ Vector<String> BluetoothDevice::uuids()
 
 ScriptPromise BluetoothDevice::connectGATT(ScriptState* scriptState)
 {
-    WebBluetooth* webbluetooth = BluetoothSupplement::from(scriptState);
+    WebBluetooth* webbluetooth = BluetoothSupplement::fromScriptState(scriptState);
     if (!webbluetooth)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    webbluetooth->connectGATT(instanceID(), new CallbackPromiseAdapter<BluetoothGATTRemoteServer, BluetoothError>(resolver));
+    webbluetooth->connectGATT(id(), new CallbackPromiseAdapter<BluetoothGATTRemoteServer, BluetoothError>(resolver));
     return promise;
 }
 

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/canvas2d/EventHitRegion.h"
 
 #include "core/dom/Document.h"
 #include "core/html/HTMLCanvasElement.h"
-#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutBox.h"
+#include "core/page/Page.h"
 #include "modules/canvas2d/CanvasRenderingContext2D.h"
 #include "modules/canvas2d/HitRegion.h"
 
@@ -23,14 +23,11 @@ String EventHitRegion::regionIdFromAbsoluteLocation(HTMLCanvasElement& canvas, c
     document.updateLayoutTreeForNodeIfNeeded(&canvas);
 
     // Adjust offsetLocation to be relative to the canvas's position.
-    LayoutObject* layoutObject = canvas.layoutObject();
-    FloatPoint localPos = layoutObject->absoluteToLocal(FloatPoint(location), UseTransforms);
-
-    LocalFrame* frame = document.frame();
-    float zoomFactor = frame ? frame->pageZoomFactor() : 1;
-    float scaleFactor = 1 / zoomFactor;
-    if (scaleFactor != 1.0f)
-        localPos.scale(scaleFactor, scaleFactor);
+    LayoutBox* box = canvas.layoutBox();
+    FloatPoint localPos = box->absoluteToLocal(FloatPoint(location), UseTransforms);
+    if (box->hasBorderOrPadding())
+        localPos.move(-box->contentBoxOffset());
+    localPos.scale(canvas.width() / box->contentWidth(), canvas.height() / box->contentHeight());
 
     HitRegion* hitRegion = toCanvasRenderingContext2D(context)->hitRegionAtPoint(localPos);
     if (!hitRegion || hitRegion->id().isEmpty())

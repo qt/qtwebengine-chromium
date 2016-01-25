@@ -11,7 +11,6 @@
 #include "SkBmpStandardCodec.h"
 #include "SkCodecPriv.h"
 #include "SkColorPriv.h"
-#include "SkScaledCodec.h"
 #include "SkStream.h"
 
 /*
@@ -57,12 +56,10 @@ enum BmpInputFormat {
 /*
  * Checks the start of the stream to see if the image is a bitmap
  */
-bool SkBmpCodec::IsBmp(SkStream* stream) {
+bool SkBmpCodec::IsBmp(const void* buffer, size_t bytesRead) {
     // TODO: Support "IC", "PT", "CI", "CP", "BA"
     const char bmpSig[] = { 'B', 'M' };
-    char buffer[sizeof(bmpSig)];
-    return stream->read(buffer, sizeof(bmpSig)) == sizeof(bmpSig) &&
-            !memcmp(buffer, bmpSig, sizeof(bmpSig));
+    return bytesRead >= sizeof(bmpSig) && !memcmp(buffer, bmpSig, sizeof(bmpSig));
 }
 
 /*
@@ -482,6 +479,8 @@ bool SkBmpCodec::ReadHeader(SkStream* stream, bool inIco, SkCodec** codecOut) {
         // Return the codec
         switch (inputFormat) {
             case kStandard_BmpInputFormat:
+                // We require streams to have a memory base for Bmp-in-Ico decodes.
+                SkASSERT(!inIco || nullptr != stream->getMemoryBase());
                 *codecOut = new SkBmpStandardCodec(imageInfo, stream, bitsPerPixel, numColors,
                         bytesPerColor, offset - bytesRead, rowOrder, inIco);
                 return true;
@@ -549,42 +548,8 @@ int32_t SkBmpCodec::getDstRow(int32_t y, int32_t height) const {
     return height - y - 1;
 }
 
-/*
- * Get the destination row to start filling from
- * Used to fill the remainder of the image on incomplete input for bmps
- * This is tricky since bmps may be kTopDown or kBottomUp.  For kTopDown,
- * we start filling from where we left off, but for kBottomUp we start
- * filling at the top of the image.
- */
-void* SkBmpCodec::getDstStartRow(void* dst, size_t dstRowBytes, int32_t y) const {
-    return (SkCodec::kTopDown_SkScanlineOrder == fRowOrder) ?
-            SkTAddOffset<void*>(dst, y * dstRowBytes) : dst;
-}
-
-/*
- * Compute the number of colors in the color table
- */
-uint32_t SkBmpCodec::computeNumColors(uint32_t numColors) {
-    // Zero is a default for maxColors
-    // Also set numColors to maxColors when it is too large
-    uint32_t maxColors = 1 << fBitsPerPixel;
-    if (numColors == 0 || numColors >= maxColors) {
-        return maxColors;
-    }
-    return numColors;
-}
-
 SkCodec::Result SkBmpCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
         const SkCodec::Options& options, SkPMColor inputColorPtr[], int* inputColorCount) {
-    if (options.fSubset) {
-        // Subsets are not supported.
-        return kUnimplemented;
-    }
-    if (dstInfo.dimensions() != this->getInfo().dimensions()) {
-        if (!SkScaledCodec::DimensionsSupportedForSampling(this->getInfo(), dstInfo)) {
-            return SkCodec::kInvalidScale;
-        }
-    }
     if (!conversion_possible(dstInfo, this->getInfo())) {
         SkCodecPrintf("Error: cannot convert input type to output type.\n");
         return kInvalidConversion;
@@ -593,14 +558,10 @@ SkCodec::Result SkBmpCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
     return prepareToDecode(dstInfo, options, inputColorPtr, inputColorCount);
 }
 
-SkCodec::Result SkBmpCodec::onGetScanlines(void* dst, int count, size_t rowBytes) {
+int SkBmpCodec::onGetScanlines(void* dst, int count, size_t rowBytes) {
     // Create a new image info representing the portion of the image to decode
     SkImageInfo rowInfo = this->dstInfo().makeWH(this->dstInfo().width(), count);
 
     // Decode the requested rows
     return this->decodeRows(rowInfo, dst, rowBytes, this->options());
-}
-
-int SkBmpCodec::onNextScanline() const {
-    return this->getDstRow(this->INHERITED::onNextScanline(), this->dstInfo().height());
 }

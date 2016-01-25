@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/VRHardwareUnit.h"
 
 #include "modules/vr/HMDVRDevice.h"
@@ -14,16 +13,19 @@
 
 namespace blink {
 
-VRHardwareUnit::VRHardwareUnit(VRController* controller)
+VRHardwareUnit::VRHardwareUnit(NavigatorVRDevice* navigatorVRDevice)
     : m_nextDeviceId(1)
     , m_frameIndex(0)
-    , m_controller(controller)
+    , m_navigatorVRDevice(navigatorVRDevice)
+    , m_canUpdatePositionState(true)
 {
     m_positionState = VRPositionState::create();
 }
 
 VRHardwareUnit::~VRHardwareUnit()
 {
+    if (!m_canUpdatePositionState)
+        Platform::current()->currentThread()->removeTaskObserver(this);
 }
 
 void VRHardwareUnit::updateFromWebVRDevice(const WebVRDevice& device)
@@ -59,21 +61,45 @@ void VRHardwareUnit::addDevicesToVector(HeapVector<Member<VRDevice>>& vrDevices)
 
 VRController* VRHardwareUnit::controller()
 {
-    return m_controller;
+    return m_navigatorVRDevice->controller();
 }
 
 VRPositionState* VRHardwareUnit::getSensorState()
 {
-    WebHMDSensorState state;
-    m_controller->getSensorState(m_index, state);
-    m_positionState->setState(state);
-    m_frameIndex = state.frameIndex;
+    if (m_canUpdatePositionState) {
+        m_positionState = getImmediateSensorState(true);
+        Platform::current()->currentThread()->addTaskObserver(this);
+        m_canUpdatePositionState = false;
+    }
+
     return m_positionState;
+}
+
+VRPositionState* VRHardwareUnit::getImmediateSensorState(bool updateFrameIndex)
+{
+    WebHMDSensorState state;
+    controller()->getSensorState(m_index, state);
+    if (updateFrameIndex)
+        m_frameIndex = state.frameIndex;
+
+    VRPositionState* immediatePositionState = VRPositionState::create();
+    immediatePositionState->setState(state);
+    return immediatePositionState;
+}
+
+
+void VRHardwareUnit::didProcessTask()
+{
+    // State should be stable until control is returned to the user agent.
+    if (!m_canUpdatePositionState) {
+        Platform::current()->currentThread()->removeTaskObserver(this);
+        m_canUpdatePositionState = true;
+    }
 }
 
 DEFINE_TRACE(VRHardwareUnit)
 {
-    visitor->trace(m_controller);
+    visitor->trace(m_navigatorVRDevice);
     visitor->trace(m_positionState);
     visitor->trace(m_hmd);
     visitor->trace(m_positionSensor);

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webmidi/MIDIOutput.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -196,15 +195,14 @@ MIDIOutput::~MIDIOutput()
 
 void MIDIOutput::send(DOMUint8Array* array, double timestamp, ExceptionState& exceptionState)
 {
+    ASSERT(array);
+
     if (timestamp == 0.0)
         timestamp = now(executionContext());
 
     // Implicit open. It does nothing if the port is already opened.
     // This should be performed even if |array| is invalid.
     open();
-
-    if (!array)
-        return;
 
     if (MessageValidator::validate(array, exceptionState, midiAccess()->sysexEnabled()))
         midiAccess()->sendMIDIData(m_portIndex, array->data(), array->length(), timestamp);
@@ -233,6 +231,7 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, Exception
 
 void MIDIOutput::send(DOMUint8Array* data, ExceptionState& exceptionState)
 {
+    ASSERT(data);
     send(data, 0.0, exceptionState);
 }
 

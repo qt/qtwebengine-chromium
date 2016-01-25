@@ -4,7 +4,11 @@
 
 #include "net/base/sdch_manager.h"
 
-#include "base/base64.h"
+#include <limits.h>
+
+#include <utility>
+
+#include "base/base64url.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -247,7 +251,7 @@ SdchManager::GetDictionarySet(const GURL& target_url) {
 
   UMA_HISTOGRAM_COUNTS("Sdch3.Advertisement_Count", count);
 
-  return result.Pass();
+  return result;
 }
 
 scoped_ptr<SdchManager::DictionarySet>
@@ -260,15 +264,15 @@ SdchManager::GetDictionarySetByHash(
   *problem_code = SDCH_DICTIONARY_HASH_NOT_FOUND;
   const auto& it = dictionaries_.find(server_hash);
   if (it == dictionaries_.end())
-    return result.Pass();
+    return result;
 
   *problem_code = it->second->data.CanUse(target_url);
   if (*problem_code != SDCH_OK)
-    return result.Pass();
+    return result;
 
   result.reset(new DictionarySet);
   result->AddDictionary(it->first, it->second);
-  return result.Pass();
+  return result;
 }
 
 // static
@@ -277,10 +281,14 @@ void SdchManager::GenerateHash(const std::string& dictionary_text,
   char binary_hash[32];
   crypto::SHA256HashString(dictionary_text, binary_hash, sizeof(binary_hash));
 
-  std::string first_48_bits(&binary_hash[0], 6);
-  std::string second_48_bits(&binary_hash[6], 6);
-  UrlSafeBase64Encode(first_48_bits, client_hash);
-  UrlSafeBase64Encode(second_48_bits, server_hash);
+  base::StringPiece first_48_bits(&binary_hash[0], 6);
+  base::StringPiece second_48_bits(&binary_hash[6], 6);
+
+  base::Base64UrlEncode(
+      first_48_bits, base::Base64UrlEncodePolicy::INCLUDE_PADDING, client_hash);
+  base::Base64UrlEncode(second_48_bits,
+                        base::Base64UrlEncodePolicy::INCLUDE_PADDING,
+                        server_hash);
 
   DCHECK_EQ(server_hash->length(), 8u);
   DCHECK_EQ(client_hash->length(), 8u);
@@ -427,17 +435,7 @@ SdchProblemCode SdchManager::RemoveSdchDictionary(
 // static
 scoped_ptr<SdchManager::DictionarySet>
 SdchManager::CreateEmptyDictionarySetForTesting() {
-  return scoped_ptr<DictionarySet>(new DictionarySet).Pass();
-}
-
-// static
-void SdchManager::UrlSafeBase64Encode(const std::string& input,
-                                      std::string* output) {
-  // Since this is only done during a dictionary load, and hashes are only 8
-  // characters, we just do the simple fixup, rather than rewriting the encoder.
-  base::Base64Encode(input, output);
-  std::replace(output->begin(), output->end(), '+', '-');
-  std::replace(output->begin(), output->end(), '/', '_');
+  return scoped_ptr<DictionarySet>(new DictionarySet);
 }
 
 scoped_ptr<base::Value> SdchManager::SdchInfoToValue() const {
@@ -458,11 +456,11 @@ scoped_ptr<base::Value> SdchManager::SdchInfoToValue() const {
          port_it != entry.second->data.ports().end(); ++port_it) {
       port_list->AppendInteger(*port_it);
     }
-    entry_dict->Set("ports", port_list.Pass());
+    entry_dict->Set("ports", std::move(port_list));
     entry_dict->SetString("server_hash", entry.first);
-    entry_list->Append(entry_dict.Pass());
+    entry_list->Append(std::move(entry_dict));
   }
-  value->Set("dictionaries", entry_list.Pass());
+  value->Set("dictionaries", std::move(entry_list));
 
   entry_list.reset(new base::ListValue());
   for (DomainBlacklistInfo::const_iterator it = blacklisted_domains_.begin();
@@ -474,11 +472,11 @@ scoped_ptr<base::Value> SdchManager::SdchInfoToValue() const {
     if (it->second.count != INT_MAX)
       entry_dict->SetInteger("tries", it->second.count);
     entry_dict->SetInteger("reason", it->second.reason);
-    entry_list->Append(entry_dict.Pass());
+    entry_list->Append(std::move(entry_dict));
   }
-  value->Set("blacklisted", entry_list.Pass());
+  value->Set("blacklisted", std::move(entry_list));
 
-  return value.Pass();
+  return std::move(value);
 }
 
 }  // namespace net

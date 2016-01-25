@@ -35,6 +35,9 @@ Advanced options:
   ${toggle_debug_libs}            in/exclude debug version of libraries
   ${toggle_static_msvcrt}         use static MSVCRT (VS builds only)
   ${toggle_vp9_highbitdepth}      use VP9 high bit depth (10/12) profiles
+  ${toggle_better_hw_compatibility}
+                                  enable encoder to produce streams with better
+                                  hardware decoder compatibility
   ${toggle_vp8}                   VP8 codec support
   ${toggle_vp9}                   VP9 codec support
   ${toggle_vp10}                  VP10 codec support
@@ -122,6 +125,7 @@ all_platforms="${all_platforms} x86-darwin11-gcc"
 all_platforms="${all_platforms} x86-darwin12-gcc"
 all_platforms="${all_platforms} x86-darwin13-gcc"
 all_platforms="${all_platforms} x86-darwin14-gcc"
+all_platforms="${all_platforms} x86-darwin15-gcc"
 all_platforms="${all_platforms} x86-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86-linux-gcc"
 all_platforms="${all_platforms} x86-linux-icc"
@@ -142,6 +146,7 @@ all_platforms="${all_platforms} x86_64-darwin11-gcc"
 all_platforms="${all_platforms} x86_64-darwin12-gcc"
 all_platforms="${all_platforms} x86_64-darwin13-gcc"
 all_platforms="${all_platforms} x86_64-darwin14-gcc"
+all_platforms="${all_platforms} x86_64-darwin15-gcc"
 all_platforms="${all_platforms} x86_64-iphonesimulator-gcc"
 all_platforms="${all_platforms} x86_64-linux-gcc"
 all_platforms="${all_platforms} x86_64-linux-icc"
@@ -232,6 +237,16 @@ ARCH_LIST="
     x86
     x86_64
 "
+ARCH_EXT_LIST_X86="
+    mmx
+    sse
+    sse2
+    sse3
+    ssse3
+    sse4_1
+    avx
+    avx2
+"
 ARCH_EXT_LIST="
     edsp
     media
@@ -243,14 +258,7 @@ ARCH_EXT_LIST="
     msa
     mips64
 
-    mmx
-    sse
-    sse2
-    sse3
-    ssse3
-    sse4_1
-    avx
-    avx2
+    ${ARCH_EXT_LIST_X86}
 "
 HAVE_LIST="
     ${ARCH_EXT_LIST}
@@ -317,6 +325,7 @@ CONFIG_LIST="
     vp9_temporal_denoising
     coefficient_range_checking
     vp9_highbitdepth
+    better_hw_compatibility
     experimental
     size_limit
     ${EXPERIMENT_LIST}
@@ -375,6 +384,7 @@ CMDLINE_SELECT="
     temporal_denoising
     vp9_temporal_denoising
     coefficient_range_checking
+    better_hw_compatibility
     vp9_highbitdepth
     experimental
 "

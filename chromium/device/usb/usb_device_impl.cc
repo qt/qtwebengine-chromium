@@ -4,6 +4,8 @@
 
 #include "device/usb/usb_device_impl.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
 #include "base/bind.h"
@@ -12,6 +14,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "components/device_event_log/device_event_log.h"
 #include "device/usb/usb_context.h"
 #include "device/usb/usb_descriptors.h"
@@ -22,7 +25,7 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/permission_broker_client.h"
-#include "dbus/file_descriptor.h"
+#include "dbus/file_descriptor.h"  // nogncheck
 #endif  // defined(OS_CHROMEOS)
 
 namespace device {
@@ -201,7 +204,7 @@ void UsbDeviceImpl::Open(const OpenCallback& callback) {
 #endif  // defined(OS_CHROMEOS)
 }
 
-bool UsbDeviceImpl::Close(scoped_refptr<UsbDeviceHandle> handle) {
+void UsbDeviceImpl::Close(scoped_refptr<UsbDeviceHandle> handle) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   for (HandlesVector::iterator it = handles_.begin(); it != handles_.end();
@@ -209,10 +212,9 @@ bool UsbDeviceImpl::Close(scoped_refptr<UsbDeviceHandle> handle) {
     if (it->get() == handle.get()) {
       (*it)->InternalClose();
       handles_.erase(it);
-      return true;
+      return;
     }
   }
-  return false;
 }
 
 const UsbConfigDescriptor* UsbDeviceImpl::GetActiveConfiguration() {

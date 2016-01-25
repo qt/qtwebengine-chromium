@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioBufferSourceNode.h"
-
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -483,6 +480,12 @@ void AudioBufferSourceHandler::startSource(double when, double grainOffset, doub
         return;
     }
 
+    // The node is started. Add a reference to keep us alive so that audio
+    // will eventually get played even if Javascript should drop all references
+    // to this node. The reference will get dropped when the source has finished
+    // playing.
+    context()->notifySourceNodeStartedProcessing(node());
+
     // This synchronizes with process(). updateSchedulingInfo will read some of the variables being
     // set here.
     MutexLocker processLocker(m_processLock);
@@ -491,12 +494,6 @@ void AudioBufferSourceHandler::startSource(double when, double grainOffset, doub
     m_isGrain = true;
     m_grainOffset = grainOffset;
     m_grainDuration = grainDuration;
-
-    // The node is started. Add a reference to keep us alive so that audio
-    // will eventually get played even if Javascript should drop all references
-    // to this node. The reference will get dropped when the source has finished
-    // playing.
-    context()->notifySourceNodeStartedProcessing(node());
 
     // If |when| < currentTime, the source must start now according to the spec.
     // So just set startTime to currentTime in this case to start the source now.
@@ -714,4 +711,3 @@ void AudioBufferSourceNode::start(double when, double grainOffset, double grainD
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

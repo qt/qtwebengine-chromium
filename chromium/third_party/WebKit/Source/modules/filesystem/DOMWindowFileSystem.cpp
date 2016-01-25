@@ -23,7 +23,6 @@
  * DAMAGE.
  */
 
-#include "config.h"
 #include "modules/filesystem/DOMWindowFileSystem.h"
 
 #include "core/dom/Document.h"
@@ -41,14 +40,6 @@
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace blink {
-
-DOMWindowFileSystem::DOMWindowFileSystem()
-{
-}
-
-DOMWindowFileSystem::~DOMWindowFileSystem()
-{
-}
 
 void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow& windowArg, int type, long long size, FileSystemCallback* successCallback, ErrorCallback* errorCallback)
 {

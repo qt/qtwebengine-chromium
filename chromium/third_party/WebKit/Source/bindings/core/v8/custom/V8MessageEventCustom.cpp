@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8MessageEvent.h"
 
 #include "bindings/core/v8/SerializedScriptValue.h"
@@ -45,7 +44,8 @@ namespace blink {
 
 void V8MessageEvent::dataAttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Local<v8::Value> cachedData = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::data(info.GetIsolate()));
+    ScriptState* scriptState = ScriptState::current(info.GetIsolate());
+    v8::Local<v8::Value> cachedData = V8HiddenValue::getHiddenValue(scriptState, info.Holder(), V8HiddenValue::data(info.GetIsolate()));
     if (!cachedData.IsEmpty()) {
         v8SetReturnValue(info, cachedData);
         return;
@@ -56,7 +56,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::FunctionCallbackInfo<v8
     v8::Local<v8::Value> result;
     switch (event->dataType()) {
     case MessageEvent::DataTypeScriptValue:
-        result = event->dataAsScriptValue().v8ValueFor(ScriptState::current(info.GetIsolate()));
+        result = event->dataAsScriptValue().v8ValueFor(scriptState);
         if (result.IsEmpty())
             result = v8::Null(info.GetIsolate());
         break;
@@ -71,7 +71,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::FunctionCallbackInfo<v8
         break;
 
     case MessageEvent::DataTypeString: {
-        result = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::stringData(info.GetIsolate()));
+        result = V8HiddenValue::getHiddenValue(scriptState, info.Holder(), V8HiddenValue::stringData(info.GetIsolate()));
         if (result.IsEmpty()) {
             String stringValue = event->dataAsString();
             result = v8String(info.GetIsolate(), stringValue);
@@ -84,7 +84,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::FunctionCallbackInfo<v8
         break;
 
     case MessageEvent::DataTypeArrayBuffer:
-        result = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::arrayBufferData(info.GetIsolate()));
+        result = V8HiddenValue::getHiddenValue(scriptState, info.Holder(), V8HiddenValue::arrayBufferData(info.GetIsolate()));
         if (result.IsEmpty())
             result = toV8(event->dataAsArrayBuffer(), info.Holder(), info.GetIsolate());
         break;
@@ -92,7 +92,7 @@ void V8MessageEvent::dataAttributeGetterCustom(const v8::FunctionCallbackInfo<v8
 
     // Store the result as a hidden value so this callback returns the cached
     // result in future invocations.
-    V8HiddenValue::setHiddenValue(info.GetIsolate(),  info.Holder(), V8HiddenValue::data(info.GetIsolate()), result);
+    V8HiddenValue::setHiddenValue(scriptState,  info.Holder(), V8HiddenValue::data(info.GetIsolate()), result);
     v8SetReturnValue(info, result);
 }
 

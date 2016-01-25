@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/paint/ThemePainterDefault.h"
 
 #include "core/layout/LayoutObject.h"
@@ -46,7 +45,7 @@ const unsigned defaultButtonBackgroundColor = 0xffdddddd;
 
 bool useMockTheme()
 {
-    return LayoutTestSupport::isRunningLayoutTest();
+    return LayoutTestSupport::isMockThemeEnabledForTest();
 }
 
 WebThemeEngine::State getWebThemeState(const LayoutObject& o)
@@ -81,16 +80,16 @@ DirectionFlippingScope::DirectionFlippingScope(const LayoutObject& layoutObject,
 {
     if (!m_needsFlipping)
         return;
-    m_paintInfo.context->save();
-    m_paintInfo.context->translate(2 * rect.x() + rect.width(), 0);
-    m_paintInfo.context->scale(-1, 1);
+    m_paintInfo.context.save();
+    m_paintInfo.context.translate(2 * rect.x() + rect.width(), 0);
+    m_paintInfo.context.scale(-1, 1);
 }
 
 DirectionFlippingScope::~DirectionFlippingScope()
 {
     if (!m_needsFlipping)
         return;
-    m_paintInfo.context->restore();
+    m_paintInfo.context.restore();
 }
 
 IntRect determinateProgressValueRectFor(const LayoutProgress& layoutProgress, const IntRect& rect)
@@ -137,20 +136,20 @@ IntRect convertToPaintingRect(const LayoutObject& inputLayoutObject, const Layou
 bool ThemePainterDefault::paintCheckbox(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.button.checked = LayoutTheme::isChecked(o);
     extraParams.button.indeterminate = LayoutTheme::isIndeterminate(o);
 
     float zoomLevel = o.styleRef().effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context, false);
+    GraphicsContextStateSaver stateSaver(i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
         stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
-        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(zoomLevel, zoomLevel);
-        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+        i.context.translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context.scale(zoomLevel, zoomLevel);
+        i.context.translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartCheckbox, getWebThemeState(o), WebRect(unzoomedRect), &extraParams);
@@ -160,7 +159,7 @@ bool ThemePainterDefault::paintCheckbox(const LayoutObject& o, const PaintInfo& 
 bool ThemePainterDefault::paintRadio(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.button.checked = LayoutTheme::isChecked(o);
 
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartRadio, getWebThemeState(o), WebRect(rect), &extraParams);
@@ -170,7 +169,7 @@ bool ThemePainterDefault::paintRadio(const LayoutObject& o, const PaintInfo& i, 
 bool ThemePainterDefault::paintButton(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.button.hasBorder = true;
     extraParams.button.backgroundColor = useMockTheme() ? 0xffc0c0c0 : defaultButtonBackgroundColor;
     if (o.hasBackground())
@@ -193,7 +192,7 @@ bool ThemePainterDefault::paintTextField(const LayoutObject& o, const PaintInfo&
     extraParams.textField.isTextArea = part == TextAreaPart;
     extraParams.textField.isListbox = part == ListboxPart;
 
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
 
     Color backgroundColor = o.resolveColor(CSSPropertyBackgroundColor);
     extraParams.textField.backgroundColor = backgroundColor.rgb();
@@ -207,11 +206,7 @@ bool ThemePainterDefault::paintMenuList(const LayoutObject& o, const PaintInfo& 
     if (!o.isBox())
         return false;
 
-    const int right = rect.x() + rect.width();
-    const int middle = rect.y() + rect.height() / 2;
-
     WebThemeEngine::ExtraParams extraParams;
-    extraParams.menuList.arrowY = middle;
     const LayoutBox& box = toLayoutBox(o);
     // Match Chromium Win behaviour of showing all borders if any are shown.
     extraParams.menuList.hasBorder = box.borderRight() || box.borderLeft() || box.borderTop() || box.borderBottom();
@@ -229,20 +224,9 @@ bool ThemePainterDefault::paintMenuList(const LayoutObject& o, const PaintInfo& 
     // investigate if we really need fillContentArea.
     extraParams.menuList.fillContentArea = !o.styleRef().hasBackgroundImage() && backgroundColor.alpha();
 
-    if (useMockTheme()) {
-        // The size and position of the drop-down button is different between
-        // the mock theme and the regular aura theme.
-        int spacingTop = box.borderTop() + box.paddingTop();
-        int spacingBottom = box.borderBottom() + box.paddingBottom();
-        int spacingRight = box.borderRight() + box.paddingRight();
-        extraParams.menuList.arrowX = (o.styleRef().direction() == RTL) ? rect.x() + 4 + spacingRight: right - 13 - spacingRight;
-        extraParams.menuList.arrowHeight = rect.height() - spacingBottom - spacingTop;
-    } else {
-        extraParams.menuList.arrowX = (o.styleRef().direction() == RTL) ? rect.x() + 7 : right - 13;
-    }
+    setupMenuListArrow(box, rect, extraParams);
 
-    WebCanvas* canvas = i.context->canvas();
-
+    WebCanvas* canvas = i.context.canvas();
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartMenuList, getWebThemeState(o), WebRect(rect), &extraParams);
     return false;
 }
@@ -252,54 +236,62 @@ bool ThemePainterDefault::paintMenuListButton(const LayoutObject& o, const Paint
     if (!o.isBox())
         return false;
 
-    const int right = rect.x() + rect.width();
-    const int middle = rect.y() + rect.height() / 2;
-
     WebThemeEngine::ExtraParams extraParams;
-    extraParams.menuList.arrowY = middle;
     extraParams.menuList.hasBorder = false;
     extraParams.menuList.hasBorderRadius = o.styleRef().hasBorderRadius();
     extraParams.menuList.backgroundColor = Color::transparent;
     extraParams.menuList.fillContentArea = false;
+    setupMenuListArrow(toLayoutBox(o), rect, extraParams);
 
+    WebCanvas* canvas = i.context.canvas();
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartMenuList, getWebThemeState(o), WebRect(rect), &extraParams);
+    return false;
+}
+
+void ThemePainterDefault::setupMenuListArrow(const LayoutBox& box, const IntRect& rect, WebThemeEngine::ExtraParams& extraParams)
+{
+    const int right = rect.x() + rect.width();
+    const int middle = rect.y() + rect.height() / 2;
+
+    extraParams.menuList.arrowY = middle;
     if (useMockTheme()) {
-        const LayoutBox& box = toLayoutBox(o);
         // The size and position of the drop-down button is different between
         // the mock theme and the regular aura theme.
         int spacingTop = box.borderTop() + box.paddingTop();
         int spacingBottom = box.borderBottom() + box.paddingBottom();
         int spacingRight = box.borderRight() + box.paddingRight();
-        extraParams.menuList.arrowX = (o.styleRef().direction() == RTL) ? rect.x() + 4 + spacingRight: right - 13 - spacingRight;
-        extraParams.menuList.arrowHeight = rect.height() - spacingBottom - spacingTop;
+        extraParams.menuList.arrowX = (box.styleRef().direction() == RTL) ? rect.x() + 4 + spacingRight: right - 10 - spacingRight;
+        extraParams.menuList.arrowSize = rect.height() - spacingBottom - spacingTop;
     } else {
-        extraParams.menuList.arrowX = (o.styleRef().direction() == RTL) ? rect.x() + 7 : right - 13;
+        const int arrowSize = 6;
+        const int arrowPadding = 7;
+        extraParams.menuList.arrowX = (box.styleRef().direction() == RTL)
+            ? rect.x() + arrowPadding * box.styleRef().effectiveZoom()
+            : right - (arrowSize + arrowPadding) * box.styleRef().effectiveZoom();
+        extraParams.menuList.arrowSize = arrowSize * box.styleRef().effectiveZoom();
     }
-
-    WebCanvas* canvas = i.context->canvas();
-
-    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartMenuList, getWebThemeState(o), WebRect(rect), &extraParams);
-    return false;
+    extraParams.menuList.arrowColor = box.resolveColor(CSSPropertyColor).rgb();
 }
 
 bool ThemePainterDefault::paintSliderTrack(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.slider.vertical = o.styleRef().appearance() == SliderVerticalPart;
 
     paintSliderTicks(o, i, rect);
 
     // FIXME: Mock theme doesn't handle zoomed sliders.
     float zoomLevel = useMockTheme() ? 1 : o.styleRef().effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context, false);
+    GraphicsContextStateSaver stateSaver(i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
         stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
-        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(zoomLevel, zoomLevel);
-        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+        i.context.translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context.scale(zoomLevel, zoomLevel);
+        i.context.translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartSliderTrack, getWebThemeState(o), WebRect(unzoomedRect), &extraParams);
@@ -310,21 +302,21 @@ bool ThemePainterDefault::paintSliderTrack(const LayoutObject& o, const PaintInf
 bool ThemePainterDefault::paintSliderThumb(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.slider.vertical = o.styleRef().appearance() == SliderThumbVerticalPart;
     extraParams.slider.inDrag = LayoutTheme::isPressed(o);
 
     // FIXME: Mock theme doesn't handle zoomed sliders.
     float zoomLevel = useMockTheme() ? 1 : o.styleRef().effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context, false);
+    GraphicsContextStateSaver stateSaver(i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
         stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
-        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(zoomLevel, zoomLevel);
-        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+        i.context.translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context.scale(zoomLevel, zoomLevel);
+        i.context.translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartSliderThumb, getWebThemeState(o), WebRect(unzoomedRect), &extraParams);
@@ -334,7 +326,7 @@ bool ThemePainterDefault::paintSliderThumb(const LayoutObject& o, const PaintInf
 bool ThemePainterDefault::paintInnerSpinButton(const LayoutObject& o, const PaintInfo& i, const IntRect& rect)
 {
     WebThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.innerSpin.spinUp = (LayoutTheme::controlStatesForLayoutObject(o) & SpinUpControlState);
     extraParams.innerSpin.readOnly = LayoutTheme::isReadOnlyControl(o);
 
@@ -358,7 +350,7 @@ bool ThemePainterDefault::paintProgressBar(const LayoutObject& o, const PaintInf
     extraParams.progressBar.valueRectHeight = valueRect.height();
 
     DirectionFlippingScope scope(o, i, rect);
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartProgressBar, getWebThemeState(o), WebRect(rect), &extraParams);
     return false;
 }
@@ -397,7 +389,7 @@ bool ThemePainterDefault::paintSearchFieldCancelButton(const LayoutObject& cance
 
     DEFINE_STATIC_REF(Image, cancelImage, (Image::loadPlatformResource("searchCancel")));
     DEFINE_STATIC_REF(Image, cancelPressedImage, (Image::loadPlatformResource("searchCancelPressed")));
-    paintInfo.context->drawImage(LayoutTheme::isPressed(cancelButtonObject) ? cancelPressedImage : cancelImage, paintingRect);
+    paintInfo.context.drawImage(LayoutTheme::isPressed(cancelButtonObject) ? cancelPressedImage : cancelImage, paintingRect);
     return false;
 }
 
@@ -424,7 +416,7 @@ bool ThemePainterDefault::paintSearchFieldResultsDecoration(const LayoutObject& 
     IntRect paintingRect = convertToPaintingRect(inputLayoutBox, magnifierObject, magnifierRect, r);
 
     DEFINE_STATIC_REF(Image, magnifierImage, (Image::loadPlatformResource("searchMagnifier")));
-    paintInfo.context->drawImage(magnifierImage, paintingRect);
+    paintInfo.context.drawImage(magnifierImage, paintingRect);
     return false;
 }
 

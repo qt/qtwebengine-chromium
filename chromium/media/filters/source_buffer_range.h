@@ -5,10 +5,12 @@
 #ifndef MEDIA_FILTERS_SOURCE_BUFFER_RANGE_H_
 #define MEDIA_FILTERS_SOURCE_BUFFER_RANGE_H_
 
+#include <stddef.h>
+
 #include <map>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/stream_parser_buffer.h"
 

@@ -105,12 +105,6 @@ void VideoCaptureHost::OnBufferReady(
   params.storage_type = video_frame->storage_type();
   params.coded_size = video_frame->coded_size();
   params.visible_rect = video_frame->visible_rect();
-  if (video_frame->HasTextures()) {
-    for (size_t i = 0; i < media::VideoFrame::NumPlanes(video_frame->format());
-         ++i) {
-      params.mailbox_holders.push_back(video_frame->mailbox_holder(i));
-    }
-  }
 
   Send(new VideoCaptureMsg_BufferReady(params));
 }
@@ -271,7 +265,7 @@ void VideoCaptureHost::OnResumeCapture(
 void VideoCaptureHost::OnRendererFinishedWithBuffer(
     int device_id,
     int buffer_id,
-    uint32 sync_point,
+    const gpu::SyncToken& sync_token,
     double consumer_resource_utilization) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -280,10 +274,7 @@ void VideoCaptureHost::OnRendererFinishedWithBuffer(
   if (it != entries_.end()) {
     const base::WeakPtr<VideoCaptureController>& controller = it->second;
     if (controller) {
-      controller->ReturnBuffer(controller_id,
-                               this,
-                               buffer_id,
-                               sync_point,
+      controller->ReturnBuffer(controller_id, this, buffer_id, sync_token,
                                consumer_resource_utilization);
     }
   }

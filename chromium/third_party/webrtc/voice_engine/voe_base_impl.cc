@@ -11,14 +11,14 @@
 #include "webrtc/voice_engine/voe_base_impl.h"
 
 #include "webrtc/base/format_macros.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/common.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
+#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_device/audio_device_impl.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/file_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/file_wrapper.h"
 #include "webrtc/voice_engine/channel.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
 #include "webrtc/voice_engine/output_mixer.h"
@@ -47,7 +47,7 @@ VoEBaseImpl::~VoEBaseImpl() {
   delete &callbackCritSect_;
 }
 
-void VoEBaseImpl::OnErrorIsReported(ErrorCode error) {
+void VoEBaseImpl::OnErrorIsReported(const ErrorCode error) {
   CriticalSectionScoped cs(&callbackCritSect_);
   int errCode = 0;
   if (error == AudioDeviceObserver::kRecordingError) {
@@ -63,7 +63,7 @@ void VoEBaseImpl::OnErrorIsReported(ErrorCode error) {
   }
 }
 
-void VoEBaseImpl::OnWarningIsReported(WarningCode warning) {
+void VoEBaseImpl::OnWarningIsReported(const WarningCode warning) {
   CriticalSectionScoped cs(&callbackCritSect_);
   int warningCode = 0;
   if (warning == AudioDeviceObserver::kRecordingWarning) {
@@ -79,34 +79,40 @@ void VoEBaseImpl::OnWarningIsReported(WarningCode warning) {
   }
 }
 
-int32_t VoEBaseImpl::RecordedDataIsAvailable(
-    const void* audioSamples, size_t nSamples, size_t nBytesPerSample,
-    uint8_t nChannels, uint32_t samplesPerSec, uint32_t totalDelayMS,
-    int32_t clockDrift, uint32_t micLevel, bool keyPressed,
-    uint32_t& newMicLevel) {
+int32_t VoEBaseImpl::RecordedDataIsAvailable(const void* audioSamples,
+                                             const size_t nSamples,
+                                             const size_t nBytesPerSample,
+                                             const size_t nChannels,
+                                             const uint32_t samplesPerSec,
+                                             const uint32_t totalDelayMS,
+                                             const int32_t clockDrift,
+                                             const uint32_t currentMicLevel,
+                                             const bool keyPressed,
+                                             uint32_t& newMicLevel) {
   newMicLevel = static_cast<uint32_t>(ProcessRecordedDataWithAPM(
       nullptr, 0, audioSamples, samplesPerSec, nChannels, nSamples,
-      totalDelayMS, clockDrift, micLevel, keyPressed));
+      totalDelayMS, clockDrift, currentMicLevel, keyPressed));
   return 0;
 }
 
-int32_t VoEBaseImpl::NeedMorePlayData(size_t nSamples,
-                                      size_t nBytesPerSample,
-                                      uint8_t nChannels, uint32_t samplesPerSec,
-                                      void* audioSamples, size_t& nSamplesOut,
+int32_t VoEBaseImpl::NeedMorePlayData(const size_t nSamples,
+                                      const size_t nBytesPerSample,
+                                      const size_t nChannels,
+                                      const uint32_t samplesPerSec,
+                                      void* audioSamples,
+                                      size_t& nSamplesOut,
                                       int64_t* elapsed_time_ms,
                                       int64_t* ntp_time_ms) {
-  GetPlayoutData(static_cast<int>(samplesPerSec), static_cast<int>(nChannels),
-                 nSamples, true, audioSamples,
-                 elapsed_time_ms, ntp_time_ms);
+  GetPlayoutData(static_cast<int>(samplesPerSec), nChannels, nSamples, true,
+                 audioSamples, elapsed_time_ms, ntp_time_ms);
   nSamplesOut = audioFrame_.samples_per_channel_;
   return 0;
 }
 
 int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
-                                 int number_of_voe_channels,
+                                 size_t number_of_voe_channels,
                                  const int16_t* audio_data, int sample_rate,
-                                 int number_of_channels,
+                                 size_t number_of_channels,
                                  size_t number_of_frames,
                                  int audio_delay_milliseconds, int volume,
                                  bool key_pressed, bool need_audio_processing) {
@@ -121,7 +127,7 @@ int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
 
   // No need to go through the APM, demultiplex the data to each VoE channel,
   // encode and send to the network.
-  for (int i = 0; i < number_of_voe_channels; ++i) {
+  for (size_t i = 0; i < number_of_voe_channels; ++i) {
     // TODO(ajm): In the case where multiple channels are using the same codec
     // rate, this path needlessly does extra conversions. We should convert once
     // and share between channels.
@@ -135,14 +141,14 @@ int VoEBaseImpl::OnDataAvailable(const int voe_channels[],
 
 void VoEBaseImpl::OnData(int voe_channel, const void* audio_data,
                          int bits_per_sample, int sample_rate,
-                         int number_of_channels, size_t number_of_frames) {
+                         size_t number_of_channels, size_t number_of_frames) {
   PushCaptureData(voe_channel, audio_data, bits_per_sample, sample_rate,
                   number_of_channels, number_of_frames);
 }
 
 void VoEBaseImpl::PushCaptureData(int voe_channel, const void* audio_data,
                                   int bits_per_sample, int sample_rate,
-                                  int number_of_channels,
+                                  size_t number_of_channels,
                                   size_t number_of_frames) {
   voe::ChannelOwner ch = shared_->channel_manager().GetChannel(voe_channel);
   voe::Channel* channel_ptr = ch.channel();
@@ -158,7 +164,7 @@ void VoEBaseImpl::PushCaptureData(int voe_channel, const void* audio_data,
 
 void VoEBaseImpl::PullRenderData(int bits_per_sample,
                                  int sample_rate,
-                                 int number_of_channels,
+                                 size_t number_of_channels,
                                  size_t number_of_frames,
                                  void* audio_data, int64_t* elapsed_time_ms,
                                  int64_t* ntp_time_ms) {
@@ -575,68 +581,18 @@ int VoEBaseImpl::StopSend(int channel) {
 }
 
 int VoEBaseImpl::GetVersion(char version[1024]) {
-  static_assert(kVoiceEngineVersionMaxMessageSize == 1024, "");
-
   if (version == nullptr) {
     shared_->SetLastError(VE_INVALID_ARGUMENT, kTraceError);
-    return (-1);
-  }
-
-  char versionBuf[kVoiceEngineVersionMaxMessageSize];
-  char* versionPtr = versionBuf;
-
-  int32_t len = 0;
-  int32_t accLen = 0;
-
-  len = AddVoEVersion(versionPtr);
-  if (len == -1) {
     return -1;
   }
-  versionPtr += len;
-  accLen += len;
-  assert(accLen < kVoiceEngineVersionMaxMessageSize);
 
-#ifdef WEBRTC_EXTERNAL_TRANSPORT
-  len = AddExternalTransportBuild(versionPtr);
-  if (len == -1) {
-    return -1;
-  }
-  versionPtr += len;
-  accLen += len;
-  assert(accLen < kVoiceEngineVersionMaxMessageSize);
-#endif
-
-  memcpy(version, versionBuf, accLen);
-  version[accLen] = '\0';
-
-  // to avoid the truncation in the trace, split the string into parts
-  char partOfVersion[256];
-  for (int partStart = 0; partStart < accLen;) {
-    memset(partOfVersion, 0, sizeof(partOfVersion));
-    int partEnd = partStart + 180;
-    while (version[partEnd] != '\n' && version[partEnd] != '\0') {
-      partEnd--;
-    }
-    if (partEnd < accLen) {
-      memcpy(partOfVersion, &version[partStart], partEnd - partStart);
-    } else {
-      memcpy(partOfVersion, &version[partStart], accLen - partStart);
-    }
-    partStart = partEnd;
-  }
-
+  std::string versionString = VoiceEngine::GetVersionString();
+  RTC_DCHECK_GT(1024u, versionString.size() + 1);
+  char* end = std::copy(versionString.cbegin(), versionString.cend(), version);
+  end[0] = '\n';
+  end[1] = '\0';
   return 0;
 }
-
-int32_t VoEBaseImpl::AddVoEVersion(char* str) const {
-  return sprintf(str, "VoiceEngine 4.1.0\n");
-}
-
-#ifdef WEBRTC_EXTERNAL_TRANSPORT
-int32_t VoEBaseImpl::AddExternalTransportBuild(char* str) const {
-  return sprintf(str, "External transport build\n");
-}
-#endif
 
 int VoEBaseImpl::LastError() { return (shared_->statistics().LastError()); }
 
@@ -742,8 +698,8 @@ int32_t VoEBaseImpl::TerminateInternal() {
 }
 
 int VoEBaseImpl::ProcessRecordedDataWithAPM(
-    const int voe_channels[], int number_of_voe_channels,
-    const void* audio_data, uint32_t sample_rate, uint8_t number_of_channels,
+    const int voe_channels[], size_t number_of_voe_channels,
+    const void* audio_data, uint32_t sample_rate, size_t number_of_channels,
     size_t number_of_frames, uint32_t audio_delay_milliseconds,
     int32_t clock_drift, uint32_t volume, bool key_pressed) {
   assert(shared_->transmit_mixer() != nullptr);
@@ -808,7 +764,7 @@ int VoEBaseImpl::ProcessRecordedDataWithAPM(
   return 0;
 }
 
-void VoEBaseImpl::GetPlayoutData(int sample_rate, int number_of_channels,
+void VoEBaseImpl::GetPlayoutData(int sample_rate, size_t number_of_channels,
                                  size_t number_of_frames, bool feed_data_to_apm,
                                  void* audio_data, int64_t* elapsed_time_ms,
                                  int64_t* ntp_time_ms) {

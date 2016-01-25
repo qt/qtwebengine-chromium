@@ -23,7 +23,6 @@
  */
 
 
-#include "config.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 
 #include "core/inspector/ConsoleMessage.h"
@@ -194,7 +193,7 @@ void InspectorConsoleAgent::sendConsoleMessageToFrontend(ConsoleMessage* console
     jsonObj->setUrl(consoleMessage->url());
     ScriptState* scriptState = consoleMessage->scriptState();
     if (scriptState)
-        jsonObj->setExecutionContextId(m_injectedScriptManager->injectedScriptIdFor(scriptState));
+        jsonObj->setExecutionContextId(m_injectedScriptManager->injectedScriptFor(scriptState).contextId());
     if (consoleMessage->source() == NetworkMessageSource && consoleMessage->requestIdentifier())
         jsonObj->setNetworkRequestId(IdentifiersFactory::requestId(consoleMessage->requestIdentifier()));
     RefPtrWillBeRawPtr<ScriptArguments> arguments = consoleMessage->scriptArguments();

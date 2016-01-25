@@ -25,11 +25,12 @@
 
 namespace blink {
 
-class LayoutSVGInlineText;
+enum class FontOrientation;
+class LineLayoutSVGInlineText;
 class TextRun;
 
 class SVGTextMetrics {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     enum MetricsType {
         SkippedSpaceMetrics
@@ -37,10 +38,10 @@ public:
 
     SVGTextMetrics();
     SVGTextMetrics(MetricsType);
-    SVGTextMetrics(LayoutSVGInlineText*, unsigned length, float width);
+    SVGTextMetrics(LineLayoutSVGInlineText, unsigned length, float width);
 
-    static SVGTextMetrics measureCharacterRange(LayoutSVGInlineText*, unsigned position, unsigned length, TextDirection);
-    static TextRun constructTextRun(LayoutSVGInlineText*, unsigned position, unsigned length, TextDirection);
+    static SVGTextMetrics measureCharacterRange(LineLayoutSVGInlineText, unsigned position, unsigned length, TextDirection);
+    static TextRun constructTextRun(LineLayoutSVGInlineText, unsigned position, unsigned length, TextDirection);
 
     bool isEmpty() const { return !m_width && !m_height && m_length <= 1; }
 
@@ -48,10 +49,14 @@ public:
     void setWidth(float width) { m_width = width; }
 
     float height() const { return m_height; }
+
+    // TODO(kojii): We should store logical width (advance) and height instead
+    // of storing physical and calculate logical. crbug.com/544767
+    float advance(FontOrientation) const;
     unsigned length() const { return m_length; }
 
 private:
-    SVGTextMetrics(LayoutSVGInlineText*, const TextRun&);
+    SVGTextMetrics(LineLayoutSVGInlineText, const TextRun&);
 
     float m_width;
     float m_height;

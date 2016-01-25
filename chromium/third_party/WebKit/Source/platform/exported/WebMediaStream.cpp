@@ -22,8 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "public/platform/WebMediaStream.h"
 
 #include "platform/UUID.h"
@@ -43,7 +41,7 @@ namespace {
 
 class ExtraDataContainer : public MediaStreamDescriptor::ExtraData {
 public:
-    ExtraDataContainer(PassOwnPtr<WebMediaStream::ExtraData> extraData) : m_extraData(extraData) { }
+    ExtraDataContainer(PassOwnPtr<WebMediaStream::ExtraData> extraData) : m_extraData(std::move(extraData)) { }
 
     WebMediaStream::ExtraData* extraData() { return m_extraData.get(); }
 
@@ -52,11 +50,6 @@ private:
 };
 
 } // namespace
-
-WebMediaStream::WebMediaStream(const PassRefPtr<MediaStreamDescriptor>& mediaStreamDescriptor)
-    : m_private(mediaStreamDescriptor)
-{
-}
 
 WebMediaStream::WebMediaStream(MediaStreamDescriptor* mediaStreamDescriptor)
     : m_private(mediaStreamDescriptor)
@@ -116,15 +109,10 @@ void WebMediaStream::removeTrack(const WebMediaStreamTrack& track)
     m_private->removeRemoteTrack(track);
 }
 
-WebMediaStream& WebMediaStream::operator=(const PassRefPtr<MediaStreamDescriptor>& mediaStreamDescriptor)
+WebMediaStream& WebMediaStream::operator=(MediaStreamDescriptor* mediaStreamDescriptor)
 {
     m_private = mediaStreamDescriptor;
     return *this;
-}
-
-WebMediaStream::operator PassRefPtr<MediaStreamDescriptor>() const
-{
-    return m_private.get();
 }
 
 WebMediaStream::operator MediaStreamDescriptor*() const

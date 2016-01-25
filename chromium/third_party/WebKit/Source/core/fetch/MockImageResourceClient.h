@@ -32,6 +32,7 @@
 #define MockImageResourceClient_h
 
 #include "core/fetch/ImageResourceClient.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -50,6 +51,7 @@ public:
     }
 
     void notifyFinished(Resource*) override;
+    String debugName() const override { return "MockImageResourceClient"; }
 
     int imageChangedCount() const { return m_imageChangedCount; }
     bool notifyFinishedCalled() const { return m_notifyFinishedCalled; }
@@ -57,7 +59,8 @@ public:
     void removeAsClient();
 
 private:
-    Resource* m_resource;
+    // TODO(Oilpan): properly trace when ImageResourceClient is on the heap.
+    RawPtrWillBeUntracedMember<Resource> m_resource;
     int m_imageChangedCount;
     bool m_notifyFinishedCalled;
 };

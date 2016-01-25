@@ -36,6 +36,7 @@
 #include "WebDOMMessageEvent.h"
 #include "WebDataSource.h"
 #include "WebFrame.h"
+#include "WebFrameOwnerProperties.h"
 #include "WebHistoryCommitType.h"
 #include "WebHistoryItem.h"
 #include "WebIconURL.h"
@@ -48,6 +49,7 @@
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemType.h"
 #include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebSetSinkIdCallbacks.h"
 #include "public/platform/WebStorageQuotaCallbacks.h"
 #include "public/platform/WebStorageQuotaType.h"
 #include "public/platform/WebURLError.h"
@@ -65,6 +67,7 @@ class WebColorChooser;
 class WebColorChooserClient;
 class WebContentDecryptionModule;
 class WebCookieJar;
+class WebCString;
 class WebDataSource;
 class WebEncryptedMediaClient;
 class WebExternalPopupMenu;
@@ -74,6 +77,7 @@ class WebGeolocationClient;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebMediaPlayerEncryptedMediaClient;
+class WebMediaSession;
 class WebMIDIClient;
 class WebNotificationPermissionCallback;
 class WebPermissionClient;
@@ -109,7 +113,10 @@ public:
 
     // May return null.
     // WebContentDecryptionModule* may be null if one has not yet been set.
-    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebMediaPlayerEncryptedMediaClient*, WebContentDecryptionModule*) { return 0; }
+    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebMediaPlayerEncryptedMediaClient*, WebContentDecryptionModule*, const WebString& sinkId) { return 0; }
+
+    // May return null.
+    virtual WebMediaSession* createMediaSession() { return 0; }
 
     // May return null.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) { return 0; }
@@ -149,7 +156,7 @@ public:
     // until frameDetached() is called on it.
     // Note: If you override this, you should almost certainly be overriding
     // frameDetached().
-    virtual WebFrame* createChildFrame(WebLocalFrame* parent, WebTreeScopeType, const WebString& frameName, WebSandboxFlags sandboxFlags) { return nullptr; }
+    virtual WebFrame* createChildFrame(WebLocalFrame* parent, WebTreeScopeType, const WebString& frameName, WebSandboxFlags sandboxFlags, const WebFrameOwnerProperties&) { return nullptr; }
 
     // This frame has set its opener to another frame, or disowned the opener
     // if opener is null. See http://html.spec.whatwg.org/#dom-opener.
@@ -171,8 +178,16 @@ public:
     // This frame's name has changed.
     virtual void didChangeName(WebLocalFrame*, const WebString&) { }
 
+    // This frame has been set to enforce strict mixed content checking.
+    virtual void didEnforceStrictMixedContentChecking() {}
+
     // The sandbox flags have changed for a child frame of this frame.
     virtual void didChangeSandboxFlags(WebFrame* childFrame, WebSandboxFlags flags) { }
+
+    // Some frame owner properties have changed for a child frame of this frame.
+    // Frame owner properties currently include: scrolling, marginwidth and
+    // marginheight.
+    virtual void didChangeFrameOwnerProperties(WebFrame* childFrame, const WebFrameOwnerProperties&) { }
 
     // Called when a watched CSS selector matches or stops matching.
     virtual void didMatchCSS(WebLocalFrame*, const WebVector<WebString>& newlyMatchingSelectors, const WebVector<WebString>& stoppedMatchingSelectors) { }
@@ -190,8 +205,7 @@ public:
     // Load commands -------------------------------------------------------
 
     // The client should handle the navigation externally.
-    virtual void loadURLExternally(
-        WebLocalFrame*, const WebURLRequest&, WebNavigationPolicy, const WebString& downloadName) { }
+    virtual void loadURLExternally(const WebURLRequest&, WebNavigationPolicy, const WebString& downloadName, bool shouldReplaceCurrentEntry) {}
 
     // Navigational queries ------------------------------------------------
 
@@ -199,7 +213,6 @@ public:
     // defaultPolicy should just be returned.
 
     struct NavigationPolicyInfo {
-        WebLocalFrame* frame;
         WebDataSource::ExtraData* extraData;
 
         // Note: if browser side navigations are enabled, the client may modify
@@ -210,30 +223,28 @@ public:
         WebURLRequest& urlRequest;
         WebNavigationType navigationType;
         WebNavigationPolicy defaultPolicy;
-        bool isRedirect;
+        bool replacesCurrentHistoryItem;
+        bool isHistoryNavigationInNewChildFrame;
 
         NavigationPolicyInfo(WebURLRequest& urlRequest)
-            : frame(0)
-            , extraData(0)
+            : extraData(nullptr)
             , urlRequest(urlRequest)
             , navigationType(WebNavigationTypeOther)
             , defaultPolicy(WebNavigationPolicyIgnore)
-            , isRedirect(false) { }
+            , replacesCurrentHistoryItem(false)
+            , isHistoryNavigationInNewChildFrame(false)
+        {
+        }
     };
 
     virtual WebNavigationPolicy decidePolicyForNavigation(const NavigationPolicyInfo& info)
     {
-        return decidePolicyForNavigation(info.frame, info.extraData, info.urlRequest, info.navigationType, info.defaultPolicy, info.isRedirect);
+        return info.defaultPolicy;
     }
-
-    // DEPRECATED
-    virtual WebNavigationPolicy decidePolicyForNavigation(
-        WebLocalFrame*, WebDataSource::ExtraData*, const WebURLRequest&, WebNavigationType,
-        WebNavigationPolicy defaultPolicy, bool isRedirect) { return defaultPolicy; }
 
     // During a history navigation, we may choose to load new subframes from history as well.
     // This returns such a history item if appropriate.
-    virtual WebHistoryItem historyItemForNewChildFrame(WebFrame*) { return WebHistoryItem(); }
+    virtual WebHistoryItem historyItemForNewChildFrame() { return WebHistoryItem(); }
 
     // Whether the client is handling a navigation request.
     virtual bool hasPendingNavigation(WebLocalFrame*) { return false; }
@@ -442,11 +453,15 @@ public:
     // A PingLoader was created, and a request dispatched to a URL.
     virtual void didDispatchPingLoader(WebLocalFrame*, const WebURL&) { }
 
+    // This frame has displayed inactive content (such as an image) from
+    // a connection with certificate errors.
+    virtual void didDisplayContentWithCertificateErrors(const WebURL& url, const WebCString& securityInfo, const WebURL& mainResourceUrl, const WebCString& mainResourceSecurityInfo) {}
+    // This frame has run active content (such as a script) from a
+    // connection with certificate errors.
+    virtual void didRunContentWithCertificateErrors(const WebURL& url, const WebCString& securityInfo, const WebURL& mainResourceUrl, const WebCString& mainResourceSecurityInfo) {}
+
     // A performance timing event (e.g. first paint) occurred
     virtual void didChangePerformanceTiming() { }
-
-    // The loaders in this frame have been stopped.
-    virtual void didAbortLoading(WebLocalFrame*) { }
 
 
     // Script notifications ------------------------------------------------
@@ -474,9 +489,17 @@ public:
 
     // Notifies how many matches have been found so far, for a given
     // identifier.  |finalUpdate| specifies whether this is the last update
-    // (all frames have completed scoping).
+    // (all frames have completed scoping). This notification is only delivered
+    // to the main frame and aggregates all matches across all frames.
     virtual void reportFindInPageMatchCount(
         int identifier, int count, bool finalUpdate) { }
+
+    // Notifies how many matches have been found in a specific frame so far,
+    // for a given identifier. Unlike reprotFindInPageMatchCount(), this
+    // notification is sent to the client of each frame, and only reports
+    // results per-frame.
+    virtual void reportFindInFrameMatchCount(
+        int identifier, int count, bool finalUpdate) {}
 
     // Notifies what tick-mark rect is currently selected.   The given
     // identifier lets the client know which request this message belongs
@@ -487,6 +510,11 @@ public:
     virtual void reportFindInPageSelection(
         int identifier, int activeMatchOrdinal, const WebRect& selection) { }
 
+    // Currently, TextFinder will report up the frame tree on certain events to
+    // form a tree of TextFinders. When we're experimenting with OOPIFs, this
+    // is precisely not what we want. Experiments that want to search per frame
+    // should override this to true.
+    virtual bool shouldSearchSingleFrame() { return false; }
 
     // Quota ---------------------------------------------------------
 
@@ -547,10 +575,10 @@ public:
         WebSecurityOrigin target,
         WebDOMMessageEvent event) { return false; }
 
-    // Asks the embedder if a specific user agent should be used for the given
-    // URL. Non-empty strings indicate an override should be used. Otherwise,
+    // Asks the embedder if a specific user agent should be used. Non-empty
+    // strings indicate an override should be used. Otherwise,
     // Platform::current()->userAgent() will be called to provide one.
-    virtual WebString userAgentOverride(WebLocalFrame*, const WebURL& url) { return WebString(); }
+    virtual WebString userAgentOverride(WebLocalFrame*) { return WebString(); }
 
     // Asks the embedder what value the network stack will send for the DNT
     // header. An empty string indicates that no DNT header will be send.
@@ -662,6 +690,13 @@ public:
 
     // WebUSB --------------------------------------------------------------
     virtual WebUSBClient* usbClient() { return nullptr; }
+
+
+    // Audio Output Devices API --------------------------------------------
+
+    // Checks that the given audio sink exists and is authorized. The result is provided via the callbacks.
+    // This method takes ownership of the callbacks pointer.
+    virtual void checkIfAudioSinkExistsAndIsAuthorized(const WebString& sinkId, const WebSecurityOrigin&, WebSetSinkIdCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
 
 protected:
     virtual ~WebFrameClient() { }

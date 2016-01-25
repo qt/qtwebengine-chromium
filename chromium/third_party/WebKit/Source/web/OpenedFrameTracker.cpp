@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/OpenedFrameTracker.h"
 
 #include "platform/heap/Handle.h"
@@ -18,7 +17,7 @@ OpenedFrameTracker::~OpenedFrameTracker()
 {
 #if !ENABLE(OILPAN)
     // Oilpan takes care of clearing weak m_opener fields during GC.
-    updateOpener(0);
+    transferTo(nullptr);
 #endif
 }
 
@@ -37,11 +36,12 @@ void OpenedFrameTracker::remove(WebFrame* frame)
     m_openedFrames.remove(frame);
 }
 
-void OpenedFrameTracker::updateOpener(WebFrame* frame)
+void OpenedFrameTracker::transferTo(WebFrame* opener)
 {
-    HashSet<WebFrame*>::iterator end = m_openedFrames.end();
-    for (HashSet<WebFrame*>::iterator it = m_openedFrames.begin(); it != end; ++it)
-        (*it)->m_opener = frame;
+    // Copy the set of opened frames, since changing the owner will mutate this set.
+    HashSet<WebFrame*> frames(m_openedFrames);
+    for (WebFrame* frame : frames)
+        frame->setOpener(opener);
 }
 
 template <typename VisitorDispatcher>

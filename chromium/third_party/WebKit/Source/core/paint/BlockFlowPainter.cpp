@@ -2,48 +2,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/BlockFlowPainter.h"
 
 #include "core/layout/FloatingObjects.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/paint/ClipScope.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
 
 namespace blink {
 
-void BlockFlowPainter::paintFloats(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, bool preservePhase)
+void BlockFlowPainter::paintFloats(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (!m_layoutBlockFlow.floatingObjects())
         return;
 
-    const FloatingObjectSet& floatingObjectSet = m_layoutBlockFlow.floatingObjects()->set();
-    FloatingObjectSetIterator end = floatingObjectSet.end();
-    for (FloatingObjectSetIterator it = floatingObjectSet.begin(); it != end; ++it) {
-        const FloatingObject& floatingObject = *it->get();
-        // Only paint the object if our m_shouldPaint flag is set.
-        if (floatingObject.shouldPaint() && !floatingObject.layoutObject()->hasSelfPaintingLayer()) {
-            PaintInfo currentPaintInfo(paintInfo);
-            currentPaintInfo.phase = preservePhase ? paintInfo.phase : PaintPhaseBlockBackground;
-            // FIXME: LayoutPoint version of xPositionForFloatIncludingMargin would make this much cleaner.
-            LayoutPoint childPoint = m_layoutBlockFlow.flipFloatForWritingModeForChild(
-                floatingObject, LayoutPoint(paintOffset.x()
-                + m_layoutBlockFlow.xPositionForFloatIncludingMargin(floatingObject) - floatingObject.layoutObject()->location().x(), paintOffset.y()
-                + m_layoutBlockFlow.yPositionForFloatIncludingMargin(floatingObject) - floatingObject.layoutObject()->location().y()));
-            floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
-            if (!preservePhase) {
-                currentPaintInfo.phase = PaintPhaseChildBlockBackgrounds;
-                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
-                currentPaintInfo.phase = PaintPhaseFloat;
-                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
-                currentPaintInfo.phase = PaintPhaseForeground;
-                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
-                currentPaintInfo.phase = PaintPhaseOutline;
-                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
-            }
-        }
+    ASSERT(paintInfo.phase == PaintPhaseFloat || paintInfo.phase == PaintPhaseSelection || paintInfo.phase == PaintPhaseTextClip);
+    PaintInfo floatPaintInfo(paintInfo);
+    if (paintInfo.phase == PaintPhaseFloat)
+        floatPaintInfo.phase = PaintPhaseForeground;
+
+    for (const auto& floatingObject : m_layoutBlockFlow.floatingObjects()->set()) {
+        if (!floatingObject->shouldPaint())
+            continue;
+
+        const LayoutBox* floatingLayoutObject = floatingObject->layoutObject();
+        if (floatingLayoutObject->hasSelfPaintingLayer())
+            continue;
+
+        // FIXME: LayoutPoint version of xPositionForFloatIncludingMargin would make this much cleaner.
+        LayoutPoint childPoint = m_layoutBlockFlow.flipFloatForWritingModeForChild(
+            *floatingObject, LayoutPoint(paintOffset.x()
+            + m_layoutBlockFlow.xPositionForFloatIncludingMargin(*floatingObject) - floatingLayoutObject->location().x(), paintOffset.y()
+            + m_layoutBlockFlow.yPositionForFloatIncludingMargin(*floatingObject) - floatingLayoutObject->location().y()));
+        ObjectPainter(*floatingLayoutObject).paintAsPseudoStackingContext(floatPaintInfo, childPoint);
     }
 }
 
@@ -62,11 +56,11 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
 
     // Only create a DrawingRecorder and ClipScope if skipRecording is false. This logic is needed
     // because selectionGaps(...) needs to be called even when we do not record.
-    bool skipRecording = LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, paintOffset);
+    bool skipRecording = LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, paintOffset);
     Optional<LayoutObjectDrawingRecorder> drawingRecorder;
     Optional<ClipScope> clipScope;
     if (!skipRecording) {
-        drawingRecorder.emplace(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, FloatRect(bounds), paintOffset);
+        drawingRecorder.emplace(paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, FloatRect(bounds), paintOffset);
         clipScope.emplace(paintInfo.context);
     }
 
@@ -80,7 +74,7 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         if (!m_layoutBlockFlow.hasLayer()) {
             LayoutRect localBounds(gapRectsBounds);
             m_layoutBlockFlow.flipForWritingMode(localBounds);
-            gapRectsBounds = LayoutRect(m_layoutBlockFlow.localToContainerQuad(FloatRect(localBounds), layer->layoutObject()).enclosingBoundingBox());
+            gapRectsBounds = LayoutRect(m_layoutBlockFlow.localToAncestorQuad(FloatRect(localBounds), layer->layoutObject()).enclosingBoundingBox());
             if (layer->layoutObject()->hasOverflowClip())
                 gapRectsBounds.move(layer->layoutBox()->scrolledContentOffset());
         }

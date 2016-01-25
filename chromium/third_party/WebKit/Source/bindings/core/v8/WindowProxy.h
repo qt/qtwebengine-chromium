@@ -51,14 +51,14 @@ class SecurityOrigin;
 // WindowProxy represents all the per-global object state for a Frame that
 // persist between navigations.
 class WindowProxy final : public NoBaseWillBeGarbageCollectedFinalized<WindowProxy> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WindowProxy);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(WindowProxy);
 public:
     static PassOwnPtrWillBeRawPtr<WindowProxy> create(v8::Isolate*, Frame*, DOMWrapperWorld&);
 
     ~WindowProxy();
     DECLARE_TRACE();
 
-    v8::Local<v8::Context> context() const { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
+    v8::Local<v8::Context> contextIfInitialized() const { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
     ScriptState* scriptState() const { return m_scriptState.get(); }
 
     // Update document object of the frame.
@@ -80,7 +80,8 @@ public:
     void clearForNavigation();
     void clearForClose();
 
-    void takeGlobalFrom(WindowProxy*);
+    v8::Local<v8::Object> releaseGlobal();
+    void setGlobal(v8::Local<v8::Object>);
 
     DOMWrapperWorld& world() { return *m_world; }
 

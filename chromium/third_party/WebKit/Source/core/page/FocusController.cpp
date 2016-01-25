@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/page/FocusController.h"
 
 #include "core/HTMLNames.h"
@@ -40,9 +39,11 @@
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/events/Event.h"
+#include "core/frame/FrameClient.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/RemoteFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
@@ -129,7 +130,7 @@ FocusNavigationScope FocusNavigationScope::ownedByNonFocusableFocusScopeOwner(El
 FocusNavigationScope FocusNavigationScope::ownedByShadowHost(const Element& element)
 {
     ASSERT(isShadowHost(element));
-    return FocusNavigationScope(element.shadow()->youngestShadowRoot());
+    return FocusNavigationScope(&element.shadow()->youngestShadowRoot());
 }
 
 FocusNavigationScope FocusNavigationScope::ownedByIFrame(const HTMLFrameOwnerElement& frame)
@@ -472,7 +473,7 @@ Element* findFocusableElementDescendingDownIntoFrameDocument(WebFocusType type, 
         if (!owner.contentFrame() || !owner.contentFrame()->isLocalFrame())
             break;
         toLocalFrame(owner.contentFrame())->document()->updateLayoutIgnorePendingStylesheets();
-        Element* foundElement = findFocusableElementInternal(type, FocusNavigationScope::ownedByIFrame(owner), nullptr);
+        Element* foundElement = findFocusableElementRecursively(type, FocusNavigationScope::ownedByIFrame(owner), nullptr);
         if (!foundElement)
             break;
         ASSERT(element != foundElement);
@@ -548,7 +549,7 @@ PassOwnPtrWillBeRawPtr<FocusController> FocusController::create(Page* page)
     return adoptPtrWillBeNoop(new FocusController(page));
 }
 
-void FocusController::setFocusedFrame(PassRefPtrWillBeRawPtr<Frame> frame)
+void FocusController::setFocusedFrame(PassRefPtrWillBeRawPtr<Frame> frame, bool notifyEmbedder)
 {
     ASSERT(!frame || frame->page() == m_page);
     if (m_focusedFrame == frame || m_isChangingFocusedFrame)
@@ -575,10 +576,13 @@ void FocusController::setFocusedFrame(PassRefPtrWillBeRawPtr<Frame> frame)
 
     m_isChangingFocusedFrame = false;
 
-    m_page->chromeClient().focusedFrameChanged(newFrame.get());
+    // Checking client() is necessary, as the frame might have been detached as
+    // part of dispatching the focus event above. See https://crbug.com/570874.
+    if (m_focusedFrame && m_focusedFrame->client() && notifyEmbedder)
+        m_focusedFrame->client()->frameFocused();
 }
 
-void FocusController::focusDocumentView(PassRefPtrWillBeRawPtr<Frame> frame)
+void FocusController::focusDocumentView(PassRefPtrWillBeRawPtr<Frame> frame, bool notifyEmbedder)
 {
     ASSERT(!frame || frame->page() == m_page);
     if (m_focusedFrame == frame)
@@ -600,12 +604,23 @@ void FocusController::focusDocumentView(PassRefPtrWillBeRawPtr<Frame> frame)
             dispatchFocusEvent(*document, *focusedElement);
     }
 
-    setFocusedFrame(frame);
+    setFocusedFrame(frame, notifyEmbedder);
+}
+
+LocalFrame* FocusController::focusedFrame() const
+{
+    // TODO(alexmos): Strengthen this to ASSERT that whoever called this really
+    // expected a LocalFrame. Refactor call sites so that the rare cases that
+    // need to know about focused RemoteFrames use a separate accessor (to be
+    // added).
+    if (m_focusedFrame && m_focusedFrame->isRemoteFrame())
+        return nullptr;
+    return toLocalFrame(m_focusedFrame.get());
 }
 
 Frame* FocusController::focusedOrMainFrame() const
 {
-    if (Frame* frame = focusedFrame())
+    if (LocalFrame* frame = focusedFrame())
         return frame;
 
     // FIXME: This is a temporary hack to ensure that we return a LocalFrame, even when the mainFrame is remote.
@@ -616,6 +631,26 @@ Frame* FocusController::focusedOrMainFrame() const
     }
 
     return m_page->mainFrame();
+}
+
+HTMLFrameOwnerElement* FocusController::focusedFrameOwnerElement(LocalFrame& currentFrame) const
+{
+    Frame* focusedFrame = m_focusedFrame.get();
+    for (; focusedFrame; focusedFrame = focusedFrame->tree().parent()) {
+        if (focusedFrame->tree().parent() == &currentFrame) {
+            ASSERT(focusedFrame->owner()->isLocal());
+            return focusedFrame->deprecatedLocalOwner();
+        }
+    }
+    return nullptr;
+}
+
+bool FocusController::isDocumentFocused(const Document& document) const
+{
+    if (!isActive() || !isFocused())
+        return false;
+
+    return m_focusedFrame && m_focusedFrame->tree().isDescendantOf(document.frame());
 }
 
 void FocusController::setFocused(bool focused)
@@ -659,8 +694,13 @@ bool FocusController::advanceFocus(WebFocusType type, bool initialFocus, InputDe
 {
     switch (type) {
     case WebFocusTypeForward:
-    case WebFocusTypeBackward:
-        return advanceFocusInDocumentOrder(type, initialFocus, sourceCapabilities);
+    case WebFocusTypeBackward: {
+        // We should never hit this when a RemoteFrame is focused, since the key
+        // event that initiated focus advancement should've been routed to that
+        // frame's process from the beginning.
+        LocalFrame* startingFrame = toLocalFrame(focusedOrMainFrame());
+        return advanceFocusInDocumentOrder(startingFrame, nullptr, type, initialFocus, sourceCapabilities);
+    }
     case WebFocusTypeLeft:
     case WebFocusTypeRight:
     case WebFocusTypeUp:
@@ -673,17 +713,30 @@ bool FocusController::advanceFocus(WebFocusType type, bool initialFocus, InputDe
     return false;
 }
 
-bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initialFocus, InputDeviceCapabilities* sourceCapabilities)
+bool FocusController::advanceFocusAcrossFrames(WebFocusType type, RemoteFrame* from, LocalFrame* to, InputDeviceCapabilities* sourceCapabilities)
 {
-    // FIXME: Focus advancement won't work with externally rendered frames until after
-    // inter-frame focus control is moved out of Blink.
-    if (!focusedOrMainFrame()->isLocalFrame())
-        return false;
-    LocalFrame* frame = toLocalFrame(focusedOrMainFrame());
+    // If we are shifting focus from a child frame to its parent, the
+    // child frame has no more focusable elements, and we should continue
+    // looking for focusable elements in the parent, starting from the <iframe>
+    // element of the child frame.
+    Node* startingNode = nullptr;
+    if (from->tree().parent() == to) {
+        ASSERT(from->owner()->isLocal());
+        startingNode = toHTMLFrameOwnerElement(from->owner());
+    }
+
+    return advanceFocusInDocumentOrder(to, startingNode, type, false, sourceCapabilities);
+}
+
+bool FocusController::advanceFocusInDocumentOrder(LocalFrame* frame, Node* startingNode, WebFocusType type, bool initialFocus, InputDeviceCapabilities* sourceCapabilities)
+{
     ASSERT(frame);
     Document* document = frame->document();
 
-    Node* currentNode = document->focusedElement();
+    Node* currentNode = startingNode;
+    if (!currentNode)
+        currentNode = document->focusedElement();
+
     // FIXME: Not quite correct when it comes to focus transitions leaving/entering the WebView itself
     bool caretBrowsing = frame->settings() && frame->settings()->caretBrowsingEnabled();
 
@@ -695,18 +748,24 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
     RefPtrWillBeRawPtr<Element> element = findFocusableElementAcrossFocusScopes(type, FocusNavigationScope::focusNavigationScopeOf(currentNode ? *currentNode : *document), currentNode);
 
     if (!element) {
+        // If there's a RemoteFrame on the ancestor chain, we need to continue
+        // searching for focusable elements there.
+        if (frame->localFrameRoot() != frame->tree().top()) {
+            document->clearFocusedElement();
+            toRemoteFrame(frame->localFrameRoot()->tree().parent())->advanceFocus(type, frame->localFrameRoot());
+            return true;
+        }
+
         // We didn't find an element to focus, so we should try to pass focus to Chrome.
         if (!initialFocus && m_page->chromeClient().canTakeFocus(type)) {
-            document->setFocusedElement(nullptr);
+            document->clearFocusedElement();
             setFocusedFrame(nullptr);
             m_page->chromeClient().takeFocus(type);
             return true;
         }
 
         // Chrome doesn't want focus, so we should wrap focus.
-        if (!m_page->mainFrame()->isLocalFrame())
-            return false;
-        element = findFocusableElementRecursively(type, FocusNavigationScope::focusNavigationScopeOf(*m_page->deprecatedLocalMainFrame()->document()), nullptr);
+        element = findFocusableElementRecursively(type, FocusNavigationScope::focusNavigationScopeOf(*toLocalFrame(m_page->mainFrame())->document()), nullptr);
         element = findFocusableElementDescendingDownIntoFrameDocument(type, element.get());
 
         if (!element)
@@ -727,8 +786,16 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
         if (!owner->contentFrame())
             return false;
 
-        document->setFocusedElement(nullptr);
+        document->clearFocusedElement();
         setFocusedFrame(owner->contentFrame());
+
+        // If contentFrame is remote, continue the search for focusable
+        // elements in that frame's process.
+        // clearFocusedElement() fires events that might detach the
+        // contentFrame, hence the need to null-check it again.
+        if (owner->contentFrame() && owner->contentFrame()->isRemoteFrame())
+            toRemoteFrame(owner->contentFrame())->advanceFocus(type, frame);
+
         return true;
     }
 
@@ -739,7 +806,7 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
 
     if (&newDocument != document) {
         // Focus is going away from this document, so clear the focused node.
-        document->setFocusedElement(nullptr);
+        document->clearFocusedElement();
     }
 
     setFocusedFrame(newDocument.frame());
@@ -750,7 +817,7 @@ bool FocusController::advanceFocusInDocumentOrder(WebFocusType type, bool initia
         frame->selection().setSelection(newSelection);
     }
 
-    element->focus(false, type, sourceCapabilities);
+    element->focus(FocusParams(SelectionBehaviorOnFocus::Reset, type, sourceCapabilities));
     return true;
 }
 
@@ -797,9 +864,14 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
     selection.clear();
 }
 
-bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr<Frame> newFocusedFrame, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
+bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr<Frame> newFocusedFrame)
 {
-    RefPtrWillBeRawPtr<LocalFrame> oldFocusedFrame = focusedFrame() && focusedFrame()->isLocalFrame() ? toLocalFrame(focusedFrame()) : nullptr;
+    return setFocusedElement(element, newFocusedFrame, FocusParams(SelectionBehaviorOnFocus::None, WebFocusTypeNone, nullptr));
+}
+
+bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr<Frame> newFocusedFrame, const FocusParams& params)
+{
+    RefPtrWillBeRawPtr<LocalFrame> oldFocusedFrame = focusedFrame();
     RefPtrWillBeRawPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : nullptr;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : nullptr;
@@ -821,10 +893,11 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr
     if (newDocument && oldDocument == newDocument && newDocument->focusedElement() == element)
         return true;
 
-    clearSelectionIfNeeded(oldFocusedFrame.get(), toLocalFrame(newFocusedFrame.get()), element);
+    if (newFocusedFrame && newFocusedFrame->isLocalFrame())
+        clearSelectionIfNeeded(oldFocusedFrame.get(), toLocalFrame(newFocusedFrame.get()), element);
 
     if (oldDocument && oldDocument != newDocument)
-        oldDocument->setFocusedElement(nullptr);
+        oldDocument->clearFocusedElement();
 
     if (newFocusedFrame && !newFocusedFrame->page()) {
         setFocusedFrame(nullptr);
@@ -836,7 +909,7 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtrWillBeRawPtr
     RefPtrWillBeRawPtr<Element> protect = element;
     ALLOW_UNUSED_LOCAL(protect);
     if (newDocument) {
-        bool successfullyFocused = newDocument->setFocusedElement(element, type, sourceCapabilities);
+        bool successfullyFocused = newDocument->setFocusedElement(element, params);
         if (!successfullyFocused)
             return false;
     }
@@ -910,7 +983,7 @@ static void updateFocusCandidateIfNeeded(WebFocusType type, const FocusCandidate
 
 void FocusController::findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, WebFocusType type, FocusCandidate& closest)
 {
-    Element* focusedElement = (focusedFrame() && toLocalFrame(focusedFrame())->document()) ? toLocalFrame(focusedFrame())->document()->focusedElement() : nullptr;
+    Element* focusedElement = (focusedFrame() && focusedFrame()->document()) ? focusedFrame()->document()->focusedElement() : nullptr;
 
     Element* element = ElementTraversal::firstWithin(container);
     FocusCandidate current;
@@ -1002,7 +1075,7 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
     Element* element = toElement(focusCandidate.focusableNode);
     ASSERT(element);
 
-    element->focus(false, type);
+    element->focus(FocusParams(SelectionBehaviorOnFocus::Reset, type, nullptr));
     return true;
 }
 

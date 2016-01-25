@@ -26,15 +26,16 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXObject.h"
 
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLDialogElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutListItem.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
@@ -141,6 +142,7 @@ const InternalRoleEntry internalRoles[] = {
     { ArticleRole, "Article" },
     { BannerRole, "Banner" },
     { BlockquoteRole, "Blockquote" },
+    // TODO(nektar): Delete busy_indicator role. It's used nowhere.
     { BusyIndicatorRole, "BusyIndicator" },
     { ButtonRole, "Button" },
     { CanvasRole, "Canvas" },
@@ -673,24 +675,231 @@ bool AXObject::isPresentationalChild() const
     return m_cachedIsPresentationalChild;
 }
 
-String AXObject::name(AXNameFrom& nameFrom, AXObjectVector* nameObjects) const
+// Simplify whitespace, but preserve a single leading and trailing whitespace character if it's present.
+// static
+String AXObject::collapseWhitespace(const String& str)
+{
+    StringBuilder result;
+    if (!str.isEmpty() && isHTMLSpace<UChar>(str[0]))
+        result.append(' ');
+    result.append(str.simplifyWhiteSpace(isHTMLSpace<UChar>));
+    if (!str.isEmpty() && isHTMLSpace<UChar>(str[str.length() - 1]))
+        result.append(' ');
+    return result.toString();
+}
+
+String AXObject::computedName() const
+{
+    AXNameFrom nameFrom;
+    AXObject::AXObjectVector nameObjects;
+    return name(nameFrom, &nameObjects);
+}
+
+String AXObject::name(AXNameFrom& nameFrom, AXObject::AXObjectVector* nameObjects) const
 {
     HeapHashSet<Member<const AXObject>> visited;
-    return textAlternative(false, false, visited, nameFrom, nameObjects, nullptr);
+    AXRelatedObjectVector relatedObjects;
+    String text = textAlternative(false, false, visited, nameFrom, &relatedObjects, nullptr);
+
+    AccessibilityRole role = roleValue();
+    if (!node() || (!isHTMLBRElement(node()) && role != StaticTextRole && role != InlineTextBoxRole))
+        text = collapseWhitespace(text);
+
+    if (nameObjects) {
+        nameObjects->clear();
+        for (size_t i = 0; i < relatedObjects.size(); i++)
+            nameObjects->append(relatedObjects[i]->object);
+    }
+
+    return text;
 }
 
 String AXObject::name(NameSources* nameSources) const
 {
     AXObjectSet visited;
     AXNameFrom tmpNameFrom;
-    AXObjectVector tmpNameObjects;
-    return textAlternative(false, false, visited, tmpNameFrom, &tmpNameObjects, nameSources);
+    AXRelatedObjectVector tmpRelatedObjects;
+    String text = textAlternative(false, false, visited, tmpNameFrom, &tmpRelatedObjects, nameSources);
+    text = text.simplifyWhiteSpace(isHTMLSpace<UChar>);
+    return text;
 }
 
 String AXObject::recursiveTextAlternative(const AXObject& axObj, bool inAriaLabelledByTraversal, AXObjectSet& visited)
 {
     AXNameFrom tmpNameFrom;
     return axObj.textAlternative(true, inAriaLabelledByTraversal, visited, tmpNameFrom, nullptr, nullptr);
+}
+
+bool AXObject::isHiddenForTextAlternativeCalculation() const
+{
+    if (equalIgnoringCase(getAttribute(aria_hiddenAttr), "false"))
+        return false;
+
+    if (layoutObject())
+        return layoutObject()->style()->visibility() != VISIBLE;
+
+    // This is an obscure corner case: if a node has no LayoutObject, that means it's not rendered,
+    // but we still may be exploring it as part of a text alternative calculation, for example if it
+    // was explicitly referenced by aria-labelledby. So we need to explicitly call the style resolver
+    // to check whether it's invisible or display:none, rather than relying on the style cached in the
+    // LayoutObject.
+    Document* doc = document();
+    if (doc && doc->frame() && node() && node()->isElementNode()) {
+        RefPtr<ComputedStyle> style = doc->ensureStyleResolver().styleForElement(toElement(node()));
+        return style->display() == NONE || style->visibility() != VISIBLE;
+    }
+
+    return false;
+}
+
+String AXObject::ariaTextAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources, bool* foundTextAlternative) const
+{
+    String textAlternative;
+    bool alreadyVisited = visited.contains(this);
+    visited.add(this);
+
+    // Step 2A from: http://www.w3.org/TR/accname-aam-1.1
+    // If you change this logic, update AXNodeObject::nameFromLabelElement, too.
+    if (!inAriaLabelledByTraversal && isHiddenForTextAlternativeCalculation()) {
+        *foundTextAlternative = true;
+        return String();
+    }
+
+    // Step 2B from: http://www.w3.org/TR/accname-aam-1.1
+    // If you change this logic, update AXNodeObject::nameFromLabelElement, too.
+    if (!inAriaLabelledByTraversal && !alreadyVisited) {
+        const QualifiedName& attr = hasAttribute(aria_labeledbyAttr) && !hasAttribute(aria_labelledbyAttr) ? aria_labeledbyAttr : aria_labelledbyAttr;
+        nameFrom = AXNameFromRelatedElement;
+        if (nameSources) {
+            nameSources->append(NameSource(*foundTextAlternative, attr));
+            nameSources->last().type = nameFrom;
+        }
+
+        const AtomicString& ariaLabelledby = getAttribute(attr);
+        if (!ariaLabelledby.isNull()) {
+            if (nameSources)
+                nameSources->last().attributeValue = ariaLabelledby;
+
+            textAlternative = textFromAriaLabelledby(visited, relatedObjects);
+
+            if (!textAlternative.isNull()) {
+                if (nameSources) {
+                    NameSource& source = nameSources->last();
+                    source.type = nameFrom;
+                    source.relatedObjects = *relatedObjects;
+                    source.text = textAlternative;
+                    *foundTextAlternative = true;
+                } else {
+                    *foundTextAlternative = true;
+                    return textAlternative;
+                }
+            } else if (nameSources) {
+                nameSources->last().invalid = true;
+            }
+        }
+    }
+
+    // Step 2C from: http://www.w3.org/TR/accname-aam-1.1
+    // If you change this logic, update AXNodeObject::nameFromLabelElement, too.
+    nameFrom = AXNameFromAttribute;
+    if (nameSources) {
+        nameSources->append(NameSource(*foundTextAlternative, aria_labelAttr));
+        nameSources->last().type = nameFrom;
+    }
+    const AtomicString& ariaLabel = getAttribute(aria_labelAttr);
+    if (!ariaLabel.isEmpty()) {
+        textAlternative = ariaLabel;
+
+        if (nameSources) {
+            NameSource& source = nameSources->last();
+            source.text = textAlternative;
+            source.attributeValue = ariaLabel;
+            *foundTextAlternative = true;
+        } else {
+            *foundTextAlternative = true;
+            return textAlternative;
+        }
+    }
+
+    return textAlternative;
+}
+
+String AXObject::textFromElements(bool inAriaLabelledbyTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXRelatedObjectVector* relatedObjects) const
+{
+    StringBuilder accumulatedText;
+    bool foundValidElement = false;
+    AXRelatedObjectVector localRelatedObjects;
+
+    for (const auto& element : elements) {
+        AXObject* axElement = axObjectCache().getOrCreate(element);
+        if (axElement) {
+            foundValidElement = true;
+
+            String result = recursiveTextAlternative(*axElement, inAriaLabelledbyTraversal, visited);
+            localRelatedObjects.append(new NameSourceRelatedObject(axElement, result));
+            if (!result.isEmpty()) {
+                if (!accumulatedText.isEmpty())
+                    accumulatedText.append(" ");
+                accumulatedText.append(result);
+            }
+        }
+    }
+    if (!foundValidElement)
+        return String();
+    if (relatedObjects)
+        *relatedObjects = localRelatedObjects;
+    return accumulatedText.toString();
+}
+
+void AXObject::tokenVectorFromAttribute(Vector<String>& tokens, const QualifiedName& attribute) const
+{
+    Node* node = this->node();
+    if (!node || !node->isElementNode())
+        return;
+
+    String attributeValue = getAttribute(attribute).string();
+    if (attributeValue.isEmpty())
+        return;
+
+    attributeValue.simplifyWhiteSpace();
+    attributeValue.split(' ', tokens);
+}
+
+void AXObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName& attribute) const
+{
+    Vector<String> ids;
+    tokenVectorFromAttribute(ids, attribute);
+    if (ids.isEmpty())
+        return;
+
+    TreeScope& scope = node()->treeScope();
+    for (const auto& id : ids) {
+        if (Element* idElement = scope.getElementById(AtomicString(id)))
+            elements.append(idElement);
+    }
+}
+
+void AXObject::ariaLabelledbyElementVector(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const
+{
+    // Try both spellings, but prefer aria-labelledby, which is the official spec.
+    elementsFromAttribute(elements, aria_labelledbyAttr);
+    if (!elements.size())
+        elementsFromAttribute(elements, aria_labeledbyAttr);
+}
+
+String AXObject::textFromAriaLabelledby(AXObjectSet& visited, AXRelatedObjectVector* relatedObjects) const
+{
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
+    ariaLabelledbyElementVector(elements);
+    return textFromElements(true, visited, elements, relatedObjects);
+}
+
+String AXObject::textFromAriaDescribedby(AXRelatedObjectVector* relatedObjects) const
+{
+    AXObjectSet visited;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
+    elementsFromAttribute(elements, aria_describedbyAttr);
+    return textFromElements(true, visited, elements, relatedObjects);
 }
 
 AccessibilityOrientation AXObject::orientation() const
@@ -735,17 +944,15 @@ String AXObject::actionVerb() const
 
 AccessibilityButtonState AXObject::checkboxOrRadioValue() const
 {
-    // If this is a real checkbox or radio button, AXLayoutObject will handle.
-    // If it's an ARIA checkbox or radio, the aria-checked attribute should be used.
-
-    const AtomicString& result = getAttribute(aria_checkedAttr);
-    if (equalIgnoringCase(result, "true"))
+    const AtomicString& checkedAttribute = getAttribute(aria_checkedAttr);
+    if (equalIgnoringCase(checkedAttribute, "true"))
         return ButtonStateOn;
-    if (equalIgnoringCase(result, "mixed")) {
+
+    if (equalIgnoringCase(checkedAttribute, "mixed")) {
+        // Only checkboxes should support the mixed state.
         AccessibilityRole role = ariaRoleAttribute();
-        if (role == RadioButtonRole || role == MenuItemRadioRole || role == SwitchRole)
-            return ButtonStateOff;
-        return ButtonStateMixed;
+        if (role == CheckBoxRole || role == MenuItemCheckBoxRole)
+            return ButtonStateMixed;
     }
 
     return ButtonStateOff;
@@ -827,18 +1034,6 @@ int AXObject::indexInParent() const
         }
     }
     return 0;
-}
-
-void AXObject::ariaTreeRows(AccessibilityChildrenVector& result)
-{
-    for (const auto& child : children()) {
-        // Add tree items as the rows.
-        if (child->roleValue() == TreeItemRole)
-            result.append(child);
-
-        // Now see if this item also has rows hiding inside of it.
-        child->ariaTreeRows(result);
-    }
 }
 
 bool AXObject::isLiveRegion() const
@@ -931,7 +1126,7 @@ AXObject* AXObject::elementAccessibilityHitTest(const IntPoint& point) const
     return const_cast<AXObject*>(this);
 }
 
-const AXObject::AccessibilityChildrenVector& AXObject::children()
+const AXObject::AXObjectVector& AXObject::children()
 {
     updateChildrenIfNecessary();
 
@@ -1348,29 +1543,30 @@ void AXObject::selectionChanged()
         parent->selectionChanged();
 }
 
-int AXObject::lineForPosition(const VisiblePosition& visiblePos) const
+int AXObject::lineForPosition(const VisiblePosition& position) const
 {
-    if (visiblePos.isNull() || !node())
+    if (position.isNull() || !node())
         return -1;
 
     // If the position is not in the same editable region as this AX object, return -1.
-    Node* containerNode = visiblePos.deepEquivalent().computeContainerNode();
+    Node* containerNode = position.deepEquivalent().computeContainerNode();
     if (!containerNode->containsIncludingShadowDOM(node()) && !node()->containsIncludingShadowDOM(containerNode))
         return -1;
 
     int lineCount = -1;
-    VisiblePosition currentVisiblePos = visiblePos;
-    VisiblePosition savedVisiblePos;
+    VisiblePosition currentPosition = position;
+    VisiblePosition previousPosition;
 
     // move up until we get to the top
     // FIXME: This only takes us to the top of the rootEditableElement, not the top of the
     // top document.
     do {
-        savedVisiblePos = currentVisiblePos;
-        VisiblePosition prevVisiblePos = previousLinePosition(currentVisiblePos, 0, HasEditableAXRole);
-        currentVisiblePos = prevVisiblePos;
+        previousPosition = currentPosition;
+        currentPosition = previousLinePosition(
+            currentPosition, 0, HasEditableAXRole);
         ++lineCount;
-    } while (currentVisiblePos.isNotNull() && !(inSameLine(currentVisiblePos, savedVisiblePos)));
+    } while (currentPosition.isNotNull()
+        && !inSameLine(currentPosition, previousPosition));
 
     return lineCount;
 }
@@ -1452,22 +1648,24 @@ bool AXObject::nameFromContents() const
     switch (roleValue()) {
     case ButtonRole:
     case CheckBoxRole:
-    case CellRole:
-    case ColumnHeaderRole:
     case DirectoryRole:
     case DisclosureTriangleRole:
+    case HeadingRole:
+    case LineBreakRole:
     case LinkRole:
+    case ListBoxOptionRole:
     case ListItemRole:
     case MenuItemRole:
     case MenuItemCheckBoxRole:
     case MenuItemRadioRole:
     case MenuListOptionRole:
+    case PopUpButtonRole:
     case RadioButtonRole:
-    case RowHeaderRole:
     case StaticTextRole:
     case StatusRole:
     case SwitchRole:
-    case TreeItemRole:
+    case TabRole:
+    case ToggleButtonRole:
         return true;
     default:
         return false;

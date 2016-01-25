@@ -25,9 +25,12 @@
 #include "SkString.h"
 #include "SkTraceEvent.h"
 #include "batches/GrVertexBatch.h"
-#include "gl/GrGLProcessor.h"
-#include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLGeometryProcessor.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
+#include "glsl/GrGLSLVarying.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
 GrAAConvexPathRenderer::GrAAConvexPathRenderer() {
 }
@@ -541,58 +544,65 @@ public:
     const SkMatrix& localMatrix() const { return fLocalMatrix; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 
-    class GLProcessor : public GrGLGeometryProcessor {
+    class GLSLProcessor : public GrGLSLGeometryProcessor {
     public:
-        GLProcessor()
+        GLSLProcessor()
             : fColor(GrColor_ILLEGAL) {}
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
             const QuadEdgeEffect& qe = args.fGP.cast<QuadEdgeEffect>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
+            GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
+            GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
+            GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
             // emit attributes
-            vsBuilder->emitAttributes(qe);
+            varyingHandler->emitAttributes(qe);
 
-            GrGLVertToFrag v(kVec4f_GrSLType);
-            args.fPB->addVarying("QuadEdge", &v);
-            vsBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.inQuadEdge()->fName);
+            GrGLSLVertToFrag v(kVec4f_GrSLType);
+            varyingHandler->addVarying("QuadEdge", &v);
+            vertBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.inQuadEdge()->fName);
 
+            GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
             // Setup pass through color
             if (!qe.colorIgnored()) {
-                this->setupUniformColor(pb, args.fOutputColor, &fColorUniform);
+                this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor,
+                                        &fColorUniform);
             }
 
             // Setup position
-            this->setupPosition(pb, gpArgs, qe.inPosition()->fName);
+            this->setupPosition(vertBuilder, gpArgs, qe.inPosition()->fName);
 
             // emit transforms
-            this->emitTransforms(args.fPB, gpArgs->fPositionVar, qe.inPosition()->fName,
-                                 qe.localMatrix(), args.fTransformsIn, args.fTransformsOut);
+            this->emitTransforms(vertBuilder,
+                                 varyingHandler,
+                                 uniformHandler,
+                                 gpArgs->fPositionVar,
+                                 qe.inPosition()->fName,
+                                 qe.localMatrix(),
+                                 args.fTransformsIn,
+                                 args.fTransformsOut);
 
-            GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
-
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("float edgeAlpha;");
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("float edgeAlpha;");
 
             // keep the derivative instructions outside the conditional
-            fsBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
             // today we know z and w are in device space. We could use derivatives
-            fsBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
-                                    v.fsIn());
-            fsBuilder->codeAppendf ("} else {");
-            fsBuilder->codeAppendf("vec2 gF = vec2(2.0*%s.x*duvdx.x - duvdx.y,"
-                                   "               2.0*%s.x*duvdy.x - duvdy.y);",
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("edgeAlpha = (%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
-                                    v.fsIn());
-            fsBuilder->codeAppendf("edgeAlpha = "
-                                   "clamp(0.5 - edgeAlpha / length(gF), 0.0, 1.0);}");
+            fragBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
+                                     v.fsIn());
+            fragBuilder->codeAppendf ("} else {");
+            fragBuilder->codeAppendf("vec2 gF = vec2(2.0*%s.x*duvdx.x - duvdx.y,"
+                                     "               2.0*%s.x*duvdy.x - duvdy.y);",
+                                     v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("edgeAlpha = (%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
+                                     v.fsIn());
+            fragBuilder->codeAppendf("edgeAlpha = "
+                                     "clamp(0.5 - edgeAlpha / length(gF), 0.0, 1.0);}");
 
-            fsBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
@@ -605,10 +615,11 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const QuadEdgeEffect& qe = gp.cast<QuadEdgeEffect>();
             if (qe.color() != fColor) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(qe.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = qe.color();
@@ -616,7 +627,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<QuadEdgeEffect>(primProc, pdman, index, transforms);
@@ -626,15 +637,15 @@ public:
         GrColor fColor;
         UniformHandle fColorUniform;
 
-        typedef GrGLGeometryProcessor INHERITED;
+        typedef GrGLSLGeometryProcessor INHERITED;
     };
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
-        GLProcessor::GenKey(*this, caps, b);
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
+        GLSLProcessor::GenKey(*this, caps, b);
     }
 
-    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override {
-        return new GLProcessor();
+    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override {
+        return new GLSLProcessor();
     }
 
 private:
@@ -744,32 +755,33 @@ public:
 
     const char* name() const override { return "AAConvexBatch"; }
 
-    void getInvariantOutputColor(GrInitInvariantOutput* out) const override {
+    void computePipelineOptimizations(GrInitInvariantOutput* color, 
+                                      GrInitInvariantOutput* coverage,
+                                      GrBatchToXPOverrides* overrides) const override {
         // When this is called on a batch, there is only one geometry bundle
-        out->setKnownFourComponents(fGeoData[0].fColor);
-    }
-    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
-        out->setUnknownSingleComponent();
+        color->setKnownFourComponents(fGeoData[0].fColor);
+        coverage->setUnknownSingleComponent();
+        overrides->fUsePLSDstRead = false;
     }
 
 private:
-    void initBatchTracker(const GrPipelineOptimizations& opt) override {
+    void initBatchTracker(const GrXPOverridesForBatch& overrides) override {
         // Handle any color overrides
-        if (!opt.readsColor()) {
+        if (!overrides.readsColor()) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
         }
-        opt.getOverrideColorIfSet(&fGeoData[0].fColor);
+        overrides.getOverrideColorIfSet(&fGeoData[0].fColor);
 
         // setup batch properties
-        fBatch.fColorIgnored = !opt.readsColor();
+        fBatch.fColorIgnored = !overrides.readsColor();
         fBatch.fColor = fGeoData[0].fColor;
-        fBatch.fUsesLocalCoords = opt.readsLocalCoords();
-        fBatch.fCoverageIgnored = !opt.readsCoverage();
+        fBatch.fUsesLocalCoords = overrides.readsLocalCoords();
+        fBatch.fCoverageIgnored = !overrides.readsCoverage();
         fBatch.fLinesOnly = SkPath::kLine_SegmentMask == fGeoData[0].fPath.getSegmentMasks();
-        fBatch.fCanTweakAlphaForCoverage = opt.canTweakAlphaForCoverage();
+        fBatch.fCanTweakAlphaForCoverage = overrides.canTweakAlphaForCoverage();
     }
 
-    void prepareLinesOnlyDraws(Target* target) {
+    void prepareLinesOnlyDraws(Target* target) const {
         bool canTweakAlphaForCoverage = this->canTweakAlphaForCoverage();
 
         // Setup GrGeometryProcessor
@@ -797,7 +809,7 @@ private:
         for (int i = 0; i < instanceCount; i++) {
             tess.rewind();
 
-            Geometry& args = fGeoData[i];
+            const Geometry& args = fGeoData[i];
 
             if (!tess.tessellate(args.fViewMatrix, args.fPath)) {
                 continue;
@@ -833,7 +845,7 @@ private:
         }
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(Target* target) const override {
 #ifndef SK_IGNORE_LINEONLY_AA_CONVEX_PATH_OPTS
         if (this->linesOnly()) {
             this->prepareLinesOnlyDraws(target);
@@ -857,15 +869,22 @@ private:
 
         // TODO generate all segments for all paths and use one vertex buffer
         for (int i = 0; i < instanceCount; i++) {
-            Geometry& args = fGeoData[i];
+            const Geometry& args = fGeoData[i];
 
             // We use the fact that SkPath::transform path does subdivision based on
             // perspective. Otherwise, we apply the view matrix when copying to the
             // segment representation.
             const SkMatrix* viewMatrix = &args.fViewMatrix;
+
+            // We avoid initializing the path unless we have to
+            const SkPath* pathPtr = &args.fPath;
+            SkTLazy<SkPath> tmpPath;
             if (viewMatrix->hasPerspective()) {
-                args.fPath.transform(*viewMatrix);
+                SkPath* tmpPathPtr = tmpPath.init(*pathPtr);
+                tmpPathPtr->setIsVolatile(true);
+                tmpPathPtr->transform(*viewMatrix);
                 viewMatrix = &SkMatrix::I();
+                pathPtr = tmpPathPtr;
             }
 
             int vertexCount;
@@ -877,7 +896,7 @@ private:
             SkSTArray<kPreallocSegmentCnt, Segment, true> segments;
             SkPoint fanPt;
 
-            if (!get_segments(args.fPath, *viewMatrix, &segments, &fanPt, &vertexCount,
+            if (!get_segments(*pathPtr, *viewMatrix, &segments, &fanPt, &vertexCount,
                               &indexCount)) {
                 continue;
             }
@@ -983,6 +1002,7 @@ private:
 };
 
 bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
+    GR_AUDIT_TRAIL_AUTO_FRAME(args.fTarget->getAuditTrail(), "GrAAConvexPathRenderer::onDrawPath");
     if (args.fPath->isEmpty()) {
         return true;
     }

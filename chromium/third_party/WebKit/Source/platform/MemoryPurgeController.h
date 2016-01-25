@@ -6,16 +6,12 @@
 #define MemoryPurgeController_h
 
 #include "platform/PlatformExport.h"
+#include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebMemoryPressureLevel.h"
 #include "wtf/MainThread.h"
 
 namespace blink {
-
-enum class MemoryPurgeMode {
-    // The tab contains the webview went to background
-    InactiveTab,
-    // TODO(bashi): Add more modes as needed.
-};
 
 enum class DeviceKind {
     NotSpecified,
@@ -26,28 +22,32 @@ enum class DeviceKind {
 // interface to be informed when they should reduce memory consumption.
 // MemoryPurgeController assumes that subclasses of MemoryPurgeClient are
 // WillBes.
-class MemoryPurgeClient : public WillBeGarbageCollectedMixin {
+class PLATFORM_EXPORT MemoryPurgeClient : public WillBeGarbageCollectedMixin {
 public:
     virtual ~MemoryPurgeClient() { }
 
     // MemoryPurgeController invokes this callback when a memory purge event
     // has occurred.
-    virtual void purgeMemory(MemoryPurgeMode, DeviceKind) = 0;
+    virtual void purgeMemory(DeviceKind) = 0;
 
-    DECLARE_TRACE();
+    DECLARE_VIRTUAL_TRACE();
 };
 
 // MemoryPurgeController listens to some events which could be opportunities
 // for reducing memory consumption and notifies its clients.
 // Since we want to control memory per tab, MemoryPurgeController is owned by
 // Page.
-class PLATFORM_EXPORT MemoryPurgeController final : public NoBaseWillBeGarbageCollected<MemoryPurgeController> {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MemoryPurgeController);
+class PLATFORM_EXPORT MemoryPurgeController final : public NoBaseWillBeGarbageCollectedFinalized<MemoryPurgeController> {
+    USING_FAST_MALLOC_WILL_BE_REMOVED(MemoryPurgeController);
+    WTF_MAKE_NONCOPYABLE(MemoryPurgeController);
 public:
+    static void onMemoryPressure(WebMemoryPressureLevel);
+
     static PassOwnPtrWillBeRawPtr<MemoryPurgeController> create()
     {
         return adoptPtrWillBeNoop(new MemoryPurgeController);
     }
+    ~MemoryPurgeController();
 
     void registerClient(MemoryPurgeClient* client)
     {
@@ -59,17 +59,18 @@ public:
 
     void unregisterClient(MemoryPurgeClient* client)
     {
+        // Don't assert m_clients.contains() so that clients can unregister
+        // unconditionally.
         ASSERT(isMainThread());
-        ASSERT(m_clients.contains(client));
         m_clients.remove(client);
     }
+
+    void purgeMemory();
 
     DECLARE_TRACE();
 
 private:
     MemoryPurgeController();
-
-    void purgeMemory(MemoryPurgeMode);
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<MemoryPurgeClient>> m_clients;
     DeviceKind m_deviceKind;

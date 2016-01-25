@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <tuple>
+
 #include "base/logging.h"
 #include "base/numerics/safe_math.h"
 #include "net/der/parse_values.h"
@@ -191,10 +193,48 @@ bool ParseUint64(const Input& in, uint64_t* out) {
   return true;
 }
 
+bool ParseUint8(const Input& in, uint8_t* out) {
+  // TODO(eroman): Implement this more directly.
+  uint64_t value;
+  if (!ParseUint64(in, &value))
+    return false;
+
+  if (value > 0xFF)
+    return false;
+
+  *out = static_cast<uint8_t>(value);
+  return true;
+}
+
 BitString::BitString(const Input& bytes, uint8_t unused_bits)
     : bytes_(bytes), unused_bits_(unused_bits) {
   DCHECK_LT(unused_bits, 8);
   DCHECK(unused_bits == 0 || bytes.Length() != 0);
+  // The unused bits must be zero.
+  DCHECK(bytes.Length() == 0 ||
+         (bytes.UnsafeData()[bytes.Length() - 1] & ((1u << unused_bits) - 1)) ==
+             0);
+}
+
+bool BitString::AssertsBit(size_t bit_index) const {
+  // Index of the byte that contains the bit.
+  size_t byte_index = bit_index / 8;
+
+  // If the bit is outside of the bitstring, by definition it is not
+  // asserted.
+  if (byte_index >= bytes_.Length())
+    return false;
+
+  // Within a byte, bits are ordered from most significant to least significant.
+  // Convert |bit_index| to an index within the |byte_index| byte, measured from
+  // its least significant bit.
+  uint8_t bit_index_in_byte = 7 - (bit_index - byte_index * 8);
+
+  // BIT STRING parsing already guarantees that unused bits in a byte are zero
+  // (otherwise it wouldn't be valid DER). Therefore it isn't necessary to check
+  // |unused_bits_|
+  uint8_t byte = bytes_.UnsafeData()[byte_index];
+  return 0 != (byte & (1 << bit_index_in_byte));
 }
 
 bool ParseBitString(const Input& in, BitString* out) {
@@ -239,17 +279,9 @@ bool ParseBitString(const Input& in, BitString* out) {
 }
 
 bool operator<(const GeneralizedTime& lhs, const GeneralizedTime& rhs) {
-  if (lhs.year != rhs.year)
-    return lhs.year < rhs.year;
-  if (lhs.month != rhs.month)
-    return lhs.month < rhs.month;
-  if (lhs.day != rhs.day)
-    return lhs.day < rhs.day;
-  if (lhs.hours != rhs.hours)
-    return lhs.hours < rhs.hours;
-  if (lhs.minutes != rhs.minutes)
-    return lhs.minutes < rhs.minutes;
-  return lhs.seconds < rhs.seconds;
+  return std::tie(lhs.year, lhs.month, lhs.day, lhs.hours, lhs.minutes,
+                  lhs.seconds) < std::tie(rhs.year, rhs.month, rhs.day,
+                                          rhs.hours, rhs.minutes, rhs.seconds);
 }
 
 // A UTC Time in DER encoding should be YYMMDDHHMMSSZ, but some CAs encode

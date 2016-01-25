@@ -46,7 +46,7 @@ class StyleSheetList;
 
 enum class ShadowRootType {
     UserAgent,
-    OpenByDefault,
+    V0,
     Open,
     Closed
 };
@@ -78,7 +78,10 @@ public:
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
     ShadowRoot* olderShadowRootForBindings() const;
-    bool isOpen() const { return type() == ShadowRootType::OpenByDefault || type() == ShadowRootType::Open; }
+
+    bool isOpenOrV0() const { return type() == ShadowRootType::V0 || type() == ShadowRootType::Open; }
+
+    bool isV1() const { return type() == ShadowRootType::Open || type() == ShadowRootType::Closed; }
 
     bool isYoungest() const { return !youngerShadowRoot(); }
     bool isOldest() const { return !olderShadowRoot(); }
@@ -124,7 +127,6 @@ public:
     void setInnerHTML(const String&, ExceptionState&);
 
     PassRefPtrWillBeRawPtr<Node> cloneNode(bool, ExceptionState&);
-    PassRefPtrWillBeRawPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
 
     StyleSheetList* styleSheets();
 

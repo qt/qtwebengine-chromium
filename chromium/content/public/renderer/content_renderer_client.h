@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_RENDERER_CONTENT_RENDERER_CLIENT_H_
 #define CONTENT_PUBLIC_RENDERER_CONTENT_RENDERER_CLIENT_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <string>
 #include <vector>
@@ -133,8 +135,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // (lack of information on the error code) so the caller should take care to
   // initialize the string values with safe defaults before the call.
   virtual void GetNavigationErrorStrings(
-      content::RenderView* render_view,
-      blink::WebFrame* frame,
+      content::RenderFrame* render_frame,
       const blink::WebURLRequest& failed_request,
       const blink::WebURLError& error,
       std::string* error_html,
@@ -201,7 +202,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the navigation was handled by the embedder and should be
   // ignored by WebKit. This method is used by CEF and android_webview.
   virtual bool HandleNavigation(RenderFrame* render_frame,
-                                DocumentState* document_state,
+                                bool is_content_initiated,
                                 int opener_id,
                                 blink::WebFrame* frame,
                                 const blink::WebURLRequest& request,
@@ -252,7 +253,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Allows an embedder to provide a media::RendererFactory.
   virtual scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
       RenderFrame* render_frame,
-      const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
+      media::GpuVideoAcceleratorFactories* gpu_factories,
       const scoped_refptr<media::MediaLog>& media_log);
 
   // Allows an embedder to provide a MediaStreamRendererFactory.
@@ -288,10 +289,6 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if dev channel APIs are available for plugins.
   virtual bool IsPluginAllowedToUseDevChannelAPIs();
-
-  // Returns a user agent override specific for |url|, or empty string if
-  // default user agent should be used.
-  virtual std::string GetUserAgentOverrideForURL(const GURL& url);
 
   // Records a sample string to a Rappor privacy-preserving metric.
   // See: https://www.chromium.org/developers/design-documents/rappor

@@ -5,17 +5,26 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_IMPL_H_
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
+#include <set>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/site_instance_impl.h"
+#include "content/browser/webui/web_ui_impl.h"
 #include "content/common/accessibility_mode_enums.h"
 #include "content/common/ax_content_node_data.h"
 #include "content/common/content_export.h"
@@ -27,6 +36,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "net/http/http_response_headers.h"
+#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -90,7 +100,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
       public BrowserAccessibilityDelegate {
  public:
   using AXTreeSnapshotCallback =
-      base::Callback<void(const ui::AXTreeUpdate<ui::AXNodeData>&)>;
+      base::Callback<void(
+          const ui::AXTreeUpdate&)>;
 
   // Keeps track of the state of the RenderFrameHostImpl, particularly with
   // respect to swap out.
@@ -129,9 +140,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   SiteInstanceImpl* GetSiteInstance() override;
   RenderProcessHost* GetProcess() override;
   RenderFrameHost* GetParent() override;
+  int GetFrameTreeNodeId() override;
   const std::string& GetFrameName() override;
   bool IsCrossProcessSubframe() override;
   GURL GetLastCommittedURL() override;
+  url::Origin GetLastCommittedOrigin() override;
   gfx::NativeView GetNativeView() override;
   void AddMessageToConsole(ConsoleMessageLevel level,
                            const std::string& message) override;
@@ -172,9 +185,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                   const gfx::Point& point) override;
   void AccessibilitySetScrollOffset(int acc_obj_id,
                                     const gfx::Point& offset) override;
-  void AccessibilitySetTextSelection(int acc_obj_id,
-                                     int start_offset,
-                                     int end_offset) override;
+  void AccessibilitySetSelection(int anchor_object_id,
+                                 int anchor_offset,
+                                 int focus_object_id,
+                                 int focus_offset) override;
   void AccessibilitySetValue(int acc_obj_id, const base::string16& value)
       override;
   bool AccessibilityViewHasFocus() const override;
@@ -203,14 +217,24 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void Init();
 
   int routing_id() const { return routing_id_; }
-  void OnCreateChildFrame(int new_routing_id,
-                          blink::WebTreeScopeType scope,
-                          const std::string& frame_name,
-                          blink::WebSandboxFlags sandbox_flags);
+  void OnCreateChildFrame(
+      int new_routing_id,
+      blink::WebTreeScopeType scope,
+      const std::string& frame_name,
+      blink::WebSandboxFlags sandbox_flags,
+      const blink::WebFrameOwnerProperties& frame_owner_properties);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
+
+  // Returns the associated WebUI or null if none applies.
+  WebUIImpl* web_ui() const { return web_ui_.get(); }
+
+  // Returns the pending WebUI, or null if none applies.
+  WebUIImpl* pending_web_ui() const {
+    return should_reuse_web_ui_ ? web_ui_.get() : pending_web_ui_.get();
+  }
 
   // Returns this RenderFrameHost's loading state. This method is only used by
   // FrameTreeNode. The proper way to check whether a frame is loading is to
@@ -248,6 +272,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // TODO(creis): Make bindings frame-specific, to support cases like <webview>.
   int GetEnabledBindings();
 
+  // The unique ID of the latest NavigationEntry that this RenderFrameHost is
+  // showing. This may change even when this frame hasn't committed a page,
+  // such as for a new subframe navigation in a different frame.
+  int nav_entry_id() const { return nav_entry_id_; }
+  void set_nav_entry_id(int nav_entry_id) { nav_entry_id_ = nav_entry_id; }
+
+  // A NavigationHandle for the pending navigation in this frame, if any. This
+  // is cleared when the navigation commits.
   NavigationHandleImpl* navigation_handle() const {
     return navigation_handle_.get();
   }
@@ -373,8 +405,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // another renderer process.
   void UpdateOpener();
 
-  // Clear focus from this frame in the renderer process.
-  void ClearFocus();
+  // Set this frame as focused in the renderer process.  This supports
+  // cross-process window.focus() calls.
+  void SetFocusedFrame();
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
@@ -467,6 +500,26 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // addition, its associated RenderWidgetHost has to be focused.
   bool IsFocused();
 
+  // Updates the pending WebUI of this RenderFrameHost based on the provided
+  // |dest_url|, setting it to either none, a new instance or to reuse the
+  // currently active one. Returns true if the pending WebUI was updated.
+  // If this is a history navigation its NavigationEntry bindings should be
+  // provided through |entry_bindings| to allow verifying that they are not
+  // being set differently this time around. Otherwise |entry_bindings| should
+  // be set to NavigationEntryImpl::kInvalidBindings so that no checks are done.
+  bool UpdatePendingWebUI(const GURL& dest_url, int entry_bindings);
+
+  // Updates the active WebUI with the pending one set by the last call to
+  // UpdatePendingWebUI and then clears any pending data. If UpdatePendingWebUI
+  // was not called the active WebUI will simply be cleared.
+  void CommitPendingWebUI();
+
+  // Destroys the pending WebUI and resets related data.
+  void ClearPendingWebUI();
+
+  // Destroys all WebUI instances and resets related data.
+  void ClearAllWebUI();
+
   // Returns the Mojo ImageDownloader service.
   const image_downloader::ImageDownloaderPtr& GetMojoImageDownloader();
 
@@ -483,8 +536,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                       RenderWidgetHostDelegate* rwh_delegate,
                       FrameTree* frame_tree,
                       FrameTreeNode* frame_tree_node,
-                      int32 routing_id,
-                      int32 widget_routing_id,
+                      int32_t routing_id,
+                      int32_t widget_routing_id,
                       int flags);
 
  private:
@@ -494,9 +547,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest, CrashSubframe);
 
   // IPC Message handlers.
-  void OnAddMessageToConsole(int32 level,
+  void OnAddMessageToConsole(int32_t level,
                              const base::string16& message,
-                             int32 line_no,
+                             int32_t line_no,
                              const base::string16& source_id);
   void OnDetach();
   void OnFrameFocused();
@@ -504,7 +557,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDocumentOnLoadCompleted(
       FrameMsg_UILoadMetricsReportType::Value report_type,
       base::TimeTicks ui_timestamp);
-  void OnDidStartProvisionalLoadForFrame(const GURL& url);
+  void OnDidStartProvisionalLoad(
+      const GURL& url,
+      const base::TimeTicks& navigation_start);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
@@ -514,6 +569,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       bool was_ignored_by_handler);
   void OnDidCommitProvisionalLoad(const IPC::Message& msg);
   void OnDidDropNavigation();
+  void OnUpdateState(const PageState& state);
   void OnBeforeUnloadACK(
       bool proceed,
       const base::TimeTicks& renderer_before_unload_start_time,
@@ -522,7 +578,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnRenderProcessGone(int status, int error_code);
   void OnContextMenu(const ContextMenuParams& params);
   void OnJavaScriptExecuteResponse(int id, const base::ListValue& result);
-  void OnVisualStateResponse(uint64 id);
+  void OnVisualStateResponse(uint64_t id);
   void OnRunJavaScriptMessage(const base::string16& message,
                               const base::string16& default_prompt,
                               const GURL& frame_url,
@@ -536,11 +592,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                           size_t start_offset,
                                           size_t end_offset);
   void OnDidAccessInitialDocument();
-  void OnDidChangeOpener(int32 opener_routing_id);
+  void OnDidChangeOpener(int32_t opener_routing_id);
   void OnDidChangeName(const std::string& name);
-  void OnDidAssignPageId(int32 page_id);
-  void OnDidChangeSandboxFlags(int32 frame_routing_id,
+  void OnEnforceStrictMixedContentChecking();
+  void OnDidAssignPageId(int32_t page_id);
+  void OnDidChangeSandboxFlags(int32_t frame_routing_id,
                                blink::WebSandboxFlags flags);
+  void OnDidChangeFrameOwnerProperties(
+      int32_t frame_routing_id,
+      const blink::WebFrameOwnerProperties& frame_owner_properties);
   void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
@@ -557,11 +617,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const AccessibilityHostMsg_FindInPageResultParams& params);
   void OnAccessibilitySnapshotResponse(
       int callback_id,
-      const ui::AXTreeUpdate<AXContentNodeData>& snapshot);
+      const AXContentTreeUpdate& snapshot);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidStartLoading(bool to_different_document);
   void OnDidStopLoading();
   void OnDidChangeLoadProgress(double load_progress);
+  void OnSerializeAsMHTMLResponse(
+      int job_id,
+      bool success,
+      const std::set<std::string>& digests_of_uris_of_serialized_resources);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void OnShowPopup(const FrameHostMsg_ShowPopup_Params& params);
@@ -608,10 +672,30 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void AXContentNodeDataToAXNodeData(const AXContentNodeData& src,
                                      ui::AXNodeData* dst);
 
+  // Convert the content-layer-specific AXContentTreeData to a general-purpose
+  // AXTreeData structure.
+  void AXContentTreeDataToAXTreeData(const AXContentTreeData& src,
+                                     ui::AXTreeData* dst);
+
   // Returns the RenderWidgetHostView used for accessibility. For subframes,
   // this function will return the platform view on the main frame; for main
   // frames, it will return the current frame's view.
   RenderWidgetHostViewBase* GetViewForAccessibility();
+
+  // Sends a navigate message to the RenderFrame and notifies DevTools about
+  // navigation happening. Should be used instead of sending the message
+  // directly.
+  void SendNavigateMessage(
+      const content::CommonNavigationParams& common_params,
+      const content::StartNavigationParams& start_params,
+      const content::RequestNavigationParams& request_params);
+
+  // Returns the child FrameTreeNode if |child_frame_routing_id| is an
+  // immediate child of this FrameTreeNode.  |child_frame_routing_id| is
+  // considered untrusted, so the renderer process is killed if it refers to a
+  // FrameTreeNode that is not a child of this node.
+  FrameTreeNode* FindAndVerifyChild(int32_t child_frame_routing_id,
+                                    bad_message::BadMessageReason reason);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -663,7 +747,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // The mapping of pending JavaScript calls created by
   // ExecuteJavaScript and their corresponding callbacks.
   std::map<int, JavaScriptResultCallback> javascript_callbacks_;
-  std::map<uint64, VisualStateCallback> visual_state_callbacks_;
+  std::map<uint64_t, VisualStateCallback> visual_state_callbacks_;
 
   // RenderFrameHosts that need management of the rendering and input events
   // for their frame subtrees require RenderWidgetHosts. This typically
@@ -726,6 +810,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // tests.
   bool pending_commit_;
 
+  // The unique ID of the latest NavigationEntry that this RenderFrameHost is
+  // showing. This may change even when this frame hasn't committed a page,
+  // such as for a new subframe navigation in a different frame.  Tracking this
+  // allows us to send things like title and state updates to the latest
+  // relevant NavigationEntry.
+  int nav_entry_id_;
+
   // Used to swap out or shut down this RFH when the unload event is taking too
   // long to execute, depending on the number of active frames in the
   // SiteInstance.
@@ -780,6 +871,22 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // PlzNavigate: before the navigation is ready to be committed, the
   // NavigationHandle for it is owned by the NavigationRequest.
   scoped_ptr<NavigationHandleImpl> navigation_handle_;
+
+  // The associated WebUIImpl and its type. They will be set if the current
+  // document is from WebUI source. Otherwise they will be null and
+  // WebUI::kNoWebUI, respectively.
+  scoped_ptr<WebUIImpl> web_ui_;
+  WebUI::TypeID web_ui_type_;
+
+  // The pending WebUIImpl and its type. These values will be used exclusively
+  // for same-site navigations to keep a transition of a WebUI in a pending
+  // state until the navigation commits.
+  scoped_ptr<WebUIImpl> pending_web_ui_;
+  WebUI::TypeID pending_web_ui_type_;
+
+  // If true the associated WebUI should be reused when CommitPendingWebUI is
+  // called (no pending instance should be set).
+  bool should_reuse_web_ui_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

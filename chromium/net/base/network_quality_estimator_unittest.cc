@@ -5,14 +5,14 @@
 #include "net/base/network_quality_estimator.h"
 
 #include <stdint.h>
-
 #include <limits>
 #include <map>
+#include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/run_loop.h"
@@ -39,14 +39,14 @@ class TestNetworkQualityEstimator : public net::NetworkQualityEstimator {
   TestNetworkQualityEstimator(
       const std::map<std::string, std::string>& variation_params,
       scoped_ptr<net::ExternalEstimateProvider> external_estimate_provider)
-      : NetworkQualityEstimator(external_estimate_provider.Pass(),
+      : NetworkQualityEstimator(std::move(external_estimate_provider),
                                 variation_params,
                                 true,
                                 true) {
     // Set up embedded test server.
     embedded_test_server_.ServeFilesFromDirectory(
         base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
-    EXPECT_TRUE(embedded_test_server_.InitializeAndWaitUntilReady());
+    EXPECT_TRUE(embedded_test_server_.Start());
     embedded_test_server_.RegisterRequestHandler(base::Bind(
         &TestNetworkQualityEstimator::HandleRequest, base::Unretained(this)));
   }
@@ -76,7 +76,7 @@ class TestNetworkQualityEstimator : public net::NetworkQualityEstimator {
     http_response->set_code(net::HTTP_OK);
     http_response->set_content("hello");
     http_response->set_content_type("text/plain");
-    return http_response.Pass();
+    return std::move(http_response);
   }
 
   // Returns a GURL hosted at embedded test server.
@@ -99,7 +99,7 @@ class TestNetworkQualityEstimator : public net::NetworkQualityEstimator {
   std::string current_network_id_;
 
   // Embedded server used for testing.
-  net::test_server::EmbeddedTestServer embedded_test_server_;
+  net::EmbeddedTestServer embedded_test_server_;
 
   DISALLOW_COPY_AND_ASSIGN(TestNetworkQualityEstimator);
 };
@@ -716,8 +716,8 @@ TEST(NetworkQualityEstimatorTest, TestGetMedianRTTSince) {
   std::map<std::string, std::string> variation_params;
   TestNetworkQualityEstimator estimator(variation_params);
   base::TimeTicks now = base::TimeTicks::Now();
-  base::TimeTicks old =
-      base::TimeTicks::Now() - base::TimeDelta::FromMilliseconds(1);
+  base::TimeTicks old = now - base::TimeDelta::FromMilliseconds(1);
+  ASSERT_NE(old, now);
 
   // First sample has very old timestamp.
   estimator.downstream_throughput_kbps_observations_.AddObservation(
@@ -808,7 +808,7 @@ TEST(NetworkQualityEstimatorTest, InvalidExternalEstimateProvider) {
       invalid_external_estimate_provider);
 
   TestNetworkQualityEstimator estimator(std::map<std::string, std::string>(),
-                                        external_estimate_provider.Pass());
+                                        std::move(external_estimate_provider));
 
   base::TimeDelta rtt;
   int32_t kbps;
@@ -906,7 +906,7 @@ TEST(NetworkQualityEstimatorTest, TestExternalEstimateProvider) {
       test_external_estimate_provider);
   std::map<std::string, std::string> variation_params;
   TestNetworkQualityEstimator estimator(variation_params,
-                                        external_estimate_provider.Pass());
+                                        std::move(external_estimate_provider));
 
   base::TimeDelta rtt;
   int32_t kbps;
@@ -981,7 +981,7 @@ TEST(NetworkQualityEstimatorTest, TestExternalEstimateProviderMergeEstimates) {
 
   std::map<std::string, std::string> variation_params;
   TestNetworkQualityEstimator estimator(variation_params,
-                                        external_estimate_provider.Pass());
+                                        std::move(external_estimate_provider));
 
   base::TimeDelta rtt;
   // Estimate provided by network quality estimator should match the estimate
@@ -1058,6 +1058,26 @@ TEST(NetworkQualityEstimatorTest, TestObservers) {
     EXPECT_LE(0, (observation.timestamp - then).InMilliseconds());
     EXPECT_EQ(NetworkQualityEstimator::URL_REQUEST, observation.source);
   }
+
+  // Verify that observations from TCP and QUIC are passed on to the observers.
+  base::TimeDelta tcp_rtt(base::TimeDelta::FromMilliseconds(1));
+  base::TimeDelta quic_rtt(base::TimeDelta::FromMilliseconds(2));
+
+  scoped_ptr<SocketPerformanceWatcher> tcp_watcher =
+      estimator.CreateSocketPerformanceWatcher(
+          SocketPerformanceWatcherFactory::PROTOCOL_TCP);
+  scoped_ptr<SocketPerformanceWatcher> quic_watcher =
+      estimator.CreateSocketPerformanceWatcher(
+          SocketPerformanceWatcherFactory::PROTOCOL_QUIC);
+  tcp_watcher->OnUpdatedRTTAvailable(tcp_rtt);
+  quic_watcher->OnUpdatedRTTAvailable(quic_rtt);
+
+  EXPECT_EQ(4U, rtt_observer.observations().size());
+  EXPECT_EQ(2U, throughput_observer.observations().size());
+
+  EXPECT_EQ(tcp_rtt.InMilliseconds(), rtt_observer.observations().at(2).rtt_ms);
+  EXPECT_EQ(quic_rtt.InMilliseconds(),
+            rtt_observer.observations().at(3).rtt_ms);
 }
 
 }  // namespace net

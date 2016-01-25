@@ -52,9 +52,6 @@ class MEDIA_EXPORT AudioOutputIPCDelegate {
                                base::SyncSocket::Handle socket_handle,
                                int length) = 0;
 
-  // Called when an attempt to switch the output device has been completed
-  virtual void OnOutputDeviceSwitched(OutputDeviceStatus result) = 0;
-
   // Called when the AudioOutputIPC object is going away and/or when the IPC
   // channel has been closed and no more ipc requests can be made.
   // Implementations should delete their owned AudioOutputIPC instance
@@ -75,11 +72,14 @@ class MEDIA_EXPORT AudioOutputIPC {
 
   // Sends a request to authorize the use of a specific audio output device
   // in the peer process.
-  // If |session_id| is nonzero, the browser selects the output device
-  // associated with an opened input device indicated by |session_id|. If no
-  // such device is found, the browser attempts to select the device indicated
-  // by |device_id|. If |device_id| is the empty string, the default
-  // audio output device will be selected.
+  // If |device_id| is nonempty, the browser selects the device
+  // indicated by |device_id|, regardless of the value of |session_id|.
+  // If |device_id| is empty and |session_id| is nonzero, the browser selects
+  // the output device associated with an opened input device indicated by
+  // |session_id|. If no such device is found, the default device will be
+  // selected.
+  // If |device_id| is empty and |session_id| is zero, the browser selects
+  // the default device.
   // Once the authorization process is complete, the implementation will
   // notify |delegate| by calling OnDeviceAuthorized().
   virtual void RequestDeviceAuthorization(
@@ -91,6 +91,8 @@ class MEDIA_EXPORT AudioOutputIPC {
   // Sends a request to create an AudioOutputController object in the peer
   // process and configures it to use the specified audio |params| including
   // number of synchronized input channels.
+  // If no authorization for an output device has been previously requested,
+  // the default device will be used.
   // Once the stream has been created, the implementation will notify
   // |delegate| by calling OnStreamCreated().
   virtual void CreateStream(AudioOutputIPCDelegate* delegate,
@@ -110,10 +112,6 @@ class MEDIA_EXPORT AudioOutputIPC {
 
   // Sets the volume of the audio stream.
   virtual void SetVolume(double volume) = 0;
-
-  // Switches the output device of the audio stream.
-  virtual void SwitchOutputDevice(const std::string& device_id,
-                                  const url::Origin& security_origin) = 0;
 };
 
 }  // namespace media

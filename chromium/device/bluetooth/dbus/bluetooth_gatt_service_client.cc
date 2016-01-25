@@ -5,6 +5,7 @@
 #include "device/bluetooth/dbus/bluetooth_gatt_service_client.h"
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "dbus/bus.h"
@@ -95,7 +96,7 @@ class BluetoothGattServiceClientImpl : public BluetoothGattServiceClient,
   }
 
  protected:
-  // chromeos::DBusClient override.
+  // bluez::DBusClient override.
   void Init(dbus::Bus* bus) override {
     object_manager_ = bus->GetObjectManager(
         bluetooth_object_manager::kBluetoothObjectManagerServiceName,

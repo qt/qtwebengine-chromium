@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebURLRequest.h"
 
 #include "platform/exported/WebURLRequestPrivate.h"
@@ -37,6 +36,8 @@
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebURL.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
@@ -63,7 +64,8 @@ private:
 
 // The standard implementation of WebURLRequestPrivate, which maintains
 // ownership of a ResourceRequest instance.
-class WebURLRequestPrivateImpl : public WebURLRequestPrivate {
+class WebURLRequestPrivateImpl final : public WebURLRequestPrivate {
+    USING_FAST_MALLOC(WebURLRequestPrivate);
 public:
     WebURLRequestPrivateImpl()
     {
@@ -247,7 +249,7 @@ WebReferrerPolicy WebURLRequest::referrerPolicy() const
 
 void WebURLRequest::addHTTPOriginIfNeeded(const WebString& origin)
 {
-    m_private->m_resourceRequest->addHTTPOriginIfNeeded(origin);
+    m_private->m_resourceRequest->addHTTPOriginIfNeeded(WebSecurityOrigin::createFromString(origin));
 }
 
 bool WebURLRequest::hasUserGesture() const
@@ -368,6 +370,16 @@ WebURLRequest::FetchRedirectMode WebURLRequest::fetchRedirectMode() const
 void WebURLRequest::setFetchRedirectMode(WebURLRequest::FetchRedirectMode redirect)
 {
     return m_private->m_resourceRequest->setFetchRedirectMode(redirect);
+}
+
+WebURLRequest::LoFiState WebURLRequest::loFiState() const
+{
+    return m_private->m_resourceRequest->loFiState();
+}
+
+void WebURLRequest::setLoFiState(WebURLRequest::LoFiState loFiState)
+{
+    return m_private->m_resourceRequest->setLoFiState(loFiState);
 }
 
 WebURLRequest::ExtraData* WebURLRequest::extraData() const

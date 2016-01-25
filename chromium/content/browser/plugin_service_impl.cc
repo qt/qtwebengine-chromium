@@ -4,6 +4,8 @@
 
 #include "content/browser/plugin_service_impl.h"
 
+#include <stddef.h>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -15,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -174,7 +177,7 @@ PluginServiceImpl::~PluginServiceImpl() {
 }
 
 void PluginServiceImpl::Init() {
-  plugin_list_token_ = BrowserThread::GetBlockingPool()->GetSequenceToken();
+  plugin_list_token_ = base::SequencedWorkerPool::GetSequenceToken();
   PluginList::Singleton()->set_will_load_plugins_callback(
       base::Bind(&WillLoadPluginsCallback, plugin_list_token_));
 

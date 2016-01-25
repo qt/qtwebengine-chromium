@@ -37,6 +37,10 @@
 // from browserAccessibility_.
 - (ui::AXRole)internalRole;
 
+// Convenience method to determine if this object should expose its
+// accessible name in AXValue (as opposed to AXTitle/AXDescription).
+- (bool)shouldExposeNameInAXValue;
+
 // Convenience method to get the BrowserAccessibilityDelegate from
 // the manager.
 - (content::BrowserAccessibilityDelegate*)delegate;
@@ -53,6 +57,9 @@
 
 // Swap the children array with the given scoped_nsobject.
 - (void)swapChildren:(base::scoped_nsobject<NSMutableArray>*)other;
+
+// Returns the requested text range from this object's value attribute.
+- (NSString*)valueForRange:(NSRange)range;
 
 // Internally-used method.
 @property(nonatomic, readonly) NSPoint origin;

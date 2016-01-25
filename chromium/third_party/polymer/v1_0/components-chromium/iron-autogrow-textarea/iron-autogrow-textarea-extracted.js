@@ -1,6 +1,4 @@
-
-
-  Polymer({
+Polymer({
 
     is: 'iron-autogrow-textarea',
 
@@ -14,6 +12,8 @@
 
       /**
        * Use this property instead of `value` for two-way data binding.
+       *
+       * @type {string|number|undefined|null}
        */
       bindValue: {
         observer: '_bindValueChanged',
@@ -188,7 +188,14 @@
         return;
       }
 
-      textarea.value = this.bindValue;
+      // If the bindValue changed manually, then we need to also update
+      // the underlying textarea's value. Otherwise this change was probably
+      // generated from the _onInput handler, and the two values are already
+      // the same.
+      if (textarea.value !== this.bindValue) {
+        textarea.value = !(this.bindValue || this.bindValue === 0) ? '' : this.bindValue;
+      }
+
       this.$.mirror.innerHTML = this._valueForMirror();
       // manually notify because we don't want to notify until after setting value
       this.fire('bind-value-changed', {value: this.bindValue});
@@ -210,7 +217,8 @@
       while (this.rows > 0 && _tokens.length < this.rows) {
         _tokens.push('');
       }
-      return _tokens.join('<br>') + '&nbsp;';
+      // Use &#160; instead &nbsp; of to allow this element to be used in XHTML.
+      return _tokens.join('<br/>') + '&#160;';
     },
 
     _valueForMirror: function() {

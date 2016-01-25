@@ -3,22 +3,22 @@
 # found in the LICENSE file.
 
 config("config") {
-  include_dirs = [
-    "trunk/include",
-    "../libc++abi/trunk/include",
-  ]
   cflags = [
+    "-isystem" + rebase_path("trunk/include", root_build_dir),
+    "-isystem" + rebase_path("../libc++abi/trunk/include", root_build_dir),
     "-fPIC",
     "-fstrict-aliasing",
     "-nostdinc++",
     "-pthread",
     "-std=c++11",
+    "-DLIBCXX_BUILDING_LIBCXXABI",
   ]
 }
 
 shared_library("libc++") {
   sources = [
     "trunk/src/algorithm.cpp",
+    "trunk/src/any.cpp",
     "trunk/src/bind.cpp",
     "trunk/src/chrono.cpp",
     "trunk/src/condition_variable.cpp",
@@ -58,6 +58,7 @@ shared_library("libc++") {
     "//build/config/sanitizers:sanitizer_options_link_helper",
   ]
 
+  defines = [ "LIBCXX_BUILDING_LIBCXXABI" ]
   ldflags = [ "-nodefaultlibs" ]
 
   # TODO(GYP): Remove "-pthread" from ldflags.

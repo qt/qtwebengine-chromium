@@ -5,6 +5,7 @@
 #include "ui/views/widget/widget.h"
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
@@ -56,13 +57,19 @@ void BuildRootLayers(View* view, std::vector<ui::Layer*>* layers) {
 // Create a native widget implementation.
 // First, use the supplied one if non-NULL.
 // Finally, make a default one.
-NativeWidget* CreateNativeWidget(NativeWidget* native_widget,
+NativeWidget* CreateNativeWidget(const Widget::InitParams& params,
                                  internal::NativeWidgetDelegate* delegate) {
-  if (!native_widget) {
-    native_widget =
-        internal::NativeWidgetPrivate::CreateNativeWidget(delegate);
+  if (params.native_widget)
+    return params.native_widget;
+
+  ViewsDelegate* views_delegate = ViewsDelegate::GetInstance();
+  if (views_delegate && !views_delegate->native_widget_factory().is_null()) {
+    NativeWidget* native_widget =
+        views_delegate->native_widget_factory().Run(params, delegate);
+    if (native_widget)
+      return native_widget;
   }
-  return native_widget;
+  return internal::NativeWidgetPrivate::CreateNativeWidget(delegate);
 }
 
 void NotifyCaretBoundsChanged(ui::InputMethod* input_method) {
@@ -105,7 +112,7 @@ class DefaultWidgetDelegate : public WidgetDelegate {
 
 Widget::InitParams::InitParams()
     : type(TYPE_WINDOW),
-      delegate(NULL),
+      delegate(nullptr),
       child(false),
       opacity(INFER_OPACITY),
       accept_events(true),
@@ -118,18 +125,19 @@ Widget::InitParams::InitParams()
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
-      parent(NULL),
-      native_widget(NULL),
-      desktop_window_tree_host(NULL),
+      parent(nullptr),
+      native_widget(nullptr),
+      native_theme(nullptr),
+      desktop_window_tree_host(nullptr),
       layer_type(ui::LAYER_TEXTURED),
-      context(NULL),
+      context(nullptr),
       force_show_in_taskbar(false),
       force_software_compositing(false) {
 }
 
 Widget::InitParams::InitParams(Type type)
     : type(type),
-      delegate(NULL),
+      delegate(nullptr),
       child(false),
       opacity(INFER_OPACITY),
       accept_events(true),
@@ -142,11 +150,12 @@ Widget::InitParams::InitParams(Type type)
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
-      parent(NULL),
-      native_widget(NULL),
-      desktop_window_tree_host(NULL),
+      parent(nullptr),
+      native_widget(nullptr),
+      native_theme(nullptr),
+      desktop_window_tree_host(nullptr),
       layer_type(ui::LAYER_TEXTURED),
-      context(NULL),
+      context(nullptr),
       force_show_in_taskbar(false),
       force_software_compositing(false) {
 }
@@ -158,10 +167,11 @@ Widget::InitParams::~InitParams() {
 // Widget, public:
 
 Widget::Widget()
-    : native_widget_(NULL),
-      widget_delegate_(NULL),
-      non_client_view_(NULL),
-      dragged_view_(NULL),
+    : native_widget_(nullptr),
+      native_theme_(nullptr),
+      widget_delegate_(nullptr),
+      non_client_view_(nullptr),
+      dragged_view_(nullptr),
       ownership_(InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       is_secondary_widget_(true),
       frame_type_(FRAME_TYPE_DEFAULT),
@@ -351,8 +361,7 @@ void Widget::Init(const InitParams& in_params) {
   widget_delegate_->set_can_activate(can_activate);
 
   ownership_ = params.ownership;
-  native_widget_ = CreateNativeWidget(params.native_widget, this)->
-                   AsNativeWidgetPrivate();
+  native_widget_ = CreateNativeWidget(params, this)->AsNativeWidgetPrivate();
   root_view_.reset(CreateRootView());
   default_theme_provider_.reset(new ui::DefaultThemeProvider);
   if (params.type == InitParams::TYPE_MENU) {
@@ -360,6 +369,7 @@ void Widget::Init(const InitParams& in_params) {
         internal::NativeWidgetPrivate::IsMouseButtonDown();
   }
   native_widget_->InitNativeWidget(params);
+  native_theme_ = params.native_theme;
   if (RequiresNonClientView(params.type)) {
     non_client_view_ = new NonClientView;
     non_client_view_->SetFrameView(CreateNonClientFrameView());
@@ -387,6 +397,7 @@ void Widget::Init(const InitParams& in_params) {
   // the correct NativeTheme (on Linux). See http://crbug.com/384492
   observer_manager_.Add(GetNativeTheme());
   native_widget_initialized_ = true;
+  native_widget_->OnWidgetInitDone();
 }
 
 // Unconverted methods (see header) --------------------------------------------
@@ -627,8 +638,10 @@ void Widget::Show() {
         !IsFullscreen()) {
       native_widget_->ShowMaximizedWithBounds(initial_restored_bounds_);
     } else {
-      native_widget_->ShowWithWindowState(
-          IsFullscreen() ? ui::SHOW_STATE_FULLSCREEN : saved_show_state_);
+      ui::WindowShowState show_state =
+          IsFullscreen() ? ui::SHOW_STATE_FULLSCREEN :
+          IsMinimized() ? ui::SHOW_STATE_MINIMIZED : saved_show_state_;
+      native_widget_->ShowWithWindowState(show_state);
     }
     // |saved_show_state_| only applies the first time the window is shown.
     // If we don't reset the value the window may be shown maximized every time
@@ -744,12 +757,12 @@ bool Widget::IsVisible() const {
   return native_widget_->IsVisible();
 }
 
-ui::ThemeProvider* Widget::GetThemeProvider() const {
+const ui::ThemeProvider* Widget::GetThemeProvider() const {
   const Widget* root_widget = GetTopLevelWidget();
   if (root_widget && root_widget != this) {
     // Attempt to get the theme provider, and fall back to the default theme
     // provider if not found.
-    ui::ThemeProvider* provider = root_widget->GetThemeProvider();
+    const ui::ThemeProvider* provider = root_widget->GetThemeProvider();
     if (provider)
       return provider;
 
@@ -761,7 +774,7 @@ ui::ThemeProvider* Widget::GetThemeProvider() const {
 }
 
 const ui::NativeTheme* Widget::GetNativeTheme() const {
-  return native_widget_->GetNativeTheme();
+  return native_theme_? native_theme_ : native_widget_->GetNativeTheme();
 }
 
 FocusManager* Widget::GetFocusManager() {
@@ -1437,9 +1450,16 @@ void Widget::SetInitialBounds(const gfx::Rect& bounds) {
     }
   } else {
     if (bounds.IsEmpty()) {
-      // No initial bounds supplied, so size the window to its content and
-      // center over its parent.
-      native_widget_->CenterWindow(non_client_view_->GetPreferredSize());
+      if (bounds.origin().IsOrigin()) {
+        // No initial bounds supplied, so size the window to its content and
+        // center over its parent.
+        native_widget_->CenterWindow(non_client_view_->GetPreferredSize());
+      } else {
+        // Use the preferred size and the supplied origin.
+        gfx::Rect preferred_bounds(bounds);
+        preferred_bounds.set_size(non_client_view_->GetPreferredSize());
+        SetBoundsConstrained(preferred_bounds);
+      }
     } else {
       // Use the supplied initial bounds.
       SetBoundsConstrained(bounds);

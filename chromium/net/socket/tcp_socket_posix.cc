@@ -21,9 +21,9 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/base/network_activity_monitor.h"
 #include "net/base/network_change_notifier.h"
+#include "net/base/sockaddr_storage.h"
 #include "net/socket/socket_net_log_params.h"
 #include "net/socket/socket_posix.h"
 
@@ -404,14 +404,14 @@ int TCPSocketPosix::SetAddressReuse(bool allow) {
   return OK;
 }
 
-int TCPSocketPosix::SetReceiveBufferSize(int32 size) {
+int TCPSocketPosix::SetReceiveBufferSize(int32_t size) {
   DCHECK(socket_);
   int rv = setsockopt(socket_->socket_fd(), SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
   return (rv == 0) ? OK : MapSystemError(errno);
 }
 
-int TCPSocketPosix::SetSendBufferSize(int32 size) {
+int TCPSocketPosix::SetSendBufferSize(int32_t size) {
   DCHECK(socket_);
   int rv = setsockopt(socket_->socket_fd(), SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
@@ -463,6 +463,10 @@ void TCPSocketPosix::EnableTCPFastOpenIfSupported() {
 
 bool TCPSocketPosix::IsValid() const {
   return socket_ != NULL && socket_->socket_fd() != kInvalidSocket;
+}
+
+void TCPSocketPosix::DetachFromThread() {
+  socket_->DetachFromThread();
 }
 
 void TCPSocketPosix::StartLoggingMultipleConnectAttempts(
@@ -535,7 +539,7 @@ int TCPSocketPosix::HandleConnectCompleted(int rv) const {
   // Log the end of this attempt (and any OS error it threw).
   if (rv != OK) {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT,
-                      NetLog::IntegerCallback("os_error", errno));
+                      NetLog::IntCallback("os_error", errno));
   } else {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT);
   }

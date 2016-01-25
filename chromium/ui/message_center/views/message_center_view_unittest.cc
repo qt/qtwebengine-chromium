@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/message_center/views/message_center_view.h"
+
 #include <map>
+#include <utility>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -14,7 +18,6 @@
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/views/message_center_controller.h"
-#include "ui/message_center/views/message_center_view.h"
 #include "ui/message_center/views/message_list_view.h"
 #include "ui/message_center/views/notification_view.h"
 
@@ -127,9 +130,12 @@ class MessageCenterViewTest : public testing::Test,
   bool HasClickedListener(const std::string& notification_id) override;
   void ClickOnNotificationButton(const std::string& notification_id,
                                  int button_index) override;
+  void ClickOnSettingsButton(const std::string& notification_id) override;
 
   // Overridden from MockNotificationView::Test
   void RegisterCall(CallType type) override;
+
+  void FireOnMouseExitedEvent();
 
   void LogBounds(int depth, views::View* view);
 
@@ -188,6 +194,7 @@ void MessageCenterViewTest::SetUp() {
 
 void MessageCenterViewTest::TearDown() {
   message_center_view_.reset();
+  STLDeleteElements(&notifications_);
 }
 
 MessageCenterView* MessageCenterViewTest::GetMessageCenterView() {
@@ -238,6 +245,7 @@ void MessageCenterViewTest::UpdateNotification(
     scoped_ptr<Notification> notification) {
   for (auto it = notifications_.begin(); it != notifications_.end(); it++) {
     if ((*it)->id() == notification_id) {
+      delete *it;
       notifications_.erase(it);
       break;
     }
@@ -254,6 +262,7 @@ void MessageCenterViewTest::RemoveNotification(
     bool by_user) {
   for (auto it = notifications_.begin(); it != notifications_.end(); it++) {
     if ((*it)->id() == notification_id) {
+      delete *it;
       notifications_.erase(it);
       break;
     }
@@ -282,8 +291,24 @@ void MessageCenterViewTest::ClickOnNotificationButton(
   NOTREACHED();
 }
 
+void MessageCenterViewTest::ClickOnSettingsButton(
+    const std::string& notification_id) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
 void MessageCenterViewTest::RegisterCall(CallType type) {
   callCounts_[type] += 1;
+}
+
+void MessageCenterViewTest::FireOnMouseExitedEvent() {
+  ui::MouseEvent dummy_event(ui::ET_MOUSE_EXITED /* type */,
+                             gfx::Point(0,0) /* location */,
+                             gfx::Point(0,0) /* root location */,
+                             base::TimeDelta() /* time_stamp */,
+                             0 /* flags */,
+                             0 /*changed_button_flags */);
+  message_center_view_->OnMouseExited(dummy_event);
 }
 
 void MessageCenterViewTest::LogBounds(int depth, views::View* view) {
@@ -299,13 +324,7 @@ void MessageCenterViewTest::LogBounds(int depth, views::View* view) {
 
 /* Unit tests *****************************************************************/
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_CallTest DISABLED_CallTest
-#else
-#define MAYBE_CallTest CallTest
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_CallTest) {
+TEST_F(MessageCenterViewTest, CallTest) {
   // Verify that this didn't generate more than 2 Layout() call per descendant
   // NotificationView or more than a total of 20 GetPreferredSize() and
   // GetHeightForWidth() calls per descendant NotificationView. 20 is a very
@@ -317,13 +336,7 @@ TEST_F(MessageCenterViewTest, MAYBE_CallTest) {
             GetNotificationCount() * 20);
 }
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_Size DISABLED_Size
-#else
-#define MAYBE_Size Size
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_Size) {
+TEST_F(MessageCenterViewTest, Size) {
   EXPECT_EQ(2, GetMessageListView()->child_count());
   EXPECT_EQ(GetMessageListView()->height(),
             GetCalculatedMessageListViewHeight());
@@ -338,13 +351,7 @@ TEST_F(MessageCenterViewTest, MAYBE_Size) {
           GetMessageListView()->GetInsets().height());
 }
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_SizeAfterUpdate DISABLED_SizeAfterUpdate
-#else
-#define MAYBE_SizeAfterUpdate SizeAfterUpdate
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_SizeAfterUpdate) {
+TEST_F(MessageCenterViewTest, SizeAfterUpdate) {
   EXPECT_EQ(2, GetMessageListView()->child_count());
   int width =
       GetMessageListView()->width() - GetMessageListView()->GetInsets().width();
@@ -366,7 +373,7 @@ TEST_F(MessageCenterViewTest, MAYBE_SizeAfterUpdate) {
 
   int previous_height = GetMessageListView()->height();
 
-  UpdateNotification(kNotificationId2, notification.Pass());
+  UpdateNotification(kNotificationId2, std::move(notification));
 
   // Wait until the animation finishes if available.
   if (GetAnimator()->IsAnimating())
@@ -387,13 +394,7 @@ TEST_F(MessageCenterViewTest, MAYBE_SizeAfterUpdate) {
           GetMessageListView()->GetInsets().height());
 }
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_SizeAfterRemove DISABLED_SizeAfterRemove
-#else
-#define MAYBE_SizeAfterRemove SizeAfterRemove
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_SizeAfterRemove) {
+TEST_F(MessageCenterViewTest, SizeAfterRemove) {
   EXPECT_EQ(2, GetMessageListView()->child_count());
   RemoveNotification(kNotificationId1, false);
 
@@ -412,13 +413,7 @@ TEST_F(MessageCenterViewTest, MAYBE_SizeAfterRemove) {
                 GetMessageListView()->GetInsets().height());
 }
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_PositionAfterUpdate DISABLED_PositionAfterUpdate
-#else
-#define MAYBE_PositionAfterUpdate PositionAfterUpdate
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_PositionAfterUpdate) {
+TEST_F(MessageCenterViewTest, PositionAfterUpdate) {
   // Make sure that the notification 2 is placed above the notification 1.
   EXPECT_LT(GetNotificationView(kNotificationId2)->bounds().y(),
             GetNotificationView(kNotificationId1)->bounds().y());
@@ -436,7 +431,7 @@ TEST_F(MessageCenterViewTest, MAYBE_PositionAfterUpdate) {
       gfx::Image(), base::UTF8ToUTF16("display source"), GURL(),
       NotifierId(NotifierId::APPLICATION, "extension_id"),
       message_center::RichNotificationData(), NULL));
-  UpdateNotification(kNotificationId2, notification.Pass());
+  UpdateNotification(kNotificationId2, std::move(notification));
 
   // Wait until the animation finishes if available.
   if (GetAnimator()->IsAnimating())
@@ -450,13 +445,7 @@ TEST_F(MessageCenterViewTest, MAYBE_PositionAfterUpdate) {
             current_vertical_pos_from_bottom);
 }
 
-// TODO(yoshiki): Fix this test on Linux ASAN http://crbug.com/537265
-#if defined(ADDRESS_SANITIZER)
-#define MAYBE_PositionAfterRemove DISABLED_PositionAfterRemove
-#else
-#define MAYBE_PositionAfterRemove PositionAfterRemove
-#endif  // ADDRESS_SANITIZER
-TEST_F(MessageCenterViewTest, MAYBE_PositionAfterRemove) {
+TEST_F(MessageCenterViewTest, PositionAfterRemove) {
   // Make sure that the notification 2 is placed above the notification 1.
   EXPECT_LT(GetNotificationView(kNotificationId2)->bounds().y(),
             GetNotificationView(kNotificationId1)->bounds().y());
@@ -466,6 +455,8 @@ TEST_F(MessageCenterViewTest, MAYBE_PositionAfterRemove) {
   int previous_height = GetMessageListView()->height();
   int previous_notification2_y =
       GetNotificationView(kNotificationId2)->bounds().y();
+  int previous_notification2_height =
+      GetNotificationView(kNotificationId2)->bounds().height();
 
   EXPECT_EQ(2, GetMessageListView()->child_count());
   RemoveNotification(kNotificationId2, false);
@@ -483,8 +474,18 @@ TEST_F(MessageCenterViewTest, MAYBE_PositionAfterRemove) {
   // The size should be kept.
   EXPECT_EQ(previous_height, GetMessageListView()->height());
 
+  // Notification 2 is successfully removed.
   EXPECT_FALSE(GetNotificationView(kNotificationId2));
   EXPECT_TRUE(GetNotificationView(kNotificationId1));
+
+  // Mouse cursor moves out of the message center. This resets the reposition
+  // target in the message list.
+  FireOnMouseExitedEvent();
+
+  // The height should shrink from the height of the removed notification 2.
+  EXPECT_EQ(previous_height - previous_notification2_height -
+                (kMarginBetweenItems - MessageView::GetShadowInsets().bottom()),
+            GetMessageListView()->height());
 }
 
 }  // namespace message_center

@@ -15,8 +15,8 @@
 #include <limits>
 #include <sstream>
 
-#include "webrtc/modules/pacing/include/paced_sender.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/modules/pacing/paced_sender.h"
 
 namespace webrtc {
 

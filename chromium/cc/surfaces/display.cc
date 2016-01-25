@@ -4,6 +4,8 @@
 
 #include "cc/surfaces/display.h"
 
+#include <stddef.h>
+
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/debug/benchmark_instrumentation.h"
@@ -54,7 +56,7 @@ Display::~Display() {
 
 bool Display::Initialize(scoped_ptr<OutputSurface> output_surface,
                          DisplayScheduler* scheduler) {
-  output_surface_ = output_surface.Pass();
+  output_surface_ = std::move(output_surface);
   scheduler_ = scheduler;
   return output_surface_->BindToClient(this);
 }
@@ -106,6 +108,7 @@ void Display::InitializeRenderer() {
       output_surface_.get(), bitmap_manager_, gpu_memory_buffer_manager_,
       nullptr, settings_.highp_threshold_min,
       settings_.texture_id_allocation_chunk_size,
+      settings_.use_gpu_memory_buffer_resources,
       std::vector<unsigned>(static_cast<size_t>(gfx::BufferFormat::LAST) + 1,
                             GL_TEXTURE_2D));
   if (!resource_provider)
@@ -117,22 +120,22 @@ void Display::InitializeRenderer() {
         texture_mailbox_deleter_.get(), settings_.highp_threshold_min);
     if (!renderer)
       return;
-    renderer_ = renderer.Pass();
+    renderer_ = std::move(renderer);
   } else {
     scoped_ptr<SoftwareRenderer> renderer = SoftwareRenderer::Create(
         this, &settings_, output_surface_.get(), resource_provider.get());
     if (!renderer)
       return;
-    renderer_ = renderer.Pass();
+    renderer_ = std::move(renderer);
   }
 
-  resource_provider_ = resource_provider.Pass();
+  resource_provider_ = std::move(resource_provider);
   // TODO(jbauman): Outputting an incomplete quad list doesn't work when using
   // overlays.
   bool output_partial_list = renderer_->Capabilities().using_partial_swap &&
                              !output_surface_->GetOverlayCandidateValidator();
-  aggregator_.reset(new SurfaceAggregator(manager_, resource_provider_.get(),
-                                          output_partial_list));
+  aggregator_.reset(new SurfaceAggregator(
+      this, manager_, resource_provider_.get(), output_partial_list));
 }
 
 void Display::DidLoseOutputSurface() {
@@ -148,6 +151,31 @@ void Display::UpdateRootSurfaceResourcesLocked() {
   bool root_surface_resources_locked = !surface || !surface->GetEligibleFrame();
   if (scheduler_)
     scheduler_->SetRootSurfaceResourcesLocked(root_surface_resources_locked);
+}
+
+void Display::AddSurface(Surface* surface) {
+  // Checking for the output_surface ensures Display::Initialize has been
+  // called and that scheduler_ won't change its value.
+  DCHECK(output_surface_);
+
+  // WebView's HardwareRenderer will never have a scheduler.
+  if (!scheduler_)
+    return;
+
+  surface->AddBeginFrameSource(scheduler_->begin_frame_source_for_children());
+}
+
+void Display::RemoveSurface(Surface* surface) {
+  // Checking for the output_surface ensures Display::Initialize has been
+  // called and that scheduler_ won't change its value.
+  DCHECK(output_surface_);
+
+  // WebView's HardwareRenderer will never have a scheduler.
+  if (!scheduler_)
+    return;
+
+  surface->RemoveBeginFrameSource(
+      scheduler_->begin_frame_source_for_children());
 }
 
 bool Display::DrawAndSwap() {
@@ -186,21 +214,29 @@ bool Display::DrawAndSwap() {
                                       stored_latency_info_.end());
   stored_latency_info_.clear();
   bool have_copy_requests = false;
-  for (const auto* pass : frame_data->render_pass_list) {
+  for (const auto& pass : frame_data->render_pass_list) {
     have_copy_requests |= !pass->copy_requests.empty();
   }
 
   gfx::Size surface_size;
   bool have_damage = false;
   if (!frame_data->render_pass_list.empty()) {
-    surface_size = frame_data->render_pass_list.back()->output_rect.size();
-    have_damage =
-        !frame_data->render_pass_list.back()->damage_rect.size().IsEmpty();
+    RenderPass& last_render_pass = *frame_data->render_pass_list.back();
+    if (last_render_pass.output_rect.size() != current_surface_size_ &&
+        last_render_pass.damage_rect == last_render_pass.output_rect &&
+        !current_surface_size_.IsEmpty()) {
+      // Resize the output rect to the current surface size so that we won't
+      // skip the draw and so that the GL swap won't stretch the output.
+      last_render_pass.output_rect.set_size(current_surface_size_);
+      last_render_pass.damage_rect = last_render_pass.output_rect;
+    }
+    surface_size = last_render_pass.output_rect.size();
+    have_damage = !last_render_pass.damage_rect.size().IsEmpty();
   }
 
   bool size_matches = surface_size == current_surface_size_;
   if (!size_matches)
-    TRACE_EVENT_INSTANT0("cc", "Size missmatch.", TRACE_EVENT_SCOPE_THREAD);
+    TRACE_EVENT_INSTANT0("cc", "Size mismatch.", TRACE_EVENT_SCOPE_THREAD);
 
   bool should_draw = !frame->metadata.latency_info.empty() ||
                      have_copy_requests || (have_damage && size_matches);
@@ -261,6 +297,8 @@ void Display::DidSwapBuffers() {
 void Display::DidSwapBuffersComplete() {
   if (scheduler_)
     scheduler_->DidSwapBuffersComplete();
+  if (renderer_)
+    renderer_->SwapBuffersComplete();
 }
 
 void Display::CommitVSyncParameters(base::TimeTicks timebase,
@@ -272,7 +310,10 @@ void Display::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
   client_->SetMemoryPolicy(policy);
 }
 
-void Display::OnDraw() {
+void Display::OnDraw(const gfx::Transform& transform,
+                     const gfx::Rect& viewport,
+                     const gfx::Rect& clip,
+                     bool resourceless_software_draw) {
   NOTREACHED();
 }
 
@@ -286,13 +327,9 @@ void Display::ReclaimResources(const CompositorFrameAck* ack) {
   NOTREACHED();
 }
 
-void Display::SetExternalDrawConstraints(
-    const gfx::Transform& transform,
-    const gfx::Rect& viewport,
-    const gfx::Rect& clip,
-    const gfx::Rect& viewport_rect_for_tile_priority,
-    const gfx::Transform& transform_for_tile_priority,
-    bool resourceless_software_draw) {
+void Display::SetExternalTilePriorityConstraints(
+    const gfx::Rect& viewport_rect,
+    const gfx::Transform& transform) {
   NOTREACHED();
 }
 

@@ -5,8 +5,10 @@
 #include "net/spdy/hpack/hpack_encoder.h"
 
 #include <algorithm>
+#include <limits>
 
 #include "base/logging.h"
+#include "net/spdy/hpack/hpack_constants.h"
 #include "net/spdy/hpack/hpack_header_table.h"
 #include "net/spdy/hpack/hpack_huffman_table.h"
 #include "net/spdy/hpack/hpack_output_stream.h"
@@ -18,15 +20,16 @@ using std::string;
 
 HpackEncoder::HpackEncoder(const HpackHuffmanTable& table)
     : output_stream_(),
-      allow_huffman_compression_(true),
       huffman_table_(table),
-      char_counts_(NULL),
-      total_char_counts_(NULL) {}
+      min_table_size_setting_received_(std::numeric_limits<size_t>::max()),
+      allow_huffman_compression_(true),
+      should_emit_table_size_(false) {}
 
 HpackEncoder::~HpackEncoder() {}
 
 bool HpackEncoder::EncodeHeaderSet(const SpdyHeaderBlock& header_set,
                                    string* output) {
+  MaybeEmitTableSize();
   // Separate header set into pseudo-headers and regular headers.
   Representations pseudo_headers;
   Representations regular_headers;
@@ -37,7 +40,8 @@ bool HpackEncoder::EncodeHeaderSet(const SpdyHeaderBlock& header_set,
       // a map.
       found_cookie = true;
       CookieToCrumbs(header, &regular_headers);
-    } else if (header.first[0] == kPseudoHeaderPrefix) {
+    } else if (!header.first.empty() &&
+               header.first[0] == kPseudoHeaderPrefix) {
       DecomposeRepresentation(header, &pseudo_headers);
     } else {
       DecomposeRepresentation(header, &regular_headers);
@@ -87,6 +91,7 @@ bool HpackEncoder::EncodeHeaderSetWithoutCompression(
     const SpdyHeaderBlock& header_set,
     string* output) {
   allow_huffman_compression_ = false;
+  MaybeEmitTableSize();
   for (const auto& header : header_set) {
     // Note that cookies are not crumbled in this case.
     EmitNonIndexedLiteral(header);
@@ -94,6 +99,18 @@ bool HpackEncoder::EncodeHeaderSetWithoutCompression(
   allow_huffman_compression_ = true;
   output_stream_.TakeString(output);
   return true;
+}
+
+void HpackEncoder::ApplyHeaderTableSizeSetting(size_t size_setting) {
+  if (size_setting == header_table_.settings_size_bound()) {
+    return;
+  }
+  if (size_setting < header_table_.settings_size_bound()) {
+    min_table_size_setting_received_ =
+        std::min(size_setting, min_table_size_setting_received_);
+  }
+  header_table_.SetSettingsHeaderTableSize(size_setting);
+  should_emit_table_size_ = true;
 }
 
 void HpackEncoder::EmitIndex(const HpackEntry* entry) {
@@ -138,24 +155,21 @@ void HpackEncoder::EmitString(StringPiece str) {
     output_stream_.AppendUint32(str.size());
     output_stream_.AppendBytes(str);
   }
-  UpdateCharacterCounts(str);
 }
 
-void HpackEncoder::SetCharCountsStorage(std::vector<size_t>* char_counts,
-                                        size_t* total_char_counts) {
-  CHECK_LE(256u, char_counts->size());
-  char_counts_ = char_counts;
-  total_char_counts_ = total_char_counts;
-}
-
-void HpackEncoder::UpdateCharacterCounts(base::StringPiece str) {
-  if (char_counts_ == NULL || total_char_counts_ == NULL) {
+void HpackEncoder::MaybeEmitTableSize() {
+  if (!should_emit_table_size_) {
     return;
   }
-  for (StringPiece::const_iterator it = str.begin(); it != str.end(); ++it) {
-    ++(*char_counts_)[static_cast<uint8>(*it)];
+  const size_t current_size = CurrentHeaderTableSizeSetting();
+  if (min_table_size_setting_received_ < current_size) {
+    output_stream_.AppendPrefix(kHeaderTableSizeUpdateOpcode);
+    output_stream_.AppendUint32(min_table_size_setting_received_);
   }
-  (*total_char_counts_) += str.size();
+  output_stream_.AppendPrefix(kHeaderTableSizeUpdateOpcode);
+  output_stream_.AppendUint32(current_size);
+  min_table_size_setting_received_ = std::numeric_limits<size_t>::max();
+  should_emit_table_size_ = false;
 }
 
 // static
@@ -198,8 +212,10 @@ void HpackEncoder::DecomposeRepresentation(const Representation& header_field,
   size_t end = 0;
   while (end != StringPiece::npos) {
     end = header_field.second.find('\0', pos);
-    out->push_back(std::make_pair(header_field.first,
-                                  header_field.second.substr(pos, end - pos)));
+    out->push_back(
+        std::make_pair(header_field.first,
+                       header_field.second.substr(
+                           pos, end == StringPiece::npos ? end : end - pos)));
     pos = end + 1;
   }
 }

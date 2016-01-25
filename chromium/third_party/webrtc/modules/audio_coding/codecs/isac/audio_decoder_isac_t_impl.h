@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_DECODER_ISAC_T_IMPL_H_
 
-#include "webrtc/modules/audio_coding/codecs/isac/main/interface/audio_decoder_isac.h"
+#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_decoder_isac.h"
 
 #include "webrtc/base/checks.h"
 
@@ -44,10 +44,6 @@ int AudioDecoderIsacT<T>::DecodeInternal(const uint8_t* encoded,
                                          int sample_rate_hz,
                                          int16_t* decoded,
                                          SpeechType* speech_type) {
-  // We want to crate the illusion that iSAC supports 48000 Hz decoding, while
-  // in fact it outputs 32000 Hz. This is the iSAC fullband mode.
-  if (sample_rate_hz == 48000)
-    sample_rate_hz = 32000;
   RTC_CHECK(sample_rate_hz == 16000 || sample_rate_hz == 32000)
       << "Unsupported sample rate " << sample_rate_hz;
   if (sample_rate_hz != decoder_sample_rate_hz_) {

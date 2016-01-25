@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/exported/WebActiveGestureAnimation.h"
 
 #include "public/platform/WebGestureCurve.h"
@@ -33,12 +32,12 @@ namespace blink {
 
 PassOwnPtr<WebActiveGestureAnimation> WebActiveGestureAnimation::createAtAnimationStart(PassOwnPtr<WebGestureCurve> curve, WebGestureCurveTarget* target)
 {
-    return adoptPtr(new WebActiveGestureAnimation(curve, target, 0, true));
+    return adoptPtr(new WebActiveGestureAnimation(std::move(curve), target, 0, true));
 }
 
 PassOwnPtr<WebActiveGestureAnimation> WebActiveGestureAnimation::createWithTimeOffset(PassOwnPtr<WebGestureCurve> curve, WebGestureCurveTarget* target, double startTime)
 {
-    return adoptPtr(new WebActiveGestureAnimation(curve, target, startTime, false));
+    return adoptPtr(new WebActiveGestureAnimation(std::move(curve), target, startTime, false));
 }
 
 WebActiveGestureAnimation::~WebActiveGestureAnimation()
@@ -48,7 +47,7 @@ WebActiveGestureAnimation::~WebActiveGestureAnimation()
 WebActiveGestureAnimation::WebActiveGestureAnimation(PassOwnPtr<WebGestureCurve> curve, WebGestureCurveTarget* target, double startTime, bool waitingForFirstTick)
     : m_startTime(startTime)
     , m_waitingForFirstTick(waitingForFirstTick)
-    , m_curve(curve)
+    , m_curve(std::move(curve))
     , m_target(target)
 {
 }

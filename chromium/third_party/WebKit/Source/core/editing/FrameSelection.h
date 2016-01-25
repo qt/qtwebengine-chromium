@@ -33,6 +33,7 @@
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
+#include "core/editing/iterators/TextIteratorFlags.h"
 #include "core/layout/ScrollAlignment.h"
 #include "platform/Timer.h"
 #include "platform/geometry/IntRect.h"
@@ -43,6 +44,7 @@
 namespace blink {
 
 class CharacterData;
+class CullRect;
 class LocalFrame;
 class GranularityStrategy;
 class GraphicsContext;
@@ -64,7 +66,7 @@ enum class SelectionDirectionalMode { NonDirectional, Directional };
 
 class CORE_EXPORT FrameSelection final : public NoBaseWillBeGarbageCollectedFinalized<FrameSelection>, private CaretBase {
     WTF_MAKE_NONCOPYABLE(FrameSelection);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FrameSelection);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FrameSelection);
 public:
     static PassOwnPtrWillBeRawPtr<FrameSelection> create(LocalFrame* frame = nullptr)
     {
@@ -81,6 +83,7 @@ public:
         DoNotSetFocus = 1 << 4,
         DoNotUpdateAppearance = 1 << 5,
         DoNotClearStrategy = 1 << 6,
+        DoNotAdjustInComposedTree = 1 << 7,
     };
     typedef unsigned SetSelectionOptions; // Union of values in SetSelectionOption and EUserTriggered
     static inline EUserTriggered selectionOptionsToUserTriggered(SetSelectionOptions options)
@@ -189,7 +192,7 @@ public:
     void setCaretRectNeedsUpdate();
     void scheduleVisualUpdate() const;
     void invalidateCaretRect();
-    void paintCaret(GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect);
+    void paintCaret(GraphicsContext&, const LayoutPoint&);
     bool ShouldPaintCaretForTesting() const { return m_shouldPaintCaret; }
 
     // Used to suspend caret blinking while the mouse is down.
@@ -223,7 +226,7 @@ public:
     void clearTypingStyle();
 
     String selectedHTMLForClipboard() const;
-    String selectedText() const;
+    String selectedText(TextIteratorBehavior = TextIteratorDefaultBehavior) const;
     String selectedTextForClipboard() const;
 
     // The bounds are clipped to the viewport as this is what callers expect.

@@ -48,15 +48,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // invalid.
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
-  // Like |GetDispatcher()|, but also removes the handle from the handle table.
-  // On success, gets the dispatcher for a given handle (which should not be
-  // |MOJO_HANDLE_INVALID|) and removes it. (On failure, returns an appropriate
-  // result (and leaves |dispatcher| alone), namely
-  // |MOJO_RESULT_INVALID_ARGUMENT| if there's no dispatcher for the given
-  // handle or |MOJO_RESULT_BUSY| if the handle is marked as busy.)
-  MojoResult GetAndRemoveDispatcher(MojoHandle handle,
-                                    scoped_refptr<Dispatcher>* dispatcher);
-
   // Watches on the given handle for the given signals, calling |callback| when
   // a signal is satisfied or when all signals become unsatisfiable. |callback|
   // must satisfy stringent requirements -- see |Awakable::Awake()| in
@@ -91,6 +82,20 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                       MojoDeadline deadline,
                       uint32_t* result_index,
                       MojoHandleSignalsState* signals_states);
+
+  // These methods correspond to the API functions defined in
+  // "mojo/public/c/system/wait_set.h":
+  MojoResult CreateWaitSet(MojoHandle* wait_set_handle);
+  MojoResult AddHandle(MojoHandle wait_set_handle,
+                       MojoHandle handle,
+                       MojoHandleSignals signals);
+  MojoResult RemoveHandle(MojoHandle wait_set_handle,
+                          MojoHandle handle);
+  MojoResult GetReadyHandles(MojoHandle wait_set_handle,
+                             uint32_t* count,
+                             MojoHandle* handles,
+                             MojoResult* results,
+                             MojoHandleSignalsState* signals_states);
 
   // These methods correspond to the API functions defined in
   // "mojo/public/c/system/message_pipe.h":

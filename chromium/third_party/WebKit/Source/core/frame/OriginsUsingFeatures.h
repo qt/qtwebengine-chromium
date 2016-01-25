@@ -19,7 +19,7 @@ class EventTarget;
 class ScriptState;
 
 class CORE_EXPORT OriginsUsingFeatures {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     ~OriginsUsingFeatures();
 
@@ -34,6 +34,7 @@ public:
         GeolocationInsecureOrigin,
         GetUserMediaInsecureOrigin,
         GetUserMediaSecureOrigin,
+        ElementAttachShadow,
 
         NumberOfFeatures // This must be the last item.
     };
@@ -46,7 +47,7 @@ public:
     void updateMeasurementsAndClear();
 
     class CORE_EXPORT Value {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         Value();
 

@@ -22,12 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioResampler.h"
-
 #include <algorithm>
 #include "wtf/MathExtras.h"
 
@@ -122,4 +117,3 @@ void AudioResampler::reset()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBObjectStore.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -421,7 +420,7 @@ public:
         return adoptRefWillBeNoop(new IndexPopulator(scriptState, database, transactionId, objectStoreId, indexMetadata));
     }
 
-    bool operator==(const EventListener& other) override
+    bool operator==(const EventListener& other) const override
     {
         return this == &other;
     }

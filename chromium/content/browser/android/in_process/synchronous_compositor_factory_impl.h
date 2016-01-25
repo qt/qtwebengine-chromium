@@ -28,7 +28,7 @@ class WebGraphicsContext3DInProcessCommandBufferImpl;
 namespace content {
 
 class InProcessChildThreadParams;
-class SynchronousCompositorContextProvider;
+class ContextProviderCommandBuffer;
 
 class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
  public:
@@ -40,22 +40,14 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
       override;
   scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id,
-      scoped_refptr<content::FrameSwapMessageQueue> frame_swap_message_queue)
-      override;
+      const scoped_refptr<FrameSwapMessageQueue>& frame_swap_message_queue,
+      const scoped_refptr<cc::ContextProvider>& onscreen_context,
+      const scoped_refptr<cc::ContextProvider>& worker_context) override;
   InputHandlerManagerClient* GetInputHandlerManagerClient() override;
   scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) override;
   scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
-      int view_id) override;
-  bool OverrideWithFactory() override;
-  scoped_refptr<cc_blink::ContextProviderWebContext>
-  CreateOffscreenContextProvider(
-      const blink::WebGraphicsContext3D::Attributes& attributes,
-      const std::string& debug_name) override;
-  gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl*
-  CreateOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes) override;
-  gpu::GPUInfo GetGPUInfo() const override;
+      int frame_id) override;
 
   SynchronousInputEventFilter* synchronous_input_event_filter() {
     return &synchronous_input_event_filter_;
@@ -63,37 +55,23 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
 
   void SetDeferredGpuService(
       scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
-  base::Thread* CreateInProcessGpuThread(
-      const InProcessChildThreadParams& params);
-  void SetUseIpcCommandBuffer();
   void CompositorInitializedHardwareDraw();
   void CompositorReleasedHardwareDraw();
 
 
  private:
-  scoped_refptr<cc::ContextProvider> CreateContextProviderForCompositor(
-      int surface_id,
-      CommandBufferContextType type);
   scoped_refptr<cc::ContextProvider> GetSharedWorkerContextProvider();
   bool CanCreateMainThreadContext();
   scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
       TryCreateStreamTextureFactory();
   void RestoreContextOnMainThread();
-  scoped_refptr<gpu::InProcessCommandBuffer::Service> GpuThreadService();
 
   SynchronousInputEventFilter synchronous_input_event_filter_;
 
   scoped_refptr<gpu::InProcessCommandBuffer::Service> android_view_service_;
-  scoped_refptr<gpu::InProcessCommandBuffer::Service> gpu_thread_service_;
 
   class VideoContextProvider;
   scoped_refptr<VideoContextProvider> video_context_provider_;
-
-  scoped_refptr<SynchronousCompositorContextProvider> shared_worker_context_;
-  scoped_refptr<cc_blink::ContextProviderWebContext>
-      in_process_shared_worker_context_;
-
-  bool use_ipc_command_buffer_;
 
   // |num_hardware_compositor_lock_| is updated on UI thread only but can be
   // read on renderer main thread.

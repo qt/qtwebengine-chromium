@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/PlatformEventController.h"
 
 #include "core/page/Page.h"
@@ -37,7 +36,7 @@ void PlatformEventController::startUpdating()
 
     if (hasLastData() && !m_timer.isActive()) {
         // Make sure to fire the data as soon as possible.
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
     }
 
     registerWithDispatcher();

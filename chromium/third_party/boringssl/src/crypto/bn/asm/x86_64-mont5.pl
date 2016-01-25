@@ -38,20 +38,12 @@ die "can't locate x86_64-xlate.pl";
 open OUT,"| \"$^X\" $xlate $flavour $output";
 *STDOUT=*OUT;
 
-if (`$ENV{CC} -Wa,-v -c -o /dev/null -x assembler /dev/null 2>&1`
-		=~ /GNU assembler version ([2-9]\.[0-9]+)/) {
-	$addx = ($1>=2.23);
-}
-
-if (!$addx && $win64 && ($flavour =~ /nasm/ || $ENV{ASM} =~ /nasm/) &&
-	    `nasm -v 2>&1` =~ /NASM version ([2-9]\.[0-9]+)/) {
-	$addx = ($1>=2.10);
-}
-
-if (!$addx && $win64 && ($flavour =~ /masm/ || $ENV{ASM} =~ /ml64/) &&
-	    `ml64 2>&1` =~ /Version ([0-9]+)\./) {
-	$addx = ($1>=12);
-}
+# In upstream, this is controlled by shelling out to the compiler to check
+# versions, but BoringSSL is intended to be used with pre-generated perlasm
+# output, so this isn't useful anyway.
+#
+# TODO(davidben): Enable this after testing. $addx goes up to 1.
+$addx = 0;
 
 # int bn_mul_mont_gather5(
 $rp="%rdi";	# BN_ULONG *rp,
@@ -1778,6 +1770,15 @@ sqr8x_reduction:
 .align	32
 .L8x_tail_done:
 	add	(%rdx),%r8		# can this overflow?
+	adc	\$0,%r9
+	adc	\$0,%r10
+	adc	\$0,%r11
+	adc	\$0,%r12
+	adc	\$0,%r13
+	adc	\$0,%r14
+	adc	\$0,%r15		# can't overflow, because we
+					# started with "overhung" part
+					# of multiplication
 	xor	%rax,%rax
 
 	neg	$carry
@@ -3124,6 +3125,15 @@ sqrx8x_reduction:
 .align	32
 .Lsqrx8x_tail_done:
 	add	24+8(%rsp),%r8		# can this overflow?
+	adc	\$0,%r9
+	adc	\$0,%r10
+	adc	\$0,%r11
+	adc	\$0,%r12
+	adc	\$0,%r13
+	adc	\$0,%r14
+	adc	\$0,%r15		# can't overflow, because we
+					# started with "overhung" part
+					# of multiplication
 	mov	$carry,%rax		# xor	%rax,%rax
 
 	sub	16+8(%rsp),$carry	# mov 16(%rsp),%cf
@@ -3167,13 +3177,11 @@ my ($rptr,$nptr)=("%rdx","%rbp");
 my @ri=map("%r$_",(10..13));
 my @ni=map("%r$_",(14..15));
 $code.=<<___;
-	xor	%rbx,%rbx
+	xor	%ebx,%ebx
 	sub	%r15,%rsi		# compare top-most words
 	adc	%rbx,%rbx
 	mov	%rcx,%r10		# -$num
-	.byte	0x67
 	or	%rbx,%rax
-	.byte	0x67
 	mov	%rcx,%r9		# -$num
 	xor	\$1,%rax
 	sar	\$3+2,%rcx		# cf=0

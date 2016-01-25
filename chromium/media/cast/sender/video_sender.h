@@ -6,6 +6,7 @@
 #define MEDIA_CAST_SENDER_VIDEO_SENDER_H_
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -13,6 +14,8 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
+#include "media/cast/cast_sender.h"
+#include "media/cast/common/rtp_time.h"
 #include "media/cast/sender/congestion_control.h"
 #include "media/cast/sender/frame_sender.h"
 
@@ -62,14 +65,6 @@ class VideoSender : public FrameSender,
  protected:
   int GetNumberOfFramesInEncoder() const final;
   base::TimeDelta GetInFlightMediaDuration() const final;
-  void OnAck(uint32 frame_id) final;
-
-  // Return the maximum target bitrate that should be used for the given video
-  // |frame|.  This will be provided to CongestionControl as a soft maximum
-  // limit, and should be interpreted as "the point above which the extra
-  // encoder CPU time + network bandwidth usage isn't warranted for the amount
-  // of further quality improvement to be gained."
-  static int GetMaximumTargetBitrateForFrame(const media::VideoFrame& frame);
 
  private:
   // Called by the |video_encoder_| with the next EncodedFrame to send.
@@ -89,7 +84,7 @@ class VideoSender : public FrameSender,
   base::TimeDelta duration_in_encoder_;
 
   // The timestamp of the frame that was last enqueued in |video_encoder_|.
-  RtpTimestamp last_enqueued_frame_rtp_timestamp_;
+  RtpTimeTicks last_enqueued_frame_rtp_timestamp_;
   base::TimeTicks last_enqueued_frame_reference_time_;
 
   // Remember what we set the bitrate to before, no need to set it again if
@@ -97,6 +92,11 @@ class VideoSender : public FrameSender,
   int last_bitrate_;
 
   PlayoutDelayChangeCB playout_delay_change_cb_;
+
+  // Indicates we are operating in a mode where the target playout latency is
+  // low for best user experience. When operating in low latency mode, we
+  // prefer dropping frames over increasing target playout time.
+  bool low_latency_mode_;
 
   // The video encoder's performance metrics as of the last call to
   // OnEncodedVideoFrame().  See header file comments for SenderEncodedFrame for

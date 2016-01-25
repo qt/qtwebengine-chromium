@@ -23,10 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#import "config.h"
 #import "platform/mac/BlockExceptions.h"
 
-#import <wtf/Assertions.h>
+#import "wtf/Assertions.h"
 
 void ReportBlockedObjCException(NSException *exception)
 {

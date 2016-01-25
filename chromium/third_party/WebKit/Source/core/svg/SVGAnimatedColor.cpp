@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGAnimatedColor.h"
 
 #include "core/css/parser/CSSParser.h"
@@ -31,9 +30,9 @@ SVGColorProperty::SVGColorProperty(const String& colorString)
     : SVGPropertyBase(classType())
     , m_styleColor(StyleColor::currentColor())
 {
-    RGBA32 color;
+    Color color;
     if (CSSParser::parseColor(color, colorString.stripWhiteSpace()))
-        m_styleColor = StyleColor(color);
+        m_styleColor = color;
 }
 
 String SVGColorProperty::valueAsString() const

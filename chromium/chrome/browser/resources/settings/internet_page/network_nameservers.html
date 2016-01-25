@@ -1,12 +1,12 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-input/paper-input.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_onc_types.html">
+<link rel="import" href="chrome://resources/cr_elements/network/cr_onc_types.html">
 
 <dom-module id="network-nameservers">
   <link rel="import" type="css" href="network_nameservers.css">
   <template>
     <div id="outer" class="layout vertical">
-      <div>
+      <div id="selectTypeDiv">
         <!-- TODO(stevenjb): Use cr-dropdown-menu once available. -->
         <select id="type" on-change="onTypeChange_">
           <template is="dom-repeat" items="[[nameserverTypeNames_]]">

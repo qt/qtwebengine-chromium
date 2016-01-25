@@ -1,6 +1,14 @@
+# Copyright 2015 PDFium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 {
   'variables': {
+    # TODO(thakis): Enable this, pdfium:29
+    #'chromium_code': 1,
     'pdf_use_skia%': 0,
+    'pdf_enable_v8%': 1,
+    'pdf_enable_xfa%': 0, # Set to 1 by standalone.gypi in a standalone build.
     'conditions': [
       ['OS=="linux"', {
         'bundle_freetype%': 0,
@@ -13,16 +21,28 @@
   'target_defaults': {
     'defines' : [
       'OPJ_STATIC',
+      'PNG_PREFIX',
+      'PNGPREFIX_H',
+      'PNG_USE_READ_MACROS',
       'V8_DEPRECATION_WARNINGS',
       '_CRT_SECURE_NO_WARNINGS',
     ],
     'include_dirs': [
+      # This is implicit in GN.
+      '<(DEPTH)',
+      '.',
       'third_party/freetype/include',
       'third_party/freetype/include/freetype',
     ],
     'conditions': [
       ['pdf_use_skia==1', {
         'defines': ['_SKIA_SUPPORT_'],
+      }],
+      ['pdf_enable_v8==1', {
+        'defines': ['PDF_ENABLE_V8'],
+      }],
+      ['pdf_enable_xfa==1', {
+        'defines': ['PDF_ENABLE_XFA'],
       }],
       ['OS=="linux"', {
         'conditions': [
@@ -37,8 +57,18 @@
       }],
     ],
     'msvs_disabled_warnings': [
-      4005, 4018, 4146, 4333, 4345, 4267
+      4005, 4018, 4146, 4333, 4345, 4267,
+      # TODO(thestig): Fix all instances, remove this, pdfium:29
+      4245, 4310, 4389, 4701, 4702, 4706, 4800,
     ],
+    'variables': {
+      'clang_warning_flags': [
+        # TODO(thestig): Fix all instances, remove this, pdfium:29
+        '-Wno-sign-compare',
+      ],
+      # Make sure Chromium's build/common.gypi doesn't re-add the flag on linux.
+      'cflags_cc!': [ '-Wsign-compare' ],
+    },
   },
   'targets': [
     {
@@ -57,10 +87,8 @@
         'fxedit',
         'fxge',
         'javascript',
-        'jsapi',
         'pdfwindow',
       ],
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'fpdfsdk/include/fsdk_actionhandler.h',
         'fpdfsdk/include/fsdk_annothandler.h',
@@ -87,8 +115,6 @@
         'fpdfsdk/src/fsdk_baseform.cpp',
         'fpdfsdk/src/fsdk_mgr.cpp',
         'fpdfsdk/src/fsdk_rendercontext.cpp',
-        'fpdfsdk/src/fpdfsdkdll.rc',
-        'fpdfsdk/src/resource.h',
         'public/fpdf_dataavail.h',
         'public/fpdf_doc.h',
         'public/fpdf_edit.h',
@@ -106,10 +132,10 @@
         'public/fpdfview.h',
       ],
       'conditions': [
-        ['OS!="win"', {
-          'sources!': [
-            'fpdfsdk/src/fpdfsdkdll.rc',
-          ],
+        ['pdf_enable_xfa==1', {
+          'dependencies': [
+            'fpdfxfa',
+           ],
         }],
         ['bundle_freetype==1', {
           'dependencies': [
@@ -148,7 +174,6 @@
     {
       'target_name': 'fdrm',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'core/include/fdrm/fx_crypt.h',
         'core/src/fdrm/crypto/fx_crypt.cpp',
@@ -159,7 +184,6 @@
     {
       'target_name': 'fpdfdoc',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'core/include/fpdfdoc/fpdf_ap.h',
         'core/include/fpdfdoc/fpdf_doc.h',
@@ -189,9 +213,7 @@
     {
       'target_name': 'fpdfapi',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
-        'core/include/fpdfapi/fpdfapi.h',
         'core/include/fpdfapi/fpdf_module.h',
         'core/include/fpdfapi/fpdf_objects.h',
         'core/include/fpdfapi/fpdf_page.h',
@@ -269,7 +291,6 @@
         'core/src/fpdfapi/fpdf_edit/fpdf_edit_create.cpp',
         'core/src/fpdfapi/fpdf_edit/fpdf_edit_doc.cpp',
         'core/src/fpdfapi/fpdf_edit/fpdf_edit_image.cpp',
-        'core/src/fpdfapi/fpdf_font/common.h',
         'core/src/fpdfapi/fpdf_font/font_int.h',
         'core/src/fpdfapi/fpdf_font/fpdf_font.cpp',
         'core/src/fpdfapi/fpdf_font/fpdf_font_charset.cpp',
@@ -294,6 +315,7 @@
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_objects.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_parser.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_utility.cpp',
+        'core/src/fpdfapi/fpdf_parser/parser_int.h',
         'core/src/fpdfapi/fpdf_render/fpdf_render.cpp',
         'core/src/fpdfapi/fpdf_render/fpdf_render_cache.cpp',
         'core/src/fpdfapi/fpdf_render/fpdf_render_image.cpp',
@@ -306,7 +328,6 @@
     {
       'target_name': 'fpdftext',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'core/include/fpdftext/fpdf_text.h',
         'core/src/fpdftext/fpdf_text.cpp',
@@ -323,30 +344,28 @@
       'target_name': 'fxcodec',
       'type': 'static_library',
       'dependencies': [
+        '<(libjpeg_gyp_path):libjpeg',
         'third_party/third_party.gyp:fx_lcms2',
-        'third_party/third_party.gyp:fx_libjpeg',
         'third_party/third_party.gyp:fx_libopenjpeg',
         'third_party/third_party.gyp:fx_zlib',
       ],
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'core/include/fxcodec/fx_codec.h',
         'core/include/fxcodec/fx_codec_def.h',
         'core/include/fxcodec/fx_codec_flate.h',
-        'core/include/fxcodec/fx_codec_provider.h',
         'core/src/fxcodec/codec/codec_int.h',
         'core/src/fxcodec/codec/fx_codec.cpp',
         'core/src/fxcodec/codec/fx_codec_fax.cpp',
         'core/src/fxcodec/codec/fx_codec_flate.cpp',
         'core/src/fxcodec/codec/fx_codec_icc.cpp',
         'core/src/fxcodec/codec/fx_codec_jbig.cpp',
-        'core/src/fxcodec/codec/fx_codec_jbig_enc.cpp',
         'core/src/fxcodec/codec/fx_codec_jpeg.cpp',
         'core/src/fxcodec/codec/fx_codec_jpx_opj.cpp',
         'core/src/fxcodec/jbig2/JBig2_ArithDecoder.cpp',
         'core/src/fxcodec/jbig2/JBig2_ArithDecoder.h',
         'core/src/fxcodec/jbig2/JBig2_ArithIntDecoder.cpp',
         'core/src/fxcodec/jbig2/JBig2_ArithIntDecoder.h',
+        'core/src/fxcodec/jbig2/JBig2_BitStream.cpp',
         'core/src/fxcodec/jbig2/JBig2_BitStream.h',
         'core/src/fxcodec/jbig2/JBig2_Context.cpp',
         'core/src/fxcodec/jbig2/JBig2_Context.h',
@@ -389,6 +408,24 @@
         },
       },
       'conditions': [
+        ['pdf_enable_xfa==1', {
+          'dependencies': [
+            'third_party/third_party.gyp:fx_lpng',
+            'third_party/third_party.gyp:fx_tiff',
+          ],
+          'sources': [
+            'core/src/fxcodec/codec/fx_codec_bmp.cpp',
+            'core/src/fxcodec/codec/fx_codec_gif.cpp',
+            'core/src/fxcodec/codec/fx_codec_png.cpp',
+            'core/src/fxcodec/codec/fx_codec_progress.cpp',
+            'core/src/fxcodec/codec/fx_codec_progress.h',
+            'core/src/fxcodec/codec/fx_codec_tiff.cpp',
+            'core/src/fxcodec/lbmp/fx_bmp.cpp',
+            'core/src/fxcodec/lbmp/fx_bmp.h',
+            'core/src/fxcodec/lgif/fx_gif.cpp',
+            'core/src/fxcodec/lgif/fx_gif.h',
+          ],
+        }],
         ['os_posix==1', {
           # core/src/fxcodec/fx_libopenjpeg/src/fx_mct.c does an pointer-to-int
           # conversion to check that an address is 16-bit aligned (benign).
@@ -399,7 +436,6 @@
     {
       'target_name': 'fxcrt',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'core/include/fxcrt/fx_basic.h',
         'core/include/fxcrt/fx_bidi.h',
@@ -440,13 +476,19 @@
         'core/src/fxcrt/plex.h',
         'core/src/fxcrt/xml_int.h',
       ],
+      'conditions': [
+        ['pdf_enable_xfa==1', {
+          'sources': [
+            'core/include/fxcrt/fx_arb.h',
+            'core/src/fxcrt/fx_arabic.cpp',
+            'core/src/fxcrt/fx_arabic.h',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'fxge',
       'type': 'static_library',
-      'ldflags': [
-        '-L<(PRODUCT_DIR)',
-      ],
       'dependencies': [
         'third_party/third_party.gyp:fx_agg',
       ],
@@ -553,12 +595,10 @@
     {
       'target_name': 'fxedit',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'fpdfsdk/include/fxedit/fx_edit.h',
         'fpdfsdk/include/fxedit/fxet_edit.h',
         'fpdfsdk/include/fxedit/fxet_list.h',
-        'fpdfsdk/include/fxedit/fxet_stub.h',
         'fpdfsdk/src/fxedit/fxet_ap.cpp',
         'fpdfsdk/src/fxedit/fxet_edit.cpp',
         'fpdfsdk/src/fxedit/fxet_list.cpp',
@@ -569,10 +609,7 @@
     {
       'target_name': 'pdfwindow',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
-        'fpdfsdk/include/pdfwindow/IPDFWindow.h',
-        'fpdfsdk/include/pdfwindow/PDFWindow.h',
         'fpdfsdk/include/pdfwindow/PWL_Button.h',
         'fpdfsdk/include/pdfwindow/PWL_Caret.h',
         'fpdfsdk/include/pdfwindow/PWL_ComboBox.h',
@@ -612,84 +649,77 @@
     {
       'target_name': 'javascript',
       'type': 'static_library',
-      'include_dirs': [
-        '<(DEPTH)/v8',
-        '<(DEPTH)/v8/include',
-      ],
-      'dependencies': [
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      ],
-      'export_dependent_settings': [
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      ],
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
-        'fpdfsdk/include/javascript/app.h',
-        'fpdfsdk/include/javascript/color.h',
-        'fpdfsdk/include/javascript/console.h',
-        'fpdfsdk/include/javascript/Consts.h',
-        'fpdfsdk/include/javascript/Document.h',
-        'fpdfsdk/include/javascript/event.h',
-        'fpdfsdk/include/javascript/Field.h',
-        'fpdfsdk/include/javascript/global.h',
-        'fpdfsdk/include/javascript/Icon.h',
         'fpdfsdk/include/javascript/IJavaScript.h',
-        'fpdfsdk/include/javascript/JavaScript.h',
-        'fpdfsdk/include/javascript/JS_Context.h',
-        'fpdfsdk/include/javascript/JS_Define.h',
-        'fpdfsdk/include/javascript/JS_EventHandler.h',
-        'fpdfsdk/include/javascript/JS_GlobalData.h',
-        'fpdfsdk/include/javascript/JS_Object.h',
-        'fpdfsdk/include/javascript/JS_Runtime.h',
-        'fpdfsdk/include/javascript/JS_Value.h',
-        'fpdfsdk/include/javascript/PublicMethods.h',
-        'fpdfsdk/include/javascript/report.h',
-        'fpdfsdk/include/javascript/resource.h',
-        'fpdfsdk/include/javascript/util.h',
-        'fpdfsdk/src/javascript/app.cpp',
-        'fpdfsdk/src/javascript/color.cpp',
-        'fpdfsdk/src/javascript/console.cpp',
-        'fpdfsdk/src/javascript/Consts.cpp',
-        'fpdfsdk/src/javascript/Document.cpp',
-        'fpdfsdk/src/javascript/event.cpp',
-        'fpdfsdk/src/javascript/Field.cpp',
-        'fpdfsdk/src/javascript/global.cpp',
-        'fpdfsdk/src/javascript/Icon.cpp',
-        'fpdfsdk/src/javascript/JS_Context.cpp',
-        'fpdfsdk/src/javascript/JS_EventHandler.cpp',
-        'fpdfsdk/src/javascript/JS_GlobalData.cpp',
-        'fpdfsdk/src/javascript/JS_Object.cpp',
-        'fpdfsdk/src/javascript/JS_Runtime.cpp',
-        'fpdfsdk/src/javascript/JS_Value.cpp',
-        'fpdfsdk/src/javascript/PublicMethods.cpp',
-        'fpdfsdk/src/javascript/report.cpp',
-        'fpdfsdk/src/javascript/resource.cpp',
-        'fpdfsdk/src/javascript/util.cpp',
+        'fpdfsdk/src/javascript/JS_Runtime_Stub.cpp',
       ],
-    },
-    {
-      'target_name': 'jsapi',
-      'type': 'static_library',
-      'dependencies': [
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      ],
-      'export_dependent_settings': [
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      ],
-      'include_dirs': [
-        '<(DEPTH)/v8',
-        '<(DEPTH)/v8/include',
-      ],
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
-      'sources': [
-        'fpdfsdk/include/jsapi/fxjs_v8.h',
-        'fpdfsdk/src/jsapi/fxjs_v8.cpp',
+      'conditions': [
+        ['pdf_enable_v8==1', {
+          'include_dirs': [
+            '<(DEPTH)/v8',
+            '<(DEPTH)/v8/include',
+          ],
+          'dependencies': [
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+          ],
+          'sources!': [
+            'fpdfsdk/src/javascript/JS_Runtime_Stub.cpp',
+          ],
+          'sources': [
+            'fpdfsdk/src/javascript/Consts.cpp',
+            'fpdfsdk/src/javascript/Consts.h',
+            'fpdfsdk/src/javascript/Document.cpp',
+            'fpdfsdk/src/javascript/Document.h',
+            'fpdfsdk/src/javascript/Field.cpp',
+            'fpdfsdk/src/javascript/Field.h',
+            'fpdfsdk/src/javascript/Icon.cpp',
+            'fpdfsdk/src/javascript/Icon.h',
+            'fpdfsdk/src/javascript/JS_Context.cpp',
+            'fpdfsdk/src/javascript/JS_Context.h',
+            'fpdfsdk/src/javascript/JS_Define.h',
+            'fpdfsdk/src/javascript/JS_EventHandler.cpp',
+            'fpdfsdk/src/javascript/JS_EventHandler.h',
+            'fpdfsdk/src/javascript/JS_GlobalData.cpp',
+            'fpdfsdk/src/javascript/JS_GlobalData.h',
+            'fpdfsdk/src/javascript/JS_Object.cpp',
+            'fpdfsdk/src/javascript/JS_Object.h',
+            'fpdfsdk/src/javascript/JS_Runtime.cpp',
+            'fpdfsdk/src/javascript/JS_Runtime.h',
+            'fpdfsdk/src/javascript/JS_Value.cpp',
+            'fpdfsdk/src/javascript/JS_Value.h',
+            'fpdfsdk/src/javascript/PublicMethods.cpp',
+            'fpdfsdk/src/javascript/PublicMethods.h',
+            'fpdfsdk/src/javascript/app.cpp',
+            'fpdfsdk/src/javascript/app.cpp',
+            'fpdfsdk/src/javascript/app.h',
+            'fpdfsdk/src/javascript/color.cpp',
+            'fpdfsdk/src/javascript/color.cpp',
+            'fpdfsdk/src/javascript/color.h',
+            'fpdfsdk/src/javascript/console.cpp',
+            'fpdfsdk/src/javascript/console.cpp',
+            'fpdfsdk/src/javascript/console.h',
+            'fpdfsdk/src/javascript/event.cpp',
+            'fpdfsdk/src/javascript/event.h',
+            'fpdfsdk/src/javascript/global.cpp',
+            'fpdfsdk/src/javascript/global.h',
+            'fpdfsdk/src/javascript/report.cpp',
+            'fpdfsdk/src/javascript/report.h',
+            'fpdfsdk/src/javascript/resource.cpp',
+            'fpdfsdk/src/javascript/resource.h',
+            'fpdfsdk/src/javascript/util.cpp',
+            'fpdfsdk/src/javascript/util.h',
+            'fpdfsdk/include/jsapi/fxjs_v8.h',
+            'fpdfsdk/src/jsapi/fxjs_v8.cpp',
+          ],
+        }],
       ],
     },
     {
       'target_name': 'formfiller',
       'type': 'static_library',
-      'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
         'fpdfsdk/include/formfiller/FFL_CBA_Fontmap.h',
         'fpdfsdk/include/formfiller/FFL_CheckBox.h',
@@ -697,23 +727,18 @@
         'fpdfsdk/include/formfiller/FFL_FormFiller.h',
         'fpdfsdk/include/formfiller/FFL_IFormFiller.h',
         'fpdfsdk/include/formfiller/FFL_ListBox.h',
-        'fpdfsdk/include/formfiller/FFL_Notify.h',
         'fpdfsdk/include/formfiller/FFL_PushButton.h',
         'fpdfsdk/include/formfiller/FFL_RadioButton.h',
         'fpdfsdk/include/formfiller/FFL_TextField.h',
-        'fpdfsdk/include/formfiller/FFL_Utils.h',
-        'fpdfsdk/include/formfiller/FormFiller.h',
         'fpdfsdk/src/formfiller/FFL_CBA_Fontmap.cpp',
         'fpdfsdk/src/formfiller/FFL_CheckBox.cpp',
         'fpdfsdk/src/formfiller/FFL_ComboBox.cpp',
         'fpdfsdk/src/formfiller/FFL_FormFiller.cpp',
         'fpdfsdk/src/formfiller/FFL_IFormFiller.cpp',
         'fpdfsdk/src/formfiller/FFL_ListBox.cpp',
-        'fpdfsdk/src/formfiller/FFL_Notify.cpp',
         'fpdfsdk/src/formfiller/FFL_PushButton.cpp',
         'fpdfsdk/src/formfiller/FFL_RadioButton.cpp',
         'fpdfsdk/src/formfiller/FFL_TextField.cpp',
-        'fpdfsdk/src/formfiller/FFL_Utils.cpp',
       ],
     },
     {
@@ -723,20 +748,32 @@
         '<(DEPTH)/testing/gtest.gyp:gtest_main',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         'pdfium',
-      ],
-      'include_dirs': [
-        '<(DEPTH)'
+        'test_support',
       ],
       'sources': [
+        'core/src/fpdfapi/fpdf_font/fpdf_font_cid_unittest.cpp',
+        'core/src/fpdfapi/fpdf_font/fpdf_font_unittest.cpp',
+        'core/src/fpdfapi/fpdf_page/fpdf_page_parser_old_unittest.cpp',
+        'core/src/fpdfapi/fpdf_parser/fpdf_parser_decode_unittest.cpp',
+        'core/src/fpdfapi/fpdf_parser/fpdf_parser_parser_unittest.cpp',
+        'core/src/fpdftext/fpdf_text_int_unittest.cpp',
         'core/src/fxcodec/codec/fx_codec_jpx_unittest.cpp',
         'core/src/fxcrt/fx_basic_bstring_unittest.cpp',
         'core/src/fxcrt/fx_basic_memmgr_unittest.cpp',
         'core/src/fxcrt/fx_basic_wstring_unittest.cpp',
         'core/src/fxcrt/fx_bidi_unittest.cpp',
+        'core/src/fxcrt/fx_extension_unittest.cpp',
         'core/src/fxcrt/fx_system_unittest.cpp',
         'testing/fx_string_testhelpers.h',
         'testing/fx_string_testhelpers.cpp',
-        'third_party/base/nonstd_unique_ptr_unittest.cpp',
+      ],
+      'conditions': [
+        ['pdf_enable_xfa==1', {
+          'sources': [
+            'xfa/src/fxbarcode/pdf417/BC_PDF417HighLevelEncoder_unittest.cpp',
+            'xfa/src/fxfa/src/parser/xfa_utils_imp_unittest.cpp',
+          ],
+        }],
       ],
     },
     {
@@ -745,34 +782,104 @@
       'dependencies': [
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/testing/gtest.gyp:gtest',
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
         'pdfium',
-      ],
-      'include_dirs': [
-        '<(DEPTH)',
-        '<(DEPTH)/v8',
-        '<(DEPTH)/v8/include',
+        'test_support',
       ],
       'sources': [
         'core/src/fpdfapi/fpdf_page/fpdf_page_func_embeddertest.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_decode_embeddertest.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_parser_embeddertest.cpp',
+        'core/src/fpdfapi/fpdf_render/fpdf_render_loadimage_embeddertest.cpp',
+        'core/src/fpdfapi/fpdf_render/fpdf_render_pattern_embeddertest.cpp',
         'fpdfsdk/src/fpdf_dataavail_embeddertest.cpp',
         'fpdfsdk/src/fpdfdoc_embeddertest.cpp',
+        'fpdfsdk/src/fpdfedit_embeddertest.cpp',
+        'fpdfsdk/src/fpdfext_embeddertest.cpp',
         'fpdfsdk/src/fpdfformfill_embeddertest.cpp',
+        'fpdfsdk/src/fpdfsave_embeddertest.cpp',
         'fpdfsdk/src/fpdftext_embeddertest.cpp',
         'fpdfsdk/src/fpdfview_c_api_test.c',
         'fpdfsdk/src/fpdfview_c_api_test.h',
         'fpdfsdk/src/fpdfview_embeddertest.cpp',
-        'fpdfsdk/src/jsapi/fxjs_v8_embeddertest.cpp',
         'testing/embedder_test.cpp',
         'testing/embedder_test.h',
         'testing/embedder_test_mock_delegate.h',
         'testing/embedder_test_timer_handling_delegate.h',
+      ],
+      'conditions': [
+        ['pdf_enable_xfa==1', {
+          'sources': [
+            'xfa/src/fxfa/src/parser/xfa_parser_imp_embeddertest.cpp',
+          ],
+        }],
+        ['pdf_enable_v8==1', {
+          'include_dirs': [
+            '<(DEPTH)/v8',
+            '<(DEPTH)/v8/include',
+          ],
+          'dependencies': [
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+          ],
+          'sources': [
+            'fpdfsdk/src/javascript/public_methods_embeddertest.cpp',
+            'fpdfsdk/src/jsapi/fxjs_v8_embeddertest.cpp',
+            'testing/js_embedder_test.cpp',
+            'testing/js_embedder_test.h',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '<(DEPTH)/testing/gmock.gyp:gmock',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+      ],
+      'sources': [
         'testing/fx_string_testhelpers.cpp',
         'testing/fx_string_testhelpers.h',
+        'testing/test_support.cpp',
+        'testing/test_support.h',
+        'testing/utils/path_service.cpp',
+      ],
+      'conditions': [
+        ['pdf_enable_v8==1', {
+          'include_dirs': [
+            '<(DEPTH)/v8',
+            '<(DEPTH)/v8/include',
+          ],
+          'dependencies': [
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+          ],
+        }],
       ],
     },
   ],
+  'conditions': [
+    ['pdf_enable_xfa==1', {
+      'targets': [
+        {
+          'target_name': 'fpdfxfa',
+          'type': 'static_library',
+          'dependencies': [
+            'javascript',
+            'xfa.gyp:xfa',
+          ],
+          'sources': [
+            'fpdfsdk/src/fpdfxfa/fpdfxfa_app.cpp',
+            'fpdfsdk/src/fpdfxfa/fpdfxfa_doc.cpp',
+            'fpdfsdk/src/fpdfxfa/fpdfxfa_page.cpp',
+            'fpdfsdk/src/fpdfxfa/fpdfxfa_util.cpp',
+            'fpdfsdk/include/fpdfxfa/fpdfxfa_app.h',
+            'fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h',
+            'fpdfsdk/include/fpdfxfa/fpdfxfa_page.h',
+            'fpdfsdk/include/fpdfxfa/fpdfxfa_util.h',
+          ],
+        },
+      ]
+    }],
+  ]
 }

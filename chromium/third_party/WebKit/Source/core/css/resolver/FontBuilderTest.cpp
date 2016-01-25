@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/resolver/FontBuilder.h"
 
 #include "core/css/CSSFontSelector.h"
@@ -11,9 +10,7 @@
 #include "core/frame/Settings.h"
 #include "core/style/ComputedStyle.h"
 #include "core/testing/DummyPageHolder.h"
-#include "platform/text/LocaleToScriptMapping.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -142,11 +139,10 @@ static void fontSizeValue(FontBuilder& b)
 static void fontScriptBase(FontDescription& d)
 {
     d.setLocale("no");
-    d.setScript(localeToScriptCodeForFontSelection("no"));
 }
 static void fontScriptValue(FontBuilder& b)
 {
-    b.setScript("se");
+    b.setLocale("se");
 }
 
 INSTANTIATE_TEST_CASE_P(AllFields, FontBuilderAdditiveTest,

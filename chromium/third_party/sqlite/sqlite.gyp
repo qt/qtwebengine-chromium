@@ -28,6 +28,12 @@
       # appropriately.  Chromium doesn't configure SQLite for that, and would
       # prefer to control distribution to worker threads.
       'SQLITE_MAX_WORKER_THREADS=0',
+      # Allow 256MB mmap footprint per connection.  Should not be too open-ended
+      # as that could cause memory fragmentation.  50MB encompasses the 99th
+      # percentile of Chrome databases in the wild.
+      # TODO(shess): A 64-bit-specific value could be 1G or more.
+      # TODO(shess): Figure out if exceeding this is costly.
+      'SQLITE_MAX_MMAP_SIZE=268435456',
       # Use a read-only memory map when mmap'ed I/O is enabled to prevent memory
       # stompers from directly corrupting the database.
       # TODO(shess): Upstream the ability to use this define.
@@ -73,14 +79,11 @@
             'fdatasync=fdatasync',
           ],
         }],
-        # SQLite wants to track malloc sizes.  On OSX it uses malloc_size(), on
-        # Windows _msize(), elsewhere it handles it manually by enlarging the
-        # malloc and injecting a field.  Enable malloc_usable_size() for Linux.
-        # NOTE(shess): Android does _not_ export malloc_usable_size().
+        # Pull in config.h on Linux.  This allows use of preprocessor macros
+        # which are not available to the build config.
         ['OS == "linux"', {
           'defines': [
-            'HAVE_MALLOC_H',
-            'HAVE_MALLOC_USABLE_SIZE',
+            '_HAVE_SQLITE_CONFIG_H',
           ],
         }],
         ['use_system_sqlite', {
@@ -130,6 +133,7 @@
           'product_name': 'chromium_sqlite3',
           'type': '<(component)',
           'sources': [
+            'amalgamation/config.h',
             'amalgamation/sqlite3.h',
             'amalgamation/sqlite3.c',
           ],
@@ -245,6 +249,12 @@
           'sources': [
             'src/ext/icu/icu.c',
           ],
+          'variables': {
+            'clang_warning_flags_unset': [
+              # icu.c uses assert(!"foo") instead of assert(false && "foo")
+              '-Wstring-conversion',
+            ],
+          },
         },
       ],
     }],

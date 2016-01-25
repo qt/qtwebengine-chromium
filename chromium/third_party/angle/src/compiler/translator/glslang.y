@@ -178,10 +178,10 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 
 %type <interm.intermNode> translation_unit function_definition
 %type <interm.intermNode> statement simple_statement
-%type <interm.intermAggregate>  statement_list compound_statement
+%type <interm.intermAggregate>  statement_list compound_statement compound_statement_no_new_scope
 %type <interm.intermNode> declaration_statement selection_statement expression_statement
 %type <interm.intermNode> declaration external_declaration
-%type <interm.intermNode> for_init_statement compound_statement_no_new_scope
+%type <interm.intermNode> for_init_statement
 %type <interm.nodePair> selection_rest_statement for_rest_statement
 %type <interm.intermSwitch> switch_statement
 %type <interm.intermCase> case_label
@@ -215,21 +215,7 @@ identifier
 variable_identifier
     : IDENTIFIER {
         // The symbol table search was done in the lexical phase
-        const TVariable *variable = context->getNamedVariable(@1, $1.string, $1.symbol);
-
-        if (variable->getType().getQualifier() == EvqConst)
-        {
-            TConstantUnion* constArray = variable->getConstPointer();
-            TType t(variable->getType());
-            $$ = context->intermediate.addConstantUnion(constArray, t, @1);
-        }
-        else
-        {
-            $$ = context->intermediate.addSymbol(variable->getUniqueId(),
-                                                 variable->getName(),
-                                                 variable->getType(),
-                                                 @1);
-        }
+        $$ = context->parseVariableIdentifier(@1, $1.string, $1.symbol);
 
         // don't delete $1.string, it's used by error recovery, and the pool
         // pop will reclaim the memory
@@ -342,7 +328,7 @@ function_call_header_with_parameters
         const TType *type = new TType($2->getType());
         $1->addParameter(TConstParameter(type));
         $$.function = $1;
-        $$.nodePair.node1 = $2;
+        $$.nodePair.node1 = context->intermediate.makeAggregate($2, @2);
     }
     | function_call_header_with_parameters COMMA assignment_expression {
         const TType *type = new TType($3->getType());
@@ -573,12 +559,7 @@ expression
         $$ = $1;
     }
     | expression COMMA assignment_expression {
-        $$ = context->intermediate.addComma($1, $3, @2);
-        if ($$ == 0) {
-            context->binaryOpError(@2, ",", $1->getCompleteString(), $3->getCompleteString());
-            context->recover();
-            $$ = $3;
-        }
+        $$ = context->addComma($1, $3, @2);
     }
     ;
 
@@ -599,33 +580,8 @@ enter_struct
     ;
 
 declaration
-    : function_prototype SEMICOLON   {
-        TFunction &function = *($1.function);
-        
-        TIntermAggregate *prototype = new TIntermAggregate;
-        prototype->setType(function.getReturnType());
-        prototype->setName(function.getMangledName());
-        prototype->setFunctionId(function.getUniqueId());
-        
-        for (size_t i = 0; i < function.getParamCount(); i++)
-        {
-            const TConstParameter &param = function.getParam(i);
-            if (param.name != 0)
-            {
-                TVariable variable(param.name, *param.type);
-                
-                prototype = context->intermediate.growAggregate(prototype, context->intermediate.addSymbol(variable.getUniqueId(), variable.getName(), variable.getType(), @1), @1);
-            }
-            else
-            {
-                prototype = context->intermediate.growAggregate(prototype, context->intermediate.addSymbol(0, "", *param.type, @1), @1);
-            }
-        }
-        
-        prototype->setOp(EOpPrototype);
-        $$ = prototype;
-
-        context->symbolTable.pop();
+    : function_prototype SEMICOLON {
+        $$ = context->addFunctionPrototypeDeclaration(*($1.function), @1);
     }
     | init_declarator_list SEMICOLON {
         TIntermAggregate *aggNode = $1.intermAggregate;
@@ -944,12 +900,12 @@ type_qualifier
         $$.invariant = true;
     }
     | storage_qualifier {
-        if ($1.qualifier != EvqConst && !context->symbolTable.atGlobalLevel()) {
+        if ($1.qualifier != EvqConst && !context->symbolTable.atGlobalLevel())
+        {
             context->error(@1, "Local variables can only use the const storage qualifier.", getQualifierString($1.qualifier));
             context->recover();
-        } else {
-            $$.setBasic(EbtVoid, $1.qualifier, @1);
         }
+        $$.setBasic(EbtVoid, $1.qualifier, @1);
     }
     | interpolation_qualifier storage_qualifier {
         $$ = context->joinInterpolationQualifiers(@1, $1.qualifier, @2, $2.qualifier);
@@ -1618,20 +1574,7 @@ function_definition
         context->parseFunctionPrototype(@1, $1.function, &$1.intermAggregate);
     }
     compound_statement_no_new_scope {
-        //?? Check that all paths return a value if return type != void ?
-        //   May be best done as post process phase on intermediate code
-        if (context->getCurrentFunctionType()->getBasicType() != EbtVoid && !context->getFunctionReturnsValue()) {
-            context->error(@1, "function does not return a value:", "", $1.function->getName().c_str());
-            context->recover();
-        }
-        
-        $$ = context->intermediate.growAggregate($1.intermAggregate, $3, @$);
-        context->intermediate.setAggregateOperator($$, EOpFunction, @1);
-        $$->getAsAggregate()->setName($1.function->getMangledName().c_str());
-        $$->getAsAggregate()->setType($1.function->getReturnType());
-        $$->getAsAggregate()->setFunctionId($1.function->getUniqueId());
-
-        context->symbolTable.pop();
+        $$ = context->addFunctionDefinition(*($1.function), $1.intermAggregate, $3, @1);
     }
     ;
 

@@ -22,7 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/DOMTokenList.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -61,7 +60,7 @@ private:
 
 } // namespace
 
-bool DOMTokenList::validateToken(const String& token, ExceptionState& exceptionState)
+bool DOMTokenList::validateToken(const String& token, ExceptionState& exceptionState) const
 {
     if (token.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "The token provided must not be empty.");
@@ -76,7 +75,7 @@ bool DOMTokenList::validateToken(const String& token, ExceptionState& exceptionS
     return true;
 }
 
-bool DOMTokenList::validateTokens(const Vector<String>& tokens, ExceptionState& exceptionState)
+bool DOMTokenList::validateTokens(const Vector<String>& tokens, ExceptionState& exceptionState) const
 {
     for (size_t i = 0; i < tokens.size(); ++i) {
         if (!validateToken(tokens[i], exceptionState))
@@ -84,6 +83,13 @@ bool DOMTokenList::validateTokens(const Vector<String>& tokens, ExceptionState& 
     }
 
     return true;
+}
+
+// https://dom.spec.whatwg.org/#concept-domtokenlist-validation
+bool DOMTokenList::validateTokenValue(const AtomicString&, ExceptionState& exceptionState) const
+{
+    exceptionState.throwTypeError("DOMTokenList has no supported tokens.");
+    return false;
 }
 
 bool DOMTokenList::contains(const AtomicString& token, ExceptionState& exceptionState) const
@@ -116,10 +122,8 @@ void DOMTokenList::add(const Vector<String>& tokens, ExceptionState& exceptionSt
         filteredTokens.append(tokens[i]);
     }
 
-    if (filteredTokens.isEmpty())
-        return;
-
-    setValue(addTokens(value(), filteredTokens));
+    if (!filteredTokens.isEmpty())
+        setValue(addTokens(value(), filteredTokens));
 }
 
 void DOMTokenList::remove(const AtomicString& token, ExceptionState& exceptionState)
@@ -174,6 +178,11 @@ bool DOMTokenList::toggle(const AtomicString& token, bool force, ExceptionState&
         removeInternal(token);
 
     return force;
+}
+
+bool DOMTokenList::supports(const AtomicString& token, ExceptionState& exceptionState)
+{
+    return validateTokenValue(token, exceptionState);
 }
 
 void DOMTokenList::addInternal(const AtomicString& token)
@@ -232,7 +241,7 @@ AtomicString DOMTokenList::removeToken(const AtomicString& input, const AtomicSt
 AtomicString DOMTokenList::removeTokens(const AtomicString& input, const Vector<String>& tokens)
 {
     // Algorithm defined at http://www.whatwg.org/specs/web-apps/current-work/multipage/common-microsyntaxes.html#remove-a-token-from-a-string
-    // New spec is at http://dom.spec.whatwg.org/#remove-a-token-from-a-string
+    // New spec is at https://dom.spec.whatwg.org/#remove-a-token-from-a-string
 
     unsigned inputLength = input.length();
     StringBuilder output; // 3
@@ -242,7 +251,7 @@ AtomicString DOMTokenList::removeTokens(const AtomicString& input, const Vector<
     // Step 5
     while (position < inputLength) {
         if (isHTMLSpace<UChar>(input[position])) { // 6
-            output.append(input[position++]); // 6.1, 6.2
+            position++;
             continue; // 6.3
         }
 
@@ -263,14 +272,17 @@ AtomicString DOMTokenList::removeTokens(const AtomicString& input, const Vector<
             while (j > 0 && isHTMLSpace<UChar>(output[j - 1]))
                 --j;
             output.resize(j);
-
-            // Step 8.3
-            if (position < inputLength && !output.isEmpty())
-                output.append(' ');
         } else {
             output.append(token); // Step 9
         }
+
+        if (position < inputLength && !output.isEmpty())
+            output.append(' ');
     }
+
+    size_t j = output.length();
+    if (j > 0 && isHTMLSpace<UChar>(output[j - 1]))
+        output.resize(j - 1);
 
     return output.toAtomicString();
 }

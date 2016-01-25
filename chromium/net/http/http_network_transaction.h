@@ -9,11 +9,12 @@
 
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
+#include "net/base/net_error_details.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_request_headers.h"
@@ -29,6 +30,7 @@
 
 namespace net {
 
+class BidirectionalStreamJob;
 class ClientSocketHandle;
 class HttpAuthController;
 class HttpNetworkSession;
@@ -37,6 +39,7 @@ class HttpStreamRequest;
 class IOBuffer;
 class ProxyInfo;
 class SpdySession;
+class SSLPrivateKey;
 struct HttpRequestInfo;
 
 class NET_EXPORT_PRIVATE HttpNetworkTransaction
@@ -54,6 +57,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
             const BoundNetLog& net_log) override;
   int RestartIgnoringLastError(const CompletionCallback& callback) override;
   int RestartWithCertificate(X509Certificate* client_cert,
+                             SSLPrivateKey* client_private_key,
                              const CompletionCallback& callback) override;
   int RestartWithAuth(const AuthCredentials& credentials,
                       const CompletionCallback& callback) override;
@@ -73,6 +77,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
+  void PopulateNetErrorDetails(NetErrorDetails* details) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
@@ -86,6 +91,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   void OnStreamReady(const SSLConfig& used_ssl_config,
                      const ProxyInfo& used_proxy_info,
                      HttpStream* stream) override;
+  void OnBidirectionalStreamJobReady(
+      const SSLConfig& used_ssl_config,
+      const ProxyInfo& used_proxy_info,
+      BidirectionalStreamJob* stream_job) override;
   void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
@@ -107,6 +116,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                                   const ProxyInfo& used_proxy_info,
                                   HttpStream* stream) override;
 
+  void OnQuicBroken() override;
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
  private:
@@ -114,6 +124,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest,
                            ResetStateForRestart);
+  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest, EnableNPN);
+  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest, DisableNPN);
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            WindowUpdateReceived);
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
@@ -242,6 +254,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // to be maintained for multi-round auth.
   void ResetStateForAuthRestart();
 
+  // Caches network error details from the stream if available
+  // and resets the stream.
+  void CacheNetErrorDetailsAndResetStream();
+
   // Records metrics relating to SSL fallbacks.
   void RecordSSLFallbackMetrics(int result);
 
@@ -353,7 +369,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   ConnectionAttempts connection_attempts_;
   IPEndPoint remote_endpoint_;
-
+  // Network error details for this transaction.
+  NetErrorDetails net_error_details_;
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };
 

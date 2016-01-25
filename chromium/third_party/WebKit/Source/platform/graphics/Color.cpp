@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/Color.h"
 
 #include "platform/Decimal.h"
@@ -35,7 +34,8 @@
 
 namespace blink {
 
-#if !COMPILER(MSVC)
+// VS 2015 and above allow these definitions and in this case require them
+#if !COMPILER(MSVC) || _MSC_VER >= 1900
 // FIXME: Use C++11 strong enums to avoid static data member with initializer definition problems.
 const RGBA32 Color::black;
 const RGBA32 Color::white;
@@ -50,17 +50,17 @@ static const RGBA32 darkenedWhite = 0xFFABABAB;
 
 RGBA32 makeRGB(int r, int g, int b)
 {
-    return 0xFF000000 | std::max(0, std::min(r, 255)) << 16 | std::max(0, std::min(g, 255)) << 8 | std::max(0, std::min(b, 255));
+    return 0xFF000000 | clampTo(r, 0, 255) << 16 | clampTo(g, 0, 255) << 8 | clampTo(b, 0, 255);
 }
 
 RGBA32 makeRGBA(int r, int g, int b, int a)
 {
-    return std::max(0, std::min(a, 255)) << 24 | std::max(0, std::min(r, 255)) << 16 | std::max(0, std::min(g, 255)) << 8 | std::max(0, std::min(b, 255));
+    return clampTo(a, 0, 255) << 24 | clampTo(r, 0, 255) << 16 | clampTo(g, 0, 255) << 8 | clampTo(b, 0, 255);
 }
 
 static int colorFloatToRGBAByte(float f)
 {
-    return std::max(0, std::min(static_cast<int>(lroundf(255.0f * f)), 255));
+    return clampTo(static_cast<int>(lroundf(255.0f * f)), 0, 255);
 }
 
 RGBA32 makeRGBA32FromFloats(float r, float g, float b, float a)

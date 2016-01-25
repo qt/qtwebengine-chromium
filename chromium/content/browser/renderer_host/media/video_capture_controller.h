@@ -43,6 +43,7 @@
 #include <list>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -69,10 +70,8 @@ class CONTENT_EXPORT VideoCaptureController {
   base::WeakPtr<VideoCaptureController> GetWeakPtrForIOThread();
 
   // Return a new VideoCaptureDeviceClient to forward capture events to this
-  // instance. Some device clients need to allocate resources for the given
-  // capture |format| and/or work on Capture Thread (|capture_task_runner|).
-  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient(
-      const scoped_refptr<base::SingleThreadTaskRunner>& capture_task_runner);
+  // instance.
+  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient();
 
   // Start video capturing and try to use the resolution specified in |params|.
   // Buffers will be shared to the client as necessary. The client will continue
@@ -109,14 +108,14 @@ class CONTENT_EXPORT VideoCaptureController {
 
   // Return a buffer with id |buffer_id| previously given in
   // VideoCaptureControllerEventHandler::OnBufferReady. In the case that the
-  // buffer was backed by a texture, |sync_point| will be waited on before
+  // buffer was backed by a texture, |sync_token| will be waited on before
   // destroying or recycling the texture, to synchronize with texture users in
   // the renderer process. If the consumer provided resource utilization
   // feedback, this will be passed here (-1.0 indicates no feedback).
   void ReturnBuffer(VideoCaptureControllerID id,
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id,
-                    uint32 sync_point,
+                    const gpu::SyncToken& sync_token,
                     double consumer_resource_utilization);
 
   const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
@@ -135,6 +134,11 @@ class CONTENT_EXPORT VideoCaptureController {
  private:
   struct ControllerClient;
   typedef std::list<ControllerClient*> ControllerClients;
+
+  // Notify renderer that a new buffer has been created.
+  void DoNewBufferOnIOThread(ControllerClient* client,
+                             media::VideoCaptureDevice::Client::Buffer* buffer,
+                             const scoped_refptr<media::VideoFrame>& frame);
 
   // Find a client of |id| and |handler| in |clients|.
   ControllerClient* FindClient(VideoCaptureControllerID id,

@@ -253,6 +253,14 @@ EVENT_TYPE(PROXY_SERVICE_WAITING_FOR_INIT_PAC)
 //   }
 EVENT_TYPE(PROXY_SERVICE_RESOLVED_PROXY_LIST)
 
+// This event is emitted after proxies marked as bad have been deprioritized.
+//
+// It contains these parameters:
+//   {
+//      "pac_string": <List of valid proxy servers, in PAC format>,
+//   }
+EVENT_TYPE(PROXY_SERVICE_DEPRIORITIZED_BAD_PROXIES)
+
 // This event is emitted whenever the proxy settings used by ProxyService
 // change.
 //
@@ -453,7 +461,12 @@ EVENT_TYPE(SSL_SERVER_HANDSHAKE)
 // The SSL server requested a client certificate.
 EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
 
-// The SSL stack blocked on a private key operation.
+// The SSL stack blocked on a private key operation. The following parameters
+// are attached to the event.
+//   {
+//     "type": <type of the key>,
+//     "hash": <hash function used>,
+//   }
 EVENT_TYPE(SSL_PRIVATE_KEY_OPERATION)
 
 // The start/end of getting a domain-bound certificate and private key.
@@ -918,7 +931,7 @@ EVENT_TYPE(ENTRY_WRITE_DATA)
 // For the BEGIN phase, the following parameters are attached:
 //   {
 //     "offset": <Offset at which to start reading>,
-//     "buff_len": <Bytes to read/write>,
+//     "buf_len": <Bytes to read/write>,
 //   }
 EVENT_TYPE(SPARSE_READ)
 EVENT_TYPE(SPARSE_WRITE)
@@ -937,7 +950,7 @@ EVENT_TYPE(SPARSE_WRITE_CHILD_DATA)
 //
 // For the BEGIN phase, the following parameters are attached:
 //   {
-//     "buff_len": <Bytes to read/write>,
+//     "buf_len": <Bytes to read/write>,
 //     "offset": <Offset at which to start reading>,
 //   }
 //
@@ -1312,10 +1325,6 @@ EVENT_TYPE(HTTP2_SESSION_CLOSE)
 // Event when the creation of a stream is stalled because we're at
 // the maximum number of concurrent streams.
 EVENT_TYPE(HTTP2_SESSION_STALLED_MAX_STREAMS)
-
-// Received a value for initial window size in SETTINGS frame with
-// flow control turned off.
-EVENT_TYPE(HTTP2_SESSION_INITIAL_WINDOW_SIZE_NO_FLOW_CONTROL)
 
 // Received an out-of-range value for initial window size in SETTINGS
 // frame.
@@ -1858,6 +1867,10 @@ EVENT_TYPE(SERVICE_WORKER_ERROR_NO_ACTIVE_VERSION)
 // This event is emitted when Service Worker fails to respond because
 // the underlying request was detached.
 EVENT_TYPE(SERVICE_WORKER_ERROR_NO_REQUEST)
+
+// This event is emitted when Service Worker fails to respond because
+// the job delegate behaved incorrectly.
+EVENT_TYPE(SERVICE_WORKER_ERROR_BAD_DELEGATE)
 
 // This event is emitted when Service Worker fails to respond because
 // the fetch event could not be dispatched to the worker.
@@ -2409,14 +2422,12 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_CREATE_BEGIN)
 // }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_CREATE_END)
 
-// This event is created when ReadEntry is called.
+// This event is created when ReadData is called.
 // It contains the following parameters:
 //   {
 //     "index": <Index being read/written>,
 //     "offset": <Offset being read/written>,
 //     "buf_len": <Length of buffer being read to/written from>,
-//     "truncate": <If present for a write, the truncate flag is set to true.
-//                  Not present in reads or writes where it is false>,
 //   }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_CALL)
 
@@ -2427,12 +2438,10 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_CALL)
 //     "index": <Index being read/written>,
 //     "offset": <Offset being read/written>,
 //     "buf_len": <Length of buffer being read to/written from>,
-//     "truncate": <If present for a write, the truncate flag is set to true.
-//                  Not present in reads or writes where it is false>,
 //   }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_BEGIN)
 
-// This event is created when the Simple Cache finishes a ReadEntry call.
+// This event is created when the Simple Cache finishes a ReadData call.
 // It contains the following parameters:
 //   {
 //     "bytes_copied": <Number of bytes copied.  Not present on error>,
@@ -2453,7 +2462,7 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_CHECKSUM_BEGIN)
 // }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_CHECKSUM_END)
 
-// This event is created when WriteEntry is called.
+// This event is created when WriteData is called.
 // It contains the following parameters:
 //   {
 //     "index": <Index being read/written>,
@@ -2485,13 +2494,67 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_OPTIMISTIC)
 //   }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_BEGIN)
 
-// This event is created when the Simple Cache finishes a WriteEntry call.
+// This event is created when the Simple Cache finishes a WriteData call.
 // It contains the following parameters:
 //   {
 //     "bytes_copied": <Number of bytes copied.  Not present on error>,
 //     "net_error": <Network error code.  Only present on error>,
 //   }
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_END)
+
+// This event is created when ReadSparseData is called.
+// It contains the following parameters:
+//   {
+//     "offset": <Offset being read/written>,
+//     "buf_len": <Length of buffer being read to/written from>,
+//     "truncate": <If present for a write, the truncate flag is set to true.
+//                  Not present in reads or writes where it is false>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_SPARSE_CALL)
+
+// This event is created when the Simple Cache actually begins reading sparse
+// data from the cache entry.
+// It contains the following parameters:
+//   {
+//     "offset": <Offset being read/written>,
+//     "buf_len": <Length of buffer being read to/written from>,
+//     "truncate": <If present for a write, the truncate flag is set to true.
+//                  Not present in reads or writes where it is false>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_SPARSE_BEGIN)
+
+// This event is created when the Simple Cache finishes a ReadSparseData call.
+// It contains the following parameters:
+//   {
+//     "bytes_copied": <Number of bytes copied.  Not present on error>,
+//     "net_error": <Network error code.  Only present on error>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_READ_SPARSE_END)
+
+// This event is created when WriteSparseData is called.
+// It contains the following parameters:
+//   {
+//     "offset": <Offset being read/written>,
+//     "buf_len": <Length of buffer being read to/written from>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_SPARSE_CALL)
+
+// This event is created when the Simple Cache actually begins writing sparse
+// data to the cache entry.
+// It contains the following parameters:
+//   {
+//     "offset": <Offset being read/written>,
+//     "buf_len": <Length of buffer being read to/written from>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_SPARSE_BEGIN)
+
+// This event is created when the Simple Cache finishes a WriteSparseData call.
+// It contains the following parameters:
+//   {
+//     "bytes_copied": <Number of bytes copied.  Not present on error>,
+//     "net_error": <Network error code.  Only present on error>,
+//   }
+EVENT_TYPE(SIMPLE_CACHE_ENTRY_WRITE_SPARSE_END)
 
 // This event is created when DoomEntry is called.  It contains no parameters.
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_DOOM_CALL)

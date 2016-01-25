@@ -5,7 +5,10 @@
 #ifndef MEDIA_FORMATS_WEBM_WEBM_STREAM_PARSER_H_
 #define MEDIA_FORMATS_WEBM_WEBM_STREAM_PARSER_H_
 
+#include <stdint.h>
+
 #include "base/callback_forward.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/byte_queue.h"
@@ -31,7 +34,7 @@ class WebMStreamParser : public StreamParser {
             const base::Closure& end_of_segment_cb,
             const scoped_refptr<MediaLog>& media_log) override;
   void Flush() override;
-  bool Parse(const uint8* buf, int size) override;
+  bool Parse(const uint8_t* buf, int size) override;
 
  private:
   enum State {
@@ -51,7 +54,7 @@ class WebMStreamParser : public StreamParser {
   // Returns < 0 if the parse fails.
   // Returns 0 if more data is needed.
   // Returning > 0 indicates success & the number of bytes parsed.
-  int ParseInfoAndTracks(const uint8* data, int size);
+  int ParseInfoAndTracks(const uint8_t* data, int size);
 
   // Incrementally parses WebM cluster elements. This method also skips
   // CUES elements if they are encountered since we currently don't use the
@@ -60,7 +63,7 @@ class WebMStreamParser : public StreamParser {
   // Returns < 0 if the parse fails.
   // Returns 0 if more data is needed.
   // Returning > 0 indicates success & the number of bytes parsed.
-  int ParseCluster(const uint8* data, int size);
+  int ParseCluster(const uint8_t* data, int size);
 
   // Fire needkey event through the |encrypted_media_init_data_cb_|.
   void OnEncryptedMediaInitData(const std::string& key_id);

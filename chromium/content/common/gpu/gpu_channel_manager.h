@@ -5,11 +5,14 @@
 #ifndef CONTENT_COMMON_GPU_GPU_CHANNEL_MANAGER_H_
 #define CONTENT_COMMON_GPU_GPU_CHANNEL_MANAGER_H_
 
+#include <stdint.h>
+
 #include <deque>
 #include <string>
 #include <vector>
 
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -34,7 +37,9 @@ class GLShareGroup;
 
 namespace gpu {
 class PreemptionFlag;
+class SyncPointClient;
 class SyncPointManager;
+struct SyncToken;
 union ValueState;
 namespace gles2 {
 class FramebufferCompletenessCache;
@@ -53,6 +58,9 @@ struct GPUCreateCommandBufferConfig;
 struct GpuMsg_EstablishChannel_Params;
 
 namespace content {
+#if defined(OS_CHROMEOS)
+class GpuArcVideoService;
+#endif
 class GpuChannel;
 class GpuMemoryBufferFactory;
 class GpuWatchdog;
@@ -84,8 +92,8 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   void LoseAllContexts();
 
   int GenerateRouteID();
-  void AddRoute(int32 routing_id, IPC::Listener* listener);
-  void RemoveRoute(int32 routing_id);
+  void AddRoute(int32_t routing_id, IPC::Listener* listener);
+  void RemoveRoute(int32_t routing_id);
 
   gpu::gles2::ProgramCache* program_cache();
   gpu::gles2::ShaderTranslatorCache* shader_translator_cache();
@@ -93,11 +101,7 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
 
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
-  GpuChannel* LookupChannel(int32 client_id) const;
-
-  gpu::SyncPointManager* sync_point_manager() {
-    return sync_point_manager_;
-  }
+  GpuChannel* LookupChannel(int32_t client_id) const;
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
 
@@ -124,6 +128,10 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
                                                   bool allow_future_sync_points,
                                                   bool allow_real_time_streams);
 
+  gpu::SyncPointManager* sync_point_manager() const {
+    return sync_point_manager_;
+  }
+
   gfx::GLShareGroup* share_group() const { return share_group_.get(); }
   gpu::gles2::MailboxManager* mailbox_manager() const {
     return mailbox_manager_.get();
@@ -138,25 +146,32 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   // These objects manage channels to individual renderer processes there is
   // one channel for each renderer process that has connected to this GPU
   // process.
-  base::ScopedPtrHashMap<int32, scoped_ptr<GpuChannel>> gpu_channels_;
+  base::ScopedPtrHashMap<int32_t, scoped_ptr<GpuChannel>> gpu_channels_;
 
  private:
   // Message handlers.
   bool OnControlMessageReceived(const IPC::Message& msg);
   void OnEstablishChannel(const GpuMsg_EstablishChannel_Params& params);
   void OnCloseChannel(const IPC::ChannelHandle& channel_handle);
-  void OnVisibilityChanged(int32 render_view_id, int32 client_id, bool visible);
+  void OnVisibilityChanged(int32_t render_view_id,
+                           int32_t client_id,
+                           bool visible);
   void OnCreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
-      int32 client_id,
+      int32_t client_id,
       const GPUCreateCommandBufferConfig& init_params,
-      int32 route_id);
+      int32_t route_id);
   void OnLoadedShader(const std::string& shader);
   void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id, int client_id);
   void DestroyGpuMemoryBufferOnIO(gfx::GpuMemoryBufferId id, int client_id);
   void OnDestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                                 int client_id,
-                                int32 sync_point);
+                                const gpu::SyncToken& sync_token);
+#if defined(OS_CHROMEOS)
+  void OnCreateArcVideoAcceleratorChannel();
+  void ArcVideoAcceleratorChannelCreated(const IPC::ChannelHandle& handle);
+  void OnShutdownArcVideoService();
+#endif
 
   void OnUpdateValueState(int client_id,
                           unsigned int target,
@@ -182,11 +197,15 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   GpuMemoryManager gpu_memory_manager_;
   // SyncPointManager guaranteed to outlive running MessageLoop.
   gpu::SyncPointManager* sync_point_manager_;
+  scoped_ptr<gpu::SyncPointClient> sync_point_client_waiter_;
   scoped_ptr<gpu::gles2::ProgramCache> program_cache_;
   scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
   scoped_refptr<gpu::gles2::FramebufferCompletenessCache>
       framebuffer_completeness_cache_;
   scoped_refptr<gfx::GLSurface> default_offscreen_surface_;
+#if defined(OS_CHROMEOS)
+  scoped_ptr<GpuArcVideoService> gpu_arc_video_service_;
+#endif
   GpuMemoryBufferFactory* const gpu_memory_buffer_factory_;
 #if defined(OS_ANDROID)
   // Last time we know the GPU was powered on. Global for tracking across all

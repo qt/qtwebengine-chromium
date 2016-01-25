@@ -4,7 +4,7 @@
 
 import("//build/config/ui.gni")
 import("//mojo/public/mojo_application.gni")
-import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
 
 mojo_native_application("desktop_ui") {
   sources = [
@@ -14,7 +14,7 @@ mojo_native_application("desktop_ui") {
   deps = [
     ":lib",
     "//mandoline/ui/common/resources",
-    "//mojo/application/public/cpp",
+    "//mojo/shell/public/cpp",
   ]
 
   resources = [ "$root_out_dir/mandoline_ui.pak" ]
@@ -27,6 +27,9 @@ source_set("lib") {
     "browser_manager.h",
     "browser_window.cc",
     "browser_window.h",
+    "find_bar_delegate.h",
+    "find_bar_view.cc",
+    "find_bar_view.h",
     "toolbar_view.cc",
     "toolbar_view.h",
   ]
@@ -36,18 +39,18 @@ source_set("lib") {
     "//base",
     "//components/web_view/public/cpp",
     "//components/web_view/public/interfaces",
-    "//mandoline/ui/aura",
-    "//mojo/application/public/cpp:sources",
     "//mojo/common:common_base",
     "//mojo/converters/geometry",
+    "//mojo/public/cpp/bindings",
     "//mojo/services/tracing/public/cpp",
     "//mojo/services/tracing/public/interfaces",
+    "//mojo/shell/public/cpp:sources",
     "//skia",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//ui/gfx",
     "//ui/gfx/geometry",
-    "//ui/mojo/events:interfaces",
+    "//ui/mojo/init",
     "//ui/views",
+    "//ui/views/mus:for_mojo_application",
     "//url",
   ]
 }
@@ -60,11 +63,12 @@ mojo_native_application("mandoline_browser_apptests") {
   ]
 
   deps = [
-    "//base",
-    "//base/test:test_config",
-    "//components/mus/public/cpp",
-    "//mandoline/ui/desktop_ui:lib",
-    "//mojo/application/public/cpp:sources",
-    "//mojo/application/public/cpp:test_support",
+    "//mandoline/ui/desktop_ui/public/interfaces",
+    "//mojo/shell/public/cpp:sources",
+    "//mojo/shell/public/cpp:test_support",
+  ]
+
+  data_deps = [
+    ":desktop_ui",
   ]
 }

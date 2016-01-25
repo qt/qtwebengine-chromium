@@ -17,31 +17,34 @@
 
 #include <windows.h>
 #include <sys/time.h>
+#include <sys/types.h>
 
 #include <map>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "client/crashpad_info.h"
 #include "snapshot/crashpad_info_client_options.h"
 #include "snapshot/exception_snapshot.h"
+#include "snapshot/memory_map_region_snapshot.h"
 #include "snapshot/memory_snapshot.h"
 #include "snapshot/module_snapshot.h"
 #include "snapshot/process_snapshot.h"
 #include "snapshot/system_snapshot.h"
 #include "snapshot/thread_snapshot.h"
 #include "snapshot/win/exception_snapshot_win.h"
+#include "snapshot/win/memory_map_region_snapshot_win.h"
 #include "snapshot/win/memory_snapshot_win.h"
 #include "snapshot/win/module_snapshot_win.h"
 #include "snapshot/win/system_snapshot_win.h"
 #include "snapshot/win/thread_snapshot_win.h"
 #include "util/misc/initialization_state_dcheck.h"
 #include "util/misc/uuid.h"
+#include "util/stdlib/pointer_container.h"
 #include "util/win/address_types.h"
 #include "util/win/process_structs.h"
-#include "util/stdlib/pointer_container.h"
 
 namespace crashpad {
 
@@ -57,12 +60,18 @@ class ProcessSnapshotWin final : public ProcessSnapshot {
   //! \param[in] process The handle to create a snapshot from.
   //! \param[in] suspension_state Whether \a process has been suspended by the
   //!     caller.
+  //! \param[in] debug_critical_section_address The address in the target
+  //!     process's address space of a `CRITICAL_SECTION` allocated with valid
+  //!     `.DebugInfo`. Used as a starting point to walk the process's locks.
+  //!     May be `0`.
   //!
   //! \return `true` if the snapshot could be created, `false` otherwise with
   //!     an appropriate message logged.
   //!
   //! \sa ScopedProcessSuspend
-  bool Initialize(HANDLE process, ProcessSuspensionState suspension_state);
+  bool Initialize(HANDLE process,
+                  ProcessSuspensionState suspension_state,
+                  WinVMAddress debug_critical_section_address);
 
   //! \brief Initializes the object's exception.
   //!
@@ -126,6 +135,8 @@ class ProcessSnapshotWin final : public ProcessSnapshot {
   std::vector<const ThreadSnapshot*> Threads() const override;
   std::vector<const ModuleSnapshot*> Modules() const override;
   const ExceptionSnapshot* Exception() const override;
+  std::vector<const MemoryMapRegionSnapshot*> MemoryMap() const override;
+  std::vector<HandleSnapshot> Handles() const override;
   std::vector<const MemorySnapshot*> ExtraMemory() const override;
 
  private:
@@ -135,9 +146,10 @@ class ProcessSnapshotWin final : public ProcessSnapshot {
   // Initializes modules_ on behalf of Initialize().
   void InitializeModules();
 
-  // Initializes peb_memory_ on behalf of Initialize().
+  // Initializes various memory blocks reachable from the PEB on behalf of
+  // Initialize().
   template <class Traits>
-  void InitializePebData();
+  void InitializePebData(WinVMAddress debug_critical_section_address);
 
   void AddMemorySnapshot(WinVMAddress address,
                          WinVMSize size,
@@ -157,11 +169,18 @@ class ProcessSnapshotWin final : public ProcessSnapshot {
   WinVMSize DetermineSizeOfEnvironmentBlock(
       WinVMAddress start_of_environment_block);
 
+  // Starting from the address of a CRITICAL_SECTION, add a lock and, if valid,
+  // its .DebugInfo field to the snapshot.
+  template <class Traits>
+  void ReadLock(WinVMAddress start,
+                PointerVector<internal::MemorySnapshotWin>* into);
+
   internal::SystemSnapshotWin system_;
-  PointerVector<internal::MemorySnapshotWin> peb_memory_;
+  PointerVector<internal::MemorySnapshotWin> extra_memory_;
   PointerVector<internal::ThreadSnapshotWin> threads_;
   PointerVector<internal::ModuleSnapshotWin> modules_;
   scoped_ptr<internal::ExceptionSnapshotWin> exception_;
+  PointerVector<internal::MemoryMapRegionSnapshotWin> memory_map_;
   ProcessReaderWin process_reader_;
   UUID report_id_;
   UUID client_id_;

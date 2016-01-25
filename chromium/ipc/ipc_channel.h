@@ -5,20 +5,22 @@
 #ifndef IPC_IPC_CHANNEL_H_
 #define IPC_IPC_CHANNEL_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <string>
 
-#if defined(OS_POSIX)
-#include <sys/types.h>
-#endif
-
 #include "base/compiler_specific.h"
 #include "base/files/scoped_file.h"
 #include "base/process/process.h"
+#include "build/build_config.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_endpoint.h"
 #include "ipc/ipc_message.h"
+
+#if defined(OS_POSIX)
+#include <sys/types.h>
+#endif
 
 namespace IPC {
 
@@ -73,7 +75,7 @@ class IPC_EXPORT Channel : public Endpoint {
   };
 
   // Messages internal to the IPC implementation are defined here.
-  // Uses Maximum value of message type (uint16), to avoid conflicting
+  // Uses Maximum value of message type (uint16_t), to avoid conflicting
   // with normal message types, which are enumeration constants starting from 0.
   enum {
     // The Hello message is sent by the peer when the channel is connected.
@@ -96,6 +98,11 @@ class IPC_EXPORT Channel : public Endpoint {
 
   // Amount of data to read at once from the pipe.
   static const size_t kReadBufferSize = 4 * 1024;
+
+  // Maximum persistent read buffer size. Read buffer can grow larger to
+  // accommodate large messages, but it's recommended to shrink back to this
+  // value because it fits 99.9% of all messages (see issue 529940 for data).
+  static const size_t kMaximumReadBufferSize = 64 * 1024;
 
   // Initialize a Channel.
   //
@@ -239,10 +246,10 @@ class IPC_EXPORT Channel : public Endpoint {
     ~OutputElement();
     size_t size() const { return message_ ? message_->size() : length_; }
     const void* data() const { return message_ ? message_->data() : buffer_; }
-    const Message* get_message() const { return message_.get(); }
+    Message* get_message() const { return message_.get(); }
 
    private:
-    scoped_ptr<const Message> message_;
+    scoped_ptr<Message> message_;
     void* buffer_;
     size_t length_;
   };

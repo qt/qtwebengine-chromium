@@ -4,12 +4,17 @@
 
 #include "chrome/renderer/spellchecker/spellcheck.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/hunspell_engine.h"
@@ -70,14 +75,10 @@ class SpellCheckTest : public testing::Test {
     spell_check_->languages_.push_back(new SpellcheckLanguage());
     spell_check_->languages_.front()->platform_spelling_engine_.reset(
         new HunspellEngine);
-    spell_check_->languages_.front()->Init(file.Pass(), language);
+    spell_check_->languages_.front()->Init(std::move(file), language);
 #else
-    spell_check_->AddSpellcheckLanguage(file.Pass(), language);
+    spell_check_->AddSpellcheckLanguage(std::move(file), language);
 #endif
-  }
-
-  void EnableAutoCorrect(bool enable_autocorrect) {
-    spell_check_->OnEnableAutoSpellCorrect(enable_autocorrect);
   }
 
   ~SpellCheckTest() override {}
@@ -855,36 +856,6 @@ TEST_F(SpellCheckTest, MAYBE_SpellCheckText) {
         << ".";
     EXPECT_EQ(0, misspelling_start);
     EXPECT_EQ(0, misspelling_length);
-  }
-}
-
-TEST_F(SpellCheckTest, GetAutoCorrectionWord_EN_US) {
-  static const struct {
-    // A misspelled word.
-    const char* input;
-
-    // An expected result for this test case.
-    // Should be an empty string if there are no suggestions for auto correct.
-    const char* expected_result;
-  } kTestCases[] = {
-    {"teh", "the"},
-    {"moer", "more"},
-    {"watre", "water"},
-    {"noen", ""},
-    {"what", ""},
-  };
-
-  EnableAutoCorrect(true);
-
-  for (size_t i = 0; i < arraysize(kTestCases); ++i) {
-    base::string16 misspelled_word(base::UTF8ToUTF16(kTestCases[i].input));
-    base::string16 expected_autocorrect_word(
-        base::UTF8ToUTF16(kTestCases[i].expected_result));
-    base::string16 autocorrect_word = spell_check()->GetAutoCorrectionWord(
-        misspelled_word, 0);
-
-    // Check for spelling.
-    EXPECT_EQ(expected_autocorrect_word, autocorrect_word);
   }
 }
 

@@ -4,9 +4,9 @@
 
 #include "content/public/common/web_preferences.h"
 
-#include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 
@@ -50,18 +50,18 @@ STATIC_ASSERT_MATCHING_ENUMS(IMAGE_ANIMATION_POLICY_NO_ANIMATION,
                              WebSettings::ImageAnimationPolicyNoAnimation);
 
 STATIC_ASSERT_MATCHING_ENUMS(ui::POINTER_TYPE_NONE,
-                             WebSettings::PointerTypeNone);
+                             blink::PointerTypeNone);
 STATIC_ASSERT_MATCHING_ENUMS(ui::POINTER_TYPE_COARSE,
-                             WebSettings::PointerTypeCoarse);
+                             blink::PointerTypeCoarse);
 STATIC_ASSERT_MATCHING_ENUMS(ui::POINTER_TYPE_FINE,
-                             WebSettings::PointerTypeFine);
+                             blink::PointerTypeFine);
 
 STATIC_ASSERT_MATCHING_ENUMS(ui::HOVER_TYPE_NONE,
-                             WebSettings::HoverTypeNone);
+                             blink::HoverTypeNone);
 STATIC_ASSERT_MATCHING_ENUMS(ui::HOVER_TYPE_ON_DEMAND,
-                             WebSettings::HoverTypeOnDemand);
+                             blink::HoverTypeOnDemand);
 STATIC_ASSERT_MATCHING_ENUMS(ui::HOVER_TYPE_HOVER,
-                             WebSettings::HoverTypeHover);
+                             blink::HoverTypeHover);
 
 WebPreferences::WebPreferences()
     : default_font_size(16),
@@ -90,17 +90,13 @@ WebPreferences::WebPreferences()
       xslt_enabled(true),
       xss_auditor_enabled(true),
       dns_prefetching_enabled(true),
+      data_saver_enabled(false),
       local_storage_enabled(false),
       databases_enabled(false),
       application_cache_enabled(false),
       tabs_to_links(true),
       caret_browsing_enabled(false),
       hyperlink_auditing_enabled(true),
-      is_online(true),
-      net_info_connection_type(net::NetworkChangeNotifier::CONNECTION_NONE),
-      net_info_max_bandwidth_mbps(
-          net::NetworkChangeNotifier::GetMaxBandwidthForConnectionSubtype(
-              net::NetworkChangeNotifier::SUBTYPE_NONE)),
       allow_universal_access_from_file_urls(false),
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
@@ -113,7 +109,6 @@ WebPreferences::WebPreferences()
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
       mock_scrollbars_enabled(false),
-      asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
       accelerated_2d_canvas_enabled(false),
       minimum_accelerated_2d_canvas_size(257 * 256),
@@ -177,8 +172,6 @@ WebPreferences::WebPreferences()
       use_solid_color_scrollbars(false),
       navigate_on_drag_drop(true),
       v8_cache_options(V8_CACHE_OPTIONS_DEFAULT),
-      slimming_paint_v2_enabled(false),
-      inert_visual_viewport(false),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false),
       animation_policy(IMAGE_ANIMATION_POLICY_ALLOWED),

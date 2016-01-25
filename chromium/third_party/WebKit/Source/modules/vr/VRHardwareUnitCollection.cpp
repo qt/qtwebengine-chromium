@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/VRHardwareUnitCollection.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
@@ -22,8 +21,8 @@
 
 namespace blink {
 
-VRHardwareUnitCollection::VRHardwareUnitCollection(VRController* controller)
-    : m_controller(controller)
+VRHardwareUnitCollection::VRHardwareUnitCollection(NavigatorVRDevice* navigatorVRDevice)
+    : m_navigatorVRDevice(navigatorVRDevice)
 {
 }
 
@@ -34,7 +33,7 @@ HeapVector<Member<VRDevice>> VRHardwareUnitCollection::updateVRHardwareUnits(con
     for (const auto& device : devices) {
         VRHardwareUnit* hardwareUnit = getHardwareUnitForIndex(device.index);
         if (!hardwareUnit) {
-            hardwareUnit = new VRHardwareUnit(m_controller);
+            hardwareUnit = new VRHardwareUnit(m_navigatorVRDevice);
             m_hardwareUnits.append(hardwareUnit);
         }
 
@@ -60,7 +59,7 @@ VRHardwareUnit* VRHardwareUnitCollection::getHardwareUnitForIndex(unsigned index
 
 DEFINE_TRACE(VRHardwareUnitCollection)
 {
-    visitor->trace(m_controller);
+    visitor->trace(m_navigatorVRDevice);
     visitor->trace(m_hardwareUnits);
 }
 

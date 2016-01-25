@@ -6,7 +6,6 @@
 #define BASE_PROCESS_PROCESS_H_
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/move.h"
 #include "base/process/process_handle.h"
 #include "base/time/time.h"
@@ -32,19 +31,17 @@ namespace base {
 // the process dies, and it may be reused by the system, which means that it may
 // end up pointing to the wrong process.
 class BASE_EXPORT Process {
-  MOVE_ONLY_TYPE_FOR_CPP_03(Process, RValue)
+  MOVE_ONLY_TYPE_FOR_CPP_03(Process)
 
  public:
   explicit Process(ProcessHandle handle = kNullProcessHandle);
 
-  // Move constructor for C++03 move emulation of this type.
-  Process(RValue other);
+  Process(Process&& other);
 
   // The destructor does not terminate the process.
   ~Process();
 
-  // Move operator= for C++03 move emulation of this type.
-  Process& operator=(RValue other);
+  Process& operator=(Process&& other);
 
   // Returns an object for the current process.
   static Process Current();
@@ -125,6 +122,13 @@ class BASE_EXPORT Process {
   // of this value is OS dependent.
   int GetPriority() const;
 
+#if defined(OS_CHROMEOS)
+  // Get the PID in its PID namespace.
+  // If the process is not in a PID namespace or /proc/<pid>/status does not
+  // report NSpid, kNullProcessId is returned.
+  ProcessId GetPidInNamespace() const;
+#endif
+
  private:
 #if defined(OS_WIN)
   bool is_current_process_;
@@ -133,6 +137,14 @@ class BASE_EXPORT Process {
   ProcessHandle process_;
 #endif
 };
+
+#if defined(OS_CHROMEOS)
+// Exposed for testing.
+// Given the contents of the /proc/<pid>/cgroup file, determine whether the
+// process is backgrounded or not.
+BASE_EXPORT bool IsProcessBackgroundedCGroup(
+    const StringPiece& cgroup_contents);
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace base
 

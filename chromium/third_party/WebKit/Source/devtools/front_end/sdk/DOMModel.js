@@ -54,6 +54,7 @@ WebInspector.DOMNode = function(domModel, doc, isInShadowTree, payload)
     this._pseudoType = payload.pseudoType;
     this._shadowRootType = payload.shadowRootType;
     this._frameId = payload.frameId || null;
+    this._xmlVersion = payload.xmlVersion;
 
     this._shadowRoots = [];
 
@@ -784,7 +785,7 @@ WebInspector.DOMNode.prototype = {
      */
     isXMLNode: function()
     {
-        return !!this.ownerDocument && !!this.ownerDocument.xmlVersion;
+        return !!this._xmlVersion;
     },
 
     /**
@@ -1058,7 +1059,6 @@ WebInspector.DOMDocument = function(domModel, payload)
     WebInspector.DOMNode.call(this, domModel, this, false, payload);
     this.documentURL = payload.documentURL || "";
     this.baseURL = payload.baseURL || "";
-    this.xmlVersion = payload.xmlVersion;
     this._listeners = {};
 }
 
@@ -1075,7 +1075,6 @@ WebInspector.DOMModel = function(target) {
     WebInspector.SDKModel.call(this, WebInspector.DOMModel, target);
 
     this._agent = target.domAgent();
-    WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._suspendStateChanged, this);
 
     /** @type {!Object.<number, !WebInspector.DOMNode>} */
     this._idToDOMNode = {};
@@ -1101,6 +1100,7 @@ WebInspector.DOMModel.Events = {
     DOMMutated: "DOMMutated",
     NodeInserted: "NodeInserted",
     NodeInspected: "NodeInspected",
+    NodeHighlightedInOverlay: "NodeHighlightedInOverlay",
     NodeRemoved: "NodeRemoved",
     DocumentUpdated: "DocumentUpdated",
     ChildNodeCountUpdated: "ChildNodeCountUpdated",
@@ -1150,24 +1150,28 @@ WebInspector.DOMModel.cancelSearch = function()
 }
 
 WebInspector.DOMModel.prototype = {
-    _scheduleMutationEvent: function()
+    /**
+     * @param {!WebInspector.DOMNode} node
+     */
+    _scheduleMutationEvent: function(node)
     {
         if (!this.hasEventListeners(WebInspector.DOMModel.Events.DOMMutated))
             return;
 
         this._lastMutationId = (this._lastMutationId || 0) + 1;
-        Promise.resolve().then(callObserve.bind(this, this._lastMutationId));
+        Promise.resolve().then(callObserve.bind(this, node, this._lastMutationId));
 
         /**
          * @this {WebInspector.DOMModel}
+         * @param {!WebInspector.DOMNode} node
          * @param {number} mutationId
          */
-        function callObserve(mutationId)
+        function callObserve(node, mutationId)
         {
             if (!this.hasEventListeners(WebInspector.DOMModel.Events.DOMMutated) || this._lastMutationId !== mutationId)
                 return;
 
-            this.dispatchEventToListeners(WebInspector.DOMModel.Events.DOMMutated);
+            this.dispatchEventToListeners(WebInspector.DOMModel.Events.DOMMutated, node);
         }
     },
 
@@ -1331,7 +1335,7 @@ WebInspector.DOMModel.prototype = {
 
         node._setAttribute(name, value);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.AttrModified, { node: node, name: name });
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1345,7 +1349,7 @@ WebInspector.DOMModel.prototype = {
             return;
         node._removeAttribute(name);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.AttrRemoved, { node: node, name: name });
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1378,7 +1382,7 @@ WebInspector.DOMModel.prototype = {
             if (node) {
                 if (node._setAttributesPayload(attributes)) {
                     this.dispatchEventToListeners(WebInspector.DOMModel.Events.AttrModified, { node: node, name: "style" });
-                    this._scheduleMutationEvent();
+                    this._scheduleMutationEvent(node);
                 }
             }
         }
@@ -1401,7 +1405,7 @@ WebInspector.DOMModel.prototype = {
         var node = this._idToDOMNode[nodeId];
         node._nodeValue = newValue;
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.CharacterDataModified, node);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1466,7 +1470,7 @@ WebInspector.DOMModel.prototype = {
         var node = this._idToDOMNode[nodeId];
         node._childNodeCount = newValue;
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.ChildNodeCountUpdated, node);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1481,7 +1485,7 @@ WebInspector.DOMModel.prototype = {
         var node = parent._insertChild(prev, payload);
         this._idToDOMNode[node.id] = node;
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeInserted, node);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1495,7 +1499,7 @@ WebInspector.DOMModel.prototype = {
         parent._removeChild(node);
         this._unbind(node);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeRemoved, {node: node, parent: parent});
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1512,7 +1516,7 @@ WebInspector.DOMModel.prototype = {
         this._idToDOMNode[node.id] = node;
         host._shadowRoots.unshift(node);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeInserted, node);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1530,7 +1534,7 @@ WebInspector.DOMModel.prototype = {
         host._removeChild(root);
         this._unbind(root);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeRemoved, {node: root, parent: host});
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(root);
     },
 
     /**
@@ -1548,7 +1552,7 @@ WebInspector.DOMModel.prototype = {
         console.assert(!parent._pseudoElements.get(node.pseudoType()));
         parent._pseudoElements.set(node.pseudoType(), node);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeInserted, node);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(node);
     },
 
     /**
@@ -1566,7 +1570,7 @@ WebInspector.DOMModel.prototype = {
         parent._removeChild(pseudoElement);
         this._unbind(pseudoElement);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeRemoved, {node: pseudoElement, parent: parent});
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(pseudoElement);
     },
 
     /**
@@ -1580,7 +1584,7 @@ WebInspector.DOMModel.prototype = {
             return;
         insertionPoint._setDistributedNodePayloads(distributedNodes);
         this.dispatchEventToListeners(WebInspector.DOMModel.Events.DistributedNodesChanged, insertionPoint);
-        this._scheduleMutationEvent();
+        this._scheduleMutationEvent(insertionPoint);
     },
 
     /**
@@ -1735,13 +1739,13 @@ WebInspector.DOMModel.prototype = {
 
     /**
      * @param {!DOMAgent.NodeId=} nodeId
-     * @param {!{mode: (string|undefined), showInfo: (boolean|undefined)}=} config
+     * @param {!{mode: (string|undefined), showInfo: (boolean|undefined), selectors: (string|undefined)}=} config
      * @param {!DOMAgent.BackendNodeId=} backendNodeId
      * @param {!RuntimeAgent.RemoteObjectId=} objectId
      */
     highlightDOMNodeWithConfig: function(nodeId, config, backendNodeId, objectId)
     {
-        config = config || { mode: "all", showInfo: undefined };
+        config = config || { mode: "all", showInfo: undefined, selectors: undefined };
         if (this._hideDOMNodeHighlightTimeout) {
             clearTimeout(this._hideDOMNodeHighlightTimeout);
             delete this._hideDOMNodeHighlightTimeout;
@@ -1749,6 +1753,8 @@ WebInspector.DOMModel.prototype = {
         var highlightConfig = this._buildHighlightConfig(config.mode);
         if (typeof config.showInfo !== "undefined")
             highlightConfig.showInfo = config.showInfo;
+        if (typeof config.selectors !== "undefined")
+            highlightConfig.selectorList = config.selectors;
         this._highlighter.highlightDOMNode(this.nodeForId(nodeId || 0), highlightConfig, backendNodeId, objectId);
     },
 
@@ -1935,14 +1941,61 @@ WebInspector.DOMModel.prototype = {
             callback(null);
     },
 
-    _suspendStateChanged: function()
+    /**
+     * @override
+     * @return {!Promise}
+     */
+    suspendModel: function()
     {
-        if (WebInspector.targetManager.allTargetsSuspended()) {
-            this._agent.disable();
-        } else {
-            this._agent.enable();
-            this._setDocument(null);
+        return new Promise(promiseBody.bind(this));
+
+        /**
+         * @param {function()} fulfill
+         * @this {WebInspector.DOMModel}
+         */
+        function promiseBody(fulfill)
+        {
+            this._agent.disable(callback.bind(this));
+
+            /**
+             * @this {WebInspector.DOMModel}
+             */
+            function callback()
+            {
+                this._setDocument(null);
+                fulfill();
+            }
         }
+    },
+
+    /**
+     * @override
+     * @return {!Promise}
+     */
+    resumeModel: function()
+    {
+        return new Promise(promiseBody.bind(this));
+
+        /**
+         * @param {function()} fulfill
+         * @this {WebInspector.DOMModel}
+         */
+        function promiseBody(fulfill)
+        {
+            this._agent.enable(fulfill);
+        }
+    },
+
+    /**
+     * @param {!DOMAgent.NodeId} nodeId
+     */
+    nodeHighlightRequested: function(nodeId)
+    {
+        var node = this.nodeForId(nodeId);
+        if (!node)
+            return;
+
+        this.dispatchEventToListeners(WebInspector.DOMModel.Events.NodeHighlightedInOverlay, node);
     },
 
     __proto__: WebInspector.SDKModel.prototype
@@ -2105,6 +2158,15 @@ WebInspector.DOMDispatcher.prototype = {
     distributedNodesUpdated: function(insertionPointId, distributedNodes)
     {
         this._domModel._distributedNodesUpdated(insertionPointId, distributedNodes);
+    },
+
+    /**
+     * @override
+     * @param {!DOMAgent.NodeId} nodeId
+     */
+    nodeHighlightRequested: function(nodeId)
+    {
+        this._domModel.nodeHighlightRequested(nodeId);
     }
 }
 

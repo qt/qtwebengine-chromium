@@ -3,7 +3,12 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/framebuffer_manager.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/framebuffer_completeness_cache.h"
@@ -39,7 +44,10 @@ class RenderbufferAttachment
     return renderbuffer_->internal_format();
   }
 
-  GLenum texture_type() const override { return 0; }
+  GLenum texture_type() const override {
+    return TextureManager::ExtractTypeFromStorageFormat(
+        renderbuffer_->internal_format());
+  }
 
   GLsizei samples() const override { return renderbuffer_->samples(); }
 
@@ -66,10 +74,10 @@ class RenderbufferAttachment
   }
 
   bool ValidForAttachmentType(GLenum attachment_type,
-                              uint32 max_color_attachments) override {
-    uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
+                              uint32_t max_color_attachments) override {
+    uint32_t need = GLES2Util::GetChannelsNeededForAttachmentType(
         attachment_type, max_color_attachments);
-    uint32 have = GLES2Util::GetChannelsForFormat(internal_format());
+    uint32_t have = GLES2Util::GetChannelsForFormat(internal_format());
     return (need & have) != 0;
   }
 
@@ -87,8 +95,6 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
-  void OnWillRenderTo() const override {}
-  void OnDidRenderTo() const override {}
   bool FormsFeedbackLoop(TextureRef* /* texture */,
                          GLint /*level */) const override {
     return false;
@@ -107,11 +113,13 @@ class TextureAttachment
     : public Framebuffer::Attachment {
  public:
   TextureAttachment(
-      TextureRef* texture_ref, GLenum target, GLint level, GLsizei samples)
+      TextureRef* texture_ref, GLenum target, GLint level,
+      GLsizei samples, GLint layer)
       : texture_ref_(texture_ref),
         target_(target),
         level_(level),
-        samples_(samples) {
+        samples_(samples),
+        layer_(layer) {
   }
 
   GLsizei width() const override {
@@ -148,6 +156,8 @@ class TextureAttachment
 
   GLsizei samples() const override { return samples_; }
 
+  GLint layer() const { return layer_; }
+
   GLuint object_name() const override { return texture_ref_->client_id(); }
 
   bool cleared() const override {
@@ -179,20 +189,19 @@ class TextureAttachment
 
   void DetachFromFramebuffer(Framebuffer* framebuffer) const override {
     texture_ref_->texture()->DetachFromFramebuffer();
-    framebuffer->OnTextureRefDetached(texture_ref_.get());
   }
 
   bool ValidForAttachmentType(GLenum attachment_type,
-                              uint32 max_color_attachments) override {
+                              uint32_t max_color_attachments) override {
     GLenum type = 0;
     GLenum internal_format = 0;
     if (!texture_ref_->texture()->GetLevelType(
         target_, level_, &type, &internal_format)) {
       return false;
     }
-    uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
+    uint32_t need = GLES2Util::GetChannelsNeededForAttachmentType(
         attachment_type, max_color_attachments);
-    uint32 have = GLES2Util::GetChannelsForFormat(internal_format);
+    uint32_t have = GLES2Util::GetChannelsForFormat(internal_format);
 
     // Workaround for NVIDIA drivers that incorrectly expose these formats as
     // renderable:
@@ -214,14 +223,6 @@ class TextureAttachment
         texture_ref_.get(), target_, level_, signature);
   }
 
-  void OnWillRenderTo() const override {
-    texture_ref_->texture()->OnWillModifyPixels();
-  }
-
-  void OnDidRenderTo() const override {
-    texture_ref_->texture()->OnDidModifyPixels();
-  }
-
   bool FormsFeedbackLoop(TextureRef* texture, GLint level) const override {
     return texture == texture_ref_.get() && level == level_;
   }
@@ -234,17 +235,14 @@ class TextureAttachment
   GLenum target_;
   GLint level_;
   GLsizei samples_;
+  GLint layer_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureAttachment);
 };
 
-FramebufferManager::TextureDetachObserver::TextureDetachObserver() {}
-
-FramebufferManager::TextureDetachObserver::~TextureDetachObserver() {}
-
 FramebufferManager::FramebufferManager(
-    uint32 max_draw_buffers,
-    uint32 max_color_attachments,
+    uint32_t max_draw_buffers,
+    uint32_t max_color_attachments,
     ContextType context_type,
     const scoped_refptr<FramebufferCompletenessCache>&
         framebuffer_combo_complete_cache)
@@ -313,7 +311,7 @@ Framebuffer::Framebuffer(
   DCHECK_GT(manager->max_draw_buffers_, 0u);
   draw_buffers_.reset(new GLenum[manager->max_draw_buffers_]);
   draw_buffers_[0] = GL_COLOR_ATTACHMENT0;
-  for (uint32 i = 1; i < manager->max_draw_buffers_; ++i)
+  for (uint32_t i = 1; i < manager->max_draw_buffers_; ++i)
     draw_buffers_[i] = GL_NONE;
 }
 
@@ -354,7 +352,7 @@ bool Framebuffer::HasUnclearedColorAttachments() const {
 
 void Framebuffer::ChangeDrawBuffersHelper(bool recover) const {
   scoped_ptr<GLenum[]> buffers(new GLenum[manager_->max_draw_buffers_]);
-  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i)
+  for (uint32_t i = 0; i < manager_->max_draw_buffers_; ++i)
     buffers[i] = GL_NONE;
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
@@ -365,7 +363,7 @@ void Framebuffer::ChangeDrawBuffersHelper(bool recover) const {
     }
   }
   bool different = false;
-  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
+  for (uint32_t i = 0; i < manager_->max_draw_buffers_; ++i) {
     if (buffers[i] != draw_buffers_[i]) {
       different = true;
       break;
@@ -577,7 +575,7 @@ void Framebuffer::SetDrawBuffers(GLsizei n, const GLenum* bufs) {
 }
 
 bool Framebuffer::HasAlphaMRT() const {
-  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
+  for (uint32_t i = 0; i < manager_->max_draw_buffers_; ++i) {
     if (draw_buffers_[i] != GL_NONE) {
       const Attachment* attachment = GetAttachment(draw_buffers_[i]);
       if (!attachment)
@@ -592,7 +590,7 @@ bool Framebuffer::HasAlphaMRT() const {
 
 bool Framebuffer::HasSameInternalFormatsMRT() const {
   GLenum internal_format = 0;
-  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
+  for (uint32_t i = 0; i < manager_->max_draw_buffers_; ++i) {
     if (draw_buffers_[i] != GL_NONE) {
       const Attachment* attachment = GetAttachment(draw_buffers_[i]);
       if (!attachment)
@@ -689,7 +687,23 @@ void Framebuffer::AttachTexture(
     a->DetachFromFramebuffer(this);
   if (texture_ref) {
     attachments_[attachment] = scoped_refptr<Attachment>(
-        new TextureAttachment(texture_ref, target, level, samples));
+        new TextureAttachment(texture_ref, target, level, samples, 0));
+    texture_ref->texture()->AttachToFramebuffer();
+  } else {
+    attachments_.erase(attachment);
+  }
+  framebuffer_complete_state_count_id_ = 0;
+}
+
+void Framebuffer::AttachTextureLayer(
+    GLenum attachment, TextureRef* texture_ref, GLenum target,
+    GLint level, GLint layer) {
+  const Attachment* a = GetAttachment(attachment);
+  if (a)
+    a->DetachFromFramebuffer(this);
+  if (texture_ref) {
+    attachments_[attachment] = scoped_refptr<Attachment>(
+        new TextureAttachment(texture_ref, target, level, 0, layer));
     texture_ref->texture()->AttachToFramebuffer();
   } else {
     attachments_.erase(attachment);
@@ -711,28 +725,6 @@ const Framebuffer::Attachment* Framebuffer::GetReadBufferAttachment() const {
   if (read_buffer_ == GL_NONE)
     return nullptr;
   return GetAttachment(read_buffer_);
-}
-
-void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
-  manager_->OnTextureRefDetached(texture);
-}
-
-void Framebuffer::OnWillRenderTo(GLenum attachment) const {
-  for (AttachmentMap::const_iterator it = attachments_.begin();
-       it != attachments_.end(); ++it) {
-    if (attachment == 0 || attachment == it->first) {
-      it->second->OnWillRenderTo();
-    }
-  }
-}
-
-void Framebuffer::OnDidRenderTo(GLenum attachment) const {
-  for (AttachmentMap::const_iterator it = attachments_.begin();
-       it != attachments_.end(); ++it) {
-    if (attachment == 0 || attachment == it->first) {
-      it->second->OnDidRenderTo();
-    }
-  }
 }
 
 bool FramebufferManager::GetClientId(
@@ -770,16 +762,6 @@ bool FramebufferManager::IsComplete(
   DCHECK(framebuffer);
   return framebuffer->framebuffer_complete_state_count_id() ==
       framebuffer_state_change_count_;
-}
-
-void FramebufferManager::OnTextureRefDetached(TextureRef* texture) {
-  for (TextureDetachObserverVector::iterator it =
-           texture_detach_observers_.begin();
-       it != texture_detach_observers_.end();
-       ++it) {
-    TextureDetachObserver* observer = *it;
-    observer->OnTextureRefDetachedFromFramebuffer(texture);
-  }
 }
 
 }  // namespace gles2

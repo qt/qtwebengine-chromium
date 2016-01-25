@@ -40,7 +40,7 @@ class KURL;
 class MHTMLArchive;
 
 class PLATFORM_EXPORT ArchiveResourceCollection final : public NoBaseWillBeGarbageCollectedFinalized<ArchiveResourceCollection> {
-    WTF_MAKE_NONCOPYABLE(ArchiveResourceCollection); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ArchiveResourceCollection);
+    WTF_MAKE_NONCOPYABLE(ArchiveResourceCollection); USING_FAST_MALLOC_WILL_BE_REMOVED(ArchiveResourceCollection);
 public:
     static PassOwnPtrWillBeRawPtr<ArchiveResourceCollection> create()
     {
@@ -49,7 +49,6 @@ public:
 
     ~ArchiveResourceCollection();
 
-    void addResource(PassRefPtrWillBeRawPtr<ArchiveResource>);
     void addAllResources(MHTMLArchive*);
 
     ArchiveResource* archiveResourceForURL(const KURL&);
@@ -59,6 +58,7 @@ public:
 
 private:
     ArchiveResourceCollection();
+    void addResource(ArchiveResource&);
 
     WillBeHeapHashMap<String, RefPtrWillBeMember<ArchiveResource>> m_subresources;
     WillBeHeapHashMap<String, RefPtrWillBeMember<MHTMLArchive>> m_subframes;

@@ -4,19 +4,23 @@
 
 {
   'variables': {
-    'chromium_code': 1
+    'chromium_code': 1,
+    'use_alsa%': 0,
   },
   'targets': [
     {
       'target_name': 'cast_base_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
-        'chromecast.gyp:cast_base',
-        'chromecast.gyp:cast_crypto',
+        'cast_base',
+        'cast_crypto',
         '../base/base.gyp:run_all_unittests',
+        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
+        'base/bind_to_task_runner_unittest.cc',
+        'base/device_capabilities_impl_unittest.cc',
         'base/error_codes_unittest.cc',
         'base/path_utils_unittest.cc',
         'base/process_utils_unittest.cc',
@@ -36,8 +40,8 @@
       'target_name': 'cast_crash_test_support',
       'type': '<(component)',
       'dependencies': [
-        'chromecast.gyp:cast_crash',
         'cast_base',
+        'cast_crash',
       ],
       'sources': [
         'crash/linux/crash_testing_utils.cc',
@@ -48,8 +52,8 @@
       'target_name': 'cast_crash_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
+        'cast_crash',
         'cast_crash_test_support',
-        'chromecast.gyp:cast_crash',
         '../base/base.gyp:run_all_unittests',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -92,7 +96,6 @@
       'type': 'none',
       'dependencies': [
         'cast_base_unittests',
-        'cast_crash_unittests',
         '../base/base.gyp:base_unittests',
         '../content/content_shell_and_tests.gyp:content_unittests',
         '../crypto/crypto.gyp:crypto_unittests',
@@ -101,6 +104,7 @@
         '../media/media.gyp:media_unittests',
         '../media/midi/midi.gyp:midi_unittests',
         '../net/net.gyp:net_unittests',
+        '../ppapi/ppapi_internal.gyp:ppapi_unittests',
         '../sandbox/sandbox.gyp:sandbox_linux_unittests',
         '../sql/sql.gyp:sql_unittests',
         '../sync/sync.gyp:sync_unit_tests',
@@ -109,7 +113,7 @@
         '../url/url.gyp:url_unittests',
       ],
       'conditions': [
-        ['target_arch=="arm" and OS!="android"', {
+        ['OS=="linux" and is_cast_desktop_build==0', {
           'variables': {
             'filters': [
               # Run net_unittests first to avoid random failures due to slow python startup
@@ -151,13 +155,18 @@
               'url_unittests --gtest_filter=-URLCanonTest.DoAppendUTF8Invalid',
             ],
           },
-        }, { # else "x86" or "android"
+        }, { # else desktop or android
           'variables': {
             'filters': [
               # Disable PipelineIntegrationTest.BasicPlayback_MediaSource_VP9_WebM (not supported)
               'media_unittests --gtest_filter=-PipelineIntegrationTest.BasicPlayback_MediaSource_VP9_WebM',
             ],
           }
+        }],
+        ['OS=="linux"', {
+          'dependencies': [
+            'cast_crash_unittests',
+          ],
         }],
         ['disable_display==0', {
           'dependencies': [
@@ -166,15 +175,27 @@
         }],
         ['OS!="android"', {
           'dependencies': [
+            'cast_renderer_media_unittests',
             'cast_shell_unittests',
             'cast_shell_browser_test',
             'media/media.gyp:cast_media_unittests',
           ],
           'variables': {
             'filters': [
-              'cast_shell_browser_test --no-sandbox --disable-gpu',
+              # --enable-local-file-accesses => to load sample media files
+              # --test-launcher-jobs=1 => so internal code can bind to port
+              'cast_shell_browser_test --no-sandbox --enable-local-file-accesses --enable-cma-media-pipeline --ozone-platform=cast --test-launcher-jobs=1',
             ],
           },
+          'conditions': [
+            # TODO(slan): Reenable this test for Desktop x86 when CQ supports it.
+            # (b/26429268)
+            ['use_alsa==1 and is_cast_desktop_build==0', {
+              'dependencies': [
+                'media/media.gyp:alsa_cma_backend_unittests',
+              ],
+            }],
+          ],
         }],
         ['disable_display==1', {
           'variables': {
@@ -183,11 +204,6 @@
               'cast_media_unittests --gtest_filter=-AudioVideoPipelineDeviceTest.VorbisPlayback:AudioVideoPipelineDeviceTest.WebmPlayback',
             ],
           }
-        }],
-        ['enable_plugins==1', {
-          'dependencies': [
-            '../ppapi/ppapi_internal.gyp:ppapi_unittests',
-          ],
         }],
       ],
       'includes': ['build/tests/test_list.gypi'],
@@ -219,17 +235,6 @@
           'includes': ['../build/apk_test.gypi'],
         },  # end of target 'cast_base_unittests_apk'
         {
-          'target_name': 'cast_crash_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'cast_crash_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'cast_crash_unittests',
-          },
-          'includes': ['../build/apk_test.gypi'],
-        },  # end of target 'cast_crash_unittests_apk'
-        {
           'target_name': 'cast_android_tests',
           'type': 'none',
           'dependencies': ['cast_android_tests_generator'],
@@ -255,18 +260,15 @@
           },
           'dependencies': [
             'cast_base_unittests_apk',
-            'cast_crash_unittests_apk',
             '../base/base.gyp:base_unittests_apk',
             '../cc/cc_tests.gyp:cc_unittests_apk',
             '../ipc/ipc.gyp:ipc_tests_apk',
             '../media/media.gyp:media_unittests_apk',
             '../media/midi/midi.gyp:midi_unittests_apk',
             '../net/net.gyp:net_unittests_apk',
-            # Note(gunsch): crashes 100% on Fugu. b/22489355
-            # '../sandbox/sandbox.gyp:sandbox_linux_jni_unittests_apk',
             '../sql/sql.gyp:sql_unittests_apk',
             '../sync/sync.gyp:sync_unit_tests_apk',
-            '../ui/events/events.gyp:events_unittests_apk',
+            '../ui/events/events_unittests.gyp:events_unittests_apk',
             '../ui/gfx/gfx_tests.gyp:gfx_unittests_apk',
           ],
           'includes': ['build/tests/test_list.gypi'],
@@ -312,6 +314,23 @@
     }, {  # OS!="android"
       'targets': [
         {
+          'target_name': 'cast_renderer_media_unittests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            'cast_shell_media',
+            '../base/base.gyp:run_all_unittests',
+            '../testing/gmock.gyp:gmock',
+            '../testing/gtest.gyp:gtest',
+          ],
+          'sources': [
+            'renderer/media/demuxer_stream_adapter_unittest.cc',
+            'renderer/media/demuxer_stream_for_test.cc',
+            'renderer/media/demuxer_stream_for_test.h',
+            'renderer/media/multi_demuxer_stream_adapter_unittest.cc',
+          ],
+        },  # end of cast_renderer_media_unittests
+        # GN target: //chromecast/browser:test_support
+        {
           'target_name': 'cast_shell_test_support',
           'type': '<(component)',
           'defines': [
@@ -334,6 +353,8 @@
           'type': '<(gtest_target_type)',
           'dependencies': [
             'cast_shell_test_support',
+            '../content/content_shell_and_tests.gyp:test_support_content',
+            '../media/media.gyp:media_test_support',
             '../testing/gtest.gyp:gtest',
           ],
           'defines': [
@@ -342,13 +363,23 @@
           'sources': [
             'browser/test/chromecast_shell_browser_test.cc',
           ],
+          'conditions': [
+            ['chromecast_branding=="public"', {
+              'dependencies': [
+                # Link default libcast_media_1.0 statically to prevent
+                # linking dynamically against dummy implementation.
+                'media/media.gyp:libcast_media_1.0_default_core',
+              ],
+            }],
+          ],
         },
+        # GN target: //chromecast/app:cast_shell_unittests
         {
           'target_name': 'cast_shell_unittests',
           'type': '<(gtest_target_type)',
           'dependencies': [
+            'cast_crash_client',
             'cast_crash_test_support',
-            'chromecast.gyp:cast_crash_client',
             '../base/base.gyp:run_all_unittests',
             '../testing/gtest.gyp:gtest',
           ],
@@ -360,6 +391,7 @@
         # Note: producing a predetermined list of dependent inputs on which to
         # regenerate this output is difficult with GYP. This file is not
         # guaranteed to be regenerated outside of a clean build.
+        # GN target: //chromecast:cast_test_lists
         {
           'target_name': 'cast_test_lists',
           'type': 'none',
@@ -369,7 +401,7 @@
           'variables': {
             'test_generator_py': '<(DEPTH)/chromecast/tools/build/generate_test_lists.py',
             'test_inputs_dir': '<(SHARED_INTERMEDIATE_DIR)/chromecast/tests',
-            'test_additional_options': '--ozone-platform=test'
+            'test_additional_options': '--ozone-platform=headless'
           },
           'actions': [
             {

@@ -126,6 +126,7 @@ class HitTestRequest;
 class IdleRequestCallback;
 class IdleRequestOptions;
 class InputDeviceCapabilities;
+class IntersectionObserverController;
 class LayoutPoint;
 class LiveNodeListBase;
 class Locale;
@@ -135,8 +136,10 @@ class MainThreadTaskRunner;
 class MediaQueryListListener;
 class MediaQueryMatcher;
 class NodeFilter;
+class NodeIntersectionObserverData;
 class NodeIterator;
 class NthIndexCache;
+class OriginAccessEntry;
 class Page;
 class PlatformMouseEvent;
 class ProcessingInstruction;
@@ -167,8 +170,9 @@ class TransformSource;
 class TreeWalker;
 class VisitedLinkState;
 class WebGLRenderingContext;
-
+enum class SelectionBehaviorOnFocus;
 struct AnnotatedRegionValue;
+struct FocusParams;
 struct IconURL;
 
 using MouseEventWithHitTestResults = EventWithHitTestResults<PlatformMouseEvent>;
@@ -252,10 +256,6 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(securitypolicyviolation);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(selectionchange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(selectstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
 
     bool shouldMergeWithLegacyDescription(ViewportDescription::Type);
@@ -266,7 +266,7 @@ public:
 
     bool hasLegacyViewportTag() const { return m_legacyViewportDescription.isLegacyViewportType(); }
 
-    String outgoingReferrer();
+    String outgoingReferrer() const;
     String outgoingOrigin() const;
 
     void setDoctype(PassRefPtrWillBeRawPtr<DocumentType>);
@@ -297,7 +297,7 @@ public:
     PassRefPtrWillBeRawPtr<Element> createElement(const QualifiedName&, bool createdByParser);
 
     Element* elementFromPoint(int x, int y) const;
-    Vector<Element*> elementsFromPoint(int x, int y) const;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elementsFromPoint(int x, int y) const;
     PassRefPtrWillBeRawPtr<Range> caretRangeFromPoint(int x, int y);
     Element* scrollingElement();
 
@@ -330,9 +330,8 @@ public:
     void setXMLStandalone(bool, ExceptionState&);
     void setHasXMLDeclaration(bool hasXMLDeclaration) { m_hasXMLDeclaration = hasXMLDeclaration ? 1 : 0; }
 
-    KURL baseURI() const final;
-
     String origin() const { return securityOrigin()->toString(); }
+    String suborigin() const { return securityOrigin()->suboriginName(); }
 
     String visibilityState() const;
     PageVisibilityState pageVisibilityState() const;
@@ -423,8 +422,8 @@ public:
 
     PassRefPtrWillBeRawPtr<Range> createRange();
 
-    PassRefPtrWillBeRawPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>, ExceptionState&);
-    PassRefPtrWillBeRawPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>, ExceptionState&);
+    PassRefPtrWillBeRawPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>);
+    PassRefPtrWillBeRawPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>);
 
     // Special support for editing
     PassRefPtrWillBeRawPtr<Text> createEditingTextNode(const String&);
@@ -483,14 +482,10 @@ public:
     void close(ExceptionState&);
     // This is used internally and does not handle exceptions.
     void close();
-    // In some situations (see the code), we ignore document.close().
-    // explicitClose() bypass these checks and actually tries to close the
-    // input stream.
-    void explicitClose();
     // implicitClose() actually does the work of closing the input stream.
     void implicitClose();
 
-    bool dispatchBeforeUnloadEvent(ChromeClient&, bool&);
+    bool dispatchBeforeUnloadEvent(ChromeClient&, bool isReload, bool& didAllowNavigation);
     void dispatchUnloadEvents();
 
     enum PageDismissalType {
@@ -523,10 +518,21 @@ public:
     const AtomicString& baseTarget() const { return m_baseTarget; }
     void processBaseElement();
 
+    // Creates URL based on passed relative url and this documents base URL.
+    // Depending on base URL value it is possible that parent document
+    // base URL will be used instead. Uses completeURLWithOverride internally.
     KURL completeURL(const String&) const;
+    // Creates URL based on passed relative url and passed base URL override.
+    // Depending on baseURLOverride value it is possible that parent document
+    // base URL will be used instead of it. See baseURLForOverride function
+    // for details.
     KURL completeURLWithOverride(const String&, const KURL& baseURLOverride) const;
+    // Determines which base URL should be used given specified override.
+    // If override is empty or is about:blank url and parent document exists
+    // base URL of parent will be returned, passed base URL override otherwise.
+    const KURL& baseURLForOverride(const KURL& baseURLOverride) const;
 
-    String userAgent(const KURL&) const final;
+    String userAgent() const final;
     void disableEval(const String& errorMessage) final;
 
     CSSStyleSheet& elementSheet();
@@ -589,7 +595,8 @@ public:
     String selectedStylesheetSet() const;
     void setSelectedStylesheetSet(const String&);
 
-    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, WebFocusType = WebFocusTypeNone, InputDeviceCapabilities* sourceCapabilities = nullptr);
+    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, const FocusParams&);
+    void clearFocusedElement();
     Element* focusedElement() const { return m_focusedElement.get(); }
     UserActionElementSet& userActionElements()  { return m_userActionElements; }
     const UserActionElementSet& userActionElements() const { return m_userActionElements; }
@@ -679,6 +686,12 @@ public:
     bool hasMutationObservers() const { return m_mutationObserverTypes; }
     void addMutationObserverTypes(MutationObserverOptions types) { m_mutationObserverTypes |= types; }
 
+    WeakPtrWillBeRawPtr<Document> createWeakPtr();
+
+    IntersectionObserverController* intersectionObserverController();
+    IntersectionObserverController& ensureIntersectionObserverController();
+    NodeIntersectionObserverData& ensureIntersectionObserverData();
+
     void updateViewportDescription();
     void processReferrerPolicy(const String& policy);
 
@@ -760,6 +773,7 @@ public:
     DocumentMarkerController& markers() const { return *m_markers; }
 
     bool execCommand(const String& command, bool showUI, const String& value, ExceptionState&);
+    bool isRunningExecCommand() const { return m_isRunningExecCommand; }
     bool queryCommandEnabled(const String& command, ExceptionState&);
     bool queryCommandIndeterm(const String& command, ExceptionState&);
     bool queryCommandState(const String& command, ExceptionState&);
@@ -810,12 +824,8 @@ public:
     void setUseSecureKeyboardEntryWhenActive(bool);
     bool useSecureKeyboardEntryWhenActive() const;
 
-    void updateFocusAppearanceSoon(bool restorePreviousSelection);
+    void updateFocusAppearanceSoon(SelectionBehaviorOnFocus);
     void cancelFocusAppearanceUpdate();
-
-    // Extension for manipulating canvas drawing contexts for use in CSS
-    ScriptValue getCSSCanvasContext(ScriptState*, const String& type, const String& name, int width, int height);
-    HTMLCanvasElement& getCSSCanvasElement(const String& name);
 
     bool isDNSPrefetchEnabled() const { return m_isDNSPrefetchEnabled; }
     void parseDNSPrefetchControlHeader(const String&);
@@ -911,7 +921,6 @@ public:
     PassRefPtrWillBeRawPtr<TouchList> createTouchList(WillBeHeapVector<RefPtrWillBeMember<Touch>>&) const;
 
     const DocumentTiming& timing() const { return m_documentTiming; }
-    void markFirstTextPaint();
 
     int requestAnimationFrame(FrameRequestCallback*);
     void cancelAnimationFrame(int id);
@@ -963,7 +972,7 @@ public:
     // Return a Locale for the default locale if the argument is null or empty.
     Locale& getCachedLocale(const AtomicString& locale = nullAtom);
 
-    AnimationClock& animationClock() { return m_animationClock; }
+    AnimationClock& animationClock();
     AnimationTimeline& timeline() const { return *m_timeline; }
     CompositorPendingAnimations& compositorPendingAnimations() { return m_compositorPendingAnimations; }
 
@@ -1010,6 +1019,9 @@ public:
 
     void updateStyleInvalidationIfNeeded();
 
+    bool attemptedToDetermineEncodingFromContentSniffing() const;
+    bool encodingWasDetectedFromContentSniffing() const;
+
     DECLARE_VIRTUAL_TRACE();
 
     bool hasSVGFilterElementsRequiringLayerUpdate() const { return m_layerUpdateSVGFilterElements.size(); }
@@ -1029,6 +1041,7 @@ public:
     NthIndexCache* nthIndexCache() const { return m_nthIndexCache; }
 
     bool isSecureContext(String& errorMessage, const SecureContextCheck = StandardSecureContextCheck) const override;
+    bool isSecureContext(const SecureContextCheck = StandardSecureContextCheck) const override;
 
     ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
 
@@ -1049,6 +1062,11 @@ public:
 
     using WeakDocumentSet = WillBeHeapHashSet<RawPtrWillBeWeakMember<Document>>;
     static WeakDocumentSet& liveDocumentSet();
+
+    WebTaskRunner* loadingTaskRunner() const;
+    WebTaskRunner* timerTaskRunner() const;
+
+    void enforceStrictMixedContentChecking();
 
 protected:
     Document(const DocumentInit&, DocumentClassFlags = DefaultDocumentClass);
@@ -1108,8 +1126,9 @@ private:
     String nodeName() const final;
     NodeType nodeType() const final;
     bool childTypeAllowed(NodeType) const final;
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) final;
+    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) final;
     void cloneDataFromDocument(const Document&);
+    bool isSecureContextImpl(String* errorMessage, const SecureContextCheck priviligeContextCheck) const;
 
 #if !ENABLE(OILPAN)
     void refExecutionContext() final { ref(); }
@@ -1121,8 +1140,6 @@ private:
 
     void reportBlockedScriptExecutionToInspector(const String& directiveText) final;
 
-    double timerAlignmentInterval() const final;
-
     void updateTitle(const String&);
     void updateFocusAppearanceTimerFired(Timer<Document>*);
     void updateBaseURL();
@@ -1131,11 +1148,6 @@ private:
 
     void loadEventDelayTimerFired(Timer<Document>*);
     void pluginLoadingTimerFired(Timer<Document>*);
-
-    // Note that dispatching a window load event may cause the LocalDOMWindow to be detached from
-    // the LocalFrame, so callers should take a reference to the LocalDOMWindow (which owns us) to
-    // prevent the Document from getting blown away from underneath them.
-    void dispatchWindowLoadEvent();
 
     void addListenerType(ListenerType listenerType) { m_listenerTypes |= listenerType; }
     void addMutationEventListenerTypeIfEnabled(ListenerType);
@@ -1153,6 +1165,8 @@ private:
     static EventFactorySet& eventFactories();
 
     void setNthIndexCache(NthIndexCache* nthIndexCache) { ASSERT(!m_nthIndexCache || !nthIndexCache); m_nthIndexCache = nthIndexCache; }
+
+    const OriginAccessEntry& accessEntryFromURL();
 
     DocumentLifecycle m_lifecycle;
 
@@ -1184,6 +1198,7 @@ private:
     KURL m_baseURLOverride; // An alternative base URL that takes precedence over m_baseURL (but not m_baseElementURL).
     KURL m_baseElementURL; // The URL set by the <base> element.
     KURL m_cookieURL; // The URL to use for cookie access.
+    OwnPtr<OriginAccessEntry> m_accessEntryFromURL;
 
     AtomicString m_baseTarget;
 
@@ -1242,8 +1257,8 @@ private:
     bool m_isDNSPrefetchEnabled;
     bool m_haveExplicitlyDisabledDNSPrefetch;
     bool m_containsValidityStyleRules;
-    bool m_updateFocusAppearanceRestoresSelection;
     bool m_containsPlugins;
+    SelectionBehaviorOnFocus m_updateFocusAppearanceSelectionBahavior;
 
     // http://www.whatwg.org/specs/web-apps/current-work/#ignore-destructive-writes-counter
     unsigned m_ignoreDestructiveWriteCount;
@@ -1279,6 +1294,7 @@ private:
     DocumentEncodingData m_encodingData;
 
     bool m_designMode;
+    bool m_isRunningExecCommand;
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<const LiveNodeListBase>> m_listsInvalidatedAtDocument;
 #if ENABLE(OILPAN)
@@ -1296,8 +1312,6 @@ private:
     Vector<AnnotatedRegionValue> m_annotatedRegions;
     bool m_hasAnnotatedRegions;
     bool m_annotatedRegionsDirty;
-
-    WillBeHeapHashMap<String, RefPtrWillBeMember<HTMLCanvasElement>> m_cssCanvasElements;
 
     OwnPtr<SelectorQueryCache> m_selectorQueryCache;
 
@@ -1360,7 +1374,6 @@ private:
     using LocaleIdentifierToLocaleMap = HashMap<AtomicString, OwnPtr<Locale>>;
     LocaleIdentifierToLocaleMap m_localeCache;
 
-    AnimationClock m_animationClock;
     PersistentWillBeMember<AnimationTimeline> m_timeline;
     CompositorPendingAnimations m_compositorPendingAnimations;
 
@@ -1392,6 +1405,9 @@ private:
     ClientHintsPreferences m_clientHintsPreferences;
 
     PersistentWillBeMember<CanvasFontCache> m_canvasFontCache;
+
+    PersistentWillBeMember<IntersectionObserverController> m_intersectionObserverController;
+    PersistentWillBeMember<NodeIntersectionObserverData> m_intersectionObserverData;
 
     int m_nodeCount;
 };

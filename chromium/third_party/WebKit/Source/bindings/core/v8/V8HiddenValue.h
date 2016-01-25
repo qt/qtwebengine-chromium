@@ -14,6 +14,7 @@
 
 namespace blink {
 
+class ScriptState;
 class ScriptWrappable;
 
 #define V8_HIDDEN_VALUES(V) \
@@ -48,7 +49,7 @@ class ScriptWrappable;
     SCRIPT_PROMISE_PROPERTIES(V, Resolver)
 
 class CORE_EXPORT V8HiddenValue {
-    WTF_MAKE_FAST_ALLOCATED(V8HiddenValue);
+    USING_FAST_MALLOC(V8HiddenValue);
     WTF_MAKE_NONCOPYABLE(V8HiddenValue);
 public:
     static PassOwnPtr<V8HiddenValue> create() { return adoptPtr(new V8HiddenValue()); }
@@ -57,10 +58,10 @@ public:
     V8_HIDDEN_VALUES(V8_DECLARE_METHOD);
 #undef V8_DECLARE_METHOD
 
-    static v8::Local<v8::Value> getHiddenValue(v8::Isolate*, v8::Local<v8::Object>, v8::Local<v8::String>);
-    static bool setHiddenValue(v8::Isolate*, v8::Local<v8::Object>, v8::Local<v8::String>, v8::Local<v8::Value>);
-    static bool deleteHiddenValue(v8::Isolate*, v8::Local<v8::Object>, v8::Local<v8::String>);
-    static v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, v8::Local<v8::String>);
+    static v8::Local<v8::Value> getHiddenValue(ScriptState*, v8::Local<v8::Object>, v8::Local<v8::String>);
+    static bool setHiddenValue(ScriptState*, v8::Local<v8::Object>, v8::Local<v8::String>, v8::Local<v8::Value>);
+    static bool deleteHiddenValue(ScriptState*, v8::Local<v8::Object>, v8::Local<v8::String>);
+    static v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(ScriptState*, ScriptWrappable*, v8::Local<v8::String>);
 
 private:
     V8HiddenValue() { }

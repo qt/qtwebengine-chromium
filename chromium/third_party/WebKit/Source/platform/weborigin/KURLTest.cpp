@@ -31,12 +31,11 @@
 // Basic tests that verify our KURL's interface behaves the same as the
 // original KURL's.
 
-#include "config.h"
 #include "platform/weborigin/KURL.h"
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -74,7 +73,7 @@ TEST(KURLTest, SameGetters)
         {"javascript:hello!//world", "javascript", "", 0, "", 0, "world", 0, 0, false},
     };
 
-    for (size_t i = 0; i < arraysize(cases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(cases); i++) {
         // UTF-8
         KURL kurl(ParsedURLString, cases[i].url);
 
@@ -126,7 +125,7 @@ TEST(KURLTest, DISABLED_DifferentGetters)
         {"http://www.google.com/foo/blah?bar=baz#\xce\xb1\xce\xb2", "http", "www.google.com", 0, "", 0,  "blah", "bar=baz", "\xce\xb1\xce\xb2"},
     };
 
-    for (size_t i = 0; i < arraysize(cases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(cases); i++) {
         KURL kurl(ParsedURLString, cases[i].url);
 
         EXPECT_EQ(cases[i].protocol, kurl.protocol());
@@ -237,7 +236,7 @@ TEST(KURLTest, Setters)
         },
     };
 
-    for (size_t i = 0; i < arraysize(cases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(cases); i++) {
         KURL kurl(ParsedURLString, cases[i].url);
 
         kurl.setProtocol(cases[i].protocol);
@@ -286,7 +285,7 @@ TEST(KURLTest, Decode)
         {"%e4%bd%a0%e5%a5%bd", "\xe4\xbd\xa0\xe5\xa5\xbd"},
     };
 
-    for (size_t i = 0; i < arraysize(decodeCases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(decodeCases); i++) {
         String input(decodeCases[i].input);
         String str = decodeURLEscapeSequences(input);
         EXPECT_STREQ(decodeCases[i].output, str.utf8().data());
@@ -329,7 +328,7 @@ TEST(KURLTest, Encode)
           "pqrstuvwxyz%7B%7C%7D~%7F"},
     };
 
-    for (size_t i = 0; i < arraysize(encode_cases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(encode_cases); i++) {
         String input(encode_cases[i].input);
         String expectedOutput(encode_cases[i].output);
         String output = encodeWithURLEscapeSequences(input);
@@ -349,6 +348,14 @@ TEST(KURLTest, Encode)
     String wideReference("%E4%BD%A0%E5%A5%BD");
     String wideOutput = encodeWithURLEscapeSequences(wideInput);
     EXPECT_EQ(wideReference, wideOutput);
+
+    // Encoding should not NFC-normalize the string.
+    // Contain a combining character ('e' + COMBINING OGONEK).
+    String combining(String::fromUTF8("\x65\xCC\xA8"));
+    EXPECT_EQ(encodeWithURLEscapeSequences(combining), "e%CC%A8");
+    // Contain a precomposed character corresponding to |combining|.
+    String precomposed(String::fromUTF8("\xC4\x99"));
+    EXPECT_EQ(encodeWithURLEscapeSequences(precomposed), "%C4%99");
 }
 
 TEST(KURLTest, ResolveEmpty)
@@ -748,7 +755,7 @@ TEST(KURLTest, strippedForUseAsReferrer)
         {"https://www.google.com/#", "https://www.google.com/"},
     };
 
-    for (size_t i = 0; i < arraysize(referrerCases); i++) {
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(referrerCases); i++) {
         KURL kurl(ParsedURLString, referrerCases[i].input);
         String referrer = kurl.strippedForUseAsReferrer();
         EXPECT_STREQ(referrerCases[i].output, referrer.utf8().data());

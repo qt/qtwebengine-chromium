@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/RetainedDOMInfo.h"
 
 #include "bindings/core/v8/V8Node.h"
@@ -99,7 +98,7 @@ intptr_t RetainedDOMInfo::GetElementCount()
 
 intptr_t RetainedDOMInfo::GetEquivalenceClass()
 {
-    return reinterpret_cast<intptr_t>(m_root);
+    return reinterpret_cast<intptr_t>(m_root.get());
 }
 
 ActiveDOMObjectsInfo::ActiveDOMObjectsInfo(int numberOfObjectsWithPendingActivity)

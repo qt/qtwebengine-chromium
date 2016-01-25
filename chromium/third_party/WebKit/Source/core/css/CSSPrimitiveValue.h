@@ -26,11 +26,11 @@
 #include "core/CSSValueKeywords.h"
 #include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
-#include "platform/graphics/Color.h"
 #include "wtf/BitVector.h"
 #include "wtf/Forward.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/TypeTraits.h"
 #include "wtf/text/StringHash.h"
 
 namespace blink {
@@ -38,7 +38,6 @@ namespace blink {
 class CSSCalcValue;
 class CSSToLengthConversionData;
 class Length;
-class RGBColor;
 class ComputedStyle;
 
 // Dimension calculations are imprecise, often resulting in values of e.g.
@@ -78,6 +77,7 @@ public:
         Inches,
         Points,
         Picas,
+        UserUnits, // The SVG term for unitless lengths
         Degrees,
         Radians,
         Gradians,
@@ -86,9 +86,6 @@ public:
         Seconds,
         Hertz,
         Kilohertz,
-        CustomIdentifier,
-        URI,
-        RGBColor,
         ViewportWidth,
         ViewportHeight,
         ViewportMin,
@@ -103,8 +100,6 @@ public:
         Calc,
         CalcPercentageWithNumber,
         CalcPercentageWithLength,
-        String,
-        PropertyID,
         ValueID,
 
         // This value is used to handle quirky margins in reflow roots (body, td, and th) like WinIE.
@@ -161,7 +156,6 @@ public:
             || type() == UnitType::Gradians
             || type() == UnitType::Turns;
     }
-    bool isCustomIdent() const { return type() == UnitType::CustomIdentifier; }
     bool isFontRelativeLength() const
     {
         return type() == UnitType::QuirkyEms
@@ -175,23 +169,16 @@ public:
     static bool isViewportPercentageLength(UnitType type) { return type >= UnitType::ViewportWidth && type <= UnitType::ViewportMax; }
     static bool isLength(UnitType type)
     {
-        return (type >= UnitType::Ems && type <= UnitType::Picas) || type == UnitType::QuirkyEms || type == UnitType::Rems || type == UnitType::Chs || isViewportPercentageLength(type);
+        return (type >= UnitType::Ems && type <= UnitType::UserUnits) || type == UnitType::QuirkyEms || type == UnitType::Rems || type == UnitType::Chs || isViewportPercentageLength(type);
     }
     bool isLength() const { return isLength(typeWithCalcResolved()); }
     bool isNumber() const { return typeWithCalcResolved() == UnitType::Number || typeWithCalcResolved() == UnitType::Integer; }
     bool isPercentage() const { return typeWithCalcResolved() == UnitType::Percentage; }
-    bool isPropertyID() const { return type() == UnitType::PropertyID; }
     bool isPx() const { return typeWithCalcResolved() == UnitType::Pixels; }
-    bool isRGBColor() const { return type() == UnitType::RGBColor; }
-    bool isString() const { return type() == UnitType::String; }
     bool isTime() const { return type() == UnitType::Seconds || type() == UnitType::Milliseconds; }
-    bool isURI() const { return type() == UnitType::URI; }
     bool isCalculated() const { return type() == UnitType::Calc; }
     bool isCalculatedPercentageWithNumber() const { return typeWithCalcResolved() == UnitType::CalcPercentageWithNumber; }
     bool isCalculatedPercentageWithLength() const { return typeWithCalcResolved() == UnitType::CalcPercentageWithLength; }
-    static bool isDotsPerInch(UnitType type) { return type == UnitType::DotsPerInch; }
-    static bool isDotsPerPixel(UnitType type) { return type == UnitType::DotsPerPixel; }
-    static bool isDotsPerCentimeter(UnitType type) { return type == UnitType::DotsPerCentimeter; }
     static bool isResolution(UnitType type) { return type >= UnitType::DotsPerPixel && type <= UnitType::DotsPerCentimeter; }
     bool isFlex() const { return typeWithCalcResolved() == UnitType::Fraction; }
     bool isValueID() const { return type() == UnitType::ValueID; }
@@ -201,19 +188,7 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(valueID));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifier(CSSPropertyID propertyID)
-    {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(propertyID));
-    }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColor(RGBA32 rgbValue)
-    {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(rgbValue));
-    }
     static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(double value, UnitType type)
-    {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, type));
-    }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const String& value, UnitType type)
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, type));
     }
@@ -223,12 +198,11 @@ public:
     }
     template<typename T> static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(T value)
     {
+        static_assert(!std::is_same<T, CSSValueID>::value, "Do not call create() with a CSSValueID; call createIdentifier() instead");
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value));
     }
 
     ~CSSPrimitiveValue();
-
-    void cleanup();
 
     UnitType typeWithCalcResolved() const;
 
@@ -246,15 +220,11 @@ public:
     int getIntValue() const { return getValue<int>(); }
     template<typename T> inline T getValue() const { return clampTo<T>(getDoubleValue()); }
 
-    String getStringValue() const;
-    RGBA32 getRGBA32Value() const { ASSERT(isRGBColor()); return m_value.rgbcolor; }
-
     CSSCalcValue* cssCalcValue() const { ASSERT(isCalculated()); return m_value.calc; }
-    CSSPropertyID getPropertyID() const { ASSERT(isPropertyID()); return m_value.propertyID; }
 
     CSSValueID getValueID() const { return type() == UnitType::ValueID ? m_value.valueID : CSSValueInvalid; }
 
-    template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
+    template<typename T> inline T convertTo() const; // Defined in CSSPrimitiveValueMappings.h
 
     static const char* unitTypeToString(UnitType);
     String customCSSText() const;
@@ -272,10 +242,7 @@ public:
 
 private:
     CSSPrimitiveValue(CSSValueID);
-    CSSPrimitiveValue(CSSPropertyID);
-    CSSPrimitiveValue(RGBA32 color);
     CSSPrimitiveValue(const Length&, float zoom);
-    CSSPrimitiveValue(const String&, UnitType);
     CSSPrimitiveValue(double, UnitType);
 
     template<typename T> CSSPrimitiveValue(T); // Defined in CSSPrimitiveValueMappings.h
@@ -304,11 +271,8 @@ private:
     inline UnitType type() const { return static_cast<UnitType>(m_primitiveUnitType); }
 
     union {
-        CSSPropertyID propertyID;
         CSSValueID valueID;
         double num;
-        StringImpl* string;
-        RGBA32 rgbcolor;
         // FIXME: oilpan: Should be a member, but no support for members in unions. Just trace the raw ptr for now.
         CSSCalcValue* calc;
     } m_value;

@@ -2,13 +2,11 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/MediaValues.h"
 
 #include "core/css/CSSPrimitiveValue.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/StringBuilder.h"
-
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -39,6 +37,7 @@ TEST(MediaValuesTest, Basic)
         { 1.3, CSSPrimitiveValue::UnitType::Inches, 16, 300, 300, true, 124 },
         { 13, CSSPrimitiveValue::UnitType::Points, 16, 300, 300, true, 17 },
         { 1.3, CSSPrimitiveValue::UnitType::Picas, 16, 300, 300, true, 20 },
+        { 40.0, CSSPrimitiveValue::UnitType::UserUnits, 16, 300, 300, true, 40 },
         { 1.3, CSSPrimitiveValue::UnitType::Unknown, 16, 300, 300, false, 20 },
         { 0.0, CSSPrimitiveValue::UnitType::Unknown, 0, 0, 0, false, 0.0 } // Do not remove the terminating line.
     };

@@ -17,21 +17,21 @@ namespace blink {
 
 class PLATFORM_EXPORT ClipDisplayItem final : public PairedBeginDisplayItem {
 public:
-    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect)
+    ClipDisplayItem(const DisplayItemClient& client, Type type, const IntRect& clipRect)
         : PairedBeginDisplayItem(client, type, sizeof(*this))
         , m_clipRect(clipRect)
     {
         ASSERT(isClipType(type));
     }
 
-    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, Vector<FloatRoundedRect>& roundedRectClips)
+    ClipDisplayItem(const DisplayItemClient& client, Type type, const IntRect& clipRect, Vector<FloatRoundedRect>& roundedRectClips)
         : ClipDisplayItem(client, type, clipRect)
     {
         m_roundedRectClips.swap(roundedRectClips);
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #ifndef NDEBUG
@@ -52,14 +52,14 @@ private:
 
 class PLATFORM_EXPORT EndClipDisplayItem final : public PairedEndDisplayItem {
 public:
-    EndClipDisplayItem(const DisplayItemClientWrapper& client, Type type)
+    EndClipDisplayItem(const DisplayItemClient& client, Type type)
         : PairedEndDisplayItem(client, type, sizeof(*this))
     {
         ASSERT(isEndClipType(type));
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)

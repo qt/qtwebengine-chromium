@@ -141,7 +141,6 @@ static int check_crl_chain(X509_STORE_CTX *ctx,
 			STACK_OF(X509) *crl_path);
 
 static int internal_verify(X509_STORE_CTX *ctx);
-const char X509_version[]="X.509";
 
 
 static int null_callback(int ok, X509_STORE_CTX *e)
@@ -1191,7 +1190,7 @@ static void crl_akid_check(X509_STORE_CTX *ctx, X509_CRL *crl,
 	int cidx = ctx->error_depth;
 	size_t i;
 
-	if (cidx != sk_X509_num(ctx->chain) - 1)
+	if ((size_t) cidx != sk_X509_num(ctx->chain) - 1)
 		cidx++;
 
 	crl_issuer = sk_X509_value(ctx->chain, cidx);
@@ -2093,14 +2092,14 @@ X509_CRL *X509_CRL_diff(X509_CRL *base, X509_CRL *newer,
 	return NULL;
 	}
 
-int X509_STORE_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
+int X509_STORE_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
 	     CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func)
 	{
 	/* This function is (usually) called only once, by
 	 * SSL_get_ex_data_X509_STORE_CTX_idx (ssl/ssl_cert.c). */
 	int index;
 	if (!CRYPTO_get_ex_new_index(&g_ex_data_class, &index, argl, argp,
-			new_func, dup_func, free_func))
+			dup_func, free_func))
 		{
 		return -1;
 		}
@@ -2267,19 +2266,13 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
 	     STACK_OF(X509) *chain)
 	{
 	int ret = 1;
-	int ex_data_allocated = 0;
 
 	memset(ctx, 0, sizeof(X509_STORE_CTX));
 	ctx->ctx=store;
 	ctx->cert=x509;
 	ctx->untrusted=chain;
 
-	if(!CRYPTO_new_ex_data(&g_ex_data_class, ctx,
-			       &ctx->ex_data))
-		{
-		goto err;
-		}
-	ex_data_allocated = 1;
+	CRYPTO_new_ex_data(&ctx->ex_data);
 
 	ctx->param = X509_VERIFY_PARAM_new();
 	if (!ctx->param)
@@ -2363,10 +2356,7 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
 	return 1;
 
 err:
-	if (ex_data_allocated)
-		{
-		CRYPTO_free_ex_data(&g_ex_data_class, ctx, &ctx->ex_data);
-		}
+	CRYPTO_free_ex_data(&g_ex_data_class, ctx, &ctx->ex_data);
 	if (ctx->param != NULL)
 		{
 		X509_VERIFY_PARAM_free(ctx->param);

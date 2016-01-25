@@ -9,7 +9,9 @@
 #define MEDIA_VIDEO_CAPTURE_WIN_SINK_FILTER_WIN_H_
 
 #include <windows.h>
+#include <stddef.h>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/video_capture_types.h"
 #include "media/capture/video/video_capture_device.h"

@@ -6,6 +6,7 @@
 #define Response_h
 
 #include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/modules/v8/UnionTypesModules.h"
 #include "modules/ModulesExport.h"
@@ -15,16 +16,17 @@
 #include "modules/fetch/Headers.h"
 #include "platform/blob/BlobData.h"
 #include "platform/heap/Handle.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
 class Blob;
 class DOMArrayBuffer;
 class ExceptionState;
+class FetchDataConsumerHandle;
 class ResponseInit;
+class ScriptState;
 class WebServiceWorkerResponse;
-
-typedef BlobOrArrayBufferOrArrayBufferViewOrFormDataOrUSVString BodyInit;
 
 class MODULES_EXPORT Response final : public Body {
     DEFINE_WRAPPERTYPEINFO();
@@ -33,10 +35,10 @@ public:
     ~Response() override { }
 
     // From Response.idl:
-    static Response* create(ExecutionContext*, ExceptionState&);
-    static Response* create(ExecutionContext*, const BodyInit&, const Dictionary&, ExceptionState&);
+    static Response* create(ScriptState*, ExceptionState&);
+    static Response* create(ScriptState*, ScriptValue body, const Dictionary&, ExceptionState&);
 
-    static Response* create(ExecutionContext*, Blob*, const ResponseInit&, ExceptionState&);
+    static Response* create(ExecutionContext*, PassOwnPtr<FetchDataConsumerHandle> bodyHandle, const String& contentType, const ResponseInit&, ExceptionState&);
     static Response* create(ExecutionContext*, FetchResponseData*);
     static Response* create(ExecutionContext*, const WebServiceWorkerResponse&);
 
@@ -60,6 +62,7 @@ public:
 
     // ActiveDOMObject
     bool hasPendingActivity() const override;
+    void stop() override;
 
     // Does not call response.setBlobDataHandle().
     void populateWebServiceWorkerResponse(WebServiceWorkerResponse& /* response */);
@@ -69,6 +72,7 @@ public:
     const BodyStreamBuffer* bodyBuffer() const override { return m_response->buffer(); }
     BodyStreamBuffer* internalBodyBuffer() { return m_response->internalBuffer(); }
     const BodyStreamBuffer* internalBodyBuffer() const { return m_response->internalBuffer(); }
+    bool bodyUsed() override;
 
     String mimeType() const override;
     String internalMIMEType() const;

@@ -1,16 +1,8 @@
-Index: mozilla/nsprpub/pr/include/prtypes.h
-===================================================================
-RCS file: /cvsroot/mozilla/nsprpub/pr/include/prtypes.h,v
-retrieving revision 3.52
-diff -p -u -8 -r3.52 prtypes.h
---- mozilla/nsprpub/pr/include/prtypes.h	7 Dec 2012 21:13:41 -0000	3.52
-+++ mozilla/nsprpub/pr/include/prtypes.h	29 Jan 2013 01:15:02 -0000
-@@ -43,17 +43,33 @@
- ** Example:
- **   in dowhim.h
- **     PR_EXTERN( void ) DoWhatIMean( void );
- **   in dowhim.c
- **     PR_IMPLEMENT( void ) DoWhatIMean( void ) { return; }
+diff --git a/pr/include/prtypes.h b/pr/include/prtypes.h
+index 52b3ab0..d78f580 100644
+--- a/pr/include/prtypes.h
++++ b/pr/include/prtypes.h
+@@ -48,7 +48,23 @@
  **
  **
  ***********************************************************************/
@@ -35,21 +27,11 @@ diff -p -u -8 -r3.52 prtypes.h
  
  #define PR_EXPORT(__type) extern __declspec(dllexport) __type
  #define PR_EXPORT_DATA(__type) extern __declspec(dllexport) __type
- #define PR_IMPORT(__type) __declspec(dllimport) __type
- #define PR_IMPORT_DATA(__type) __declspec(dllimport) __type
- 
- #define PR_EXTERN(__type) extern __declspec(dllexport) __type
- #define PR_IMPLEMENT(__type) __declspec(dllexport) __type
-Index: mozilla/nsprpub/pr/src/md/windows/w95dllmain.c
-===================================================================
-RCS file: /cvsroot/mozilla/nsprpub/pr/src/md/windows/w95dllmain.c,v
-retrieving revision 3.9
-diff -p -u -8 -r3.9 w95dllmain.c
---- mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	6 Mar 2012 13:14:17 -0000	3.9
-+++ mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	29 Jan 2013 01:15:02 -0000
-@@ -1,13 +1,15 @@
- /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
- /* This Source Code Form is subject to the terms of the Mozilla Public
+diff --git a/pr/src/md/windows/w95dllmain.c b/pr/src/md/windows/w95dllmain.c
+index 73707a6..90957c1 100644
+--- a/pr/src/md/windows/w95dllmain.c
++++ b/pr/src/md/windows/w95dllmain.c
+@@ -3,6 +3,8 @@
   * License, v. 2.0. If a copy of the MPL was not distributed with this
   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
  
@@ -58,35 +40,17 @@ diff -p -u -8 -r3.9 w95dllmain.c
  /*
   * The DLL entry point (DllMain) for NSPR.
   *
-  * This is used to detach threads that were automatically attached by
-  * nspr.
-  */
- 
- #include <windows.h>
-@@ -32,8 +34,10 @@ PRThread *me;
-                     _PRI_DetachThread();
-             }
-             break;
-         case DLL_PROCESS_DETACH:
-             break;
+@@ -37,3 +39,5 @@ PRThread *me;
      }
      return TRUE;
  }
 +
 +#endif
-Index: mozilla/nsprpub/pr/src/md/windows/w95thred.c
-===================================================================
-RCS file: /cvsroot/mozilla/nsprpub/pr/src/md/windows/w95thred.c,v
-retrieving revision 3.22
-diff -p -u -8 -r3.22 w95thred.c
---- mozilla/nsprpub/pr/src/md/windows/w95thred.c	13 Jun 2012 02:17:05 -0000	3.22
-+++ mozilla/nsprpub/pr/src/md/windows/w95thred.c	29 Jan 2013 01:15:02 -0000
-@@ -313,8 +313,125 @@ PRThread *thread;
- 
-    	if (NULL == thread) {
- 		thread = _PRI_AttachThread(
-             PR_USER_THREAD, PR_PRIORITY_NORMAL, NULL, 0);
- 	}
+diff --git a/pr/src/md/windows/w95thred.c b/pr/src/md/windows/w95thred.c
+index 932c50c..f5c7703 100644
+--- a/pr/src/md/windows/w95thred.c
++++ b/pr/src/md/windows/w95thred.c
+@@ -318,3 +318,120 @@ PRThread *thread;
  	PR_ASSERT(thread != NULL);
  	return thread;
  }

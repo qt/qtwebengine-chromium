@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/LayoutScrollbar.h"
 
 #include "core/css/PseudoStyleRequest.h"
@@ -43,7 +42,7 @@ PassRefPtrWillBeRawPtr<Scrollbar> LayoutScrollbar::createCustomScrollbar(Scrolla
 }
 
 LayoutScrollbar::LayoutScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, LocalFrame* owningFrame)
-    : Scrollbar(scrollableArea, orientation, RegularScrollbar, LayoutScrollbarTheme::layoutScrollbarTheme())
+    : Scrollbar(scrollableArea, orientation, RegularScrollbar, nullptr, LayoutScrollbarTheme::layoutScrollbarTheme())
     , m_owner(ownerNode)
     , m_owningFrame(owningFrame)
 {
@@ -201,7 +200,7 @@ void LayoutScrollbar::updateScrollbarParts(bool destroy)
                 toLayoutBlock(box)->notifyScrollbarThicknessChanged();
             box->setChildNeedsLayout();
             if (m_scrollableArea)
-                m_scrollableArea->invalidateScrollCorner(m_scrollableArea->scrollCornerRect());
+                m_scrollableArea->setScrollCornerNeedsPaintInvalidation();
         }
     }
 }
@@ -242,21 +241,21 @@ void LayoutScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
 
     if (needLayoutObject && partStyle->display() != BLOCK) {
         // See if we are a button that should not be visible according to OS settings.
-        ScrollbarButtonsPlacement buttonsPlacement = theme()->buttonsPlacement();
+        WebScrollbarButtonsPlacement buttonsPlacement = theme().buttonsPlacement();
         switch (partType) {
         case BackButtonStartPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementSingle || buttonsPlacement == ScrollbarButtonsPlacementDoubleStart
-                || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
+            needLayoutObject = (buttonsPlacement == WebScrollbarButtonsPlacementSingle || buttonsPlacement == WebScrollbarButtonsPlacementDoubleStart
+                || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth);
             break;
         case ForwardButtonStartPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementDoubleStart || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
+            needLayoutObject = (buttonsPlacement == WebScrollbarButtonsPlacementDoubleStart || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth);
             break;
         case BackButtonEndPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
+            needLayoutObject = (buttonsPlacement == WebScrollbarButtonsPlacementDoubleEnd || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth);
             break;
         case ForwardButtonEndPart:
-            needLayoutObject = (buttonsPlacement == ScrollbarButtonsPlacementSingle || buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd
-                || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth);
+            needLayoutObject = (buttonsPlacement == WebScrollbarButtonsPlacementSingle || buttonsPlacement == WebScrollbarButtonsPlacementDoubleEnd
+                || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth);
             break;
         default:
             break;
@@ -362,15 +361,10 @@ int LayoutScrollbar::minimumThumbLength() const
     return orientation() == HorizontalScrollbar ? partLayoutObject->size().width() : partLayoutObject->size().height();
 }
 
-void LayoutScrollbar::invalidateRect(const IntRect& rect)
+void LayoutScrollbar::invalidateDisplayItemClientsOfScrollbarParts(const LayoutBoxModelObject& paintInvalidationContainer)
 {
-    Scrollbar::invalidateRect(rect);
-
-    // FIXME: invalidate only the changed part.
-    if (LayoutBox* owningLayoutObject = this->owningLayoutObject()) {
-        for (auto& part : m_parts)
-            owningLayoutObject->invalidateDisplayItemClientForNonCompositingDescendantsOf(*part.value);
-    }
+    for (auto& part : m_parts)
+        part.value->invalidateDisplayItemClientsIncludingNonCompositingDescendants(&paintInvalidationContainer, PaintInvalidationScroll);
 }
 
 }

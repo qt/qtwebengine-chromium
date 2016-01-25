@@ -32,7 +32,6 @@
 namespace blink {
 
 struct GlyphOverflow {
-    STACK_ALLOCATED();
     GlyphOverflow()
         : left(0)
         , right(0)
@@ -41,26 +40,31 @@ struct GlyphOverflow {
     {
     }
 
-    bool isZero() const
+    bool isApproximatelyZero() const
     {
-        return !left && !right && !top && !bottom;
+        // Overflow can be expensive so we try to avoid it. Small amounts of
+        // overflow is imperceptible and is typically masked by pixel snapping.
+        static const float kApproximatelyNoOverflow = 0.0625f;
+        return std::fabs(left) < kApproximatelyNoOverflow
+            && std::fabs(right) < kApproximatelyNoOverflow
+            && std::fabs(top) < kApproximatelyNoOverflow
+            && std::fabs(bottom) < kApproximatelyNoOverflow;
     }
 
     void setFromBounds(const FloatRect& bounds, float ascent, float descent, float textWidth)
     {
-        top = ceilf(std::max(0.0f, -bounds.y() - ascent));
-        bottom = ceilf(std::max(0.0f, bounds.maxY() - descent));
-        left = ceilf(std::max(0.0f, -bounds.x()));
-        right = ceilf(std::max(0.0f, bounds.maxX() - textWidth));
+        top = std::max(0.0f, -bounds.y() - ascent);
+        bottom = std::max(0.0f, bounds.maxY() - descent);
+        left = std::max(0.0f, -bounds.x());
+        right = std::max(0.0f, bounds.maxX() - textWidth);
     }
 
     // Top and bottom are the amounts of glyph overflows exceeding the font metrics' ascent and descent, respectively.
     // Left and right are the amounts of glyph overflows exceeding the left and right edge of normal layout boundary, respectively.
-    // All fields are in absolute number of pixels rounded up to the nearest integer.
-    int left;
-    int right;
-    int top;
-    int bottom;
+    float left;
+    float right;
+    float top;
+    float bottom;
 };
 
 } // namespace blink

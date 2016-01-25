@@ -44,13 +44,13 @@ class QualifiedName;
 // more standard (grows upwards) stack terminology here.
 class HTMLElementStack {
     WTF_MAKE_NONCOPYABLE(HTMLElementStack);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     HTMLElementStack();
     ~HTMLElementStack();
 
     class ElementRecord final : public NoBaseWillBeGarbageCollected<ElementRecord> {
-        WTF_MAKE_NONCOPYABLE(ElementRecord); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ElementRecord);
+        WTF_MAKE_NONCOPYABLE(ElementRecord); USING_FAST_MALLOC_WILL_BE_REMOVED(ElementRecord);
     public:
 #if !ENABLE(OILPAN)
         ~ElementRecord(); // Public for ~PassOwnPtr()

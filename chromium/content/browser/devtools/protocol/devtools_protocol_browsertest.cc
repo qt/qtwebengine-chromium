@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -37,14 +41,14 @@ class DevToolsProtocolTest : public ContentBrowserTest,
  public:
   DevToolsProtocolTest()
       : last_sent_id_(0),
-        waiting_for_notifications_count_(0),
+        waiting_for_command_result_id_(0),
         in_dispatch_(false) {
   }
 
  protected:
   void SendCommand(const std::string& method,
                    scoped_ptr<base::DictionaryValue> params) {
-    SendCommand(method, params.Pass(), true);
+    SendCommand(method, std::move(params), true);
   }
 
   void SendCommand(const std::string& method,
@@ -62,8 +66,10 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     agent_host_->DispatchProtocolMessage(json_command);
     // Some messages are dispatched synchronously.
     // Only run loop if we are not finished yet.
-    if (in_dispatch_ && wait)
+    if (in_dispatch_ && wait) {
+      waiting_for_command_result_id_ = last_sent_id_;
       base::MessageLoop::current()->Run();
+    }
     in_dispatch_ = false;
   }
 
@@ -104,8 +110,8 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     }
   }
 
-  void WaitForNotifications(int count) {
-    waiting_for_notifications_count_ = count;
+  void WaitForNotification(const std::string& notification) {
+    waiting_for_notification_ = notification;
     RunMessageLoop();
   }
 
@@ -124,19 +130,20 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     if (root->GetInteger("id", &id)) {
       result_ids_.push_back(id);
       base::DictionaryValue* result;
-      EXPECT_TRUE(root->GetDictionary("result", &result));
+      ASSERT_TRUE(root->GetDictionary("result", &result));
       result_.reset(result->DeepCopy());
       in_dispatch_ = false;
-      if (base::MessageLoop::current()->is_running())
+      if (id && id == waiting_for_command_result_id_) {
+        waiting_for_command_result_id_ = 0;
         base::MessageLoop::current()->QuitNow();
+      }
     } else {
       std::string notification;
       EXPECT_TRUE(root->GetString("method", &notification));
       notifications_.push_back(notification);
-      if (waiting_for_notifications_count_) {
-        waiting_for_notifications_count_--;
-        if (!waiting_for_notifications_count_)
-          base::MessageLoop::current()->QuitNow();
+      if (waiting_for_notification_ == notification) {
+        waiting_for_notification_ = std::string();
+        base::MessageLoop::current()->QuitNow();
       }
     }
   }
@@ -145,7 +152,8 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     EXPECT_TRUE(false);
   }
 
-  int waiting_for_notifications_count_;
+  std::string waiting_for_notification_;
+  int waiting_for_command_result_id_;
   bool in_dispatch_;
 };
 
@@ -160,7 +168,7 @@ class SyntheticKeyEventTest : public DevToolsProtocolTest {
     params->SetInteger("modifiers", modifier);
     params->SetInteger("windowsVirtualKeyCode", windowsKeyCode);
     params->SetInteger("nativeVirtualKeyCode", nativeKeyCode);
-    SendCommand("Input.dispatchKeyEvent", params.Pass());
+    SendCommand("Input.dispatchKeyEvent", std::move(params));
   }
 };
 
@@ -259,7 +267,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, DISABLED_SynthesizePinchGesture) {
   params->SetInteger("x", old_width / 2);
   params->SetInteger("y", old_height / 2);
   params->SetDouble("scaleFactor", 2.0);
-  SendCommand("Input.synthesizePinchGesture", params.Pass());
+  SendCommand("Input.synthesizePinchGesture", std::move(params));
 
   int new_width;
   ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
@@ -290,7 +298,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, SynthesizeScrollGesture) {
   params->SetInteger("y", 0);
   params->SetInteger("xDistance", 0);
   params->SetInteger("yDistance", -100);
-  SendCommand("Input.synthesizeScrollGesture", params.Pass());
+  SendCommand("Input.synthesizeScrollGesture", std::move(params));
 
   ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
       shell()->web_contents(),
@@ -313,7 +321,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, SynthesizeTapGesture) {
   params->SetInteger("x", 16);
   params->SetInteger("y", 16);
   params->SetString("gestureSourceType", "touch");
-  SendCommand("Input.synthesizeTapGesture", params.Pass());
+  SendCommand("Input.synthesizeTapGesture", std::move(params));
 
   // The link that we just tapped should take us to the bottom of the page. The
   // new value of |document.body.scrollTop| will depend on the screen dimensions
@@ -327,8 +335,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, SynthesizeTapGesture) {
 #endif  // defined(OS_ANDROID)
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, NavigationPreservesMessages) {
-  ASSERT_TRUE(test_server()->Start());
-  GURL test_url = test_server()->GetURL("files/devtools/navigation.html");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_url = embedded_test_server()->GetURL("/devtools/navigation.html");
   NavigateToURLBlockUntilNavigationsComplete(shell(), test_url, 1);
   Attach();
   SendCommand("Page.enable", nullptr, false);
@@ -336,7 +344,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, NavigationPreservesMessages) {
   scoped_ptr<base::DictionaryValue> params(new base::DictionaryValue());
   test_url = GetTestUrl("devtools", "navigation.html");
   params->SetString("url", test_url.spec());
-  SendCommand("Page.navigate", params.Pass(), true);
+  SendCommand("Page.navigate", std::move(params), true);
 
   bool enough_results = result_ids_.size() >= 2u;
   EXPECT_TRUE(enough_results);
@@ -357,7 +365,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, NavigationPreservesMessages) {
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CrossSiteNoDetach) {
   host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ASSERT_TRUE(embedded_test_server()->Start());
   content::SetupCrossSiteRedirector(embedded_test_server());
 
   GURL test_url1 = embedded_test_server()->GetURL(
@@ -373,8 +381,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CrossSiteNoDetach) {
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ReconnectPreservesState) {
-  ASSERT_TRUE(test_server()->Start());
-  GURL test_url = test_server()->GetURL("files/devtools/navigation.html");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL test_url = embedded_test_server()->GetURL("/devtools/navigation.html");
   NavigateToURLBlockUntilNavigationsComplete(shell(), test_url, 1);
 
   Shell* second = CreateBrowser();
@@ -383,17 +391,87 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ReconnectPreservesState) {
   Attach();
   SendCommand("Runtime.enable", nullptr);
 
-  size_t notification_count = notifications_.size();
   agent_host_->DisconnectWebContents();
   agent_host_->ConnectWebContents(second->web_contents());
-  WaitForNotifications(1);
+  WaitForNotification("Runtime.executionContextsCleared");
+}
 
-  bool found_notification = false;
-  for (size_t i = notification_count; i < notifications_.size(); ++i) {
-    if (notifications_[i] == "Runtime.executionContextsCleared")
-      found_notification = true;
-  }
-  EXPECT_TRUE(found_notification);
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CrossSitePauseInBeforeUnload) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  content::SetupCrossSiteRedirector(embedded_test_server());
+
+  NavigateToURLBlockUntilNavigationsComplete(shell(),
+      embedded_test_server()->GetURL("A.com", "/devtools/navigation.html"), 1);
+  Attach();
+  SendCommand("Debugger.enable", nullptr);
+
+  ASSERT_TRUE(content::ExecuteScript(
+      shell()->web_contents(),
+      "window.onbeforeunload = function() { debugger; return null; }"));
+
+  shell()->LoadURL(
+      embedded_test_server()->GetURL("B.com", "/devtools/navigation.html"));
+  WaitForNotification("Debugger.paused");
+  TestNavigationObserver observer(shell()->web_contents(), 1);
+  SendCommand("Debugger.resume", nullptr);
+  observer.Wait();
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, InspectDuringFrameSwap) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  content::SetupCrossSiteRedirector(embedded_test_server());
+
+  GURL test_url1 =
+      embedded_test_server()->GetURL("A.com", "/devtools/navigation.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url1, 1);
+
+  ShellAddedObserver new_shell_observer;
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(),
+                            "window.open('about:blank','foo');"));
+  Shell* new_shell = new_shell_observer.GetShell();
+  EXPECT_TRUE(new_shell->web_contents()->HasOpener());
+
+  agent_host_ = DevToolsAgentHost::GetOrCreateFor(new_shell->web_contents());
+  agent_host_->AttachClient(this);
+
+  GURL test_url2 =
+      embedded_test_server()->GetURL("B.com", "/devtools/navigation.html");
+
+  // After this navigation, if the bug exists, the process will crash.
+  NavigateToURLBlockUntilNavigationsComplete(new_shell, test_url2, 1);
+
+  // Ensure that the A.com process is still alive by executing a script in the
+  // original tab.
+  //
+  // TODO(alexmos, nasko):  A better way to do this is to navigate the original
+  // tab to another site, watch for process exit, and check whether there was a
+  // crash. However, currently there's no way to wait for process exit
+  // regardless of whether it's a crash or not.  RenderProcessHostWatcher
+  // should be fixed to support waiting on both WATCH_FOR_PROCESS_EXIT and
+  // WATCH_FOR_HOST_DESTRUCTION, and then used here.
+  bool success = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(shell()->web_contents(),
+                                          "window.domAutomationController.send("
+                                          "    !!window.open('', 'foo'));",
+                                          &success));
+  EXPECT_TRUE(success);
+
+  GURL test_url3 =
+      embedded_test_server()->GetURL("A.com", "/devtools/navigation.html");
+
+  // After this navigation, if the bug exists, the process will crash.
+  NavigateToURLBlockUntilNavigationsComplete(new_shell, test_url3, 1);
+
+  // Ensure that the A.com process is still alive by executing a script in the
+  // original tab.
+  success = false;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(shell()->web_contents(),
+                                          "window.domAutomationController.send("
+                                          "    !!window.open('', 'foo'));",
+                                          &success));
+  EXPECT_TRUE(success);
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ReloadBlankPage) {

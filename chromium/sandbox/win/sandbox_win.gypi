@@ -114,8 +114,6 @@
             'src/security_level.h',
             'src/service_resolver.cc',
             'src/service_resolver.h',
-            'src/shared_handles.cc',
-            'src/shared_handles.h',
             'src/sharedmem_ipc_client.cc',
             'src/sharedmem_ipc_client.h',
             'src/sharedmem_ipc_server.cc',
@@ -134,6 +132,8 @@
             'src/target_process.h',
             'src/target_services.cc',
             'src/target_services.h',
+            'src/top_level_dispatcher.cc',
+            'src/top_level_dispatcher.h',
             'src/win_utils.cc',
             'src/win_utils.h',
             'src/win2k_threadpool.cc',
@@ -189,12 +189,6 @@
       'include_dirs': [
         '../..',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'src',
-          '../..',
-        ],
-      },
       'target_conditions': [
         ['target_arch=="ia32"', {
           'copies': [
@@ -227,6 +221,7 @@
         'src/handle_closer_test.cc',
         'src/integrity_level_test.cc',
         'src/ipc_ping_test.cc',
+        'src/lpc_policy_test.cc',
         'src/named_pipe_policy_test.cc',
         'src/policy_target_test.cc',
         'src/process_mitigations_test.cc',
@@ -358,12 +353,6 @@
           'include_dirs': [
             '../..',
           ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              'src',
-              '../..',
-            ],
-          },
           'defines': [
             '<@(nacl_win64_defines)',
           ]

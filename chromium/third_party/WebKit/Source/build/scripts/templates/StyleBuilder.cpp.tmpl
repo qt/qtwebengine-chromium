@@ -1,7 +1,6 @@
 {% from 'macros.tmpl' import license %}
 {{license()}}
 
-#include "config.h"
 #include "core/css/resolver/StyleBuilder.h"
 
 #include "StyleBuilderFunctions.h"
@@ -29,6 +28,10 @@ void StyleBuilder::applyProperty(CSSPropertyID property, StyleResolverState& sta
         return;
 
     {% endfor %}
+    case CSSPropertyVariable:
+        ASSERT(!isInitial && !isInherit);
+        StyleBuilderFunctions::applyValueCSSPropertyVariable(state, value);
+        return;
     {% for property_id, property in properties.items() if property.direction_aware %}
     case {{property_id}}:
     {% endfor %}

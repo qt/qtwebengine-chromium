@@ -24,8 +24,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/network/ResourceRequest.h"
+
+#include "platform/HTTPNames.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURLRequest.h"
 
@@ -33,43 +34,43 @@ namespace blink {
 
 double ResourceRequest::s_defaultTimeoutInterval = INT_MAX;
 
-PassOwnPtr<ResourceRequest> ResourceRequest::adopt(PassOwnPtr<CrossThreadResourceRequestData> data)
+ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
+    : ResourceRequest()
 {
-    OwnPtr<ResourceRequest> request = adoptPtr(new ResourceRequest());
-    request->setURL(data->m_url);
-    request->setCachePolicy(data->m_cachePolicy);
-    request->setTimeoutInterval(data->m_timeoutInterval);
-    request->setFirstPartyForCookies(data->m_firstPartyForCookies);
-    request->setRequestorOrigin(data->m_requestorOrigin);
-    request->setHTTPMethod(AtomicString(data->m_httpMethod));
-    request->setPriority(data->m_priority, data->m_intraPriorityValue);
+    setURL(data->m_url);
+    setCachePolicy(data->m_cachePolicy);
+    setTimeoutInterval(data->m_timeoutInterval);
+    setFirstPartyForCookies(data->m_firstPartyForCookies);
+    setRequestorOrigin(data->m_requestorOrigin);
+    setHTTPMethod(AtomicString(data->m_httpMethod));
+    setPriority(data->m_priority, data->m_intraPriorityValue);
 
-    request->m_httpHeaderFields.adopt(data->m_httpHeaders.release());
+    m_httpHeaderFields.adopt(data->m_httpHeaders.release());
 
-    request->setHTTPBody(data->m_httpBody);
-    request->setAllowStoredCredentials(data->m_allowStoredCredentials);
-    request->setReportUploadProgress(data->m_reportUploadProgress);
-    request->setHasUserGesture(data->m_hasUserGesture);
-    request->setDownloadToFile(data->m_downloadToFile);
-    request->setUseStreamOnResponse(data->m_useStreamOnResponse);
-    request->setSkipServiceWorker(data->m_skipServiceWorker);
-    request->setShouldResetAppCache(data->m_shouldResetAppCache);
-    request->setRequestorID(data->m_requestorID);
-    request->setRequestorProcessID(data->m_requestorProcessID);
-    request->setAppCacheHostID(data->m_appCacheHostID);
-    request->setRequestContext(data->m_requestContext);
-    request->setFrameType(data->m_frameType);
-    request->setFetchRequestMode(data->m_fetchRequestMode);
-    request->setFetchCredentialsMode(data->m_fetchCredentialsMode);
-    request->setFetchRedirectMode(data->m_fetchRedirectMode);
-    request->m_referrerPolicy = data->m_referrerPolicy;
-    request->m_didSetHTTPReferrer = data->m_didSetHTTPReferrer;
-    request->m_checkForBrowserSideNavigation = data->m_checkForBrowserSideNavigation;
-    request->m_uiStartTime = data->m_uiStartTime;
-    request->m_originatesFromReservedIPRange = data->m_originatesFromReservedIPRange;
-    request->m_inputPerfMetricReportPolicy = data->m_inputPerfMetricReportPolicy;
-    request->m_followedRedirect = data->m_followedRedirect;
-    return request.release();
+    setHTTPBody(data->m_httpBody);
+    setAllowStoredCredentials(data->m_allowStoredCredentials);
+    setReportUploadProgress(data->m_reportUploadProgress);
+    setHasUserGesture(data->m_hasUserGesture);
+    setDownloadToFile(data->m_downloadToFile);
+    setUseStreamOnResponse(data->m_useStreamOnResponse);
+    setSkipServiceWorker(data->m_skipServiceWorker);
+    setShouldResetAppCache(data->m_shouldResetAppCache);
+    setRequestorID(data->m_requestorID);
+    setRequestorProcessID(data->m_requestorProcessID);
+    setAppCacheHostID(data->m_appCacheHostID);
+    setRequestContext(data->m_requestContext);
+    setFrameType(data->m_frameType);
+    setFetchRequestMode(data->m_fetchRequestMode);
+    setFetchCredentialsMode(data->m_fetchCredentialsMode);
+    setFetchRedirectMode(data->m_fetchRedirectMode);
+    setLoFiState(data->m_loFiState);
+    m_referrerPolicy = data->m_referrerPolicy;
+    m_didSetHTTPReferrer = data->m_didSetHTTPReferrer;
+    m_checkForBrowserSideNavigation = data->m_checkForBrowserSideNavigation;
+    m_uiStartTime = data->m_uiStartTime;
+    m_originatesFromReservedIPRange = data->m_originatesFromReservedIPRange;
+    m_inputPerfMetricReportPolicy = data->m_inputPerfMetricReportPolicy;
+    m_followedRedirect = data->m_followedRedirect;
 }
 
 PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
@@ -102,6 +103,7 @@ PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
     data->m_fetchRequestMode = m_fetchRequestMode;
     data->m_fetchCredentialsMode = m_fetchCredentialsMode;
     data->m_fetchRedirectMode = m_fetchRedirectMode;
+    data->m_loFiState = m_loFiState;
     data->m_referrerPolicy = m_referrerPolicy;
     data->m_didSetHTTPReferrer = m_didSetHTTPReferrer;
     data->m_checkForBrowserSideNavigation = m_checkForBrowserSideNavigation;
@@ -201,44 +203,42 @@ const AtomicString& ResourceRequest::httpHeaderField(const AtomicString& name) c
     return m_httpHeaderFields.get(name);
 }
 
-const AtomicString& ResourceRequest::httpHeaderField(const char* name) const
-{
-    return m_httpHeaderFields.get(name);
-}
-
 void ResourceRequest::setHTTPHeaderField(const AtomicString& name, const AtomicString& value)
 {
     m_httpHeaderFields.set(name, value);
 }
 
-void ResourceRequest::setHTTPHeaderField(const char* name, const AtomicString& value)
-{
-    setHTTPHeaderField(AtomicString(name), value);
-}
-
 void ResourceRequest::setHTTPReferrer(const Referrer& referrer)
 {
     if (referrer.referrer.isEmpty())
-        m_httpHeaderFields.remove("Referer");
+        m_httpHeaderFields.remove(HTTPNames::Referer);
     else
-        setHTTPHeaderField("Referer", referrer.referrer);
+        setHTTPHeaderField(HTTPNames::Referer, referrer.referrer);
     m_referrerPolicy = referrer.referrerPolicy;
     m_didSetHTTPReferrer = true;
 }
 
 void ResourceRequest::clearHTTPReferrer()
 {
-    m_httpHeaderFields.remove("Referer");
+    m_httpHeaderFields.remove(HTTPNames::Referer);
     m_referrerPolicy = ReferrerPolicyDefault;
     m_didSetHTTPReferrer = false;
 }
 
-void ResourceRequest::clearHTTPOrigin()
+void ResourceRequest::setHTTPOrigin(PassRefPtr<SecurityOrigin> origin)
 {
-    m_httpHeaderFields.remove("Origin");
+    setHTTPHeaderField(HTTPNames::Origin, origin->toAtomicString());
+    if (origin->hasSuborigin())
+        setHTTPHeaderField(HTTPNames::Suborigin, AtomicString(origin->suboriginName()));
 }
 
-void ResourceRequest::addHTTPOriginIfNeeded(const AtomicString& origin)
+void ResourceRequest::clearHTTPOrigin()
+{
+    m_httpHeaderFields.remove(HTTPNames::Origin);
+    m_httpHeaderFields.remove(HTTPNames::Suborigin);
+}
+
+void ResourceRequest::addHTTPOriginIfNeeded(PassRefPtr<SecurityOrigin> origin)
 {
     if (!httpOrigin().isEmpty())
         return; // Request already has an Origin header.
@@ -249,16 +249,17 @@ void ResourceRequest::addHTTPOriginIfNeeded(const AtomicString& origin)
     // will leak the internal host name. Similar privacy concerns have lead
     // to the widespread suppression of the Referer header at the network
     // layer.
-    if (httpMethod() == "GET" || httpMethod() == "HEAD")
+    if (httpMethod() == HTTPNames::GET || httpMethod() == HTTPNames::HEAD)
         return;
 
     // For non-GET and non-HEAD methods, always send an Origin header so the
     // server knows we support this feature.
 
-    if (origin.isEmpty()) {
+    AtomicString originString = origin->toAtomicString();
+    if (originString.isEmpty()) {
         // If we don't know what origin header to attach, we attach the value
         // for an empty origin.
-        setHTTPOrigin(SecurityOrigin::createUnique()->toAtomicString());
+        setHTTPOrigin(SecurityOrigin::createUnique());
         return;
     }
     setHTTPOrigin(origin);
@@ -266,7 +267,7 @@ void ResourceRequest::addHTTPOriginIfNeeded(const AtomicString& origin)
 
 void ResourceRequest::clearHTTPUserAgent()
 {
-    m_httpHeaderFields.remove("User-Agent");
+    m_httpHeaderFields.remove(HTTPNames::User_Agent);
 }
 
 EncodedFormData* ResourceRequest::httpBody() const
@@ -372,11 +373,11 @@ bool ResourceRequest::compare(const ResourceRequest& a, const ResourceRequest& b
 
 bool ResourceRequest::isConditional() const
 {
-    return (m_httpHeaderFields.contains("If-Match")
-        || m_httpHeaderFields.contains("If-Modified-Since")
-        || m_httpHeaderFields.contains("If-None-Match")
-        || m_httpHeaderFields.contains("If-Range")
-        || m_httpHeaderFields.contains("If-Unmodified-Since"));
+    return (m_httpHeaderFields.contains(HTTPNames::If_Match)
+        || m_httpHeaderFields.contains(HTTPNames::If_Modified_Since)
+        || m_httpHeaderFields.contains(HTTPNames::If_None_Match)
+        || m_httpHeaderFields.contains(HTTPNames::If_Range)
+        || m_httpHeaderFields.contains(HTTPNames::If_Unmodified_Since));
 }
 
 void ResourceRequest::setHasUserGesture(bool hasUserGesture)
@@ -384,22 +385,10 @@ void ResourceRequest::setHasUserGesture(bool hasUserGesture)
     m_hasUserGesture |= hasUserGesture;
 }
 
-static const AtomicString& cacheControlHeaderString()
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, cacheControlHeader, ("cache-control", AtomicString::ConstructFromLiteral));
-    return cacheControlHeader;
-}
-
-static const AtomicString& pragmaHeaderString()
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, pragmaHeader, ("pragma", AtomicString::ConstructFromLiteral));
-    return pragmaHeader;
-}
-
 const CacheControlHeader& ResourceRequest::cacheControlHeader() const
 {
     if (!m_cacheControlHeaderCache.parsed)
-        m_cacheControlHeaderCache = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+        m_cacheControlHeaderCache = parseCacheControlDirectives(m_httpHeaderFields.get(HTTPNames::Cache_Control), m_httpHeaderFields.get(HTTPNames::Pragma));
     return m_cacheControlHeaderCache;
 }
 
@@ -415,9 +404,7 @@ bool ResourceRequest::cacheControlContainsNoStore() const
 
 bool ResourceRequest::hasCacheValidatorFields() const
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, lastModifiedHeader, ("last-modified", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, eTagHeader, ("etag", AtomicString::ConstructFromLiteral));
-    return !m_httpHeaderFields.get(lastModifiedHeader).isEmpty() || !m_httpHeaderFields.get(eTagHeader).isEmpty();
+    return !m_httpHeaderFields.get(HTTPNames::Last_Modified).isEmpty() || !m_httpHeaderFields.get(HTTPNames::ETag).isEmpty();
 }
 
 void ResourceRequest::initialize(const KURL& url)
@@ -425,7 +412,7 @@ void ResourceRequest::initialize(const KURL& url)
     m_url = url;
     m_cachePolicy = UseProtocolCachePolicy;
     m_timeoutInterval = s_defaultTimeoutInterval;
-    m_httpMethod = "GET";
+    m_httpMethod = HTTPNames::GET;
     m_allowStoredCredentials = true;
     m_reportUploadProgress = false;
     m_reportRawHeaders = false;
@@ -448,6 +435,7 @@ void ResourceRequest::initialize(const KURL& url)
     m_fetchCredentialsMode = WebURLRequest::FetchCredentialsModeSameOrigin;
     m_fetchRedirectMode = WebURLRequest::FetchRedirectModeFollow;
     m_referrerPolicy = ReferrerPolicyDefault;
+    m_loFiState = WebURLRequest::LoFiUnspecified;
     m_didSetHTTPReferrer = false;
     m_checkForBrowserSideNavigation = true;
     m_uiStartTime = 0;

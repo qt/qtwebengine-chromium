@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/DocumentWriter.h"
 
 #include "core/dom/Document.h"
@@ -91,7 +90,6 @@ void DocumentWriter::addData(const char* bytes, size_t length)
         m_parser->setDecoder(decoder.release());
     }
     // appendBytes() can result replacing DocumentLoader::m_writer.
-    RefPtrWillBeRawPtr<DocumentWriter> protectingThis(this);
     m_parser->appendBytes(bytes, length);
 }
 

@@ -14,7 +14,6 @@ assert(is_android)
 config("compiler") {
   cflags = [
     "-ffunction-sections",
-    "-funwind-tables",
     "-fno-short-enums",
   ]
   defines = [
@@ -33,21 +32,14 @@ config("compiler") {
   if (is_clang) {
     rebased_android_toolchain_root =
         rebase_path(android_toolchain_root, root_build_dir)
-    if (current_cpu == "arm") {
+    assert(rebased_android_toolchain_root != "")  # Mark as used.
+    if (current_cpu == "mipsel") {
       cflags += [
-        # TODO(hans) Enable integrated-as (crbug.com/124610).
+        # TODO(gordanac) Enable integrated-as.
         "-no-integrated-as",
         "-B${rebased_android_toolchain_root}/bin",  # Else /usr/bin/as gets picked up.
       ]
     }
-  }
-
-  if (is_asan) {
-    # Android build relies on -Wl,--gc-sections removing unreachable code.
-    # ASan instrumentation for globals inhibits this and results in a library
-    # with unresolvable relocations.
-    # TODO(eugenis): find a way to reenable this.
-    cflags += [ "-mllvm -asan-globals=0" ]
   }
 
   # Use gold for Android for most CPU architectures.
@@ -65,6 +57,11 @@ config("compiler") {
     }
   }
 
+  if (current_cpu == "mipsel" && is_clang) {
+    # Let clang find the ld.bfd in the NDK.
+    ldflags += [ "--gcc-toolchain=$rebased_android_toolchain_root" ]
+  }
+
   ldflags += [
     "-Wl,--no-undefined",
 
@@ -78,7 +75,7 @@ config("compiler") {
     # http://crbug.com/448386
     "-Wl,--exclude-libs=libvpx_assembly_arm.a",
   ]
-  if (current_cpu == "arm") {
+  if (current_cpu == "arm" && !use_order_profiling) {
     ldflags += [
       # Enable identical code folding to reduce size.
       "-Wl,--icf=safe",
@@ -92,14 +89,14 @@ config("compiler") {
       abi_target = "i686-linux-androideabi"
     } else if (current_cpu == "arm64") {
       # Place holder for arm64 support, not tested.
+      # TODO: Enable clang support for Android Arm64. http://crbug.com/539781
       abi_target = "aarch64-linux-androideabi"
     } else if (current_cpu == "x64") {
       # Place holder for x64 support, not tested.
-      # TODO: Enable clang support for Android x64. http://crbug.com/346626
+      # TODO: Enable clang support for Android x64. http://crbug.com/539781
       abi_target = "x86_64-linux-androideabi"
     } else if (current_cpu == "mipsel") {
-      # Place holder for mips support, not tested.
-      abi_target = "mipsel-linux-androideabi"
+      abi_target = "mipsel-linux-android"
     } else if (current_cpu == "mips64el") {
       # Place holder for mips64 support, not tested.
       abi_target = "mips64el-linux-androideabi"
@@ -148,16 +145,25 @@ config("runtime_library") {
   lib_dirs = [ "$android_libcpp_root/libs/$android_app_abi" ]
 
   # The libc++ runtime library (must come first).
-  if (is_component_build) {
+  # ASan needs to dynamically link to libc++ even in static builds so
+  # that it can interpose operator new.
+  if (is_component_build || is_asan) {
     libs = [ "c++_shared" ]
   } else {
     libs = [ "c++_static" ]
   }
+
+  # Manually link the libgcc.a that the cross compiler uses. This is
+  # absolute because the linker will look inside the sysroot if it's not.
   libs += [
+    rebase_path(android_libgcc_file),
     "c",
-    "dl",
-    "m",
   ]
+
+  # Clang with libc++ does not require an explicit atomic library reference.
+  if (!is_clang) {
+    libs += [ "atomic" ]
+  }
 
   if (is_clang) {
     # Work around incompatibilities between bionic and clang headers.
@@ -171,27 +177,6 @@ config("runtime_library") {
   # issues with libc++ (crbug.com/456380).
   if (current_cpu != "mipsel" && current_cpu != "mips64el") {
     ldflags += [ "-Wl,--warn-shared-textrel" ]
-  }
-
-  if (current_cpu == "mipsel") {
-    libs += [
-      # ld linker is used for mips Android, and ld does not accept library
-      # absolute path prefixed by "-l"; Since libgcc does not exist in mips
-      # sysroot the proper library will be linked.
-      # TODO(gordanac): Remove once gold linker is used for mips Android.
-      "gcc",
-    ]
-  } else {
-    libs += [
-      # Manually link the libgcc.a that the cross compiler uses. This is
-      # absolute because the linker will look inside the sysroot if it's not.
-      rebase_path(android_libgcc_file),
-    ]
-  }
-
-  # Clang with libc++ does not require an explicit atomic library reference.
-  if (!is_clang) {
-    libs += [ "atomic" ]
   }
 }
 
@@ -224,17 +209,19 @@ config("default_cygprofile_instrumentation") {
 }
 
 config("cygprofile_instrumentation") {
-  cflags = [
-    "-finstrument-functions",
-
-    # Allow mmx intrinsics to inline, so that the compiler can expand the intrinsics.
-    "-finstrument-functions-exclude-file-list=mmintrin.h",
-
-    # Avoid errors with current NDK:
-    # "third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/../lib/gcc/arm-linux-androideabi/4.6/include/arm_neon.h:3426:3: error: argument must be a constant"
-    "-finstrument-functions-exclude-file-list=arm_neon.h,SaturatedArithmeticARM.h",
-  ]
   defines = [ "CYGPROFILE_INSTRUMENTATION=1" ]
+  cflags = [ "-finstrument-functions" ]
+
+  if (!is_clang) {
+    cflags += [
+      # Allow mmx intrinsics to inline, so that the compiler can expand the intrinsics.
+      "-finstrument-functions-exclude-file-list=mmintrin.h",
+
+      # Avoid errors with current NDK:
+      # "third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/../lib/gcc/arm-linux-androideabi/4.6/include/arm_neon.h:3426:3: error: argument must be a constant"
+      "-finstrument-functions-exclude-file-list=arm_neon.h",
+    ]
+  }
 }
 
 config("no_cygprofile_instrumentation") {

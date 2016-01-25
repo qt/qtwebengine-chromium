@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/credentialmanager/PasswordCredential.h"
 
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/URLSearchParams.h"
 #include "core/html/FormData.h"
 #include "modules/credentialmanager/FormDataOptions.h"
 #include "modules/credentialmanager/PasswordCredentialData.h"
@@ -33,26 +33,58 @@ PasswordCredential* PasswordCredential::create(const PasswordCredentialData& dat
 
 PasswordCredential::PasswordCredential(WebPasswordCredential* webPasswordCredential)
     : Credential(webPasswordCredential->platformCredential())
+    , m_idName("username")
+    , m_passwordName("password")
 {
 }
 
 PasswordCredential::PasswordCredential(const String& id, const String& password, const String& name, const KURL& icon)
     : Credential(PlatformPasswordCredential::create(id, password, name, icon))
+    , m_idName("username")
+    , m_passwordName("password")
 {
 }
 
-FormData* PasswordCredential::toFormData(ScriptState* scriptState, const FormDataOptions& options)
+PassRefPtr<EncodedFormData> PasswordCredential::encodeFormData(String& contentType) const
 {
-    FormData* fd = FormData::create();
+    if (m_additionalData.isURLSearchParams()) {
+        // If |additionalData| is a 'URLSearchParams' object, build a urlencoded response.
+        URLSearchParams* params = URLSearchParams::create(URLSearchParamsInit());
+        URLSearchParams* additionalData = m_additionalData.getAsURLSearchParams();
+        for (const auto& param : additionalData->params()) {
+            const String& name = param.first;
+            if (name != idName() && name != passwordName())
+                params->append(name, param.second);
+        }
+        params->append(idName(), id());
+        params->append(passwordName(), password());
 
-    String errorMessage;
-    if (!scriptState->executionContext()->isSecureContext(errorMessage))
-        return fd;
+        contentType = AtomicString("application/x-www-form-urlencoded;charset=UTF-8", AtomicString::ConstructFromLiteral);
 
-    fd->append(options.idName(), id());
-    fd->append(options.passwordName(), password());
-    fd->makeOpaque();
-    return fd;
+        return params->encodeFormData();
+    }
+
+    // Otherwise, we'll build a multipart response.
+    FormData* formData = FormData::create(nullptr);
+    if (m_additionalData.isFormData()) {
+        FormData* additionalData = m_additionalData.getAsFormData();
+        for (const FormData::Entry* entry : additionalData->entries()) {
+            const String& name = formData->decode(entry->name());
+            if (name == idName() || name == passwordName())
+                continue;
+
+            if (entry->blob())
+                formData->append(name, entry->blob(), entry->filename());
+            else
+                formData->append(name, formData->decode(entry->value()));
+        }
+    }
+    formData->append(idName(), id());
+    formData->append(passwordName(), password());
+
+    RefPtr<EncodedFormData> encodedData = formData->encodeMultiPartFormData();
+    contentType = AtomicString("multipart/form-data; boundary=", AtomicString::ConstructFromLiteral) + encodedData->boundary().data();
+    return encodedData.release();
 }
 
 const String& PasswordCredential::password() const
@@ -63,6 +95,7 @@ const String& PasswordCredential::password() const
 DEFINE_TRACE(PasswordCredential)
 {
     Credential::trace(visitor);
+    visitor->trace(m_additionalData);
 }
 
 } // namespace blink

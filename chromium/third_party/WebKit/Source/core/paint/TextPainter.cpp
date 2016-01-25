@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/TextPainter.h"
 
 #include "core/CSSPropertyNames.h"
@@ -23,7 +22,7 @@
 
 namespace blink {
 
-TextPainter::TextPainter(GraphicsContext* context, const Font& font, const TextRun& run, const LayoutPoint& textOrigin, const LayoutRect& textBounds, bool horizontal)
+TextPainter::TextPainter(GraphicsContext& context, const Font& font, const TextRun& run, const LayoutPoint& textOrigin, const LayoutRect& textBounds, bool horizontal)
     : m_graphicsContext(context)
     , m_font(font)
     , m_run(run)
@@ -55,20 +54,20 @@ void TextPainter::setEmphasisMark(const AtomicString& emphasisMark, TextEmphasis
 
 void TextPainter::paint(int startOffset, int endOffset, int length, const Style& textStyle, TextBlobPtr* cachedTextBlob)
 {
-    GraphicsContextStateSaver stateSaver(*m_graphicsContext, false);
+    GraphicsContextStateSaver stateSaver(m_graphicsContext, false);
     updateGraphicsContext(textStyle, stateSaver);
     if (m_combinedText) {
-        m_graphicsContext->save();
-        m_combinedText->transformToInlineCoordinates(*m_graphicsContext, m_textBounds);
+        m_graphicsContext.save();
+        m_combinedText->transformToInlineCoordinates(m_graphicsContext, m_textBounds);
         paintInternal<PaintText>(startOffset, endOffset, length, cachedTextBlob);
-        m_graphicsContext->restore();
+        m_graphicsContext.restore();
     } else {
         paintInternal<PaintText>(startOffset, endOffset, length, cachedTextBlob);
     }
 
     if (!m_emphasisMark.isEmpty()) {
         if (textStyle.emphasisMarkColor != textStyle.fillColor)
-            m_graphicsContext->setFillColor(textStyle.emphasisMarkColor);
+            m_graphicsContext.setFillColor(textStyle.emphasisMarkColor);
 
         if (m_combinedText)
             paintEmphasisMarkForCombinedText();
@@ -78,33 +77,33 @@ void TextPainter::paint(int startOffset, int endOffset, int length, const Style&
 }
 
 // static
-void TextPainter::updateGraphicsContext(GraphicsContext* context, const Style& textStyle, bool horizontal, GraphicsContextStateSaver& stateSaver)
+void TextPainter::updateGraphicsContext(GraphicsContext& context, const Style& textStyle, bool horizontal, GraphicsContextStateSaver& stateSaver)
 {
-    TextDrawingModeFlags mode = context->textDrawingMode();
+    TextDrawingModeFlags mode = context.textDrawingMode();
     if (textStyle.strokeWidth > 0) {
         TextDrawingModeFlags newMode = mode | TextModeStroke;
         if (mode != newMode) {
             if (!stateSaver.saved())
                 stateSaver.save();
-            context->setTextDrawingMode(newMode);
+            context.setTextDrawingMode(newMode);
             mode = newMode;
         }
     }
 
-    if (mode & TextModeFill && textStyle.fillColor != context->fillColor())
-        context->setFillColor(textStyle.fillColor);
+    if (mode & TextModeFill && textStyle.fillColor != context.fillColor())
+        context.setFillColor(textStyle.fillColor);
 
     if (mode & TextModeStroke) {
-        if (textStyle.strokeColor != context->strokeColor())
-            context->setStrokeColor(textStyle.strokeColor);
-        if (textStyle.strokeWidth != context->strokeThickness())
-            context->setStrokeThickness(textStyle.strokeWidth);
+        if (textStyle.strokeColor != context.strokeColor())
+            context.setStrokeColor(textStyle.strokeColor);
+        if (textStyle.strokeWidth != context.strokeThickness())
+            context.setStrokeThickness(textStyle.strokeWidth);
     }
 
     if (textStyle.shadow) {
         if (!stateSaver.saved())
             stateSaver.save();
-        context->setDrawLooper(textStyle.shadow->createDrawLooper(DrawLooperBuilder::ShadowIgnoresAlpha, textStyle.currentColor, horizontal));
+        context.setDrawLooper(textStyle.shadow->createDrawLooper(DrawLooperBuilder::ShadowIgnoresAlpha, textStyle.currentColor, horizontal));
     }
 }
 
@@ -190,11 +189,11 @@ void TextPainter::paintInternalRun(TextRunPaintInfo& textRunPaintInfo, int from,
     textRunPaintInfo.to = to;
 
     if (step == PaintEmphasisMark) {
-        m_graphicsContext->drawEmphasisMarks(m_font, textRunPaintInfo, m_emphasisMark,
+        m_graphicsContext.drawEmphasisMarks(m_font, textRunPaintInfo, m_emphasisMark,
             FloatPoint(m_textOrigin) + IntSize(0, m_emphasisMarkOffset));
     } else {
         ASSERT(step == PaintText);
-        m_graphicsContext->drawText(m_font, textRunPaintInfo, FloatPoint(m_textOrigin));
+        m_graphicsContext.drawText(m_font, textRunPaintInfo, FloatPoint(m_textOrigin));
     }
 }
 
@@ -218,13 +217,13 @@ void TextPainter::paintInternal(int startOffset, int endOffset, int truncationPo
 void TextPainter::paintEmphasisMarkForCombinedText()
 {
     ASSERT(m_combinedText);
-    DEFINE_STATIC_LOCAL(TextRun, placeholderTextRun, (&ideographicFullStopCharacter, 1));
+    TextRun placeholderTextRun(&ideographicFullStopCharacter, 1);
     FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
     TextRunPaintInfo textRunPaintInfo(placeholderTextRun);
     textRunPaintInfo.bounds = FloatRect(m_textBounds);
-    m_graphicsContext->concatCTM(rotation(m_textBounds, Clockwise));
-    m_graphicsContext->drawEmphasisMarks(m_combinedText->originalFont(), textRunPaintInfo, m_emphasisMark, emphasisMarkTextOrigin);
-    m_graphicsContext->concatCTM(rotation(m_textBounds, Counterclockwise));
+    m_graphicsContext.concatCTM(rotation(m_textBounds, Clockwise));
+    m_graphicsContext.drawEmphasisMarks(m_combinedText->originalFont(), textRunPaintInfo, m_emphasisMark, emphasisMarkTextOrigin);
+    m_graphicsContext.concatCTM(rotation(m_textBounds, Counterclockwise));
 }
 
 } // namespace blink

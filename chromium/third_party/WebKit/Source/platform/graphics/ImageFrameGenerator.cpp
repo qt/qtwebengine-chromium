@@ -23,10 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/graphics/ImageFrameGenerator.h"
 
+#include "SkData.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/ImageDecodingStore.h"
@@ -53,7 +52,9 @@ static bool compatibleInfo(const SkImageInfo& src, const SkImageInfo& dst)
 
 // Creates a SkPixelRef such that the memory for pixels is given by an external body.
 // This is used to write directly to the memory given by Skia during decoding.
-class ImageFrameGenerator::ExternalMemoryAllocator : public SkBitmap::Allocator {
+class ImageFrameGenerator::ExternalMemoryAllocator final : public SkBitmap::Allocator {
+    USING_FAST_MALLOC(ExternalMemoryAllocator);
+    WTF_MAKE_NONCOPYABLE(ExternalMemoryAllocator);
 public:
     ExternalMemoryAllocator(const SkImageInfo& info, void* pixels, size_t rowBytes)
         : m_info(info)
@@ -99,51 +100,95 @@ static bool updateYUVComponentSizes(ImageDecoder* decoder, SkISize componentSize
 
 ImageFrameGenerator::ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer> data, bool allDataReceived, bool isMultiFrame)
     : m_fullSize(fullSize)
+    , m_data(adoptRef(new ThreadSafeDataTransport()))
     , m_isMultiFrame(isMultiFrame)
-    , m_decodeFailedAndEmpty(false)
-    , m_decodeCount(0)
+    , m_decodeFailed(false)
     , m_frameCount(0)
+    , m_encodedData(nullptr)
 {
     setData(data.get(), allDataReceived);
 }
 
 ImageFrameGenerator::~ImageFrameGenerator()
 {
+    if (m_encodedData)
+        m_encodedData->unref();
     ImageDecodingStore::instance().removeCacheIndexedByGenerator(this);
 }
 
 void ImageFrameGenerator::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
-    m_data.setData(data.get(), allDataReceived);
+    m_data->setData(data.get(), allDataReceived);
 }
 
-void ImageFrameGenerator::copyData(RefPtr<SharedBuffer>* data, bool* allDataReceived)
+static void sharedSkDataReleaseCallback(const void* address, void* context)
 {
+    // This gets called when m_encodedData reference count becomes 0 - and it could happen in
+    // ImageFrameGenerator destructor or later when m_encodedData gets dereferenced.
+    // In this method, we deref ThreadSafeDataTransport, as ThreadSafeDataTransport is the owner
+    // of data returned via refEncodedData.
+
+    ThreadSafeDataTransport* dataTransport = static_cast<ThreadSafeDataTransport*>(context);
+#if ENABLE(ASSERT)
+    ASSERT(dataTransport);
     SharedBuffer* buffer = 0;
-    m_data.data(&buffer, allDataReceived);
-    if (buffer)
-        *data = buffer->copy();
+    bool allDataReceived = false;
+    dataTransport->data(&buffer, &allDataReceived);
+    ASSERT(allDataReceived && buffer && buffer->data() == address);
+#endif
+    // Dereference m_data now.
+    dataTransport->deref();
 }
 
-bool ImageFrameGenerator::decodeAndScale(const SkImageInfo& info, size_t index, void* pixels, size_t rowBytes)
+SkData* ImageFrameGenerator::refEncodedData()
 {
-    // This method is called to populate a discardable memory owned by Skia.
+    // SkData is returned only when full image (encoded) data is received. This is important
+    // since DeferredImageDecoder::setData is called only once with allDataReceived set to true,
+    // and after that m_data->m_readBuffer.data() is not changed. See also RELEASE_ASSERT used in
+    // ThreadSafeDataTransport::data().
+    SharedBuffer* buffer = 0;
+    bool allDataReceived = false;
+    m_data->data(&buffer, &allDataReceived);
+    if (!allDataReceived)
+        return nullptr;
 
-    // Prevents concurrent decode or scale operations on the same image data.
+    {
+        // Prevents concurrent access to m_encodedData creation.
+        MutexLocker lock(m_decodeMutex);
+        if (m_encodedData) {
+            m_encodedData->ref();
+            return m_encodedData;
+        }
+        // m_encodedData is created with initial reference count == 1. ImageFrameGenerator always holds one
+        // reference to m_encodedData, as it prevents write access in SkData::writable_data.
+        m_encodedData = SkData::NewWithProc(buffer->data(), buffer->size(), sharedSkDataReleaseCallback, m_data.get());
+        // While m_encodedData is referenced, prevent disposing m_data and its content.
+        // it is dereferenced in sharedSkDataReleaseCallback, called when m_encodedData gets dereferenced.
+        m_data->ref();
+    }
+    // Increase the reference, caller must decrease it. One reference is always kept by ImageFrameGenerator and released
+    // in destructor.
+    m_encodedData->ref();
+    return m_encodedData;
+}
+
+bool ImageFrameGenerator::decodeAndScale(size_t index, const SkImageInfo& info, void* pixels, size_t rowBytes)
+{
+    // Prevent concurrent decode or scale operations on the same image data.
     MutexLocker lock(m_decodeMutex);
+
+    if (m_decodeFailed)
+        return false;
+
+    TRACE_EVENT1("blink", "ImageFrameGenerator::decodeAndScale", "frame index", static_cast<int>(index));
+
+    m_externalAllocator = adoptPtr(new ExternalMemoryAllocator(info, pixels, rowBytes));
 
     // This implementation does not support scaling so check the requested size.
     SkISize scaledSize = SkISize::Make(info.width(), info.height());
     ASSERT(m_fullSize == scaledSize);
 
-    if (m_decodeFailedAndEmpty)
-        return false;
-
-    TRACE_EVENT2("blink", "ImageFrameGenerator::decodeAndScale", "generator", this, "decodeCount", m_decodeCount);
-
-    m_externalAllocator = adoptPtr(new ExternalMemoryAllocator(info, pixels, rowBytes));
-
-    SkBitmap bitmap = tryToResumeDecode(scaledSize, index);
+    SkBitmap bitmap = tryToResumeDecode(index, scaledSize);
     if (bitmap.isNull())
         return false;
 
@@ -151,29 +196,25 @@ bool ImageFrameGenerator::decodeAndScale(const SkImageInfo& info, size_t index, 
     // that we do not own.
     m_externalAllocator.clear();
 
+    // Check to see if the decoder has written directly to the pixel memory
+    // provided. If not, make a copy.
     ASSERT(bitmap.width() == scaledSize.width());
     ASSERT(bitmap.height() == scaledSize.height());
-
-    bool result = true;
     SkAutoLockPixels bitmapLock(bitmap);
-    // Check to see if decoder has written directly to the memory provided
-    // by Skia. If not make a copy.
     if (bitmap.getPixels() != pixels)
-        result = bitmap.copyPixelsTo(pixels, rowBytes * info.height(), rowBytes);
-    return result;
+        return bitmap.copyPixelsTo(pixels, rowBytes * info.height(), rowBytes);
+    return true;
 }
 
-bool ImageFrameGenerator::decodeToYUV(SkISize componentSizes[3], void* planes[3], size_t rowBytes[3])
+bool ImageFrameGenerator::decodeToYUV(size_t index, SkISize componentSizes[3], void* planes[3], size_t rowBytes[3])
 {
-    // This method is called to populate a discardable memory owned by Skia.
-
-    // Prevents concurrent decode or scale operations on the same image data.
+    // Prevent concurrent decode or scale operations on the same image data.
     MutexLocker lock(m_decodeMutex);
 
-    if (m_decodeFailedAndEmpty)
+    if (m_decodeFailed)
         return false;
 
-    TRACE_EVENT2("blink", "ImageFrameGenerator::decodeToYUV", "generator", this, "decodeCount", static_cast<int>(m_decodeCount));
+    TRACE_EVENT1("blink", "ImageFrameGenerator::decodeToYUV", "frame index", static_cast<int>(index));
 
     if (!planes || !planes[0] || !planes[1] || !planes[2]
         || !rowBytes || !rowBytes[0] || !rowBytes[1] || !rowBytes[2]) {
@@ -182,7 +223,7 @@ bool ImageFrameGenerator::decodeToYUV(SkISize componentSizes[3], void* planes[3]
 
     SharedBuffer* data = 0;
     bool allDataReceived = false;
-    m_data.data(&data, &allDataReceived);
+    m_data->data(&data, &allDataReceived);
 
     // FIXME: YUV decoding does not currently support progressive decoding.
     ASSERT(allDataReceived);
@@ -199,15 +240,19 @@ bool ImageFrameGenerator::decodeToYUV(SkISize componentSizes[3], void* planes[3]
     bool sizeUpdated = updateYUVComponentSizes(decoder.get(), componentSizes, ImageDecoder::ActualSize);
     RELEASE_ASSERT(sizeUpdated);
 
-    bool yuvDecoded = decoder->decodeToYUV();
-    if (yuvDecoded)
+    if (decoder->decodeToYUV()) {
         setHasAlpha(0, false); // YUV is always opaque
-    return yuvDecoded;
+        return true;
+    }
+
+    ASSERT(decoder->failed());
+    m_decodeFailed = true;
+    return false;
 }
 
-SkBitmap ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_t index)
+SkBitmap ImageFrameGenerator::tryToResumeDecode(size_t index, const SkISize& scaledSize)
 {
-    TRACE_EVENT1("blink", "ImageFrameGenerator::tryToResumeDecodeAndScale", "index", static_cast<int>(index));
+    TRACE_EVENT1("blink", "ImageFrameGenerator::tryToResumeDecode", "frame index", static_cast<int>(index));
 
     ImageDecoder* decoder = 0;
     const bool resumeDecoding = ImageDecodingStore::instance().lockDecoder(this, m_fullSize, &decoder);
@@ -230,10 +275,9 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_
         decoderContainer = adoptPtr(decoder);
 
     if (fullSizeImage.isNull()) {
-        // If decode has failed and resulted an empty image we can save work
-        // in the future by returning early.
-        m_decodeFailedAndEmpty = !m_isMultiFrame && decoder->failed();
-
+        // If decoding has failed, we can save work in the future by
+        // ignoring further requests to decode the image.
+        m_decodeFailed = decoder->failed();
         if (resumeDecoding)
             ImageDecodingStore::instance().unlockDecoder(this, decoder);
         return SkBitmap();
@@ -284,13 +328,13 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
 {
     TRACE_EVENT2("blink", "ImageFrameGenerator::decode", "width", m_fullSize.width(), "height", m_fullSize.height());
 
-    ASSERT(decoder);
     SharedBuffer* data = 0;
     bool allDataReceived = false;
-    bool newDecoder = false;
-    m_data.data(&data, &allDataReceived);
+    m_data->data(&data, &allDataReceived);
 
     // Try to create an ImageDecoder if we are not given one.
+    ASSERT(decoder);
+    bool newDecoder = false;
     if (!*decoder) {
         newDecoder = true;
         if (m_imageDecoderFactory)
@@ -309,9 +353,10 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
         ASSERT(m_externalAllocator.get());
         (*decoder)->setMemoryAllocator(m_externalAllocator.get());
     }
-    (*decoder)->setData(data, allDataReceived);
 
+    (*decoder)->setData(data, allDataReceived);
     ImageFrame* frame = (*decoder)->frameBufferAtIndex(index);
+
     // For multi-frame image decoders, we need to know how many frames are
     // in that image in order to release the decoder when all frames are
     // decoded. frameCount() is reliable only if all data is received and set in
@@ -330,12 +375,13 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
     // Or we have received all data. The image might not be fully decoded in
     // the latter case.
     const bool isDecodeComplete = frame->status() == ImageFrame::FrameComplete || allDataReceived;
+
     SkBitmap fullSizeBitmap = frame->getSkBitmap();
-    if (!fullSizeBitmap.isNull())
-    {
+    if (!fullSizeBitmap.isNull()) {
         ASSERT(fullSizeBitmap.width() == m_fullSize.width() && fullSizeBitmap.height() == m_fullSize.height());
         setHasAlpha(index, !fullSizeBitmap.isOpaque());
     }
+
     *bitmap = fullSizeBitmap;
     return isDecodeComplete;
 }
@@ -350,13 +396,11 @@ bool ImageFrameGenerator::hasAlpha(size_t index)
 
 bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
 {
-    ASSERT(componentSizes);
-
-    TRACE_EVENT2("webkit", "ImageFrameGenerator::getYUVComponentSizes", "width", m_fullSize.width(), "height", m_fullSize.height());
+    TRACE_EVENT2("blink", "ImageFrameGenerator::getYUVComponentSizes", "width", m_fullSize.width(), "height", m_fullSize.height());
 
     SharedBuffer* data = 0;
     bool allDataReceived = false;
-    m_data.data(&data, &allDataReceived);
+    m_data->data(&data, &allDataReceived);
 
     // FIXME: YUV decoding does not currently support progressive decoding.
     if (!allDataReceived)
@@ -366,16 +410,12 @@ bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
     if (!decoder)
         return false;
 
-    // JPEG images support YUV decoding: other decoders do not. So don't pump data into decoders
-    // that always return false to updateYUVComponentSizes() requests.
-    if (decoder->filenameExtension() != "jpg")
-        return false;
-
     // Setting a dummy ImagePlanes object signals to the decoder that we want to do YUV decoding.
     decoder->setData(data, allDataReceived);
     OwnPtr<ImagePlanes> dummyImagePlanes = adoptPtr(new ImagePlanes);
     decoder->setImagePlanes(dummyImagePlanes.release());
 
+    ASSERT(componentSizes);
     return updateYUVComponentSizes(decoder.get(), componentSizes, ImageDecoder::SizeForMemoryAllocation);
 }
 

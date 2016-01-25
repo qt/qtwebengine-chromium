@@ -31,10 +31,13 @@
 #ifndef HarfBuzzFace_h
 #define HarfBuzzFace_h
 
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
+#include "wtf/text/CharacterNames.h"
 
 #include <hb.h>
 
@@ -43,6 +46,7 @@ namespace blink {
 class FontPlatformData;
 
 class HarfBuzzFace : public RefCounted<HarfBuzzFace> {
+    WTF_MAKE_NONCOPYABLE(HarfBuzzFace);
 public:
     static const hb_tag_t vertTag;
     static const hb_tag_t vrt2Tag;
@@ -53,7 +57,10 @@ public:
     }
     ~HarfBuzzFace();
 
-    hb_font_t* createFont() const;
+    // In order to support the restricting effect of unicode-range optionally a
+    // range restriction can be passed in, which will restrict which glyphs we
+    // return in the harfBuzzGetGlyph function.
+    hb_font_t* createFont(unsigned rangeFrom = 0, unsigned rangeTo = kMaxCodepoint) const;
     hb_face_t* face() const { return m_face; }
 
 private:
@@ -73,6 +80,7 @@ namespace WTF {
 
 template<typename T> struct OwnedPtrDeleter;
 template<> struct OwnedPtrDeleter<hb_font_t> {
+    STATIC_ONLY(OwnedPtrDeleter);
     static void deletePtr(hb_font_t* font)
     {
         if (font)

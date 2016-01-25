@@ -11,7 +11,8 @@
 #include "media/mojo/services/mojo_cdm_service.h"
 #include "media/mojo/services/mojo_media_client.h"
 #include "media/mojo/services/mojo_renderer_service.h"
-#include "mojo/application/public/cpp/app_lifetime_helper.h"
+#include "mojo/shell/public/cpp/app_lifetime_helper.h"
+#include "mojo/shell/public/interfaces/service_provider.mojom.h"
 
 namespace media {
 
@@ -19,11 +20,13 @@ ServiceFactoryImpl::ServiceFactoryImpl(
     mojo::InterfaceRequest<interfaces::ServiceFactory> request,
     mojo::ServiceProvider* service_provider,
     scoped_refptr<MediaLog> media_log,
-    scoped_ptr<mojo::AppRefCount> parent_app_refcount)
-    : binding_(this, request.Pass()),
+    scoped_ptr<mojo::AppRefCount> parent_app_refcount,
+    MojoMediaClient* mojo_media_client)
+    : binding_(this, std::move(request)),
       service_provider_(service_provider),
       media_log_(media_log),
-      parent_app_refcount_(parent_app_refcount.Pass()) {
+      parent_app_refcount_(std::move(parent_app_refcount)),
+      mojo_media_client_(mojo_media_client) {
   DVLOG(1) << __FUNCTION__;
 }
 
@@ -35,27 +38,36 @@ ServiceFactoryImpl::~ServiceFactoryImpl() {
 void ServiceFactoryImpl::CreateRenderer(
     mojo::InterfaceRequest<interfaces::Renderer> request) {
   // The created object is owned by the pipe.
+  // The audio and video sinks are owned by the client.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner(
+      base::MessageLoop::current()->task_runner());
+  AudioRendererSink* audio_renderer_sink =
+      mojo_media_client_->CreateAudioRendererSink();
+  VideoRendererSink* video_renderer_sink =
+      mojo_media_client_->CreateVideoRendererSink(task_runner);
+  scoped_ptr<Renderer> renderer = GetRendererFactory()->CreateRenderer(
+      task_runner, task_runner, audio_renderer_sink, video_renderer_sink);
+
   new MojoRendererService(cdm_service_context_.GetWeakPtr(),
-                          GetRendererFactory(), media_log_, request.Pass());
+                          std::move(renderer), std::move(request));
 }
 
 void ServiceFactoryImpl::CreateCdm(
     mojo::InterfaceRequest<interfaces::ContentDecryptionModule> request) {
   // The created object is owned by the pipe.
   new MojoCdmService(cdm_service_context_.GetWeakPtr(), service_provider_,
-                     GetCdmFactory(), request.Pass());
+                     GetCdmFactory(), std::move(request));
 }
 
 RendererFactory* ServiceFactoryImpl::GetRendererFactory() {
   if (!renderer_factory_)
-    renderer_factory_ =
-        MojoMediaClient::Get()->CreateRendererFactory(media_log_);
+    renderer_factory_ = mojo_media_client_->CreateRendererFactory(media_log_);
   return renderer_factory_.get();
 }
 
 CdmFactory* ServiceFactoryImpl::GetCdmFactory() {
   if (!cdm_factory_)
-    cdm_factory_ = MojoMediaClient::Get()->CreateCdmFactory();
+    cdm_factory_ = mojo_media_client_->CreateCdmFactory(service_provider_);
   return cdm_factory_.get();
 }
 

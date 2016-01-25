@@ -25,11 +25,7 @@ function getConfig() {
     startSize: getIntFromInput('startsize'),
     // Stops benchmark when the size of message exceeds this threshold.
     stopThreshold: getIntFromInput('stopthreshold'),
-    // If the size of each message is small, send/receive multiple messages
-    // until the sum of sizes reaches this threshold.
-    // minTotal: getIntFromInput('mintotal'),
-    // minTotal is not yet implemented on Fetch API benchmark
-    multipliers: getIntArrayFromInput('multipliers'),
+    multipliers: getFloatArrayFromInput('multipliers'),
     verifyData: getBoolFromCheckBox('verifydata'),
     addToLog: addToLog,
     addToSummary: addToSummary,
@@ -122,10 +118,6 @@ function init() {
       <td><input type="text" id="stopthreshold" value="102400000"></td>
     </tr>
     <tr>
-      <td>Minimum total</td>
-      <td><input type="text" id="mintotal" value="102400000"></td>
-    </tr>
-    <tr>
       <td>Multipliers</td>
       <td><input type="text" id="multipliers" value="5, 2"></td>
     </tr>
@@ -159,7 +151,13 @@ function init() {
       id="summary" rows="20" style="width: 100%" readonly></textarea>
 </div>
 
-Note: Effect of RTT and time spent for ArrayBuffer creation in receive benchmarks are not eliminated.
+<div id="note_div">
+  Note:
+  <ul>
+    <li>Effect of RTT and time spent for ArrayBuffer creation in receive benchmarks are not eliminated.</li>
+    <li>The Stddev column shows NaN when the number of iterations is set to 1.</li>
+  </ul>
+</div>
 
 </body>
 </html>

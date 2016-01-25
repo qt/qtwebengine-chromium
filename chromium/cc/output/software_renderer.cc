@@ -49,17 +49,6 @@ bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
          SkScalarNearlyZero(matrix[SkMatrix::kMPersp2] - 1.0f);
 }
 
-static SkShader::TileMode WrapModeToTileMode(GLint wrap_mode) {
-  switch (wrap_mode) {
-    case GL_REPEAT:
-      return SkShader::kRepeat_TileMode;
-    case GL_CLAMP_TO_EDGE:
-      return SkShader::kClamp_TileMode;
-  }
-  NOTREACHED();
-  return SkShader::kClamp_TileMode;
-}
-
 }  // anonymous namespace
 
 scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
@@ -139,7 +128,7 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   if (!current_canvas_)
     return;
   is_scissor_enabled_ = false;
-  SkISize size = current_canvas_->getDeviceSize();
+  SkISize size = current_canvas_->getBaseLayerSize();
   SetClipRect(gfx::Rect(size.width(), size.height()));
 }
 
@@ -230,6 +219,7 @@ void SoftwareRenderer::PrepareSurfaceForPass(
 
 bool SoftwareRenderer::IsSoftwareResource(ResourceId resource_id) const {
   switch (resource_provider_->GetResourceType(resource_id)) {
+    case ResourceProvider::RESOURCE_TYPE_GPU_MEMORY_BUFFER:
     case ResourceProvider::RESOURCE_TYPE_GL_TEXTURE:
       return false;
     case ResourceProvider::RESOURCE_TYPE_BITMAP:
@@ -444,21 +434,8 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
   }
   current_paint_.setFilterQuality(
       quad->nearest_neighbor ? kNone_SkFilterQuality : kLow_SkFilterQuality);
-  SkShader::TileMode tile_mode = WrapModeToTileMode(lock.wrap_mode());
-  if (tile_mode != SkShader::kClamp_TileMode) {
-    SkMatrix matrix;
-    matrix.setRectToRect(sk_uv_rect, quad_rect, SkMatrix::kFill_ScaleToFit);
-    skia::RefPtr<SkShader> shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode, &matrix));
-    SkPaint paint;
-    paint.setStyle(SkPaint::kFill_Style);
-    paint.setShader(shader.get());
-    current_canvas_->drawRect(quad_rect, paint);
-  } else {
-    current_canvas_->drawBitmapRect(*bitmap, sk_uv_rect, quad_rect,
-                                    &current_paint_);
-  }
-
+  current_canvas_->drawBitmapRect(*bitmap, sk_uv_rect, quad_rect,
+                                  &current_paint_);
   if (needs_layer)
     current_canvas_->restore();
 }
@@ -474,7 +451,6 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                                 quad->resource_id());
   if (!lock.valid())
     return;
-  DCHECK_EQ(GL_CLAMP_TO_EDGE, lock.wrap_mode());
 
   gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
       quad->tex_coord_rect, gfx::RectF(quad->rect),
@@ -502,7 +478,6 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                                 content_texture->id());
   if (!lock.valid())
     return;
-  SkShader::TileMode content_tile_mode = WrapModeToTileMode(lock.wrap_mode());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
   SkRect dest_visible_rect = gfx::RectFToSkRect(
@@ -516,22 +491,23 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
 
   const SkBitmap* content = lock.sk_bitmap();
 
-  SkBitmap filter_bitmap;
+  skia::RefPtr<SkImage> filter_image;
   if (!quad->filters.IsEmpty()) {
     skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
         quad->filters, gfx::SizeF(content_texture->size()));
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
-    filter_bitmap = ApplyImageFilter(filter.get(), quad, content);
+    filter_image = ApplyImageFilter(filter.get(), quad, content);
   }
 
   skia::RefPtr<SkShader> shader;
-  if (filter_bitmap.isNull()) {
-    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        *content, content_tile_mode, content_tile_mode, &content_mat));
+  if (!filter_image) {
+    shader = skia::AdoptRef(
+        SkShader::CreateBitmapShader(*content, SkShader::kClamp_TileMode,
+                                     SkShader::kClamp_TileMode, &content_mat));
   } else {
-    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        filter_bitmap, content_tile_mode, content_tile_mode, &content_mat));
+    shader = skia::AdoptRef(filter_image->newShader(
+        SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, &content_mat));
   }
 
   scoped_ptr<ResourceProvider::ScopedReadLockSoftware> mask_lock;
@@ -542,9 +518,6 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
 
     if (!mask_lock->valid())
       return;
-
-    SkShader::TileMode mask_tile_mode =
-        WrapModeToTileMode(mask_lock->wrap_mode());
 
     const SkBitmap* mask = mask_lock->sk_bitmap();
 
@@ -557,9 +530,9 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
 
-    skia::RefPtr<SkShader> mask_shader =
-        skia::AdoptRef(SkShader::CreateBitmapShader(
-            *mask, mask_tile_mode, mask_tile_mode, &mask_mat));
+    skia::RefPtr<SkShader> mask_shader = skia::AdoptRef(
+        SkShader::CreateBitmapShader(*mask, SkShader::kClamp_TileMode,
+                                     SkShader::kClamp_TileMode, &mask_mat));
 
     SkPaint mask_paint;
     mask_paint.setShader(mask_shader.get());
@@ -575,10 +548,12 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
 
   // If we have a background filter shader, render its results first.
   skia::RefPtr<SkShader> background_filter_shader =
-      GetBackgroundFilterShader(frame, quad, content_tile_mode);
+      GetBackgroundFilterShader(frame, quad, SkShader::kClamp_TileMode);
   if (background_filter_shader) {
-    current_paint_.setShader(background_filter_shader.get());
-    current_canvas_->drawRect(dest_visible_rect, current_paint_);
+    SkPaint paint;
+    paint.setShader(background_filter_shader.get());
+    paint.setRasterizer(current_paint_.getRasterizer());
+    current_canvas_->drawRect(dest_visible_rect, paint);
   }
   current_paint_.setShader(shader.get());
   current_canvas_->drawRect(dest_visible_rect, current_paint_);
@@ -610,7 +585,7 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
   current_canvas_->readPixels(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 
-  request->SendBitmapResult(bitmap.Pass());
+  request->SendBitmapResult(std::move(bitmap));
 }
 
 void SoftwareRenderer::DiscardBackbuffer() {
@@ -651,25 +626,30 @@ bool SoftwareRenderer::ShouldApplyBackgroundFilters(
   return true;
 }
 
-SkBitmap SoftwareRenderer::ApplyImageFilter(SkImageFilter* filter,
-                                            const RenderPassDrawQuad* quad,
-                                            const SkBitmap* to_filter) const {
+skia::RefPtr<SkImage> SoftwareRenderer::ApplyImageFilter(
+    SkImageFilter* filter,
+    const RenderPassDrawQuad* quad,
+    const SkBitmap* to_filter) const {
   if (!filter)
-    return SkBitmap();
+    return nullptr;
 
-  SkBitmap filter_bitmap;
-  if (filter_bitmap.tryAllocPixels(SkImageInfo::MakeN32Premul(
-          to_filter->width(), to_filter->height()))) {
-    SkCanvas canvas(filter_bitmap);
-    SkPaint paint;
-    paint.setImageFilter(filter);
-    canvas.clear(SK_ColorTRANSPARENT);
-    canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
-                     SkIntToScalar(-quad->rect.origin().y()));
-    canvas.scale(quad->filters_scale.x(), quad->filters_scale.y());
-    canvas.drawSprite(*to_filter, 0, 0, &paint);
-  }
-  return filter_bitmap;
+  SkImageInfo dst_info =
+      SkImageInfo::MakeN32Premul(to_filter->width(), to_filter->height());
+  skia::RefPtr<SkSurface> surface =
+      skia::AdoptRef(SkSurface::NewRaster(dst_info));
+
+  SkMatrix localM;
+  localM.setTranslate(SkIntToScalar(-quad->rect.origin().x()),
+                      SkIntToScalar(-quad->rect.origin().y()));
+  localM.preScale(quad->filters_scale.x(), quad->filters_scale.y());
+  skia::RefPtr<SkImageFilter> localIMF =
+      skia::AdoptRef(filter->newWithLocalMatrix(localM));
+
+  SkPaint paint;
+  paint.setImageFilter(localIMF.get());
+  surface->getCanvas()->drawBitmap(*to_filter, 0, 0, &paint);
+
+  return skia::AdoptRef(surface->newImageSnapshot());
 }
 
 SkBitmap SoftwareRenderer::GetBackdropBitmap(
@@ -732,15 +712,14 @@ skia::RefPtr<SkShader> SoftwareRenderer::GetBackgroundFilterShader(
   skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
       quad->background_filters,
       gfx::SizeF(backdrop_bitmap.width(), backdrop_bitmap.height()));
-  SkBitmap filter_backdrop_bitmap =
+  skia::RefPtr<SkImage> filter_backdrop_image =
       ApplyImageFilter(filter.get(), quad, &backdrop_bitmap);
 
-  if (filter_backdrop_bitmap.empty())
-    return skia::RefPtr<SkShader>();
+  if (!filter_backdrop_image)
+    return nullptr;
 
-  return skia::AdoptRef(SkShader::CreateBitmapShader(
-      filter_backdrop_bitmap, content_tile_mode, content_tile_mode,
-      &filter_backdrop_transform));
+  return skia::AdoptRef(filter_backdrop_image->newShader(
+      content_tile_mode, content_tile_mode, &filter_backdrop_transform));
 }
 
 }  // namespace cc

@@ -44,7 +44,7 @@ class ViewportStyleResolver;
 // This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class ScopedStyleResolver final : public NoBaseWillBeGarbageCollected<ScopedStyleResolver> {
     WTF_MAKE_NONCOPYABLE(ScopedStyleResolver);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScopedStyleResolver);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ScopedStyleResolver);
 public:
     static PassOwnPtrWillBeRawPtr<ScopedStyleResolver> create(TreeScope& scope)
     {
@@ -57,13 +57,14 @@ public:
     StyleRuleKeyframes* keyframeStylesForAnimation(const StringImpl* animationName);
 
     void appendCSSStyleSheet(CSSStyleSheet&, const MediaQueryEvaluator&);
-    void collectMatchingAuthorRules(ElementRuleCollector&, bool includeEmptyRules, CascadeOrder = ignoreCascadeOrder);
-    void collectMatchingShadowHostRules(ElementRuleCollector&, bool includeEmptyRules, CascadeOrder = ignoreCascadeOrder);
-    void collectMatchingTreeBoundaryCrossingRules(ElementRuleCollector&, bool includeEmptyRules, CascadeOrder);
+    void collectMatchingAuthorRules(ElementRuleCollector&, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingShadowHostRules(ElementRuleCollector&, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingTreeBoundaryCrossingRules(ElementRuleCollector&, CascadeOrder);
     void matchPageRules(PageRuleCollector&);
-    void collectFeaturesTo(RuleFeatureSet&, HashSet<const StyleSheetContents*>& visitedSharedStyleSheetContents) const;
+    void collectFeaturesTo(RuleFeatureSet&, WillBeHeapHashSet<RawPtrWillBeMember<const StyleSheetContents>>& visitedSharedStyleSheetContents) const;
     void resetAuthorStyle();
     void collectViewportRulesTo(ViewportStyleResolver*) const;
+    bool hasDeepOrShadowSelector() const { return m_hasDeepOrShadowSelector; }
 
     DECLARE_TRACE();
 
@@ -109,6 +110,7 @@ private:
     using CSSStyleSheetRuleSubSet = WillBeHeapVector<OwnPtrWillBeMember<RuleSubSet>>;
 
     OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> m_treeBoundaryCrossingRuleSet;
+    bool m_hasDeepOrShadowSelector = false;
 };
 
 } // namespace blink

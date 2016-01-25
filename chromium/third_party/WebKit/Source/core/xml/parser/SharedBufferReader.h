@@ -32,7 +32,7 @@
 #define SharedBufferReader_h
 
 #include "core/CoreExport.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/RefPtr.h"
 
@@ -42,18 +42,19 @@ class SharedBuffer;
 
 // Allows transfer of data in multiple chunks from a SharedBuffer to a provided buffer.
 class CORE_EXPORT SharedBufferReader {
-    WTF_MAKE_FAST_ALLOCATED(SharedBufferReader);
+    USING_FAST_MALLOC(SharedBufferReader);
 public:
     SharedBufferReader(PassRefPtr<SharedBuffer>);
 
     ~SharedBufferReader();
 
     // Returns the number of bytes that were read (i.e. written to |outputBuffer|).
-    int readData(char* outputBuffer, unsigned askedToRead);
+    // TODO(junov): use size_t instead of int. Until then, readData uses safeCast internally.
+    int readData(char* outputBuffer, int askedToRead);
 
 private:
     RefPtr<SharedBuffer> m_buffer;
-    unsigned m_currentOffset;
+    size_t m_currentOffset;
 };
 
 } // namespace blink

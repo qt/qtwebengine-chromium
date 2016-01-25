@@ -6,7 +6,7 @@
 }
 
 :host(.palettes-enabled) {
-    height: 271px;
+    height: 319px;
 }
 
 .spectrum-color {
@@ -51,11 +51,13 @@
     -webkit-user-select: none;
 }
 
-.spectrum-sat {
+.spectrum-sat,
+.-theme-preserve {
     background-image: linear-gradient(to right, white, rgba(204, 154, 129, 0));
 }
 
-.spectrum-val {
+.spectrum-val,
+.-theme-preserve {
     background-image: linear-gradient(to top, black, rgba(204, 154, 129, 0));
 }
 
@@ -117,7 +119,7 @@
 
 .spectrum-text-value {
     display: inline-block;
-    width: 39px;
+    width: 40px;
     overflow: hidden;
     text-align: center;
     border: 1px solid #dadada;
@@ -131,7 +133,7 @@
 }
 
 .spectrum-text-label {
-    letter-spacing: 38.5px;
+    letter-spacing: 39.5px;
     margin-top: 8px;
     display: block;
     color: #969696;
@@ -140,7 +142,7 @@
 }
 
 .spectrum-text-hex > .spectrum-text-value {
-    width: 174px;
+    width: 178px;
 }
 
 .spectrum-text-hex > .spectrum-text-label {
@@ -164,6 +166,10 @@
     height: 20px;
     width: 20px;
     padding: 2px;
+}
+
+:host-context(.-theme-with-dark-background) .spectrum-switcher {
+    -webkit-filter: invert(60%);
 }
 
 .spectrum-display-switcher {
@@ -199,15 +205,57 @@
     width: 12px;
     height: 12px;
     flex: 0 0 12px;
-    display: inline-block;
     border-radius: 2px;
     margin: 6px;
     cursor: pointer;
+    position: relative;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background-position: -1px !important;
+}
+
+.spectrum-palette-color:hover:not(.spectrum-shades-shown) > .spectrum-palette-color-shadow {
+    opacity: 0.2;
+}
+
+.spectrum-palette-color:hover:not(.spectrum-shades-shown) > .spectrum-palette-color-shadow:first-child {
+    opacity: 0.6;
+    top: -3px;
+    left: 1px;
+}
+
+.spectrum-palette-color-shadow {
+    position: absolute;
+    opacity: 0;
+    margin: 0;
+    top: -5px;
+    left: 3px;
+}
+
+.palette-color-shades {
+    position: absolute;
+    background-color: white;
+    height: 228px;
+    width: 28px;
+    box-shadow: 0 4px 5px 0 rgba(0, 0, 0, 0.14), 0 1px 10px 0 rgba(0, 0, 0, 0.12), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    z-index: 14;
+    border-radius: 2px;
+    transform-origin: 0px 228px;
+    margin-top: -208px;
+    margin-left: -8px;
+}
+
+.spectrum-palette > .spectrum-palette-color.spectrum-shades-shown {
+    z-index: 15;
+}
+
+.palette-color-shades > .spectrum-palette-color {
+    margin: 8px 0 0 0;
+    margin-left: 8px;
+    width: 12px;
 }
 
 .spectrum-palette > .spectrum-palette-color {
     transition: transform 100ms cubic-bezier(0, 0, 0.2, 1);
-    border: 1px solid rgba(0, 0, 0, 0.1);
     will-change: transform;
     z-index: 13;
 }
@@ -216,7 +264,8 @@
     border-color: transparent;
 }
 
-.spectrum-palette > .spectrum-palette-color:not(.empty-color):hover {
+.spectrum-palette > .spectrum-palette-color:not(.empty-color):not(.has-material-shades):hover,
+.palette-color-shades > .spectrum-palette-color:not(.empty-color):hover {
     transform: scale(1.15);
 }
 
@@ -320,14 +369,15 @@ div.palette-preview {
     position: absolute;
     right: 0;
     top: 0;
-    height: 100%;
     background-color: #EFEFEF;
     visibility: hidden;
     z-index: 3;
     width: 36px;
     display: flex;
     align-items: center;
-    padding-left: 5px;
+    padding-left: 4px;
+    bottom: 2px;
+    border-bottom-right-radius: 2px;
 }
 
 @keyframes showDeleteToolbar {

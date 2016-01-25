@@ -4,6 +4,8 @@
 
 #include "net/quic/p2p/quic_p2p_session.h"
 
+#include <utility>
+
 #include "base/callback_helpers.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -19,7 +21,7 @@ QuicP2PSession::QuicP2PSession(const QuicConfig& config,
                                scoped_ptr<QuicConnection> connection,
                                scoped_ptr<net::Socket> socket)
     : QuicSession(connection.release(), config),
-      socket_(socket.Pass()),
+      socket_(std::move(socket)),
       crypto_stream_(new QuicP2PCryptoStream(this, crypto_config)),
       read_buffer_(new net::IOBuffer(static_cast<size_t>(kMaxPacketSize))) {
   DCHECK(config.negotiated());
@@ -56,8 +58,9 @@ QuicP2PStream* QuicP2PSession::CreateIncomingDynamicStream(QuicStreamId id) {
   return stream;
 }
 
-QuicP2PStream* QuicP2PSession::CreateOutgoingDynamicStream() {
-  QuicP2PStream* stream = new QuicP2PStream(GetNextStreamId(), this);
+QuicP2PStream* QuicP2PSession::CreateOutgoingDynamicStream(
+    net::SpdyPriority priority) {
+  QuicP2PStream* stream = new QuicP2PStream(GetNextOutgoingStreamId(), this);
   if (stream) {
     ActivateStream(stream);
   }

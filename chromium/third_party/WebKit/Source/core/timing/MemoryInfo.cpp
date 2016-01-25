@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/timing/MemoryInfo.h"
 
 #include "core/frame/LocalFrame.h"
@@ -55,7 +54,7 @@ static void getHeapSize(HeapInfo& info)
 }
 
 class HeapSizeCache {
-    WTF_MAKE_NONCOPYABLE(HeapSizeCache); WTF_MAKE_FAST_ALLOCATED(HeapSizeCache);
+    WTF_MAKE_NONCOPYABLE(HeapSizeCache); USING_FAST_MALLOC(HeapSizeCache);
 public:
     HeapSizeCache()
         : m_lastUpdateTime(monotonicallyIncreasingTime() - TwentyMinutesInSeconds)
@@ -70,7 +69,7 @@ public:
 
     static HeapSizeCache& forCurrentThread()
     {
-        AtomicallyInitializedStaticReference(ThreadSpecific<HeapSizeCache>, heapSizeCache, new ThreadSpecific<HeapSizeCache>);
+        DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<HeapSizeCache>, heapSizeCache, new ThreadSpecific<HeapSizeCache>);
         return *heapSizeCache;
     }
 

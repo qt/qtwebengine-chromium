@@ -1,4 +1,9 @@
 {
+    "AsyncSetAsDefault": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "AutofillClassifier": [
         {
             "group_name": "Enabled"
@@ -9,9 +14,20 @@
             "group_name": "Enabled"
         }
     ],
+    "AutofillProfileOrderByFrecency": [
+        {
+            "group_name": "EnabledLimitTo3",
+            "params": {
+                "limit": "3"
+            }
+        }
+    ],
     "AutomaticTabDiscarding": [
         {
-            "group_name": "Enabled"
+            "enable_features": [
+                "AutomaticTabDiscarding"
+            ],
+            "group_name": "Enabled_Once"
         }
     ],
     "BrowserBlacklist": [
@@ -31,12 +47,23 @@
     ],
     "ChromeDashboard": [
         {
+            "group_name": "Enabled"
+        },
+        {
             "group_name": "Default"
         }
     ],
     "ChromotingQUIC": [
         {
             "group_name": "Enabled"
+        }
+    ],
+    "DataReductionProxyConfigService": [
+        {
+            "group_name": "Enabled",
+            "params": {
+                "minimum_refresh_interval_on_success_msec": "21600000"
+            }
         }
     ],
     "EnableGoogleCachedCopyTextExperiment": [
@@ -84,6 +111,11 @@
             "group_name": "Enabled"
         }
     ],
+    "MaterialDesignDownloads": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "NetworkQualityEstimator": [
         {
             "group_name": "Enabled",
@@ -113,14 +145,14 @@
             "group_name": "Enabled"
         }
     ],
+    "PasswordBranding": [
+        {
+            "group_name": "SmartLockBrandingSavePromptOnly"
+        }
+    ],
     "PasswordGeneration": [
         {
             "group_name": "Disabled"
-        }
-    ],
-    "PluginPowerSaver": [
-        {
-            "group_name": "Enabled"
         }
     ],
     "QUIC": [
@@ -167,7 +199,7 @@
     ],
     "SRTPromptFieldTrial": [
         {
-            "group_name": "Default"
+            "group_name": "On"
         }
     ],
     "SafeBrowsingReportPhishingErrorLink": [
@@ -181,6 +213,22 @@
             "group_name": "Disabled"
         }
     ],
+    "SafeBrowsingUnverifiedDownloads": [
+        {
+            "group_name": "DisableByParameterExe",
+            "params": {
+                "blacklist": ".exe"
+            }
+        }
+    ],
+    "SafeBrowsingUpdateFrequency": [
+        {
+            "group_name": "UpdateTime15m",
+            "params": {
+                "NextUpdateIntervalInMinutes": "15"
+            }
+        }
+    ],
     "SdchPersistence": [
         {
             "group_name": "Enabled"
@@ -189,6 +237,16 @@
     "SettingsEnforcement": [
         {
             "group_name": "enforce_always_with_extensions_and_dse"
+        }
+    ],
+    "SpdyEnableDependencies": [
+        {
+            "group_name": "Enable"
+        }
+    ],
+    "StrictSecureCookies": [
+        {
+            "group_name": "Enabled"
         }
     ],
     "SyncHttpContentCompression": [
@@ -204,6 +262,11 @@
             "group_name": "Enabled"
         }
     ],
+    "TriggeredResetFieldTrial": [
+        {
+            "group_name": "On"
+        }
+    ],
     "UseDelayAgnosticAEC": [
         {
             "group_name": "DefaultEnabled"
@@ -215,6 +278,21 @@
             "params": {
                 "fetch_period_min": "30"
             }
+        }
+    ],
+    "WebFontsIntervention": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "WebRTC-LocalIPPermissionCheck": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "WebRTC-PeerConnectionDTLS1.2": [
+        {
+            "group_name": "Enabled"
         }
     ]
 }

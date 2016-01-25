@@ -406,7 +406,7 @@ WebInspector.ExtensionServer.prototype = {
     _handleOpenURL: function(port, details)
     {
         var url = /** @type {string} */ (details.url);
-        var contentProvider = WebInspector.workspace.uiSourceCodeForOriginURL(url) || WebInspector.resourceForURL(url);
+        var contentProvider = WebInspector.workspace.uiSourceCodeForURL(url) || WebInspector.resourceForURL(url);
         if (!contentProvider)
             return false;
 
@@ -538,7 +538,7 @@ WebInspector.ExtensionServer.prototype = {
     _onGetResourceContent: function(message, port)
     {
         var url = /** @type {string} */ (message.url);
-        var contentProvider = WebInspector.workspace.uiSourceCodeForOriginURL(url) || WebInspector.resourceForURL(url);
+        var contentProvider = WebInspector.workspace.uiSourceCodeForURL(url) || WebInspector.resourceForURL(url);
         if (!contentProvider)
             return this._status.E_NOTFOUND(url);
         this._getResourceContent(contentProvider, message, port);
@@ -557,8 +557,8 @@ WebInspector.ExtensionServer.prototype = {
         }
 
         var url = /** @type {string} */ (message.url);
-        var uiSourceCode = WebInspector.workspace.uiSourceCodeForOriginURL(url);
-        if (!uiSourceCode) {
+        var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
+        if (!uiSourceCode || !uiSourceCode.contentType().isDocumentOrScriptOrStyleSheet()) {
             var resource = WebInspector.ResourceTreeModel.resourceForURL(url);
             if (!resource)
                 return this._status.E_NOTFOUND(url);
@@ -865,7 +865,7 @@ WebInspector.ExtensionServer.prototype = {
          */
         function addFirstEventListener()
         {
-            WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, handler, this);
+            WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.WorkingCopyCommittedByUser, handler, this);
             WebInspector.workspace.setHasResourceContentTrackingExtensions(true);
         }
 
@@ -875,7 +875,7 @@ WebInspector.ExtensionServer.prototype = {
         function removeLastEventListener()
         {
             WebInspector.workspace.setHasResourceContentTrackingExtensions(false);
-            WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, handler, this);
+            WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.WorkingCopyCommittedByUser, handler, this);
         }
 
         this._registerSubscriptionHandler(WebInspector.extensionAPI.Events.ResourceContentCommitted,

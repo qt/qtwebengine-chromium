@@ -64,7 +64,7 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
  protected:
   // Called to send raw packet down the wire (e.g. SCTP an packet).
   virtual bool SendPacket(rtc::Buffer* packet,
-                          rtc::DiffServCodePoint dscp) {
+                          const rtc::PacketOptions& options) {
     LOG(LS_VERBOSE) << "SctpFakeNetworkInterface::SendPacket";
 
     // TODO(ldixon): Can/should we use Buffer.TransferTo here?
@@ -93,7 +93,7 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
   // TODO(ldixon): Refactor parent NetworkInterface class so these are not
   // required. They are RTC specific and should be in an appropriate subclass.
   virtual bool SendRtcp(rtc::Buffer* packet,
-                        rtc::DiffServCodePoint dscp) {
+                        const rtc::PacketOptions& options) {
     LOG(LS_WARNING) << "Unsupported: SctpFakeNetworkInterface::SendRtcp.";
     return false;
   }
@@ -169,21 +169,19 @@ class SignalChannelClosedObserver : public sigslot::has_slots<> {
     channel->SignalStreamClosedRemotely.connect(
         this, &SignalChannelClosedObserver::OnStreamClosed);
   }
-  void OnStreamClosed(uint32 stream) {
-    streams_.push_back(stream);
-  }
+  void OnStreamClosed(uint32_t stream) { streams_.push_back(stream); }
 
-  int StreamCloseCount(uint32 stream) {
+  int StreamCloseCount(uint32_t stream) {
     return std::count(streams_.begin(), streams_.end(), stream);
   }
 
-  bool WasStreamClosed(uint32 stream) {
+  bool WasStreamClosed(uint32_t stream) {
     return std::find(streams_.begin(), streams_.end(), stream)
         != streams_.end();
   }
 
  private:
-  std::vector<uint32> streams_;
+  std::vector<uint32_t> streams_;
 };
 
 class SignalChannelClosedReopener : public sigslot::has_slots<> {
@@ -272,12 +270,14 @@ class SctpDataMediaChannelTest : public testing::Test,
     ProcessMessagesUntilIdle();
   }
 
-  void AddStream(int ssrc) {
+  bool AddStream(int ssrc) {
+    bool ret = true;
     cricket::StreamParams p(cricket::StreamParams::CreateLegacy(ssrc));
-    chan1_->AddSendStream(p);
-    chan1_->AddRecvStream(p);
-    chan2_->AddSendStream(p);
-    chan2_->AddRecvStream(p);
+    ret = ret && chan1_->AddSendStream(p);
+    ret = ret && chan1_->AddRecvStream(p);
+    ret = ret && chan2_->AddSendStream(p);
+    ret = ret && chan2_->AddRecvStream(p);
+    return ret;
   }
 
   cricket::SctpDataMediaChannel* CreateChannel(
@@ -292,7 +292,8 @@ class SctpDataMediaChannelTest : public testing::Test,
     return channel;
   }
 
-  bool SendData(cricket::SctpDataMediaChannel* chan, uint32 ssrc,
+  bool SendData(cricket::SctpDataMediaChannel* chan,
+                uint32_t ssrc,
                 const std::string& msg,
                 cricket::SendDataResult* result) {
     cricket::SendDataParams params;
@@ -302,8 +303,9 @@ class SctpDataMediaChannelTest : public testing::Test,
         &msg[0], msg.length()), result);
   }
 
-  bool ReceivedData(const SctpFakeDataReceiver* recv, uint32 ssrc,
-                    const std::string& msg ) {
+  bool ReceivedData(const SctpFakeDataReceiver* recv,
+                    uint32_t ssrc,
+                    const std::string& msg) {
     return (recv->received() &&
             recv->last_params().ssrc == ssrc &&
             recv->last_data() == msg);
@@ -502,6 +504,12 @@ TEST_F(SctpDataMediaChannelTest, EngineSignalsRightChannel) {
   int prior_count = channel1_ready_to_send_count();
   cricket::SctpDataEngine::SendThresholdCallback(sock, 0);
   EXPECT_GT(channel1_ready_to_send_count(), prior_count);
+}
+
+TEST_F(SctpDataMediaChannelTest, RefusesHighNumberedChannels) {
+  SetupConnectedChannels();
+  EXPECT_TRUE(AddStream(1022));
+  EXPECT_FALSE(AddStream(1023));
 }
 
 // Flaky on Linux and Windows. See webrtc:4453.

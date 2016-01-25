@@ -143,9 +143,18 @@ def gyp_defines(builder_dict):
       builder_dict.get('cpu_or_gpu_value') == 'Mesa'):
     gyp_defs['skia_mesa'] = '1'
 
+  # VisualBench
+  if builder_dict.get('extra_config') == 'VisualBench':
+    gyp_defs['skia_use_sdl'] = '1'
+
   # skia_use_android_framework_defines.
   if builder_dict.get('extra_config') == 'Android_FrameworkDefs':
     gyp_defs['skia_use_android_framework_defines'] = '1'
+
+  # Skia dump stats for perf tests and gpu
+  if (builder_dict.get('cpu_or_gpu') == 'GPU' and
+      builder_dict.get('role') == 'Perf'):
+      gyp_defs['skia_dump_stats'] = '1'
 
   return gyp_defs
 
@@ -171,20 +180,21 @@ def get_extra_env_vars(builder_dict):
 
 
 cov_skip.extend([lineno(), lineno() + 1])
-def build_targets_from_builder_dict(builder_dict):
+def build_targets_from_builder_dict(builder_dict, do_test_steps, do_perf_steps):
   """Return a list of targets to build, depending on the builder type."""
   if builder_dict['role'] in ('Test', 'Perf') and builder_dict['os'] == 'iOS':
     return ['iOSShell']
-  elif builder_dict['role'] == builder_name_schema.BUILDER_ROLE_TEST:
-    t = ['dm']
-    if builder_dict.get('configuration') == 'Debug':
+  if builder_dict.get('extra_config') == 'Appurify':
+    return ['VisualBenchTest_APK']
+  t = []
+  if do_test_steps:
+    t.append('dm')
+  if do_perf_steps and builder_dict.get('extra_config') == 'VisualBench':
+      t.append('visualbench')
+  elif do_perf_steps:
       t.append('nanobench')
+  if t:
     return t
-  elif builder_dict['role'] == builder_name_schema.BUILDER_ROLE_PERF:
-    if builder_dict.get('extra_config') == 'Appurify':
-      return ['VisualBenchTest_APK']
-    else:
-      return ['nanobench']
   else:
     return ['most']
 
@@ -205,6 +215,7 @@ def device_cfg(builder_dict):
     }.get(builder_dict['target_arch'], 'arm_v7_neon')
   elif builder_dict.get('os') == 'Android':
     return {
+      'AndroidOne': 'arm_v7_neon',
       'GalaxyS3': 'arm_v7_neon',
       'GalaxyS4': 'arm_v7_neon',
       'Nexus5': 'arm_v7', # This'd be 'nexus_5', but we simulate no-NEON Clank.
@@ -240,7 +251,6 @@ def get_builder_spec(builder_name):
   gyp_defs_list.sort()
   env['GYP_DEFINES'] = ' '.join(gyp_defs_list)
   rv = {
-    'build_targets': build_targets_from_builder_dict(builder_dict),
     'builder_cfg': builder_dict,
     'dm_flags': dm_flags.get_args(builder_name),
     'env': env,
@@ -263,8 +273,14 @@ def get_builder_spec(builder_name):
   rv['do_test_steps'] = role == builder_name_schema.BUILDER_ROLE_TEST
   rv['do_perf_steps'] = (role == builder_name_schema.BUILDER_ROLE_PERF or
                          (role == builder_name_schema.BUILDER_ROLE_TEST and
-                          configuration == CONFIG_DEBUG) or
-                         'Valgrind' in builder_name)
+                          configuration == CONFIG_DEBUG))
+  if 'Valgrind' in builder_name:
+    rv['do_perf_steps'] = True
+  if 'GalaxyS4' in builder_name:
+    rv['do_perf_steps'] = False
+
+  rv['build_targets'] = build_targets_from_builder_dict(
+        builder_dict, rv['do_test_steps'], rv['do_perf_steps'])
 
   # Do we upload perf results?
   upload_perf_results = False
@@ -309,6 +325,8 @@ def self_test():
         'Build-Ubuntu-GCC-x86_64-Release-ANGLE',
         'Housekeeper-PerCommit',
         'Perf-Win8-MSVC-ShuttleB-GPU-HD4600-x86_64-Release-Trybot',
+        'Perf-Ubuntu-GCC-ShuttleA-GPU-GTX660-x86_64-Release-VisualBench',
+        'Test-Android-GCC-GalaxyS4-GPU-SGX544-Arm7-Debug',
         'Perf-Android-GCC-Nexus5-GPU-Adreno330-Arm7-Release-Appurify',
         'Test-Android-GCC-Nexus6-GPU-Adreno420-Arm7-Debug',
         'Test-ChromeOS-GCC-Link-CPU-AVX-x86_64-Debug',

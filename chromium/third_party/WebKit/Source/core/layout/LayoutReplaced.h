@@ -67,11 +67,11 @@ public:
     bool canHaveChildren() const override { return false; }
     bool shouldPaint(const PaintInfo&, const LayoutPoint&) const;
     virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) const { }
-    LayoutRect localSelectionRect(bool checkWhetherSelected = true) const; // This is in local coordinates, but it's a physical rect (so the top left corner is physical top left).
+    LayoutRect localSelectionRect() const; // This is in local coordinates, but it's a physical rect (so the top left corner is physical top left).
+
+    bool hasObjectFit() const { return style()->objectFit() != ComputedStyle::initialObjectFit(); }
 
     void paint(const PaintInfo&, const LayoutPoint&) const override;
-
-    bool isSelected() const;
 
 protected:
     void willBeDestroyed() override;
@@ -104,8 +104,6 @@ protected:
 
 private:
     void computePreferredLogicalWidths() final;
-
-    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
 
     PositionWithAffinity positionForPoint(const LayoutPoint&) final;
 

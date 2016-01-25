@@ -205,7 +205,7 @@ static int read_header(AVFormatContext *s)
     avio_skip(s->pb, 1); // padding
 
     st->codec->sample_rate = bfstm ? read32(s) : read16(s);
-    if (!st->codec->sample_rate)
+    if (st->codec->sample_rate <= 0)
         return AVERROR_INVALIDDATA;
 
     if (!bfstm)
@@ -389,6 +389,20 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
         codec->codec_id == AV_CODEC_ID_ADPCM_THP_LE) {
         uint8_t *dst;
 
+        if (!b->adpc) {
+            av_log(s, AV_LOG_ERROR, "adpcm_thp requires ADPC chunk, but none was found.\n");
+            return AVERROR_INVALIDDATA;
+        }
+        if (!b->table) {
+            b->table = av_mallocz(32 * codec->channels);
+            if (!b->table)
+                return AVERROR(ENOMEM);
+        }
+
+        if (size > (INT_MAX - 32 - 4) ||
+            (32 + 4 + size) > (INT_MAX / codec->channels) ||
+            (32 + 4 + size) * codec->channels > INT_MAX - 8)
+            return AVERROR_INVALIDDATA;
         if (av_new_packet(pkt, 8 + (32 + 4 + size) * codec->channels) < 0)
             return AVERROR(ENOMEM);
         dst = pkt->data;
@@ -408,7 +422,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
             dst += size;
             avio_skip(s->pb, skip);
             if (ret != size) {
-                av_free_packet(pkt);
+                av_packet_unref(pkt);
                 break;
             }
         }

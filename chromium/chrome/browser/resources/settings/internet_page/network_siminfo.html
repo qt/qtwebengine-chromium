@@ -1,10 +1,11 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/notification-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-checkbox/paper-checkbox.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-dialog/paper-dialog.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-input/paper-input.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_onc_types.html">
+<link rel="import" href="chrome://resources/cr_elements/network/cr_onc_types.html">
 <link rel="import" href="network_property_list.html">
 
 <dom-module id="network-siminfo">
@@ -12,19 +13,19 @@
   <template>
     <div id="outerDiv" class="layout vertical">
       <div class="layout horizontal center"
-          hidden$="[[state.Cellular.SIMPresent]]">
+          hidden$="[[networkProperties.Cellular.SIMPresent]]">
         <!-- SIM missing UI -->
-        <iron-icon icon="sim-card-alert"></iron-icon>
+        <iron-icon icon="notification:sim-card-alert"></iron-icon>
         <span>Missing SIM card</span>
       </div>
       <div class="layout vertical"
-          hidden$="[[!state.Cellular.SIMPresent]]">
+          hidden$="[[!networkProperties.Cellular.SIMPresent]]">
         <div id="lockedDiv" class="layout horizontal center"
             hidden$="[[!isSimLocked_(networkProperties)]]">
           <!-- SIM locked -->
           <iron-icon icon="lock"></iron-icon>
           <span>SIM card is locked.</span>
-          <paper-button on-tap="unlockPin_">Unlock</paper-button>
+          <paper-button on-tap="onUnlockPinTap_">Unlock</paper-button>
         </div>
         <div class="layout vertical"
             hidden$="[[isSimLocked_(networkProperties)]]">
@@ -37,7 +38,7 @@
           <div class="layout horizontal center"
                hidden$="[[!networkProperties.Cellular.SIMLockStatus.LockEnabled]]">
             <!-- SIM lock enabled -->
-            <paper-button on-tap="onChangePin_">Change PIN</paper-button>
+            <paper-button on-tap="onChangePinTap_">Change PIN</paper-button>
           </div>
         </div>
       </div>

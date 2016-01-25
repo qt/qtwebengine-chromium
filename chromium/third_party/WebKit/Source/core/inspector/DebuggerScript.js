@@ -70,7 +70,8 @@ DebuggerScript.getFunctionScopes = function(fun)
             continue;
         result.push({
             type: scopeDetails.type(),
-            object: scopeObject
+            object: scopeObject,
+            name: scopeDetails.name()
         });
     }
     return result;
@@ -86,7 +87,7 @@ DebuggerScript.getGeneratorObjectDetails = function(object)
         return null;
     var result = {
         "function": funcMirror.value(),
-        "functionName": DebuggerScript._displayFunctionName(funcMirror) || "",
+        "functionName": funcMirror.debugName(),
         "status": mirror.status()
     };
     var script = funcMirror.script();
@@ -145,7 +146,7 @@ DebuggerScript.getScripts = function(contextGroupId)
             if (!script.context_data)
                 continue;
             // Context data is a string in the following format:
-            // <id>","("page"|"injected"|"worker")
+            // <id>,<contextId>,("page"|"injected"|"worker")
             if (script.context_data.indexOf(contextDataPrefix) !== 0)
                 continue;
         }
@@ -171,6 +172,24 @@ DebuggerScript._formatScript = function(script)
             endColumn = script.source.length - (lineEnds[lineCount - 2] + 1);
     }
 
+    /**
+     * @return {number}
+     */
+    function executionContextId()
+    {
+        var context_data = script.context_data;
+        if (!context_data)
+            return 0;
+        var firstComma = context_data.indexOf(",");
+        if (firstComma === -1)
+            return 0;
+        var secondComma = context_data.indexOf(",", firstComma + 1);
+        if (secondComma === -1)
+            return 0;
+
+        return parseInt(context_data.substring(firstComma + 1, secondComma), 10) || 0;
+    }
+
     return {
         id: script.id,
         name: script.nameOrSourceURL(),
@@ -181,6 +200,7 @@ DebuggerScript._formatScript = function(script)
         startColumn: script.column_offset,
         endLine: endLine,
         endColumn: endColumn,
+        executionContextId: executionContextId(),
         isContentScript: !!script.context_data && script.context_data.endsWith(",injected"),
         isInternalScript: script.is_debugger_script
     };
@@ -257,22 +277,22 @@ DebuggerScript.currentCallFrameByIndex = function(execState, index)
 
 DebuggerScript.stepIntoStatement = function(execState)
 {
-    execState.prepareStep(Debug.StepAction.StepIn, 1);
+    execState.prepareStep(Debug.StepAction.StepIn);
 }
 
 DebuggerScript.stepFrameStatement = function(execState)
 {
-    execState.prepareStep(Debug.StepAction.StepFrame, 1);
+    execState.prepareStep(Debug.StepAction.StepFrame);
 }
 
 DebuggerScript.stepOverStatement = function(execState, callFrame)
 {
-    execState.prepareStep(Debug.StepAction.StepNext, 1);
+    execState.prepareStep(Debug.StepAction.StepNext);
 }
 
 DebuggerScript.stepOutOfFunction = function(execState, callFrame)
 {
-    execState.prepareStep(Debug.StepAction.StepOut, 1);
+    execState.prepareStep(Debug.StepAction.StepOut);
 }
 
 DebuggerScript.clearStepping = function()
@@ -361,17 +381,6 @@ DebuggerScript.isEvalCompilation = function(eventData)
     return (script.compilationType() === Debug.ScriptCompilationType.Eval);
 }
 
-DebuggerScript._displayFunctionName = function(funcMirror)
-{
-    if (!funcMirror.resolved())
-        return undefined
-    var displayName;
-    var valueMirror = funcMirror.property("displayName").value();
-    if (valueMirror && valueMirror.isString())
-        displayName = valueMirror.value();
-    return displayName || funcMirror.name() || funcMirror.inferredName();
-}
-
 // NOTE: This function is performance critical, as it can be run on every
 // statement that generates an async event (like addEventListener) to support
 // asynchronous call stacks. Thus, when possible, initialize the data lazily.
@@ -391,10 +400,12 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
     var scopeMirrors = (scopeDetailsLevel === DebuggerScript.ScopeInfoDetails.NoScopes ? [] : frameMirror.allScopes(scopeDetailsLevel === DebuggerScript.ScopeInfoDetails.FastAsyncScopes));
     var scopeTypes = new Array(scopeMirrors.length);
     var scopeObjects = new Array(scopeMirrors.length);
+    var scopeNames = new Array(scopeMirrors.length);
     for (var i = 0; i < scopeMirrors.length; ++i) {
         var scopeDetails = scopeMirrors[i].details();
         scopeTypes[i] = scopeDetails.type();
         scopeObjects[i] = scopeDetails.object();
+        scopeNames[i] = scopeDetails.name();
     }
 
     // Calculated lazily.
@@ -407,14 +418,16 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
         if (!scopeChain) {
             scopeChain = [];
             for (var i = 0, j = 0; i < scopeObjects.length; ++i) {
-                var scopeObject = DebuggerScript._buildScopeObject(scopeTypes[i], scopeObjects[i]);
+                var scopeObject = DebuggerScript._buildScopeObject(scopeTypes[i], scopeObjects[i], scopeNames[i]);
                 if (scopeObject) {
                     scopeTypes[j] = scopeTypes[i];
+                    scopeNames[j] = scopeNames[i];
                     scopeChain[j] = scopeObject;
                     ++j;
                 }
             }
             scopeTypes.length = scopeChain.length;
+            scopeNames.length = scopeChain.length;
             scopeObjects = null; // Free for GC.
         }
         return scopeChain;
@@ -425,6 +438,13 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
         if (!scopeChain)
             lazyScopeChain();
         return scopeTypes;
+    }
+
+    function lazyScopeNames()
+    {
+        if (!scopeChain)
+            lazyScopeChain();
+        return scopeNames;
     }
 
     function ensureFuncMirror()
@@ -473,7 +493,7 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
 
     function functionName()
     {
-        return DebuggerScript._displayFunctionName(ensureFuncMirror());
+        return ensureFuncMirror().debugName();
     }
 
     function functionLine()
@@ -536,6 +556,7 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
         "thisObject": thisObject,
         "scopeChain": lazyScopeChain,
         "scopeType": lazyScopeTypes,
+        "scopeName": lazyScopeNames,
         "evaluate": evaluate,
         "caller": callerFrame,
         "restart": restart,

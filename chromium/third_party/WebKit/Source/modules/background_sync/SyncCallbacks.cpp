@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/background_sync/SyncCallbacks.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "modules/background_sync/PeriodicSyncRegistration.h"
 #include "modules/background_sync/SyncError.h"
 #include "modules/background_sync/SyncRegistration.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
@@ -38,14 +36,7 @@ void SyncRegistrationCallbacks::onSuccess(WebPassOwnPtr<WebSyncRegistration> web
         m_resolver->resolve(v8::Null(m_resolver->scriptState()->isolate()));
         return;
     }
-    switch (registration->periodicity) {
-    case WebSyncRegistration::PeriodicityPeriodic:
-        m_resolver->resolve(PeriodicSyncRegistration::take(m_resolver.get(), registration.release(), m_serviceWorkerRegistration));
-        break;
-    case WebSyncRegistration::PeriodicityOneShot:
-        m_resolver->resolve(SyncRegistration::take(m_resolver.get(), registration.release(), m_serviceWorkerRegistration));
-        break;
-    }
+    m_resolver->resolve(SyncRegistration::take(m_resolver.get(), registration.release(), m_serviceWorkerRegistration));
 }
 
 void SyncRegistrationCallbacks::onError(const WebSyncError& error)
@@ -56,7 +47,7 @@ void SyncRegistrationCallbacks::onError(const WebSyncError& error)
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
 }
 
-SyncNotifyWhenDoneCallbacks::SyncNotifyWhenDoneCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncNotifyWhenFinishedCallbacks::SyncNotifyWhenFinishedCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_resolver(resolver)
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
@@ -64,20 +55,20 @@ SyncNotifyWhenDoneCallbacks::SyncNotifyWhenDoneCallbacks(ScriptPromiseResolver* 
     ASSERT(m_serviceWorkerRegistration);
 }
 
-SyncNotifyWhenDoneCallbacks::~SyncNotifyWhenDoneCallbacks()
+SyncNotifyWhenFinishedCallbacks::~SyncNotifyWhenFinishedCallbacks()
 {
 }
 
-void SyncNotifyWhenDoneCallbacks::onSuccess(bool status)
+void SyncNotifyWhenFinishedCallbacks::onSuccess()
 {
     if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
 
-    m_resolver->resolve(status);
+    m_resolver->resolve();
 }
 
-void SyncNotifyWhenDoneCallbacks::onError(const WebSyncError& error)
+void SyncNotifyWhenFinishedCallbacks::onError(const WebSyncError& error)
 {
     if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
         return;
@@ -128,29 +119,14 @@ SyncGetRegistrationsCallbacks::~SyncGetRegistrationsCallbacks()
 
 void SyncGetRegistrationsCallbacks::onSuccess(const WebVector<WebSyncRegistration*>& webSyncRegistrations)
 {
-    Vector<OwnPtr<WebSyncRegistration>> registrations;
-    for (WebSyncRegistration* r : webSyncRegistrations) {
-        registrations.append(adoptPtr(r));
-    }
     if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
-
-    if (webSyncRegistrations.size() && webSyncRegistrations[0]->periodicity == WebSyncRegistration::PeriodicityOneShot) {
-        Vector<SyncRegistration*> syncRegistrations;
-        for (auto& r : registrations) {
-            SyncRegistration* reg = SyncRegistration::take(m_resolver.get(), r.release(), m_serviceWorkerRegistration);
-            syncRegistrations.append(reg);
-        }
-        m_resolver->resolve(syncRegistrations);
-    } else {
-        Vector<PeriodicSyncRegistration*> syncRegistrations;
-        for (auto& r : registrations) {
-            PeriodicSyncRegistration* reg = PeriodicSyncRegistration::take(m_resolver.get(), r.release(), m_serviceWorkerRegistration);
-            syncRegistrations.append(reg);
-        }
-        m_resolver->resolve(syncRegistrations);
+    Vector<String> tags;
+    for (const WebSyncRegistration* r : webSyncRegistrations) {
+        tags.append(r->tag);
     }
+    m_resolver->resolve(tags);
 }
 
 void SyncGetRegistrationsCallbacks::onError(const WebSyncError& error)

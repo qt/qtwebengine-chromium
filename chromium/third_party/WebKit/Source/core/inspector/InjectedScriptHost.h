@@ -69,9 +69,9 @@ public:
     {
         m_consoleAgent = consoleAgent;
         m_debuggerAgent = debuggerAgent;
-        m_inspectCallback = inspectCallback;
+        m_inspectCallback = std::move(inspectCallback);
         m_debugger = debugger;
-        m_client = injectedScriptHostClient;
+        m_client = std::move(injectedScriptHostClient);
     }
 
     static EventTarget* eventTargetFromV8Value(v8::Isolate*, v8::Local<v8::Value>);
@@ -79,7 +79,7 @@ public:
     void disconnect();
 
     class InspectableObject : public NoBaseWillBeGarbageCollectedFinalized<InspectableObject> {
-        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectableObject);
+        USING_FAST_MALLOC_WILL_BE_REMOVED(InspectableObject);
     public:
         virtual ScriptValue get(ScriptState*);
         virtual ~InspectableObject() { }

@@ -22,8 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "public/platform/WebMediaStreamTrack.h"
 
 #include "platform/mediastream/MediaStreamComponent.h"
@@ -39,7 +37,7 @@ namespace {
 
 class ExtraDataContainer : public MediaStreamComponent::ExtraData {
 public:
-    explicit ExtraDataContainer(PassOwnPtr<WebMediaStreamTrack::ExtraData> extraData) : m_extraData(extraData) { }
+    explicit ExtraDataContainer(PassOwnPtr<WebMediaStreamTrack::ExtraData> extraData) : m_extraData(std::move(extraData)) { }
 
     WebMediaStreamTrack::ExtraData* extraData() { return m_extraData.get(); }
 
@@ -48,23 +46,6 @@ private:
 };
 
 } // namespace
-
-WebMediaStreamTrack WebMediaStreamTrack::ExtraData::owner()
-{
-    ASSERT(m_owner);
-    return WebMediaStreamTrack(m_owner);
-}
-
-void WebMediaStreamTrack::ExtraData::setOwner(MediaStreamComponent* owner)
-{
-    ASSERT(!m_owner);
-    m_owner = owner;
-}
-
-WebMediaStreamTrack::WebMediaStreamTrack(PassRefPtr<MediaStreamComponent> mediaStreamComponent)
-    : m_private(mediaStreamComponent)
-{
-}
 
 WebMediaStreamTrack::WebMediaStreamTrack(MediaStreamComponent* mediaStreamComponent)
     : m_private(mediaStreamComponent)
@@ -90,11 +71,6 @@ void WebMediaStreamTrack::initialize(const WebString& id, const WebMediaStreamSo
 void WebMediaStreamTrack::reset()
 {
     m_private.reset();
-}
-
-WebMediaStreamTrack::operator PassRefPtr<MediaStreamComponent>() const
-{
-    return m_private.get();
 }
 
 WebMediaStreamTrack::operator MediaStreamComponent*() const
@@ -138,18 +114,12 @@ void WebMediaStreamTrack::setExtraData(ExtraData* extraData)
 {
     ASSERT(!m_private.isNull());
 
-    if (extraData)
-        extraData->setOwner(m_private.get());
-
     m_private->setExtraData(adoptPtr(new ExtraDataContainer(adoptPtr(extraData))));
 }
 
 void WebMediaStreamTrack::setSourceProvider(WebAudioSourceProvider* provider)
-{
-#if ENABLE(WEB_AUDIO)
-    ASSERT(!m_private.isNull());
+{    ASSERT(!m_private.isNull());
     m_private->setSourceProvider(provider);
-#endif // ENABLE(WEB_AUDIO)
 }
 
 void WebMediaStreamTrack::assign(const WebMediaStreamTrack& other)

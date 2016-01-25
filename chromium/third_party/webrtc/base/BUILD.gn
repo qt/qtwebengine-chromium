@@ -10,6 +10,13 @@ import("//build/config/crypto.gni")
 import("//build/config/ui.gni")
 import("../build/webrtc.gni")
 
+# Enable OpenSSL (BoringSSL) for iOS. This is covered in webrtc/supplement.gypi
+# for the GYP build.
+import("//build_overrides/webrtc.gni")
+if (is_ios && !build_with_chromium) {
+  use_openssl = true
+}
+
 config("rtc_base_config") {
   include_dirs = [
     "//third_party/jsoncpp/overrides/include",
@@ -41,6 +48,7 @@ config("openssl_config") {
 
 config("ios_config") {
   libs = [
+    "AVFoundation.framework",
     "CFNetwork.framework",
 
     #"Foundation.framework",  # Already included in //build/config:default_libs.
@@ -90,10 +98,12 @@ if (rtc_build_ssl == 0) {
 
 # The subset of rtc_base approved for use outside of libjingle.
 static_library("rtc_base_approved") {
+  deps = []
   configs += [ "..:common_config" ]
   public_configs = [ "..:common_inherited_config" ]
 
   sources = [
+    "array_view.h",
     "atomicops.h",
     "bitbuffer.cc",
     "bitbuffer.h",
@@ -106,8 +116,10 @@ static_library("rtc_base_approved") {
     "byteorder.h",
     "checks.cc",
     "checks.h",
+    "constructormagic.h",
     "criticalsection.cc",
     "criticalsection.h",
+    "deprecation.h",
     "event.cc",
     "event.h",
     "event_tracer.cc",
@@ -118,10 +130,14 @@ static_library("rtc_base_approved") {
     "md5.h",
     "md5digest.cc",
     "md5digest.h",
+    "optional.h",
     "platform_file.cc",
     "platform_file.h",
     "platform_thread.cc",
     "platform_thread.h",
+    "platform_thread_types.h",
+    "random.cc",
+    "random.h",
     "safe_conversions.h",
     "safe_conversions_impl.h",
     "scoped_ptr.h",
@@ -141,10 +157,16 @@ static_library("rtc_base_approved") {
     "trace_event.h",
   ]
 
-  if (!build_with_chromium) {
+  if (build_with_chromium) {
+    # Dependency on chromium's logging (in //base).
+    deps += [ "//base:base" ]
     sources += [
-      "basictypes.h",
-      "constructormagic.h",
+      "../../webrtc_overrides/webrtc/base/logging.cc",
+      "../../webrtc_overrides/webrtc/base/logging.h",
+    ]
+    include_dirs = [ "../../webrtc_overrides" ]
+  } else {
+    sources += [
       "logging.cc",
       "logging.h",
     ]
@@ -155,7 +177,8 @@ static_library("rtc_base") {
   cflags = []
   cflags_cc = []
   libs = []
-  deps = [
+  deps = []
+  public_deps = [
     ":rtc_base_approved",
   ]
 
@@ -192,7 +215,6 @@ static_library("rtc_base") {
     "autodetectproxy.h",
     "base64.cc",
     "base64.h",
-    "basicdefs.h",
     "common.cc",
     "common.h",
     "crc32.cc",
@@ -237,6 +259,8 @@ static_library("rtc_base") {
     "nethelpers.h",
     "network.cc",
     "network.h",
+    "networkmonitor.cc",
+    "networkmonitor.h",
     "nullsocketserver.h",
     "pathutils.cc",
     "pathutils.h",
@@ -308,18 +332,19 @@ static_library("rtc_base") {
 
   if (is_posix) {
     sources += [
+      "ifaddrs-android.h",
+      "ifaddrs_converter.cc",
       "unixfilesystem.cc",
       "unixfilesystem.h",
     ]
   }
 
   if (build_with_chromium) {
-    sources += [
-      "../../webrtc_overrides/webrtc/base/logging.cc",
-      "../../webrtc_overrides/webrtc/base/logging.h",
-    ]
-
     deps += [ "..:webrtc_common" ]
+
+    if (is_mac) {
+      sources += [ "macifaddrs_converter.cc" ]
+    }
 
     if (is_win) {
       sources += [ "../../webrtc_overrides/webrtc/base/win32socketinit.cc" ]
@@ -537,8 +562,6 @@ static_library("rtc_base") {
 
   if (is_win) {
     sources += [
-      "schanneladapter.cc",
-      "schanneladapter.h",
       "win32.cc",
       "win32.h",
       "win32filesystem.cc",
@@ -590,5 +613,28 @@ static_library("rtc_base") {
   if (is_nacl) {
     deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
     defines += [ "timezone=_timezone" ]
+    sources -= [ "ifaddrs_converter.cc" ]
+  }
+}
+
+if (is_ios) {
+  source_set("rtc_base_objc") {
+    deps = [
+      ":rtc_base",
+    ]
+    cflags = [ "-fobjc-arc" ]
+    configs += [ "..:common_config" ]
+    public_configs = [ "..:common_inherited_config" ]
+
+    sources = [
+      "objc/NSString+StdString.h",
+      "objc/NSString+StdString.mm",
+      "objc/RTCCameraPreviewView.h",
+      "objc/RTCCameraPreviewView.m",
+      "objc/RTCDispatcher.h",
+      "objc/RTCDispatcher.m",
+      "objc/RTCLogging.h",
+      "objc/RTCLogging.mm",
+    ]
   }
 }

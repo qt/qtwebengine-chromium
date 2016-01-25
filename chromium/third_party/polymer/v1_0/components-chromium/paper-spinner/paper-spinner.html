@@ -7,17 +7,21 @@ The complete set of contributors may be found at http://polymer.github.io/CONTRI
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
 --><html><head><link rel="import" href="../polymer/polymer.html">
-<link rel="import" href="../paper-styles/color.html">
 <link rel="import" href="../iron-flex-layout/iron-flex-layout.html">
+<link rel="import" href="../paper-styles/color.html">
+<link rel="import" href="paper-spinner-behavior.html">
+<link rel="import" href="paper-spinner-styles.html">
 
 <!--
-Element providing material design circular spinner.
+Material design: [Progress & activity](https://www.google.com/design/spec/components/progress-activity.html)
+
+Element providing a multiple color material design circular spinner.
 
     <paper-spinner active></paper-spinner>
 
 The default spinner cycles between four layers of colors; by default they are
-blue, red, yellow and green. It can be customized so that it uses one color only
-by setting all the layer colors to the same value.
+blue, red, yellow and green. It can be customized to cycle between four different
+colors. Use <paper-spinner-lite> for single color spinners.
 
 ### Accessibility
 
@@ -46,12 +50,10 @@ Custom property | Description | Default
 -->
 
 </head><body><dom-module id="paper-spinner">
-
-  <link rel="import" type="css" href="paper-spinner.css">
-
   <template>
+    <style include="paper-spinner-styles"></style>
 
-    <div id="spinnerContainer" class-name="[[_spinnerContainerClassName]]">
+    <div id="spinnerContainer" class-name="[[__computeContainerClasses(active, __coolingDown)]]">
       <div class="spinner-layer layer-1">
         <div class="circle-clipper left">
           <div class="circle"></div>
@@ -92,7 +94,6 @@ Custom property | Description | Default
         </div>
       </div>
     </div>
-
   </template>
 
   </dom-module>

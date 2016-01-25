@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/ScrollDisplayItem.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -11,16 +10,16 @@
 
 namespace blink {
 
-void BeginScrollDisplayItem::replay(GraphicsContext& context)
+void BeginScrollDisplayItem::replay(GraphicsContext& context) const
 {
     context.save();
     context.translate(-m_currentOffset.width(), -m_currentOffset.height());
 }
 
-void BeginScrollDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void BeginScrollDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    WebDisplayItemList::ScrollContainerId scrollContainerId = client();
-    list->appendScrollItem(m_currentOffset, scrollContainerId);
+    WebDisplayItemList::ScrollContainerId scrollContainerId = &client();
+    list->appendScrollItem(visualRect, m_currentOffset, scrollContainerId);
 }
 
 #ifndef NDEBUG
@@ -31,14 +30,14 @@ void BeginScrollDisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& str
 }
 #endif
 
-void EndScrollDisplayItem::replay(GraphicsContext& context)
+void EndScrollDisplayItem::replay(GraphicsContext& context) const
 {
     context.restore();
 }
 
-void EndScrollDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndScrollDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndScrollItem();
+    list->appendEndScrollItem(visualRect);
 }
 
 } // namespace blink

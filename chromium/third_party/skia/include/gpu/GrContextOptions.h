@@ -15,10 +15,15 @@ struct GrContextOptions {
         : fDrawPathToCompressedTexture(false)
         , fSuppressPrints(false)
         , fMaxTextureSizeOverride(SK_MaxS32)
-        , fMinTextureSizeOverride(0)
+        , fMaxTileSizeOverride(0)
         , fSuppressDualSourceBlending(false)
         , fGeometryBufferMapThreshold(-1)
-        , fUseDrawInsteadOfPartialRenderTargetWrite(false) {}
+        , fUseDrawInsteadOfPartialRenderTargetWrite(false)
+        , fImmediateMode(false)
+        , fClipBatchToBounds(false)
+        , fDrawBatchBounds(false)
+        , fMaxBatchLookback(-1)
+        , fUseShaderSwizzling(false) {}
 
     // EXPERIMENTAL
     // May be removed in the future, or may become standard depending
@@ -33,7 +38,9 @@ struct GrContextOptions {
         detected values. */
 
     int  fMaxTextureSizeOverride;
-    int  fMinTextureSizeOverride;
+    /** If non-zero, overrides the maximum size of a tile for sw-backed images and bitmaps rendered
+        by SkGpuDevice. */
+    int  fMaxTileSizeOverride;
     bool fSuppressDualSourceBlending;
 
     /** the threshold in bytes above which we will use a buffer mapping API to map vertex and index
@@ -43,6 +50,26 @@ struct GrContextOptions {
 
     /** some gpus have problems with partial writes of the rendertarget */
     bool fUseDrawInsteadOfPartialRenderTargetWrite;
+
+    /** The GrContext operates in immediate mode. It will issue all draws to the backend API
+        immediately. Intended to ease debugging. */
+    bool fImmediateMode;
+
+    /** For debugging purposes turn each GrBatch's bounds into a clip rect. This is used to
+        verify that the clip bounds are conservative. */
+    bool fClipBatchToBounds;
+
+    /** For debugging purposes draw a wireframe device bounds rect for each GrBatch. The wire
+        frame rect is draw before the GrBatch in order to visualize batches that draw outside
+        of their dev bounds. */
+    bool fDrawBatchBounds;
+
+    /** For debugging, override the default maximum look-back window for GrBatch combining. */
+    int fMaxBatchLookback;
+
+    /** Force us to do all swizzling manually in the shader and don't rely on extensions to do
+        swizzling. */
+    bool fUseShaderSwizzling;
 };
 
 #endif

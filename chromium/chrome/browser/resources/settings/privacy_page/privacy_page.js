@@ -4,22 +4,22 @@
 
 /**
  * @fileoverview
- * 'cr-settings-privacy-page' is the settings page containing privacy and
+ * 'settings-privacy-page' is the settings page containing privacy and
  * security settings.
  *
  * Example:
  *
  *    <iron-animated-pages>
- *      <cr-settings-privacy-page prefs="{{prefs}}">
- *      </cr-settings-privacy-page>
+ *      <settings-privacy-page prefs="{{prefs}}">
+ *      </settings-privacy-page>
  *      ... other pages ...
  *    </iron-animated-pages>
  *
  * @group Chrome Settings Elements
- * @element cr-settings-privacy-page
+ * @element settings-privacy-page
  */
 Polymer({
-  is: 'cr-settings-privacy-page',
+  is: 'settings-privacy-page',
 
   properties: {
     /**
@@ -37,6 +37,18 @@ Polymer({
       type: Object,
       notify: true,
     },
+
+    /**
+     * The origin selected by the user.
+     */
+    originSelected: {
+      type: String,
+      observer: 'onSelectedOriginChanged_',
+    }
+  },
+
+  ready: function() {
+    this.ContentSettingsTypes = settings.ContentSettingsTypes;
   },
 
   /** @private */
@@ -52,5 +64,10 @@ Polymer({
   /** @private */
   onClearBrowsingDataTap_: function() {
     this.$.pages.setSubpageChain(['clear-browsing-data']);
+  },
+
+  onSelectedOriginChanged_: function() {
+    this.$.pages.setSubpageChain(
+        ['site-settings', 'site-settings-category', 'site-details']);
   },
 });

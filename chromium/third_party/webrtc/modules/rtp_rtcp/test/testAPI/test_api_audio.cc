@@ -15,12 +15,12 @@
 #include "webrtc/modules/rtp_rtcp/test/testAPI/test_api.h"
 
 #include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_audio.h"
 
-using namespace webrtc;
-
+namespace webrtc {
+namespace {
 #define test_rate 64000u
 
 class VerifyingAudioReceiver : public NullRtpData {
@@ -64,7 +64,7 @@ class RTPCallback : public NullRtpFeedback {
   int32_t OnInitializeDecoder(const int8_t payloadType,
                               const char payloadName[RTP_PAYLOAD_NAME_SIZE],
                               const int frequency,
-                              const uint8_t channels,
+                              const size_t channels,
                               const uint32_t rate) override {
     if (payloadType == 96) {
       EXPECT_EQ(test_rate, rate) <<
@@ -165,7 +165,7 @@ TEST_F(RtpRtcpAudioTest, Basic) {
   module1->SetStartTimestamp(test_timestamp);
 
   // Test detection at the end of a DTMF tone.
-  //EXPECT_EQ(0, module2->SetTelephoneEventForwardToDecoder(true));
+  // EXPECT_EQ(0, module2->SetTelephoneEventForwardToDecoder(true));
 
   EXPECT_EQ(0, module1->SetSendingStatus(true));
 
@@ -241,7 +241,7 @@ TEST_F(RtpRtcpAudioTest, RED) {
 
   EXPECT_EQ(0, module1->SetSendREDPayloadType(voice_codec.pltype));
   int8_t red = 0;
-  EXPECT_EQ(0, module1->SendREDPayloadType(red));
+  EXPECT_EQ(0, module1->SendREDPayloadType(&red));
   EXPECT_EQ(voice_codec.pltype, red);
   EXPECT_EQ(0, rtp_receiver1_->RegisterReceivePayload(
       voice_codec.plname,
@@ -278,7 +278,7 @@ TEST_F(RtpRtcpAudioTest, RED) {
                                          &fragmentation));
 
   EXPECT_EQ(0, module1->SetSendREDPayloadType(-1));
-  EXPECT_EQ(-1, module1->SendREDPayloadType(red));
+  EXPECT_EQ(-1, module1->SendREDPayloadType(&red));
 }
 
 TEST_F(RtpRtcpAudioTest, DTMF) {
@@ -334,7 +334,7 @@ TEST_F(RtpRtcpAudioTest, DTMF) {
 
   // Send RTP packets for 16 tones a 160 ms  100ms
   // pause between = 2560ms + 1600ms = 4160ms
-  for (;timeStamp <= 250 * 160; timeStamp += 160) {
+  for (; timeStamp <= 250 * 160; timeStamp += 160) {
     EXPECT_EQ(0, module1->SendOutgoingData(webrtc::kAudioFrameSpeech, 96,
                                            timeStamp, -1, test, 4));
     fake_clock.AdvanceTimeMilliseconds(20);
@@ -342,10 +342,13 @@ TEST_F(RtpRtcpAudioTest, DTMF) {
   }
   EXPECT_EQ(0, module1->SendTelephoneEventOutband(32, 9000, 10));
 
-  for (;timeStamp <= 740 * 160; timeStamp += 160) {
+  for (; timeStamp <= 740 * 160; timeStamp += 160) {
     EXPECT_EQ(0, module1->SendOutgoingData(webrtc::kAudioFrameSpeech, 96,
                                            timeStamp, -1, test, 4));
     fake_clock.AdvanceTimeMilliseconds(20);
     module1->Process();
   }
 }
+
+}  // namespace
+}  // namespace webrtc

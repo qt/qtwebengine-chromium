@@ -1,7 +1,7 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-toggle-button/paper-toggle-button.html">
-<link rel="import" href="chrome://resources/cr_elements/v1_0/policy/cr_policy_indicator.html">
+<link rel="import" href="chrome://resources/cr_elements/policy/cr_policy_pref_indicator.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr.html">
 <link rel="import" href="languages.html">
@@ -11,11 +11,10 @@
 </if>
 
 <dom-module id="settings-language-detail-page">
-  <link rel="import" type="css" href="chrome://md-settings/settings_page/settings_page.css">
+  <link rel="import" type="css" href="chrome://md-settings/settings_shared.css">
   <link rel="import" type="css" href="language_detail_page.css">
   <template>
-    <cr-settings-languages id="languages" languages="{{languages}}">
-    </cr-settings-languages>
+    <settings-languages languages="{{languages}}"></settings-languages>
 <if expr="chromeos or is_win">
     <div id="languageSettings">
       <label hidden$="[[!detail.language.supportsUI]]">
@@ -33,7 +32,8 @@
               hidden$="[[!isRestartRequired_(detail.language.code, prefs.intl.app_locale.value)]]">
           </paper-button>
         </span>
-        <cr-policy-indicator id="policyIndicator"></cr-policy-indicator>
+        <cr-policy-pref-indicator id="policyIndicator">
+        </cr-policy-pref-indicator>
       </label>
       <span i18n-content="cannotBeDisplayedInThisLanguage"
           hidden$="[[detail.language.supportsUI]]"></span>

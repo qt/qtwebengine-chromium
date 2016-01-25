@@ -14,13 +14,13 @@
 
 == Resources
 
-Crashpad home page: https://crashpad.googlecode.com/.
+Crashpad home page: https://crashpad.chromium.org/.
 
-Report bugs at https://code.google.com/p/crashpad/issues/entry.
+Report bugs at https://crashpad.chromium.org/bug/new.
 
 == Copyright
 
-Copyright 2014
+Copyright 2016
 https://chromium.googlesource.com/crashpad/crashpad/+/master/AUTHORS[The
 Crashpad Authors].
 

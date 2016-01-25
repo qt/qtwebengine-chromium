@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/BidiRunForLine.h"
 
 #include "core/layout/line/InlineIterator.h"
@@ -35,7 +34,7 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
 {
     LayoutObject* next = current;
     while (current) {
-        if (isIsolated(current->style()->unicodeBidi())
+        if (treatAsIsolated(current->styleRef())
             && (current->isLayoutInline() || current->isLayoutBlock())) {
             if (current != root)
                 current = nullptr;
@@ -56,7 +55,7 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
             break;
 
         if (!isIteratorTarget(LineLayoutItem(current))
-            && !isIsolated(current->style()->unicodeBidi()))
+            && !treatAsIsolated(current->styleRef()))
             next = current->slowFirstChild();
 
         if (!next) {
@@ -89,21 +88,6 @@ TextDirection determinePlaintextDirectionality(LayoutObject* root,
     return observer.determineParagraphDirectionality();
 }
 
-// FIXME: This should be a BidiStatus constructor or create method.
-static inline BidiStatus statusWithDirection(TextDirection textDirection,
-    bool isOverride)
-{
-    WTF::Unicode::Direction direction = textDirection == LTR
-        ? LeftToRight
-        : RightToLeft;
-    RefPtr<BidiContext> context = BidiContext::create(
-        textDirection == LTR ? 0 : 1, direction, isOverride, FromStyleOrDOM);
-
-    // This copies BidiStatus and may churn the ref on BidiContext.
-    // I doubt it matters.
-    return BidiStatus(direction, direction, direction, context.release());
-}
-
 static inline void setupResolverToResumeInIsolate(InlineBidiResolver& resolver,
     LayoutObject* root, LayoutObject* startObject)
 {
@@ -111,17 +95,6 @@ static inline void setupResolverToResumeInIsolate(InlineBidiResolver& resolver,
         LayoutObject* parent = startObject->parent();
         setupResolverToResumeInIsolate(resolver, root, parent);
         notifyObserverEnteredObject(&resolver, LineLayoutItem(startObject));
-    }
-}
-
-static void restoreIsolatedMidpointStates(InlineBidiResolver& topResolver,
-    InlineBidiResolver& isolatedResolver)
-{
-    while (!isolatedResolver.isolatedRuns().isEmpty()) {
-        BidiRun* run = isolatedResolver.isolatedRuns().last();
-        isolatedResolver.isolatedRuns().removeLast();
-        topResolver.setMidpointStateForIsolatedRun(run,
-            isolatedResolver.midpointStateForIsolatedRun(run));
     }
 }
 
@@ -137,28 +110,15 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
     const LayoutObject* currentRoot = topResolver.position().root();
     topResolver.createBidiRunsForLine(endOfLine, override,
         previousLineBrokeCleanly);
-    struct BidiRunsWithRoot {
-        const LayoutObject* root;
-        Vector<BidiRun*> isolatedRuns;
-    };
-    Vector<BidiRunsWithRoot> isolatedRunsStack;
 
-    while (true) {
-        if (topResolver.isolatedRuns().isEmpty()) {
-            if (isolatedRunsStack.isEmpty())
-                break;
-            topResolver.isolatedRuns().appendVector(isolatedRunsStack.last().isolatedRuns);
-            ASSERT(!topResolver.isolatedRuns().isEmpty());
-            currentRoot = isolatedRunsStack.last().root;
-            isolatedRunsStack.removeLast();
-        }
-
+    while (!topResolver.isolatedRuns().isEmpty()) {
         // It does not matter which order we resolve the runs as long as we
         // resolve them all.
-        BidiRun* isolatedRun = topResolver.isolatedRuns().last();
+        BidiIsolatedRun isolatedRun = topResolver.isolatedRuns().last();
         topResolver.isolatedRuns().removeLast();
+        currentRoot = &isolatedRun.root;
 
-        LayoutObject* startObj = isolatedRun->object();
+        LayoutObject* startObj = &isolatedRun.object;
 
         // Only inlines make sense with unicode-bidi: isolate (blocks are
         // already isolated).
@@ -176,7 +136,7 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         LineMidpointState& isolatedLineMidpointState =
             isolatedResolver.midpointState();
         isolatedLineMidpointState = topResolver.midpointStateForIsolatedRun(
-            isolatedRun);
+            isolatedRun.runToReplace);
         EUnicodeBidi unicodeBidi = isolatedInline->style()->unicodeBidi();
         TextDirection direction;
         if (unicodeBidi == Plaintext) {
@@ -186,8 +146,8 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
             ASSERT(unicodeBidi == Isolate || unicodeBidi == IsolateOverride);
             direction = isolatedInline->style()->direction();
         }
-        isolatedResolver.setStatus(statusWithDirection(direction,
-            isOverride(unicodeBidi)));
+        isolatedResolver.setStatus(BidiStatus::createForIsolate(direction,
+            isOverride(unicodeBidi), isolatedRun.level));
 
         setupResolverToResumeInIsolate(isolatedResolver, isolatedInline,
             startObj);
@@ -197,7 +157,7 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         // createBidiRunsForLine. This can be but is not necessarily the first
         // run within the isolate.
         InlineIterator iter = InlineIterator(LineLayoutItem(isolatedInline), LineLayoutItem(startObj),
-            isolatedRun->m_start);
+            isolatedRun.position);
         isolatedResolver.setPositionIgnoringNestedIsolates(iter);
         // We stop at the next end of line; we may re-enter this isolate in the
         // next call to constructBidiRuns().
@@ -209,16 +169,16 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
 
         ASSERT(isolatedResolver.runs().runCount());
         if (isolatedResolver.runs().runCount())
-            bidiRuns.replaceRunWithRuns(isolatedRun, isolatedResolver.runs());
+            bidiRuns.replaceRunWithRuns(&isolatedRun.runToReplace, isolatedResolver.runs());
 
         // If we encountered any nested isolate runs, save them for later
         // processing.
-        if (!isolatedResolver.isolatedRuns().isEmpty()) {
-            isolatedRunsStack.resize(isolatedRunsStack.size() + 1);
-            isolatedRunsStack.last().isolatedRuns.appendVector(
-                isolatedResolver.isolatedRuns());
-            isolatedRunsStack.last().root = isolatedInline;
-            restoreIsolatedMidpointStates(topResolver, isolatedResolver);
+        while (!isolatedResolver.isolatedRuns().isEmpty()) {
+            BidiIsolatedRun runWithContext = isolatedResolver.isolatedRuns().last();
+            isolatedResolver.isolatedRuns().removeLast();
+            topResolver.setMidpointStateForIsolatedRun(runWithContext.runToReplace,
+                isolatedResolver.midpointStateForIsolatedRun(runWithContext.runToReplace));
+            topResolver.isolatedRuns().append(runWithContext);
         }
     }
 }

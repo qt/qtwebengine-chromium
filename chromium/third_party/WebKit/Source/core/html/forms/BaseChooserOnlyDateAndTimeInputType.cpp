@@ -23,10 +23,9 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
-#if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/BaseChooserOnlyDateAndTimeInputType.h"
 
+#if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -38,9 +37,27 @@
 
 namespace blink {
 
+BaseChooserOnlyDateAndTimeInputType::BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element)
+    : BaseDateAndTimeInputType(element)
+{
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
+}
+
 BaseChooserOnlyDateAndTimeInputType::~BaseChooserOnlyDateAndTimeInputType()
 {
+#if !ENABLE(OILPAN)
     closeDateTimeChooser();
+#endif
+    ASSERT(!m_dateTimeChooser);
+}
+
+DEFINE_TRACE(BaseChooserOnlyDateAndTimeInputType)
+{
+    visitor->trace(m_dateTimeChooser);
+    BaseDateAndTimeInputType::trace(visitor);
+    DateTimeChooserClient::trace(visitor);
 }
 
 void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)

@@ -30,6 +30,7 @@
 #define HRTFElevation_h
 
 #include "platform/audio/HRTFKernel.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -44,6 +45,7 @@ namespace blink {
 // HRTFElevation contains all of the HRTFKernels (one left ear and one right ear per azimuth angle) for a particular elevation.
 
 class PLATFORM_EXPORT HRTFElevation {
+    USING_FAST_MALLOC(HRTFElevation);
     WTF_MAKE_NONCOPYABLE(HRTFElevation);
 public:
     // Loads and returns an HRTFElevation with the given HRTF database subject name and elevation from browser (or WebKit.framework) resources.
@@ -87,8 +89,8 @@ public:
 
 private:
     HRTFElevation(PassOwnPtr<HRTFKernelList> kernelListL, PassOwnPtr<HRTFKernelList> kernelListR, int elevation, float sampleRate)
-        : m_kernelListL(kernelListL)
-        , m_kernelListR(kernelListR)
+        : m_kernelListL(std::move(kernelListL))
+        , m_kernelListR(std::move(kernelListR))
         , m_elevationAngle(elevation)
         , m_sampleRate(sampleRate)
     {

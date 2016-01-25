@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "DataLog.h"
+#include "wtf/DataLog.h"
 
 #if OS(POSIX)
 #include <pthread.h>
@@ -41,7 +40,7 @@
 
 namespace WTF {
 
-#if USE(PTHREADS)
+#if OS(POSIX)
 static pthread_once_t initializeLogFileOnceKey = PTHREAD_ONCE_INIT;
 #endif
 
@@ -73,7 +72,7 @@ static void initializeLogFileOnce()
 
 static void initializeLogFile()
 {
-#if USE(PTHREADS)
+#if OS(POSIX)
     pthread_once(&initializeLogFileOnceKey, initializeLogFileOnce);
 #else
     if (!file)

@@ -10,13 +10,14 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/ref_counted.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_observer.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_states.h"
+#include "net/base/net_error_details.h"
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
@@ -39,19 +40,18 @@ struct LoadTimingInfo;
 class NetworkDelegate;
 class SSLCertRequestInfo;
 class SSLInfo;
+class SSLPrivateKey;
 class UploadDataStream;
 class URLRequestStatus;
 class X509Certificate;
 
-class NET_EXPORT URLRequestJob
-    : public base::RefCounted<URLRequestJob>,
-      public base::PowerObserver {
+class NET_EXPORT URLRequestJob : public base::PowerObserver {
  public:
   explicit URLRequestJob(URLRequest* request,
                          NetworkDelegate* network_delegate);
+  ~URLRequestJob() override;
 
-  // Returns the request that owns this job. THIS POINTER MAY BE NULL if the
-  // request was destroyed.
+  // Returns the request that owns this job.
   URLRequest* request() const {
     return request_;
   }
@@ -94,10 +94,6 @@ class NET_EXPORT URLRequestJob
   // The job should be prepared to receive multiple calls to kill it, but only
   // one notification must be issued.
   virtual void Kill();
-
-  // Called to detach the request from this Job.  Results in the Job being
-  // killed off eventually. The job must not use the request pointer any more.
-  void DetachRequest();
 
   // Called to read post-filtered data from this Job, returning the number of
   // bytes read, 0 when there is no more data, or -1 if there was an error.
@@ -149,6 +145,10 @@ class NET_EXPORT URLRequestJob
   //       useful results once per job.
   virtual bool GetResponseCookies(std::vector<std::string>* cookies);
 
+  // Populates the network error details of the most recent origin that the
+  // network stack makes the request to.
+  virtual void PopulateNetErrorDetails(NetErrorDetails* details) const;
+
   // Called to setup a stream filter for this request. An example of filter is
   // content encoding/decoding.
   // Subclasses should return the appropriate Filter, or NULL for no Filter.
@@ -198,7 +198,8 @@ class NET_EXPORT URLRequestJob
   // Display the error page without asking for credentials again.
   virtual void CancelAuth();
 
-  virtual void ContinueWithCertificate(X509Certificate* client_cert);
+  virtual void ContinueWithCertificate(X509Certificate* client_cert,
+                                       SSLPrivateKey* client_private_key);
 
   // Continue processing the request ignoring the last error.
   virtual void ContinueDespiteLastError();
@@ -213,8 +214,8 @@ class NET_EXPORT URLRequestJob
   bool is_done() const { return done_; }
 
   // Get/Set expected content size
-  int64 expected_content_size() const { return expected_content_size_; }
-  void set_expected_content_size(const int64& size) {
+  int64_t expected_content_size() const { return expected_content_size_; }
+  void set_expected_content_size(const int64_t& size) {
     expected_content_size_ = size;
   }
 
@@ -251,9 +252,6 @@ class NET_EXPORT URLRequestJob
                                          const GURL& redirect_destination);
 
  protected:
-  friend class base::RefCounted<URLRequestJob>;
-  ~URLRequestJob() override;
-
   // Notifies the job that a certificate is requested.
   void NotifyCertificateRequested(SSLCertRequestInfo* cert_request_info);
 
@@ -276,22 +274,8 @@ class NET_EXPORT URLRequestJob
   // Notifies the job that headers have been received.
   void NotifyHeadersComplete();
 
-  // Notifies the request that the job has completed a Read operation.
-  void NotifyReadComplete(int bytes_read);
-
   // Notifies the request that a start error has occurred.
   void NotifyStartError(const URLRequestStatus& status);
-
-  // NotifyDone marks when we are done with a request.  It is really
-  // a glorified set_status, but also does internal state checking and
-  // job tracking.  It should be called once per request, when the job is
-  // finished doing all IO.
-  void NotifyDone(const URLRequestStatus& status);
-
-  // Some work performed by NotifyDone must be completed on a separate task
-  // so as to avoid re-entering the delegate.  This method exists to perform
-  // that work.
-  void CompleteNotifyDone();
 
   // Used as an asynchronous callback for Kill to notify the URLRequest
   // that we were canceled.
@@ -305,17 +289,19 @@ class NET_EXPORT URLRequestJob
   void OnCallToDelegate();
   void OnCallToDelegateComplete();
 
-  // Called to read raw (pre-filtered) data from this Job.
-  // If returning true, data was read from the job.  buf will contain
-  // the data, and bytes_read will receive the number of bytes read.
-  // If returning true, and bytes_read is returned as 0, there is no
-  // additional data to be read.
-  // If returning false, an error occurred or an async IO is now pending.
-  // If async IO is pending, the status of the request will be
-  // URLRequestStatus::IO_PENDING, and buf must remain available until the
-  // operation is completed.  See comments on URLRequest::Read for more
-  // info.
-  virtual bool ReadRawData(IOBuffer* buf, int buf_size, int *bytes_read);
+  // Called to read raw (pre-filtered) data from this Job. Reads at most
+  // |buf_size| bytes into |buf|.
+  // Possible return values:
+  //   >= 0: Read completed synchronously. Return value is the number of bytes
+  //         read. 0 means eof.
+  //   ERR_IO_PENDING: Read pending asynchronously.
+  //                   When the read completes, |ReadRawDataComplete| should be
+  //                   called.
+  //   Any other negative number: Read failed synchronously. Return value is a
+  //                   network error code.
+  // This method might hold onto a reference to |buf| (by incrementing the
+  // refcount) until the method completes or is cancelled.
+  virtual int ReadRawData(IOBuffer* buf, int buf_size);
 
   // Called to tell the job that a filter has successfully reached the end of
   // the stream.
@@ -326,14 +312,14 @@ class NET_EXPORT URLRequestJob
   // bodies are never read.
   virtual void DoneReadingRedirectResponse();
 
-  // Informs the filter that data has been read into its buffer
-  void FilteredDataRead(int bytes_read);
-
-  // Reads filtered data from the request.  Returns true if successful,
-  // false otherwise.  Note, if there is not enough data received to
-  // return data, this call can issue a new async IO request under
-  // the hood.
-  bool ReadFilteredData(int *bytes_read);
+  // Reads filtered data from the request. Returns OK if immediately successful,
+  // ERR_IO_PENDING if the request couldn't complete synchronously, and some
+  // other error code if the request failed synchronously. Note that this
+  // function can issue new asynchronous requests if needed, in which case it
+  // returns ERR_IO_PENDING. If this method completes synchronously,
+  // |*bytes_read| is the number of bytes output by the filter chain if this
+  // method returns OK, or zero if this method returns an error.
+  Error ReadFilteredData(int* bytes_read);
 
   // Whether the response is being filtered in this job.
   // Only valid after NotifyHeadersComplete() has been called.
@@ -359,25 +345,38 @@ class NET_EXPORT URLRequestJob
 
   // The number of bytes read before passing to the filter. This value reflects
   // bytes read even when there is no filter.
-  int64 prefilter_bytes_read() const { return prefilter_bytes_read_; }
+  int64_t prefilter_bytes_read() const { return prefilter_bytes_read_; }
 
   // The number of bytes read after passing through the filter. This value
   // reflects bytes read even when there is no filter.
-  int64 postfilter_bytes_read() const { return postfilter_bytes_read_; }
+  int64_t postfilter_bytes_read() const { return postfilter_bytes_read_; }
 
-  // The request that initiated this job. This value MAY BE NULL if the
-  // request was released by DetachRequest().
+  // Turns an integer result code into an Error and a count of bytes read.
+  // The semantics are:
+  //   |result| >= 0: |*error| == OK, |*count| == |result|
+  //   |result| < 0: |*error| = |result|, |*count| == 0
+  static void ConvertResultToError(int result, Error* error, int* count);
+
+  // Completion callback for raw reads. See |ReadRawData| for details.
+  // |bytes_read| is either >= 0 to indicate a successful read and count of
+  // bytes read, or < 0 to indicate an error.
+  void ReadRawDataComplete(int bytes_read);
+
+  // The request that initiated this job. This value will never be nullptr.
   URLRequest* request_;
 
  private:
   // When data filtering is enabled, this function is used to read data
-  // for the filter.  Returns true if raw data was read.  Returns false if
-  // an error occurred (or we are waiting for IO to complete).
-  bool ReadRawDataForFilter(int *bytes_read);
+  // for the filter. Returns a net error code to indicate if raw data was
+  // successfully read,  an error happened, or the IO is pending.
+  Error ReadRawDataForFilter(int* bytes_read);
+
+  // Informs the filter chain that data has been read into its buffer.
+  void PushInputToFilter(int bytes_read);
 
   // Invokes ReadRawData and records bytes read if the read completes
   // synchronously.
-  bool ReadRawDataHelper(IOBuffer* buf, int buf_size, int* bytes_read);
+  Error ReadRawDataHelper(IOBuffer* buf, int buf_size, int* bytes_read);
 
   // Called in response to a redirect that was not canceled to follow the
   // redirect. The current job will be replaced with a new job loading the
@@ -386,9 +385,9 @@ class NET_EXPORT URLRequestJob
 
   // Called after every raw read. If |bytes_read| is > 0, this indicates
   // a successful read of |bytes_read| unfiltered bytes. If |bytes_read|
-  // is 0, this indicates that there is no additional data to read. If
-  // |bytes_read| is < 0, an error occurred and no bytes were read.
-  void OnRawReadComplete(int bytes_read);
+  // is 0, this indicates that there is no additional data to read. |error|
+  // specifies whether an error occurred and no bytes were read.
+  void GatherRawReadStats(Error error, int bytes_read);
 
   // Updates the profiling info and notifies observers that an additional
   // |bytes_read| unfiltered bytes have been read for this job.
@@ -397,6 +396,16 @@ class NET_EXPORT URLRequestJob
   // Called to query whether there is data available in the filter to be read
   // out.
   bool FilterHasData();
+
+  // NotifyDone marks that request is done. It is really a glorified
+  // set_status, but also does internal state checking and job tracking. It
+  // should be called once per request, when the job is finished doing all IO.
+  void NotifyDone(const URLRequestStatus& status);
+
+  // Some work performed by NotifyDone must be completed asynchronously so
+  // as to avoid re-entering URLRequest::Delegate. This method performs that
+  // work.
+  void CompleteNotifyDone();
 
   // Subclasses may implement this method to record packet arrival times.
   // The default implementation does nothing.  Only invoked when bytes have been
@@ -417,8 +426,8 @@ class NET_EXPORT URLRequestJob
   // NotifyDone so that it is kept in sync with the request.
   bool done_;
 
-  int64 prefilter_bytes_read_;
-  int64 postfilter_bytes_read_;
+  int64_t prefilter_bytes_read_;
+  int64_t postfilter_bytes_read_;
 
   // The data stream filter which is enabled on demand.
   scoped_ptr<Filter> filter_;
@@ -443,7 +452,7 @@ class NET_EXPORT URLRequestJob
   bool has_handled_response_;
 
   // Expected content size
-  int64 expected_content_size_;
+  int64_t expected_content_size_;
 
   // Set when a redirect is deferred.
   RedirectInfo deferred_redirect_info_;

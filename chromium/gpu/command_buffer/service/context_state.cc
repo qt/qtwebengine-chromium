@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/context_state.h"
 
+#include <stddef.h>
+
 #include <cmath>
 
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -270,8 +272,10 @@ void ContextState::RestoreBufferBindings() const {
                  GetBufferId(bound_copy_write_buffer.get()));
     glBindBuffer(GL_PIXEL_PACK_BUFFER,
                  GetBufferId(bound_pixel_pack_buffer.get()));
+    UpdatePackParameters();
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER,
                  GetBufferId(bound_pixel_unpack_buffer.get()));
+    UpdateUnpackParameters();
     glBindBuffer(GL_TRANSFORM_FEEDBACK_BUFFER,
                  GetBufferId(bound_transform_feedback_buffer.get()));
     glBindBuffer(GL_UNIFORM_BUFFER, GetBufferId(bound_uniform_buffer.get()));
@@ -442,6 +446,34 @@ void ContextState::EnableDisable(GLenum pname, bool enable) const {
   }
 }
 
+void ContextState::UpdatePackParameters() const {
+  if (!feature_info_->IsES3Capable())
+    return;
+  if (bound_pixel_pack_buffer.get()) {
+    glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
+  } else {
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+  }
+}
+
+void ContextState::UpdateUnpackParameters() const {
+  if (!feature_info_->IsES3Capable())
+    return;
+  if (bound_pixel_unpack_buffer.get()) {
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, unpack_row_length);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, unpack_image_height);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpack_skip_pixels);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, unpack_skip_rows);
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES, unpack_skip_images);
+  } else {
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
+  }
+}
+
 void ContextState::SetBoundBuffer(GLenum target, Buffer* buffer) {
   switch (target) {
     case GL_ARRAY_BUFFER:
@@ -458,9 +490,11 @@ void ContextState::SetBoundBuffer(GLenum target, Buffer* buffer) {
       break;
     case GL_PIXEL_PACK_BUFFER:
       bound_pixel_pack_buffer = buffer;
+      UpdatePackParameters();
       break;
     case GL_PIXEL_UNPACK_BUFFER:
       bound_pixel_unpack_buffer = buffer;
+      UpdateUnpackParameters();
       break;
     case GL_TRANSFORM_FEEDBACK_BUFFER:
       bound_transform_feedback_buffer = buffer;
@@ -488,9 +522,11 @@ void ContextState::RemoveBoundBuffer(Buffer* buffer) {
   }
   if (bound_pixel_pack_buffer.get() == buffer) {
     bound_pixel_pack_buffer = nullptr;
+    UpdatePackParameters();
   }
   if (bound_pixel_unpack_buffer.get() == buffer) {
     bound_pixel_unpack_buffer = nullptr;
+    UpdateUnpackParameters();
   }
   if (bound_transform_feedback_buffer.get() == buffer) {
     bound_transform_feedback_buffer = nullptr;
@@ -525,6 +561,13 @@ void ContextState::UnbindTexture(TextureRef* texture) {
         active_unit = jj;
       }
       glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    } else if (unit.bound_texture_rectangle_arb.get() == texture) {
+      unit.bound_texture_rectangle_arb = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
     } else if (unit.bound_texture_3d.get() == texture) {
       unit.bound_texture_3d = NULL;
       if (active_unit != jj) {
@@ -545,6 +588,45 @@ void ContextState::UnbindTexture(TextureRef* texture) {
   if (active_unit != active_texture_unit) {
     glActiveTexture(GL_TEXTURE0 + active_texture_unit);
   }
+}
+
+void ContextState::UnbindSampler(Sampler* sampler) {
+  for (size_t jj = 0; jj < sampler_units.size(); ++jj) {
+    if (sampler_units[jj].get() == sampler) {
+      sampler_units[jj] = nullptr;
+      glBindSampler(jj, 0);
+    }
+  }
+}
+
+PixelStoreParams ContextState::GetPackParams() {
+  PixelStoreParams params;
+  params.alignment = pack_alignment;
+  params.row_length = pack_row_length;
+  params.skip_pixels = pack_skip_pixels;
+  params.skip_rows = pack_skip_rows;
+  return params;
+}
+
+PixelStoreParams ContextState::GetUnpackParams(Dimension dimension) {
+  PixelStoreParams params;
+  params.alignment = unpack_alignment;
+  params.row_length = unpack_row_length;
+  params.skip_pixels = unpack_skip_pixels;
+  params.skip_rows = unpack_skip_rows;
+  if (dimension == k3D) {
+    params.image_height = unpack_image_height;
+    params.skip_images = unpack_skip_images;
+  }
+  return params;
+}
+
+void ContextState::InitStateManual(const ContextState*) const {
+  // Here we always reset the states whether it's different from previous ones.
+  // We have very limited states here; also, once we switch to MANGLE, MANGLE
+  // will opmitize this.
+  UpdatePackParameters();
+  UpdateUnpackParameters();
 }
 
 // Include the auto-generated part of this file. We split this because it means

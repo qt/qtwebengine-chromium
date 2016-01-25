@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/WaveShaperProcessor.h"
-
 #include "modules/webaudio/WaveShaperDSPKernel.h"
 
 namespace blink {
@@ -96,4 +93,3 @@ void WaveShaperProcessor::process(const AudioBus* source, AudioBus* destination,
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

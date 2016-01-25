@@ -5,16 +5,22 @@
 #ifndef MEDIA_AUDIO_AUDIO_INPUT_CONTROLLER_H_
 #define MEDIA_AUDIO_AUDIO_INPUT_CONTROLLER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
+
 #include "base/atomicops.h"
 #include "base/callback.h"
 #include "base/files/file.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/audio/audio_parameters.h"
@@ -137,7 +143,7 @@ class MEDIA_EXPORT AudioInputController
     virtual void Write(const AudioBus* data,
                        double volume,
                        bool key_pressed,
-                       uint32 hardware_delay_bytes) = 0;
+                       uint32_t hardware_delay_bytes) = 0;
 
     // Close this synchronous writer.
     virtual void Close() = 0;
@@ -225,7 +231,7 @@ class MEDIA_EXPORT AudioInputController
   // device-specific implementation.
   void OnData(AudioInputStream* stream,
               const AudioBus* source,
-              uint32 hardware_delay_bytes,
+              uint32_t hardware_delay_bytes,
               double volume) override;
   void OnError(AudioInputStream* stream) override;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "InternalsNavigatorContentUtils.h"
 
 #include "core/dom/Document.h"
@@ -16,7 +15,7 @@ void InternalsNavigatorContentUtils::setNavigatorContentUtilsClientMock(Internal
 {
     ASSERT(document && document->page());
     NavigatorContentUtils* navigatorContentUtils = NavigatorContentUtils::from(*document->frame());
-    navigatorContentUtils->setClientForTest(adoptPtr(new NavigatorContentUtilsClientMock()));
+    navigatorContentUtils->setClientForTest(NavigatorContentUtilsClientMock::create());
 }
 
 } // namespace blink

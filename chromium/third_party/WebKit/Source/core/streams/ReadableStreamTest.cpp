@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/streams/ReadableStream.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -17,9 +16,9 @@
 #include "core/streams/ReadableStreamReader.h"
 #include "core/streams/UnderlyingSource.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gmock/gmock-more-actions.h>
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "testing/gmock/include/gmock/gmock-more-actions.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -560,7 +559,7 @@ TEST_F(ReadableStreamTest, GetClosedReader)
     String onFulfilled, onRejected;
     reader->closed(scriptState()).then(createCaptor(&onFulfilled), createCaptor(&onRejected));
 
-    EXPECT_FALSE(reader->isActive());
+    EXPECT_TRUE(reader->isActive());
     EXPECT_TRUE(onFulfilled.isNull());
     EXPECT_TRUE(onRejected.isNull());
 
@@ -583,7 +582,7 @@ TEST_F(ReadableStreamTest, GetErroredReader)
     String onFulfilled, onRejected;
     reader->closed(scriptState()).then(createCaptor(&onFulfilled), createCaptor(&onRejected));
 
-    EXPECT_FALSE(reader->isActive());
+    EXPECT_TRUE(reader->isActive());
     EXPECT_TRUE(onFulfilled.isNull());
     EXPECT_TRUE(onRejected.isNull());
 

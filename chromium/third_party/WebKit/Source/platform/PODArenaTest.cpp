@@ -23,14 +23,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/PODArena.h"
 
 #include "platform/testing/ArenaTestHelpers.h"
-#include "wtf/FastMalloc.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/RefPtr.h"
 #include <algorithm>
-#include <gtest/gtest.h>
 
 namespace blink {
 

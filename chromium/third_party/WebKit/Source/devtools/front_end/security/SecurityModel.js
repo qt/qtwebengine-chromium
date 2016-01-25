@@ -37,6 +37,38 @@ WebInspector.SecurityModel.fromTarget = function(target)
 }
 
 /**
+ * @param {!SecurityAgent.SecurityState} a
+ * @param {!SecurityAgent.SecurityState} b
+ * @return {number}
+ */
+WebInspector.SecurityModel.SecurityStateComparator = function(a, b)
+{
+    var securityStateMap;
+    if (WebInspector.SecurityModel._symbolicToNumericSecurityState) {
+        securityStateMap = WebInspector.SecurityModel._symbolicToNumericSecurityState;
+    } else {
+        securityStateMap = new Map();
+        var ordering = [
+            SecurityAgent.SecurityState.Info,
+            SecurityAgent.SecurityState.Insecure,
+            SecurityAgent.SecurityState.Neutral,
+            SecurityAgent.SecurityState.Warning,
+            SecurityAgent.SecurityState.Secure,
+            // Unknown is max so that failed/cancelled requests don't overwrite the origin security state for successful requests,
+            // and so that failed/cancelled requests appear at the bottom of the origins list.
+            SecurityAgent.SecurityState.Unknown
+        ];
+        for (var i = 0; i < ordering.length; i++)
+            securityStateMap.set(ordering[i], i + 1);
+        WebInspector.SecurityModel._symbolicToNumericSecurityState = securityStateMap;
+    }
+    var aScore = securityStateMap.get(a) || 0;
+    var bScore = securityStateMap.get(b) || 0;
+
+    return aScore - bScore;
+}
+
+/**
  * @constructor
  * @param {!SecurityAgent.SecurityState} securityState
  * @param {!Array<!SecurityAgent.SecurityStateExplanation>} explanations

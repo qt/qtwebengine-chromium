@@ -5,10 +5,12 @@
 #ifndef MEDIA_BLINK_WEBSOURCEBUFFER_IMPL_H_
 #define MEDIA_BLINK_WEBSOURCEBUFFER_IMPL_H_
 
+#include <stddef.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/time/time.h"
 #include "third_party/WebKit/public/platform/WebSourceBuffer.h"
 

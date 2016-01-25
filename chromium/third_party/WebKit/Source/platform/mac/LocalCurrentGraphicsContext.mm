@@ -17,25 +17,23 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "platform/mac/LocalCurrentGraphicsContext.h"
-#include "platform/mac/ThemeMac.h"
 
 #include <AppKit/NSGraphicsContext.h>
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/mac/ThemeMac.h"
 #include "platform_canvas.h"
 
 namespace blink {
 
-LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, const IntRect& dirtyRect)
-    : LocalCurrentGraphicsContext(graphicsContext->canvas(), graphicsContext->deviceScaleFactor(), nullptr, dirtyRect)
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext& graphicsContext, const IntRect& dirtyRect)
+    : LocalCurrentGraphicsContext(graphicsContext.canvas(), graphicsContext.deviceScaleFactor(), nullptr, dirtyRect)
 {
 }
 
-LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, const IntRect* interestRect,
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext& graphicsContext, const IntRect* interestRect,
                                                          const IntRect& dirtyRect)
-    : LocalCurrentGraphicsContext(graphicsContext->canvas(), graphicsContext->deviceScaleFactor(), interestRect, dirtyRect)
+    : LocalCurrentGraphicsContext(graphicsContext.canvas(), graphicsContext.deviceScaleFactor(), interestRect, dirtyRect)
 {
 }
 

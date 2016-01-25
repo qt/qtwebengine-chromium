@@ -4,6 +4,8 @@
 
 // Message definition file, included multiple times, hence no include guard.
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
@@ -143,13 +145,13 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_UpdateServiceWorker,
                      int /* thread_id */,
                      int /* request_id */,
                      int /* provider_id */,
-                     int64 /* registration_id */)
+                     int64_t /* registration_id */)
 
 IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_UnregisterServiceWorker,
                      int /* thread_id */,
                      int /* request_id */,
                      int /* provider_id */,
-                     int64 /* registration_id */)
+                     int64_t /* registration_id */)
 
 IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_GetRegistration,
                      int /* thread_id */,
@@ -217,7 +219,7 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_TerminateWorker,
 // |version_id| identifies which ServiceWorkerVersion.
 IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_SetVersionId,
                      int /* provider_id */,
-                     int64 /* version_id */)
+                     int64_t /* version_id */)
 
 // Informs the browser that event handling has finished.
 // Routed to the target ServiceWorkerVersion.
@@ -236,8 +238,9 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_NotificationClickEventFinished,
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_PushEventFinished,
                     int /* request_id */,
                     blink::WebServiceWorkerEventResult)
-IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_GeofencingEventFinished,
-                    int /* request_id */)
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_GeofencingEventFinished,
+                    int /* request_id */,
+                    blink::WebServiceWorkerEventResult)
 
 // Responds to a Ping from the browser.
 // Routed to the target ServiceWorkerVersion.
@@ -290,6 +293,11 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SkipWaiting,
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_ClaimClients,
                     int /* request_id */)
 
+// Informs the browser of new foreign fetch subscopes this worker wants to
+// handle. Should only be sent while an install event is being handled.
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_RegisterForeignFetchScopes,
+                    std::vector<GURL> /* sub_scopes */)
+
 //---------------------------------------------------------------------------
 // Messages sent from the browser to the child process.
 //
@@ -297,14 +305,6 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_ClaimClients,
 // a thread_id as their first field so that ServiceWorkerMessageFilter can
 // extract it and dispatch the message to the correct ServiceWorkerDispatcher
 // on the correct thread.
-
-// Informs the child process of the registration associated with the service
-// worker.
-IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_AssociateRegistrationWithServiceWorker,
-                     int /* thread_id*/,
-                     int /* provider_id */,
-                     content::ServiceWorkerRegistrationObjectInfo,
-                     content::ServiceWorkerVersionAttributes)
 
 // Informs the child process that the given provider gets associated or
 // disassociated with the registration.
@@ -402,10 +402,9 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
-// Tells the child process to set service workers for the given provider.
-IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_SetVersionAttributes,
+// Tells the child process to set service workers for the given registration.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_SetVersionAttributes,
                      int /* thread_id */,
-                     int /* provider_id */,
                      int /* registration_handle_id */,
                      int /* changed_mask */,
                      content::ServiceWorkerVersionAttributes)

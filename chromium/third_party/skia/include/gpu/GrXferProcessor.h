@@ -17,8 +17,9 @@
 
 class GrShaderCaps;
 class GrGLSLCaps;
-class GrGLXferProcessor;
+class GrGLSLXferProcessor;
 class GrProcOptInfo;
+struct GrPipelineOptimizations;
 
 /**
  * Barriers for blending. When a shader reads the dst directly, an Xfer barrier is sometimes
@@ -92,15 +93,15 @@ public:
     };
 
     /**
-     * Sets a unique key on the GrProcessorKeyBuilder calls onGetGLProcessorKey(...) to get the
+     * Sets a unique key on the GrProcessorKeyBuilder calls onGetGLSLProcessorKey(...) to get the
      * specific subclass's key.
      */ 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const;
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const;
 
     /** Returns a new instance of the appropriate *GL* implementation class
         for the given GrXferProcessor; caller is responsible for deleting
         the object. */
-    virtual GrGLXferProcessor* createGLInstance() const = 0;
+    virtual GrGLSLXferProcessor* createGLSLInstance() const = 0;
 
     /**
      * Optimizations for blending / coverage that an OptDrawState should apply to itself.
@@ -141,11 +142,10 @@ public:
      * A caller who calls this function on a XP is required to honor the returned OptFlags
      * and color values for its draw.
      */
-    OptFlags getOptimizations(const GrProcOptInfo& colorPOI,
-                              const GrProcOptInfo& coveragePOI,
+    OptFlags getOptimizations(const GrPipelineOptimizations& optimizations,
                               bool doesStencilWrite,
                               GrColor* overrideColor,
-                              const GrCaps& caps);
+                              const GrCaps& caps) const;
 
     /**
      * Returns whether this XP will require an Xfer barrier on the given rt. If true, outBarrierType
@@ -199,11 +199,6 @@ public:
     bool dstReadUsesMixedSamples() const { return fDstReadUsesMixedSamples; }
 
     /**
-     * Returns whether or not the XP will look at coverage when doing its blending.
-     */
-    bool readsCoverage() const { return fReadsCoverage; }
-
-    /**
      * Returns whether or not this xferProcossor will set a secondary output to be used with dual
      * source blending.
      */
@@ -214,16 +209,14 @@ public:
         from getFactory()).
 
         A return value of true from isEqual() should not be used to test whether the processor would
-        generate the same shader code. To test for identical code generation use getGLProcessorKey*/
+        generate the same shader code. To test for identical code generation use getGLSLProcessorKey
+      */
     
     bool isEqual(const GrXferProcessor& that) const {
         if (this->classID() != that.classID()) {
             return false;
         }
         if (this->fWillReadDstColor != that.fWillReadDstColor) {
-            return false;
-        }
-        if (this->fReadsCoverage != that.fReadsCoverage) {
             return false;
         }
         if (this->fDstTexture.getTexture() != that.fDstTexture.getTexture()) {
@@ -245,18 +238,17 @@ protected:
 private:
     void notifyRefCntIsZero() const final {}
 
-    virtual OptFlags onGetOptimizations(const GrProcOptInfo& colorPOI,
-                                        const GrProcOptInfo& coveragePOI,
+    virtual OptFlags onGetOptimizations(const GrPipelineOptimizations& optimizations,
                                         bool doesStencilWrite,
                                         GrColor* overrideColor,
-                                        const GrCaps& caps) = 0;
+                                        const GrCaps& caps) const = 0;
 
     /**
      * Sets a unique key on the GrProcessorKeyBuilder that is directly associated with this xfer
      * processor's GL backend implementation.
      */
-    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
-                                     GrProcessorKeyBuilder* b) const = 0;
+    virtual void onGetGLSLProcessorKey(const GrGLSLCaps& caps,
+                                       GrProcessorKeyBuilder* b) const = 0;
 
     /**
      * Determines the type of barrier (if any) required by the subclass. Note that the possibility
@@ -285,7 +277,6 @@ private:
 
     bool                    fWillReadDstColor;
     bool                    fDstReadUsesMixedSamples;
-    bool                    fReadsCoverage;
     SkIPoint                fDstTextureOffset;
     GrTextureAccess         fDstTexture;
 
@@ -310,19 +301,10 @@ GR_MAKE_BITFIELD_OPS(GrXferProcessor::OptFlags);
 class GrXPFactory : public SkRefCnt {
 public:
     typedef GrXferProcessor::DstTexture DstTexture;
-    GrXferProcessor* createXferProcessor(const GrProcOptInfo& colorPOI,
-                                         const GrProcOptInfo& coveragePOI,
+    GrXferProcessor* createXferProcessor(const GrPipelineOptimizations& optimizations,
                                          bool hasMixedSamples,
                                          const DstTexture*,
                                          const GrCaps& caps) const;
-
-    /**
-     * This function returns true if the GrXferProcessor generated from this factory will be able to
-     * correctly blend when using RGB coverage. The knownColor and knownColorFlags represent the
-     * final computed color from the color stages.
-     */
-    virtual bool supportsRGBCoverage(GrColor knownColor, uint32_t knownColorFlags) const = 0;
-
     /**
      * Known color information after blending, but before accounting for any coverage.
      */
@@ -341,8 +323,8 @@ public:
     virtual void getInvariantBlendedColor(const GrProcOptInfo& colorPOI,
                                           InvariantBlendedColor*) const = 0;
 
-    bool willNeedDstTexture(const GrCaps& caps, const GrProcOptInfo& colorPOI,
-                            const GrProcOptInfo& coveragePOI, bool hasMixedSamples) const;
+    bool willNeedDstTexture(const GrCaps& caps, const GrPipelineOptimizations& optimizations, 
+                            bool hasMixedSamples) const;
 
     bool isEqual(const GrXPFactory& that) const {
         if (this->classID() != that.classID()) {
@@ -370,8 +352,7 @@ protected:
 
 private:
     virtual GrXferProcessor* onCreateXferProcessor(const GrCaps& caps,
-                                                   const GrProcOptInfo& colorPOI,
-                                                   const GrProcOptInfo& coveragePOI,
+                                                   const GrPipelineOptimizations& optimizations,
                                                    bool hasMixedSamples,
                                                    const DstTexture*) const = 0;
     /**
@@ -379,8 +360,7 @@ private:
      *  shader.
      */
     virtual bool willReadDstColor(const GrCaps& caps,
-                                  const GrProcOptInfo& colorPOI,
-                                  const GrProcOptInfo& coveragePOI,
+                                  const GrPipelineOptimizations& optimizations,
                                   bool hasMixedSamples) const = 0;
 
     virtual bool onIsEqual(const GrXPFactory&) const = 0;

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8AbstractEventListener.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -48,17 +47,17 @@ V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, DOMWrapperWor
     , m_isAttribute(isAttribute)
     , m_world(world)
     , m_isolate(isolate)
+    , m_workerGlobalScope(nullptr)
 {
     if (isMainThread())
         InstanceCounters::incrementCounter(InstanceCounters::JSEventListenerCounter);
+    else
+        m_workerGlobalScope = toWorkerGlobalScope(currentExecutionContext(isolate));
 }
 
 V8AbstractEventListener::~V8AbstractEventListener()
 {
-    if (!m_listener.isEmpty()) {
-        v8::HandleScope scope(m_isolate);
-        V8EventListenerList::clearWrapper(m_listener.newLocal(isolate()), m_isAttribute, isolate());
-    }
+    ASSERT(m_listener.isEmpty());
     if (isMainThread())
         InstanceCounters::decrementCounter(InstanceCounters::JSEventListenerCounter);
 }
@@ -102,6 +101,17 @@ void V8AbstractEventListener::handleEvent(ScriptState* scriptState, Event* event
 
 void V8AbstractEventListener::setListenerObject(v8::Local<v8::Object> listener)
 {
+    ASSERT(m_listener.isEmpty());
+    // Balanced in secondWeakCallback xor clearListenerObject.
+    if (m_workerGlobalScope) {
+        m_workerGlobalScope->registerEventListener(this);
+    } else {
+#if ENABLE(OILPAN)
+        m_keepAlive = this;
+#else
+        ref();
+#endif
+    }
     m_listener.set(isolate(), listener);
     m_listener.setWeak(this, &setWeakCallback);
 }
@@ -114,15 +124,15 @@ void V8AbstractEventListener::invokeEventHandler(ScriptState* scriptState, Event
     v8::Local<v8::Value> returnValue;
     {
         // Catch exceptions thrown in the event handler so they do not propagate to javascript code that caused the event to fire.
-        v8::TryCatch tryCatch;
+        v8::TryCatch tryCatch(isolate());
         tryCatch.SetVerbose(true);
 
         // Save the old 'event' property so we can restore it later.
-        v8::Local<v8::Value> savedEvent = V8HiddenValue::getHiddenValue(isolate(), scriptState->context()->Global(), V8HiddenValue::event(isolate()));
+        v8::Local<v8::Value> savedEvent = V8HiddenValue::getHiddenValue(scriptState, scriptState->context()->Global(), V8HiddenValue::event(isolate()));
         tryCatch.Reset();
 
         // Make the event available in the global object, so LocalDOMWindow can expose it.
-        V8HiddenValue::setHiddenValue(isolate(), scriptState->context()->Global(), V8HiddenValue::event(isolate()), jsEvent);
+        V8HiddenValue::setHiddenValue(scriptState, scriptState->context()->Global(), V8HiddenValue::event(isolate()), jsEvent);
         tryCatch.Reset();
 
         returnValue = callListenerFunction(scriptState, jsEvent, event);
@@ -138,9 +148,9 @@ void V8AbstractEventListener::invokeEventHandler(ScriptState* scriptState, Event
 
         // Restore the old event. This must be done for all exit paths through this method.
         if (savedEvent.IsEmpty())
-            V8HiddenValue::setHiddenValue(isolate(), scriptState->context()->Global(), V8HiddenValue::event(isolate()), v8::Undefined(isolate()));
+            V8HiddenValue::setHiddenValue(scriptState, scriptState->context()->Global(), V8HiddenValue::event(isolate()), v8::Undefined(isolate()));
         else
-            V8HiddenValue::setHiddenValue(isolate(), scriptState->context()->Global(), V8HiddenValue::event(isolate()), savedEvent);
+            V8HiddenValue::setHiddenValue(scriptState, scriptState->context()->Global(), V8HiddenValue::event(isolate()), savedEvent);
         tryCatch.Reset();
     }
 
@@ -181,9 +191,47 @@ bool V8AbstractEventListener::belongsToTheCurrentWorld() const
     return ScriptState::hasCurrentScriptState(isolate()) && &world() == &DOMWrapperWorld::current(isolate());
 }
 
-void V8AbstractEventListener::setWeakCallback(const v8::WeakCallbackInfo<V8AbstractEventListener> &data)
+void V8AbstractEventListener::clearListenerObject()
+{
+    if (!hasExistingListenerObject())
+        return;
+    m_listener.clear();
+    if (m_workerGlobalScope) {
+        m_workerGlobalScope->deregisterEventListener(this);
+    } else {
+#if ENABLE(OILPAN)
+        m_keepAlive.clear();
+#else
+        deref();
+#endif
+    }
+}
+
+void V8AbstractEventListener::setWeakCallback(const v8::WeakCallbackInfo<V8AbstractEventListener>& data)
 {
     data.GetParameter()->m_listener.clear();
+    data.SetSecondPassCallback(secondWeakCallback);
+}
+
+void V8AbstractEventListener::secondWeakCallback(const v8::WeakCallbackInfo<V8AbstractEventListener>& data)
+{
+    if (data.GetParameter()->m_workerGlobalScope) {
+        data.GetParameter()->m_workerGlobalScope->deregisterEventListener(data.GetParameter());
+    } else {
+#if ENABLE(OILPAN)
+        data.GetParameter()->m_keepAlive.clear();
+#else
+        data.GetParameter()->deref();
+#endif
+    }
+}
+
+DEFINE_TRACE(V8AbstractEventListener)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_workerGlobalScope);
+#endif
+    EventListener::trace(visitor);
 }
 
 } // namespace blink

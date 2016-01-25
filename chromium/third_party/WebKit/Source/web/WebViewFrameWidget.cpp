@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "config.h"
 #include "web/WebViewFrameWidget.h"
 
 #include "web/WebLocalFrameImpl.h"
@@ -52,9 +51,9 @@ void WebViewFrameWidget::resize(const WebSize& size)
     return m_webView->resize(size);
 }
 
-void WebViewFrameWidget::resizePinchViewport(const WebSize& size)
+void WebViewFrameWidget::resizeVisualViewport(const WebSize& size)
 {
-    return m_webView->resizePinchViewport(size);
+    return m_webView->resizeVisualViewport(size);
 }
 
 void WebViewFrameWidget::willEndLiveResize()
@@ -72,14 +71,14 @@ void WebViewFrameWidget::didExitFullScreen()
     return m_webView->didExitFullScreen();
 }
 
-void WebViewFrameWidget::beginFrame(const WebBeginFrameArgs& frameTime)
+void WebViewFrameWidget::beginFrame(double lastFrameTimeMonotonic)
 {
-    return m_webView->beginFrame(frameTime);
+    return m_webView->beginFrame(lastFrameTimeMonotonic);
 }
 
-void WebViewFrameWidget::layout()
+void WebViewFrameWidget::updateAllLifecyclePhases()
 {
-    return m_webView->layout();
+    return m_webView->updateAllLifecyclePhases();
 }
 
 void WebViewFrameWidget::paint(WebCanvas* canvas, const WebRect& viewPort)
@@ -107,7 +106,7 @@ void WebViewFrameWidget::themeChanged()
     return m_webView->themeChanged();
 }
 
-bool WebViewFrameWidget::handleInputEvent(const WebInputEvent& event)
+WebInputEventResult WebViewFrameWidget::handleInputEvent(const WebInputEvent& event)
 {
     return m_webView->handleInputEvent(event);
 }
@@ -123,13 +122,13 @@ bool WebViewFrameWidget::hasTouchEventHandlersAt(const WebPoint& point)
 }
 
 void WebViewFrameWidget::applyViewportDeltas(
-    const WebFloatSize& pinchViewportDelta,
+    const WebFloatSize& visualViewportDelta,
     const WebFloatSize& layoutViewportDelta,
     const WebFloatSize& elasticOverscrollDelta,
     float scaleFactor,
     float topControlsShownRatioDelta)
 {
-    return m_webView->applyViewportDeltas(pinchViewportDelta, layoutViewportDelta, elasticOverscrollDelta, scaleFactor, topControlsShownRatioDelta);
+    return m_webView->applyViewportDeltas(visualViewportDelta, layoutViewportDelta, elasticOverscrollDelta, scaleFactor, topControlsShownRatioDelta);
 }
 
 void WebViewFrameWidget::recordFrameTimingEvent(FrameTimingEventType eventType, int64_t rectId, const WebVector<WebFrameTimingEvent>& events)
@@ -264,6 +263,11 @@ void WebViewFrameWidget::updateTopControlsState(WebTopControlsState constraints,
 void WebViewFrameWidget::setVisibilityState(WebPageVisibilityState visibilityState, bool isInitialState)
 {
     return m_webView->setVisibilityState(visibilityState, isInitialState);
+}
+
+void WebViewFrameWidget::scheduleAnimation()
+{
+    m_webView->scheduleAnimation();
 }
 
 } // namespace blink

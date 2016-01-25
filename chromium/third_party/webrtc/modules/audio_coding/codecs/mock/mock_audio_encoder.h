@@ -24,7 +24,7 @@ class MockAudioEncoder final : public AudioEncoder {
   MOCK_METHOD1(Mark, void(std::string desc));
   MOCK_CONST_METHOD0(MaxEncodedBytes, size_t());
   MOCK_CONST_METHOD0(SampleRateHz, int());
-  MOCK_CONST_METHOD0(NumChannels, int());
+  MOCK_CONST_METHOD0(NumChannels, size_t());
   MOCK_CONST_METHOD0(RtpTimestampRateHz, int());
   MOCK_CONST_METHOD0(Num10MsFramesInNextPacket, size_t());
   MOCK_CONST_METHOD0(Max10MsFramesInAPacket, size_t());
@@ -32,7 +32,7 @@ class MockAudioEncoder final : public AudioEncoder {
   // Note, we explicitly chose not to create a mock for the Encode method.
   MOCK_METHOD4(EncodeInternal,
                EncodedInfo(uint32_t timestamp,
-                           const int16_t* audio,
+                           rtc::ArrayView<const int16_t> audio,
                            size_t max_encoded_bytes,
                            uint8_t* encoded));
   MOCK_METHOD0(Reset, void());

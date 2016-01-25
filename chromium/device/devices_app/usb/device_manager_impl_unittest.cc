@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "device/devices_app/usb/device_manager_impl.h"
+
+#include <stddef.h>
 #include <set>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/macros.h"
@@ -11,9 +15,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/thread_task_runner_handle.h"
-#include "device/core/device_client.h"
+#include "device/core/mock_device_client.h"
 #include "device/devices_app/usb/device_impl.h"
-#include "device/devices_app/usb/device_manager_impl.h"
 #include "device/devices_app/usb/fake_permission_provider.h"
 #include "device/usb/mock_usb_device.h"
 #include "device/usb/mock_usb_device_handle.h"
@@ -28,45 +31,25 @@ namespace usb {
 
 namespace {
 
-class TestDeviceClient : public DeviceClient {
- public:
-  TestDeviceClient() {}
-  ~TestDeviceClient() override {}
-
-  MockUsbService& mock_usb_service() { return mock_usb_service_; }
-
- private:
-  // DeviceClient implementation:
-  UsbService* GetUsbService() override { return &mock_usb_service_; }
-
-  MockUsbService mock_usb_service_;
-};
-
 class USBDeviceManagerImplTest : public testing::Test {
  public:
-  USBDeviceManagerImplTest()
-      : device_client_(new TestDeviceClient),
-        message_loop_(new base::MessageLoop) {}
+  USBDeviceManagerImplTest() : message_loop_(new base::MessageLoop) {}
   ~USBDeviceManagerImplTest() override {}
 
  protected:
-  MockUsbService& mock_usb_service() {
-    return device_client_->mock_usb_service();
-  }
-
   DeviceManagerPtr ConnectToDeviceManager() {
     PermissionProviderPtr permission_provider;
     permission_provider_.Bind(mojo::GetProxy(&permission_provider));
     DeviceManagerPtr device_manager;
-    new DeviceManagerImpl(mojo::GetProxy(&device_manager),
-                          permission_provider.Pass(),
-                          base::ThreadTaskRunnerHandle::Get());
-    return device_manager.Pass();
+    DeviceManagerImpl::Create(std::move(permission_provider),
+                              mojo::GetProxy(&device_manager));
+    return device_manager;
   }
+
+  MockDeviceClient device_client_;
 
  private:
   FakePermissionProvider permission_provider_;
-  scoped_ptr<TestDeviceClient> device_client_;
   scoped_ptr<base::MessageLoop> message_loop_;
 };
 
@@ -119,9 +102,9 @@ TEST_F(USBDeviceManagerImplTest, GetDevices) {
   scoped_refptr<MockUsbDevice> device2 =
       new MockUsbDevice(0x1234, 0x567a, "ACME", "Frobinator Mk II", "MNOPQR");
 
-  mock_usb_service().AddDevice(device0);
-  mock_usb_service().AddDevice(device1);
-  mock_usb_service().AddDevice(device2);
+  device_client_.usb_service()->AddDevice(device0);
+  device_client_.usb_service()->AddDevice(device1);
+  device_client_.usb_service()->AddDevice(device2);
 
   DeviceManagerPtr device_manager = ConnectToDeviceManager();
 
@@ -138,7 +121,7 @@ TEST_F(USBDeviceManagerImplTest, GetDevices) {
 
   base::RunLoop loop;
   device_manager->GetDevices(
-      options.Pass(),
+      std::move(options),
       base::Bind(&ExpectDevicesAndThen, guids, loop.QuitClosure()));
   loop.Run();
 }
@@ -148,7 +131,7 @@ TEST_F(USBDeviceManagerImplTest, GetDevice) {
   scoped_refptr<MockUsbDevice> mock_device =
       new MockUsbDevice(0x1234, 0x5678, "ACME", "Frobinator", "ABCDEF");
 
-  mock_usb_service().AddDevice(mock_device);
+  device_client_.usb_service()->AddDevice(mock_device);
 
   DeviceManagerPtr device_manager = ConnectToDeviceManager();
 
@@ -182,7 +165,7 @@ TEST_F(USBDeviceManagerImplTest, GetDeviceChanges) {
   scoped_refptr<MockUsbDevice> device3 =
       new MockUsbDevice(0x1234, 0x567b, "ACME", "Frobinator Xtreme", "STUVWX");
 
-  mock_usb_service().AddDevice(device0);
+  device_client_.usb_service()->AddDevice(device0);
 
   DeviceManagerPtr device_manager = ConnectToDeviceManager();
 
@@ -198,9 +181,9 @@ TEST_F(USBDeviceManagerImplTest, GetDeviceChanges) {
     loop.Run();
   }
 
-  mock_usb_service().AddDevice(device1);
-  mock_usb_service().AddDevice(device2);
-  mock_usb_service().RemoveDevice(device1);
+  device_client_.usb_service()->AddDevice(device1);
+  device_client_.usb_service()->AddDevice(device2);
+  device_client_.usb_service()->RemoveDevice(device1);
 
   {
     std::set<std::string> added_guids;
@@ -213,9 +196,9 @@ TEST_F(USBDeviceManagerImplTest, GetDeviceChanges) {
     loop.Run();
   }
 
-  mock_usb_service().RemoveDevice(device0);
-  mock_usb_service().RemoveDevice(device2);
-  mock_usb_service().AddDevice(device3);
+  device_client_.usb_service()->RemoveDevice(device0);
+  device_client_.usb_service()->RemoveDevice(device2);
+  device_client_.usb_service()->AddDevice(device3);
 
   {
     std::set<std::string> added_guids;

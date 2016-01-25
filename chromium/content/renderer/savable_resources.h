@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "content/common/content_export.h"
+#include "content/common/savable_subframe.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "url/gurl.h"
 
@@ -27,22 +29,18 @@ namespace content {
 // for keeping these pointers valid for the lifetime of the
 // SavableResourcesResult instance.
 struct SavableResourcesResult {
-  // vector which contains all savable links of sub resource.
+  // Links of all savable resources.
   std::vector<GURL>* resources_list;
-  // vector which contains corresponding all referral links of sub resource,
-  // it matched with links one by one.
-  std::vector<GURL>* referrer_urls_list;
-  // and the corresponding referrer policies.
-  std::vector<blink::WebReferrerPolicy>* referrer_policies_list;
+
+  // Subframes.
+  std::vector<SavableSubframe>* subframes;
 
   // Constructor.
   SavableResourcesResult(
       std::vector<GURL>* resources_list,
-      std::vector<GURL>* referrer_urls_list,
-      std::vector<blink::WebReferrerPolicy>* referrer_policies_list)
+      std::vector<SavableSubframe>* subframes)
       : resources_list(resources_list),
-        referrer_urls_list(referrer_urls_list),
-        referrer_policies_list(referrer_policies_list) {}
+        subframes(subframes) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SavableResourcesResult);

@@ -26,11 +26,15 @@ source_set("renderer") {
     ]
   }
 
+  if (use_playready) {
+    configs += [ "//chromecast:playready_config" ]
+  }
+
   deps = [
     "//base",
     "//chromecast/base",
-    "//chromecast/crash",
     "//chromecast/common/media",
+    "//chromecast/crash",
     "//chromecast/media",
     "//components/cdm/renderer",
     "//components/network_hints/renderer",

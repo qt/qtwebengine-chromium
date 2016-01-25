@@ -76,6 +76,9 @@ WebInspector.ConsoleModel.prototype = {
      */
     addMessage: function(msg)
     {
+        if (this._isBlacklisted(msg))
+            return;
+
         if (msg.level === WebInspector.ConsoleMessage.MessageLevel.RevokedError && msg._relatedMessageId) {
             var relatedMessage = this._messageById.get(msg._relatedMessageId);
             if (!relatedMessage)
@@ -110,6 +113,22 @@ WebInspector.ConsoleModel.prototype = {
                 this._revokedErrors++;
                 break;
         }
+    },
+
+    /**
+     * @param {!WebInspector.ConsoleMessage} msg
+     * @return {boolean}
+     */
+    _isBlacklisted: function(msg)
+    {
+        if (msg.source != WebInspector.ConsoleMessage.MessageSource.Network || msg.level != WebInspector.ConsoleMessage.MessageLevel.Error || !msg.url || !msg.url.startsWith("chrome-extension"))
+            return false;
+
+        // ignore Chromecast's cast_sender spam
+        if (msg.url.includes("://boadgeojelhgndaghljhdicfkmllpafd") ||  msg.url.includes("://dliochdbjfkdbacpmhlcpmleaejidimm") ||  msg.url.includes("://pkedcjkdefgpdelpbcmbmeomcjbeemfm") || msg.url.includes("://ekpaaapppgpmolpcldedioblbkmijaca"))
+            return true;
+
+        return false;
     },
 
     /**
@@ -170,7 +189,6 @@ WebInspector.ConsoleModel.prototype = {
  */
 WebInspector.ConsoleModel.evaluateCommandInConsole = function(executionContext, text, useCommandLineAPI)
 {
-    useCommandLineAPI = !!useCommandLineAPI;
     var target = executionContext.target();
 
     var commandMessage = new WebInspector.ConsoleMessage(target, WebInspector.ConsoleMessage.MessageSource.JS, null, text, WebInspector.ConsoleMessage.MessageType.Command);
@@ -194,8 +212,9 @@ WebInspector.ConsoleModel.evaluateCommandInConsole = function(executionContext, 
             target.consoleModel.dispatchEventToListeners(WebInspector.ConsoleModel.Events.CommandEvaluated, {result: result, wasThrown: wasThrown, text: text, commandMessage: commandMessage, exceptionDetails: exceptionDetails});
         }
     }
-
-    executionContext.evaluate(text, "console", useCommandLineAPI, false, false, true, printResult);
+    if (/^\s*\{/.test(text) && /\}\s*$/.test(text))
+        text = '(' + text + ')';
+    executionContext.evaluate(text, "console", !!useCommandLineAPI, false, false, true, printResult);
 
     WebInspector.userMetrics.actionTaken(WebInspector.UserMetrics.Action.ConsoleEvaluated);
 }

@@ -4,8 +4,9 @@
 
 #include "gpu/command_buffer/service/shader_translator.h"
 
-#include <string.h>
 #include <GLES2/gl2.h>
+#include <stddef.h>
+#include <string.h>
 #include <algorithm>
 
 #include "base/at_exit.h"
@@ -71,6 +72,24 @@ void GetVaryings(ShHandle compiler, VaryingMap* var_map) {
       (*var_map)[(*varyings)[ii].mappedName] = (*varyings)[ii];
   }
 }
+void GetOutputVariables(ShHandle compiler, OutputVariableList* var_list) {
+  if (!var_list)
+    return;
+  *var_list = *ShGetOutputVariables(compiler);
+}
+
+void GetInterfaceBlocks(ShHandle compiler, InterfaceBlockMap* var_map) {
+  if (!var_map)
+    return;
+  var_map->clear();
+  const std::vector<sh::InterfaceBlock>* interface_blocks =
+      ShGetInterfaceBlocks(compiler);
+  if (interface_blocks) {
+    for (const auto& block : *interface_blocks) {
+      (*var_map)[block.mappedName] = block;
+    }
+  }
+}
 
 void GetNameHashingInfo(ShHandle compiler, NameMap* name_map) {
   if (!name_map)
@@ -123,15 +142,15 @@ ShShaderOutput ShaderTranslator::GetShaderOutputLanguageForContext(
     return SH_GLSL_330_CORE_OUTPUT;
   } else if (context_version == 320) {
     return SH_GLSL_150_CORE_OUTPUT;
-  } else if (context_version == 310) {
-    return SH_GLSL_140_OUTPUT;
-  } else if (context_version == 300) {
-    return SH_GLSL_130_OUTPUT;
   }
 
-  // Before OpenGL 3.0 we use compatibility profile. Also for future
-  // specs between OpenGL 3.3 and OpenGL 4.0, at the time of writing,
-  // we use compatibility profile.
+  // Before OpenGL 3.2 we use the compatibility profile. Shading
+  // language version 130 restricted how sampler arrays can be indexed
+  // in loops, which causes problems like crbug.com/550487 .
+  //
+  // Also for any future specs that might be introduced between OpenGL
+  // 3.3 and OpenGL 4.0, at the time of writing, we use the
+  // compatibility profile.
   return SH_GLSL_COMPATIBILITY_OUTPUT;
 }
 
@@ -192,6 +211,8 @@ bool ShaderTranslator::Translate(const std::string& shader_source,
                                  AttributeMap* attrib_map,
                                  UniformMap* uniform_map,
                                  VaryingMap* varying_map,
+                                 InterfaceBlockMap* interface_block_map,
+                                 OutputVariableList* output_variable_list,
                                  NameMap* name_map) const {
   // Make sure this instance is initialized.
   DCHECK(compiler_ != NULL);
@@ -210,10 +231,12 @@ bool ShaderTranslator::Translate(const std::string& shader_source,
     }
     // Get shader version.
     *shader_version = ShGetShaderVersion(compiler_);
-    // Get info for attribs, uniforms, and varyings.
+    // Get info for attribs, uniforms, varyings and output variables.
     GetAttributes(compiler_, attrib_map);
     GetUniforms(compiler_, uniform_map);
     GetVaryings(compiler_, varying_map);
+    GetInterfaceBlocks(compiler_, interface_block_map);
+    GetOutputVariables(compiler_, output_variable_list);
     // Get info for name hashing.
     GetNameHashingInfo(compiler_, name_map);
   }

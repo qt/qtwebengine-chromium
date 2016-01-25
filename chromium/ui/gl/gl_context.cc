@@ -66,12 +66,6 @@ GLContext::~GLContext() {
   }
 }
 
-bool GLContext::GetTotalGpuMemory(size_t* bytes) {
-  DCHECK(bytes);
-  *bytes = 0;
-  return false;
-}
-
 void GLContext::SetSafeToForceGpuSwitch() {
 }
 
@@ -206,10 +200,7 @@ bool GLContext::WasAllocatedUsingRobustnessExtension() {
 
 bool GLContext::InitializeDynamicBindings() {
   DCHECK(IsCurrent(nullptr));
-  static bool initialized = false;
-  if (initialized)
-    return initialized;
-  initialized = InitializeDynamicGLBindings(GetGLImplementation(), this);
+  bool initialized = InitializeDynamicGLBindings(GetGLImplementation(), this);
   if (!initialized)
     LOG(ERROR) << "Could not initialize dynamic bindings.";
   return initialized;

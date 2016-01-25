@@ -14,7 +14,7 @@
 
 #include "webrtc/base/byteorder.h"
 #include "webrtc/base/timeutils.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 
 namespace {
   static const unsigned int kReflectorSsrc = 0x0000;
@@ -40,9 +40,7 @@ ConferenceTransport::ConferenceTransport()
     : pq_crit_(webrtc::CriticalSectionWrapper::CreateCriticalSection()),
       stream_crit_(webrtc::CriticalSectionWrapper::CreateCriticalSection()),
       packet_event_(webrtc::EventWrapper::Create()),
-      thread_(webrtc::ThreadWrapper::CreateThread(Run,
-                                                  this,
-                                                  "ConferenceTransport")),
+      thread_(Run, this, "ConferenceTransport"),
       rtt_ms_(0),
       stream_count_(0),
       rtp_header_parser_(webrtc::RtpHeaderParser::Create()) {
@@ -79,8 +77,8 @@ ConferenceTransport::ConferenceTransport()
   EXPECT_EQ(0, remote_network_->RegisterExternalTransport(reflector_, *this));
   EXPECT_EQ(0, remote_rtp_rtcp_->SetLocalSSRC(reflector_, kReflectorSsrc));
 
-  thread_->Start();
-  thread_->SetPriority(webrtc::kHighPriority);
+  thread_.Start();
+  thread_.SetPriority(rtc::kHighPriority);
 }
 
 ConferenceTransport::~ConferenceTransport() {
@@ -93,7 +91,7 @@ ConferenceTransport::~ConferenceTransport() {
     RemoveStream(stream->first);
   }
 
-  EXPECT_TRUE(thread_->Stop());
+  thread_.Stop();
 
   remote_file_->Release();
   remote_rtp_rtcp_->Release();
@@ -207,8 +205,8 @@ bool ConferenceTransport::DispatchPackets() {
       packet_queue_.pop_front();
     }
 
-    int32 elapsed_time_ms = rtc::TimeSince(packet.send_time_ms_);
-    int32 sleep_ms = rtt_ms_ / 2 - elapsed_time_ms;
+    int32_t elapsed_time_ms = rtc::TimeSince(packet.send_time_ms_);
+    int32_t sleep_ms = rtt_ms_ / 2 - elapsed_time_ms;
     if (sleep_ms > 0) {
       // Every packet should be delayed by half of RTT.
       webrtc::SleepMs(sleep_ms);

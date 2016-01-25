@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/DocumentEncodingData.h"
 
 #include "core/html/parser/TextResourceDecoder.h"
@@ -38,6 +37,8 @@ namespace blink {
 DocumentEncodingData::DocumentEncodingData()
     : m_encoding(UTF8Encoding())
     , m_wasDetectedHeuristically(false)
+    , m_attemptedToDetermineEncodingFromContentSniffing(false)
+    , m_encodingWasDetectedFromContentSniffing(false)
     , m_sawDecodingError(false)
 {
 }
@@ -46,6 +47,8 @@ DocumentEncodingData::DocumentEncodingData(const TextResourceDecoder& decoder)
 {
     m_encoding = decoder.encoding();
     m_wasDetectedHeuristically = decoder.encodingWasDetectedHeuristically();
+    m_attemptedToDetermineEncodingFromContentSniffing = decoder.attemptedToDetermineEncodingFromContentSniffing();
+    m_encodingWasDetectedFromContentSniffing = decoder.encodingWasDetectedFromContentSniffing();
     m_sawDecodingError = decoder.sawError();
 }
 

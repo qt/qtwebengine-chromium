@@ -44,7 +44,7 @@ template <typename NodeType> class StaticNodeTypeList;
 typedef StaticNodeTypeList<Element> StaticElementList;
 
 class SelectorDataList {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     void initialize(const CSSSelectorList&);
     bool matches(Element&) const;
@@ -81,29 +81,29 @@ private:
     const CSSSelector* selectorForIdLookup(const CSSSelector&) const;
 
     Vector<const CSSSelector*> m_selectors;
-    bool m_crossesTreeBoundary : 1;
+    bool m_usesDeepCombinatorOrShadowPseudo : 1;
     bool m_needsUpdatedDistribution : 1;
 };
 
 class SelectorQuery {
     WTF_MAKE_NONCOPYABLE(SelectorQuery);
-    WTF_MAKE_FAST_ALLOCATED(SelectorQuery);
+    USING_FAST_MALLOC(SelectorQuery);
 public:
-    static PassOwnPtr<SelectorQuery> adopt(CSSSelectorList&);
+    static PassOwnPtr<SelectorQuery> adopt(CSSSelectorList);
 
     bool matches(Element&) const;
     Element* closest(Element&) const;
     PassRefPtrWillBeRawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
     PassRefPtrWillBeRawPtr<Element> queryFirst(ContainerNode& rootNode) const;
 private:
-    explicit SelectorQuery(CSSSelectorList&);
+    explicit SelectorQuery(CSSSelectorList);
 
     SelectorDataList m_selectors;
     CSSSelectorList m_selectorList;
 };
 
 class SelectorQueryCache {
-    WTF_MAKE_FAST_ALLOCATED(SelectorQueryCache);
+    USING_FAST_MALLOC(SelectorQueryCache);
 public:
     SelectorQuery* add(const AtomicString&, const Document&, ExceptionState&);
     void invalidate();

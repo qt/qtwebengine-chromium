@@ -2,13 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "media/capture/video/fake_video_capture_device.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_capture_types.h"
-#include "media/capture/video/fake_video_capture_device.h"
 #include "media/capture/video/fake_video_capture_device_factory.h"
 #include "media/capture/video/video_capture_device.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -30,7 +38,7 @@ class MockBuffer : public VideoCaptureDevice::Client::Buffer {
   MockBuffer(int buffer_id, size_t mapped_size)
       : id_(buffer_id),
         mapped_size_(mapped_size),
-        data_(new uint8[mapped_size]) {}
+        data_(new uint8_t[mapped_size]) {}
   ~MockBuffer() override { delete[] data_; }
 
   int id() const override { return id_; }
@@ -38,7 +46,7 @@ class MockBuffer : public VideoCaptureDevice::Client::Buffer {
   size_t mapped_size() const override { return mapped_size_; }
   void* data(int plane) override { return data_; }
   ClientBuffer AsClientBuffer(int plane) override { return nullptr; }
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !(defined(OS_MACOSX) && !defined(OS_IOS))
   base::FileDescriptor AsPlatformFile() override {
     return base::FileDescriptor();
   }
@@ -47,27 +55,29 @@ class MockBuffer : public VideoCaptureDevice::Client::Buffer {
  private:
   const int id_;
   const size_t mapped_size_;
-  uint8* const data_;
+  uint8_t* const data_;
 };
 
 class MockClient : public VideoCaptureDevice::Client {
  public:
-  MOCK_METHOD1(OnError, void(const std::string& reason));
+  MOCK_METHOD2(OnError,
+               void(const tracked_objects::Location& from_here,
+                    const std::string& reason));
 
   explicit MockClient(base::Callback<void(const VideoCaptureFormat&)> frame_cb)
       : frame_cb_(frame_cb) {}
 
   // Client virtual methods for capturing using Device Buffers.
-  void OnIncomingCapturedData(const uint8* data,
+  void OnIncomingCapturedData(const uint8_t* data,
                               int length,
                               const VideoCaptureFormat& format,
                               int rotation,
                               const base::TimeTicks& timestamp) {
     frame_cb_.Run(format);
   }
-  void OnIncomingCapturedYuvData(const uint8* y_data,
-                                 const uint8* u_data,
-                                 const uint8* v_data,
+  void OnIncomingCapturedYuvData(const uint8_t* y_data,
+                                 const uint8_t* u_data,
+                                 const uint8_t* v_data,
                                  size_t y_stride,
                                  size_t u_stride,
                                  size_t v_stride,
@@ -128,21 +138,18 @@ class DeviceEnumerationListener
 
 }  // namespace
 
-class FakeVideoCaptureDeviceTest
-    : public testing::TestWithParam<::testing::tuple<
-          FakeVideoCaptureDevice::BufferOwnership,
-          FakeVideoCaptureDevice::BufferPlanarity>> {
+class FakeVideoCaptureDeviceBase : public ::testing::Test {
  protected:
-  FakeVideoCaptureDeviceTest()
+  FakeVideoCaptureDeviceBase()
       : loop_(new base::MessageLoop()),
         client_(new MockClient(
-            base::Bind(&FakeVideoCaptureDeviceTest::OnFrameCaptured,
+            base::Bind(&FakeVideoCaptureDeviceBase::OnFrameCaptured,
                        base::Unretained(this)))),
         video_capture_device_factory_(new FakeVideoCaptureDeviceFactory()) {
     device_enumeration_listener_ = new DeviceEnumerationListener();
   }
 
-  void SetUp() override { EXPECT_CALL(*client_, OnError(_)).Times(0); }
+  void SetUp() override { EXPECT_CALL(*client_, OnError(_, _)).Times(0); }
 
   void OnFrameCaptured(const VideoCaptureFormat& format) {
     last_format_ = format;
@@ -177,23 +184,42 @@ class FakeVideoCaptureDeviceTest
   const scoped_ptr<VideoCaptureDeviceFactory> video_capture_device_factory_;
 };
 
+class FakeVideoCaptureDeviceTest
+    : public FakeVideoCaptureDeviceBase,
+      public ::testing::WithParamInterface<
+          ::testing::tuple<FakeVideoCaptureDevice::BufferOwnership,
+                           FakeVideoCaptureDevice::BufferPlanarity,
+                           float>> {};
+
+struct CommandLineTestData {
+  // Command line argument
+  std::string argument;
+  // Expected values
+  float fps;
+};
+
+class FakeVideoCaptureDeviceCommandLineTest
+    : public FakeVideoCaptureDeviceBase,
+      public ::testing::WithParamInterface<CommandLineTestData> {};
+
 TEST_P(FakeVideoCaptureDeviceTest, CaptureUsing) {
   const scoped_ptr<VideoCaptureDevice::Names> names(EnumerateDevices());
   ASSERT_FALSE(names->empty());
 
   scoped_ptr<VideoCaptureDevice> device(new FakeVideoCaptureDevice(
-      testing::get<0>(GetParam()), testing::get<1>(GetParam())));
+      testing::get<0>(GetParam()), testing::get<1>(GetParam()),
+      testing::get<2>(GetParam())));
   ASSERT_TRUE(device);
 
   VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(640, 480);
-  capture_params.requested_format.frame_rate = 30;
-  device->AllocateAndStart(capture_params, client_.Pass());
+  capture_params.requested_format.frame_rate = testing::get<2>(GetParam());
+  device->AllocateAndStart(capture_params, std::move(client_));
 
   WaitForCapturedFrame();
   EXPECT_EQ(last_format().frame_size.width(), 640);
   EXPECT_EQ(last_format().frame_size.height(), 480);
-  EXPECT_EQ(last_format().frame_rate, 30.0);
+  EXPECT_EQ(last_format().frame_rate, testing::get<2>(GetParam()));
   device->StopAndDeAllocate();
 }
 
@@ -203,7 +229,8 @@ INSTANTIATE_TEST_CASE_P(
     Combine(Values(FakeVideoCaptureDevice::BufferOwnership::OWN_BUFFERS,
                    FakeVideoCaptureDevice::BufferOwnership::CLIENT_BUFFERS),
             Values(FakeVideoCaptureDevice::BufferPlanarity::PACKED,
-                   FakeVideoCaptureDevice::BufferPlanarity::TRIPLANAR)));
+                   FakeVideoCaptureDevice::BufferPlanarity::TRIPLANAR),
+            Values(20, 29.97, 30, 50, 60)));
 
 TEST_F(FakeVideoCaptureDeviceTest, GetDeviceSupportedFormats) {
   scoped_ptr<VideoCaptureDevice::Names> names(EnumerateDevices());
@@ -233,4 +260,34 @@ TEST_F(FakeVideoCaptureDeviceTest, GetDeviceSupportedFormats) {
   }
 }
 
+TEST_P(FakeVideoCaptureDeviceCommandLineTest, FrameRate) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kUseFakeDeviceForMediaStream, GetParam().argument);
+  const scoped_ptr<VideoCaptureDevice::Names> names(EnumerateDevices());
+  ASSERT_FALSE(names->empty());
+
+  for (const auto& names_iterator : *names) {
+    scoped_ptr<VideoCaptureDevice> device =
+        video_capture_device_factory_->Create(names_iterator);
+    ASSERT_TRUE(device);
+
+    VideoCaptureParams capture_params;
+    capture_params.requested_format.frame_size.SetSize(1280, 720);
+    capture_params.requested_format.frame_rate = GetParam().fps;
+    device->AllocateAndStart(capture_params, std::move(client_));
+
+    WaitForCapturedFrame();
+    EXPECT_EQ(last_format().frame_size.width(), 1280);
+    EXPECT_EQ(last_format().frame_size.height(), 720);
+    EXPECT_EQ(last_format().frame_rate, GetParam().fps);
+    device->StopAndDeAllocate();
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(,
+                        FakeVideoCaptureDeviceCommandLineTest,
+                        Values(CommandLineTestData{"fps=-1", 5},
+                               CommandLineTestData{"fps=29.97", 29.97f},
+                               CommandLineTestData{"fps=60", 60},
+                               CommandLineTestData{"fps=1000", 60}));
 };  // namespace media

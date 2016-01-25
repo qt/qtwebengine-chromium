@@ -41,12 +41,12 @@ class ExceptionState;
 class MediaStreamComponent;
 class MediaStreamTrackSourcesCallback;
 
-class MODULES_EXPORT MediaStreamTrack final
+class MODULES_EXPORT MediaStreamTrack
     : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaStreamTrack>
     , public ActiveDOMObject
     , public MediaStreamSource::Observer {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(MediaStreamTrack);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaStreamTrack);
+    USING_GARBAGE_COLLECTED_MIXIN(MediaStreamTrack);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static MediaStreamTrack* create(ExecutionContext*, MediaStreamComponent*);
@@ -67,13 +67,13 @@ public:
 
     static void getSources(ExecutionContext*, MediaStreamTrackSourcesCallback*, ExceptionState&);
     void stopTrack(ExceptionState&);
-    MediaStreamTrack* clone(ExecutionContext*);
+    virtual MediaStreamTrack* clone(ExecutionContext*);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mute);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(unmute);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(ended);
 
-    MediaStreamComponent* component();
+    MediaStreamComponent* component() { return m_component; }
     bool ended() const;
 
     void registerMediaStream(MediaStream*);
@@ -88,11 +88,11 @@ public:
 
     PassOwnPtr<AudioSourceProvider> createWebAudioSource();
 
-    // Oilpan: need to eagerly unregister as observer.
-    EAGERLY_FINALIZE();
     DECLARE_VIRTUAL_TRACE();
 
 private:
+    friend class CanvasCaptureMediaStreamTrack;
+
     MediaStreamTrack(ExecutionContext*, MediaStreamComponent*);
 
     // MediaStreamSourceObserver
@@ -104,7 +104,7 @@ private:
     HeapHashSet<Member<MediaStream>> m_registeredMediaStreams;
     bool m_isIteratingRegisteredMediaStreams;
     bool m_stopped;
-    RefPtr<MediaStreamComponent> m_component;
+    Member<MediaStreamComponent> m_component;
 };
 
 typedef HeapVector<Member<MediaStreamTrack>> MediaStreamTrackVector;

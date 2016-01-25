@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/layout/LayoutRubyRun.h"
 
 #include "core/layout/LayoutRubyBase.h"
@@ -41,8 +39,8 @@ namespace blink {
 LayoutRubyRun::LayoutRubyRun()
     : LayoutBlockFlow(nullptr)
 {
-    setReplaced(true);
     setInline(true);
+    setIsAtomicInlineLevel(true);
 }
 
 LayoutRubyRun::~LayoutRubyRun()
@@ -126,6 +124,11 @@ void LayoutRubyRun::addChild(LayoutObject* child, LayoutObject* beforeChild)
             LayoutRubyRun* newRun = staticCreateRubyRun(ruby);
             ruby->addChild(newRun, this);
             newRun->addChild(child);
+
+            // Make sure we don't leave anything in the percentage descendant
+            // map before moving the children to the new base.
+            if (hasPercentHeightDescendants())
+                clearPercentHeightDescendantsFrom(this);
             rubyBaseSafe()->moveChildren(newRun->rubyBaseSafe(), beforeChild);
         }
     } else {

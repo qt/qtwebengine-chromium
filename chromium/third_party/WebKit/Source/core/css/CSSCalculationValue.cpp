@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSCalculationValue.h"
 
 #include "core/css/CSSPrimitiveValueMappings.h"
@@ -63,6 +62,7 @@ static CalculationCategory unitCategory(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::UnitType::Inches:
     case CSSPrimitiveValue::UnitType::Points:
     case CSSPrimitiveValue::UnitType::Picas:
+    case CSSPrimitiveValue::UnitType::UserUnits:
     case CSSPrimitiveValue::UnitType::Rems:
     case CSSPrimitiveValue::UnitType::Chs:
     case CSSPrimitiveValue::UnitType::ViewportWidth:
@@ -101,6 +101,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::UnitType::Inches:
     case CSSPrimitiveValue::UnitType::Points:
     case CSSPrimitiveValue::UnitType::Picas:
+    case CSSPrimitiveValue::UnitType::UserUnits:
     case CSSPrimitiveValue::UnitType::Degrees:
     case CSSPrimitiveValue::UnitType::Radians:
     case CSSPrimitiveValue::UnitType::Gradians:
@@ -120,14 +121,9 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::UnitType::Integer:
         return true;
     case CSSPrimitiveValue::UnitType::Unknown:
-    case CSSPrimitiveValue::UnitType::CustomIdentifier:
-    case CSSPrimitiveValue::UnitType::String:
-    case CSSPrimitiveValue::UnitType::URI:
-    case CSSPrimitiveValue::UnitType::RGBColor:
     case CSSPrimitiveValue::UnitType::Calc:
     case CSSPrimitiveValue::UnitType::CalcPercentageWithNumber:
     case CSSPrimitiveValue::UnitType::CalcPercentageWithLength:
-    case CSSPrimitiveValue::UnitType::PropertyID:
     case CSSPrimitiveValue::UnitType::ValueID:
     case CSSPrimitiveValue::UnitType::QuirkyEms:
         return false;
@@ -177,7 +173,7 @@ double CSSCalcValue::computeLengthPx(const CSSToLengthConversionData& conversion
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CSSCalcExpressionNode)
 
 class CSSCalcPrimitiveValue final : public CSSCalcExpressionNode {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSCalcPrimitiveValue);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(CSSCalcPrimitiveValue);
 public:
 
     static PassRefPtrWillBeRawPtr<CSSCalcPrimitiveValue> create(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> value, bool isInteger)

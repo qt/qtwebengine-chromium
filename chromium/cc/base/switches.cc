@@ -11,6 +11,12 @@ namespace switches {
 
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
+// Disables the use of a cached picture for raster in the renderer,
+// making raster go directly from the display item list (this is the data
+// structure surfaced to tracing). This is useful for debugging to remove
+// the cached picture from the pipeline to narrow down bugs.
+const char kDisableCachedPictureRaster[] = "disable-cached-picture-raster";
+
 // Disables layer-edge anti-aliasing in the compositor.
 const char kDisableCompositedAntialiasing[] =
     "disable-composited-antialiasing";
@@ -44,25 +50,21 @@ const char kStrictLayerPropertyChangeChecking[] =
 const char kEnablePropertyTreeVerification[] =
     "enable-property-tree-verification";
 
-// Disable partial swap which is needed for some OpenGL drivers / emulators.
-const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
-
 // Use a BeginFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[] = "enable-begin-frame-scheduling";
 
 // Enables the GPU benchmarking extension
 const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
 
+// Disables the use of property trees rather than CalcDrawProps for computing
+// draw properties.
+const char kDisableCompositorPropertyTrees[] =
+    "disable-compositor-property-trees";
+
 // Renders a border around compositor layers to help debug and study
 // layer compositing.
 const char kShowCompositedLayerBorders[] = "show-composited-layer-borders";
 const char kUIShowCompositedLayerBorders[] = "ui-show-layer-borders";
-
-// Draws a heads-up-display showing Frames Per Second as well as GPU memory
-// usage. If you also use --vmodule="head*=1" then FPS will also be output to
-// the console log.
-const char kShowFPSCounter[] = "show-fps-counter";
-const char kUIShowFPSCounter[] = "ui-show-fps-counter";
 
 // Renders a border that represents the bounding box for the layer's animation.
 const char kShowLayerAnimationBounds[] = "show-layer-animation-bounds";

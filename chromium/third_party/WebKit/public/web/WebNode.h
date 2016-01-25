@@ -45,7 +45,6 @@ class WebDOMEvent;
 class WebDocument;
 class WebElement;
 class WebElementCollection;
-class WebNodeList;
 class WebPluginContainer;
 
 // Provides access to some properties of a DOM node.
@@ -83,9 +82,9 @@ public:
     BLINK_EXPORT WebNode previousSibling() const;
     BLINK_EXPORT WebNode nextSibling() const;
     BLINK_EXPORT bool hasChildNodes() const;
-    BLINK_EXPORT WebNodeList childNodes();
     BLINK_EXPORT bool isLink() const;
     BLINK_EXPORT bool isDocumentNode() const;
+    BLINK_EXPORT bool isDocumentTypeNode() const;
     BLINK_EXPORT bool isCommentNode() const;
     BLINK_EXPORT bool isTextNode() const;
     BLINK_EXPORT bool isFocusable() const;

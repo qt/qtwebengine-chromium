@@ -8,6 +8,8 @@
 #include <string>
 
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
 #include "net/url_request/url_request_interceptor.h"
@@ -70,10 +72,11 @@ class NET_EXPORT URLRequestFilter : public URLRequestInterceptor {
 
  private:
   // scheme,hostname -> URLRequestInterceptor
-  typedef std::map<std::pair<std::string, std::string>,
-      URLRequestInterceptor* > HostnameInterceptorMap;
+  using HostnameInterceptorMap = std::map<std::pair<std::string, std::string>,
+                                          scoped_ptr<URLRequestInterceptor>>;
   // URL -> URLRequestInterceptor
-  typedef base::hash_map<std::string, URLRequestInterceptor*> URLInterceptorMap;
+  using URLInterceptorMap =
+      base::ScopedPtrHashMap<std::string, scoped_ptr<URLRequestInterceptor>>;
 
   URLRequestFilter();
   ~URLRequestFilter() override;

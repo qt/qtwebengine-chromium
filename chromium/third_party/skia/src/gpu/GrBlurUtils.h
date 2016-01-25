@@ -11,11 +11,15 @@
 class GrClip;
 class GrContext;
 class GrDrawContext;
+class GrPaint;
 class GrRenderTarget;
+class GrStrokeInfo;
 struct SkIRect;
+class SkMaskFilter;
 class SkMatrix;
 class SkPaint;
 class SkPath;
+class SkPathEffect;
 
 
 /**
@@ -27,7 +31,6 @@ namespace GrBlurUtils {
      */
     void drawPathWithMaskFilter(GrContext* context,
                                 GrDrawContext* drawContext,
-                                GrRenderTarget* rt,
                                 const GrClip& clip,
                                 const SkPath& origSrcPath,
                                 const SkPaint& paint,
@@ -35,6 +38,22 @@ namespace GrBlurUtils {
                                 const SkMatrix* prePathMatrix,
                                 const SkIRect& clipBounds,
                                 bool pathIsMutable);
+
+    /**
+     * Draw a path handling the mask filter. The mask filter is not optional. The path effect is
+     * optional. The GrPaint will be modified after return.
+     */
+    void drawPathWithMaskFilter(GrContext*,
+                                GrDrawContext*,
+                                const GrClip&,
+                                const SkPath& path,
+                                GrPaint*,
+                                const SkMatrix& viewMatrix,
+                                const SkMaskFilter*,
+                                const SkPathEffect*,
+                                const GrStrokeInfo&,
+                                bool pathIsMutable);
+
 };
 
 #endif

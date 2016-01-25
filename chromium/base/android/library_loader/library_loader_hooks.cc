@@ -148,6 +148,12 @@ static jboolean ForkAndPrefetchNativeLibrary(
   return NativeLibraryPrefetcher::ForkAndPrefetchNativeLibrary();
 }
 
+static jint PercentageOfResidentNativeLibraryCode(
+    JNIEnv* env,
+    const JavaParamRef<jclass>& clazz) {
+  return NativeLibraryPrefetcher::PercentageOfResidentNativeLibraryCode();
+}
+
 bool RegisterLibraryLoaderEntryHook(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }

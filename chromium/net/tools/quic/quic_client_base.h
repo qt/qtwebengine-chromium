@@ -10,7 +10,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/log/net_log.h"
@@ -33,21 +33,11 @@ namespace tools {
 
 class QuicClientBase {
  public:
-  // A packet writer factory that always returns the same writer.
-  class DummyPacketWriterFactory : public QuicConnection::PacketWriterFactory {
-   public:
-    explicit DummyPacketWriterFactory(QuicPacketWriter* writer);
-    ~DummyPacketWriterFactory() override;
-
-    QuicPacketWriter* Create(QuicConnection* connection) const override;
-
-   private:
-    QuicPacketWriter* writer_;
-  };
-
   QuicClientBase(const QuicServerId& server_id,
                  const QuicVersionVector& supported_versions,
-                 const QuicConfig& config);
+                 const QuicConfig& config,
+                 QuicConnectionHelperInterface* helper,
+                 ProofVerifier* proof_verifier);
 
   ~QuicClientBase();
 
@@ -87,13 +77,6 @@ class QuicClientBase {
 
   void SetUserAgentID(const std::string& user_agent_id) {
     crypto_config_.set_user_agent_id(user_agent_id);
-  }
-
-  // SetProofVerifier sets the ProofVerifier that will be used to verify the
-  // server's certificate and takes ownership of |verifier|.
-  void SetProofVerifier(ProofVerifier* verifier) {
-    // TODO(rtenneti): We should set ProofVerifier in QuicClientSession.
-    crypto_config_.SetProofVerifier(verifier);
   }
 
   // SetChannelIDSource sets a ChannelIDSource that will be called, when the
@@ -167,6 +150,8 @@ class QuicClientBase {
     return initial_max_packet_length_;
   }
 
+  ProofVerifier* proof_verifier() const;
+
  protected:
   virtual QuicClientSession* CreateQuicClientSession(
       QuicConnection* connection);
@@ -184,6 +169,8 @@ class QuicClientBase {
   // connection ID).
   virtual QuicConnectionId GenerateNewConnectionId();
 
+  QuicConnectionHelperInterface* helper() { return helper_.get(); }
+
  private:
   // |server_id_| is a tuple (hostname, port, is_https) of the server.
   QuicServerId server_id_;
@@ -192,6 +179,9 @@ class QuicClientBase {
   // servers.
   QuicConfig config_;
   QuicCryptoClientConfig crypto_config_;
+
+  // Helper to be used by created connections. Needs to outlive |session_|.
+  scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   // Writer used to actually send packets to the wire. Needs to outlive
   // |session_|.

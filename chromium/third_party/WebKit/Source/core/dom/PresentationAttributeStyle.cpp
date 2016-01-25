@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/PresentationAttributeStyle.h"
 
 #include "core/css/StylePropertySet.h"
@@ -39,6 +38,7 @@
 #include "wtf/HashFunctions.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/CString.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -58,7 +58,7 @@ static bool operator!=(const PresentationAttributeCacheKey& a, const Presentatio
 }
 
 struct PresentationAttributeCacheEntry final : public NoBaseWillBeGarbageCollectedFinalized<PresentationAttributeCacheEntry> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PresentationAttributeCacheEntry);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(PresentationAttributeCacheEntry);
 public:
     DEFINE_INLINE_TRACE() { visitor->trace(value); }
 
@@ -74,7 +74,7 @@ static PresentationAttributeCache& presentationAttributeCache()
 }
 
 class PresentationAttributeCacheCleaner {
-    WTF_MAKE_NONCOPYABLE(PresentationAttributeCacheCleaner); WTF_MAKE_FAST_ALLOCATED(PresentationAttributeCacheCleaner);
+    WTF_MAKE_NONCOPYABLE(PresentationAttributeCacheCleaner); USING_FAST_MALLOC(PresentationAttributeCacheCleaner);
 public:
     PresentationAttributeCacheCleaner()
         : m_hitCount(0)
@@ -90,7 +90,7 @@ public:
         m_hitCount++;
 
         if (!m_cleanTimer.isActive())
-            m_cleanTimer.startOneShot(presentationAttributeCacheCleanTimeInSeconds, FROM_HERE);
+            m_cleanTimer.startOneShot(presentationAttributeCacheCleanTimeInSeconds, BLINK_FROM_HERE);
     }
 
 private:

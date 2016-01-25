@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/RawResource.h"
 
 #include "core/fetch/FetchRequest.h"
@@ -80,12 +79,19 @@ ResourcePtr<RawResource> RawResource::fetchTextTrack(FetchRequest& request, Reso
     return toRawResource(fetcher->requestResource(request, RawResourceFactory(Resource::TextTrack)));
 }
 
+ResourcePtr<RawResource> RawResource::fetchManifest(FetchRequest& request, ResourceFetcher* fetcher)
+{
+    ASSERT(request.resourceRequest().frameType() == WebURLRequest::FrameTypeNone);
+    ASSERT(request.resourceRequest().requestContext() == WebURLRequest::RequestContextManifest);
+    return toRawResource(fetcher->requestResource(request, RawResourceFactory(Resource::Manifest)));
+}
+
 RawResource::RawResource(const ResourceRequest& resourceRequest, Type type)
     : Resource(resourceRequest, type)
 {
 }
 
-void RawResource::appendData(const char* data, unsigned length)
+void RawResource::appendData(const char* data, size_t length)
 {
     Resource::appendData(data, length);
 
@@ -145,13 +151,26 @@ void RawResource::updateRequest(const ResourceRequest& request)
 void RawResource::responseReceived(const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
     InternalResourcePtr protect(this);
+
+    bool isSuccessfulRevalidation = isCacheValidator() && response.httpStatusCode() == 304;
     Resource::responseReceived(response, nullptr);
+
     ResourceClientWalker<RawResourceClient> w(m_clients);
     ASSERT(count() <= 1 || !handle);
     while (RawResourceClient* c = w.next()) {
         // |handle| is cleared when passed, but it's not a problem because
         // |handle| is null when there are two or more clients, as asserted.
         c->responseReceived(this, m_response, handle);
+    }
+
+    // If we successfully revalidated, we won't get appendData() calls.
+    // Forward the data to clients now instead.
+    // Note: |m_data| can be null when no data is appended to the original
+    // resource.
+    if (isSuccessfulRevalidation && m_data) {
+        ResourceClientWalker<RawResourceClient> w(m_clients);
+        while (RawResourceClient* c = w.next())
+            c->dataReceived(this, m_data->data(), m_data->size());
     }
 }
 

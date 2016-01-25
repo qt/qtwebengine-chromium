@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/VRPositionState.h"
 
 namespace blink {
@@ -18,7 +17,7 @@ DOMPoint* vecToDomPoint(const WebVRVector4& vec, bool valid)
 DOMPoint* vecToDomPoint(const WebVRVector3& vec, bool valid)
 {
     if (valid)
-        return DOMPoint::create(vec.x, vec.y, vec.z, 0.0);
+        return DOMPoint::create(vec.x, vec.y, vec.z, 1.0);
     return nullptr;
 }
 

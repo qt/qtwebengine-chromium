@@ -32,7 +32,7 @@
 namespace blink {
 
 class FilterData final : public NoBaseWillBeGarbageCollectedFinalized<FilterData> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FilterData);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FilterData);
 public:
     /*
      * The state transitions should follow the following:
@@ -60,7 +60,7 @@ public:
     DECLARE_TRACE();
 
     RefPtrWillBeMember<Filter> filter;
-    RefPtrWillBeMember<SVGFilterBuilder> builder;
+    RefPtrWillBeMember<SVGFilterGraphNodeMap> nodeMap;
     FilterDataState m_state;
 
 private:
@@ -81,8 +81,6 @@ public:
     void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) override;
 
     FloatRect resourceBoundingBox(const LayoutObject*);
-
-    PassRefPtrWillBeRawPtr<SVGFilterBuilder> buildPrimitives(Filter*);
 
     SVGUnitTypes::SVGUnitType filterUnits() const { return toSVGFilterElement(element())->filterUnits()->currentValue()->enumValue(); }
     SVGUnitTypes::SVGUnitType primitiveUnits() const { return toSVGFilterElement(element())->primitiveUnits()->currentValue()->enumValue(); }

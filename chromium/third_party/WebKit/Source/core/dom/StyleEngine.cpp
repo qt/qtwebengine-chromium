@@ -25,7 +25,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/StyleEngine.h"
 
 #include "core/HTMLNames.h"
@@ -33,6 +32,7 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/FontFaceCache.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/invalidation/InvalidationSet.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/dom/DocumentStyleSheetCollector.h"
 #include "core/dom/Element.h"
@@ -47,6 +47,7 @@
 #include "core/page/Page.h"
 #include "core/svg/SVGStyleElement.h"
 #include "platform/TraceEvent.h"
+#include "platform/fonts/FontCache.h"
 
 namespace blink {
 
@@ -88,8 +89,8 @@ void StyleEngine::detachFromDocument()
     // Cleanup is performed eagerly when the StyleEngine is removed from the
     // document. The StyleEngine is unreachable after this, since only the
     // document has a reference to it.
-    for (unsigned i = 0; i < m_authorStyleSheets.size(); ++i)
-        m_authorStyleSheets[i]->clearOwnerNode();
+    for (unsigned i = 0; i < m_injectedAuthorStyleSheets.size(); ++i)
+        m_injectedAuthorStyleSheets[i]->clearOwnerNode();
 
     if (m_fontSelector) {
         m_fontSelector->clearDocument();
@@ -144,11 +145,6 @@ const WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& StyleEngine::styleSheets
     return ensureStyleSheetCollectionFor(treeScope)->styleSheetsForStyleSheetList();
 }
 
-const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& StyleEngine::activeAuthorStyleSheets() const
-{
-    return documentStyleSheetCollection()->activeAuthorStyleSheets();
-}
-
 void StyleEngine::combineCSSFeatureFlags(const RuleFeatureSet& features)
 {
     // Delay resetting the flags until after next style recalc since unapplying the style may not work without these set (this is true at least with before/after).
@@ -166,10 +162,10 @@ void StyleEngine::resetCSSFeatureFlags(const RuleFeatureSet& features)
     m_maxDirectAdjacentSelectors = features.maxDirectAdjacentSelectors();
 }
 
-void StyleEngine::addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet)
+void StyleEngine::injectAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet)
 {
-    m_authorStyleSheets.append(CSSStyleSheet::create(authorSheet, m_document));
-    document().addedStyleSheet(m_authorStyleSheets.last().get());
+    m_injectedAuthorStyleSheets.append(CSSStyleSheet::create(authorSheet, m_document));
+    document().addedStyleSheet(m_injectedAuthorStyleSheets.last().get());
     markDocumentDirty();
 }
 
@@ -401,7 +397,7 @@ void StyleEngine::createResolver()
 
     ASSERT(document().frame());
 
-    m_resolver = adoptPtrWillBeNoop(new StyleResolver(*m_document));
+    m_resolver = StyleResolver::create(*m_document);
 
     // A scoped style resolver for document will be created during
     // appendActiveAuthorStyleSheets if needed.
@@ -427,6 +423,7 @@ void StyleEngine::clearResolver()
 
     if (m_resolver) {
         TRACE_EVENT1("blink", "StyleEngine::clearResolver", "frame", document().frame());
+        m_resolver->dispose();
         m_resolver.clear();
     }
 }
@@ -491,6 +488,7 @@ void StyleEngine::updateGenericFontFamilySettings()
     m_fontSelector->updateGenericFontFamilySettings(*m_document);
     if (m_resolver)
         m_resolver->invalidateMatchedPropertiesCache();
+    FontCache::fontCache()->invalidateShapeCache();
 }
 
 void StyleEngine::removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
@@ -586,7 +584,7 @@ void StyleEngine::removeSheet(StyleSheetContents* contents)
 
 void StyleEngine::collectScopedStyleFeaturesTo(RuleFeatureSet& features) const
 {
-    HashSet<const StyleSheetContents*> visitedSharedStyleSheetContents;
+    WillBeHeapHashSet<RawPtrWillBeMember<const StyleSheetContents>> visitedSharedStyleSheetContents;
     if (document().scopedStyleResolver())
         document().scopedStyleResolver()->collectFeaturesTo(features, visitedSharedStyleSheetContents);
     for (TreeScope* treeScope : m_activeTreeScopes) {
@@ -628,21 +626,34 @@ void StyleEngine::platformColorsChanged()
     document().setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::PlatformColorChange));
 }
 
+bool StyleEngine::shouldSkipInvalidationFor(const Element& element) const
+{
+    if (!resolver())
+        return true;
+    if (!element.inActiveDocument())
+        return true;
+    if (!element.parentNode())
+        return true;
+    return element.parentNode()->styleChangeType() >= SubtreeStyleChange;
+}
+
 void StyleEngine::classChangedForElement(const SpaceSplitString& changedClasses, Element& element)
 {
-    ASSERT(isMaster());
-    InvalidationSetVector invalidationSets;
+    if (shouldSkipInvalidationFor(element))
+        return;
+    InvalidationLists invalidationLists;
     unsigned changedSize = changedClasses.size();
     RuleFeatureSet& ruleFeatureSet = ensureResolver().ensureUpdatedRuleFeatureSet();
     for (unsigned i = 0; i < changedSize; ++i)
-        ruleFeatureSet.collectInvalidationSetsForClass(invalidationSets, element, changedClasses[i]);
-    scheduleInvalidationSetsForElement(invalidationSets, element);
+        ruleFeatureSet.collectInvalidationSetsForClass(invalidationLists, element, changedClasses[i]);
+    m_styleInvalidator.scheduleInvalidationSetsForElement(invalidationLists, element);
 }
 
 void StyleEngine::classChangedForElement(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element& element)
 {
-    ASSERT(isMaster());
-    InvalidationSetVector invalidationSets;
+    if (shouldSkipInvalidationFor(element))
+        return;
+
     if (!oldClasses.size()) {
         classChangedForElement(newClasses, element);
         return;
@@ -652,6 +663,7 @@ void StyleEngine::classChangedForElement(const SpaceSplitString& oldClasses, con
     BitVector remainingClassBits;
     remainingClassBits.ensureSize(oldClasses.size());
 
+    InvalidationLists invalidationLists;
     RuleFeatureSet& ruleFeatureSet = ensureResolver().ensureUpdatedRuleFeatureSet();
 
     for (unsigned i = 0; i < newClasses.size(); ++i) {
@@ -667,58 +679,58 @@ void StyleEngine::classChangedForElement(const SpaceSplitString& oldClasses, con
         }
         // Class was added.
         if (!found)
-            ruleFeatureSet.collectInvalidationSetsForClass(invalidationSets, element, newClasses[i]);
+            ruleFeatureSet.collectInvalidationSetsForClass(invalidationLists, element, newClasses[i]);
     }
 
     for (unsigned i = 0; i < oldClasses.size(); ++i) {
         if (remainingClassBits.quickGet(i))
             continue;
         // Class was removed.
-        ruleFeatureSet.collectInvalidationSetsForClass(invalidationSets, element, oldClasses[i]);
+        ruleFeatureSet.collectInvalidationSetsForClass(invalidationLists, element, oldClasses[i]);
     }
 
-    scheduleInvalidationSetsForElement(invalidationSets, element);
+    m_styleInvalidator.scheduleInvalidationSetsForElement(invalidationLists, element);
 }
 
 void StyleEngine::attributeChangedForElement(const QualifiedName& attributeName, Element& element)
 {
-    ASSERT(isMaster());
-    InvalidationSetVector invalidationSets;
-    ensureResolver().ensureUpdatedRuleFeatureSet().collectInvalidationSetsForAttribute(invalidationSets, element, attributeName);
-    scheduleInvalidationSetsForElement(invalidationSets, element);
+    if (shouldSkipInvalidationFor(element))
+        return;
+
+    InvalidationLists invalidationLists;
+    ensureResolver().ensureUpdatedRuleFeatureSet().collectInvalidationSetsForAttribute(invalidationLists, element, attributeName);
+    m_styleInvalidator.scheduleInvalidationSetsForElement(invalidationLists, element);
 }
 
 void StyleEngine::idChangedForElement(const AtomicString& oldId, const AtomicString& newId, Element& element)
 {
-    ASSERT(isMaster());
-    InvalidationSetVector invalidationSets;
+    if (shouldSkipInvalidationFor(element))
+        return;
+
+    InvalidationLists invalidationLists;
     RuleFeatureSet& ruleFeatureSet = ensureResolver().ensureUpdatedRuleFeatureSet();
     if (!oldId.isEmpty())
-        ruleFeatureSet.collectInvalidationSetsForId(invalidationSets, element, oldId);
+        ruleFeatureSet.collectInvalidationSetsForId(invalidationLists, element, oldId);
     if (!newId.isEmpty())
-        ruleFeatureSet.collectInvalidationSetsForId(invalidationSets, element, newId);
-    scheduleInvalidationSetsForElement(invalidationSets, element);
+        ruleFeatureSet.collectInvalidationSetsForId(invalidationLists, element, newId);
+    m_styleInvalidator.scheduleInvalidationSetsForElement(invalidationLists, element);
 }
 
 void StyleEngine::pseudoStateChangedForElement(CSSSelector::PseudoType pseudoType, Element& element)
 {
-    ASSERT(isMaster());
-    InvalidationSetVector invalidationSets;
-    ensureResolver().ensureUpdatedRuleFeatureSet().collectInvalidationSetsForPseudoClass(invalidationSets, element, pseudoType);
-    scheduleInvalidationSetsForElement(invalidationSets, element);
-}
+    if (shouldSkipInvalidationFor(element))
+        return;
 
-void StyleEngine::scheduleInvalidationSetsForElement(const InvalidationSetVector& invalidationSets, Element& element)
-{
-    for (auto invalidationSet : invalidationSets)
-        m_styleInvalidator.scheduleInvalidation(invalidationSet, element);
+    InvalidationLists invalidationLists;
+    ensureResolver().ensureUpdatedRuleFeatureSet().collectInvalidationSetsForPseudoClass(invalidationLists, element, pseudoType);
+    m_styleInvalidator.scheduleInvalidationSetsForElement(invalidationLists, element);
 }
 
 DEFINE_TRACE(StyleEngine)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);
-    visitor->trace(m_authorStyleSheets);
+    visitor->trace(m_injectedAuthorStyleSheets);
     visitor->trace(m_documentStyleSheetCollection);
     visitor->trace(m_styleSheetCollectionMap);
     visitor->trace(m_resolver);

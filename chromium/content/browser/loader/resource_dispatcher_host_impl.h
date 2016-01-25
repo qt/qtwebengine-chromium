@@ -12,19 +12,22 @@
 #ifndef CONTENT_BROWSER_LOADER_RESOURCE_DISPATCHER_HOST_IMPL_H_
 #define CONTENT_BROWSER_LOADER_RESOURCE_DISPATCHER_HOST_IMPL_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "content/browser/download/download_resource_handler.h"
+#include "content/browser/download/save_types.h"
 #include "content/browser/loader/global_routing_id.h"
 #include "content/browser/loader/resource_loader.h"
 #include "content/browser/loader/resource_loader_delegate.h"
@@ -60,6 +63,7 @@ class ShareableFileReference;
 
 namespace content {
 class AppCacheService;
+class AsyncRevalidationManager;
 class NavigationURLLoaderImplCore;
 class ResourceContext;
 class ResourceDispatcherHostDelegate;
@@ -67,6 +71,7 @@ class ResourceMessageDelegate;
 class ResourceMessageFilter;
 class ResourceRequestInfoImpl;
 class SaveFileManager;
+class ServiceWorkerNavigationHandleCore;
 class WebContentsImpl;
 struct CommonNavigationParams;
 struct DownloadSaveInfo;
@@ -98,7 +103,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       bool prefer_cache,
       bool do_not_prompt_for_login,
       scoped_ptr<DownloadSaveInfo> save_info,
-      uint32 download_id,
+      uint32_t download_id,
       const DownloadStartedCallback& started_callback) override;
   void ClearLoginDelegateForRequest(net::URLRequest* request) override;
   void BlockRequestsForRoute(int child_id, int route_id) override;
@@ -127,6 +132,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // request from the renderer or another child process).
   void BeginSaveFile(const GURL& url,
                      const Referrer& referrer,
+                     SaveItemId save_item_id,
+                     SavePackageId save_package_id,
                      int child_id,
                      int render_view_route_id,
                      int render_frame_route_id,
@@ -236,7 +243,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       net::URLRequest* request,
       bool is_content_initiated,
       bool must_download,
-      uint32 id,
+      uint32_t id,
       scoped_ptr<DownloadSaveInfo> save_info,
       const DownloadUrlParameters::OnStartedCallback& started_cb);
 
@@ -273,9 +280,15 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // PlzNavigate: Begins a request for NavigationURLLoader. |loader| is the
   // loader to attach to the leaf resource handler.
-  void BeginNavigationRequest(ResourceContext* resource_context,
-                              const NavigationRequestInfo& info,
-                              NavigationURLLoaderImplCore* loader);
+  void BeginNavigationRequest(
+      ResourceContext* resource_context,
+      const NavigationRequestInfo& info,
+      NavigationURLLoaderImplCore* loader,
+      ServiceWorkerNavigationHandleCore* service_worker_handle_core);
+
+  // Turns on stale-while-revalidate support, regardless of command-line flags
+  // or experiment status. For unit tests only.
+  void EnableStaleWhileRevalidateForTesting();
 
  private:
   friend class ResourceDispatcherHostTest;
@@ -301,8 +314,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   struct LoadInfo {
     GURL url;
     net::LoadStateWithParam load_state;
-    uint64 upload_position;
-    uint64 upload_size;
+    uint64_t upload_position;
+    uint64_t upload_size;
   };
 
   // Map from ProcessID+RouteID pair to the "most interesting" LoadState.
@@ -584,6 +597,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   ResourceDispatcherHostDelegate* delegate_;
 
   bool allow_cross_origin_auth_prompt_;
+
+  // AsyncRevalidationManager is non-NULL if and only if
+  // stale-while-revalidate is enabled.
+  scoped_ptr<AsyncRevalidationManager> async_revalidation_manager_;
 
   // http://crbug.com/90971 - Assists in tracking down use-after-frees on
   // shutdown.

@@ -32,13 +32,14 @@
 namespace webrtc {
 
 AudioRtpReceiver::AudioRtpReceiver(AudioTrackInterface* track,
-                                   uint32 ssrc,
+                                   uint32_t ssrc,
                                    AudioProviderInterface* provider)
     : id_(track->id()),
       track_(track),
       ssrc_(ssrc),
       provider_(provider),
       cached_track_enabled_(track->enabled()) {
+  RTC_DCHECK(track_->GetSource()->remote());
   track_->RegisterObserver(this);
   track_->GetSource()->RegisterAudioObserver(this);
   Reconfigure();
@@ -70,7 +71,7 @@ void AudioRtpReceiver::Stop() {
   if (!provider_) {
     return;
   }
-  provider_->SetAudioPlayout(ssrc_, false, nullptr);
+  provider_->SetAudioPlayout(ssrc_, false);
   provider_ = nullptr;
 }
 
@@ -78,13 +79,14 @@ void AudioRtpReceiver::Reconfigure() {
   if (!provider_) {
     return;
   }
-  provider_->SetAudioPlayout(ssrc_, track_->enabled(), track_->GetRenderer());
+  provider_->SetAudioPlayout(ssrc_, track_->enabled());
 }
 
 VideoRtpReceiver::VideoRtpReceiver(VideoTrackInterface* track,
-                                   uint32 ssrc,
+                                   uint32_t ssrc,
                                    VideoProviderInterface* provider)
     : id_(track->id()), track_(track), ssrc_(ssrc), provider_(provider) {
+  RTC_DCHECK(track_->GetSource()->remote());
   provider_->SetVideoPlayout(ssrc_, true, track_->GetSource()->FrameInput());
 }
 

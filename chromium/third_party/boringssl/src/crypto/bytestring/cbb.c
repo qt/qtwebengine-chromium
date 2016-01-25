@@ -25,6 +25,7 @@ void CBB_zero(CBB *cbb) {
 }
 
 static int cbb_init(CBB *cbb, uint8_t *buf, size_t cap) {
+  /* This assumes that |cbb| has already been zeroed. */
   struct cbb_buffer_st *base;
 
   base = OPENSSL_malloc(sizeof(struct cbb_buffer_st));
@@ -37,16 +38,15 @@ static int cbb_init(CBB *cbb, uint8_t *buf, size_t cap) {
   base->cap = cap;
   base->can_resize = 1;
 
-  memset(cbb, 0, sizeof(CBB));
   cbb->base = base;
   cbb->is_top_level = 1;
   return 1;
 }
 
 int CBB_init(CBB *cbb, size_t initial_capacity) {
-  uint8_t *buf;
+  CBB_zero(cbb);
 
-  buf = OPENSSL_malloc(initial_capacity);
+  uint8_t *buf = OPENSSL_malloc(initial_capacity);
   if (initial_capacity > 0 && buf == NULL) {
     return 0;
   }
@@ -60,6 +60,8 @@ int CBB_init(CBB *cbb, size_t initial_capacity) {
 }
 
 int CBB_init_fixed(CBB *cbb, uint8_t *buf, size_t len) {
+  CBB_zero(cbb);
+
   if (!cbb_init(cbb, buf, len)) {
     return 0;
   }
@@ -177,28 +179,28 @@ int CBB_flush(CBB *cbb) {
     return 0;
   }
 
-  if (cbb->child == NULL || cbb->pending_len_len == 0) {
+  if (cbb->child == NULL || cbb->child->pending_len_len == 0) {
     return 1;
   }
 
-  child_start = cbb->offset + cbb->pending_len_len;
+  child_start = cbb->child->offset + cbb->child->pending_len_len;
 
   if (!CBB_flush(cbb->child) ||
-      child_start < cbb->offset ||
+      child_start < cbb->child->offset ||
       cbb->base->len < child_start) {
     return 0;
   }
 
   len = cbb->base->len - child_start;
 
-  if (cbb->pending_is_asn1) {
+  if (cbb->child->pending_is_asn1) {
     /* For ASN.1 we assume that we'll only need a single byte for the length.
      * If that turned out to be incorrect, we have to move the contents along
      * in order to make space. */
     size_t len_len;
     uint8_t initial_length_byte;
 
-    assert (cbb->pending_len_len == 1);
+    assert (cbb->child->pending_len_len == 1);
 
     if (len > 0xfffffffe) {
       /* Too large. */
@@ -230,12 +232,13 @@ int CBB_flush(CBB *cbb) {
       memmove(cbb->base->buf + child_start + extra_bytes,
               cbb->base->buf + child_start, len);
     }
-    cbb->base->buf[cbb->offset++] = initial_length_byte;
-    cbb->pending_len_len = len_len - 1;
+    cbb->base->buf[cbb->child->offset++] = initial_length_byte;
+    cbb->child->pending_len_len = len_len - 1;
   }
 
-  for (i = cbb->pending_len_len - 1; i < cbb->pending_len_len; i--) {
-    cbb->base->buf[cbb->offset + i] = len;
+  for (i = cbb->child->pending_len_len - 1; i < cbb->child->pending_len_len;
+       i--) {
+    cbb->base->buf[cbb->child->offset + i] = len;
     len >>= 8;
   }
   if (len != 0) {
@@ -244,17 +247,15 @@ int CBB_flush(CBB *cbb) {
 
   cbb->child->base = NULL;
   cbb->child = NULL;
-  cbb->pending_len_len = 0;
-  cbb->pending_is_asn1 = 0;
-  cbb->offset = 0;
 
   return 1;
 }
 
 size_t CBB_len(const CBB *cbb) {
   assert(cbb->child == NULL);
+  assert(cbb->offset + cbb->pending_len_len <= cbb->base->len);
 
-  return cbb->base->len;
+  return cbb->base->len - cbb->offset - cbb->pending_len_len;
 }
 
 static int cbb_add_length_prefixed(CBB *cbb, CBB *out_contents,
@@ -265,7 +266,7 @@ static int cbb_add_length_prefixed(CBB *cbb, CBB *out_contents,
     return 0;
   }
 
-  cbb->offset = cbb->base->len;
+  size_t offset = cbb->base->len;
   if (!cbb_buffer_add(cbb->base, &prefix_bytes, len_len)) {
     return 0;
   }
@@ -274,8 +275,9 @@ static int cbb_add_length_prefixed(CBB *cbb, CBB *out_contents,
   memset(out_contents, 0, sizeof(CBB));
   out_contents->base = cbb->base;
   cbb->child = out_contents;
-  cbb->pending_len_len = len_len;
-  cbb->pending_is_asn1 = 0;
+  cbb->child->offset = offset;
+  cbb->child->pending_len_len = len_len;
+  cbb->child->pending_is_asn1 = 0;
 
   return 1;
 }
@@ -303,7 +305,7 @@ int CBB_add_asn1(CBB *cbb, CBB *out_contents, uint8_t tag) {
     return 0;
   }
 
-  cbb->offset = cbb->base->len;
+  size_t offset = cbb->base->len;
   if (!CBB_add_u8(cbb, 0)) {
     return 0;
   }
@@ -311,8 +313,9 @@ int CBB_add_asn1(CBB *cbb, CBB *out_contents, uint8_t tag) {
   memset(out_contents, 0, sizeof(CBB));
   out_contents->base = cbb->base;
   cbb->child = out_contents;
-  cbb->pending_len_len = 1;
-  cbb->pending_is_asn1 = 1;
+  cbb->child->offset = offset;
+  cbb->child->pending_len_len = 1;
+  cbb->child->pending_is_asn1 = 1;
 
   return 1;
 }
@@ -358,6 +361,17 @@ int CBB_add_u24(CBB *cbb, uint32_t value) {
   }
 
   return cbb_buffer_add_u(cbb->base, value, 3);
+}
+
+void CBB_discard_child(CBB *cbb) {
+  if (cbb->child == NULL) {
+    return;
+  }
+
+  cbb->base->len = cbb->child->offset;
+
+  cbb->child->base = NULL;
+  cbb->child = NULL;
 }
 
 int CBB_add_asn1_uint64(CBB *cbb, uint64_t value) {

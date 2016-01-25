@@ -31,7 +31,7 @@ class TreeScope;
 
 class CORE_EXPORT FrameTree final {
     WTF_MAKE_NONCOPYABLE(FrameTree);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit FrameTree(Frame* thisFrame);
     ~FrameTree();
@@ -41,6 +41,11 @@ public:
     // If |name| is not empty, |fallbackName| is ignored. Otherwise,
     // |fallbackName| is used as a source of uniqueName.
     void setName(const AtomicString& name, const AtomicString& fallbackName = nullAtom);
+
+    // Directly assigns both the name and uniqueName. Should only be used when
+    // switching between LocalFrames and RemoteFrames for the same logical frame
+    // so that the unique name stays unique.
+    void setNameForReplacementFrame(const AtomicString& name, const AtomicString& uniqueName);
 
     Frame* parent() const;
     Frame* top() const;
@@ -69,7 +74,6 @@ private:
     Frame* deepLastChild() const;
     AtomicString uniqueChildName(const AtomicString& requestedName) const;
     bool uniqueNameExists(const AtomicString& name) const;
-    unsigned scopedChildCount(TreeScope*) const;
 
     RawPtrWillBeMember<Frame> m_thisFrame;
 

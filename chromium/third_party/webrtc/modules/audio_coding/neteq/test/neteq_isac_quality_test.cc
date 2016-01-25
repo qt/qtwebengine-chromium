@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/isac/fix/interface/isacfix.h"
+#include "webrtc/modules/audio_coding/codecs/isac/fix/include/isacfix.h"
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_quality_test.h"
 
 using google::RegisterFlagValidator;
@@ -54,13 +54,12 @@ NetEqIsacQualityTest::NetEqIsacQualityTest()
     : NetEqQualityTest(kIsacBlockDurationMs,
                        kIsacInputSamplingKhz,
                        kIsacOutputSamplingKhz,
-                       kDecoderISAC),
+                       NetEqDecoder::kDecoderISAC),
       isac_encoder_(NULL),
-      bit_rate_kbps_(FLAGS_bit_rate_kbps) {
-}
+      bit_rate_kbps_(FLAGS_bit_rate_kbps) {}
 
 void NetEqIsacQualityTest::SetUp() {
-  ASSERT_EQ(1, channels_) << "iSAC supports only mono audio.";
+  ASSERT_EQ(1u, channels_) << "iSAC supports only mono audio.";
   // Create encoder memory.
   WebRtcIsacfix_Create(&isac_encoder_);
   ASSERT_TRUE(isac_encoder_ != NULL);

@@ -5,11 +5,13 @@
 #ifndef CC_TILES_PICTURE_LAYER_TILING_SET_H_
 #define CC_TILES_PICTURE_LAYER_TILING_SET_H_
 
+#include <stddef.h>
+
 #include <set>
 #include <vector>
 
+#include "base/macros.h"
 #include "cc/base/region.h"
-#include "cc/base/scoped_ptr_vector.h"
 #include "cc/tiles/picture_layer_tiling.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -56,7 +58,7 @@ class CC_EXPORT PictureLayerTilingSet {
 
   // This function is called on the active tree during activation.
   void UpdateTilingsToCurrentRasterSourceForActivation(
-      scoped_refptr<RasterSource> raster_source,
+      scoped_refptr<DisplayListRasterSource> raster_source,
       const PictureLayerTilingSet* pending_twin_set,
       const Region& layer_invalidation,
       float minimum_contents_scale,
@@ -64,23 +66,24 @@ class CC_EXPORT PictureLayerTilingSet {
 
   // This function is called on the sync tree during commit.
   void UpdateTilingsToCurrentRasterSourceForCommit(
-      scoped_refptr<RasterSource> raster_source,
+      scoped_refptr<DisplayListRasterSource> raster_source,
       const Region& layer_invalidation,
       float minimum_contents_scale,
       float maximum_contents_scale);
 
   // This function is called on the sync tree right after commit.
   void UpdateRasterSourceDueToLCDChange(
-      const scoped_refptr<RasterSource>& raster_source,
+      const scoped_refptr<DisplayListRasterSource>& raster_source,
       const Region& layer_invalidation);
 
-  PictureLayerTiling* AddTiling(float contents_scale,
-                                scoped_refptr<RasterSource> raster_source);
+  PictureLayerTiling* AddTiling(
+      float contents_scale,
+      scoped_refptr<DisplayListRasterSource> raster_source);
   size_t num_tilings() const { return tilings_.size(); }
   int NumHighResTilings() const;
-  PictureLayerTiling* tiling_at(size_t idx) { return tilings_[idx]; }
+  PictureLayerTiling* tiling_at(size_t idx) { return tilings_[idx].get(); }
   const PictureLayerTiling* tiling_at(size_t idx) const {
-    return tilings_[idx];
+    return tilings_[idx].get();
   }
   WhichTree tree() const { return tree_; }
 
@@ -180,14 +183,14 @@ class CC_EXPORT PictureLayerTilingSet {
 
   void CopyTilingsAndPropertiesFromPendingTwin(
       const PictureLayerTilingSet* pending_twin_set,
-      const scoped_refptr<RasterSource>& raster_source,
+      const scoped_refptr<DisplayListRasterSource>& raster_source,
       const Region& layer_invalidation);
 
   // Remove one tiling.
   void Remove(PictureLayerTiling* tiling);
   void VerifyTilings(const PictureLayerTilingSet* pending_twin_set) const;
 
-  ScopedPtrVector<PictureLayerTiling> tilings_;
+  std::vector<scoped_ptr<PictureLayerTiling>> tilings_;
 
   const size_t tiling_interest_area_padding_;
   const float skewport_target_time_in_seconds_;

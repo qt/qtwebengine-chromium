@@ -20,6 +20,7 @@
 #include "GrRenderTargetPriv.h"
 #include "GrStencilAttachment.h"
 #include "GrSurfacePriv.h"
+#include "GrTransferBuffer.h"
 #include "GrVertexBuffer.h"
 #include "GrVertices.h"
 
@@ -54,6 +55,28 @@ GrGpu::~GrGpu() {}
 void GrGpu::contextAbandoned() {}
 
 ////////////////////////////////////////////////////////////////////////////////
+
+bool GrGpu::makeCopyForTextureParams(int width, int height, const GrTextureParams& textureParams,
+                                     GrTextureProducer::CopyParams* copyParams) const {
+    const GrCaps& caps = *this->caps();
+    if (textureParams.isTiled() && !caps.npotTextureTileSupport() &&
+        (!SkIsPow2(width) || !SkIsPow2(height))) {
+        copyParams->fWidth = GrNextPow2(width);
+        copyParams->fHeight = GrNextPow2(height);
+        switch (textureParams.filterMode()) {
+            case GrTextureParams::kNone_FilterMode:
+                copyParams->fFilter = GrTextureParams::kNone_FilterMode;
+                break;
+            case GrTextureParams::kBilerp_FilterMode:
+            case GrTextureParams::kMipMap_FilterMode:
+                // We are only ever scaling up so no reason to ever indicate kMipMap.
+                copyParams->fFilter = GrTextureParams::kBilerp_FilterMode;
+                break;
+        }
+        return true;
+    }
+    return false;
+}
 
 static GrSurfaceOrigin resolve_origin(GrSurfaceOrigin origin, bool renderTarget) {
     // By default, GrRenderTargets are GL's normal orientation so that they
@@ -137,6 +160,13 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, bool budgeted,
 
 GrTexture* GrGpu::wrapBackendTexture(const GrBackendTextureDesc& desc, GrWrapOwnership ownership) {
     this->handleDirtyContext();
+    if (!this->caps()->isConfigTexturable(desc.fConfig)) {
+        return nullptr;
+    }
+    if ((desc.fFlags & kRenderTarget_GrBackendTextureFlag) &&
+        !this->caps()->isConfigRenderable(desc.fConfig, desc.fSampleCnt > 0)) {
+        return nullptr;
+    }
     GrTexture* tex = this->onWrapBackendTexture(desc, ownership);
     if (nullptr == tex) {
         return nullptr;
@@ -153,6 +183,9 @@ GrTexture* GrGpu::wrapBackendTexture(const GrBackendTextureDesc& desc, GrWrapOwn
 
 GrRenderTarget* GrGpu::wrapBackendRenderTarget(const GrBackendRenderTargetDesc& desc,
                                                GrWrapOwnership ownership) {
+    if (!this->caps()->isConfigRenderable(desc.fConfig, desc.fSampleCnt > 0)) {
+        return nullptr;
+    }
     this->handleDirtyContext();
     return this->onWrapBackendRenderTarget(desc, ownership);
 }
@@ -173,6 +206,12 @@ GrIndexBuffer* GrGpu::createIndexBuffer(size_t size, bool dynamic) {
         ib->resourcePriv().removeScratchKey();
     }
     return ib;
+}
+
+GrTransferBuffer* GrGpu::createTransferBuffer(size_t size, TransferType type) {
+    this->handleDirtyContext();
+    GrTransferBuffer* tb = this->onCreateTransferBuffer(size, type);
+    return tb;
 }
 
 void GrGpu::clear(const SkIRect& rect,
@@ -295,13 +334,28 @@ bool GrGpu::writePixels(GrSurface* surface,
                         int left, int top, int width, int height,
                         GrPixelConfig config, const void* buffer,
                         size_t rowBytes) {
-    if (!buffer) {
+    if (!buffer || !surface) {
         return false;
     }
 
     this->handleDirtyContext();
     if (this->onWritePixels(surface, left, top, width, height, config, buffer, rowBytes)) {
         fStats.incTextureUploads();
+        return true;
+    }
+    return false;
+}
+
+bool GrGpu::transferPixels(GrSurface* surface,
+                           int left, int top, int width, int height,
+                           GrPixelConfig config, GrTransferBuffer* buffer,
+                           size_t offset, size_t rowBytes) {
+    SkASSERT(buffer);
+
+    this->handleDirtyContext();
+    if (this->onTransferPixels(surface, left, top, width, height, config, 
+                               buffer, offset, rowBytes)) {
+        fStats.incTransfersToTexture();
         return true;
     }
     return false;

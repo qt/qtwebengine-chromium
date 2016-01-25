@@ -114,7 +114,8 @@ public:
         FetchRequestModeSameOrigin,
         FetchRequestModeNoCORS,
         FetchRequestModeCORS,
-        FetchRequestModeCORSWithForcedPreflight
+        FetchRequestModeCORSWithForcedPreflight,
+        FetchRequestModeNavigate
     };
 
     enum FetchCredentialsMode {
@@ -136,6 +137,13 @@ public:
         NoReport, // Don't report metrics for this WebURLRequest.
         ReportLink, // Report metrics with UI action link clicked.
         ReportIntent, // Report metrics with UI action displayed intent.
+    };
+
+    // The LoFi state which determines whether to request a Lo-Fi version of the resource.
+    enum LoFiState {
+        LoFiUnspecified, // Let the browser process decide whether or not to request the Lo-Fi version.
+        LoFiOff, // Request a normal (non-Lo-Fi) version of the resource.
+        LoFiOn, // Request a Lo-Fi version of the resource.
     };
 
     class ExtraData {
@@ -267,6 +275,10 @@ public:
     // The redirect mode which is used in Fetch API.
     BLINK_PLATFORM_EXPORT FetchRedirectMode fetchRedirectMode() const;
     BLINK_PLATFORM_EXPORT void setFetchRedirectMode(FetchRedirectMode);
+
+    // The LoFi state which determines whether to request a Lo-Fi version of the resource.
+    BLINK_PLATFORM_EXPORT LoFiState loFiState() const;
+    BLINK_PLATFORM_EXPORT void setLoFiState(LoFiState);
 
     // Extra data associated with the underlying resource request. Resource
     // requests can be copied. If non-null, each copy of a resource requests

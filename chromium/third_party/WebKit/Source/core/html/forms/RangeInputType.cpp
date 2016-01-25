@@ -29,13 +29,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/forms/RangeInputType.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/AXObjectCache.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchList.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -52,6 +52,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutSlider.h"
 #include "platform/PlatformMouseEvent.h"
 #include "wtf/MathExtras.h"
@@ -88,6 +89,10 @@ RangeInputType::RangeInputType(HTMLInputElement& element)
 void RangeInputType::countUsage()
 {
     countUsageIfVisible(UseCounter::InputTypeRange);
+    if (const ComputedStyle* style = element().computedStyle()) {
+        if (style->appearance() == SliderVerticalPart)
+            UseCounter::count(element().document(), UseCounter::InputTypeRangeVerticalAppearance);
+    }
 }
 
 const AtomicString& RangeInputType::formControlType() const
@@ -190,8 +195,10 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
     const Decimal step = equalIgnoringCase(element().fastGetAttribute(stepAttr), "any") ? (stepRange.maximum() - stepRange.minimum()) / 100 : stepRange.step();
     const Decimal bigStep = std::max((stepRange.maximum() - stepRange.minimum()) / 10, step);
 
+    TextDirection dir = LTR;
     bool isVertical = false;
     if (element().layoutObject()) {
+        dir = computedTextDirection();
         ControlPart part = element().layoutObject()->style()->appearance();
         isVertical = part == SliderVerticalPart;
     }
@@ -202,9 +209,9 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
     else if (key == "Down")
         newValue = current - step;
     else if (key == "Left")
-        newValue = isVertical ? current + step : current - step;
+        newValue = (isVertical || dir == RTL) ? current + step : current - step;
     else if (key == "Right")
-        newValue = isVertical ? current - step : current + step;
+        newValue = (isVertical || dir == RTL) ? current - step : current + step;
     else if (key == "PageUp")
         newValue = current + bigStep;
     else if (key == "PageDown")
@@ -299,6 +306,14 @@ String RangeInputType::sanitizeValue(const String& proposedValue) const
     StepRange stepRange(createStepRange(RejectAny));
     const Decimal proposedNumericValue = parseToNumber(proposedValue, stepRange.defaultValue());
     return serializeForNumberType(stepRange.clampValue(proposedNumericValue));
+}
+
+void RangeInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value.isEmpty() || !element().sanitizeValue(value).isEmpty())
+        return;
+    element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
+        String::format("The specified value %s is not a valid number. The value must match to the following regular expression: -?(\\d+|\\d+\\.\\d+|\\.\\d+)([eE][-+]?\\d+)?", JSONValue::quoteString(value).utf8().data())));
 }
 
 void RangeInputType::disabledAttributeChanged()

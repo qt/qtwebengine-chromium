@@ -41,10 +41,6 @@ chrome.runtime.onMessageExternal.addListener(
           requestInfo['guestProcessId'] = sender.guestProcessId;
         }
 
-        if (sender.guestRenderFrameRoutingId) {
-          requestInfo['guestRenderFrameId'] = sender.guestRenderFrameRoutingId;
-        }
-
         var method = message['method'];
         var origin = getHost(sender.url);
         if (method == 'cpu.getInfo') {
@@ -166,6 +162,15 @@ chrome.runtime.onMessageExternal.addListener(
           var outgoing = message['outgoing'] || false;
           chrome.webrtcLoggingPrivate.stopRtpDump(
               requestInfo, origin, incoming, outgoing, doSendResponse);
+          return true;
+        } else if (method == 'logging.startAudioDebugRecordings') {
+          var seconds = message['seconds'] || 0;
+          chrome.webrtcLoggingPrivate.startAudioDebugRecordings(
+              requestInfo, origin, seconds, doSendResponse);
+          return true;
+        } else if (method == 'logging.stopAudioDebugRecordings') {
+          chrome.webrtcLoggingPrivate.stopAudioDebugRecordings(
+              requestInfo, origin, doSendResponse);
           return true;
         }
         throw new Error('Unknown method: ' + method);

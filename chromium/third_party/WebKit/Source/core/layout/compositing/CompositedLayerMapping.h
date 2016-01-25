@@ -40,7 +40,7 @@ class PaintLayerCompositor;
 
 // A GraphicsLayerPaintInfo contains all the info needed to paint a partial subtree of Layers into a GraphicsLayer.
 struct GraphicsLayerPaintInfo {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     PaintLayer* paintLayer;
 
     LayoutRect compositedBounds;
@@ -68,8 +68,9 @@ enum GraphicsLayerUpdateScope {
 //
 // Currently (Oct. 2013) there is one CompositedLayerMapping for each Layer,
 // but this is likely to evolve soon.
-class CompositedLayerMapping final : public GraphicsLayerClient {
-    WTF_MAKE_NONCOPYABLE(CompositedLayerMapping); WTF_MAKE_FAST_ALLOCATED(CompositedPaintLayerMapping);
+class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
+
+    WTF_MAKE_NONCOPYABLE(CompositedLayerMapping); USING_FAST_MALLOC(CompositedLayerMapping);
 public:
     explicit CompositedLayerMapping(PaintLayer&);
     ~CompositedLayerMapping() override;
@@ -110,6 +111,7 @@ public:
 
     GraphicsLayer* parentForSublayers() const;
     GraphicsLayer* childForSuperlayers() const;
+    void setSublayers(const GraphicsLayerVector&);
 
     bool hasChildTransformLayer() const { return m_childTransformLayer; }
     GraphicsLayer* childTransformLayer() const { return m_childTransformLayer.get(); }
@@ -122,7 +124,7 @@ public:
     // LayoutRect is in the coordinate space of the layer's layout object.
     void setContentsNeedDisplayInRect(const LayoutRect&, PaintInvalidationReason);
 
-    void invalidateDisplayItemClient(const DisplayItemClientWrapper&);
+    void invalidateDisplayItemClient(const DisplayItemClient&, PaintInvalidationReason);
 
     // Notification from the layoutObject that its content changed.
     void contentChanged(ContentChangeType);
@@ -142,11 +144,18 @@ public:
     void finishAccumulatingSquashingLayers(size_t nextSquashedLayerIndex);
     void updateRenderingContext();
     void updateShouldFlattenTransform();
+    void updateElementIdAndCompositorMutableProperties();
 
     // GraphicsLayerClient interface
     void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group) override;
-    void notifyTextPainted() override;
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) const override;
+    void notifyFirstPaint() override;
+    void notifyFirstTextPaint() override;
+    void notifyFirstImagePaint() override;
+
+    IntRect computeInterestRect(const GraphicsLayer*, const IntRect& previousInterestRect) const override;
+    bool needsRepaint() const override;
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& interestRect) const override;
+
     bool isTrackingPaintInvalidations() const override;
 
 #if ENABLE(ASSERT)
@@ -186,7 +195,7 @@ public:
     void assertNeedsToUpdateGraphicsLayerBitsCleared() {  ASSERT(m_pendingUpdateScope == GraphicsLayerUpdateNone); }
 #endif
 
-    String debugName(const GraphicsLayer*) override;
+    String debugName(const GraphicsLayer*) const override;
 
     LayoutSize contentOffsetInCompositingLayer() const;
 
@@ -200,10 +209,10 @@ public:
 
     void updateScrollingBlockSelection();
 
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-    String debugName() const { return "CompositedLayerMapping for " + owningLayer().debugName(); }
-
 private:
+    IntRect recomputeInterestRect(const GraphicsLayer*) const;
+    static bool interestRectChangedEnoughToRepaint(const IntRect& previousInterestRect, const IntRect& newInterestRect, const IntSize& layerSize);
+
     static const GraphicsLayerPaintInfo* containingSquashedLayer(const LayoutObject*,  const Vector<GraphicsLayerPaintInfo>& layers, unsigned maxSquashedLayerIndex);
 
     // Helper methods to updateGraphicsLayerGeometry:
@@ -286,7 +295,7 @@ private:
 
     static bool hasVisibleNonCompositingDescendant(PaintLayer* parent);
 
-    void doPaintTask(const GraphicsLayerPaintInfo&, const PaintLayerFlags&, GraphicsContext*, const IntRect& clip) const;
+    void doPaintTask(const GraphicsLayerPaintInfo&, const GraphicsLayer&, const PaintLayerFlags&, GraphicsContext&, const IntRect& clip) const;
 
     // Computes the background clip rect for the given squashed layer, up to any containing layer that is squashed into the
     // same squashing layer and contains this squashed layer's clipping ancestor.
@@ -315,9 +324,9 @@ private:
     //      | + m_childContainmentLayer [OPTIONAL] <-OR-> m_scrollingLayer [OPTIONAL]
     //      |                                             + m_scrollingContentsLayer [Present iff m_scrollingLayer is present]
     //      |                                               + m_scrollingBlockSelectionLayer [Present iff m_scrollingLayer is present]
-    //      + m_overflowControlsClippingLayer [OPTIONAL] // *The overflow controls may need to be repositioned in the
-    //        + m_overflowControlsHostLayer [OPTIONAL]   //  graphics layer tree by the RLC to ensure that they stack
-    //          + m_layerForVerticalScrollbar [OPTIONAL] //  above scrolling content.
+    //      + m_overflowControlsAncestorClippingLayer [OPTIONAL] // *The overflow controls may need to be repositioned in the
+    //        + m_overflowControlsHostLayer [OPTIONAL]           //  graphics layer tree by the RLC to ensure that they stack
+    //          + m_layerForVerticalScrollbar [OPTIONAL]         //  above scrolling content.
     //          + m_layerForHorizontalScrollbar [OPTIONAL]
     //          + m_layerForScrollCorner [OPTIONAL]
     //
@@ -384,17 +393,18 @@ private:
     OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForScrollCorner;
 
-    // This layer exists to simplify the reparenting of overflow control that is occasionally required
-    // to ensure that scrollbars appear above scrolling content.
+    // This layer contains the scrollbar and scroll corner layers and clips them to the border box
+    // bounds of our LayoutObject. It is usually added to m_graphicsLayer, but may be reparented by
+    // GraphicsLayerTreeBuilder to ensure that scrollbars appear above scrolling content.
     OwnPtr<GraphicsLayer> m_overflowControlsHostLayer;
 
     // The reparented overflow controls sometimes need to be clipped by a non-ancestor. In just the same
     // way we need an ancestor clipping layer to clip this CLM's internal hierarchy, we add another layer
-    // to clip the overflow controls. It would be possible to make m_overflowControlsHostLayer be
-    // responsible for applying this clip, but that could require repositioning all of the overflow
-    // controls since the this clip may apply an offset. By using a separate layer, the overflow controls
-    // can remain ignorant of the layers above them and still work correctly.
-    OwnPtr<GraphicsLayer> m_overflowControlsClippingLayer;
+    // to clip the overflow controls. We could combine this with m_overflowControlsHostLayer, but that
+    // would require manually intersecting their clips, and shifting the overflow controls to compensate
+    // for this clip's offset. By using a separate layer, the overflow controls can remain ignorant of
+    // ancestor clipping.
+    OwnPtr<GraphicsLayer> m_overflowControlsAncestorClippingLayer;
 
     // A squashing CLM has two possible squashing-related structures.
     //
@@ -427,6 +437,8 @@ private:
 
     unsigned m_backgroundLayerPaintsFixedRootBackground : 1;
     unsigned m_scrollingContentsAreEmpty : 1;
+
+    friend class CompositedLayerMappingTest;
 };
 
 } // namespace blink

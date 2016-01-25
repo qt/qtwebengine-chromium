@@ -39,7 +39,7 @@ enum CompositeOperationType {
     FECOMPOSITE_OPERATOR_LIGHTER    = 7
 };
 
-class PLATFORM_EXPORT FEComposite : public FilterEffect {
+class PLATFORM_EXPORT FEComposite final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FEComposite> create(Filter*, const CompositeOperationType&, float, float, float, float);
 
@@ -62,16 +62,15 @@ public:
 
     TextStream& externalRepresentation(TextStream&, int indention) const override;
 
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
-    PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*) override;
-
 protected:
     bool mayProduceInvalidPreMultipliedPixels() override { return m_type == FECOMPOSITE_OPERATOR_ARITHMETIC; }
 
 private:
     FEComposite(Filter*, const CompositeOperationType&, float, float, float, float);
 
-    PassRefPtr<SkImageFilter> createImageFilterInternal(SkiaImageFilterBuilder*, bool requiresPMColorValidation);
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
+    PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder&) override;
+    PassRefPtr<SkImageFilter> createImageFilterInternal(SkiaImageFilterBuilder&, bool requiresPMColorValidation);
 
     CompositeOperationType m_type;
     float m_k1;

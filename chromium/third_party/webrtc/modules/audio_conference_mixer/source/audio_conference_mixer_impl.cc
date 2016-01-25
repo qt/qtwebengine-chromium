@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_conference_mixer/interface/audio_conference_mixer_defines.h"
+#include "webrtc/modules/audio_conference_mixer/include/audio_conference_mixer_defines.h"
 #include "webrtc/modules/audio_conference_mixer/source/audio_conference_mixer_impl.h"
 #include "webrtc/modules/audio_conference_mixer/source/audio_frame_manipulator.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/utility/interface/audio_frame_operations.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/modules/utility/include/audio_frame_operations.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 namespace {
@@ -50,8 +50,8 @@ void MixFrames(AudioFrame* mixed_frame, AudioFrame* frame, bool use_limiter) {
 }
 
 // Return the max number of channels from a |list| composed of AudioFrames.
-int MaxNumChannels(const AudioFrameList* list) {
-  int max_num_channels = 1;
+size_t MaxNumChannels(const AudioFrameList* list) {
+  size_t max_num_channels = 1;
   for (AudioFrameList::const_iterator iter = list->begin();
        iter != list->end();
        ++iter) {
@@ -278,7 +278,7 @@ int32_t AudioConferenceMixerImpl::Process() {
         //                with an API instead of dynamically.
 
         // Find the max channels over all mixing lists.
-        const int num_mixed_channels = std::max(MaxNumChannels(&mixList),
+        const size_t num_mixed_channels = std::max(MaxNumChannels(&mixList),
             std::max(MaxNumChannels(&additionalFramesList),
                      MaxNumChannels(&rampOutList)));
 

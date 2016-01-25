@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLParserThread.h"
 
 #include "platform/Task.h"
@@ -98,7 +97,7 @@ bool HTMLParserThread::isRunning()
 
 void HTMLParserThread::postTask(PassOwnPtr<Closure> closure)
 {
-    platformThread().taskRunner()->postTask(FROM_HERE, new Task(closure));
+    platformThread().taskRunner()->postTask(BLINK_FROM_HERE, new Task(closure));
 }
 
 } // namespace blink

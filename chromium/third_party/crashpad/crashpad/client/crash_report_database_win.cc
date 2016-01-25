@@ -14,9 +14,14 @@
 
 #include "client/crash_report_database.h"
 
-#include <string.h>
-#include <time.h>
 #include <windows.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <wchar.h>
+
+#include <utility>
 
 #include "base/logging.h"
 #include "base/numerics/safe_math.h"
@@ -159,7 +164,7 @@ ReportDisk::ReportDisk(const MetadataFileReportRecord& record,
       base::UTF8ToUTF16(&string_table[record.file_path_index]));
   id = &string_table[record.id_index];
   creation_time = record.creation_time;
-  uploaded = record.uploaded;
+  uploaded = record.uploaded != 0;
   last_upload_attempt_time = record.last_upload_attempt_time;
   upload_attempts = record.upload_attempts;
   state = static_cast<ReportState>(record.state);
@@ -228,6 +233,19 @@ class Metadata {
   OperationStatus FindSingleReportAndMarkDirty(const UUID& uuid,
                                                ReportState desired_state,
                                                ReportDisk** report_disk);
+
+  //! \brief Removes a report from the metadata database, without touching the
+  //!     on-disk file.
+  //!
+  //! The returned report is only valid if CrashReportDatabase::kNoError is
+  //! returned. This will mark the database as dirty. Future metadata
+  //! operations for this report will not succeed.
+  //!
+  //! \param[in] uuid The report identifier to remove.
+  //! \param[out] report_path The found report's file_path, valid only if
+  //!     CrashReportDatabase::kNoError is returned.
+  OperationStatus DeleteReport(const UUID& uuid,
+                               base::FilePath* report_path);
 
  private:
   Metadata(FileHandle handle, const base::FilePath& report_dir);
@@ -351,6 +369,20 @@ OperationStatus Metadata::FindSingleReportAndMarkDirty(
   return os;
 }
 
+OperationStatus Metadata::DeleteReport(const UUID& uuid,
+                                       base::FilePath* report_path) {
+  auto report_iter = std::find_if(
+      reports_.begin(), reports_.end(), [uuid](const ReportDisk& report) {
+        return report.uuid == uuid;
+      });
+  if (report_iter == reports_.end())
+    return CrashReportDatabase::kReportNotFound;
+  *report_path = report_iter->file_path;
+  reports_.erase(report_iter);
+  dirty_ = true;
+  return CrashReportDatabase::kNoError;
+}
+
 Metadata::Metadata(FileHandle handle, const base::FilePath& report_dir)
     : handle_(handle), report_dir_(report_dir), dirty_(false), reports_() {
 }
@@ -389,26 +421,29 @@ void Metadata::Read() {
     return;
   }
 
-  std::vector<MetadataFileReportRecord> records(header.num_records);
-  if (!LoggingReadFile(handle_.get(), &records[0], records_size.ValueOrDie())) {
-    LOG(ERROR) << "failed to read records";
-    return;
-  }
-
-  std::string string_table = ReadRestOfFileAsString(handle_.get());
-  if (string_table.empty() || string_table.back() != '\0') {
-    LOG(ERROR) << "bad string table";
-    return;
-  }
-
   std::vector<ReportDisk> reports;
-  for (const auto& record : records) {
-    if (record.file_path_index >= string_table.size() ||
-        record.id_index >= string_table.size()) {
-      LOG(ERROR) << "invalid string table index";
+  if (header.num_records > 0) {
+    std::vector<MetadataFileReportRecord> records(header.num_records);
+    if (!LoggingReadFile(
+            handle_.get(), &records[0], records_size.ValueOrDie())) {
+      LOG(ERROR) << "failed to read records";
       return;
     }
-    reports.push_back(ReportDisk(record, report_dir_, string_table));
+
+    std::string string_table = ReadRestOfFileAsString(handle_.get());
+    if (string_table.empty() || string_table.back() != '\0') {
+      LOG(ERROR) << "bad string table";
+      return;
+    }
+
+    for (const auto& record : records) {
+      if (record.file_path_index >= string_table.size() ||
+          record.id_index >= string_table.size()) {
+        LOG(ERROR) << "invalid string table index";
+        return;
+      }
+      reports.push_back(ReportDisk(record, report_dir_, string_table));
+    }
   }
   reports_.swap(reports);
 }
@@ -437,6 +472,9 @@ void Metadata::Write() {
     LOG(ERROR) << "failed to write header";
     return;
   }
+
+  if (num_records == 0)
+    return;
 
   // Build the records and string table we're going to write.
   std::string string_table;
@@ -483,6 +521,21 @@ OperationStatus Metadata::VerifyReport(const ReportDisk& report_disk,
              : CrashReportDatabase::kBusyError;
 }
 
+bool EnsureDirectory(const base::FilePath& path) {
+  DWORD fileattr = GetFileAttributes(path.value().c_str());
+  if (fileattr == INVALID_FILE_ATTRIBUTES) {
+    PLOG(ERROR) << "GetFileAttributes " << base::UTF16ToUTF8(path.value());
+    return false;
+  }
+  if ((fileattr & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+    LOG(ERROR) << "GetFileAttributes "
+               << base::UTF16ToUTF8(path.value())
+               << ": not a directory";
+    return false;
+  }
+  return true;
+}
+
 //! \brief Ensures that the node at path is a directory, and creates it if it
 //!     does not exist.
 //!
@@ -493,18 +546,10 @@ bool CreateDirectoryIfNecessary(const base::FilePath& path) {
   if (CreateDirectory(path.value().c_str(), nullptr))
     return true;
   if (GetLastError() != ERROR_ALREADY_EXISTS) {
-    PLOG(ERROR) << "CreateDirectory";
+    PLOG(ERROR) << "CreateDirectory " << base::UTF16ToUTF8(path.value());
     return false;
   }
-  DWORD fileattr = GetFileAttributes(path.value().c_str());
-  if (fileattr == INVALID_FILE_ATTRIBUTES) {
-    PLOG(ERROR) << "GetFileAttributes";
-    return false;
-  }
-  if ((fileattr & FILE_ATTRIBUTE_DIRECTORY) != 0)
-    return true;
-  LOG(ERROR) << "not a directory";
-  return false;
+  return EnsureDirectory(path);
 }
 
 // CrashReportDatabaseWin ------------------------------------------------------
@@ -514,7 +559,7 @@ class CrashReportDatabaseWin : public CrashReportDatabase {
   explicit CrashReportDatabaseWin(const base::FilePath& path);
   ~CrashReportDatabaseWin() override;
 
-  bool Initialize();
+  bool Initialize(bool may_create);
 
   // CrashReportDatabase:
   Settings* GetSettings() override;
@@ -531,6 +576,7 @@ class CrashReportDatabaseWin : public CrashReportDatabase {
                                       bool successful,
                                       const std::string& id) override;
   OperationStatus SkipReportUpload(const UUID& uuid) override;
+  OperationStatus DeleteReport(const UUID& uuid) override;
 
  private:
   scoped_ptr<Metadata> AcquireMetadata();
@@ -552,16 +598,20 @@ CrashReportDatabaseWin::CrashReportDatabaseWin(const base::FilePath& path)
 CrashReportDatabaseWin::~CrashReportDatabaseWin() {
 }
 
-bool CrashReportDatabaseWin::Initialize() {
+bool CrashReportDatabaseWin::Initialize(bool may_create) {
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
-  // Ensure the database and report subdirectories exist.
-  if (!CreateDirectoryIfNecessary(base_dir_) ||
-      !CreateDirectoryIfNecessary(base_dir_.Append(kReportsDirectory)))
+  // Ensure the database directory exists.
+  if (may_create) {
+    if (!CreateDirectoryIfNecessary(base_dir_))
+      return false;
+  } else if (!EnsureDirectory(base_dir_)) {
     return false;
+  }
 
-  // TODO(scottmg): When are completed reports pruned from disk? Delete here or
-  // maybe on AcquireMetadata().
+  // Ensure that the report subdirectory exists.
+  if (!CreateDirectoryIfNecessary(base_dir_.Append(kReportsDirectory)))
+    return false;
 
   if (!settings_.Initialize())
     return false;
@@ -631,7 +681,7 @@ OperationStatus CrashReportDatabaseWin::ErrorWritingCrashReport(
   if (!DeleteFile(scoped_report->path.value().c_str())) {
     PLOG(ERROR) << "DeleteFile "
                 << base::UTF16ToUTF8(scoped_report->path.value());
-    return CrashReportDatabase::kFileSystemError;
+    return kFileSystemError;
   }
 
   return kNoError;
@@ -691,7 +741,7 @@ OperationStatus CrashReportDatabaseWin::GetReportForUploading(
   ReportDisk* report_disk;
   OperationStatus os = metadata->FindSingleReportAndMarkDirty(
       uuid, ReportState::kPending, &report_disk);
-  if (os == CrashReportDatabase::kNoError) {
+  if (os == kNoError) {
     report_disk->state = ReportState::kUploading;
     // Create a copy for passing back to client. This will be freed in
     // RecordUploadAttempt.
@@ -714,19 +764,42 @@ OperationStatus CrashReportDatabaseWin::RecordUploadAttempt(
   ReportDisk* report_disk;
   OperationStatus os = metadata->FindSingleReportAndMarkDirty(
       report->uuid, ReportState::kUploading, &report_disk);
-  if (os == CrashReportDatabaseWin::kNoError) {
-    report_disk->uploaded = successful;
-    report_disk->id = id;
-    report_disk->last_upload_attempt_time = time(nullptr);
-    report_disk->upload_attempts++;
-    report_disk->state =
-        successful ? ReportState::kCompleted : ReportState::kPending;
+  if (os != kNoError)
+    return os;
+
+  time_t now = time(nullptr);
+
+  report_disk->uploaded = successful;
+  report_disk->id = id;
+  report_disk->last_upload_attempt_time = now;
+  report_disk->upload_attempts++;
+  report_disk->state =
+      successful ? ReportState::kCompleted : ReportState::kPending;
+
+  if (!settings_.SetLastUploadAttemptTime(now))
+    return kDatabaseError;
+
+  return kNoError;
+}
+
+OperationStatus CrashReportDatabaseWin::DeleteReport(const UUID& uuid) {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+
+  scoped_ptr<Metadata> metadata(AcquireMetadata());
+  if (!metadata)
+    return kDatabaseError;
+
+  base::FilePath report_path;
+  OperationStatus os = metadata->DeleteReport(uuid, &report_path);
+  if (os != kNoError)
+    return os;
+
+  if (!DeleteFile(report_path.value().c_str())) {
+    PLOG(ERROR) << "DeleteFile "
+                << base::UTF16ToUTF8(report_path.value());
+    return kFileSystemError;
   }
-
-  // Call Settings::SetLastUploadAttemptTime().
-  // https://code.google.com/p/crashpad/issues/detail?id=13.
-
-  return os;
+  return kNoError;
 }
 
 OperationStatus CrashReportDatabaseWin::SkipReportUpload(const UUID& uuid) {
@@ -738,7 +811,7 @@ OperationStatus CrashReportDatabaseWin::SkipReportUpload(const UUID& uuid) {
   ReportDisk* report_disk;
   OperationStatus os = metadata->FindSingleReportAndMarkDirty(
       uuid, ReportState::kPending, &report_disk);
-  if (os == CrashReportDatabase::kNoError)
+  if (os == kNoError)
     report_disk->state = ReportState::kCompleted;
   return os;
 }
@@ -748,15 +821,27 @@ scoped_ptr<Metadata> CrashReportDatabaseWin::AcquireMetadata() {
   return Metadata::Create(metadata_file, base_dir_.Append(kReportsDirectory));
 }
 
+scoped_ptr<CrashReportDatabase> InitializeInternal(
+    const base::FilePath& path, bool may_create) {
+  scoped_ptr<CrashReportDatabaseWin> database_win(
+      new CrashReportDatabaseWin(path));
+  return database_win->Initialize(may_create)
+             ? std::move(database_win)
+             : scoped_ptr<CrashReportDatabaseWin>();
+}
+
 }  // namespace
 
 // static
 scoped_ptr<CrashReportDatabase> CrashReportDatabase::Initialize(
     const base::FilePath& path) {
-  scoped_ptr<CrashReportDatabaseWin> database_win(
-      new CrashReportDatabaseWin(path));
-  return database_win->Initialize() ? database_win.Pass()
-                                    : scoped_ptr<CrashReportDatabaseWin>();
+  return InitializeInternal(path, true);
+}
+
+// static
+scoped_ptr<CrashReportDatabase> CrashReportDatabase::InitializeWithoutCreating(
+    const base::FilePath& path) {
+  return InitializeInternal(path, false);
 }
 
 }  // namespace crashpad

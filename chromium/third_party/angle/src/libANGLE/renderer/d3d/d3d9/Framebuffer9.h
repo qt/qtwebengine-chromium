@@ -26,10 +26,14 @@ class Framebuffer9 : public FramebufferD3D
     gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) override;
 
   private:
-    gl::Error clear(const gl::State &state, const ClearParameters &clearParams) override;
+    gl::Error clear(const gl::Data &data, const ClearParameters &clearParams) override;
 
-    gl::Error readPixels(const gl::Rectangle &area, GLenum format, GLenum type, size_t outputPitch,
-                         const gl::PixelPackState &pack, uint8_t *pixels) const override;
+    gl::Error readPixelsImpl(const gl::Rectangle &area,
+                             GLenum format,
+                             GLenum type,
+                             size_t outputPitch,
+                             const gl::PixelPackState &pack,
+                             uint8_t *pixels) const override;
 
     gl::Error blit(const gl::Rectangle &sourceArea, const gl::Rectangle &destArea, const gl::Rectangle *scissor,
                    bool blitRenderTarget, bool blitDepth, bool blitStencil, GLenum filter,

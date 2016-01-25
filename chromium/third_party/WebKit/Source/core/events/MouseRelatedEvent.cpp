@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/events/MouseRelatedEvent.h"
 
 #include "core/dom/Document.h"
@@ -52,11 +51,11 @@ static LayoutSize contentsScrollOffset(AbstractView* abstractView)
     return LayoutSize(frameView->scrollX() / scaleFactor, frameView->scrollY() / scaleFactor);
 }
 
-MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> abstractView,
-    int detail, const IntPoint& screenLocation, const IntPoint& rootFrameLocation,
-    const IntPoint& movementDelta,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, PositionType positionType, InputDeviceCapabilities* sourceCapabilities)
-    : UIEventWithKeyState(eventType, canBubble, cancelable, abstractView, detail, ctrlKey, altKey, shiftKey, metaKey, sourceCapabilities)
+MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable,
+    PassRefPtrWillBeRawPtr<AbstractView> abstractView, int detail, const IntPoint& screenLocation,
+    const IntPoint& rootFrameLocation, const IntPoint& movementDelta, PlatformEvent::Modifiers modifiers,
+    double platformTimeStamp, PositionType positionType, InputDeviceCapabilities* sourceCapabilities)
+    : UIEventWithKeyState(eventType, canBubble, cancelable, abstractView, detail, modifiers, platformTimeStamp, sourceCapabilities)
     , m_screenLocation(screenLocation)
     , m_movementDelta(movementDelta)
     , m_positionType(positionType)
@@ -80,11 +79,6 @@ MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubb
     m_clientLocation = adjustedPageLocation - toLayoutSize(scrollPosition);
     m_pageLocation = adjustedPageLocation;
 
-    initCoordinates();
-}
-
-void MouseRelatedEvent::initCoordinates()
-{
     // Set up initial values for coordinates.
     // Correct values are computed lazily, see computeRelativePosition.
     m_layerLocation = m_pageLocation;
@@ -92,6 +86,15 @@ void MouseRelatedEvent::initCoordinates()
 
     computePageLocation();
     m_hasCachedRelativePosition = false;
+}
+
+MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, const MouseEventInit& initializer)
+    : UIEventWithKeyState(eventType, initializer)
+    , m_screenLocation(IntPoint(initializer.screenX(), initializer.screenY()))
+    , m_movementDelta(IntPoint(initializer.movementX(), initializer.movementY()))
+    , m_positionType(PositionType::Position)
+{
+    initCoordinates(IntPoint(initializer.clientX(), initializer.clientY()));
 }
 
 void MouseRelatedEvent::initCoordinates(const LayoutPoint& clientLocation)
@@ -142,9 +145,17 @@ void MouseRelatedEvent::computeRelativePosition()
     // Must have an updated layout tree for this math to work correctly.
     targetNode->document().updateLayoutIgnorePendingStylesheets();
 
-    // Adjust offsetLocation to be relative to the target's position.
+    // Adjust offsetLocation to be relative to the target's padding box.
     if (LayoutObject* r = targetNode->layoutObject()) {
         FloatPoint localPos = r->absoluteToLocal(FloatPoint(absoluteLocation()), UseTransforms);
+
+        // Adding this here to address crbug.com/570666. Basically we'd like to
+        // find the local coordinates relative to the padding box not the border box.
+        if (r->isBoxModelObject()) {
+            LayoutBoxModelObject* layoutBox = toLayoutBoxModelObject(r);
+            localPos.move(-layoutBox->borderLeft(), -layoutBox->borderTop());
+        }
+
         m_offsetLocation = roundedLayoutPoint(localPos);
         float scaleFactor = 1 / pageZoomFactor(this);
         if (scaleFactor != 1.0f)

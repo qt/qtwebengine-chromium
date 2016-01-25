@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
@@ -440,7 +441,7 @@ bool WASAPIAudioOutputStream::RenderAudioFromSource(UINT64 device_frequency) {
 
   HRESULT hr = S_FALSE;
   UINT32 num_queued_frames = 0;
-  uint8* audio_data = NULL;
+  uint8_t* audio_data = NULL;
 
   // Contains how much new data we can write to the buffer without
   // the risk of overwriting previously written data that the audio
@@ -509,7 +510,7 @@ bool WASAPIAudioOutputStream::RenderAudioFromSource(UINT64 device_frequency) {
     // can typically be utilized by an acoustic echo-control (AEC)
     // unit at the render side.
     UINT64 position = 0;
-    uint32 audio_delay_bytes = 0;
+    uint32_t audio_delay_bytes = 0;
     hr = audio_clock_->GetPosition(&position, NULL);
     if (SUCCEEDED(hr)) {
       // Stream position of the sample that is currently playing
@@ -532,9 +533,9 @@ bool WASAPIAudioOutputStream::RenderAudioFromSource(UINT64 device_frequency) {
     // Read a data packet from the registered client source and
     // deliver a delay estimate in the same callback to the client.
 
-    int frames_filled = source_->OnMoreData(
-        audio_bus_.get(), audio_delay_bytes);
-    uint32 num_filled_bytes = frames_filled * format_.Format.nBlockAlign;
+    int frames_filled =
+        source_->OnMoreData(audio_bus_.get(), audio_delay_bytes, 0);
+    uint32_t num_filled_bytes = frames_filled * format_.Format.nBlockAlign;
     DCHECK_LE(num_filled_bytes, packet_size_bytes_);
 
     // Note: If this ever changes to output raw float the data must be
@@ -558,7 +559,9 @@ bool WASAPIAudioOutputStream::RenderAudioFromSource(UINT64 device_frequency) {
 }
 
 HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
-    IAudioClient* client, HANDLE event_handle, uint32* endpoint_buffer_size) {
+    IAudioClient* client,
+    HANDLE event_handle,
+    uint32_t* endpoint_buffer_size) {
   DCHECK_EQ(share_mode_, AUDCLNT_SHAREMODE_EXCLUSIVE);
 
   float f = (1000.0 * packet_size_frames_) / format_.Format.nSamplesPerSec;

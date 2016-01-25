@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/fetch/FetchUtils.h"
 
 #include "platform/network/HTTPHeaderMap.h"
@@ -22,7 +21,7 @@ bool isHTTPWhitespace(UChar chr)
 }
 
 class ForbiddenHeaderNames {
-    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); WTF_MAKE_FAST_ALLOCATED(ForbiddenHeaderNames);
+    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); USING_FAST_MALLOC(ForbiddenHeaderNames);
 public:
     bool has(const String& name) const
     {
@@ -70,7 +69,7 @@ ForbiddenHeaderNames::ForbiddenHeaderNames()
 
 const ForbiddenHeaderNames& ForbiddenHeaderNames::get()
 {
-    AtomicallyInitializedStaticReference(const ForbiddenHeaderNames, instance, new ForbiddenHeaderNames);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(const ForbiddenHeaderNames, instance, new ForbiddenHeaderNames);
     return instance;
 }
 

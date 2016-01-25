@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/SVGRootInlineBoxPainter.h"
 
 #include "core/layout/api/SelectionState.h"
@@ -24,8 +23,10 @@ void SVGRootInlineBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoin
     bool hasSelection = !paintInfo.isPrinting() && m_svgRootInlineBox.selectionState() != SelectionNone;
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
-    if (hasSelection && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfoBeforeFiltering.context, m_svgRootInlineBox.layoutObject(), paintInfoBeforeFiltering.phase, paintOffset)) {
-        LayoutObjectDrawingRecorder recorder(*paintInfoBeforeFiltering.context, m_svgRootInlineBox.layoutObject(), paintInfoBeforeFiltering.phase, paintInfoBeforeFiltering.rect, paintOffset);
+    if (hasSelection && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfoBeforeFiltering.context, m_svgRootInlineBox.layoutObject(),
+        paintInfoBeforeFiltering.phase, paintOffset)) {
+        LayoutObjectDrawingRecorder recorder(paintInfoBeforeFiltering.context, m_svgRootInlineBox.layoutObject(), paintInfoBeforeFiltering.phase,
+            paintInfoBeforeFiltering.cullRect().m_rect, paintOffset);
         for (InlineBox* child = m_svgRootInlineBox.firstChild(); child; child = child->nextOnLine()) {
             if (child->isSVGInlineTextBox())
                 SVGInlineTextBoxPainter(*toSVGInlineTextBox(child)).paintSelectionBackground(paintInfoBeforeFiltering);

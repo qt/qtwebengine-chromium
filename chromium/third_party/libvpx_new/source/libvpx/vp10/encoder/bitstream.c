@@ -45,6 +45,19 @@ static const struct vp10_token partition_encodings[PARTITION_TYPES] =
 static const struct vp10_token inter_mode_encodings[INTER_MODES] =
   {{2, 2}, {6, 3}, {0, 1}, {7, 3}};
 
+static INLINE void write_uniform(vpx_writer *w, int n, int v) {
+  int l = get_unsigned_bits(n);
+  int m = (1 << l) - n;
+  if (l == 0)
+    return;
+  if (v < m) {
+    vpx_write_literal(w, v, l - 1);
+  } else {
+    vpx_write_literal(w, m + ((v - m) >> 1), l - 1);
+    vpx_write_literal(w, (v - m) & 1, 1);
+  }
+}
+
 static void write_intra_mode(vpx_writer *w, PREDICTION_MODE mode,
                              const vpx_prob *probs) {
   vp10_write_token(w, vp10_intra_mode_tree, probs, &intra_mode_encodings[mode]);
@@ -122,8 +135,11 @@ static void update_switchable_interp_probs(VP10_COMMON *cm, vpx_writer *w,
 
 static void pack_mb_tokens(vpx_writer *w,
                            TOKENEXTRA **tp, const TOKENEXTRA *const stop,
-                           vpx_bit_depth_t bit_depth) {
+                           vpx_bit_depth_t bit_depth, const TX_SIZE tx) {
   TOKENEXTRA *p = *tp;
+#if !CONFIG_MISC_FIXES
+  (void) tx;
+#endif
 
   while (p < stop && p->token != EOSB_TOKEN) {
     const int t = p->token;
@@ -171,6 +187,12 @@ static void pack_mb_tokens(vpx_writer *w,
 
     if (b->base_val) {
       const int e = p->extra, l = b->len;
+#if CONFIG_MISC_FIXES
+      int skip_bits =
+          (b->base_val == CAT6_MIN_VAL) ? TX_SIZES - 1 - tx : 0;
+#else
+      int skip_bits = 0;
+#endif
 
       if (l) {
         const unsigned char *pb = b->prob;
@@ -180,7 +202,12 @@ static void pack_mb_tokens(vpx_writer *w,
 
         do {
           const int bb = (v >> --n) & 1;
-          vpx_write(w, bb, pb[i >> 1]);
+          if (skip_bits) {
+            skip_bits--;
+            assert(!bb);
+          } else {
+            vpx_write(w, bb, pb[i >> 1]);
+          }
           i = b->tree[i + bb];
         } while (n);
       }
@@ -190,13 +217,14 @@ static void pack_mb_tokens(vpx_writer *w,
     ++p;
   }
 
-  *tp = p + (p->token == EOSB_TOKEN);
+  *tp = p;
 }
 
 static void write_segment_id(vpx_writer *w, const struct segmentation *seg,
+                             const struct segmentation_probs *segp,
                              int segment_id) {
   if (seg->enabled && seg->update_map)
-    vp10_write_tree(w, vp10_segment_tree, seg->tree_probs, segment_id, 3, 0);
+    vp10_write_tree(w, vp10_segment_tree, segp->tree_probs, segment_id, 3, 0);
 }
 
 // This function encodes the reference frame
@@ -242,6 +270,11 @@ static void pack_inter_mode_mvs(VP10_COMP *cpi, const MODE_INFO *mi,
   const MACROBLOCK *const x = &cpi->td.mb;
   const MACROBLOCKD *const xd = &x->e_mbd;
   const struct segmentation *const seg = &cm->seg;
+#if CONFIG_MISC_FIXES
+  const struct segmentation_probs *const segp = &cm->fc->seg;
+#else
+  const struct segmentation_probs *const segp = &cm->segp;
+#endif
   const MB_MODE_INFO *const mbmi = &mi->mbmi;
   const MB_MODE_INFO_EXT *const mbmi_ext = x->mbmi_ext;
   const PREDICTION_MODE mode = mbmi->mode;
@@ -255,12 +288,12 @@ static void pack_inter_mode_mvs(VP10_COMP *cpi, const MODE_INFO *mi,
   if (seg->update_map) {
     if (seg->temporal_update) {
       const int pred_flag = mbmi->seg_id_predicted;
-      vpx_prob pred_prob = vp10_get_pred_prob_seg_id(seg, xd);
+      vpx_prob pred_prob = vp10_get_pred_prob_seg_id(segp, xd);
       vpx_write(w, pred_flag, pred_prob);
       if (!pred_flag)
-        write_segment_id(w, seg, segment_id);
+        write_segment_id(w, seg, segp, segment_id);
     } else {
-      write_segment_id(w, seg, segment_id);
+      write_segment_id(w, seg, segp, segment_id);
     }
   }
 
@@ -270,7 +303,7 @@ static void pack_inter_mode_mvs(VP10_COMP *cpi, const MODE_INFO *mi,
     vpx_write(w, is_inter, vp10_get_intra_inter_prob(cm, xd));
 
   if (bsize >= BLOCK_8X8 && cm->tx_mode == TX_MODE_SELECT &&
-      !(is_inter && skip)) {
+      !(is_inter && skip) && !xd->lossless[segment_id]) {
     write_selected_tx_size(cm, xd, w);
   }
 
@@ -342,6 +375,11 @@ static void pack_inter_mode_mvs(VP10_COMP *cpi, const MODE_INFO *mi,
 static void write_mb_modes_kf(const VP10_COMMON *cm, const MACROBLOCKD *xd,
                               MODE_INFO **mi_8x8, vpx_writer *w) {
   const struct segmentation *const seg = &cm->seg;
+#if CONFIG_MISC_FIXES
+  const struct segmentation_probs *const segp = &cm->fc->seg;
+#else
+  const struct segmentation_probs *const segp = &cm->segp;
+#endif
   const MODE_INFO *const mi = mi_8x8[0];
   const MODE_INFO *const above_mi = xd->above_mi;
   const MODE_INFO *const left_mi = xd->left_mi;
@@ -349,15 +387,17 @@ static void write_mb_modes_kf(const VP10_COMMON *cm, const MACROBLOCKD *xd,
   const BLOCK_SIZE bsize = mbmi->sb_type;
 
   if (seg->update_map)
-    write_segment_id(w, seg, mbmi->segment_id);
+    write_segment_id(w, seg, segp, mbmi->segment_id);
 
   write_skip(cm, xd, mbmi->segment_id, mi, w);
 
-  if (bsize >= BLOCK_8X8 && cm->tx_mode == TX_MODE_SELECT)
+  if (bsize >= BLOCK_8X8 && cm->tx_mode == TX_MODE_SELECT &&
+      !xd->lossless[mbmi->segment_id])
     write_selected_tx_size(cm, xd, w);
 
   if (bsize >= BLOCK_8X8) {
-    write_intra_mode(w, mbmi->mode, get_y_mode_probs(mi, above_mi, left_mi, 0));
+    write_intra_mode(w, mbmi->mode,
+                     get_y_mode_probs(cm, mi, above_mi, left_mi, 0));
   } else {
     const int num_4x4_w = num_4x4_blocks_wide_lookup[bsize];
     const int num_4x4_h = num_4x4_blocks_high_lookup[bsize];
@@ -367,12 +407,12 @@ static void write_mb_modes_kf(const VP10_COMMON *cm, const MACROBLOCKD *xd,
       for (idx = 0; idx < 2; idx += num_4x4_w) {
         const int block = idy * 2 + idx;
         write_intra_mode(w, mi->bmi[block].as_mode,
-                         get_y_mode_probs(mi, above_mi, left_mi, block));
+                         get_y_mode_probs(cm, mi, above_mi, left_mi, block));
       }
     }
   }
 
-  write_intra_mode(w, mbmi->uv_mode, vp10_kf_uv_mode_prob[mbmi->mode]);
+  write_intra_mode(w, mbmi->uv_mode, cm->fc->uv_mode_prob[mbmi->mode]);
 }
 
 static void write_modes_b(VP10_COMP *cpi, const TileInfo *const tile,
@@ -382,6 +422,7 @@ static void write_modes_b(VP10_COMP *cpi, const TileInfo *const tile,
   const VP10_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &cpi->td.mb.e_mbd;
   MODE_INFO *m;
+  int plane;
 
   xd->mi = cm->mi_grid_visible + (mi_row * cm->mi_stride + mi_col);
   m = xd->mi[0];
@@ -398,8 +439,16 @@ static void write_modes_b(VP10_COMP *cpi, const TileInfo *const tile,
     pack_inter_mode_mvs(cpi, m, w);
   }
 
-  assert(*tok < tok_end);
-  pack_mb_tokens(w, tok, tok_end, cm->bit_depth);
+  if (!m->mbmi.skip) {
+    assert(*tok < tok_end);
+    for (plane = 0; plane < MAX_MB_PLANE; ++plane) {
+      TX_SIZE tx = plane ? get_uv_tx_size(&m->mbmi, &xd->plane[plane])
+                         : m->mbmi.tx_size;
+      pack_mb_tokens(w, tok, tok_end, cm->bit_depth, tx);
+      assert(*tok < tok_end && (*tok)->token == EOSB_TOKEN);
+      (*tok)++;
+    }
+  }
 }
 
 static void write_partition(const VP10_COMMON *const cm,
@@ -407,7 +456,7 @@ static void write_partition(const VP10_COMMON *const cm,
                             int hbs, int mi_row, int mi_col,
                             PARTITION_TYPE p, BLOCK_SIZE bsize, vpx_writer *w) {
   const int ctx = partition_plane_context(xd, mi_row, mi_col, bsize);
-  const vpx_prob *const probs = xd->partition_probs[ctx];
+  const vpx_prob *const probs = cm->fc->partition_prob[ctx];
   const int has_rows = (mi_row + hbs) < cm->mi_rows;
   const int has_cols = (mi_col + hbs) < cm->mi_cols;
 
@@ -485,11 +534,8 @@ static void write_modes_sb(VP10_COMP *cpi,
 static void write_modes(VP10_COMP *cpi,
                         const TileInfo *const tile, vpx_writer *w,
                         TOKENEXTRA **tok, const TOKENEXTRA *const tok_end) {
-  const VP10_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &cpi->td.mb.e_mbd;
   int mi_row, mi_col;
-
-  set_partition_probs(cm, xd);
 
   for (mi_row = tile->mi_row_start; mi_row < tile->mi_row_end;
        mi_row += MI_BLOCK_SIZE) {
@@ -733,7 +779,7 @@ static void encode_loopfilter(struct loopfilter *lf,
 static void write_delta_q(struct vpx_write_bit_buffer *wb, int delta_q) {
   if (delta_q != 0) {
     vpx_wb_write_bit(wb, 1);
-    vpx_wb_write_inv_signed_literal(wb, delta_q, 4);
+    vpx_wb_write_inv_signed_literal(wb, delta_q, CONFIG_MISC_FIXES ? 6 : 4);
   } else {
     vpx_wb_write_bit(wb, 0);
   }
@@ -752,6 +798,9 @@ static void encode_segmentation(VP10_COMMON *cm, MACROBLOCKD *xd,
   int i, j;
 
   const struct segmentation *seg = &cm->seg;
+#if !CONFIG_MISC_FIXES
+  const struct segmentation_probs *segp = &cm->segp;
+#endif
 
   vpx_wb_write_bit(wb, seg->enabled);
   if (!seg->enabled)
@@ -766,14 +815,16 @@ static void encode_segmentation(VP10_COMMON *cm, MACROBLOCKD *xd,
   if (seg->update_map) {
     // Select the coding strategy (temporal or spatial)
     vp10_choose_segmap_coding_method(cm, xd);
+#if !CONFIG_MISC_FIXES
     // Write out probabilities used to decode unpredicted  macro-block segments
     for (i = 0; i < SEG_TREE_PROBS; i++) {
-      const int prob = seg->tree_probs[i];
+      const int prob = segp->tree_probs[i];
       const int update = prob != MAX_PROB;
       vpx_wb_write_bit(wb, update);
       if (update)
         vpx_wb_write_literal(wb, prob, 8);
     }
+#endif
 
     // Write out the chosen coding method.
     if (!frame_is_intra_only(cm) && !cm->error_resilient_mode) {
@@ -781,15 +832,18 @@ static void encode_segmentation(VP10_COMMON *cm, MACROBLOCKD *xd,
     } else {
       assert(seg->temporal_update == 0);
     }
+
+#if !CONFIG_MISC_FIXES
     if (seg->temporal_update) {
       for (i = 0; i < PREDICTION_PROBS; i++) {
-        const int prob = seg->pred_probs[i];
+        const int prob = segp->pred_probs[i];
         const int update = prob != MAX_PROB;
         vpx_wb_write_bit(wb, update);
         if (update)
           vpx_wb_write_literal(wb, prob, 8);
       }
     }
+#endif
   }
 
   // Segmentation data
@@ -818,23 +872,43 @@ static void encode_segmentation(VP10_COMMON *cm, MACROBLOCKD *xd,
 }
 
 #if CONFIG_MISC_FIXES
+static void update_seg_probs(VP10_COMP *cpi, vpx_writer *w) {
+  VP10_COMMON *cm = &cpi->common;
+
+  if (!cpi->common.seg.enabled)
+    return;
+
+  if (cpi->common.seg.temporal_update) {
+    int i;
+
+    for (i = 0; i < PREDICTION_PROBS; i++)
+      vp10_cond_prob_diff_update(w, &cm->fc->seg.pred_probs[i],
+          cm->counts.seg.pred[i]);
+
+    prob_diff_update(vp10_segment_tree, cm->fc->seg.tree_probs,
+        cm->counts.seg.tree_mispred, MAX_SEGMENTS, w);
+  } else {
+    prob_diff_update(vp10_segment_tree, cm->fc->seg.tree_probs,
+        cm->counts.seg.tree_total, MAX_SEGMENTS, w);
+  }
+}
+
 static void write_txfm_mode(TX_MODE mode, struct vpx_write_bit_buffer *wb) {
   vpx_wb_write_bit(wb, mode == TX_MODE_SELECT);
   if (mode != TX_MODE_SELECT)
     vpx_wb_write_literal(wb, mode, 2);
 }
+#else
+static void write_txfm_mode(TX_MODE mode, struct vpx_writer *wb) {
+  vpx_write_literal(wb, VPXMIN(mode, ALLOW_32X32), 2);
+  if (mode >= ALLOW_32X32)
+    vpx_write_bit(wb, mode == TX_MODE_SELECT);
+}
 #endif
+
 
 static void update_txfm_probs(VP10_COMMON *cm, vpx_writer *w,
                               FRAME_COUNTS *counts) {
-#if !CONFIG_MISC_FIXES
-  // Mode
-  vpx_write_literal(w, VPXMIN(cm->tx_mode, ALLOW_32X32), 2);
-  if (cm->tx_mode >= ALLOW_32X32)
-    vpx_write_bit(w, cm->tx_mode == TX_MODE_SELECT);
-
-  // Probabilities
-#endif
 
   if (cm->tx_mode == TX_MODE_SELECT) {
     int i, j;
@@ -940,7 +1014,8 @@ static int get_refresh_mask(VP10_COMP *cpi) {
   }
 }
 
-static size_t encode_tiles(VP10_COMP *cpi, uint8_t *data_ptr) {
+static size_t encode_tiles(VP10_COMP *cpi, uint8_t *data_ptr,
+                           unsigned int *max_tile_sz) {
   VP10_COMMON *const cm = &cpi->common;
   vpx_writer residual_bc;
   int tile_row, tile_col;
@@ -948,6 +1023,7 @@ static size_t encode_tiles(VP10_COMP *cpi, uint8_t *data_ptr) {
   size_t total_size = 0;
   const int tile_cols = 1 << cm->log2_tile_cols;
   const int tile_rows = 1 << cm->log2_tile_rows;
+  unsigned int max_tile = 0;
 
   memset(cm->above_seg_context, 0,
          sizeof(*cm->above_seg_context) * mi_cols_aligned_to_sb(cm->mi_cols));
@@ -970,14 +1046,20 @@ static size_t encode_tiles(VP10_COMP *cpi, uint8_t *data_ptr) {
       assert(tok == tok_end);
       vpx_stop_encode(&residual_bc);
       if (tile_col < tile_cols - 1 || tile_row < tile_rows - 1) {
+        unsigned int tile_sz;
+
         // size of this tile
-        mem_put_be32(data_ptr + total_size, residual_bc.pos);
+        assert(residual_bc.pos > 0);
+        tile_sz = residual_bc.pos - CONFIG_MISC_FIXES;
+        mem_put_le32(data_ptr + total_size, tile_sz);
+        max_tile = max_tile > tile_sz ? max_tile : tile_sz;
         total_size += 4;
       }
 
       total_size += residual_bc.pos;
     }
   }
+  *max_tile_sz = max_tile;
 
   return total_size;
 }
@@ -1013,6 +1095,10 @@ static void write_frame_size_with_refs(VP10_COMP *cpi,
     if (cfg != NULL) {
       found = cm->width == cfg->y_crop_width &&
               cm->height == cfg->y_crop_height;
+#if CONFIG_MISC_FIXES
+      found &= cm->render_width == cfg->render_width &&
+               cm->render_height == cfg->render_height;
+#endif
     }
     vpx_wb_write_bit(wb, found);
     if (found) {
@@ -1023,9 +1109,15 @@ static void write_frame_size_with_refs(VP10_COMP *cpi,
   if (!found) {
     vpx_wb_write_literal(wb, cm->width - 1, 16);
     vpx_wb_write_literal(wb, cm->height - 1, 16);
+
+#if CONFIG_MISC_FIXES
+    write_render_size(cm, wb);
+#endif
   }
 
+#if !CONFIG_MISC_FIXES
   write_render_size(cm, wb);
+#endif
 }
 
 static void write_sync_code(struct vpx_write_bit_buffer *wb) {
@@ -1123,10 +1215,14 @@ static void write_uncompressed_header(VP10_COMP *cpi,
     if (cm->intra_only) {
       write_sync_code(wb);
 
+#if CONFIG_MISC_FIXES
+      write_bitdepth_colorspace_sampling(cm, wb);
+#else
       // Note for profile 0, 420 8bpp is assumed.
       if (cm->profile > PROFILE_0) {
         write_bitdepth_colorspace_sampling(cm, wb);
       }
+#endif
 
       vpx_wb_write_literal(wb, get_refresh_mask(cpi), REF_FRAMES);
       write_frame_size(cm, wb);
@@ -1165,7 +1261,7 @@ static void write_uncompressed_header(VP10_COMP *cpi,
   encode_quantization(cm, wb);
   encode_segmentation(cm, xd, wb);
 #if CONFIG_MISC_FIXES
-  if (xd->lossless)
+  if (!cm->seg.enabled && xd->lossless[0])
     cm->tx_mode = TX_4X4;
   else
     write_txfm_mode(cm->tx_mode, wb);
@@ -1187,23 +1283,46 @@ static size_t write_compressed_header(VP10_COMP *cpi, uint8_t *data) {
   FRAME_CONTEXT *const fc = cm->fc;
   FRAME_COUNTS *counts = cpi->td.counts;
   vpx_writer header_bc;
+  int i;
+#if CONFIG_MISC_FIXES
+  int j;
+#endif
 
   vpx_start_encode(&header_bc, data);
 
 #if !CONFIG_MISC_FIXES
-  if (cpi->td.mb.e_mbd.lossless)
+  if (cpi->td.mb.e_mbd.lossless[0]) {
     cm->tx_mode = TX_4X4;
-  else
+  } else {
+    write_txfm_mode(cm->tx_mode, &header_bc);
     update_txfm_probs(cm, &header_bc, counts);
+  }
 #else
   update_txfm_probs(cm, &header_bc, counts);
 #endif
   update_coef_probs(cpi, &header_bc);
   update_skip_probs(cm, &header_bc, counts);
+#if CONFIG_MISC_FIXES
+  update_seg_probs(cpi, &header_bc);
 
-  if (!frame_is_intra_only(cm)) {
-    int i;
+  for (i = 0; i < INTRA_MODES; ++i)
+    prob_diff_update(vp10_intra_mode_tree, fc->uv_mode_prob[i],
+                     counts->uv_mode[i], INTRA_MODES, &header_bc);
 
+  for (i = 0; i < PARTITION_CONTEXTS; ++i)
+    prob_diff_update(vp10_partition_tree, fc->partition_prob[i],
+                     counts->partition[i], PARTITION_TYPES, &header_bc);
+#endif
+
+  if (frame_is_intra_only(cm)) {
+    vp10_copy(cm->kf_y_prob, vp10_kf_y_mode_prob);
+#if CONFIG_MISC_FIXES
+    for (i = 0; i < INTRA_MODES; ++i)
+      for (j = 0; j < INTRA_MODES; ++j)
+        prob_diff_update(vp10_intra_mode_tree, cm->kf_y_prob[i][j],
+                         counts->kf_y_mode[i][j], INTRA_MODES, &header_bc);
+#endif
+  } else {
     for (i = 0; i < INTER_MODE_CONTEXTS; ++i)
       prob_diff_update(vp10_inter_mode_tree, cm->fc->inter_mode_probs[i],
                        counts->inter_mode[i], INTER_MODES, &header_bc);
@@ -1254,9 +1373,11 @@ static size_t write_compressed_header(VP10_COMP *cpi, uint8_t *data) {
       prob_diff_update(vp10_intra_mode_tree, cm->fc->y_mode_prob[i],
                        counts->y_mode[i], INTRA_MODES, &header_bc);
 
+#if !CONFIG_MISC_FIXES
     for (i = 0; i < PARTITION_CONTEXTS; ++i)
       prob_diff_update(vp10_partition_tree, fc->partition_prob[i],
                        counts->partition[i], PARTITION_TYPES, &header_bc);
+#endif
 
     vp10_write_nmv_probs(cm, cm->allow_high_precision_mv, &header_bc,
                         &counts->mv);
@@ -1268,15 +1389,67 @@ static size_t write_compressed_header(VP10_COMP *cpi, uint8_t *data) {
   return header_bc.pos;
 }
 
-void vp10_pack_bitstream(VP10_COMP *cpi, uint8_t *dest, size_t *size) {
+#if CONFIG_MISC_FIXES
+static int remux_tiles(uint8_t *dest, const int sz,
+                       const int n_tiles, const int mag) {
+  int rpos = 0, wpos = 0, n;
+
+  for (n = 0; n < n_tiles; n++) {
+    int tile_sz;
+
+    if (n == n_tiles - 1) {
+      tile_sz = sz - rpos;
+    } else {
+      tile_sz = mem_get_le32(&dest[rpos]) + 1;
+      rpos += 4;
+      switch (mag) {
+        case 0:
+          dest[wpos] = tile_sz - 1;
+          break;
+        case 1:
+          mem_put_le16(&dest[wpos], tile_sz - 1);
+          break;
+        case 2:
+          mem_put_le24(&dest[wpos], tile_sz - 1);
+          break;
+        case 3:  // remuxing should only happen if mag < 3
+        default:
+          assert("Invalid value for tile size magnitude" && 0);
+      }
+      wpos += mag + 1;
+    }
+
+    memmove(&dest[wpos], &dest[rpos], tile_sz);
+    wpos += tile_sz;
+    rpos += tile_sz;
+  }
+
+  assert(rpos > wpos);
+  assert(rpos == sz);
+
+  return wpos;
+}
+#endif
+
+void vp10_pack_bitstream(VP10_COMP *const cpi, uint8_t *dest, size_t *size) {
   uint8_t *data = dest;
-  size_t first_part_size, uncompressed_hdr_size;
+  size_t first_part_size, uncompressed_hdr_size, data_sz;
   struct vpx_write_bit_buffer wb = {data, 0};
   struct vpx_write_bit_buffer saved_wb;
+  unsigned int max_tile;
+#if CONFIG_MISC_FIXES
+  VP10_COMMON *const cm = &cpi->common;
+  const int n_log2_tiles = cm->log2_tile_rows + cm->log2_tile_cols;
+  const int have_tiles = n_log2_tiles > 0;
+#else
+  const int have_tiles = 0;  // we have tiles, but we don't want to write a
+                             // tile size marker in the header
+#endif
 
   write_uncompressed_header(cpi, &wb);
   saved_wb = wb;
-  vpx_wb_write_literal(&wb, 0, 16);  // don't know in advance first part. size
+  // don't know in advance first part. size
+  vpx_wb_write_literal(&wb, 0, 16 + have_tiles * 2);
 
   uncompressed_hdr_size = vpx_wb_bytes_written(&wb);
   data += uncompressed_hdr_size;
@@ -1285,10 +1458,32 @@ void vp10_pack_bitstream(VP10_COMP *cpi, uint8_t *dest, size_t *size) {
 
   first_part_size = write_compressed_header(cpi, data);
   data += first_part_size;
+
+  data_sz = encode_tiles(cpi, data, &max_tile);
+#if CONFIG_MISC_FIXES
+  if (max_tile > 0) {
+    int mag;
+    unsigned int mask;
+
+    // Choose the (tile size) magnitude
+    for (mag = 0, mask = 0xff; mag < 4; mag++) {
+      if (max_tile <= mask)
+        break;
+      mask <<= 8;
+      mask |= 0xff;
+    }
+    assert(n_log2_tiles > 0);
+    vpx_wb_write_literal(&saved_wb, mag, 2);
+    if (mag < 3)
+      data_sz = remux_tiles(data, (int)data_sz, 1 << n_log2_tiles, mag);
+  } else {
+    assert(n_log2_tiles == 0);
+  }
+#endif
+  data += data_sz;
+
   // TODO(jbb): Figure out what to do if first_part_size > 16 bits.
   vpx_wb_write_literal(&saved_wb, (int)first_part_size, 16);
-
-  data += encode_tiles(cpi, data);
 
   *size = data - dest;
 }

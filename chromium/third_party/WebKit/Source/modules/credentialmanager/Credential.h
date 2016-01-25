@@ -14,9 +14,11 @@ namespace blink {
 
 class ExceptionState;
 
-class Credential : public GarbageCollected<Credential>, public ScriptWrappable {
+class Credential : public GarbageCollectedFinalized<Credential>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
+    virtual ~Credential();
+
     // Credential.idl
     const String& id() const { return m_platformCredential->id(); }
     const String& name() const { return m_platformCredential->name(); }

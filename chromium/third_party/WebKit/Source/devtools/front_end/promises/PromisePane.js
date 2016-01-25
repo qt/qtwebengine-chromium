@@ -10,12 +10,11 @@
 WebInspector.PromisePane = function()
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("ui/filter.css");
     this.registerRequiredCSS("promises/promisePane.css");
     this.element.classList.add("promises");
 
-    var toolbar = new WebInspector.Toolbar(this.element);
-    this._recordButton = new WebInspector.ToolbarButton("", "record-toolbar-item");
+    var toolbar = new WebInspector.Toolbar("", this.element);
+    this._recordButton = new WebInspector.ToolbarToggle("", "record-toolbar-item");
     this._recordButton.addEventListener("click", this._recordButtonClicked.bind(this));
     toolbar.appendToolbarItem(this._recordButton);
 
@@ -38,7 +37,7 @@ WebInspector.PromisePane = function()
     var asyncCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Async"), WebInspector.UIString("Capture async stack traces"), WebInspector.moduleSetting("enableAsyncStackTraces"));
     toolbar.appendToolbarItem(asyncCheckbox);
 
-    this.element.appendChild(this._filterBar.filtersElement());
+    this._filterBar.show(this.element);
 
     this._hiddenByFilterCount = 0;
     this._filterStatusMessageElement = this.element.createChild("div", "promises-filter-status hidden");
@@ -48,8 +47,6 @@ WebInspector.PromisePane = function()
     resetFiltersLink.textContent = WebInspector.UIString("Show all promises.");
     resetFiltersLink.addEventListener("click", this._resetFilters.bind(this), true);
 
-    this._dataGridContainer = new WebInspector.VBox();
-    this._dataGridContainer.show(this.element);
     // FIXME: Make "status" column width fixed to ~16px.
     var columns = [
         { id: "status", weight: 1 },
@@ -60,7 +57,7 @@ WebInspector.PromisePane = function()
     ];
     this._dataGrid = new WebInspector.ViewportDataGrid(columns, undefined, undefined, undefined, this._onContextMenu.bind(this));
     this._dataGrid.setStickToBottom(true);
-    this._dataGrid.show(this._dataGridContainer.element);
+    this._dataGrid.asWidget().show(this.element);
 
     this._linkifier = new WebInspector.Linkifier();
 

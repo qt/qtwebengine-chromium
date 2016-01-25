@@ -44,8 +44,11 @@
 #include <string>
 #include <utility>
 
+#include <stddef.h>
+
 #include "base/atomic_ref_count.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/process.h"
@@ -165,12 +168,6 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // Set the volume of the audio stream referenced by |stream_id|.
   void OnSetVolume(int stream_id, double volume);
 
-  // Set the output device of the audio stream referenced by |stream_id|.
-  void OnSwitchOutputDevice(int stream_id,
-                            int render_frame_id,
-                            const std::string& device_id,
-                            const url::Origin& gurl_security_origin);
-
   // Helper methods.
 
   // Proceed with device authorization after checking permissions.
@@ -198,31 +195,6 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
 
   // Send playing/paused status to the renderer.
   void DoNotifyStreamStateChanged(int stream_id, bool is_playing);
-
-  // Proceed with output device switching after checking permissions.
-  void OnSwitchDeviceAuthorized(int stream_id,
-                                const std::string& device_id,
-                                const GURL& security_origin,
-                                bool have_access);
-
-  // Proceed with output device switching after getting the name of the current
-  // device from the audio controller.
-  void OnSwitchDeviceCurrentName(const std::string& device_id,
-                                 const GURL& security_origin,
-                                 int stream_id,
-                                 const std::string& current_device_unique_id);
-
-  // Proceed with output device switching after translating the ID of the new
-  // device and checking that output parameters are compatible with the current
-  // device.
-  void OnSwitchDeviceIDTranslatedAndParamsChecked(
-      int stream_id,
-      bool success,
-      const AudioOutputDeviceInfo& device_info);
-
-  // Finish handling the output device switch request, after the device has
-  // been switched.
-  void OnDeviceSwitched(int stream_id);
 
   RenderProcessHost::AudioOutputControllerList DoGetOutputControllers() const;
 
@@ -259,24 +231,7 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   void TranslateDeviceID(const std::string& device_id,
                          const GURL& gurl_security_origin,
                          const OutputDeviceInfoCB& callback,
-                         const AudioOutputDeviceEnumeration& device_infos);
-
-  // Translate the hashed |device_id| to a unique device ID and compare
-  // output parameters for both devices.
-  // |callback| is invoked with the following arguments:
-  //    bool: true if |device_id| was found and its parameters match the
-  //    parmeters of the current device.
-  //    AudioOutputDeviceInfo: info for |device_id| if it was found, or dummy
-  //    info with empty unique ID and name otherwise.
-  // TODO(guidou): Remove this method once all clients select the output device
-  // in the initial creation/authorization process instead of by issuing
-  // switch output device IPCs . http://crbug.com/531468
-  void TranslateDeviceIDAndCheckParams(
-      const std::string& device_id,
-      const GURL& gurl_security_origin,
-      const std::string& current_device_unique_id,
-      const OutputDeviceInfoCB& callback,
-      const AudioOutputDeviceEnumeration& device_infos);
+                         const AudioOutputDeviceEnumeration& enumeration);
 
   // Helper method to check if the authorization procedure for stream
   // |stream_id| has started.
@@ -295,7 +250,8 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // A map of stream IDs to audio sources.
   AudioEntryMap audio_entries_;
 
-  // The number of streams in the playing state.
+  // The number of streams in the playing state. Atomic read safe from any
+  // thread, but should only be updated from the IO thread.
   base::AtomicRefCount num_playing_streams_;
 
   // Salt required to translate renderer device IDs to raw device unique IDs
@@ -306,6 +262,10 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // is a bool that is true if the authorization process completes successfully.
   // The second element contains the unique ID of the authorized device.
   std::map<int, std::pair<bool, std::string>> authorizations_;
+
+  // The maximum number of simultaneous streams during the lifetime of this
+  // host. Reported as UMA stat at shutdown.
+  size_t max_simultaneous_streams_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererHost);
 };

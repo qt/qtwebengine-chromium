@@ -28,13 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "public/platform/WebRTCSessionDescriptionRequest.h"
 
 #include "platform/mediastream/RTCSessionDescriptionRequest.h"
 #include "public/platform/WebRTCSessionDescription.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 

@@ -32,13 +32,13 @@ class Page;
 
 class CORE_EXPORT ScopedPageLoadDeferrer final {
     WTF_MAKE_NONCOPYABLE(ScopedPageLoadDeferrer);
-    WTF_MAKE_FAST_ALLOCATED(ScopedPageLoadDeferrer);
+    USING_FAST_MALLOC(ScopedPageLoadDeferrer);
 public:
     explicit ScopedPageLoadDeferrer(Page* exclusion = nullptr);
     ~ScopedPageLoadDeferrer();
 
 private:
-    void detach();
+    void setDefersLoading(bool);
 
     Vector<RefPtrWillBePersistent<LocalFrame>, 16> m_deferredFrames;
 };

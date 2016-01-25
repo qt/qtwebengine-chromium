@@ -22,10 +22,10 @@ class WebTaskRunner;
 // also tracks recursive creation or iterative scheduling of timers,
 // which is used as a signal for throttling repetitive timers.
 class DOMTimerCoordinator {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(DOMTimerCoordinator);
 public:
-    explicit DOMTimerCoordinator(WebTaskRunner*);
+    explicit DOMTimerCoordinator(PassOwnPtr<WebTaskRunner>);
 
     // Creates and installs a new timer. Returns the assigned ID.
     int installNewTimeout(ExecutionContext*, PassOwnPtrWillBeRawPtr<ScheduledAction>, int timeout, bool singleShot);
@@ -33,11 +33,6 @@ public:
     // Removes and disposes the timer with the specified ID, if any. This may
     // destroy the timer.
     void removeTimeoutByID(int id);
-
-    // Notifies registered timers that
-    // ExecutionContext::timerAlignmentInterval has changed so that
-    // timers can adjust their schedule to the new alignment interval.
-    void didChangeTimerAlignmentInterval();
 
     // Timers created during the execution of other timers, and
     // repeating timers, are throttled. Timer nesting level tracks the
@@ -50,9 +45,9 @@ public:
     // deeper timer nesting level, see DOMTimer::DOMTimer.
     void setTimerNestingLevel(int level) { m_timerNestingLevel = level; }
 
-    void setTimerTaskRunner(WebTaskRunner* timerTaskRunner) { m_timerTaskRunner = timerTaskRunner; }
+    void setTimerTaskRunner(PassOwnPtr<WebTaskRunner>);
 
-    WebTaskRunner* timerTaskRunner() const { return m_timerTaskRunner; }
+    WebTaskRunner* timerTaskRunner() const { return m_timerTaskRunner.get(); }
 
     DECLARE_TRACE(); // Oilpan.
 
@@ -64,7 +59,7 @@ private:
 
     int m_circularSequentialID;
     int m_timerNestingLevel;
-    WebTaskRunner* m_timerTaskRunner; // NOT OWNED
+    OwnPtr<WebTaskRunner> m_timerTaskRunner;
 };
 
 } // namespace blink

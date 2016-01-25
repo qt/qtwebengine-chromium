@@ -22,13 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/HRTFPanner.h"
-
-#include <algorithm>
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioUtilities.h"
 #include "platform/audio/HRTFDatabase.h"
@@ -119,8 +113,7 @@ int HRTFPanner::calculateDesiredAzimuthIndexAndBlend(double azimuth, double& azi
 
     // We don't immediately start using this azimuth index, but instead approach this index from the last index we rendered at.
     // This minimizes the clicks and graininess for moving sources which occur otherwise.
-    desiredAzimuthIndex = std::max(0, desiredAzimuthIndex);
-    desiredAzimuthIndex = std::min(numberOfAzimuths - 1, desiredAzimuthIndex);
+    desiredAzimuthIndex = clampTo(desiredAzimuthIndex, 0, numberOfAzimuths - 1);
     return desiredAzimuthIndex;
 }
 
@@ -316,4 +309,3 @@ double HRTFPanner::latencyTime() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

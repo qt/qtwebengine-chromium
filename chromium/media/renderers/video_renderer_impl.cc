@@ -4,6 +4,8 @@
 
 #include "media/renderers/video_renderer_impl.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
@@ -30,13 +32,14 @@ VideoRendererImpl::VideoRendererImpl(
     VideoRendererSink* sink,
     ScopedVector<VideoDecoder> decoders,
     bool drop_frames,
-    const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+    GpuVideoAcceleratorFactories* gpu_factories,
     const scoped_refptr<MediaLog>& media_log)
     : task_runner_(media_task_runner),
       sink_(sink),
       sink_started_(false),
-      video_frame_stream_(
-          new VideoFrameStream(media_task_runner, decoders.Pass(), media_log)),
+      video_frame_stream_(new VideoFrameStream(media_task_runner,
+                                               std::move(decoders),
+                                               media_log)),
       gpu_memory_buffer_pool_(nullptr),
       media_log_(media_log),
       low_delay_(false),
@@ -54,6 +57,7 @@ VideoRendererImpl::VideoRendererImpl(
       time_progressing_(false),
       render_first_frame_and_stop_(false),
       posted_maybe_stop_after_first_paint_(false),
+      last_video_memory_usage_(0),
       weak_factory_(this) {
   if (gpu_factories &&
       gpu_factories->ShouldUseGpuMemoryBuffersForVideoFrames()) {
@@ -119,7 +123,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta timestamp) {
 void VideoRendererImpl::Initialize(
     DemuxerStream* stream,
     const PipelineStatusCB& init_cb,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    const SetCdmReadyCB& set_cdm_ready_cb,
     const StatisticsCB& statistics_cb,
     const BufferingStateCB& buffering_state_cb,
     const base::Closure& ended_cb,
@@ -164,7 +168,7 @@ void VideoRendererImpl::Initialize(
   video_frame_stream_->Initialize(
       stream, base::Bind(&VideoRendererImpl::OnVideoFrameStreamInitialized,
                          weak_factory_.GetWeakPtr()),
-      set_decryptor_ready_cb, statistics_cb, waiting_for_decryption_key_cb);
+      set_cdm_ready_cb, statistics_cb, waiting_for_decryption_key_cb);
 }
 
 scoped_refptr<VideoFrame> VideoRendererImpl::Render(
@@ -305,7 +309,7 @@ void VideoRendererImpl::OnTimeStateChanged(bool time_progressing) {
 void VideoRendererImpl::FrameReadyForCopyingToGpuMemoryBuffers(
     VideoFrameStream::Status status,
     const scoped_refptr<VideoFrame>& frame) {
-  if (status != VideoFrameStream::OK || start_timestamp_ > frame->timestamp()) {
+  if (status != VideoFrameStream::OK || IsBeforeStartTime(frame->timestamp())) {
     VideoRendererImpl::FrameReady(sequence_token_, status, frame);
     return;
   }
@@ -355,28 +359,26 @@ void VideoRendererImpl::FrameReady(uint32_t sequence_token,
       return;
     }
 
-    // In low delay mode, don't accumulate frames that's earlier than the start
-    // time. Otherwise we could declare HAVE_ENOUGH_DATA and start playback
-    // prematurely.
-    if (low_delay_ &&
-        !frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM) &&
-        frame->timestamp() < start_timestamp_) {
-      AttemptRead_Locked();
-      return;
-    }
-
     if (frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM)) {
       DCHECK(!received_end_of_stream_);
       received_end_of_stream_ = true;
 
       // See if we can fire EOS immediately instead of waiting for Render().
       MaybeFireEndedCallback_Locked(time_progressing_);
+    } else if ((low_delay_ || !video_frame_stream_->CanReadWithoutStalling()) &&
+               IsBeforeStartTime(frame->timestamp())) {
+      // Don't accumulate frames that are earlier than the start time if we
+      // won't have a chance for a better frame, otherwise we could declare
+      // HAVE_ENOUGH_DATA and start playback prematurely.
+      AttemptRead_Locked();
+      return;
     } else {
-      // Maintain the latest frame decoded so the correct frame is displayed
-      // after prerolling has completed.
-      if (frame->timestamp() <= start_timestamp_) {
+      // If the sink hasn't been started, we still have time to release less
+      // than ideal frames prior to startup.  We don't use IsBeforeStartTime()
+      // here since it's based on a duration estimate and we can be exact here.
+      if (!sink_started_ && frame->timestamp() <= start_timestamp_)
         algorithm_->Reset();
-      }
+
       AddReadyFrame_Locked(frame);
     }
 
@@ -550,10 +552,14 @@ void VideoRendererImpl::UpdateStats_Locked() {
     PipelineStatistics statistics;
     statistics.video_frames_decoded = frames_decoded_;
     statistics.video_frames_dropped = frames_dropped_;
-    task_runner_->PostTask(FROM_HERE, base::Bind(statistics_cb_, statistics));
 
+    const size_t memory_usage = algorithm_->GetMemoryUsage();
+    statistics.video_memory_usage = memory_usage - last_video_memory_usage_;
+
+    task_runner_->PostTask(FROM_HERE, base::Bind(statistics_cb_, statistics));
     frames_decoded_ = 0;
     frames_dropped_ = 0;
+    last_video_memory_usage_ = memory_usage;
   }
 }
 
@@ -629,6 +635,10 @@ base::TimeTicks VideoRendererImpl::ConvertMediaTimestamp(
   if (!wall_clock_time_cb_.Run(media_times, &wall_clock_times))
     return base::TimeTicks();
   return wall_clock_times[0];
+}
+
+bool VideoRendererImpl::IsBeforeStartTime(base::TimeDelta timestamp) {
+  return timestamp + video_frame_stream_->AverageDuration() < start_timestamp_;
 }
 
 }  // namespace media

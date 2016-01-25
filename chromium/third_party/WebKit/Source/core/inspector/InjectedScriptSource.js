@@ -170,6 +170,8 @@ function isArrayLike(obj)
         return false;
     try {
         if (typeof obj.splice === "function") {
+            if (!InjectedScriptHost.suppressWarningsAndCallFunction(Object.prototype.hasOwnProperty, obj, ["length"]))
+                return false;
             var len = obj.length;
             return typeof len === "number" && isUInt32(len);
         }
@@ -482,7 +484,7 @@ InjectedScript.prototype = {
             delete details["rawScopes"];
             var scopes = [];
             for (var i = 0; i < rawScopes.length; ++i)
-                scopes[i] = InjectedScript.CallFrameProxy._createScopeJson(rawScopes[i].type, rawScopes[i].object, objectGroupName);
+                scopes[i] = InjectedScript.CallFrameProxy._createScopeJson(rawScopes[i].type, rawScopes[i].name, rawScopes[i].object, objectGroupName);
             details.scopeChain = scopes;
         }
         return details;
@@ -562,6 +564,7 @@ InjectedScript.prototype = {
                             continue;
                         if ("get" in descriptor && "set" in descriptor && name != "__proto__" && InjectedScriptHost.isDOMWrapper(object) && !doesAttributeHaveObservableSideEffectOnGet(object, name)) {
                             descriptor.value = InjectedScriptHost.suppressWarningsAndCallFunction(function(attribute) { return this[attribute]; }, object, [name]);
+                            descriptor.isOwn = true;
                             delete descriptor.get;
                             delete descriptor.set;
                         }
@@ -1543,7 +1546,7 @@ InjectedScript.CallFrameProxy.prototype = {
         var scopeChain = callFrame.scopeChain;
         var scopeChainProxy = [];
         for (var i = 0; i < scopeChain.length; ++i)
-            scopeChainProxy[i] = InjectedScript.CallFrameProxy._createScopeJson(callFrame.scopeType(i), scopeChain[i], "backtrace");
+            scopeChainProxy[i] = InjectedScript.CallFrameProxy._createScopeJson(callFrame.scopeType(i), callFrame.scopeName(i), scopeChain[i], "backtrace");
         return scopeChainProxy;
     },
 
@@ -1567,17 +1570,21 @@ InjectedScript.CallFrameProxy._scopeTypeNames = {
 
 /**
  * @param {number} scopeTypeCode
+ * @param {string} scopeName
  * @param {*} scopeObject
  * @param {string} groupId
  * @return {!DebuggerAgent.Scope}
  */
-InjectedScript.CallFrameProxy._createScopeJson = function(scopeTypeCode, scopeObject, groupId)
+InjectedScript.CallFrameProxy._createScopeJson = function(scopeTypeCode, scopeName, scopeObject, groupId)
 {
-    return {
+    var scope = {
         object: injectedScript._wrapObject(scopeObject, groupId),
         type: InjectedScript.CallFrameProxy._scopeTypeNames[scopeTypeCode],
         __proto__: null
     };
+    if (scopeName)
+        scope.name = scopeName;
+    return scope;
 }
 
 /**

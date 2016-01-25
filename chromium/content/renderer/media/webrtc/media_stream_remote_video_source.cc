@@ -4,6 +4,9 @@
 
 #include "content/renderer/media/webrtc/media_stream_remote_video_source.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
@@ -15,7 +18,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "third_party/libjingle/source/talk/media/base/videoframe.h"
-#include "third_party/webrtc/system_wrappers/interface/tick_util.h"
+#include "third_party/webrtc/system_wrappers/include/tick_util.h"
 
 namespace content {
 
@@ -101,10 +104,6 @@ void MediaStreamRemoteVideoSource::RemoteVideoSourceDelegate::RenderFrame(
 
     gfx::Size size(frame->GetWidth(), frame->GetHeight());
 
-    // Non-square pixels are unsupported.
-    DCHECK_EQ(frame->GetPixelWidth(), 1u);
-    DCHECK_EQ(frame->GetPixelHeight(), 1u);
-
     // Make a shallow copy. Both |frame| and |video_frame| will share a single
     // reference counted frame buffer. Const cast and hope no one will overwrite
     // the data.
@@ -116,6 +115,8 @@ void MediaStreamRemoteVideoSource::RemoteVideoSourceDelegate::RenderFrame(
         const_cast<uint8_t*>(frame->GetYPlane()),
         const_cast<uint8_t*>(frame->GetUPlane()),
         const_cast<uint8_t*>(frame->GetVPlane()), elapsed_timestamp);
+    if (!video_frame)
+      return;
     video_frame->AddDestructionObserver(
         base::Bind(&base::DeletePointer<cricket::VideoFrame>, frame->Copy()));
   }
@@ -139,7 +140,7 @@ RemoteVideoSourceDelegate::DoRenderFrameOnIOThread(
 
 MediaStreamRemoteVideoSource::MediaStreamRemoteVideoSource(
     scoped_ptr<TrackObserver> observer)
-    : observer_(observer.Pass()) {
+    : observer_(std::move(observer)) {
   // The callback will be automatically cleared when 'observer_' goes out of
   // scope and no further callbacks will occur.
   observer_->SetCallback(base::Bind(&MediaStreamRemoteVideoSource::OnChanged,
@@ -148,6 +149,12 @@ MediaStreamRemoteVideoSource::MediaStreamRemoteVideoSource(
 
 MediaStreamRemoteVideoSource::~MediaStreamRemoteVideoSource() {
   DCHECK(CalledOnValidThread());
+  DCHECK(!observer_);
+}
+
+void MediaStreamRemoteVideoSource::OnSourceTerminated() {
+  DCHECK(CalledOnValidThread());
+  StopSourceImpl();
 }
 
 void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
@@ -177,10 +184,18 @@ void MediaStreamRemoteVideoSource::StartSourceImpl(
 
 void MediaStreamRemoteVideoSource::StopSourceImpl() {
   DCHECK(CalledOnValidThread());
+  // StopSourceImpl is called either when MediaStreamTrack.stop is called from
+  // JS or blink gc the MediaStreamSource object or when OnSourceTerminated()
+  // is called. Garbage collection will happen after the PeerConnection no
+  // longer receives the video track.
+  if (!observer_)
+    return;
   DCHECK(state() != MediaStreamVideoSource::ENDED);
   scoped_refptr<webrtc::VideoTrackInterface> video_track(
       static_cast<webrtc::VideoTrackInterface*>(observer_->track().get()));
   video_track->RemoveRenderer(delegate_.get());
+  // This removes the references to the webrtc video track.
+  observer_.reset();
 }
 
 webrtc::VideoRendererInterface*

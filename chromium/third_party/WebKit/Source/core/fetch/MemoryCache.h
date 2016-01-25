@@ -28,6 +28,7 @@
 #include "core/CoreExport.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourcePtr.h"
+#include "public/platform/WebMemoryDumpProvider.h"
 #include "public/platform/WebThread.h"
 #include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
@@ -115,7 +116,7 @@ WILL_NOT_BE_EAGERLY_TRACED_CLASS(MemoryCacheEntry);
 // MemoryCacheLRUList an inner struct of MemoryCache because we can't define
 // VectorTraits for inner structs.
 struct MemoryCacheLRUList final {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     Member<MemoryCacheEntry> m_head;
     Member<MemoryCacheEntry> m_tail;
@@ -178,7 +179,6 @@ public:
     WillBeHeapVector<RawPtrWillBeMember<Resource>> resourcesForURL(const KURL&);
 
     void add(Resource*);
-    void replace(Resource* newResource, Resource* oldResource);
     void remove(Resource*);
     bool contains(const Resource*) const;
 
@@ -233,6 +233,10 @@ public:
 
     void updateFramePaintTimestamp();
 
+    // Take memory usage snapshot for tracing.
+    void onMemoryDump(WebMemoryDumpLevelOfDetail, WebProcessMemoryDump*);
+
+    bool isInSameLRUListForTest(const Resource*, const Resource*);
 private:
     enum PruneStrategy {
         // Automatically decide how much to prune.

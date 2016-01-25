@@ -13,10 +13,11 @@ WebInspector.AdvancedApp = function()
 
 WebInspector.AdvancedApp.prototype = {
     /**
-     * @param {!Document} document
      * @override
+     * @param {!Document} document
+     * @param {function()} callback
      */
-    presentUI: function(document)
+    presentUI: function(document, callback)
     {
         var rootView = new WebInspector.RootView();
 
@@ -26,9 +27,11 @@ WebInspector.AdvancedApp.prototype = {
         this._rootSplitWidget.setSidebarWidget(WebInspector.inspectorView);
 
         this._inspectedPagePlaceholder = new WebInspector.InspectedPagePlaceholder();
-        this._inspectedPagePlaceholder.addEventListener(WebInspector.InspectedPagePlaceholder.Events.Update, this._onSetInspectedPageBounds.bind(this, false), this);
-        this._responsiveDesignView = new WebInspector.ResponsiveDesignView(this._inspectedPagePlaceholder);
-        this._rootSplitWidget.setMainWidget(this._responsiveDesignView);
+        this._inspectedPagePlaceholder.addEventListener(WebInspector.InspectedPagePlaceholder.Events.Update, this._onSetInspectedPageBounds.bind(this), this);
+        if (Runtime.experiments.isEnabled("deviceMode"))
+            this._responsiveDesignView = new WebInspector.DeviceModeView.Wrapper(this._inspectedPagePlaceholder);
+        else
+            this._responsiveDesignView = new WebInspector.ResponsiveDesignView(this._inspectedPagePlaceholder);
 
         WebInspector.dockController.addEventListener(WebInspector.DockController.Events.BeforeDockSideChanged, this._onBeforeDockSideChange, this);
         WebInspector.dockController.addEventListener(WebInspector.DockController.Events.DockSideChanged, this._onDockSideChange, this);
@@ -39,6 +42,11 @@ WebInspector.AdvancedApp.prototype = {
         console.timeStamp("AdvancedApp.attachToBody");
         rootView.attachToDocument(document);
         this._inspectedPagePlaceholder.update();
+
+        if (this._isDocked())
+            callback();
+        else
+            this._presentUICallback = callback;
     },
 
     /**
@@ -61,35 +69,31 @@ WebInspector.AdvancedApp.prototype = {
      */
     toolboxLoaded: function(toolboxDocument)
     {
-        WebInspector.initializeUIUtils(toolboxDocument.defaultView);
+        WebInspector.initializeUIUtils(toolboxDocument, WebInspector.settings.createSetting("uiTheme", "default"));
         WebInspector.installComponentRootStyles(/** @type {!Element} */ (toolboxDocument.body));
         WebInspector.ContextMenu.installHandler(toolboxDocument);
         WebInspector.Tooltip.installHandler(toolboxDocument);
 
-        var rootView = new WebInspector.RootView();
-        var inspectedPagePlaceholder = new WebInspector.InspectedPagePlaceholder();
-        inspectedPagePlaceholder.addEventListener(WebInspector.InspectedPagePlaceholder.Events.Update, this._onSetInspectedPageBounds.bind(this, true));
-        this._toolboxResponsiveDesignView = new WebInspector.ResponsiveDesignView(inspectedPagePlaceholder);
-        this._toolboxResponsiveDesignView.show(rootView.element);
-        rootView.attachToDocument(toolboxDocument);
+        this._toolboxRootView = new WebInspector.RootView();
+        this._toolboxRootView.attachToDocument(toolboxDocument);
 
-        this._updatePageResizer();
+        this._updateResponsiveDesignView();
+
+        if (this._presentUICallback) {
+            var callback = this._presentUICallback;
+            delete this._presentUICallback;
+            callback();
+        }
     },
 
-    /**
-     * @return {!InspectorFrontendHostAPI}
-     */
-    inspectorFrontendHost: function()
-    {
-        return window.InspectorFrontendHost;
-    },
-
-    _updatePageResizer: function()
+    _updateResponsiveDesignView: function()
     {
         if (this._isDocked())
+            this._rootSplitWidget.setMainWidget(this._responsiveDesignView);
+        else if (this._toolboxRootView)
+            this._responsiveDesignView.show(this._toolboxRootView.element);
+        if (!Runtime.experiments.isEnabled("deviceMode") && (this._isDocked() || this._toolboxRootView))
             this._responsiveDesignView.updatePageResizer();
-        else if (this._toolboxResponsiveDesignView)
-            this._toolboxResponsiveDesignView.updatePageResizer();
     },
 
     /**
@@ -97,7 +101,7 @@ WebInspector.AdvancedApp.prototype = {
      */
     _onBeforeDockSideChange: function(event)
     {
-        if (/** @type {string} */ (event.data.to) === WebInspector.DockController.State.Undocked && this._toolboxResponsiveDesignView) {
+        if (/** @type {string} */ (event.data.to) === WebInspector.DockController.State.Undocked && this._toolboxRootView) {
             // Hide inspectorView and force layout to mimic the undocked state.
             this._rootSplitWidget.hideSidebar();
             this._inspectedPagePlaceholder.update();
@@ -111,12 +115,12 @@ WebInspector.AdvancedApp.prototype = {
      */
     _onDockSideChange: function(event)
     {
-        this._updatePageResizer();
+        this._updateResponsiveDesignView();
 
         var toDockSide = event ? /** @type {string} */ (event.data.to) : WebInspector.dockController.dockSide();
         if (toDockSide === WebInspector.DockController.State.Undocked) {
             this._updateForUndocked();
-        } else if (this._toolboxResponsiveDesignView && event && /** @type {string} */ (event.data.from) === WebInspector.DockController.State.Undocked) {
+        } else if (this._toolboxRootView && event && /** @type {string} */ (event.data.from) === WebInspector.DockController.State.Undocked) {
             // Don't update yet for smooth transition.
             this._rootSplitWidget.hideSidebar();
         } else {
@@ -132,11 +136,11 @@ WebInspector.AdvancedApp.prototype = {
         // We may get here on the first dock side change while loading without BeforeDockSideChange.
         if (!this._changingDockSide)
             return;
-        this._changingDockSide = false;
         if (/** @type {string} */ (event.data.from) === WebInspector.DockController.State.Undocked) {
             // Restore docked layout in case of smooth transition.
             this._updateForDocked(/** @type {string} */ (event.data.to));
         }
+        this._changingDockSide = false;
         this._inspectedPagePlaceholder.update();
     },
 
@@ -165,14 +169,16 @@ WebInspector.AdvancedApp.prototype = {
     },
 
     /**
-     * @param {boolean} toolbox
      * @param {!WebInspector.Event} event
      */
-    _onSetInspectedPageBounds: function(toolbox, event)
+    _onSetInspectedPageBounds: function(event)
     {
-        if (this._changingDockSide || (this._isDocked() === toolbox))
+        if (this._changingDockSide)
             return;
+        var window = this._inspectedPagePlaceholder.element.window();
         if (!window.innerWidth || !window.innerHeight)
+            return;
+        if (!this._inspectedPagePlaceholder.isShowing())
             return;
         var bounds = /** @type {{x: number, y: number, width: number, height: number}} */ (event.data);
         console.timeStamp("AdvancedApp.setInspectedPageBounds");

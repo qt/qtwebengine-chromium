@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "snapshot/win/capture_context_memory.h"
 #include "snapshot/win/cpu_context_win.h"
 #include "snapshot/win/process_reader_win.h"
 
@@ -41,11 +42,23 @@ bool ThreadSnapshotWin::Initialize(
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
   thread_ = process_reader_thread;
-  // TODO(scottmg): Ensure these regions are readable
-  // https://code.google.com/p/crashpad/issues/detail?id=59
-  stack_.Initialize(
-      process_reader, thread_.stack_region_address, thread_.stack_region_size);
-  teb_.Initialize(process_reader, thread_.teb_address, thread_.teb_size);
+  if (process_reader->GetProcessInfo().LoggingRangeIsFullyReadable(
+          CheckedRange<WinVMAddress, WinVMSize>(thread_.stack_region_address,
+                                                thread_.stack_region_size))) {
+    stack_.Initialize(process_reader,
+                      thread_.stack_region_address,
+                      thread_.stack_region_size);
+  } else {
+    stack_.Initialize(process_reader, 0, 0);
+  }
+
+  if (process_reader->GetProcessInfo().LoggingRangeIsFullyReadable(
+          CheckedRange<WinVMAddress, WinVMSize>(thread_.teb_address,
+                                                thread_.teb_size))) {
+    teb_.Initialize(process_reader, thread_.teb_address, thread_.teb_size);
+  } else {
+    teb_.Initialize(process_reader, 0, 0);
+  }
 
 #if defined(ARCH_CPU_X86_64)
   if (process_reader->Is64Bit()) {
@@ -62,6 +75,9 @@ bool ThreadSnapshotWin::Initialize(
   context_.x86 = &context_union_.x86;
   InitializeX86Context(process_reader_thread.context.native, context_.x86);
 #endif  // ARCH_CPU_X86_64
+
+  CaptureMemoryPointedToByContext(
+      context_, process_reader, thread_, &pointed_to_memory_);
 
   INITIALIZATION_STATE_SET_VALID(initialized_);
   return true;
@@ -99,10 +115,13 @@ uint64_t ThreadSnapshotWin::ThreadSpecificDataAddress() const {
 
 std::vector<const MemorySnapshot*> ThreadSnapshotWin::ExtraMemory() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  // TODO(scottmg): Ensure this region is readable, and make sure we don't
-  // discard the entire dump if it isn't.
-  // https://code.google.com/p/crashpad/issues/detail?id=59
-  return std::vector<const MemorySnapshot*>(1, &teb_);
+  std::vector<const MemorySnapshot*> result;
+  result.reserve(1 + pointed_to_memory_.size());
+  result.push_back(&teb_);
+  std::copy(pointed_to_memory_.begin(),
+            pointed_to_memory_.end(),
+            std::back_inserter(result));
+  return result;
 }
 
 }  // namespace internal

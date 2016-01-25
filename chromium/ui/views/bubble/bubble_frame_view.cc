@@ -5,7 +5,9 @@
 #include "ui/views/bubble/bubble_frame_view.h"
 
 #include <algorithm>
+#include <utility>
 
+#include "build/build_config.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -70,7 +72,8 @@ BubbleFrameView::BubbleFrameView(const gfx::Insets& content_margins)
       title_icon_(new views::ImageView()),
       title_(nullptr),
       close_(nullptr),
-      titlebar_extra_view_(nullptr) {
+      titlebar_extra_view_(nullptr),
+      close_button_clicked_(false) {
   AddChildView(title_icon_);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -321,13 +324,15 @@ void BubbleFrameView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
 }
 
 void BubbleFrameView::ButtonPressed(Button* sender, const ui::Event& event) {
-  if (sender == close_)
+  if (sender == close_) {
+    close_button_clicked_ = true;
     GetWidget()->Close();
+  }
 }
 
 void BubbleFrameView::SetBubbleBorder(scoped_ptr<BubbleBorder> border) {
   bubble_border_ = border.get();
-  SetBorder(border.Pass());
+  SetBorder(std::move(border));
 
   // Update the background, which relies on the border.
   set_background(new views::BubbleBackground(bubble_border_));

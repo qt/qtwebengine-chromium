@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebTextInputInfo.h"
 
 namespace blink {
@@ -37,6 +36,7 @@ bool WebTextInputInfo::equals(const WebTextInputInfo& other) const
 {
     return type == other.type
         && value == other.value
+        && flags == other.flags
         && selectionStart == other.selectionStart
         && selectionEnd == other.selectionEnd
         && compositionStart == other.compositionStart

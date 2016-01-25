@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_context.h"
@@ -40,6 +43,7 @@ class GLApiTest : public testing::Test {
     num_fake_extension_strings_ = 0;
     fake_extension_strings_ = nullptr;
 
+    DCHECK(!g_current_gl_context_tls);
     g_current_gl_context_tls = new base::ThreadLocalPointer<GLApi>;
 
     SetGLGetProcAddressProc(
@@ -53,6 +57,7 @@ class GLApiTest : public testing::Test {
   void TearDown() override {
     api_.reset(nullptr);
     delete g_current_gl_context_tls;
+    g_current_gl_context_tls = nullptr;
 
     SetGLImplementation(kGLImplementationNone);
     fake_extension_string_ = "";

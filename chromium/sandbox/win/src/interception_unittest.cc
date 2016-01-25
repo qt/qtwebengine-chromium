@@ -6,16 +6,17 @@
 // The tests require private information so the whole interception.cc file is
 // included from this file.
 
+#include <windows.h>
+#include <stddef.h>
+
 #include <algorithm>
 #include <set>
-
-#include <windows.h>
 
 #include "base/bits.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/win/src/interception.h"
-#include "sandbox/win/src/interceptors.h"
 #include "sandbox/win/src/interception_internal.h"
+#include "sandbox/win/src/interceptors.h"
 #include "sandbox/win/src/target_process.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -93,7 +94,7 @@ TEST(InterceptionManagerTest, GetGranularAlignedRandomOffset) {
   // ciel(log2(544)) = 10.
   // Alignment must be 2^10 = 1024.
   const size_t kAlignmentBits = base::bits::Log2Ceiling(kThunkBytes);
-  const size_t kAlignment = 1 << kAlignmentBits;
+  const size_t kAlignment = static_cast<size_t>(1) << kAlignmentBits;
 
   const size_t kAllocGranularity = 65536;
 
@@ -118,7 +119,7 @@ TEST(InterceptionManagerTest, GetGranularAlignedRandomOffset) {
     max_val = std::max(val, max_val);
   }
   ASSERT_EQ(max_val, kAllocGranularity - kAlignment);
-  ASSERT_EQ(min_val, 0);
+  ASSERT_EQ(0u, min_val);
   ASSERT_EQ(min_nonzero_val, kAlignment);
 }
 
@@ -179,7 +180,7 @@ TEST(InterceptionManagerTest, BufferLayout1) {
                                       INTERCEPTION_EAT, function, OPEN_KEY_ID);
 
   // Verify that all interceptions were added
-  ASSERT_EQ(18, interceptions.interceptions_.size());
+  ASSERT_EQ(18u, interceptions.interceptions_.size());
 
   size_t buffer_size = interceptions.GetBufferSize();
   scoped_ptr<BYTE[]> local_buffer(new BYTE[buffer_size]);
@@ -195,7 +196,7 @@ TEST(InterceptionManagerTest, BufferLayout1) {
   // first group remains on the list of interceptions (inside the object
   // "interceptions"). There are 3 local interceptions (of ntdll); the
   // other 15 have to be sent to the child to be performed "hot".
-  EXPECT_EQ(3, interceptions.interceptions_.size());
+  EXPECT_EQ(3u, interceptions.interceptions_.size());
 
   int num_dlls, num_functions, num_names;
   WalkBuffer(local_buffer.get(), buffer_size, &num_dlls, &num_functions,
@@ -232,7 +233,7 @@ TEST(InterceptionManagerTest, BufferLayout2) {
                                       INTERCEPTION_SMART_SIDESTEP, function,
                                       OPEN_FILE_ID);
   // Verify that all interceptions were added
-  ASSERT_EQ(5, interceptions.interceptions_.size());
+  ASSERT_EQ(5u, interceptions.interceptions_.size());
 
   size_t buffer_size = interceptions.GetBufferSize();
   scoped_ptr<BYTE[]> local_buffer(new BYTE[buffer_size]);
@@ -245,7 +246,7 @@ TEST(InterceptionManagerTest, BufferLayout2) {
   // group with the interceptions belonging to dlls that will be "hot"
   // patched on the client. The second group lives on local_buffer, and the
   // first group remains on the list of interceptions, in this case just one.
-  EXPECT_EQ(1, interceptions.interceptions_.size());
+  EXPECT_EQ(1u, interceptions.interceptions_.size());
 
   int num_dlls, num_functions, num_names;
   WalkBuffer(local_buffer.get(), buffer_size, &num_dlls, &num_functions,

@@ -30,11 +30,14 @@
 
 /**
  * @constructor
- * @param {!Object<string, string>} prefs
+ * @param {!WebInspector.SettingsStorage} storage
  */
-WebInspector.Settings = function(prefs)
+WebInspector.Settings = function(storage)
 {
-    this._settingsStorage = prefs;
+    this._settingsStorage = storage;
+    var clearLocalStorage = window.localStorage ? window.localStorage.clear.bind(window.localStorage) : undefined;
+    this._localStorage = new WebInspector.SettingsStorage(window.localStorage || {}, undefined, undefined, clearLocalStorage);
+
     this._eventSupport = new WebInspector.Object();
     /** @type {!Map<string, !WebInspector.Setting>} */
     this._registry = new Map();
@@ -91,7 +94,7 @@ WebInspector.Settings.prototype = {
     createSetting: function(key, defaultValue, isLocal)
     {
         if (!this._registry.get(key))
-            this._registry.set(key, new WebInspector.Setting(this, key, defaultValue, this._eventSupport, isLocal ? (window.localStorage || {}) : this._settingsStorage));
+            this._registry.set(key, new WebInspector.Setting(this, key, defaultValue, this._eventSupport, isLocal ? this._localStorage : this._settingsStorage));
         return /** @type {!WebInspector.Setting} */ (this._registry.get(key));
     },
 
@@ -115,18 +118,96 @@ WebInspector.Settings.prototype = {
     createRegExpSetting: function(key, defaultValue, regexFlags, isLocal)
     {
         if (!this._registry.get(key))
-            this._registry.set(key, new WebInspector.RegExpSetting(this, key, defaultValue, this._eventSupport, isLocal ? (window.localStorage || {}) : this._settingsStorage, regexFlags));
+            this._registry.set(key, new WebInspector.RegExpSetting(this, key, defaultValue, this._eventSupport, isLocal ? this._localStorage : this._settingsStorage, regexFlags));
         return /** @type {!WebInspector.RegExpSetting} */ (this._registry.get(key));
     },
 
     clearAll: function()
     {
-        if (window.localStorage)
-            window.localStorage.clear();
-        for (var key in this._settingsStorage)
-            delete this._settingsStorage[key];
+        this._settingsStorage.removeAll();
+        this._localStorage.removeAll();
         var versionSetting = WebInspector.settings.createSetting(WebInspector.VersionController._currentVersionName, 0);
         versionSetting.set(WebInspector.VersionController.currentVersion);
+    }
+}
+
+/**
+ * @constructor
+ * @param {!Object} object
+ * @param {function(string, string)=} setCallback
+ * @param {function(string)=} removeCallback
+ * @param {function(string)=} removeAllCallback
+ */
+WebInspector.SettingsStorage = function(object, setCallback, removeCallback, removeAllCallback)
+{
+    this._object = object;
+    this._setCallback = setCallback || function() {};
+    this._removeCallback = removeCallback || function() {};
+    this._removeAllCallback = removeAllCallback || function() {};
+}
+
+WebInspector.SettingsStorage.prototype = {
+    /**
+     * @param {string} name
+     * @param {string} value
+     */
+    set: function(name, value)
+    {
+        this._object[name] = value;
+        this._setCallback(name, value);
+    },
+
+    /**
+     * @param {string} name
+     * @return {boolean}
+     */
+    has: function(name)
+    {
+        return name in this._object;
+    },
+
+    /**
+     * @param {string} name
+     * @return {string}
+     */
+    get: function(name)
+    {
+        return this._object[name];
+    },
+
+    /**
+     * @param {string} name
+     */
+    remove: function(name)
+    {
+        delete this._object[name];
+        this._removeCallback(name);
+    },
+
+    removeAll: function()
+    {
+        this._object = {};
+        this._removeAllCallback();
+    },
+
+    _dumpSizes: function()
+    {
+        WebInspector.console.log("Ten largest settings: ");
+
+        var sizes = { __proto__: null };
+        for (var key in this._object)
+            sizes[key] = this._object[key].length;
+        var keys = Object.keys(sizes);
+
+        function comparator(key1, key2)
+        {
+            return sizes[key2] - sizes[key1];
+        }
+
+        keys.sort(comparator);
+
+        for (var i = 0; i < 10 && i < keys.length; ++i)
+            WebInspector.console.log("Setting: '" + keys[i] + "', size: " + sizes[keys[i]]);
     }
 }
 
@@ -136,7 +217,7 @@ WebInspector.Settings.prototype = {
  * @param {string} name
  * @param {V} defaultValue
  * @param {!WebInspector.Object} eventSupport
- * @param {!Object} storage
+ * @param {!WebInspector.SettingsStorage} storage
  * @template V
  */
 WebInspector.Setting = function(settings, name, defaultValue, eventSupport, storage)
@@ -181,9 +262,9 @@ WebInspector.Setting.prototype = {
             return this._value;
 
         this._value = this._defaultValue;
-        if (this._name in this._storage) {
+        if (this._storage.has(this._name)) {
             try {
-                this._value = JSON.parse(this._storage[this._name]);
+                this._value = JSON.parse(this._storage.get(this._name));
             } catch(e) {
                 this.remove();
             }
@@ -200,7 +281,7 @@ WebInspector.Setting.prototype = {
         try {
             var settingString = JSON.stringify(value);
             try {
-                this._storage[this._name] = settingString;
+                this._storage.set(this._name, settingString);
             } catch(e) {
                 this._printSettingsSavingError(e.message, this._name, settingString);
             }
@@ -214,7 +295,7 @@ WebInspector.Setting.prototype = {
     {
         this._settings._registry.delete(this._name);
         this._settings._moduleSettings.delete(this._name);
-        delete this._storage[this._name];
+        this._storage.remove(this._name);
     },
 
     /**
@@ -227,22 +308,7 @@ WebInspector.Setting.prototype = {
         var errorMessage = "Error saving setting with name: " + this._name + ", value length: " + value.length + ". Error: " + message;
         console.error(errorMessage);
         WebInspector.console.error(errorMessage);
-        WebInspector.console.log("Ten largest settings: ");
-
-        var sizes = { __proto__: null };
-        for (var key in this._storage)
-            sizes[key] = this._storage[key].length;
-        var keys = Object.keys(sizes);
-
-        function comparator(key1, key2)
-        {
-            return sizes[key2] - sizes[key1];
-        }
-
-        keys.sort(comparator);
-
-        for (var i = 0; i < 10 && i < keys.length; ++i)
-            WebInspector.console.log("Setting: '" + keys[i] + "', size: " + sizes[keys[i]]);
+        this._storage._dumpSizes();
     }
 }
 
@@ -253,7 +319,7 @@ WebInspector.Setting.prototype = {
  * @param {string} name
  * @param {string} defaultValue
  * @param {!WebInspector.Object} eventSupport
- * @param {!Object<string, string>} storage
+ * @param {!WebInspector.SettingsStorage} storage
  * @param {string=} regexFlags
  */
 WebInspector.RegExpSetting = function(settings, name, defaultValue, eventSupport, storage, regexFlags)
@@ -333,7 +399,7 @@ WebInspector.VersionController = function()
 }
 
 WebInspector.VersionController._currentVersionName = "inspectorVersion";
-WebInspector.VersionController.currentVersion = 15;
+WebInspector.VersionController.currentVersion = 18;
 
 WebInspector.VersionController.prototype = {
     updateVersion: function()
@@ -589,6 +655,47 @@ WebInspector.VersionController.prototype = {
             newValue[fileSystemPath] = [];
             for (var entry of oldValue[fileSystemPath])
                 newValue[fileSystemPath].push(entry.path);
+        }
+        setting.set(newValue);
+    },
+
+    _updateVersionFrom15To16: function()
+    {
+        var setting = WebInspector.settings.createSetting("InspectorView.panelOrder", {});
+        var tabOrders = setting.get();
+        for (var key of Object.keys(tabOrders))
+            tabOrders[key] = (tabOrders[key] + 1) * 10;
+        setting.set(tabOrders);
+    },
+
+    _updateVersionFrom16To17: function()
+    {
+        var setting = WebInspector.settings.createSetting("networkConditionsCustomProfiles", []);
+        var oldValue = setting.get();
+        var newValue = [];
+        if (Array.isArray(oldValue)) {
+            for (var preset of oldValue) {
+                if (typeof preset.title === "string" && typeof preset.value === "object" && typeof preset.value.throughput === "number" && typeof preset.value.latency === "number")
+                    newValue.push({title: preset.title, value: {download: preset.value.throughput, upload: preset.value.throughput, latency: preset.value.latency}});
+            }
+        }
+        setting.set(newValue);
+    },
+
+    _updateVersionFrom17To18: function()
+    {
+        var setting = WebInspector.settings.createLocalSetting("workspaceExcludedFolders", {});
+        var oldValue = setting.get();
+        var newValue = {};
+        for (var oldKey in oldValue) {
+            var newKey = oldKey.replace(/\\/g, "/");
+            if (!newKey.startsWith("file://")) {
+                if (newKey.startsWith("/"))
+                    newKey = "file://" + newKey;
+                else
+                    newKey = "file:///" + newKey;
+            }
+            newValue[newKey] = oldValue[oldKey];
         }
         setting.set(newValue);
     },

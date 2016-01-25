@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//chromecast/chromecast.gni")
+import("//media/media_options.gni")
 import("//testing/test.gni")
 
 source_set("browser") {
@@ -61,8 +62,8 @@ source_set("browser") {
 
   deps = [
     "//base",
-    "//base:prefs",
     "//base:i18n",
+    "//base:prefs",
     "//cc",
     "//chromecast/app:chromecast_settings",
     "//chromecast/app:resources",
@@ -81,13 +82,18 @@ source_set("browser") {
     "//components/metrics:gpu",
     "//components/metrics:net",
     "//components/metrics:profiler",
+
+    # TODO(gfhuang): Eliminate this dependency if ScreenInfoMetricsProvider
+    # isn't needed. crbug.com/541577
+    "//components/metrics:ui",
     "//components/network_hints/browser",
     "//content",
     "//content/public/browser",
     "//content/public/common",
     "//content/public/utility",
-    "//media",
+    "//gpu",
     "//ipc",
+    "//media",
     "//net",
     "//ui/aura",
     "//ui/base",
@@ -105,7 +111,18 @@ source_set("browser") {
       "//chromecast/browser/media",
     ]
 
-    deps += [ "//components/metrics:serialization" ]
+    deps += [
+      "//build/linux:fontconfig",
+      "//components/metrics:serialization",
+    ]
+  }
+
+  if (enable_mojo_media != "none") {
+    configs += [ "//media/mojo/services:enable_mojo_media_config" ]
+  }
+
+  if (enable_mojo_media == "utility") {
+    deps += [ "//media/mojo/services:application" ]
   }
 }
 
@@ -148,7 +165,14 @@ test("cast_shell_browser_test") {
   deps = [
     ":test_support",
     "//base",
+    "//content/test:test_support",
+    "//media/base:test_support",
     "//testing/gtest",
     "//url",
   ]
+
+  # TODO(slan): Find a better way to do this.
+  if (chromecast_branding != "public") {
+    deps += [ "//chromecast/internal:cast_shell_internal" ]
+  }
 }

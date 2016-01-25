@@ -17,9 +17,9 @@
         '../third_party/protobuf/protobuf.gyp:protobuf_lite',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_vector_icons',
         '../url/url.gyp:url_lib',
         'bookmarks_browser',
-        'crash_core_common',  # TODO(mpearson): remove once 464926 is fixed.
         'metrics',
         'component_metrics_proto',
         'components_resources.gyp:components_resources',
@@ -36,7 +36,7 @@
         'search_engines',
         'toolbar',
         'url_formatter/url_formatter.gyp:url_formatter',
-        'variations_http_provider',
+        'variations_net',
       ],
       'export_dependent_settings': [
         'component_metrics_proto',
@@ -187,5 +187,20 @@
         'omnibox/browser/test_scheme_classifier.h',
       ],
     },
+  ],
+  'conditions': [
+    ['OS == "android"', {
+      'targets': [
+        {
+          # GN: //components/omnibox:autocomplete_match_type_javagen
+          'target_name': 'autocomplete_match_type_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'omnibox/browser/autocomplete_match_type.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+      ],
+    }],
   ],
 }

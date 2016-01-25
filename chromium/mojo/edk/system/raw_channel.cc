@@ -4,15 +4,18 @@
 
 #include "mojo/edk/system/raw_channel.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
-
 #include <algorithm>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/edk/embedder/embedder_internal.h"
+#include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/message_in_transit.h"
 #include "mojo/edk/system/transport_data.h"
 
@@ -96,13 +99,22 @@ void RawChannel::WriteBuffer::GetPlatformHandlesToSend(
   }
 }
 
-void RawChannel::WriteBuffer::GetBuffers(std::vector<Buffer>* buffers) const {
+void RawChannel::WriteBuffer::GetBuffers(std::vector<Buffer>* buffers) {
   buffers->clear();
 
   if (message_queue_.IsEmpty())
     return;
 
   const MessageInTransit* message = message_queue_.PeekMessage();
+  if (message->type() == MessageInTransit::Type::RAW_MESSAGE) {
+    // These are already-serialized messages so we don't want to write another
+    // header as they include that.
+    if (data_offset_ == 0) {
+      size_t header_size = message->total_size() - message->num_bytes();
+      data_offset_ = header_size;
+    }
+  }
+
   DCHECK_LT(data_offset_, message->total_size());
   size_t bytes_to_write = message->total_size() - data_offset_;
 
@@ -155,11 +167,13 @@ void RawChannel::WriteBuffer::GetBuffers(std::vector<Buffer>* buffers) const {
 // RawChannel ------------------------------------------------------------------
 
 RawChannel::RawChannel()
-    : message_loop_for_io_(nullptr),
-      delegate_(nullptr),
+    : delegate_(nullptr),
+      error_occurred_(false),
+      calling_delegate_(false),
       write_ready_(false),
       write_stopped_(false),
-      error_occurred_(false),
+      pending_write_error_(false),
+      initialized_(false),
       weak_ptr_factory_(this) {
   read_buffer_.reset(new ReadBuffer);
   write_buffer_.reset(new WriteBuffer());
@@ -168,37 +182,57 @@ RawChannel::RawChannel()
 RawChannel::~RawChannel() {
   DCHECK(!read_buffer_);
   DCHECK(!write_buffer_);
-
-  // Only want to decrement counter if Init was called.
-  if (message_loop_for_io_) {
-    // No need to take the |write_lock_| here -- if there are still weak
-    // pointers outstanding, then we're hosed anyway (since we wouldn't be able
-    // to invalidate them cleanly, since we might not be on the I/O thread).
-  //  DCHECK(!weak_ptr_factory_.HasWeakPtrs());
-    internal::ChannelShutdown();
-  }
 }
 
 void RawChannel::Init(Delegate* delegate) {
-  internal::ChannelStarted();
   DCHECK(delegate);
 
   base::AutoLock read_locker(read_lock_);
-  // solves race where initialiing on io thread while main thread is serializing
+  // Solves race where initialiing on io thread while main thread is serializing
   // this channel and releases handle.
   base::AutoLock locker(write_lock_);
 
   DCHECK(!delegate_);
   delegate_ = delegate;
 
-  DCHECK(!message_loop_for_io_);
-  message_loop_for_io_ =
-      static_cast<base::MessageLoopForIO*>(base::MessageLoop::current());
+  if (read_buffer_->num_valid_bytes_ ||
+      !write_buffer_->message_queue_.IsEmpty()) {
+    LazyInitialize();
+  }
+}
+
+void RawChannel::EnsureLazyInitialized() {
+  {
+    base::AutoLock locker(write_lock_);
+    if (initialized_)
+      return;
+  }
+
+  internal::g_io_thread_task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(&RawChannel::LockAndCallLazyInitialize,
+      weak_ptr_factory_.GetWeakPtr()));
+}
+
+void RawChannel::LockAndCallLazyInitialize() {
+  base::AutoLock read_locker(read_lock_);
+  base::AutoLock locker(write_lock_);
+  LazyInitialize();
+}
+
+void RawChannel::LazyInitialize() {
+  read_lock_.AssertAcquired();
+  write_lock_.AssertAcquired();
+  DCHECK(internal::g_io_thread_task_runner->RunsTasksOnCurrentThread());
+  if (initialized_)
+    return;
+  initialized_ = true;
+  base::MessageLoop::current()->AddDestructionObserver(this);
 
   OnInit();
 
-  if (read_buffer_->num_valid_bytes()) {
-    // We had serialized read buffer data through SetInitialReadBufferData call.
+  if (read_buffer_->num_valid_bytes_) {
+    // We had serialized read buffer data through SetSerializedData call.
     // Make sure we read messages out of it now, otherwise the delegate won't
     // get notified if no other data gets written to the pipe.
     // Although this means that we can call back synchronously into the caller,
@@ -214,8 +248,8 @@ void RawChannel::Init(Delegate* delegate) {
   if (io_result != IO_PENDING) {
     // This will notify the delegate about the read failure. Although we're on
     // the I/O thread, don't call it in the nested context.
-    message_loop_for_io_->PostTask(
-        FROM_HERE, base::Bind(&RawChannel::OnReadCompleted,
+    internal::g_io_thread_task_runner->PostTask(
+        FROM_HERE, base::Bind(&RawChannel::CallOnReadCompleted,
                               weak_ptr_factory_.GetWeakPtr(), io_result, 0));
   }
   // Note: |ScheduleRead()| failure is treated as a read failure (by notifying
@@ -229,73 +263,69 @@ void RawChannel::Init(Delegate* delegate) {
 }
 
 void RawChannel::Shutdown() {
+  DCHECK(internal::g_io_thread_task_runner->RunsTasksOnCurrentThread());
+
   weak_ptr_factory_.InvalidateWeakPtrs();
+  // Reset the delegate so that it won't receive further calls.
+  delegate_ = nullptr;
+  if (calling_delegate_) {
+    internal::g_io_thread_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&RawChannel::Shutdown, weak_ptr_factory_.GetWeakPtr()));
+    return;
+  }
+
+  bool empty = false;
+  {
+    base::AutoLock locker(write_lock_);
+    empty = write_buffer_->message_queue_.IsEmpty();
+  }
 
   // Normally, we want to flush any pending writes before shutting down. This
-  // doesn't apply when 1) we don't have a handle (for obvious reasons) or
-  // 2) when the other side already quit and asked us to close the handle to
-  // ensure that we read everything out of the pipe first.
-  if (!HandleForDebuggingNoLock().is_valid() || error_occurred_) {
+  // doesn't apply when 1) we don't have a handle (for obvious reasons),
+  // 2) we have a read or write error before (doesn't matter which), or 3) when
+  // there are no pending messages to be written.
+  if (!IsHandleValid() || error_occurred_ || empty) {
     {
       base::AutoLock read_locker(read_lock_);
       base::AutoLock locker(write_lock_);
-      OnShutdownNoLock(read_buffer_.Pass(), write_buffer_.Pass());
+      OnShutdownNoLock(std::move(read_buffer_), std::move(write_buffer_));
+      if (initialized_)
+        base::MessageLoop::current()->RemoveDestructionObserver(this);
     }
+
     delete this;
     return;
   }
 
   base::AutoLock read_locker(read_lock_);
   base::AutoLock locker(write_lock_);
-  DCHECK(read_buffer_->num_valid_bytes() == 0) <<
+  DCHECK(read_buffer_->IsEmpty()) <<
       "RawChannel::Shutdown called but there is pending data to be read";
 
-  // happens on shutdown if didn't call init when doing createduplicate
-  if (message_loop_for_io()) {
-    DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
-  }
-
-  // Reset the delegate so that it won't receive further calls.
-  delegate_ = nullptr;
-
-  bool empty = write_buffer_->message_queue_.IsEmpty();
-
-  // We may have no messages to write. However just because our end of the pipe
-  // wrote everything doesn't mean that the other end read it. We don't want to
-  // call FlushFileBuffers since a) that only works for server end of the pipe,
-  // and b) it pauses this thread (which can block a process on another, or
-  // worse hang if both pipes are in the same process).
-  scoped_ptr<MessageInTransit> quit_message(new MessageInTransit(
-      MessageInTransit::Type::RAW_CHANNEL_QUIT, 0, nullptr));
-  EnqueueMessageNoLock(quit_message.Pass());
   write_stopped_ = true;
-
-  if (empty)
-    SendQueuedMessagesNoLock();
 }
 
 ScopedPlatformHandle RawChannel::ReleaseHandle(
-    std::vector<char>* read_buffer) {
+    std::vector<char>* serialized_read_buffer,
+    std::vector<char>* serialized_write_buffer,
+    std::vector<int>* serialized_read_fds,
+    std::vector<int>* serialized_write_fds,
+    bool* write_error) {
   ScopedPlatformHandle rv;
+  *write_error = false;
   {
     base::AutoLock read_locker(read_lock_);
     base::AutoLock locker(write_lock_);
-    rv = ReleaseHandleNoLock(read_buffer);
-
-    // TODO(jam); if we use these, use nolock versions of these methods that are
-    // copied.
-    if (!write_buffer_->message_queue_.IsEmpty()) {
-      NOTREACHED() << "TODO(JAM)";
-    }
-
+    rv = ReleaseHandleNoLock(serialized_read_buffer,
+                             serialized_write_buffer,
+                             serialized_read_fds,
+                             serialized_write_fds,
+                             write_error);
     delegate_ = nullptr;
-
-    // The Unretained is safe because above cancelled IO so we shouldn't get any
-    // channel errors.
-    // |message_loop_for_io_| might not be set yet
     internal::g_io_thread_task_runner->PostTask(
         FROM_HERE,
-        base::Bind(&RawChannel::Shutdown, base::Unretained(this)));
+        base::Bind(&RawChannel::Shutdown, weak_ptr_factory_.GetWeakPtr()));
   }
 
   return rv;
@@ -304,12 +334,13 @@ ScopedPlatformHandle RawChannel::ReleaseHandle(
 // Reminder: This must be thread-safe.
 bool RawChannel::WriteMessage(scoped_ptr<MessageInTransit> message) {
   DCHECK(message);
+  EnsureLazyInitialized();
   base::AutoLock locker(write_lock_);
   if (write_stopped_)
     return false;
 
   bool queue_was_empty = write_buffer_->message_queue_.IsEmpty();
-  EnqueueMessageNoLock(message.Pass());
+  EnqueueMessageNoLock(std::move(message));
   if (queue_was_empty && write_ready_)
     return SendQueuedMessagesNoLock();
 
@@ -325,12 +356,13 @@ bool RawChannel::SendQueuedMessagesNoLock() {
   if (io_result == IO_PENDING)
     return true;
 
-  bool result = OnWriteCompletedNoLock(io_result, platform_handles_written,
-                                       bytes_written);
+  bool result = OnWriteCompletedInternalNoLock(
+      io_result, platform_handles_written, bytes_written);
   if (!result) {
     // Even if we're on the I/O thread, don't call |OnError()| in the nested
     // context.
-    message_loop_for_io_->PostTask(
+    pending_write_error_ = true;
+    internal::g_io_thread_task_runner->PostTask(
         FROM_HERE,
         base::Bind(&RawChannel::LockAndCallOnError,
                    weak_ptr_factory_.GetWeakPtr(),
@@ -340,30 +372,46 @@ bool RawChannel::SendQueuedMessagesNoLock() {
   return result;
 }
 
-// Reminder: This must be thread-safe.
-bool RawChannel::IsWriteBufferEmpty() {
-  base::AutoLock locker(write_lock_);
-  return write_buffer_->message_queue_.IsEmpty();
-}
-
-bool RawChannel::IsReadBufferEmpty() {
-  base::AutoLock locker(read_lock_);
-  return read_buffer_->num_valid_bytes_ != 0;
-}
-
-void RawChannel::SetInitialReadBufferData(char* data, size_t size) {
-  base::AutoLock locker(read_lock_);
-  // TODO(jam): copy power of 2 algorithm below? or share.
-  read_buffer_->buffer_.resize(size+kReadSize);
-  memcpy(&read_buffer_->buffer_[0], data, size);
-  read_buffer_->num_valid_bytes_ = size;
-}
-
-void RawChannel::OnReadCompleted(IOResult io_result, size_t bytes_read) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
-
+void RawChannel::SetSerializedData(
+    char* serialized_read_buffer, size_t serialized_read_buffer_size,
+    char* serialized_write_buffer, size_t serialized_write_buffer_size,
+    std::vector<int>* serialized_read_fds,
+    std::vector<int>* serialized_write_fds) {
   base::AutoLock locker(read_lock_);
 
+#if defined(OS_POSIX)
+  SetSerializedFDs(serialized_read_fds, serialized_write_fds);
+#endif
+
+  if (serialized_read_buffer_size) {
+    // TODO(jam): copy power of 2 algorithm below? or share.
+    read_buffer_->buffer_.resize(serialized_read_buffer_size + kReadSize);
+    memcpy(&read_buffer_->buffer_[0], serialized_read_buffer,
+           serialized_read_buffer_size);
+    read_buffer_->num_valid_bytes_ = serialized_read_buffer_size;
+  }
+
+  if (serialized_write_buffer_size) {
+    size_t max_message_num_bytes = GetConfiguration().max_message_num_bytes;
+
+    uint32_t offset = 0;
+    while (offset < serialized_write_buffer_size) {
+      uint32_t message_num_bytes =
+          std::min(static_cast<uint32_t>(max_message_num_bytes),
+                   static_cast<uint32_t>(serialized_write_buffer_size) -
+                       offset);
+      scoped_ptr<MessageInTransit> message(new MessageInTransit(
+          MessageInTransit::Type::RAW_MESSAGE, message_num_bytes,
+          static_cast<const char*>(serialized_write_buffer) + offset));
+      write_buffer_->message_queue_.AddMessage(std::move(message));
+      offset += message_num_bytes;
+    }
+  }
+}
+
+void RawChannel::OnReadCompletedNoLock(IOResult io_result, size_t bytes_read) {
+  DCHECK(internal::g_io_thread_task_runner->RunsTasksOnCurrentThread());
+  read_lock_.AssertAcquired();
   // Keep reading data in a loop, and dispatch messages if enough data is
   // received. Exit the loop if any of the following happens:
   //   - one or more messages were dispatched;
@@ -420,42 +468,74 @@ void RawChannel::OnReadCompleted(IOResult io_result, size_t bytes_read) {
   } while (io_result != IO_PENDING);
 }
 
-void RawChannel::OnWriteCompleted(IOResult io_result,
-                                  size_t platform_handles_written,
-                                  size_t bytes_written) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
+void RawChannel::OnWriteCompletedNoLock(IOResult io_result,
+                                        size_t platform_handles_written,
+                                        size_t bytes_written) {
+  DCHECK(internal::g_io_thread_task_runner->RunsTasksOnCurrentThread());
+  write_lock_.AssertAcquired();
   DCHECK_NE(io_result, IO_PENDING);
 
-  bool did_fail = false;
-  {
-    base::AutoLock locker(write_lock_);
-    did_fail = !OnWriteCompletedNoLock(io_result, platform_handles_written,
-                                       bytes_written);
+  bool did_fail = !OnWriteCompletedInternalNoLock(
+      io_result, platform_handles_written, bytes_written);
+  if (did_fail) {
+    // Don't want to call the delegate with the current callstack for two
+    // reasons:
+    // 1) We already have write_lock_ acquired, and calling the delegate means
+    // also acquiring the read lock. We need to acquire read and then write to
+    // avoid deadlocks.
+    // 2) We shouldn't call the delegate with write_lock acquired, since the
+    // delegate could be calling WriteMessage and that can cause deadlocks.
+    pending_write_error_ = true;
+    internal::g_io_thread_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&RawChannel::LockAndCallOnError,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   Delegate::ERROR_WRITE));
+  }
+}
+
+void RawChannel::SerializeReadBuffer(size_t additional_bytes_read,
+                                     std::vector<char>* buffer) {
+  read_lock_.AssertAcquired();
+  read_buffer_->num_valid_bytes_ += additional_bytes_read;
+  read_buffer_->buffer_.resize(read_buffer_->num_valid_bytes_);
+  read_buffer_->buffer_.swap(*buffer);
+  read_buffer_->num_valid_bytes_ = 0;
+}
+
+void RawChannel::SerializeWriteBuffer(
+    size_t additional_bytes_written,
+    size_t additional_platform_handles_written,
+    std::vector<char>* buffer,
+    std::vector<int>* fds) {
+  write_lock_.AssertAcquired();
+  if (write_buffer_->IsEmpty()) {
+    DCHECK_EQ(0u, additional_bytes_written);
+    DCHECK_EQ(0u, additional_platform_handles_written);
+    return;
   }
 
-  if (did_fail) {
-    LockAndCallOnError(Delegate::ERROR_WRITE);
-    return;  // |this| may have been destroyed in |CallOnError()|.
+  UpdateWriteBuffer(
+      additional_platform_handles_written, additional_bytes_written);
+  while (!write_buffer_->message_queue_.IsEmpty()) {
+    SerializePlatformHandles(fds);
+    std::vector<WriteBuffer::Buffer> buffers;
+    write_buffer_no_lock()->GetBuffers(&buffers);
+    for (size_t i = 0; i < buffers.size(); ++i) {
+      buffer->insert(buffer->end(), buffers[i].addr,
+                     buffers[i].addr + buffers[i].size);
+    }
+    write_buffer_->message_queue_.DiscardMessage();
   }
 }
 
 void RawChannel::EnqueueMessageNoLock(scoped_ptr<MessageInTransit> message) {
   write_lock_.AssertAcquired();
-  DCHECK(HandleForDebuggingNoLock().is_valid());
-  write_buffer_->message_queue_.AddMessage(message.Pass());
+  write_buffer_->message_queue_.AddMessage(std::move(message));
 }
 
 bool RawChannel::OnReadMessageForRawChannel(
     const MessageInTransit::View& message_view) {
-  if (message_view.type() == MessageInTransit::Type::RAW_CHANNEL_QUIT) {
-    message_loop_for_io_->PostTask(
-        FROM_HERE, base::Bind(&RawChannel::LockAndCallOnError,
-                              weak_ptr_factory_.GetWeakPtr(),
-                              Delegate::ERROR_READ_SHUTDOWN));
-    return true;
-  }
-
-  // No non-implementation specific |RawChannel| control messages.
   LOG(ERROR) << "Invalid control message (type " << message_view.type()
              << ")";
   return false;
@@ -479,15 +559,18 @@ RawChannel::Delegate::Error RawChannel::ReadIOResultToError(
 }
 
 void RawChannel::CallOnError(Delegate::Error error) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
+  DCHECK(internal::g_io_thread_task_runner->RunsTasksOnCurrentThread());
   read_lock_.AssertAcquired();
   error_occurred_ = true;
   if (delegate_) {
+    DCHECK(!calling_delegate_);
+    calling_delegate_ = true;
     delegate_->OnError(error);
+    calling_delegate_ = false;
   } else {
     // We depend on delegate to delete since it could be waiting to call
     // ReleaseHandle.
-    base::MessageLoop::current()->PostTask(
+    internal::g_io_thread_task_runner->PostTask(
         FROM_HERE,
         base::Bind(&RawChannel::Shutdown, weak_ptr_factory_.GetWeakPtr()));
   }
@@ -498,27 +581,24 @@ void RawChannel::LockAndCallOnError(Delegate::Error error) {
   CallOnError(error);
 }
 
-bool RawChannel::OnWriteCompletedNoLock(IOResult io_result,
-                                        size_t platform_handles_written,
-                                        size_t bytes_written) {
+bool RawChannel::OnWriteCompletedInternalNoLock(IOResult io_result,
+                                                size_t platform_handles_written,
+                                                size_t bytes_written) {
   write_lock_.AssertAcquired();
 
   DCHECK(!write_buffer_->message_queue_.IsEmpty());
 
   if (io_result == IO_SUCCEEDED) {
-    write_buffer_->platform_handles_offset_ += platform_handles_written;
-    write_buffer_->data_offset_ += bytes_written;
-
-    MessageInTransit* message = write_buffer_->message_queue_.PeekMessage();
-    if (write_buffer_->data_offset_ >= message->total_size()) {
-      // Complete write.
-      CHECK_EQ(write_buffer_->data_offset_, message->total_size());
-      write_buffer_->message_queue_.DiscardMessage();
-      write_buffer_->platform_handles_offset_ = 0;
-      write_buffer_->data_offset_ = 0;
-
-      if (write_buffer_->message_queue_.IsEmpty())
-        return true;
+    UpdateWriteBuffer(platform_handles_written, bytes_written);
+    if (write_buffer_->message_queue_.IsEmpty()) {
+      if (!delegate_) {
+        // Shutdown must have been called and we were waiting to flush all
+        // pending writes. Now we're done.
+        internal::g_io_thread_task_runner->PostTask(
+            FROM_HERE,
+            base::Bind(&RawChannel::Shutdown, weak_ptr_factory_.GetWeakPtr()));
+      }
+      return true;
     }
 
     // Schedule the next write.
@@ -569,7 +649,8 @@ void RawChannel::DispatchMessages(bool* did_dispatch_message,
       return;  // |this| may have been destroyed in |CallOnError()|.
     }
 
-    if (message_view.type() != MessageInTransit::Type::MESSAGE) {
+    if (message_view.type() != MessageInTransit::Type::MESSAGE &&
+        message_view.type() != MessageInTransit::Type::QUIT_MESSAGE) {
       if (!OnReadMessageForRawChannel(message_view)) {
         CallOnError(Delegate::ERROR_READ_BAD_MESSAGE);
         *stop_dispatching = true;
@@ -585,9 +666,8 @@ void RawChannel::DispatchMessages(bool* did_dispatch_message,
             &platform_handle_table);
 
         if (num_platform_handles > 0) {
-          platform_handles =
-              GetReadPlatformHandles(num_platform_handles,
-                                      platform_handle_table).Pass();
+          platform_handles = GetReadPlatformHandles(num_platform_handles,
+                                                    platform_handle_table);
           if (!platform_handles) {
             LOG(ERROR) << "Invalid number of platform handles received";
             CallOnError(Delegate::ERROR_READ_BAD_MESSAGE);
@@ -599,14 +679,12 @@ void RawChannel::DispatchMessages(bool* did_dispatch_message,
 
       // TODO(vtl): In the case that we aren't expecting any platform handles,
       // for the POSIX implementation, we should confirm that none are stored.
-
-      // Dispatch the message.
-      // Note: it's valid to get here without a delegate. i.e. after Shutdown
-      // is called, if this object still has a valid handle we keep it alive
-      // until the other side closes it in response to the RAW_CHANNEL_QUIT
-      // message. In the meantime the sender could have sent us a message.
-      if (delegate_)
-        delegate_->OnReadMessage(message_view, platform_handles.Pass());
+      if (delegate_) {
+        DCHECK(!calling_delegate_);
+        calling_delegate_ = true;
+        delegate_->OnReadMessage(message_view, std::move(platform_handles));
+        calling_delegate_ = false;
+      }
     }
 
     *did_dispatch_message = true;
@@ -625,6 +703,36 @@ void RawChannel::DispatchMessages(bool* did_dispatch_message,
     }
     read_buffer_start = 0;
   }
+}
+
+void RawChannel::UpdateWriteBuffer(size_t platform_handles_written,
+                                   size_t bytes_written) {
+  write_buffer_->platform_handles_offset_ += platform_handles_written;
+  write_buffer_->data_offset_ += bytes_written;
+
+  MessageInTransit* message = write_buffer_->message_queue_.PeekMessage();
+  if (write_buffer_->data_offset_ >= message->total_size()) {
+    // Complete write.
+    CHECK_EQ(write_buffer_->data_offset_, message->total_size());
+    write_buffer_->message_queue_.DiscardMessage();
+    write_buffer_->platform_handles_offset_ = 0;
+    write_buffer_->data_offset_ = 0;
+  }
+}
+
+void RawChannel::CallOnReadCompleted(IOResult io_result, size_t bytes_read) {
+  base::AutoLock locker(read_lock_);
+  OnReadCompletedNoLock(io_result, bytes_read);
+}
+
+void RawChannel::WillDestroyCurrentMessageLoop() {
+  {
+    base::AutoLock locker(read_lock_);
+    OnReadCompletedNoLock(IO_FAILED_SHUTDOWN, 0);
+  }
+  // The PostTask inside Shutdown() will never be called, so manually call it
+  // here to avoid leaks in LSAN builds.
+  Shutdown();
 }
 
 }  // namespace edk

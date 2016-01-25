@@ -4,6 +4,8 @@
 
 #include "content/browser/bluetooth/bluetooth_metrics.h"
 
+#include <stdint.h>
+
 #include <map>
 #include <set>
 #include "base/hash.h"
@@ -18,7 +20,7 @@ namespace {
 // TODO(ortuno): Remove once we have a macro to histogram strings.
 // http://crbug.com/520284
 int HashUUID(const std::string& uuid) {
-  uint32 data = base::SuperFastHash(uuid.data(), uuid.size());
+  uint32_t data = base::SuperFastHash(uuid.data(), uuid.size());
 
   // Strip off the signed bit because UMA doesn't support negative values,
   // but takes a signed int as input.
@@ -103,6 +105,11 @@ void RecordConnectGATTOutcome(UMAConnectGATTOutcome outcome) {
                             static_cast<int>(UMAConnectGATTOutcome::COUNT));
 }
 
+void RecordConnectGATTOutcome(CacheQueryOutcome outcome) {
+  DCHECK(outcome == CacheQueryOutcome::NO_DEVICE);
+  RecordConnectGATTOutcome(UMAConnectGATTOutcome::NO_DEVICE);
+}
+
 void RecordConnectGATTTimeSuccess(const base::TimeDelta& duration) {
   UMA_HISTOGRAM_MEDIUM_TIMES("Bluetooth.Web.ConnectGATT.TimeSuccess", duration);
 }
@@ -126,12 +133,35 @@ void RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome outcome) {
       static_cast<int>(UMAGetPrimaryServiceOutcome::COUNT));
 }
 
+void RecordGetPrimaryServiceOutcome(CacheQueryOutcome outcome) {
+  DCHECK(outcome == CacheQueryOutcome::NO_DEVICE);
+  RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome::NO_DEVICE);
+}
+
 // getCharacteristic
 
 void RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome outcome) {
   UMA_HISTOGRAM_ENUMERATION(
       "Bluetooth.Web.GetCharacteristic.Outcome", static_cast<int>(outcome),
       static_cast<int>(UMAGetCharacteristicOutcome::COUNT));
+}
+
+void RecordGetCharacteristicOutcome(CacheQueryOutcome outcome) {
+  switch (outcome) {
+    case CacheQueryOutcome::SUCCESS:
+    case CacheQueryOutcome::BAD_RENDERER:
+      NOTREACHED() << "No need to record a success or renderer crash";
+      return;
+    case CacheQueryOutcome::NO_DEVICE:
+      RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::NO_DEVICE);
+      return;
+    case CacheQueryOutcome::NO_SERVICE:
+      RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::NO_SERVICE);
+      return;
+    case CacheQueryOutcome::NO_CHARACTERISTIC:
+      NOTREACHED();
+      return;
+  }
 }
 
 void RecordGetCharacteristicCharacteristic(const std::string& characteristic) {
@@ -150,11 +180,32 @@ void RecordGATTOperationOutcome(UMAGATTOperation operation,
     case UMAGATTOperation::CHARACTERISTIC_WRITE:
       RecordCharacteristicWriteValueOutcome(outcome);
       return;
+    case UMAGATTOperation::START_NOTIFICATIONS:
+      RecordStartNotificationsOutcome(outcome);
+      return;
     case UMAGATTOperation::COUNT:
       NOTREACHED();
       return;
   }
   NOTREACHED();
+}
+
+static UMAGATTOperationOutcome TranslateCacheQueryOutcomeToGATTOperationOutcome(
+    CacheQueryOutcome outcome) {
+  switch (outcome) {
+    case CacheQueryOutcome::SUCCESS:
+    case CacheQueryOutcome::BAD_RENDERER:
+      NOTREACHED() << "No need to record success or renderer crash";
+      return UMAGATTOperationOutcome::NOT_SUPPORTED;
+    case CacheQueryOutcome::NO_DEVICE:
+      return UMAGATTOperationOutcome::NO_DEVICE;
+    case CacheQueryOutcome::NO_SERVICE:
+      return UMAGATTOperationOutcome::NO_SERVICE;
+    case CacheQueryOutcome::NO_CHARACTERISTIC:
+      return UMAGATTOperationOutcome::NO_CHARACTERISTIC;
+  }
+  NOTREACHED() << "No need to record success or renderer crash";
+  return UMAGATTOperationOutcome::NOT_SUPPORTED;
 }
 
 // Characteristic.readValue
@@ -166,12 +217,35 @@ void RecordCharacteristicReadValueOutcome(UMAGATTOperationOutcome outcome) {
                             static_cast<int>(UMAGATTOperationOutcome::COUNT));
 }
 
+void RecordCharacteristicReadValueOutcome(CacheQueryOutcome outcome) {
+  RecordCharacteristicReadValueOutcome(
+      TranslateCacheQueryOutcomeToGATTOperationOutcome(outcome));
+}
+
 // Characteristic.writeValue
 
 void RecordCharacteristicWriteValueOutcome(UMAGATTOperationOutcome outcome) {
   UMA_HISTOGRAM_ENUMERATION("Bluetooth.Web.Characteristic.WriteValue.Outcome",
                             static_cast<int>(outcome),
                             static_cast<int>(UMAGATTOperationOutcome::COUNT));
+}
+
+void RecordCharacteristicWriteValueOutcome(CacheQueryOutcome outcome) {
+  RecordCharacteristicWriteValueOutcome(
+      TranslateCacheQueryOutcomeToGATTOperationOutcome(outcome));
+}
+
+// Characteristic.startNotifications
+void RecordStartNotificationsOutcome(UMAGATTOperationOutcome outcome) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Bluetooth.Web.Characteristic.StartNotifications.Outcome",
+      static_cast<int>(outcome),
+      static_cast<int>(UMAGATTOperationOutcome::COUNT));
+}
+
+void RecordStartNotificationsOutcome(CacheQueryOutcome outcome) {
+  RecordStartNotificationsOutcome(
+      TranslateCacheQueryOutcomeToGATTOperationOutcome(outcome));
 }
 
 }  // namespace content

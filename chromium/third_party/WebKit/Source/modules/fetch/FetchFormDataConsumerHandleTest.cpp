@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchFormDataConsumerHandle.h"
 
 #include "core/dom/DOMTypedArray.h"
@@ -14,13 +13,12 @@
 #include "platform/network/ResourceResponse.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/weborigin/KURL.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
-
-#include <gtest/gtest.h>
 #include <string.h>
 
 namespace blink {
@@ -227,11 +225,69 @@ TEST_F(FetchFormDataConsumerHandleTest, TwoPhaseReadFromComplexFormData)
     EXPECT_EQ("bar", toString(r->data()));
 }
 
-TEST_F(FetchFormDataConsumerHandleTest, DrainAsBlobDataHandle)
+TEST_F(FetchFormDataConsumerHandleTest, DrainAsBlobDataHandleFromString)
 {
     OwnPtr<FetchDataConsumerHandle> handle = FetchFormDataConsumerHandle::create(String("hello, world"));
     OwnPtr<FetchDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
-    EXPECT_FALSE(reader->drainAsBlobDataHandle(FetchDataConsumerHandle::Reader::AllowBlobWithInvalidSize));
+    RefPtr<BlobDataHandle> blobDataHandle = reader->drainAsBlobDataHandle();
+    ASSERT_TRUE(blobDataHandle);
+
+    EXPECT_EQ(String(), blobDataHandle->type());
+    EXPECT_EQ(12u, blobDataHandle->size());
+    EXPECT_EQ(nullptr, reader->drainAsFormData());
+    char c;
+    size_t readSize;
+    EXPECT_EQ(kDone, reader->read(&c, 1, kNone, &readSize));
+}
+
+TEST_F(FetchFormDataConsumerHandleTest, DrainAsBlobDataHandleFromArrayBuffer)
+{
+    OwnPtr<FetchDataConsumerHandle> handle = FetchFormDataConsumerHandle::create(DOMArrayBuffer::create("foo", 3));
+    OwnPtr<FetchDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
+    RefPtr<BlobDataHandle> blobDataHandle = reader->drainAsBlobDataHandle();
+    ASSERT_TRUE(blobDataHandle);
+
+    EXPECT_EQ(String(), blobDataHandle->type());
+    EXPECT_EQ(3u, blobDataHandle->size());
+    EXPECT_EQ(nullptr, reader->drainAsFormData());
+    char c;
+    size_t readSize;
+    EXPECT_EQ(kDone, reader->read(&c, 1, kNone, &readSize));
+}
+
+TEST_F(FetchFormDataConsumerHandleTest, DrainAsBlobDataHandleFromSimpleFormData)
+{
+    FormData* data = FormData::create(UTF8Encoding());
+    data->append("name1", "value1");
+    data->append("name2", "value2");
+    RefPtr<EncodedFormData> inputFormData = data->encodeMultiPartFormData();
+
+    OwnPtr<FetchDataConsumerHandle> handle = FetchFormDataConsumerHandle::create(document(), inputFormData);
+    OwnPtr<FetchDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
+    RefPtr<BlobDataHandle> blobDataHandle = reader->drainAsBlobDataHandle();
+    ASSERT_TRUE(blobDataHandle);
+
+    EXPECT_EQ(String(), blobDataHandle->type());
+    EXPECT_EQ(inputFormData->flattenToString().utf8().length(), blobDataHandle->size());
+    EXPECT_EQ(nullptr, reader->drainAsFormData());
+    char c;
+    size_t readSize;
+    EXPECT_EQ(kDone, reader->read(&c, 1, kNone, &readSize));
+}
+
+TEST_F(FetchFormDataConsumerHandleTest, DrainAsBlobDataHandleFromComplexFormData)
+{
+    RefPtr<EncodedFormData> inputFormData = complexFormData();
+
+    OwnPtr<FetchDataConsumerHandle> handle = FetchFormDataConsumerHandle::create(document(), inputFormData);
+    OwnPtr<FetchDataConsumerHandle::Reader> reader = handle->obtainReader(nullptr);
+    RefPtr<BlobDataHandle> blobDataHandle = reader->drainAsBlobDataHandle();
+    ASSERT_TRUE(blobDataHandle);
+
+    EXPECT_EQ(nullptr, reader->drainAsFormData());
+    char c;
+    size_t readSize;
+    EXPECT_EQ(kDone, reader->read(&c, 1, kNone, &readSize));
 }
 
 TEST_F(FetchFormDataConsumerHandleTest, DrainAsFormDataFromString)

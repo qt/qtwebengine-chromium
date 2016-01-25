@@ -18,8 +18,8 @@
         # to be built.
         'mojo_message_pipe_perftests2',
         'mojo_system_unittests2',
-        'mojo_js_unittests2',
-        'mojo_js_integration_tests2',
+        'mojo_js_unittests',
+        'mojo_js_integration_tests',
       ],
     },
     {
@@ -57,6 +57,7 @@
         'edk/system/simple_dispatcher_unittest.cc',
         'edk/system/test_utils.cc',
         'edk/system/test_utils.h',
+        'edk/system/wait_set_dispatcher_unittest.cc',
         'edk/system/waiter_test_utils.cc',
         'edk/system/waiter_test_utils.h',
         'edk/system/waiter_unittest.cc',
@@ -92,9 +93,10 @@
         'edk/system/test_utils.h',
       ],
     },
+    # TODO(yzshen): fix the following two targets.
     {
       # GN version: //mojo/edk/js/test:js_unittests
-      'target_name': 'mojo_js_unittests2',
+      'target_name': 'mojo_js_unittests',
       'type': 'executable',
       'dependencies': [
         '../gin/gin.gyp:gin_test',
@@ -112,7 +114,7 @@
     },
     {
       # GN version: //mojo/edk/js/test:js_integration_tests
-      'target_name': 'mojo_js_integration_tests2',
+      'target_name': 'mojo_js_integration_tests',
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:base',

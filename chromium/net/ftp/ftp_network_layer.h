@@ -5,8 +5,8 @@
 #ifndef NET_FTP_FTP_NETWORK_LAYER_H_
 #define NET_FTP_FTP_NETWORK_LAYER_H_
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
 #include "net/ftp/ftp_transaction_factory.h"
@@ -22,7 +22,7 @@ class NET_EXPORT FtpNetworkLayer : public FtpTransactionFactory {
   ~FtpNetworkLayer() override;
 
   // FtpTransactionFactory methods:
-  FtpTransaction* CreateTransaction() override;
+  scoped_ptr<FtpTransaction> CreateTransaction() override;
   void Suspend(bool suspend) override;
 
  private:

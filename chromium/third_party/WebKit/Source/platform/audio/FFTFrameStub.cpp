@@ -25,9 +25,7 @@
 
 // FFTFrame stub implementation to avoid link errors during bringup
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
+#include "wtf/build_config.h"
 
 #if !OS(MACOSX) && !USE(WEBAUDIO_FFMPEG) && !USE(WEBAUDIO_IPP) && !USE(WEBAUDIO_OPENMAX_DL_FFT)
 
@@ -87,4 +85,3 @@ void FFTFrame::cleanup()
 
 #endif // !OS(MACOSX) && !USE(WEBAUDIO_FFMPEG) && !USE(WEBAUDIO_IPP) && !USE(WEBAUDIO_OPENMAX_DL_FFT)
 
-#endif // ENABLE(WEB_AUDIO)

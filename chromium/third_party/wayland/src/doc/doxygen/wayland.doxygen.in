@@ -1,0 +1,16 @@
+# Wayland-specific overrides
+PROJECT_NAME           = "Wayland"
+PROJECT_NUMBER         = @VERSION@
+OUTPUT_DIRECTORY       = @top_builddir@/doc/doxygen
+JAVADOC_AUTOBRIEF      = YES
+TAB_SIZE               = 8
+QUIET                  = YES
+HTML_TIMESTAMP         = YES
+GENERATE_LATEX         = NO
+MAN_LINKS              = YES
+PREDEFINED             = WL_EXPORT=
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+DOT_MULTI_TARGETS      = YES
+ALIASES                += comment{1}="/* \1 *<!-- -->/"
+GENERATE_HTML          = NO

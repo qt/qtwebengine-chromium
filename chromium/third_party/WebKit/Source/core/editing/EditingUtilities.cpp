@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/EditingUtilities.h"
 
 #include "core/HTMLElementFactory.h"
@@ -327,6 +326,7 @@ Element* unsplittableElementForPosition(const Position& p)
 template <typename Strategy>
 PositionTemplate<Strategy> nextCandidateAlgorithm(const PositionTemplate<Strategy>& position)
 {
+    TRACE_EVENT0("input", "EditingUtility::nextCandidateAlgorithm");
     PositionIteratorAlgorithm<Strategy> p(position);
 
     p.increment();
@@ -357,6 +357,7 @@ PositionInComposedTree nextCandidate(const PositionInComposedTree& position)
 template <typename Strategy>
 static PositionTemplate<Strategy> nextVisuallyDistinctCandidateAlgorithm(const PositionTemplate<Strategy>& position)
 {
+    TRACE_EVENT0("input", "EditingUtility::nextVisuallyDistinctCandidateAlgorithm");
     if (position.isNull())
         return PositionTemplate<Strategy>();
 
@@ -388,6 +389,7 @@ PositionInComposedTree nextVisuallyDistinctCandidate(const PositionInComposedTre
 template <typename Strategy>
 PositionTemplate<Strategy> previousCandidateAlgorithm(const PositionTemplate<Strategy>& position)
 {
+    TRACE_EVENT0("input", "EditingUtility::previousCandidateAlgorithm");
     PositionIteratorAlgorithm<Strategy> p(position);
 
     p.decrement();
@@ -418,6 +420,7 @@ PositionInComposedTree previousCandidate(const PositionInComposedTree& position)
 template <typename Strategy>
 PositionTemplate<Strategy> previousVisuallyDistinctCandidateAlgorithm(const PositionTemplate<Strategy>& position)
 {
+    TRACE_EVENT0("input", "EditingUtility::previousVisuallyDistinctCandidateAlgorithm");
     if (position.isNull())
         return PositionTemplate<Strategy>();
 
@@ -446,93 +449,93 @@ PositionInComposedTree previousVisuallyDistinctCandidate(const PositionInCompose
     return previousVisuallyDistinctCandidateAlgorithm<EditingInComposedTreeStrategy>(position);
 }
 
-VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& position, ContainerNode* highestRoot)
+VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& position, ContainerNode& highestRoot)
 {
     return createVisiblePosition(firstEditablePositionAfterPositionInRoot(position, highestRoot));
 }
 
-VisiblePositionInComposedTree firstEditableVisiblePositionAfterPositionInRoot(const PositionInComposedTree& position, ContainerNode* highestRoot)
+VisiblePositionInComposedTree firstEditableVisiblePositionAfterPositionInRoot(const PositionInComposedTree& position, ContainerNode& highestRoot)
 {
     return createVisiblePosition(firstEditablePositionAfterPositionInRoot(position, highestRoot));
 }
 
 template <typename Strategy>
-PositionTemplate<Strategy> firstEditablePositionAfterPositionInRootAlgorithm(const PositionTemplate<Strategy>& position, Node* highestRoot)
+PositionTemplate<Strategy> firstEditablePositionAfterPositionInRootAlgorithm(const PositionTemplate<Strategy>& position, Node& highestRoot)
 {
     // position falls before highestRoot.
-    if (position.compareTo(PositionTemplate<Strategy>::firstPositionInNode(highestRoot)) == -1 && highestRoot->hasEditableStyle())
-        return PositionTemplate<Strategy>::firstPositionInNode(highestRoot);
+    if (position.compareTo(PositionTemplate<Strategy>::firstPositionInNode(&highestRoot)) == -1 && highestRoot.hasEditableStyle())
+        return PositionTemplate<Strategy>::firstPositionInNode(&highestRoot);
 
     PositionTemplate<Strategy> editablePosition = position;
 
-    if (position.anchorNode()->treeScope() != highestRoot->treeScope()) {
-        Node* shadowAncestor = highestRoot->treeScope().ancestorInThisScope(editablePosition.anchorNode());
+    if (position.anchorNode()->treeScope() != highestRoot.treeScope()) {
+        Node* shadowAncestor = highestRoot.treeScope().ancestorInThisScope(editablePosition.anchorNode());
         if (!shadowAncestor)
             return PositionTemplate<Strategy>();
 
         editablePosition = PositionTemplate<Strategy>::afterNode(shadowAncestor);
     }
 
-    while (editablePosition.anchorNode() && !isEditablePosition(editablePosition) && editablePosition.anchorNode()->isDescendantOf(highestRoot))
+    while (editablePosition.anchorNode() && !isEditablePosition(editablePosition) && editablePosition.anchorNode()->isDescendantOf(&highestRoot))
         editablePosition = isAtomicNode(editablePosition.anchorNode()) ? PositionTemplate<Strategy>::inParentAfterNode(*editablePosition.anchorNode()) : nextVisuallyDistinctCandidate(editablePosition);
 
-    if (editablePosition.anchorNode() && editablePosition.anchorNode() != highestRoot && !editablePosition.anchorNode()->isDescendantOf(highestRoot))
+    if (editablePosition.anchorNode() && editablePosition.anchorNode() != &highestRoot && !editablePosition.anchorNode()->isDescendantOf(&highestRoot))
         return PositionTemplate<Strategy>();
 
     return editablePosition;
 }
 
-Position firstEditablePositionAfterPositionInRoot(const Position& position, Node* highestRoot)
+Position firstEditablePositionAfterPositionInRoot(const Position& position, Node& highestRoot)
 {
     return firstEditablePositionAfterPositionInRootAlgorithm<EditingStrategy>(position, highestRoot);
 }
 
-PositionInComposedTree firstEditablePositionAfterPositionInRoot(const PositionInComposedTree& position, Node* highestRoot)
+PositionInComposedTree firstEditablePositionAfterPositionInRoot(const PositionInComposedTree& position, Node& highestRoot)
 {
     return firstEditablePositionAfterPositionInRootAlgorithm<EditingInComposedTreeStrategy>(position, highestRoot);
 }
 
-VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position& position, ContainerNode* highestRoot)
+VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position& position, ContainerNode& highestRoot)
 {
     return createVisiblePosition(lastEditablePositionBeforePositionInRoot(position, highestRoot));
 }
 
-VisiblePositionInComposedTree lastEditableVisiblePositionBeforePositionInRoot(const PositionInComposedTree& position, ContainerNode* highestRoot)
+VisiblePositionInComposedTree lastEditableVisiblePositionBeforePositionInRoot(const PositionInComposedTree& position, ContainerNode& highestRoot)
 {
     return createVisiblePosition(lastEditablePositionBeforePositionInRoot(position, highestRoot));
 }
 
 template <typename Strategy>
-PositionTemplate<Strategy> lastEditablePositionBeforePositionInRootAlgorithm(const PositionTemplate<Strategy>& position, Node* highestRoot)
+PositionTemplate<Strategy> lastEditablePositionBeforePositionInRootAlgorithm(const PositionTemplate<Strategy>& position, Node& highestRoot)
 {
     // When position falls after highestRoot, the result is easy to compute.
-    if (position.compareTo(PositionTemplate<Strategy>::lastPositionInNode(highestRoot)) == 1)
-        return PositionTemplate<Strategy>::lastPositionInNode(highestRoot);
+    if (position.compareTo(PositionTemplate<Strategy>::lastPositionInNode(&highestRoot)) == 1)
+        return PositionTemplate<Strategy>::lastPositionInNode(&highestRoot);
 
     PositionTemplate<Strategy> editablePosition = position;
 
-    if (position.anchorNode()->treeScope() != highestRoot->treeScope()) {
-        Node* shadowAncestor = highestRoot->treeScope().ancestorInThisScope(editablePosition.anchorNode());
+    if (position.anchorNode()->treeScope() != highestRoot.treeScope()) {
+        Node* shadowAncestor = highestRoot.treeScope().ancestorInThisScope(editablePosition.anchorNode());
         if (!shadowAncestor)
             return PositionTemplate<Strategy>();
 
         editablePosition = PositionTemplate<Strategy>::firstPositionInOrBeforeNode(shadowAncestor);
     }
 
-    while (editablePosition.anchorNode() && !isEditablePosition(editablePosition) && editablePosition.anchorNode()->isDescendantOf(highestRoot))
+    while (editablePosition.anchorNode() && !isEditablePosition(editablePosition) && editablePosition.anchorNode()->isDescendantOf(&highestRoot))
         editablePosition = isAtomicNode(editablePosition.anchorNode()) ? PositionTemplate<Strategy>::inParentBeforeNode(*editablePosition.anchorNode()) : previousVisuallyDistinctCandidate(editablePosition);
 
-    if (editablePosition.anchorNode() && editablePosition.anchorNode() != highestRoot && !editablePosition.anchorNode()->isDescendantOf(highestRoot))
+    if (editablePosition.anchorNode() && editablePosition.anchorNode() != &highestRoot && !editablePosition.anchorNode()->isDescendantOf(&highestRoot))
         return PositionTemplate<Strategy>();
     return editablePosition;
 }
 
-Position lastEditablePositionBeforePositionInRoot(const Position& position, Node* highestRoot)
+Position lastEditablePositionBeforePositionInRoot(const Position& position, Node& highestRoot)
 {
     return lastEditablePositionBeforePositionInRootAlgorithm<EditingStrategy>(position, highestRoot);
 }
 
-PositionInComposedTree lastEditablePositionBeforePositionInRoot(const PositionInComposedTree& position, Node* highestRoot)
+PositionInComposedTree lastEditablePositionBeforePositionInRoot(const PositionInComposedTree& position, Node& highestRoot)
 {
     return lastEditablePositionBeforePositionInRootAlgorithm<EditingInComposedTreeStrategy>(position, highestRoot);
 }
@@ -703,11 +706,6 @@ bool nodeIsUserSelectAll(const Node* node)
 {
     return RuntimeEnabledFeatures::userSelectAllEnabled() && node && node->layoutObject() && node->layoutObject()->style()->userSelect() == SELECT_ALL;
 
-}
-
-bool nodeIsUserSelectNone(Node* node)
-{
-    return node && node->layoutObject() && !node->layoutObject()->isSelectable();
 }
 
 template <typename Strategy>
@@ -1249,21 +1247,6 @@ PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document& docu
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<HTMLBRElement> createBreakElement(Document& document)
-{
-    return HTMLBRElement::create(document);
-}
-
-PassRefPtrWillBeRawPtr<HTMLUListElement> createUnorderedListElement(Document& document)
-{
-    return HTMLUListElement::create(document);
-}
-
-PassRefPtrWillBeRawPtr<HTMLLIElement> createListItemElement(Document& document)
-{
-    return HTMLLIElement::create(document);
-}
-
 PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document& document, const QualifiedName& name)
 {
     return HTMLElementFactory::createHTMLElement(name.localName(), document, 0, false);
@@ -1292,7 +1275,7 @@ static PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& do
     RefPtrWillBeRawPtr<Text> tabTextNode = prpTabTextNode;
 
     // Make the span to hold the tab.
-    RefPtrWillBeRawPtr<HTMLSpanElement> spanElement = toHTMLSpanElement(document.createElement(spanTag, false).get());
+    RefPtrWillBeRawPtr<HTMLSpanElement> spanElement = HTMLSpanElement::create(document);
     spanElement->setAttribute(classAttr, AppleTabSpanClass);
     spanElement->setAttribute(styleAttr, "white-space:pre");
 
@@ -1313,11 +1296,6 @@ PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& document,
 PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& document)
 {
     return createTabSpanElement(document, PassRefPtrWillBeRawPtr<Text>(nullptr));
-}
-
-PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document& document)
-{
-    return toHTMLBRElement(document.createElement(brTag, false).get());
 }
 
 bool isNodeRendered(const Node& node)
@@ -1446,18 +1424,6 @@ bool isMailHTMLBlockquoteElement(const Node* node)
 
     const HTMLElement& element = toHTMLElement(*node);
     return element.hasTagName(blockquoteTag) && element.getAttribute("type") == "cite";
-}
-
-int caretMinOffset(const Node* n)
-{
-    LayoutObject* r = n->layoutObject();
-    ASSERT(!n->isCharacterDataNode() || !r || r->isText()); // FIXME: This was a runtime check that seemingly couldn't fail; changed it to an assertion for now.
-    return r ? r->caretMinOffset() : 0;
-}
-
-int caretMaxOffset(const Node* n)
-{
-    return EditingStrategy::caretMaxOffset(*n);
 }
 
 bool lineBreakExistsAtVisiblePosition(const VisiblePosition& visiblePosition)
@@ -1679,6 +1645,11 @@ Position adjustedSelectionStartForStyleComputation(const VisibleSelection& selec
     // otherwise, make sure to be at the start of the first selected node,
     // instead of possibly at the end of the last node before the selection
     return mostForwardCaretPosition(visiblePosition.deepEquivalent());
+}
+
+bool isTextSecurityNode(const Node* node)
+{
+    return node && node->layoutObject() && node->layoutObject()->style()->textSecurity() != TSNONE;
 }
 
 } // namespace blink

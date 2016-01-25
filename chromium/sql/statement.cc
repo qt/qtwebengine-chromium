@@ -4,6 +4,9 @@
 
 #include "sql/statement.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -109,6 +112,11 @@ void Statement::Reset(bool clear_bound_vars) {
     if (rc == SQLITE_OK && ref_->connection())
       ref_->connection()->RecordOneEvent(Connection::EVENT_STATEMENT_SUCCESS);
   }
+
+  // Potentially release dirty cache pages if an autocommit statement made
+  // changes.
+  if (ref_->connection())
+    ref_->connection()->ReleaseCacheMemoryIfNeeded(false);
 
   succeeded_ = false;
   stepped_ = false;

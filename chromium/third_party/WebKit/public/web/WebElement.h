@@ -59,7 +59,6 @@ public:
     // namespace. Tag name matching is case-insensitive.
     BLINK_EXPORT bool hasHTMLTagName(const WebString&) const;
     BLINK_EXPORT bool hasAttribute(const WebString&) const;
-    BLINK_EXPORT void removeAttribute(const WebString&);
     BLINK_EXPORT WebString getAttribute(const WebString&) const;
     BLINK_EXPORT bool setAttribute(const WebString& name, const WebString& value);
     BLINK_EXPORT WebString textContent() const;
@@ -71,11 +70,10 @@ public:
     // If this element takes up space in the layout of the page.
     BLINK_EXPORT bool hasNonEmptyLayoutSize() const;
 
-    // Returns the bounds of the element in viewport space. The bounds
-    // have been adjusted to include any transformations. This view is
-    // also called the Root View in Blink.
+    // Returns the bounds of the element in Visual Viewport. The bounds
+    // have been adjusted to include any transformations, including page scale.
     // This function will update the layout if required.
-    BLINK_EXPORT WebRect boundsInViewportSpace();
+    BLINK_EXPORT WebRect boundsInViewport() const;
 
     // Returns the image contents of this element or a null WebImage
     // if there isn't any.

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/DOMMatrix.h"
 
 namespace blink {
@@ -34,8 +33,7 @@ DOMMatrix* DOMMatrix::multiplySelf(DOMMatrix* other)
     if (!other->is2D())
         m_is2D = false;
 
-    TransformationMatrix& matrix = *m_matrix;
-    *m_matrix = matrix * other->matrix();
+    *m_matrix *= other->matrix();
 
     return this;
 }

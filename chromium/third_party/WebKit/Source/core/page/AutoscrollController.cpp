@@ -26,7 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/page/AutoscrollController.h"
 
 #include "core/frame/FrameView.h"
@@ -131,7 +130,12 @@ void AutoscrollController::updateAutoscrollLayoutObject()
 
     while (layoutObject && !(layoutObject->isBox() && toLayoutBox(layoutObject)->canAutoscroll()))
         layoutObject = layoutObject->parent();
-    m_autoscrollLayoutObject = layoutObject && layoutObject->isBox() ? toLayoutBox(layoutObject) : nullptr;
+
+    LayoutBox* autoscrollLayoutObject = layoutObject && layoutObject->isBox() ? toLayoutBox(layoutObject) : nullptr;
+    if (m_autoscrollLayoutObject && !autoscrollLayoutObject)
+        stopAutoscrollIfNeeded(m_autoscrollLayoutObject);
+
+    m_autoscrollLayoutObject = autoscrollLayoutObject;
 }
 
 void AutoscrollController::updateDragAndDrop(Node* dropTargetNode, const IntPoint& eventPosition, double eventTime)
@@ -259,12 +263,12 @@ void AutoscrollController::animate(double)
 #endif
     }
     if (m_autoscrollType != NoAutoscroll)
-        m_page->chromeClient().scheduleAnimation();
+        m_page->chromeClient().scheduleAnimation(m_autoscrollLayoutObject->frame()->view());
 }
 
 void AutoscrollController::startAutoscroll()
 {
-    m_page->chromeClient().scheduleAnimation();
+    m_page->chromeClient().scheduleAnimation(m_autoscrollLayoutObject->frame()->view());
 }
 
 #if OS(WIN)

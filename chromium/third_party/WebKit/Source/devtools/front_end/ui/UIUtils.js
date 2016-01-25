@@ -198,12 +198,14 @@ WebInspector._elementDragEnd = function(event)
 /**
  * @constructor
  * @param {!Document} document
+ * @param {boolean=} dimmed
  */
-WebInspector.GlassPane = function(document)
+WebInspector.GlassPane = function(document, dimmed)
 {
     this.element = createElement("div");
-    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;overflow:hidden;";
-    this.element.id = "glass-pane";
+    var background = dimmed ? "rgba(255, 255, 255, 0.5)" : "transparent";
+    this._zIndex = WebInspector._glassPane ? WebInspector._glassPane._zIndex + 1000 : 3000; // Deliberately starts with 3000 to hide other z-indexed elements below.
+    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:" + background + ";z-index:" + this._zIndex + ";overflow:hidden;";
     document.body.appendChild(this.element);
     WebInspector._glassPane = this;
 }
@@ -217,6 +219,9 @@ WebInspector.GlassPane.prototype = {
         this.element.remove();
     }
 }
+
+/** @type {!WebInspector.GlassPane|undefined} */
+WebInspector._glassPane;
 
 /**
  * @type {!Array.<!WebInspector.Widget|!WebInspector.Dialog>}
@@ -597,28 +602,24 @@ Number.withThousandsSeparator = function(num)
 /**
  * @param {string} format
  * @param {?ArrayLike} substitutions
- * @param {?string} initialValue
  * @return {!Element}
  */
-WebInspector.formatLocalized = function(format, substitutions, initialValue)
+WebInspector.formatLocalized = function(format, substitutions)
 {
-    var element = createElement("span");
     var formatters = {
-        s: function(substitution)
-        {
-            return substitution;
-        }
+        s: substitution => substitution
     };
+    /**
+     * @param {!Element} a
+     * @param {string|!Element} b
+     * @return {!Element}
+     */
     function append(a, b)
     {
-        if (typeof b === "string")
-            b = createTextNode(b);
-        else if (b.shadowRoot)
-            b = createTextNode(b.shadowRoot.lastChild.textContent);
-        element.appendChild(b);
+        a.appendChild(typeof b === "string" ? createTextNode(b) : b);
+        return a;
     }
-    String.format(WebInspector.UIString(format), substitutions, formatters, initialValue, append);
-    return element;
+    return String.format(WebInspector.UIString(format), substitutions, formatters, createElement("span"), append).formattedResult;
 }
 
 /**
@@ -659,9 +660,9 @@ WebInspector.asyncStackTraceLabel = function(description)
 /**
  * @return {string}
  */
-WebInspector.manageBlackboxingButtonLabel = function()
+WebInspector.manageBlackboxingSettingsTabLabel = function()
 {
-    return WebInspector.UIString("Manage framework blackboxing...");
+    return WebInspector.UIString("Blackboxing");
 }
 
 /**
@@ -669,8 +670,8 @@ WebInspector.manageBlackboxingButtonLabel = function()
  */
 WebInspector.installComponentRootStyles = function(element)
 {
-    element.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorCommon.css"));
-    element.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorSyntaxHighlight.css"));
+    WebInspector.appendStyle(element, "ui/inspectorCommon.css");
+    WebInspector.themeSupport.injectHighlightStyleSheets(element);
     element.classList.add("platform-" + WebInspector.platform());
     if (Runtime.experiments.isEnabled("materialDesign"))
         element.classList.add("material");
@@ -678,13 +679,16 @@ WebInspector.installComponentRootStyles = function(element)
 
 /**
  * @param {!Element} element
+ * @param {string=} cssFile
  * @return {!DocumentFragment}
  */
-WebInspector.createShadowRootWithCoreStyles = function(element)
+WebInspector.createShadowRootWithCoreStyles = function(element, cssFile)
 {
     var shadowRoot = element.createShadowRoot();
-    shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorCommon.css"));
-    shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorSyntaxHighlight.css"));
+    WebInspector.appendStyle(shadowRoot, "ui/inspectorCommon.css");
+    WebInspector.themeSupport.injectHighlightStyleSheets(shadowRoot);
+    if (cssFile)
+        WebInspector.appendStyle(shadowRoot, cssFile);
     shadowRoot.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector), true);
     return shadowRoot;
 }
@@ -770,17 +774,17 @@ WebInspector.setCurrentFocusElement = function(x)
         WebInspector._previousFocusElement = WebInspector._currentFocusElement;
     WebInspector._currentFocusElement = x;
 
-    if (WebInspector._currentFocusElement) {
-        WebInspector._currentFocusElement.focus();
+    if (x) {
+        x.focus();
 
         // Make a caret selection inside the new element if there isn't a range selection and there isn't already a caret selection inside.
         // This is needed (at least) to remove caret from console when focus is moved to some element in the panel.
         // The code below should not be applied to text fields and text areas, hence _isTextEditingElement check.
         var selection = x.getComponentSelection();
-        if (!WebInspector._isTextEditingElement(WebInspector._currentFocusElement) && selection.isCollapsed && !WebInspector._currentFocusElement.isInsertionCaretInside()) {
-            var selectionRange = WebInspector._currentFocusElement.ownerDocument.createRange();
-            selectionRange.setStart(WebInspector._currentFocusElement, 0);
-            selectionRange.setEnd(WebInspector._currentFocusElement, 0);
+        if (!WebInspector._isTextEditingElement(x) && selection.isCollapsed && !x.isInsertionCaretInside()) {
+            var selectionRange = x.ownerDocument.createRange();
+            selectionRange.setStart(x, 0);
+            selectionRange.setEnd(x, 0);
 
             selection.removeAllRanges();
             selection.addRange(selectionRange);
@@ -849,9 +853,9 @@ WebInspector.highlightRangesWithStyleClass = function(element, resultRanges, sty
 {
     changes = changes || [];
     var highlightNodes = [];
-    var lineText = element.deepTextContent();
-    var ownerDocument = element.ownerDocument;
     var textNodes = element.childTextNodes();
+    var lineText = textNodes.map(function (node) { return node.textContent; }).join("");
+    var ownerDocument = element.ownerDocument;
 
     if (textNodes.length === 0)
         return highlightNodes;
@@ -1100,18 +1104,14 @@ WebInspector.animateFunction = function(window, func, params, frames, animationC
  * @constructor
  * @extends {WebInspector.Object}
  * @param {!Element} element
+ * @param {function(!Event)} callback
  */
-WebInspector.LongClickController = function(element)
+WebInspector.LongClickController = function(element, callback)
 {
     this._element = element;
+    this._callback = callback;
+    this._enable();
 }
-
-/**
- * @enum {string}
- */
-WebInspector.LongClickController.Events = {
-    LongClick: "LongClick"
-};
 
 WebInspector.LongClickController.prototype = {
     reset: function()
@@ -1122,7 +1122,7 @@ WebInspector.LongClickController.prototype = {
         }
     },
 
-    enable: function()
+    _enable: function()
     {
         if (this._longClickData)
             return;
@@ -1145,7 +1145,8 @@ WebInspector.LongClickController.prototype = {
         {
             if (e.which !== 1)
                 return;
-            this._longClickInterval = setTimeout(longClicked.bind(this, e), 200);
+            var callback = this._callback;
+            this._longClickInterval = setTimeout(callback.bind(null, e), 200);
         }
 
         /**
@@ -1158,18 +1159,9 @@ WebInspector.LongClickController.prototype = {
                 return;
             this.reset();
         }
-
-        /**
-         * @param {!Event} e
-         * @this {WebInspector.LongClickController}
-         */
-        function longClicked(e)
-        {
-            this.dispatchEventToListeners(WebInspector.LongClickController.Events.LongClick, e);
-        }
     },
 
-    disable: function()
+    dispose: function()
     {
         if (!this._longClickData)
             return;
@@ -1184,14 +1176,19 @@ WebInspector.LongClickController.prototype = {
 }
 
 /**
- * @param {!Window} window
+ * @param {!Document} document
+ * @param {!WebInspector.Setting} themeSetting
  */
-WebInspector.initializeUIUtils = function(window)
+WebInspector.initializeUIUtils = function(document, themeSetting)
 {
-    window.addEventListener("focus", WebInspector._windowFocused.bind(WebInspector, window.document), false);
-    window.addEventListener("blur", WebInspector._windowBlurred.bind(WebInspector, window.document), false);
-    window.document.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector), true);
-    window.document.addEventListener("blur", WebInspector._documentBlurred.bind(WebInspector, window.document), true);
+    document.defaultView.addEventListener("focus", WebInspector._windowFocused.bind(WebInspector, document), false);
+    document.defaultView.addEventListener("blur", WebInspector._windowBlurred.bind(WebInspector, document), false);
+    document.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector), true);
+    document.addEventListener("blur", WebInspector._documentBlurred.bind(WebInspector, document), true);
+
+    if (!WebInspector.themeSupport)
+        WebInspector.themeSupport = new WebInspector.ThemeSupport(themeSetting);
+    WebInspector.themeSupport.applyTheme(document);
 }
 
 /**
@@ -1268,6 +1265,30 @@ function createCheckboxLabel(title, checked)
     return element;
 }
 
+/**
+ * @param {!Node} node
+ * @param {string} cssFile
+ * @suppressGlobalPropertiesCheck
+ */
+WebInspector.appendStyle = function(node, cssFile)
+{
+    var content = Runtime.cachedResources[cssFile] || "";
+    if (!content)
+        console.error(cssFile + " not preloaded. Check module.json");
+    var styleElement = createElement("style");
+    styleElement.type = "text/css";
+    styleElement.textContent = content;
+    node.appendChild(styleElement);
+
+    var themeStyleSheet = WebInspector.themeSupport.themeStyleSheet(cssFile, content);
+    if (themeStyleSheet) {
+        styleElement = createElement("style");
+        styleElement.type = "text/css";
+        styleElement.textContent = themeStyleSheet + "\n" + Runtime.resolveSourceURL(cssFile + ".theme");
+        node.appendChild(styleElement);
+    }
+}
+
 ;(function() {
     registerCustomElement("button", "text-button", {
         /**
@@ -1276,8 +1297,7 @@ function createCheckboxLabel(title, checked)
         createdCallback: function()
         {
             this.type = "button";
-            var root = WebInspector.createShadowRootWithCoreStyles(this);
-            root.appendChild(WebInspector.Widget.createStyleElement("ui/textButton.css"));
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/textButton.css");
             root.createChild("content");
         },
 
@@ -1292,8 +1312,7 @@ function createCheckboxLabel(title, checked)
         {
             this.radioElement = this.createChild("input", "dt-radio-button");
             this.radioElement.type = "radio";
-            var root = WebInspector.createShadowRootWithCoreStyles(this);
-            root.appendChild(WebInspector.Widget.createStyleElement("ui/radioButton.css"));
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/radioButton.css");
             root.createChild("content").select = ".dt-radio-button";
             root.createChild("content");
             this.addEventListener("click", radioClickHandler, false);
@@ -1321,8 +1340,7 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            this._root = WebInspector.createShadowRootWithCoreStyles(this);
-            this._root.appendChild(WebInspector.Widget.createStyleElement("ui/checkboxTextLabel.css"));
+            this._root = WebInspector.createShadowRootWithCoreStyles(this, "ui/checkboxTextLabel.css");
             var checkboxElement = createElementWithClass("input", "dt-checkbox-button");
             checkboxElement.type = "checkbox";
             this._root.appendChild(checkboxElement);
@@ -1336,8 +1354,10 @@ function createCheckboxLabel(title, checked)
              */
             function toggleCheckbox(event)
             {
-                if (event.target !== checkboxElement && event.target !== this)
+                if (event.target !== checkboxElement && event.target !== this) {
+                    event.consume();
                     checkboxElement.click();
+                }
             }
 
             this._root.createChild("content");
@@ -1384,8 +1404,7 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            var root = WebInspector.createShadowRootWithCoreStyles(this);
-            root.appendChild(WebInspector.Widget.createStyleElement("ui/smallIcon.css"));
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/smallIcon.css");
             this._iconElement = root.createChild("div");
             root.createChild("content");
         },
@@ -1408,8 +1427,7 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            var root = WebInspector.createShadowRootWithCoreStyles(this);
-            root.appendChild(WebInspector.Widget.createStyleElement("ui/closeButton.css"));
+            var root = WebInspector.createShadowRootWithCoreStyles(this, "ui/closeButton.css");
             this._buttonElement = root.createChild("div", "close-button");
         },
 
@@ -1479,3 +1497,251 @@ WebInspector.StringFormatter.prototype = {
         return container;
     }
 }
+
+/**
+ * @constructor
+ * @param {!WebInspector.Setting} setting
+ */
+WebInspector.ThemeSupport = function(setting)
+{
+    this._themeName = setting.get() || "default";
+    this._themableProperties = new Set([
+        "color", "box-shadow", "text-shadow", "outline-color",
+        "background-image", "background-color",
+        "border-left-color", "border-right-color", "border-top-color", "border-bottom-color",
+        "-webkit-border-image"]);
+    /** @type {!Map<string, string>} */
+    this._cachedThemePatches = new Map();
+    this._setting = setting;
+}
+
+WebInspector.ThemeSupport.prototype = {
+    /**
+     * @return {boolean}
+     */
+    hasTheme: function()
+    {
+        return this._themeName !== "default";
+    },
+
+    /**
+     * @param {!Element} element
+     */
+    injectHighlightStyleSheets: function(element)
+    {
+        this._injectingStyleSheet = true;
+        WebInspector.appendStyle(element, "ui/inspectorSyntaxHighlight.css");
+        if (this._themeName === "dark")
+            WebInspector.appendStyle(element, "ui/inspectorSyntaxHighlightDark.css");
+        this._injectingStyleSheet = false;
+    },
+
+    /**
+     * @param {!Document} document
+     */
+    applyTheme: function(document)
+    {
+        if (!this.hasTheme())
+            return;
+
+        if (this._themeName === "dark")
+            document.body.classList.add("-theme-with-dark-background");
+
+        var styleSheets = document.styleSheets;
+        var result = [];
+        for (var i = 0; i < styleSheets.length; ++i)
+            result.push(this._patchForTheme(styleSheets[i].href, styleSheets[i]));
+        result.push("/*# sourceURL=inspector.css.theme */");
+
+        var styleElement = createElement("style");
+        styleElement.type = "text/css";
+        styleElement.textContent = result.join("\n");
+        document.head.appendChild(styleElement);
+    },
+
+    /**
+     * @param {string} id
+     * @param {string} text
+     * @return {string}
+     * @suppressGlobalPropertiesCheck
+     */
+    themeStyleSheet: function(id, text)
+    {
+        if (!this.hasTheme() || this._injectingStyleSheet)
+            return "";
+
+        var patch = this._cachedThemePatches.get(id);
+        if (!patch) {
+            var styleElement = createElement("style");
+            styleElement.type = "text/css";
+            styleElement.textContent = text;
+            document.body.appendChild(styleElement);
+            patch = this._patchForTheme(id, styleElement.sheet);
+            document.body.removeChild(styleElement);
+        }
+        return patch;
+    },
+
+    /**
+     * @param {string} id
+     * @param {!CSSStyleSheet} styleSheet
+     * @return {string}
+     */
+    _patchForTheme: function(id, styleSheet)
+    {
+        var cached = this._cachedThemePatches.get(id);
+        if (cached)
+            return cached;
+
+        try {
+            var rules = styleSheet.cssRules;
+            var result = [];
+            for (var j = 0; j < rules.length; ++j) {
+                if (rules[j] instanceof CSSImportRule) {
+                    result.push(this._patchForTheme(rules[j].styleSheet.href, rules[j].styleSheet));
+                    continue;
+                }
+                var output = [];
+                var style = rules[j].style;
+                var selectorText = rules[j].selectorText;
+                for (var i = 0; style && i < style.length; ++i)
+                    this._patchProperty(selectorText, style, style[i], output);
+                if (output.length)
+                    result.push(rules[j].selectorText + "{" + output.join("") + "}");
+            }
+
+            var fullText = result.join("\n");
+            this._cachedThemePatches.set(id, fullText);
+            return fullText;
+        } catch(e) {
+           this._setting.set("default");
+           return "";
+        }
+    },
+
+    /**
+     * @param {string} selectorText
+     * @param {!CSSStyleDeclaration} style
+     * @param {string} name
+     * @param {!Array<string>} output
+     *
+     * Theming API is primarily targeted at making dark theme look good.
+     * - If rule has ".-theme-preserve" in selector, it won't be affected.
+     * - If rule has ".selection" or "selected" or "-theme-selection-color" in selector, its hue is rotated 180deg in dark themes.
+     * - One can create specializations for dark themes via body.-theme-with-dark-background selector in host context.
+     */
+    _patchProperty: function(selectorText, style, name, output)
+    {
+        if (!this._themableProperties.has(name))
+            return;
+
+        var value = style.getPropertyValue(name);
+        if (!value || value === "none" || value === "inherit" || value === "initial" || value === "transparent")
+            return;
+        if (name === "background-image" && value.indexOf("gradient") === -1)
+            return;
+
+        var isSelection = selectorText.indexOf(".-theme-selection-color") !== -1;
+        if (selectorText.indexOf("-theme-") !== -1 && !isSelection)
+            return;
+
+        if (name === "-webkit-border-image") {
+            output.push("-webkit-filter: invert(100%)");
+            return;
+        }
+
+        isSelection = isSelection || selectorText.indexOf("selected") !== -1 || selectorText.indexOf(".selection") !== -1;
+        var isBackground = name.indexOf("background") === 0 || name.indexOf("border") === 0;
+        var isForeground = name.indexOf("background") === -1;
+
+        var colorRegex = /((?:rgb|hsl)a?\([^)]+\)|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|\b\w+\b(?!-))/g;
+        output.push(name);
+        output.push(":");
+        var items = value.replace(colorRegex, "\0$1\0").split("\0");
+        for (var i = 0; i < items.length; ++i)
+            output.push(this._patchColor(items[i], isSelection, isBackground, isForeground));
+        if (style.getPropertyPriority(name))
+            output.push(" !important");
+        output.push(";");
+    },
+
+    /**
+     * @param {string} text
+     * @param {boolean} isSelection
+     * @param {boolean} isBackground
+     * @param {boolean} isForeground
+     * @return {string}
+     */
+    _patchColor: function(text, isSelection, isBackground, isForeground)
+    {
+        var color = WebInspector.Color.parse(text);
+        if (!color)
+            return text;
+
+        var hsla = color.hsla();
+        this._patchHSLA(hsla, isSelection, isBackground, isForeground);
+        var rgba = [];
+        WebInspector.Color.hsl2rgb(hsla, rgba);
+        var outColor = new WebInspector.Color(rgba, color.format());
+        var outText = outColor.asString(null);
+        if (!outText)
+            outText = outColor.asString(outColor.hasAlpha() ? WebInspector.Color.Format.RGBA : WebInspector.Color.Format.RGB);
+        return outText || text;
+    },
+
+    /**
+     * @param {!Array<number>} hsla
+     * @param {boolean} isSelection
+     * @param {boolean} isBackground
+     * @param {boolean} isForeground
+     */
+    _patchHSLA: function(hsla, isSelection, isBackground, isForeground)
+    {
+        var hue = hsla[0];
+        var sat = hsla[1];
+        var lit = hsla[2];
+        var alpha = hsla[3]
+
+        switch (this._themeName) {
+        case "dark":
+            if (isSelection)
+                hue = (hue + 0.5) % 1;
+            var minCap = isBackground ? 0.14 : 0;
+            var maxCap = isForeground ? 0.9 : 1;
+            lit = 1 - lit;
+            if (lit < minCap * 2)
+                lit = minCap + lit / 2;
+            else if (lit > 2 * maxCap - 1)
+                lit = maxCap - 1 / 2 + lit / 2;
+
+            break;
+        }
+        hsla[0] = Number.constrain(hue, 0, 1);
+        hsla[1] = Number.constrain(sat, 0, 1);
+        hsla[2] = Number.constrain(lit, 0, 1);
+        hsla[3] = Number.constrain(alpha, 0, 1);
+    }
+}
+
+/**
+ * @param {?NetworkAgent.ResourcePriority} priority
+ * @return {string}
+ */
+WebInspector.uiLabelForPriority = function(priority)
+{
+    var labelMap = WebInspector.uiLabelForPriority._priorityToUILabel;
+    if (!labelMap) {
+        labelMap = new Map([
+            [NetworkAgent.ResourcePriority.VeryLow, WebInspector.UIString("Lowest")],
+            [NetworkAgent.ResourcePriority.Low, WebInspector.UIString("Low")],
+            [NetworkAgent.ResourcePriority.Medium, WebInspector.UIString("Medium")],
+            [NetworkAgent.ResourcePriority.High, WebInspector.UIString("High")],
+            [NetworkAgent.ResourcePriority.VeryHigh, WebInspector.UIString("Highest")]
+        ]);
+        WebInspector.uiLabelForPriority._priorityToUILabel = labelMap;
+    }
+    return labelMap.get(priority) || WebInspector.UIString("Unknown");
+}
+
+/** @type {!WebInspector.ThemeSupport} */
+WebInspector.themeSupport;

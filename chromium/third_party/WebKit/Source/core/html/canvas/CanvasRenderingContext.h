@@ -46,7 +46,7 @@ class ImageData;
 
 class CORE_EXPORT CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext>, public ActiveDOMObject, public ScriptWrappable {
     WTF_MAKE_NONCOPYABLE(CanvasRenderingContext);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CanvasRenderingContext);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(CanvasRenderingContext);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(CanvasRenderingContext);
 public:
     ~CanvasRenderingContext() override { }
@@ -103,7 +103,7 @@ public:
     virtual bool is2d() const { return false; }
     virtual void restoreCanvasMatrixClipStack(SkCanvas*) const { }
     virtual void reset() { }
-    virtual void clearRect(float x, float y, float width, float height) { }
+    virtual void clearRect(double x, double y, double width, double height) { }
     virtual void didSetSurfaceSize() { }
     virtual void setShouldAntialias(bool) { }
     virtual unsigned hitRegionsCount() const { return 0; }

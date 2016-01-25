@@ -134,7 +134,9 @@ SkString* SkObjectParser::PaintToString(const SkPaint& paint) {
 }
 
 SkString* SkObjectParser::PathToString(const SkPath& path) {
-    SkString* mPath = new SkString("Path (");
+    SkString* mPath = new SkString;
+    
+    mPath->appendf("Path (%d) (", path.getGenerationID());
 
     static const char* gFillStrings[] = {
         "Winding", "EvenOdd", "InverseWinding", "InverseEvenOdd"
@@ -155,6 +157,19 @@ SkString* SkObjectParser::PathToString(const SkPath& path) {
         mPath->append("isRect, ");
     } else {
         mPath->append("isNotRect, ");
+    }
+
+    if (path.isOval(nullptr)) {
+        mPath->append("isOval, ");
+    } else {
+        mPath->append("isNotOval, ");
+    }
+
+    SkRRect rrect;
+    if (path.isRRect(&rrect)) {
+        mPath->append("isRRect, ");
+    } else {
+        mPath->append("isNotRRect, ");
     }
 
     mPath->appendS32(path.countVerbs());
@@ -323,16 +338,13 @@ SkString* SkObjectParser::RegionToString(const SkRegion& region) {
     return mRegion;
 }
 
-SkString* SkObjectParser::SaveFlagsToString(SkCanvas::SaveFlags flags) {
+SkString* SkObjectParser::SaveLayerFlagsToString(SkCanvas::SaveLayerFlags saveLayerFlags) {
     SkString* mFlags = new SkString("SkCanvas::SaveFlags: ");
-    if (flags & SkCanvas::kHasAlphaLayer_SaveFlag) {
-        mFlags->append("kHasAlphaLayer_SaveFlag ");
+    if (saveLayerFlags & SkCanvas::kIsOpaque_SaveLayerFlag) {
+        mFlags->append("kIsOpaque_SaveLayerFlag ");
     }
-    if (flags & SkCanvas::kFullColorLayer_SaveFlag) {
-        mFlags->append("kFullColorLayer_SaveFlag ");
-    }
-    if (flags & SkCanvas::kClipToLayer_SaveFlag) {
-        mFlags->append("kClipToLayer_SaveFlag ");
+    if (saveLayerFlags & SkCanvas::kPreserveLCDText_SaveLayerFlag) {
+        mFlags->append("kPreserveLCDText_SaveLayerFlag ");
     }
     return mFlags;
 }

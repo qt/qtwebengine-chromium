@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
-#include "webrtc/system_wrappers/interface/atomic32.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "webrtc/system_wrappers/include/atomic32.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/voice_engine/test/auto_test/fixtures/before_streaming_fixture.h"
 
 using ::testing::_;

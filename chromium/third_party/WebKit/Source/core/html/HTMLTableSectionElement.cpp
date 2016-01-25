@@ -22,7 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLTableSectionElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -83,14 +82,6 @@ void HTMLTableSectionElement::deleteRow(int index, ExceptionState& exceptionStat
     } else {
         exceptionState.throwDOMException(IndexSizeError, "The provided index (" + String::number(index) + " is outside the range [-1, " + String::number(numRows) + "].");
     }
-}
-
-int HTMLTableSectionElement::numRows() const
-{
-    int rowCount = 0;
-    for (const HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*this); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row))
-        ++rowCount;
-    return rowCount;
 }
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableSectionElement::rows()

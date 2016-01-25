@@ -23,7 +23,6 @@
  */
 
 [
-    Conditional=WEB_AUDIO,
     Constructor(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate),
     ConstructorCallWith=ExecutionContext,
     RaisesException=Constructor,
@@ -31,5 +30,7 @@
 ] interface OfflineAudioContext : AudioContext {
     // Offline rendering
     attribute EventHandler oncomplete;
-    [CallWith=ScriptState,ImplementedAs=startOfflineRendering] Promise<AudioBuffer> startRendering();
+    [CallWith=ScriptState, ImplementedAs=startOfflineRendering, MeasureAs=OfflineAudioContextStartRendering] Promise<AudioBuffer> startRendering();
+    [CallWith=ScriptState, ImplementedAs=suspendContext, MeasureAs=OfflineAudioContextSuspend] Promise<void> suspend(double suspendTime);
+    [CallWith=ScriptState, ImplementedAs=resumeContext, MeasureAs=OfflineAudioContextResume] Promise<void> resume();
 };

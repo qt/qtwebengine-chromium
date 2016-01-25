@@ -20,14 +20,13 @@
  *
  */
 
-#include "config.h"
-#include "AtomicString.h"
+#include "wtf/text/AtomicString.h"
 
-#include "StringHash.h"
 #include "wtf/HashSet.h"
 #include "wtf/WTFThreadData.h"
 #include "wtf/dtoa.h"
 #include "wtf/text/IntegerToStringConversion.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/UTF8.h"
 
 namespace WTF {
@@ -108,6 +107,11 @@ static inline AtomicStringTable& atomicStringTable()
 static inline HashSet<StringImpl*>& atomicStrings()
 {
     return atomicStringTable().table();
+}
+
+void AtomicString::reserveTableCapacity(size_t size)
+{
+    atomicStringTable().table().reserveCapacityForSize(size);
 }
 
 template<typename T, typename HashTranslator>
@@ -455,6 +459,18 @@ AtomicString AtomicString::lower() const
         return *this;
     return AtomicString(newImpl.release());
 }
+
+AtomicString AtomicString::lowerASCII() const
+{
+    StringImpl* impl = this->impl();
+    if (UNLIKELY(!impl))
+        return *this;
+    RefPtr<StringImpl> newImpl = impl->lowerASCII();
+    if (LIKELY(newImpl == impl))
+        return *this;
+    return AtomicString(newImpl.release());
+}
+
 
 AtomicString AtomicString::fromUTF8Internal(const char* charactersStart, const char* charactersEnd)
 {

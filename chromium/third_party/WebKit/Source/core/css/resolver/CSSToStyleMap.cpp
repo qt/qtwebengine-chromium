@@ -25,12 +25,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/resolver/CSSToStyleMap.h"
 
 #include "core/CSSValueKeywords.h"
 #include "core/animation/css/CSSAnimationData.h"
 #include "core/css/CSSBorderImageSliceValue.h"
+#include "core/css/CSSCustomIdentValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSQuadValue.h"
@@ -43,18 +43,18 @@
 
 namespace blink {
 
-void CSSToStyleMap::mapFillAttachment(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillAttachment(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setAttachment(FillLayer::initialFillAttachment(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    switch (primitiveValue->getValueID()) {
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    switch (primitiveValue.getValueID()) {
     case CSSValueFixed:
         layer->setAttachment(FixedBackgroundAttachment);
         break;
@@ -69,66 +69,66 @@ void CSSToStyleMap::mapFillAttachment(StyleResolverState&, FillLayer* layer, CSS
     }
 }
 
-void CSSToStyleMap::mapFillClip(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillClip(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setClip(FillLayer::initialFillClip(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setClip(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setClip(primitiveValue.convertTo<EFillBox>());
 }
 
-void CSSToStyleMap::mapFillComposite(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillComposite(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setComposite(FillLayer::initialFillComposite(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setComposite(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setComposite(primitiveValue.convertTo<CompositeOperator>());
 }
 
-void CSSToStyleMap::mapFillBlendMode(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillBlendMode(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setBlendMode(FillLayer::initialFillBlendMode(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setBlendMode(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setBlendMode(primitiveValue.convertTo<WebBlendMode>());
 }
 
-void CSSToStyleMap::mapFillOrigin(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillOrigin(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setOrigin(FillLayer::initialFillOrigin(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setOrigin(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setOrigin(primitiveValue.convertTo<EFillBox>());
 }
 
 
-void CSSToStyleMap::mapFillImage(StyleResolverState& state, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillImage(StyleResolverState& state, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setImage(FillLayer::initialFillImage(layer->type()));
         return;
     }
@@ -137,55 +137,55 @@ void CSSToStyleMap::mapFillImage(StyleResolverState& state, FillLayer* layer, CS
     layer->setImage(state.styleImage(property, value));
 }
 
-void CSSToStyleMap::mapFillRepeatX(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillRepeatX(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setRepeatX(FillLayer::initialFillRepeatX(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setRepeatX(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setRepeatX(primitiveValue.convertTo<EFillRepeat>());
 }
 
-void CSSToStyleMap::mapFillRepeatY(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillRepeatY(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setRepeatY(FillLayer::initialFillRepeatY(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    layer->setRepeatY(*primitiveValue);
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    layer->setRepeatY(primitiveValue.convertTo<EFillRepeat>());
 }
 
-void CSSToStyleMap::mapFillSize(StyleResolverState& state, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillSize(StyleResolverState& state, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setSizeType(FillLayer::initialFillSizeType(layer->type()));
         layer->setSizeLength(FillLayer::initialFillSizeLength(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue() && !value->isValuePair())
+    if (!value.isPrimitiveValue() && !value.isValuePair())
         return;
 
-    if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueContain)
+    if (value.isPrimitiveValue() && toCSSPrimitiveValue(value).getValueID() == CSSValueContain)
         layer->setSizeType(Contain);
-    else if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueCover)
+    else if (value.isPrimitiveValue() && toCSSPrimitiveValue(value).getValueID() == CSSValueCover)
         layer->setSizeType(Cover);
     else
         layer->setSizeType(SizeLength);
 
     LengthSize b = FillLayer::initialFillSizeLength(layer->type());
 
-    if (value->isPrimitiveValue() && (toCSSPrimitiveValue(value)->getValueID() == CSSValueContain || toCSSPrimitiveValue(value)->getValueID() == CSSValueCover)) {
+    if (value.isPrimitiveValue() && (toCSSPrimitiveValue(value).getValueID() == CSSValueContain || toCSSPrimitiveValue(value).getValueID() == CSSValueCover)) {
         layer->setSizeLength(b);
         return;
     }
@@ -193,12 +193,12 @@ void CSSToStyleMap::mapFillSize(StyleResolverState& state, FillLayer* layer, CSS
     Length firstLength;
     Length secondLength;
 
-    if (value->isValuePair()) {
-        CSSValuePair* pair = toCSSValuePair(value);
-        firstLength = StyleBuilderConverter::convertLengthOrAuto(state, &pair->first());
-        secondLength = StyleBuilderConverter::convertLengthOrAuto(state, &pair->second());
+    if (value.isValuePair()) {
+        const CSSValuePair& pair = toCSSValuePair(value);
+        firstLength = StyleBuilderConverter::convertLengthOrAuto(state, pair.first());
+        secondLength = StyleBuilderConverter::convertLengthOrAuto(state, pair.second());
     } else {
-        ASSERT(value->isPrimitiveValue());
+        ASSERT(value.isPrimitiveValue());
         firstLength = StyleBuilderConverter::convertLengthOrAuto(state, value);
         secondLength = Length();
     }
@@ -208,62 +208,60 @@ void CSSToStyleMap::mapFillSize(StyleResolverState& state, FillLayer* layer, CSS
     layer->setSizeLength(b);
 }
 
-void CSSToStyleMap::mapFillXPosition(StyleResolverState& state, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillXPosition(StyleResolverState& state, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setXPosition(FillLayer::initialFillXPosition(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue() && !value->isValuePair())
+    if (!value.isPrimitiveValue() && !value.isValuePair())
         return;
 
     Length length;
-    if (value->isValuePair())
-        length = toCSSPrimitiveValue(toCSSValuePair(value)->second()).convertToLength(state.cssToLengthConversionData());
+    if (value.isValuePair())
+        length = toCSSPrimitiveValue(toCSSValuePair(value).second()).convertToLength(state.cssToLengthConversionData());
     else
-        length = toCSSPrimitiveValue(value)->convertToLength(state.cssToLengthConversionData());
+        length = toCSSPrimitiveValue(value).convertToLength(state.cssToLengthConversionData());
 
     layer->setXPosition(length);
-    if (value->isValuePair())
-        layer->setBackgroundXOrigin(toCSSPrimitiveValue(toCSSValuePair(value)->first()));
+    if (value.isValuePair())
+        layer->setBackgroundXOrigin(toCSSPrimitiveValue(toCSSValuePair(value).first()).convertTo<BackgroundEdgeOrigin>());
 }
 
-void CSSToStyleMap::mapFillYPosition(StyleResolverState& state, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillYPosition(StyleResolverState& state, FillLayer* layer, const CSSValue& value)
 {
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setYPosition(FillLayer::initialFillYPosition(layer->type()));
         return;
     }
 
-    if (!value->isPrimitiveValue() && !value->isValuePair())
+    if (!value.isPrimitiveValue() && !value.isValuePair())
         return;
 
-    CSSPrimitiveValue* primitiveValue;
-    if (value->isValuePair())
-        primitiveValue = &toCSSPrimitiveValue(toCSSValuePair(value)->second());
+    Length length;
+    if (value.isValuePair())
+        length = toCSSPrimitiveValue(toCSSValuePair(value).second()).convertToLength(state.cssToLengthConversionData());
     else
-        primitiveValue = toCSSPrimitiveValue(value);
-
-    Length length = primitiveValue->convertToLength(state.cssToLengthConversionData());
+        length = toCSSPrimitiveValue(value).convertToLength(state.cssToLengthConversionData());
 
     layer->setYPosition(length);
-    if (value->isValuePair())
-        layer->setBackgroundYOrigin(toCSSPrimitiveValue(toCSSValuePair(value)->first()));
+    if (value.isValuePair())
+        layer->setBackgroundYOrigin(toCSSPrimitiveValue(toCSSValuePair(value).first()).convertTo<BackgroundEdgeOrigin>());
 }
 
-void CSSToStyleMap::mapFillMaskSourceType(StyleResolverState&, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillMaskSourceType(StyleResolverState&, FillLayer* layer, const CSSValue& value)
 {
     EMaskSourceType type = FillLayer::initialFillMaskSourceType(layer->type());
-    if (value->isInitialValue()) {
+    if (value.isInitialValue()) {
         layer->setMaskSourceType(type);
         return;
     }
 
-    if (!value->isPrimitiveValue())
+    if (!value.isPrimitiveValue())
         return;
 
-    switch (toCSSPrimitiveValue(value)->getValueID()) {
+    switch (toCSSPrimitiveValue(value).getValueID()) {
     case CSSValueAlpha:
         type = MaskAlpha;
         break;
@@ -279,19 +277,19 @@ void CSSToStyleMap::mapFillMaskSourceType(StyleResolverState&, FillLayer* layer,
     layer->setMaskSourceType(type);
 }
 
-double CSSToStyleMap::mapAnimationDelay(CSSValue* value)
+double CSSToStyleMap::mapAnimationDelay(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSTimingData::initialDelay();
-    return toCSSPrimitiveValue(value)->computeSeconds();
+    return toCSSPrimitiveValue(value).computeSeconds();
 }
 
-Timing::PlaybackDirection CSSToStyleMap::mapAnimationDirection(CSSValue* value)
+Timing::PlaybackDirection CSSToStyleMap::mapAnimationDirection(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSAnimationData::initialDirection();
 
-    switch (toCSSPrimitiveValue(value)->getValueID()) {
+    switch (toCSSPrimitiveValue(value).getValueID()) {
     case CSSValueNormal:
         return Timing::PlaybackDirectionNormal;
     case CSSValueAlternate:
@@ -306,19 +304,19 @@ Timing::PlaybackDirection CSSToStyleMap::mapAnimationDirection(CSSValue* value)
     }
 }
 
-double CSSToStyleMap::mapAnimationDuration(CSSValue* value)
+double CSSToStyleMap::mapAnimationDuration(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSTimingData::initialDuration();
-    return toCSSPrimitiveValue(value)->computeSeconds();
+    return toCSSPrimitiveValue(value).computeSeconds();
 }
 
-Timing::FillMode CSSToStyleMap::mapAnimationFillMode(CSSValue* value)
+Timing::FillMode CSSToStyleMap::mapAnimationFillMode(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSAnimationData::initialFillMode();
 
-    switch (toCSSPrimitiveValue(value)->getValueID()) {
+    switch (toCSSPrimitiveValue(value).getValueID()) {
     case CSSValueNone:
         return Timing::FillModeNone;
     case CSSValueForwards:
@@ -333,58 +331,60 @@ Timing::FillMode CSSToStyleMap::mapAnimationFillMode(CSSValue* value)
     }
 }
 
-double CSSToStyleMap::mapAnimationIterationCount(CSSValue* value)
+double CSSToStyleMap::mapAnimationIterationCount(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSAnimationData::initialIterationCount();
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == CSSValueInfinite)
+    const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+    if (primitiveValue.getValueID() == CSSValueInfinite)
         return std::numeric_limits<double>::infinity();
-    return primitiveValue->getFloatValue();
+    return primitiveValue.getFloatValue();
 }
 
-AtomicString CSSToStyleMap::mapAnimationName(CSSValue* value)
+AtomicString CSSToStyleMap::mapAnimationName(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSAnimationData::initialName();
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == CSSValueNone)
-        return CSSAnimationData::initialName();
-    return AtomicString(primitiveValue->getStringValue());
+    if (value.isCustomIdentValue())
+        return AtomicString(toCSSCustomIdentValue(value).value());
+    ASSERT(toCSSPrimitiveValue(value).getValueID() == CSSValueNone);
+    return CSSAnimationData::initialName();
 }
 
-EAnimPlayState CSSToStyleMap::mapAnimationPlayState(CSSValue* value)
+EAnimPlayState CSSToStyleMap::mapAnimationPlayState(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSAnimationData::initialPlayState();
-    if (toCSSPrimitiveValue(value)->getValueID() == CSSValuePaused)
+    if (toCSSPrimitiveValue(value).getValueID() == CSSValuePaused)
         return AnimPlayStatePaused;
-    ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueRunning);
+    ASSERT(toCSSPrimitiveValue(value).getValueID() == CSSValueRunning);
     return AnimPlayStatePlaying;
 }
 
-CSSTransitionData::TransitionProperty CSSToStyleMap::mapAnimationProperty(CSSValue* value)
+CSSTransitionData::TransitionProperty CSSToStyleMap::mapAnimationProperty(const CSSValue& value)
 {
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSTransitionData::initialProperty();
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->isCustomIdent())
-        return CSSTransitionData::TransitionProperty(primitiveValue->getStringValue());
-    if (primitiveValue->getValueID() == CSSValueNone)
-        return CSSTransitionData::TransitionProperty(CSSTransitionData::TransitionNone);
-    return CSSTransitionData::TransitionProperty(primitiveValue->getPropertyID());
+    if (value.isCustomIdentValue()) {
+        const CSSCustomIdentValue& customIdentValue = toCSSCustomIdentValue(value);
+        if (customIdentValue.isKnownPropertyID())
+            return CSSTransitionData::TransitionProperty(customIdentValue.valueAsPropertyID());
+        return CSSTransitionData::TransitionProperty(customIdentValue.value());
+    }
+    ASSERT(toCSSPrimitiveValue(value).getValueID() == CSSValueNone);
+    return CSSTransitionData::TransitionProperty(CSSTransitionData::TransitionNone);
 }
 
-PassRefPtr<TimingFunction> CSSToStyleMap::mapAnimationTimingFunction(CSSValue* value, bool allowStepMiddle)
+PassRefPtr<TimingFunction> CSSToStyleMap::mapAnimationTimingFunction(const CSSValue& value, bool allowStepMiddle)
 {
     // FIXME: We should probably only call into this function with a valid
     // single timing function value which isn't initial or inherit. We can
     // currently get into here with initial since the parser expands unset
     // properties in shorthands to initial.
 
-    if (value->isPrimitiveValue()) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-        switch (primitiveValue->getValueID()) {
+    if (value.isPrimitiveValue()) {
+        const CSSPrimitiveValue& primitiveValue = toCSSPrimitiveValue(value);
+        switch (primitiveValue.getValueID()) {
         case CSSValueLinear:
             return LinearTimingFunction::shared();
         case CSSValueEase:
@@ -409,28 +409,28 @@ PassRefPtr<TimingFunction> CSSToStyleMap::mapAnimationTimingFunction(CSSValue* v
         }
     }
 
-    if (value->isCubicBezierTimingFunctionValue()) {
-        CSSCubicBezierTimingFunctionValue* cubicTimingFunction = toCSSCubicBezierTimingFunctionValue(value);
-        return CubicBezierTimingFunction::create(cubicTimingFunction->x1(), cubicTimingFunction->y1(), cubicTimingFunction->x2(), cubicTimingFunction->y2());
+    if (value.isCubicBezierTimingFunctionValue()) {
+        const CSSCubicBezierTimingFunctionValue& cubicTimingFunction = toCSSCubicBezierTimingFunctionValue(value);
+        return CubicBezierTimingFunction::create(cubicTimingFunction.x1(), cubicTimingFunction.y1(), cubicTimingFunction.x2(), cubicTimingFunction.y2());
     }
 
-    if (value->isInitialValue())
+    if (value.isInitialValue())
         return CSSTimingData::initialTimingFunction();
 
-    CSSStepsTimingFunctionValue* stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
-    if (stepsTimingFunction->stepAtPosition() == StepsTimingFunction::Middle && !allowStepMiddle)
+    const CSSStepsTimingFunctionValue& stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
+    if (stepsTimingFunction.stepAtPosition() == StepsTimingFunction::Middle && !allowStepMiddle)
         return CSSTimingData::initialTimingFunction();
-    return StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtPosition());
+    return StepsTimingFunction::create(stepsTimingFunction.numberOfSteps(), stepsTimingFunction.stepAtPosition());
 }
 
-void CSSToStyleMap::mapNinePieceImage(StyleResolverState& state, CSSPropertyID property, CSSValue* value, NinePieceImage& image)
+void CSSToStyleMap::mapNinePieceImage(StyleResolverState& state, CSSPropertyID property, const CSSValue& value, NinePieceImage& image)
 {
     // If we're not a value list, then we are "none" and don't need to alter the empty image at all.
-    if (!value || !value->isValueList())
+    if (!value.isValueList())
         return;
 
     // Retrieve the border image value.
-    CSSValueList* borderImage = toCSSValueList(value);
+    const CSSValueList& borderImage = toCSSValueList(value);
 
     // Set the image (this kicks off the load).
     CSSPropertyID imageProperty;
@@ -441,28 +441,28 @@ void CSSToStyleMap::mapNinePieceImage(StyleResolverState& state, CSSPropertyID p
     else
         imageProperty = property;
 
-    for (unsigned i = 0 ; i < borderImage->length() ; ++i) {
-        CSSValue* current = borderImage->item(i);
+    for (unsigned i = 0 ; i < borderImage.length() ; ++i) {
+        const CSSValue& current = *borderImage.item(i);
 
-        if (current->isImageValue() || current->isImageGeneratorValue() || current->isImageSetValue())
+        if (current.isImageValue() || current.isImageGeneratorValue() || current.isImageSetValue()) {
             image.setImage(state.styleImage(imageProperty, current));
-        else if (current->isBorderImageSliceValue())
+        } else if (current.isBorderImageSliceValue()) {
             mapNinePieceImageSlice(state, current, image);
-        else if (current->isValueList()) {
-            CSSValueList* slashList = toCSSValueList(current);
-            size_t length = slashList->length();
+        } else if (current.isValueList()) {
+            const CSSValueList& slashList = toCSSValueList(current);
+            size_t length = slashList.length();
             // Map in the image slices.
-            if (length && slashList->item(0)->isBorderImageSliceValue())
-                mapNinePieceImageSlice(state, slashList->item(0), image);
+            if (length && slashList.item(0)->isBorderImageSliceValue())
+                mapNinePieceImageSlice(state, *slashList.item(0), image);
 
             // Map in the border slices.
             if (length > 1)
-                image.setBorderSlices(mapNinePieceImageQuad(state, slashList->item(1)));
+                image.setBorderSlices(mapNinePieceImageQuad(state, *slashList.item(1)));
 
             // Map in the outset.
             if (length > 2)
-                image.setOutset(mapNinePieceImageQuad(state, slashList->item(2)));
-        } else if (current->isPrimitiveValue() || current->isValuePair()) {
+                image.setOutset(mapNinePieceImageQuad(state, *slashList.item(2)));
+        } else if (current.isPrimitiveValue() || current.isValuePair()) {
             // Set the appropriate rules for stretch/round/repeat of the slices.
             mapNinePieceImageRepeat(state, current, image);
         }
@@ -483,37 +483,32 @@ void CSSToStyleMap::mapNinePieceImage(StyleResolverState& state, CSSPropertyID p
     }
 }
 
-void CSSToStyleMap::mapNinePieceImageSlice(StyleResolverState&, CSSValue* value, NinePieceImage& image)
+static Length convertBorderImageSliceSide(const CSSPrimitiveValue& value)
 {
-    if (!value || !value->isBorderImageSliceValue())
+    if (value.isPercentage())
+        return Length(value.getDoubleValue(), Percent);
+    return Length(round(value.getDoubleValue()), Fixed);
+}
+
+void CSSToStyleMap::mapNinePieceImageSlice(StyleResolverState&, const CSSValue& value, NinePieceImage& image)
+{
+    if (!value.isBorderImageSliceValue())
         return;
 
     // Retrieve the border image value.
-    CSSBorderImageSliceValue* borderImageSlice = toCSSBorderImageSliceValue(value);
+    const CSSBorderImageSliceValue& borderImageSlice = toCSSBorderImageSliceValue(value);
 
     // Set up a length box to represent our image slices.
     LengthBox box;
-    CSSQuadValue* slices = borderImageSlice->slices();
-    if (slices->top()->isPercentage())
-        box.m_top = Length(slices->top()->getDoubleValue(), Percent);
-    else
-        box.m_top = Length(slices->top()->getIntValue(), Fixed);
-    if (slices->bottom()->isPercentage())
-        box.m_bottom = Length(slices->bottom()->getDoubleValue(), Percent);
-    else
-        box.m_bottom = Length(slices->bottom()->getIntValue(), Fixed);
-    if (slices->left()->isPercentage())
-        box.m_left = Length(slices->left()->getDoubleValue(), Percent);
-    else
-        box.m_left = Length(slices->left()->getIntValue(), Fixed);
-    if (slices->right()->isPercentage())
-        box.m_right = Length(slices->right()->getDoubleValue(), Percent);
-    else
-        box.m_right = Length(slices->right()->getIntValue(), Fixed);
+    CSSQuadValue* slices = borderImageSlice.slices();
+    box.m_top = convertBorderImageSliceSide(*slices->top());
+    box.m_bottom = convertBorderImageSliceSide(*slices->bottom());
+    box.m_left = convertBorderImageSliceSide(*slices->left());
+    box.m_right = convertBorderImageSliceSide(*slices->right());
     image.setImageSlices(box);
 
     // Set our fill mode.
-    image.setFill(borderImageSlice->m_fill);
+    image.setFill(borderImageSlice.m_fill);
 }
 
 static BorderImageLength toBorderImageLength(CSSPrimitiveValue& value, const CSSToLengthConversionData& conversionData)
@@ -527,27 +522,27 @@ static BorderImageLength toBorderImageLength(CSSPrimitiveValue& value, const CSS
     return Length(Auto);
 }
 
-BorderImageLengthBox CSSToStyleMap::mapNinePieceImageQuad(StyleResolverState& state, CSSValue* value)
+BorderImageLengthBox CSSToStyleMap::mapNinePieceImageQuad(StyleResolverState& state, const CSSValue& value)
 {
-    if (!value || !value->isQuadValue())
+    if (!value.isQuadValue())
         return BorderImageLengthBox(Length(Auto));
 
-    RefPtrWillBeRawPtr<CSSQuadValue> slices = toCSSQuadValue(value);
+    const CSSQuadValue& slices = toCSSQuadValue(value);
 
     // Set up a border image length box to represent our image slices.
     return BorderImageLengthBox(
-        toBorderImageLength(*slices->top(), state.cssToLengthConversionData()),
-        toBorderImageLength(*slices->right(), state.cssToLengthConversionData()),
-        toBorderImageLength(*slices->bottom(), state.cssToLengthConversionData()),
-        toBorderImageLength(*slices->left(), state.cssToLengthConversionData()));
+        toBorderImageLength(*slices.top(), state.cssToLengthConversionData()),
+        toBorderImageLength(*slices.right(), state.cssToLengthConversionData()),
+        toBorderImageLength(*slices.bottom(), state.cssToLengthConversionData()),
+        toBorderImageLength(*slices.left(), state.cssToLengthConversionData()));
 }
 
-void CSSToStyleMap::mapNinePieceImageRepeat(StyleResolverState&, CSSValue* value, NinePieceImage& image)
+void CSSToStyleMap::mapNinePieceImageRepeat(StyleResolverState&, const CSSValue& value, NinePieceImage& image)
 {
-    if (!value || !value->isValuePair())
+    if (!value.isValuePair())
         return;
 
-    const CSSValuePair& pair = toCSSValuePair(*value);
+    const CSSValuePair& pair = toCSSValuePair(value);
     CSSValueID firstIdentifier = toCSSPrimitiveValue(pair.first()).getValueID();
     CSSValueID secondIdentifier = toCSSPrimitiveValue(pair.second()).getValueID();
 

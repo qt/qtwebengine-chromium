@@ -6,11 +6,13 @@
 #define MEDIA_BASE_ANDROID_MEDIA_PLAYER_BRIDGE_H_
 
 #include <jni.h>
+#include <stdint.h>
 #include <map>
 #include <string>
 
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -63,6 +65,8 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   void SeekTo(base::TimeDelta timestamp) override;
   void Release() override;
   void SetVolume(double volume) override;
+  bool HasVideo() const override;
+  bool HasAudio() const override;
   int GetVideoWidth() override;
   int GetVideoHeight() override;
   base::TimeDelta GetCurrentTime() override;
@@ -75,7 +79,10 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   GURL GetUrl() override;
   GURL GetFirstPartyForCookies() override;
 
-  void OnDidSetDataUriDataSource(JNIEnv* env, jobject obj, jboolean success);
+  void OnDidSetDataUriDataSource(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      jboolean success);
 
  protected:
   void SetDuration(base::TimeDelta time);
@@ -135,8 +142,10 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   // Returns true if a MediaUrlInterceptor registered by the embedder has
   // intercepted the url.
-  bool InterceptMediaUrl(
-      const std::string& url, int* fd, int64* offset, int64* size);
+  bool InterceptMediaUrl(const std::string& url,
+                         int* fd,
+                         int64_t* offset,
+                         int64_t* size);
 
   // Whether the player is prepared for playback.
   bool prepared_;
@@ -182,6 +191,8 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   base::android::ScopedJavaGlobalRef<jobject> j_media_player_bridge_;
 
   base::RepeatingTimer time_update_timer_;
+
+  base::TimeDelta last_time_update_timestamp_;
 
   // Volume of playback.
   double volume_;

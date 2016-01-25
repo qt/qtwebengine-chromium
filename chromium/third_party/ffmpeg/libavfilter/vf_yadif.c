@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2006-2011 Michael Niedermayer <michaelni@gmx.at>
  *               2010      James Darnley <james.darnley@gmail.com>
+
+ * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -377,34 +379,31 @@ static int request_frame(AVFilterLink *link)
 {
     AVFilterContext *ctx = link->src;
     YADIFContext *yadif = ctx->priv;
+    int ret;
 
     if (yadif->frame_pending) {
         return_frame(ctx, 1);
         return 0;
     }
 
-    do {
-        int ret;
+    if (yadif->eof)
+        return AVERROR_EOF;
 
-        if (yadif->eof)
-            return AVERROR_EOF;
+    ret  = ff_request_frame(link->src->inputs[0]);
 
-        ret  = ff_request_frame(link->src->inputs[0]);
+    if (ret == AVERROR_EOF && yadif->cur) {
+        AVFrame *next = av_frame_clone(yadif->next);
 
-        if (ret == AVERROR_EOF && yadif->cur) {
-            AVFrame *next = av_frame_clone(yadif->next);
+        if (!next)
+            return AVERROR(ENOMEM);
 
-            if (!next)
-                return AVERROR(ENOMEM);
+        next->pts = yadif->next->pts * 2 - yadif->cur->pts;
 
-            next->pts = yadif->next->pts * 2 - yadif->cur->pts;
-
-            filter_frame(link->src->inputs[0], next);
-            yadif->eof = 1;
-        } else if (ret < 0) {
-            return ret;
-        }
-    } while (!yadif->prev);
+        filter_frame(link->src->inputs[0], next);
+        yadif->eof = 1;
+    } else if (ret < 0) {
+        return ret;
+    }
 
     return 0;
 }
@@ -477,8 +476,9 @@ static int config_props(AVFilterLink *link)
     link->w             = link->src->inputs[0]->w;
     link->h             = link->src->inputs[0]->h;
 
-    if(s->mode&1)
-        link->frame_rate = av_mul_q(link->src->inputs[0]->frame_rate, (AVRational){2,1});
+    if(s->mode & 1)
+        link->frame_rate = av_mul_q(link->src->inputs[0]->frame_rate,
+                                    (AVRational){2, 1});
 
     if (link->w < 3 || link->h < 3) {
         av_log(ctx, AV_LOG_ERROR, "Video of less than 3 columns or lines is not supported\n");

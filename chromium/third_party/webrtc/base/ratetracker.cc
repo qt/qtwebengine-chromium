@@ -19,13 +19,12 @@
 
 namespace rtc {
 
-RateTracker::RateTracker(
-    uint32 bucket_milliseconds, size_t bucket_count)
+RateTracker::RateTracker(uint32_t bucket_milliseconds, size_t bucket_count)
     : bucket_milliseconds_(bucket_milliseconds),
-    bucket_count_(bucket_count),
-    sample_buckets_(new size_t[bucket_count + 1]),
-    total_sample_count_(0u),
-    bucket_start_time_milliseconds_(~0u) {
+      bucket_count_(bucket_count),
+      sample_buckets_(new size_t[bucket_count + 1]),
+      total_sample_count_(0u),
+      bucket_start_time_milliseconds_(~0u) {
   RTC_CHECK(bucket_milliseconds > 0u);
   RTC_CHECK(bucket_count > 0u);
 }
@@ -35,26 +34,27 @@ RateTracker::~RateTracker() {
 }
 
 double RateTracker::ComputeRateForInterval(
-    uint32 interval_milliseconds) const {
+    uint32_t interval_milliseconds) const {
   if (bucket_start_time_milliseconds_ == ~0u) {
     return 0.0;
   }
-  uint32 current_time = Time();
+  uint32_t current_time = Time();
   // Calculate which buckets to sum up given the current time.  If the time
   // has passed to a new bucket then we have to skip some of the oldest buckets.
-  uint32 available_interval_milliseconds = std::min<uint32>(
+  uint32_t available_interval_milliseconds = std::min<uint32_t>(
       interval_milliseconds,
-      bucket_milliseconds_ * static_cast<uint32>(bucket_count_));
+      bucket_milliseconds_ * static_cast<uint32_t>(bucket_count_));
   // number of old buckets (i.e. after the current bucket in the ring buffer)
   // that are expired given our current time interval.
   size_t buckets_to_skip;
   // Number of milliseconds of the first bucket that are not a portion of the
   // current interval.
-  uint32 milliseconds_to_skip;
+  uint32_t milliseconds_to_skip;
   if (current_time >
       initialization_time_milliseconds_ + available_interval_milliseconds) {
-    uint32 time_to_skip = current_time - bucket_start_time_milliseconds_ +
-        static_cast<uint32>(bucket_count_) * bucket_milliseconds_ -
+    uint32_t time_to_skip =
+        current_time - bucket_start_time_milliseconds_ +
+        static_cast<uint32_t>(bucket_count_) * bucket_milliseconds_ -
         available_interval_milliseconds;
     buckets_to_skip = time_to_skip / bucket_milliseconds_;
     milliseconds_to_skip = time_to_skip % bucket_milliseconds_;
@@ -73,8 +73,9 @@ double RateTracker::ComputeRateForInterval(
   size_t start_bucket = NextBucketIndex(current_bucket_ + buckets_to_skip);
   // Only count a portion of the first bucket according to how much of the
   // first bucket is within the current interval.
-  size_t total_samples = sample_buckets_[start_bucket] *
-      (bucket_milliseconds_ - milliseconds_to_skip) /
+  size_t total_samples = ((sample_buckets_[start_bucket] *
+      (bucket_milliseconds_ - milliseconds_to_skip)) +
+      (bucket_milliseconds_ >> 1)) /
       bucket_milliseconds_;
   // All other buckets in the interval are counted in their entirety.
   for (size_t i = NextBucketIndex(start_bucket);
@@ -91,7 +92,7 @@ double RateTracker::ComputeTotalRate() const {
   if (bucket_start_time_milliseconds_ == ~0u) {
     return 0.0;
   }
-  uint32 current_time = Time();
+  uint32_t current_time = Time();
   if (TimeIsLaterOrEqual(current_time, initialization_time_milliseconds_)) {
     return 0.0;
   }
@@ -106,7 +107,7 @@ size_t RateTracker::TotalSampleCount() const {
 
 void RateTracker::AddSamples(size_t sample_count) {
   EnsureInitialized();
-  uint32 current_time = Time();
+  uint32_t current_time = Time();
   // Advance the current bucket as needed for the current time, and reset
   // bucket counts as we advance.
   for (size_t i = 0u; i <= bucket_count_ &&
@@ -125,7 +126,7 @@ void RateTracker::AddSamples(size_t sample_count) {
   total_sample_count_ += sample_count;
 }
 
-uint32 RateTracker::Time() const {
+uint32_t RateTracker::Time() const {
   return rtc::Time();
 }
 

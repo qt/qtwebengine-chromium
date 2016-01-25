@@ -16,9 +16,7 @@
 #     - "Attr=X|Y|Z" means that Attr takes a required value, and the valid
 #       values are X, Y, and Z, and combinations thereof;
 #       e.g. [Attr=X], [Attr=Y], [Attr=X|Z].
-#       The separator must be | or &, so [Attr=X&Z] is also valid; the
-#       separator makes a difference for Conditional, but otherwise is simply
-#       a style convention.
+#       The separator must be | or &, so [Attr=X&Z] is also valid.
 #     - "Attr=|X|Y|Z" means that Attr takes an optional value, whose valid
 #       values (if present) are X, Y, and Z, and combinations thereof; e.g.
 #       [Attr], [Attr=X], [Attr=Y], [Attr=X|Z], [Attr=X|Y|Z], [Attr=X&Z].
@@ -33,12 +31,12 @@
 #       arbitrary, but that "X" is standard, e.g. [Attr=X], [Attr=Foo].
 #
 
+APIExperimentEnabled=*
 ActiveDOMObject
 CachedAttribute=*
 CallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
-CheckSecurity=Frame|Node|Window
+CheckSecurity=Receiver|ReturnValue
 Clamp
-Conditional=*
 Constructor
 # FIXME: remove [ConstructorCallWith=Document], as can instead use
 # [ConstructorCallWith=ExecutionContext] + toDocument(executionContext)
@@ -57,7 +55,6 @@ Exposed=*
 FlexibleArrayBufferView
 GarbageCollected
 Global=|*
-Immutable
 ImplementedAs=*
 ImplementedInPrivateScript
 Iterable
@@ -98,7 +95,6 @@ SetterCallWith=ExecutionContext|ScriptArguments|ActiveWindow|FirstWindow
 TreatNullAs=NullString|EmptyString
 TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=NullString
-TypeChecking=Interface
 URL
 Unforgeable
 Unscopeable

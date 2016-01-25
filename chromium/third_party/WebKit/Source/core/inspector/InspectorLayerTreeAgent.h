@@ -44,7 +44,7 @@ namespace blink {
 
 class GraphicsContext;
 class GraphicsLayer;
-class InspectorPageAgent;
+class InspectedFrames;
 class LayoutObject;
 class LayoutRect;
 class PictureSnapshot;
@@ -56,9 +56,9 @@ typedef String ErrorString;
 class CORE_EXPORT InspectorLayerTreeAgent final : public InspectorBaseAgent<InspectorLayerTreeAgent, InspectorFrontend::LayerTree>, public InspectorBackendDispatcher::LayerTreeCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorLayerTreeAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorLayerTreeAgent> create(InspectorPageAgent* pageAgent)
+    static PassOwnPtrWillBeRawPtr<InspectorLayerTreeAgent> create(InspectedFrames* inspectedFrames)
     {
-        return adoptPtrWillBeNoop(new InspectorLayerTreeAgent(pageAgent));
+        return adoptPtrWillBeNoop(new InspectorLayerTreeAgent(inspectedFrames));
     }
     ~InspectorLayerTreeAgent() override;
     DECLARE_VIRTUAL_TRACE();
@@ -72,7 +72,7 @@ public:
 
     // Called from InspectorInstrumentation
     void layerTreeDidChange();
-    void didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
+    void didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext&, const LayoutRect&);
 
     // Called from the front-end.
     void enable(ErrorString*) override;
@@ -90,11 +90,11 @@ public:
 private:
     static unsigned s_lastSnapshotId;
 
-    explicit InspectorLayerTreeAgent(InspectorPageAgent*);
+    explicit InspectorLayerTreeAgent(InspectedFrames*);
 
     GraphicsLayer* rootGraphicsLayer();
 
-    PaintLayerCompositor* deprecatedPaintLayerCompositor();
+    PaintLayerCompositor* paintLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
     const PictureSnapshot* snapshotById(ErrorString*, const String& snapshotId);
 
@@ -103,7 +103,7 @@ private:
     void gatherGraphicsLayers(GraphicsLayer*, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     int idForNode(Node*);
 
-    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InspectedFrames> m_inspectedFrames;
     Vector<int, 2> m_pageOverlayLayerIds;
 
     typedef HashMap<String, RefPtr<PictureSnapshot> > SnapshotById;

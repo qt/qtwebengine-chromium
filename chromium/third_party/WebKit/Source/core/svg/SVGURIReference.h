@@ -35,15 +35,15 @@ public:
     virtual ~SVGURIReference() { }
 
     bool isKnownAttribute(const QualifiedName&);
-    void addSupportedAttributes(HashSet<QualifiedName>&);
 
     static AtomicString fragmentIdentifierFromIRIString(const String&, const TreeScope&);
     static Element* targetElementFromIRIString(const String&, const TreeScope&, AtomicString* = 0, Document* = 0);
 
     static inline bool isExternalURIReference(const String& uri, const Document& document)
     {
-        // Fragment-only URIs are always internal
-        if (uri.startsWith('#'))
+        // Fragment-only URIs are always internal if the baseURL is same as the document URL.
+        // This is common case, so check that first to avoid resolving URL (which is relatively expensive). See crbug.com/557979
+        if (document.baseURL() == document.url() && uri.startsWith('#'))
             return false;
 
         // If the URI matches our documents URL, we're dealing with a local reference.

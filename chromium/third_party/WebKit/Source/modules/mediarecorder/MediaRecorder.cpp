@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/mediarecorder/MediaRecorder.h"
 
-#include "core/dom/DOMError.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "core/events/Event.h"
 #include "core/fileapi/Blob.h"
-#include "modules/EventModules.h"
 #include "modules/EventTargetModules.h"
 #include "modules/mediarecorder/BlobEvent.h"
-#include "modules/mediarecorder/MediaRecorderErrorEvent.h"
+#include "platform/ContentType.h"
 #include "platform/NotImplemented.h"
 #include "platform/blob/BlobData.h"
 #include "public/platform/Platform.h"
@@ -39,28 +38,29 @@ String stateToString(MediaRecorder::State state)
 
 MediaRecorder* MediaRecorder::create(ExecutionContext* context, MediaStream* stream, ExceptionState& exceptionState)
 {
-    MediaRecorder* recorder = new MediaRecorder(context, stream, String(), exceptionState);
+    MediaRecorder* recorder = new MediaRecorder(context, stream, MediaRecorderOptions(), exceptionState);
     recorder->suspendIfNeeded();
 
     return recorder;
 }
 
-MediaRecorder* MediaRecorder::create(ExecutionContext* context, MediaStream* stream,  const String& mimeType, ExceptionState& exceptionState)
+MediaRecorder* MediaRecorder::create(ExecutionContext* context, MediaStream* stream,  const MediaRecorderOptions& options, ExceptionState& exceptionState)
 {
-    MediaRecorder* recorder = new MediaRecorder(context, stream, mimeType, exceptionState);
+    MediaRecorder* recorder = new MediaRecorder(context, stream, options, exceptionState);
     recorder->suspendIfNeeded();
 
     return recorder;
 }
 
-MediaRecorder::MediaRecorder(ExecutionContext* context, MediaStream* stream, const String& mimeType, ExceptionState& exceptionState)
+MediaRecorder::MediaRecorder(ExecutionContext* context, MediaStream* stream, const MediaRecorderOptions& options, ExceptionState& exceptionState)
     : ActiveDOMObject(context)
     , m_stream(stream)
-    , m_mimeType(mimeType)
+    , m_streamAmountOfTracks(stream->getTracks().size())
+    , m_mimeType(options.mimeType())
     , m_stopped(true)
     , m_ignoreMutedMedia(true)
     , m_state(State::Inactive)
-    , m_dispatchScheduledEventRunner(this, &MediaRecorder::dispatchScheduledEvent)
+    , m_dispatchScheduledEventRunner(AsyncMethodRunner<MediaRecorder>::create(this, &MediaRecorder::dispatchScheduledEvent))
 {
     ASSERT(m_stream->getTracks().size());
 
@@ -72,7 +72,8 @@ MediaRecorder::MediaRecorder(ExecutionContext* context, MediaStream* stream, con
         exceptionState.throwDOMException(NotSupportedError, "No MediaRecorder handler can be created.");
         return;
     }
-    if (!m_recorderHandler->initialize(this, stream->descriptor(), m_mimeType)) {
+    ContentType contentType(m_mimeType);
+    if (!m_recorderHandler->initialize(this, stream->descriptor(), contentType.type(), contentType.parameter("codecs"))) {
         exceptionState.throwDOMException(NotSupportedError, "Failed to initialize native MediaRecorder, the type provided " + m_mimeType + "is unsupported." );
         return;
     }
@@ -86,13 +87,7 @@ String MediaRecorder::state() const
 
 void MediaRecorder::start(ExceptionState& exceptionState)
 {
-    if (m_state != State::Inactive) {
-        exceptionState.throwDOMException(InvalidStateError, "The MediaRecorder's state is '" + stateToString(m_state) + "'.");
-        return;
-    }
-    m_state = State::Recording;
-
-    m_recorderHandler->start();
+    start(0 /* timeSlice */, exceptionState);
 }
 
 void MediaRecorder::start(int timeSlice, ExceptionState& exceptionState)
@@ -103,7 +98,11 @@ void MediaRecorder::start(int timeSlice, ExceptionState& exceptionState)
     }
     m_state = State::Recording;
 
-    m_recorderHandler->start(timeSlice);
+    if (!m_recorderHandler->start(timeSlice)) {
+        exceptionState.throwDOMException(UnknownError, "The MediaRecorder failed to start because there are no audio or video tracks available.");
+        return;
+    }
+    scheduleDispatchEvent(Event::create(EventTypeNames::start));
 }
 
 void MediaRecorder::stop(ExceptionState& exceptionState)
@@ -144,6 +143,7 @@ void MediaRecorder::resume(ExceptionState& exceptionState)
     m_state = State::Recording;
 
     m_recorderHandler->resume();
+    scheduleDispatchEvent(Event::create(EventTypeNames::resume));
 }
 
 void MediaRecorder::requestData(ExceptionState& exceptionState)
@@ -152,24 +152,22 @@ void MediaRecorder::requestData(ExceptionState& exceptionState)
         exceptionState.throwDOMException(InvalidStateError, "The MediaRecorder's state is '" + stateToString(m_state) + "'.");
         return;
     }
-
-    createBlobEvent(nullptr);
+    writeData(nullptr /* data */, 0 /* length */, true /* lastInSlice */);
 }
 
-String MediaRecorder::canRecordMimeType(const String& mimeType)
+bool MediaRecorder::isTypeSupported(const String& type)
 {
     RawPtr<WebMediaRecorderHandler> handler = Platform::current()->createMediaRecorderHandler();
     if (!handler)
-        return emptyString();
+        return false;
 
-    // MediaRecorder canRecordMimeType() MUST return 'probably' "if the UA is
-    // confident that mimeType represents a type that it can record" [1], but a
-    // number of reasons could prevent the recording from happening as expected,
-    // so 'maybe' is a better option: "Implementors are encouraged to return
-    // "maybe" unless the type can be confidently established as being supported
-    // or not.". Hence this method returns '' or 'maybe', never 'probably'.
-    // [1] http://w3c.github.io/mediacapture-record/MediaRecorder.html#methods
-    return handler->canSupportMimeType(mimeType) ? "maybe" : emptyString();
+    // If true is returned from this method, it only indicates that the
+    // MediaRecorder implementation is capable of recording Blob objects for the
+    // specified MIME type. Recording may still fail if sufficient resources are
+    // not available to support the concrete media encoding.
+    // [1] https://w3c.github.io/mediacapture-record/MediaRecorder.html#methods
+    ContentType contentType(type);
+    return handler->canSupportMimeType(contentType.type(), contentType.parameter("codecs"));
 }
 
 const AtomicString& MediaRecorder::interfaceName() const
@@ -184,12 +182,12 @@ ExecutionContext* MediaRecorder::executionContext() const
 
 void MediaRecorder::suspend()
 {
-    m_dispatchScheduledEventRunner.suspend();
+    m_dispatchScheduledEventRunner->suspend();
 }
 
 void MediaRecorder::resume()
 {
-    m_dispatchScheduledEventRunner.resume();
+    m_dispatchScheduledEventRunner->resume();
 }
 
 void MediaRecorder::stop()
@@ -200,49 +198,38 @@ void MediaRecorder::stop()
     m_stopped = true;
     m_stream.clear();
     m_recorderHandler.clear();
-
-    scheduleDispatchEvent(Event::create(EventTypeNames::stop));
 }
 
 void MediaRecorder::writeData(const char* data, size_t length, bool lastInSlice)
 {
-    if (!lastInSlice && m_stopped) {
+    if (m_stopped && !lastInSlice) {
         m_stopped = false;
         scheduleDispatchEvent(Event::create(EventTypeNames::start));
     }
+    if (m_stream && m_streamAmountOfTracks != m_stream->getTracks().size()) {
+        m_streamAmountOfTracks = m_stream->getTracks().size();
+        onError("Amount of tracks in MediaStream has changed.");
+    }
 
     // TODO(mcasas): Act as |m_ignoredMutedMedia| instructs if |m_stream| track(s) is in muted() state.
-    // TODO(mcasas): Use |lastInSlice| to indicate to JS that recording is done.
-    OwnPtr<BlobData> blobData = BlobData::create();
-    blobData->appendBytes(data, length);
-    createBlobEvent(Blob::create(BlobDataHandle::create(blobData.release(), length)));
+
+    if (!m_blobData)
+        m_blobData = BlobData::create();
+    if (data)
+        m_blobData->appendBytes(data, length);
+
+    if (!lastInSlice)
+        return;
+
+    // Cache |m_blobData->length()| before release()ng it.
+    const long long blobDataLength = m_blobData->length();
+    createBlobEvent(Blob::create(BlobDataHandle::create(m_blobData.release(), blobDataLength)));
 }
 
-void MediaRecorder::failOutOfMemory(const WebString& message)
+void MediaRecorder::onError(const WebString& message)
 {
-    scheduleDispatchEvent(MediaRecorderErrorEvent::create(
-        EventTypeNames::error, false, false, "OutOfMemory", message));
-
-    if (m_state == State::Recording)
-        stopRecording();
-}
-
-void MediaRecorder::failIllegalStreamModification(const WebString& message)
-{
-    scheduleDispatchEvent(MediaRecorderErrorEvent::create(
-        EventTypeNames::error, false, false, "IllegalStreamModification", message));
-
-    if (m_state == State::Recording)
-        stopRecording();
-}
-
-void MediaRecorder::failOtherRecordingError(const WebString& message)
-{
-    scheduleDispatchEvent(MediaRecorderErrorEvent::create(
-        EventTypeNames::error, false, false, "OtherRecordingError", message));
-
-    if (m_state == State::Recording)
-        stopRecording();
+    // TODO(mcasas): Beef up the Error Event and add the |message|, see https://github.com/w3c/mediacapture-record/issues/31
+    scheduleDispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void MediaRecorder::createBlobEvent(Blob* blob)
@@ -258,8 +245,7 @@ void MediaRecorder::stopRecording()
 
     m_recorderHandler->stop();
 
-    createBlobEvent(nullptr);
-
+    writeData(nullptr /* data */, 0 /* length */, true /* lastInSlice */);
     scheduleDispatchEvent(Event::create(EventTypeNames::stop));
 }
 
@@ -267,7 +253,7 @@ void MediaRecorder::scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     m_scheduledEvents.append(event);
 
-    m_dispatchScheduledEventRunner.runAsync();
+    m_dispatchScheduledEventRunner->runAsync();
 }
 
 void MediaRecorder::dispatchScheduledEvent()
@@ -282,6 +268,7 @@ void MediaRecorder::dispatchScheduledEvent()
 DEFINE_TRACE(MediaRecorder)
 {
     visitor->trace(m_stream);
+    visitor->trace(m_dispatchScheduledEventRunner);
     visitor->trace(m_scheduledEvents);
     RefCountedGarbageCollectedEventTargetWithInlineData<MediaRecorder>::trace(visitor);
     ActiveDOMObject::trace(visitor);

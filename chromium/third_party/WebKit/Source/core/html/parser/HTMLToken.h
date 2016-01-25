@@ -34,7 +34,7 @@
 namespace blink {
 
 class DoctypeData {
-    WTF_MAKE_FAST_ALLOCATED(DoctypeData);
+    USING_FAST_MALLOC(DoctypeData);
     WTF_MAKE_NONCOPYABLE(DoctypeData);
 public:
     DoctypeData()
@@ -62,7 +62,7 @@ static inline Attribute* findAttributeInVector(Vector<Attribute>& attributes, co
 
 class HTMLToken {
     WTF_MAKE_NONCOPYABLE(HTMLToken);
-    WTF_MAKE_FAST_ALLOCATED(HTMLToken);
+    USING_FAST_MALLOC(HTMLToken);
 public:
     enum Type {
         Uninitialized,
@@ -75,10 +75,10 @@ public:
     };
 
     class Attribute {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         class Range {
-            DISALLOW_ALLOCATION();
+            DISALLOW_NEW();
         public:
             int start;
             int end;

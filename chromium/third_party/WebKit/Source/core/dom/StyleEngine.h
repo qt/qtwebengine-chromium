@@ -36,7 +36,7 @@
 #include "core/dom/DocumentOrderedList.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
 #include "wtf/TemporaryChange.h"
@@ -55,12 +55,12 @@ class StyleSheet;
 class StyleSheetContents;
 
 class CORE_EXPORT StyleEngine final : public NoBaseWillBeGarbageCollectedFinalized<StyleEngine>, public CSSFontSelectorClient  {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleEngine);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(StyleEngine);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(StyleEngine);
 public:
 
     class IgnoringPendingStylesheet : public TemporaryChange<bool> {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         IgnoringPendingStylesheet(StyleEngine& engine)
             : TemporaryChange<bool>(engine.m_ignorePendingStylesheets, true)
@@ -79,9 +79,8 @@ public:
 #endif
 
     const WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& styleSheetsForStyleSheetList(TreeScope&);
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& activeAuthorStyleSheets() const;
 
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& injectedAuthorStyleSheets() const { return m_injectedAuthorStyleSheets; }
 
     const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> activeStyleSheetsForInspector() const;
 
@@ -91,7 +90,7 @@ public:
     void removeStyleSheetCandidateNode(Node*, TreeScope&);
     void modifiedStyleSheetCandidateNode(Node*);
 
-    void addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet);
+    void injectAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet);
 
     void clearMediaQueryRuleSetStyleSheets();
     void updateStyleSheetsInImport(DocumentStyleSheetCollector& parentCollector);
@@ -199,8 +198,6 @@ private:
     Document* master();
     Document& document() const { return *m_document; }
 
-    void scheduleInvalidationSetsForElement(const InvalidationSetVector&, Element&);
-
     typedef WillBeHeapHashSet<RawPtrWillBeMember<TreeScope>> UnorderedTreeScopeSet;
 
     void clearMediaQueryRuleSetOnTreeScopeStyleSheets(UnorderedTreeScopeSet&);
@@ -221,6 +218,8 @@ private:
 
     void updateActiveStyleSheetsInShadow(StyleResolverUpdateMode, TreeScope*, UnorderedTreeScopeSet& treeScopesRemoved);
 
+    bool shouldSkipInvalidationFor(const Element&) const;
+
     RawPtrWillBeMember<Document> m_document;
     bool m_isMaster;
 
@@ -230,7 +229,7 @@ private:
     // elements and when it is safe to execute scripts.
     int m_pendingStylesheets;
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> m_authorStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> m_injectedAuthorStyleSheets;
 
     OwnPtrWillBeMember<DocumentStyleSheetCollection> m_documentStyleSheetCollection;
 

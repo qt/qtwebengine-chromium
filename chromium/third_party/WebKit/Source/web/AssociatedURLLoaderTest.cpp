@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
@@ -44,10 +42,10 @@
 #include "public/web/WebFrame.h"
 #include "public/web/WebURLLoaderOptions.h"
 #include "public/web/WebView.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "web/tests/FrameTestHelpers.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 using blink::URLTestHelpers::toKURL;
 using blink::testing::runPendingTasks;
@@ -58,7 +56,7 @@ class AssociatedURLLoaderTest : public ::testing::Test,
                                 public WebURLLoaderClient {
 public:
     AssociatedURLLoaderTest()
-        :  m_willSendRequest(false)
+        :  m_willFollowRedirect(false)
         ,  m_didSendData(false)
         ,  m_didReceiveResponse(false)
         ,  m_didReceiveData(false)
@@ -67,7 +65,7 @@ public:
         ,  m_didFail(false)
     {
         // Reuse one of the test files from WebFrameTest.
-        m_baseFilePath = Platform::current()->unitTestSupport()->webKitRootDir();
+        m_baseFilePath = testing::blinkRootDir();
         m_baseFilePath.append("/Source/web/tests/data/");
         m_frameFilePath = m_baseFilePath;
         m_frameFilePath.append("iframes_test.html");
@@ -96,7 +94,7 @@ public:
             "visible_iframe.html",
             "zero_sized_iframe.html",
         };
-        for (size_t i = 0; i < arraysize(iframeSupportFiles); ++i) {
+        for (size_t i = 0; i < WTF_ARRAY_LENGTH(iframeSupportFiles); ++i) {
             RegisterMockedUrl(urlRoot, iframeSupportFiles[i]);
         }
 
@@ -121,9 +119,9 @@ public:
     }
 
     // WebURLLoaderClient implementation.
-    void willSendRequest(WebURLLoader* loader, WebURLRequest& newRequest, const WebURLResponse& redirectResponse) override
+    void willFollowRedirect(WebURLLoader* loader, WebURLRequest& newRequest, const WebURLResponse& redirectResponse) override
     {
-        m_willSendRequest = true;
+        m_willFollowRedirect = true;
         EXPECT_EQ(m_expectedLoader, loader);
         EXPECT_EQ(m_expectedNewRequest.url(), newRequest.url());
         // Check that CORS simple headers are transferred to the new request.
@@ -273,7 +271,7 @@ protected:
     WebURLResponse m_expectedResponse;
     WebURLRequest m_expectedNewRequest;
     WebURLResponse m_expectedRedirectResponse;
-    bool m_willSendRequest;
+    bool m_willFollowRedirect;
     bool m_didSendData;
     bool m_didReceiveResponse;
     bool m_didDownloadData;
@@ -465,7 +463,7 @@ TEST_F(AssociatedURLLoaderTest, RedirectSuccess)
     EXPECT_TRUE(m_expectedLoader);
     m_expectedLoader->loadAsynchronously(request, this);
     serveRequests();
-    EXPECT_TRUE(m_willSendRequest);
+    EXPECT_TRUE(m_willFollowRedirect);
     EXPECT_TRUE(m_didReceiveResponse);
     EXPECT_TRUE(m_didReceiveData);
     EXPECT_TRUE(m_didFinishLoading);
@@ -504,7 +502,7 @@ TEST_F(AssociatedURLLoaderTest, RedirectCrossOriginFailure)
     m_expectedLoader->loadAsynchronously(request, this);
 
     serveRequests();
-    EXPECT_FALSE(m_willSendRequest);
+    EXPECT_FALSE(m_willFollowRedirect);
     EXPECT_FALSE(m_didReceiveResponse);
     EXPECT_FALSE(m_didReceiveData);
     EXPECT_FALSE(m_didFinishLoading);
@@ -546,7 +544,7 @@ TEST_F(AssociatedURLLoaderTest, RedirectCrossOriginWithAccessControlFailure)
 
     serveRequests();
     // We should get a notification about access control check failure.
-    EXPECT_FALSE(m_willSendRequest);
+    EXPECT_FALSE(m_willFollowRedirect);
     EXPECT_FALSE(m_didReceiveResponse);
     EXPECT_FALSE(m_didReceiveData);
     EXPECT_TRUE(m_didFail);
@@ -593,7 +591,7 @@ TEST_F(AssociatedURLLoaderTest, RedirectCrossOriginWithAccessControlSuccess)
     m_expectedLoader->loadAsynchronously(request, this);
     serveRequests();
     // We should not receive a notification for the redirect.
-    EXPECT_FALSE(m_willSendRequest);
+    EXPECT_FALSE(m_willFollowRedirect);
     EXPECT_TRUE(m_didReceiveResponse);
     EXPECT_TRUE(m_didReceiveData);
     EXPECT_TRUE(m_didFinishLoading);

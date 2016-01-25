@@ -5,7 +5,9 @@
 #include "ui/views/views_delegate.h"
 
 #include "base/command_line.h"
+#include "build/build_config.h"
 #include "ui/views/views_touch_selection_controller_factory.h"
+#include "ui/views/widget/native_widget_private.h"
 
 #if defined(USE_AURA)
 #include "ui/views/touchui/touch_selection_menu_runner_views.h"

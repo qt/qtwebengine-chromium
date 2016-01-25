@@ -18,7 +18,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -44,6 +43,15 @@ static WidgetToParentMap& widgetNewParentMap()
 {
     DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WidgetToParentMap>, map, (adoptPtrWillBeNoop(new WidgetToParentMap())));
     return *map;
+}
+
+typedef WillBeHeapHashSet<RefPtrWillBeMember<Widget>> WidgetSet;
+static WidgetSet& widgetsPendingTemporaryRemovalFromParent()
+{
+    // Widgets in this set will not leak because it will be cleared in
+    // HTMLFrameOwnerElement::UpdateSuspendScope::performDeferredWidgetTreeOperations.
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WidgetSet>, set, (adoptPtrWillBeNoop(new WidgetSet())));
+    return *set;
 }
 
 WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& SubframeLoadingDisabler::disabledSubtreeRoots()
@@ -78,6 +86,14 @@ void HTMLFrameOwnerElement::UpdateSuspendScope::performDeferredWidgetTreeOperati
 #endif
         }
     }
+
+    WidgetSet set;
+    widgetsPendingTemporaryRemovalFromParent().swap(set);
+    for (const auto& widget : set) {
+        FrameView* currentParent = toFrameView(widget->parent());
+        if (currentParent)
+            currentParent->removeChild(widget.get());
+    }
 }
 
 HTMLFrameOwnerElement::UpdateSuspendScope::~UpdateSuspendScope()
@@ -88,7 +104,18 @@ HTMLFrameOwnerElement::UpdateSuspendScope::~UpdateSuspendScope()
     --s_updateSuspendCount;
 }
 
-static void moveWidgetToParentSoon(Widget* child, FrameView* parent)
+// Unlike moveWidgetToParentSoon, this will not call dispose the Widget.
+void temporarilyRemoveWidgetFromParentSoon(Widget* widget)
+{
+    if (s_updateSuspendCount) {
+        widgetsPendingTemporaryRemovalFromParent().add(widget);
+    } else {
+        if (toFrameView(widget->parent()))
+            toFrameView(widget->parent())->removeChild(widget);
+    }
+}
+
+void moveWidgetToParentSoon(Widget* child, FrameView* parent)
 {
     if (!s_updateSuspendCount) {
         if (parent) {
@@ -153,16 +180,6 @@ void HTMLFrameOwnerElement::disconnectContentFrame()
     if (RefPtrWillBeRawPtr<Frame> frame = contentFrame()) {
         frame->detach(FrameDetachType::Remove);
     }
-#if ENABLE(OILPAN)
-    // Oilpan: a plugin container must be explicitly disposed before it
-    // is swept and finalized. This is because the underlying plugin needs
-    // to be able to access a fully-functioning frame (and all it refers
-    // to) while it destructs and cleans out its resources.
-    if (m_widget) {
-        m_widget->dispose();
-        m_widget = nullptr;
-    }
-#endif
 }
 
 HTMLFrameOwnerElement::~HTMLFrameOwnerElement()
@@ -236,6 +253,20 @@ void HTMLFrameOwnerElement::setWidget(PassRefPtrWillBeRawPtr<Widget> widget)
 
     if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->childrenChanged(layoutPart);
+}
+
+PassRefPtrWillBeRawPtr<Widget> HTMLFrameOwnerElement::releaseWidget()
+{
+    if (!m_widget)
+        return nullptr;
+    if (m_widget->parent())
+        temporarilyRemoveWidgetFromParentSoon(m_widget.get());
+    LayoutPart* layoutPart = toLayoutPart(layoutObject());
+    if (layoutPart) {
+        if (AXObjectCache* cache = document().existingAXObjectCache())
+            cache->childrenChanged(layoutPart);
+    }
+    return m_widget.release();
 }
 
 Widget* HTMLFrameOwnerElement::ownedWidget() const

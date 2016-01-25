@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGFEConvolveMatrixElement.h"
 
 #include "core/SVGNames.h"
@@ -50,7 +49,7 @@ public:
         return adoptRefWillBeNoop(new SVGAnimatedOrder(contextElement));
     }
 
-    void setBaseValueAsString(const String&, SVGParsingError&) override;
+    SVGParsingError setBaseValueAsString(const String&) override;
 
 protected:
     SVGAnimatedOrder(SVGElement* contextElement)
@@ -59,15 +58,16 @@ protected:
     }
 };
 
-void SVGAnimatedOrder::setBaseValueAsString(const String& value, SVGParsingError& parseError)
+SVGParsingError SVGAnimatedOrder::setBaseValueAsString(const String& value)
 {
-    SVGAnimatedIntegerOptionalInteger::setBaseValueAsString(value, parseError);
+    SVGParsingError parseStatus = SVGAnimatedIntegerOptionalInteger::setBaseValueAsString(value);
 
     ASSERT(contextElement());
-    if (parseError == NoError && (firstInteger()->baseValue()->value() < 1 || secondInteger()->baseValue()->value() < 1)) {
+    if (parseStatus == NoError && (firstInteger()->baseValue()->value() < 1 || secondInteger()->baseValue()->value() < 1)) {
         contextElement()->document().accessSVGExtensions().reportWarning(
             "feConvolveMatrix: problem parsing order=\"" + value + "\".");
     }
+    return parseStatus;
 }
 
 inline SVGFEConvolveMatrixElement::SVGFEConvolveMatrixElement(Document& document)
@@ -159,9 +159,7 @@ void SVGFEConvolveMatrixElement::svgAttributeChanged(const QualifiedName& attrNa
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
-
-    if (!input1)
-        return nullptr;
+    ASSERT(input1);
 
     int orderXValue = orderX()->currentValue()->value();
     int orderYValue = orderY()->currentValue()->value();

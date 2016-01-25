@@ -22,11 +22,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLLinkElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/HTMLNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
@@ -45,6 +43,7 @@
 #include "core/frame/SubresourceIntegrity.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/html/CrossOriginAttribute.h"
 #include "core/html/LinkManifest.h"
 #include "core/html/imports/LinkImport.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -52,7 +51,10 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/NetworkHintsInterface.h"
 #include "core/style/StyleInheritedData.h"
+#include "platform/ContentType.h"
+#include "platform/MIMETypeRegistry.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "public/platform/Platform.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
@@ -122,8 +124,14 @@ static void parseSizes(const CharacterType* value, unsigned length, Vector<IntSi
 
 static LinkEventSender& linkLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (EventTypeNames::load));
-    return sharedLoadEventSender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<LinkEventSender>, sharedLoadEventSender, (LinkEventSender::create(EventTypeNames::load)));
+    return *sharedLoadEventSender;
+}
+
+static bool styleSheetTypeIsSupported(const String& type)
+{
+    String trimmedType = ContentType(type).type();
+    return trimmedType.isEmpty() || MIMETypeRegistry::isSupportedStyleSheetMIMEType(trimmedType);
 }
 
 void HTMLLinkElement::parseSizesAttribute(const AtomicString& value, Vector<IntSize>& iconSizes)
@@ -140,7 +148,8 @@ void HTMLLinkElement::parseSizesAttribute(const AtomicString& value, Vector<IntS
 inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser)
     : HTMLElement(linkTag, document)
     , m_linkLoader(this)
-    , m_sizes(DOMSettableTokenList::create())
+    , m_sizes(DOMSettableTokenList::create(this))
+    , m_relList(RelList::create(this))
     , m_createdByParser(createdByParser)
     , m_isInShadowTree(false)
 {
@@ -154,21 +163,23 @@ PassRefPtrWillBeRawPtr<HTMLLinkElement> HTMLLinkElement::create(Document& docume
 HTMLLinkElement::~HTMLLinkElement()
 {
 #if !ENABLE(OILPAN)
+    m_sizes->setObserver(nullptr);
     m_link.clear();
-
     if (inDocument())
         document().styleEngine().removeStyleSheetCandidateNode(this);
-#endif
-
     linkLoadEventSender().cancelEvent(this);
+#endif
 }
 
-void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == relAttr) {
         m_relAttribute = LinkRelAttribute(value);
+        m_relList->setRelValues(value);
         process();
     } else if (name == hrefAttr) {
+        // Log href attribute before logging resource fetching in process().
+        logUpdateAttributeIfIsolatedWorldAndInDocument("link", hrefAttr, oldValue, value);
         process();
     } else if (name == typeAttr) {
         m_type = value;
@@ -178,8 +189,6 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         process();
     } else if (name == sizesAttr) {
         m_sizes->setValue(value);
-        parseSizesAttribute(value, m_iconSizes);
-        process();
     } else if (name == mediaAttr) {
         m_media = value.lower();
         process();
@@ -193,7 +202,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
                 link->setSheetTitle(value);
         }
 
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -204,7 +213,7 @@ bool HTMLLinkElement::shouldLoadLink()
 
 bool HTMLLinkElement::loadLink(const String& type, const String& as, const KURL& url)
 {
-    return m_linkLoader.loadLink(m_relAttribute, fastGetAttribute(HTMLNames::crossoriginAttr), type, as, url, document(), NetworkHintsInterfaceImpl());
+    return m_linkLoader.loadLink(m_relAttribute, crossOriginAttributeValue(fastGetAttribute(HTMLNames::crossoriginAttr)), type, as, url, document(), NetworkHintsInterfaceImpl());
 }
 
 LinkResource* HTMLLinkElement::linkResourceToProcess()
@@ -262,17 +271,8 @@ void HTMLLinkElement::process()
 
 Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("link");
-            argv.append(fastGetAttribute(relAttr));
-            argv.append(fastGetAttribute(hrefAttr));
-            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
-        }
-    }
     HTMLElement::insertedInto(insertionPoint);
+    logAddElementIfIsolatedWorldAndInDocument("link", relAttr, hrefAttr);
     if (!insertionPoint->inDocument())
         return InsertionDone;
 
@@ -354,6 +354,14 @@ void HTMLLinkElement::didSendLoadForLinkPrerender()
 void HTMLLinkElement::didSendDOMContentLoadedForLinkPrerender()
 {
     dispatchEvent(Event::create(EventTypeNames::webkitprerenderdomcontentloaded));
+}
+
+void HTMLLinkElement::valueWasSet()
+{
+    setSynchronizedLazyAttribute(HTMLNames::sizesAttr, m_sizes->value());
+    m_iconSizes.clear();
+    parseSizesAttribute(m_sizes->value(), m_iconSizes);
+    process();
 }
 
 bool HTMLLinkElement::sheetLoaded()
@@ -455,23 +463,9 @@ DEFINE_TRACE(HTMLLinkElement)
     visitor->trace(m_link);
     visitor->trace(m_sizes);
     visitor->trace(m_linkLoader);
+    visitor->trace(m_relList);
     HTMLElement::trace(visitor);
-}
-
-void HTMLLinkElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == hrefAttr && inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("link");
-            argv.append(hrefAttr.toString());
-            argv.append(oldValue);
-            argv.append(newValue);
-            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
-        }
-    }
-    HTMLElement::attributeWillChange(name, oldValue, newValue);
+    DOMSettableTokenListObserver::trace(visitor);
 }
 
 PassOwnPtrWillBeRawPtr<LinkStyle> LinkStyle::create(HTMLLinkElement* owner)
@@ -512,7 +506,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
 
     // See the comment in PendingScript.cpp about why this check is necessary
     // here, instead of in the resource fetcher. https://crbug.com/500701.
-    if (!cachedStyleSheet->errorOccurred() && cachedStyleSheet->resourceBuffer() && !SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->resourceBuffer()->data(), cachedStyleSheet->resourceBuffer()->size(), KURL(baseURL, href), *cachedStyleSheet)) {
+    if (!cachedStyleSheet->errorOccurred() && m_owner->fastHasAttribute(HTMLNames::integrityAttr) && cachedStyleSheet->resourceBuffer() && !SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->resourceBuffer()->data(), cachedStyleSheet->resourceBuffer()->size(), KURL(baseURL, href), *cachedStyleSheet)) {
         m_loading = false;
         removePendingSheet();
         notifyLoadedSheetAndAllCriticalSubresources(Node::ErrorOccurredLoadingSubresource);
@@ -545,8 +539,10 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
 
         m_loading = false;
         restoredSheet->checkLoaded();
+        Platform::current()->histogramEnumeration("Blink.RestoredCachedStyleSheet", true, 2);
         return;
     }
+    Platform::current()->histogramEnumeration("Blink.RestoredCachedStyleSheet", false, 2);
 
     RefPtrWillBeRawPtr<StyleSheetContents> styleSheet = StyleSheetContents::create(href, parserContext);
 
@@ -597,8 +593,7 @@ void LinkStyle::clearSheet()
 {
     ASSERT(m_sheet);
     ASSERT(m_sheet->ownerNode() == m_owner);
-    m_sheet->clearOwnerNode();
-    m_sheet = nullptr;
+    m_sheet.release()->clearOwnerNode();
 }
 
 bool LinkStyle::styleSheetIsLoading() const
@@ -715,10 +710,13 @@ void LinkStyle::process()
         return;
 
     if (m_disabledState != Disabled && m_owner->relAttribute().isStyleSheet() && shouldLoadResource() && builder.url().isValid()) {
+        if (!styleSheetTypeIsSupported(type))
+            UseCounter::countDeprecation(document(), UseCounter::NonCSSStyleSheetType);
 
         if (resource()) {
             removePendingSheet();
             clearResource();
+            clearFetchFollowingCORS();
         }
 
         if (!m_owner->shouldLoadLink())
@@ -742,9 +740,9 @@ void LinkStyle::process()
 
         // Load stylesheets that are not needed for the layout immediately with low priority.
         FetchRequest request = builder.build(blocking);
-        AtomicString crossOriginMode = m_owner->fastGetAttribute(HTMLNames::crossoriginAttr);
-        if (!crossOriginMode.isNull()) {
-            request.setCrossOriginAccessControl(document().securityOrigin(), crossOriginMode);
+        CrossOriginAttributeValue crossOrigin = crossOriginAttributeValue(m_owner->fastGetAttribute(HTMLNames::crossoriginAttr));
+        if (crossOrigin != CrossOriginAttributeNotSet) {
+            request.setCrossOriginAccessControl(document().securityOrigin(), crossOrigin);
             setFetchFollowingCORS();
         }
         setResource(CSSStyleSheetResource::fetch(request, document().fetcher()));

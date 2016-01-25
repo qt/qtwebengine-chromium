@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/MediaValuesCached.h"
 
 #include "core/css/CSSPrimitiveValue.h"
@@ -100,12 +99,12 @@ bool MediaValuesCached::isSafeToSendToAnotherThread() const
 #endif
 }
 
-int MediaValuesCached::viewportWidth() const
+double MediaValuesCached::viewportWidth() const
 {
     return m_data.viewportWidth;
 }
 
-int MediaValuesCached::viewportHeight() const
+double MediaValuesCached::viewportHeight() const
 {
     return m_data.viewportHeight;
 }
@@ -185,12 +184,12 @@ bool MediaValuesCached::hasValues() const
     return true;
 }
 
-void MediaValuesCached::setViewportWidth(int width)
+void MediaValuesCached::setViewportWidth(double width)
 {
     m_data.viewportWidth = width;
 }
 
-void MediaValuesCached::setViewportHeight(int height)
+void MediaValuesCached::setViewportHeight(double height)
 {
     m_data.viewportHeight = height;
 }

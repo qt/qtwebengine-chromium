@@ -103,9 +103,6 @@ public:
 
     Glyph spaceGlyph() const { return m_spaceGlyph; }
     void setSpaceGlyph(Glyph spaceGlyph) { m_spaceGlyph = spaceGlyph; }
-    Glyph zeroWidthSpaceGlyph() const { return m_zeroWidthSpaceGlyph; }
-    void setZeroWidthSpaceGlyph(Glyph spaceGlyph) { m_zeroWidthSpaceGlyph = spaceGlyph; }
-    bool isZeroWidthSpaceGlyph(Glyph glyph) const { return glyph == m_zeroWidthSpaceGlyph && glyph; }
     Glyph zeroGlyph() const { return m_zeroGlyph; }
     void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
@@ -158,11 +155,12 @@ private:
     float m_spaceWidth;
     Glyph m_zeroGlyph;
 
-    Glyph m_zeroWidthSpaceGlyph;
-
     GlyphData m_missingGlyphData;
 
     struct DerivedFontData {
+        USING_FAST_MALLOC(DerivedFontData);
+        WTF_MAKE_NONCOPYABLE(DerivedFontData);
+    public:
         static PassOwnPtr<DerivedFontData> create(bool forCustomFont);
         ~DerivedFontData();
 
@@ -179,17 +177,16 @@ private:
         }
     };
 
+#if COMPILER(MSVC)
+    friend struct ::WTF::OwnedPtrDeleter<DerivedFontData>;
+#endif
     mutable OwnPtr<DerivedFontData> m_derivedFontData;
 
     RefPtr<CustomFontData> m_customFontData;
-    mutable OwnPtr<HashMap<String, bool>> m_combiningCharacterSequenceSupport;
 };
 
 ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
 {
-    if (isZeroWidthSpaceGlyph(glyph))
-        return FloatRect();
-
     FloatRect bounds;
     if (m_glyphToBoundsMap) {
         bounds = m_glyphToBoundsMap->metricsForGlyph(glyph);
@@ -206,9 +203,6 @@ ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
 
 ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
 {
-    if (isZeroWidthSpaceGlyph(glyph))
-        return 0;
-
     float width = m_glyphToWidthMap.metricsForGlyph(glyph);
     if (width != cGlyphSizeUnknown)
         return width;

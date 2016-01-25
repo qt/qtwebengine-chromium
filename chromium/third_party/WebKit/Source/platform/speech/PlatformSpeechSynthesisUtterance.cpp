@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/speech/PlatformSpeechSynthesisUtterance.h"
 
 namespace blink {
@@ -44,7 +43,6 @@ PlatformSpeechSynthesisUtterance::PlatformSpeechSynthesisUtterance(PlatformSpeec
 DEFINE_TRACE(PlatformSpeechSynthesisUtterance)
 {
     visitor->trace(m_client);
-    visitor->trace(m_voice);
 }
 
 } // namespace blink

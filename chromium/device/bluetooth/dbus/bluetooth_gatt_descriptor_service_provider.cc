@@ -4,8 +4,12 @@
 
 #include "device/bluetooth/dbus/bluetooth_gatt_descriptor_service_provider.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/threading/platform_thread.h"
@@ -83,7 +87,7 @@ class BluetoothGattDescriptorServiceProviderImpl
   }
 
   // BluetoothGattDescriptorServiceProvider override.
-  void SendValueChanged(const std::vector<uint8>& value) override {
+  void SendValueChanged(const std::vector<uint8_t>& value) override {
     VLOG(2) << "Emitting a PropertiesChanged signal for descriptor value.";
     dbus::Signal signal(dbus::kDBusPropertiesInterface,
                         dbus::kDBusPropertiesChangedSignal);
@@ -136,7 +140,7 @@ class BluetoothGattDescriptorServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 'ss'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -147,7 +151,7 @@ class BluetoothGattDescriptorServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -185,7 +189,7 @@ class BluetoothGattDescriptorServiceProviderImpl
           "No such property: '" + property_name + "'.");
     }
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by dbus:: when the Bluetooth daemon sets a single property of the
@@ -207,7 +211,7 @@ class BluetoothGattDescriptorServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 'ssv'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -218,7 +222,7 @@ class BluetoothGattDescriptorServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -237,24 +241,24 @@ class BluetoothGattDescriptorServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, error_name,
                                               error_message);
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
     // Obtain the value.
-    const uint8* bytes = NULL;
+    const uint8_t* bytes = NULL;
     size_t length = 0;
     if (!variant_reader.PopArrayOfBytes(&bytes, &length)) {
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "Property '" + property_name + "' has type 'ay'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
     // Pass the set request onto the delegate.
-    std::vector<uint8> value(bytes, bytes + length);
+    std::vector<uint8_t> value(bytes, bytes + length);
     DCHECK(delegate_);
     delegate_->SetDescriptorValue(
         value, base::Bind(&BluetoothGattDescriptorServiceProviderImpl::OnSet,
@@ -280,7 +284,7 @@ class BluetoothGattDescriptorServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 's'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -291,7 +295,7 @@ class BluetoothGattDescriptorServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -320,7 +324,7 @@ class BluetoothGattDescriptorServiceProviderImpl
   // descriptor value.
   void OnGetAll(dbus::MethodCall* method_call,
                 dbus::ExportedObject::ResponseSender response_sender,
-                const std::vector<uint8>& value) {
+                const std::vector<uint8_t>& value) {
     VLOG(2) << "Descriptor value obtained from delegate. Responding to "
             << "GetAll.";
 
@@ -355,14 +359,14 @@ class BluetoothGattDescriptorServiceProviderImpl
 
     writer.CloseContainer(&array_writer);
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by the Delegate in response to a successful method call to get the
   // descriptor value.
   void OnGet(dbus::MethodCall* method_call,
              dbus::ExportedObject::ResponseSender response_sender,
-             const std::vector<uint8>& value) {
+             const std::vector<uint8_t>& value) {
     VLOG(2) << "Returning descriptor value obtained from delegate.";
     scoped_ptr<dbus::Response> response =
         dbus::Response::FromMethodCall(method_call);
@@ -373,7 +377,7 @@ class BluetoothGattDescriptorServiceProviderImpl
     variant_writer.AppendArrayOfBytes(value.data(), value.size());
     writer.CloseContainer(&variant_writer);
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by the Delegate in response to a successful method call to set the
@@ -392,7 +396,7 @@ class BluetoothGattDescriptorServiceProviderImpl
     scoped_ptr<dbus::ErrorResponse> error_response =
         dbus::ErrorResponse::FromMethodCall(
             method_call, kErrorFailed, "Failed to get/set descriptor value.");
-    response_sender.Run(error_response.Pass());
+    response_sender.Run(std::move(error_response));
   }
 
   // Origin thread (i.e. the UI thread in production).

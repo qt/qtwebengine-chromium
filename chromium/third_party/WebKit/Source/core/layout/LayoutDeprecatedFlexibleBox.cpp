@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutDeprecatedFlexibleBox.h"
 
 #include "core/frame/UseCounter.h"
@@ -33,6 +32,7 @@
 #include "platform/fonts/Font.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CharacterNames.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -327,7 +327,9 @@ void LayoutDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                 continue;
 
             SubtreeLayoutScope layoutScope(*child);
-            if (relayoutChildren || (child->isReplaced() && (child->style()->width().hasPercent() || child->style()->height().hasPercent())))
+            // TODO(jchaffraix): It seems incorrect to check isAtomicInlineLevel in this file.
+            // We probably want to check if the element is replaced.
+            if (relayoutChildren || (child->isAtomicInlineLevel() && (child->style()->width().hasPercent() || child->style()->height().hasPercent())))
                 layoutScope.setChildNeedsLayout(child);
 
             // Compute the child's vertical margins.
@@ -629,7 +631,7 @@ void LayoutDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             }
 
             SubtreeLayoutScope layoutScope(*child);
-            if (!haveLineClamp && (relayoutChildren || (child->isReplaced() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))))
+            if (!haveLineClamp && (relayoutChildren || (child->isAtomicInlineLevel() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))))
                 layoutScope.setChildNeedsLayout(child);
 
             if (child->style()->visibility() == COLLAPSE) {
@@ -843,7 +845,7 @@ void LayoutDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
             continue;
 
         child->clearOverrideSize();
-        if (relayoutChildren || (child->isReplaced() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))
+        if (relayoutChildren || (child->isAtomicInlineLevel() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))
             || (child->style()->height().isAuto() && child->isLayoutBlock())) {
             child->setChildNeedsLayout(MarkOnlyThis);
 
@@ -910,13 +912,13 @@ void LayoutDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         if (!leftToRight)
             continue;
 
-        LayoutUnit blockRightEdge = destBlock.logicalRightOffsetForLine(lastVisibleLine->y(), false);
+        LayoutUnit blockRightEdge = destBlock.logicalRightOffsetForLine(lastVisibleLine->y(), DoNotIndentText);
         if (!lastVisibleLine->lineCanAccommodateEllipsis(leftToRight, blockRightEdge, lastVisibleLine->x() + lastVisibleLine->logicalWidth(), totalWidth))
             continue;
 
         // Let the truncation code kick in.
         // FIXME: the text alignment should be recomputed after the width changes due to truncation.
-        LayoutUnit blockLeftEdge = destBlock.logicalLeftOffsetForLine(lastVisibleLine->y(), false);
+        LayoutUnit blockLeftEdge = destBlock.logicalLeftOffsetForLine(lastVisibleLine->y(), DoNotIndentText);
         lastVisibleLine->placeEllipsis(ellipsisStr, leftToRight, blockLeftEdge, blockRightEdge, totalWidth);
         destBlock.setHasMarkupTruncation(true);
     }
@@ -930,7 +932,7 @@ void LayoutDeprecatedFlexibleBox::clearLineClamp()
             continue;
 
         child->clearOverrideSize();
-        if ((child->isReplaced() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))
+        if ((child->isAtomicInlineLevel() && (child->style()->width().hasPercent() || child->style()->height().hasPercent()))
             || (child->style()->height().isAuto() && child->isLayoutBlock())) {
             child->setChildNeedsLayout();
 
@@ -963,10 +965,6 @@ LayoutUnit LayoutDeprecatedFlexibleBox::allowedChildFlex(LayoutBox* child, bool 
             LayoutUnit width = contentWidthForChild(child);
             if (child->style()->maxWidth().isFixed())
                 maxWidth = child->style()->maxWidth().value();
-            else if (child->style()->maxWidth().type() == Intrinsic)
-                maxWidth = child->maxPreferredLogicalWidth();
-            else if (child->style()->maxWidth().type() == MinIntrinsic)
-                maxWidth = child->minPreferredLogicalWidth();
             if (maxWidth == LayoutUnit::max())
                 return maxWidth;
             return std::max<LayoutUnit>(0, maxWidth - width);
@@ -987,10 +985,6 @@ LayoutUnit LayoutDeprecatedFlexibleBox::allowedChildFlex(LayoutBox* child, bool 
         LayoutUnit width = contentWidthForChild(child);
         if (child->style()->minWidth().isFixed())
             minWidth = child->style()->minWidth().value();
-        else if (child->style()->minWidth().type() == Intrinsic)
-            minWidth = child->maxPreferredLogicalWidth();
-        else if (child->style()->minWidth().type() == MinIntrinsic)
-            minWidth = child->minPreferredLogicalWidth();
         else if (child->style()->minWidth().type() == Auto)
             minWidth = 0;
 

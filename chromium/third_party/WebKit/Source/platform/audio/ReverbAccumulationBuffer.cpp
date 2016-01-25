@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/ReverbAccumulationBuffer.h"
-
 #include "platform/audio/VectorMath.h"
 
 namespace blink {
@@ -116,4 +111,3 @@ void ReverbAccumulationBuffer::reset()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

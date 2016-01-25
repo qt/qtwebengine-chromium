@@ -9,6 +9,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/quads/render_pass.h"
@@ -25,11 +26,20 @@ class Surface;
 class SurfaceDrawQuad;
 class SurfaceManager;
 
+class CC_SURFACES_EXPORT SurfaceAggregatorClient {
+ public:
+  virtual ~SurfaceAggregatorClient() {}
+
+  virtual void AddSurface(Surface* surface) = 0;
+  virtual void RemoveSurface(Surface* surface) = 0;
+};
+
 class CC_SURFACES_EXPORT SurfaceAggregator {
  public:
   typedef base::hash_map<SurfaceId, int> SurfaceIndexMap;
 
-  SurfaceAggregator(SurfaceManager* manager,
+  SurfaceAggregator(SurfaceAggregatorClient* client,
+                    SurfaceManager* manager,
                     ResourceProvider* provider,
                     bool aggregate_only_damaged);
   ~SurfaceAggregator();
@@ -49,6 +59,15 @@ class CC_SURFACES_EXPORT SurfaceAggregator {
 
     bool is_clipped;
     gfx::Rect rect;
+  };
+
+  struct PrewalkResult {
+    PrewalkResult();
+    ~PrewalkResult();
+    bool has_copy_requests = false;
+    // This is the set of Surfaces that were referenced by another Surface, but
+    // not included in a SurfaceDrawQuad.
+    std::set<SurfaceId> undrawn_surfaces;
   };
 
   ClipData CalculateClipRect(const ClipData& surface_clip,
@@ -74,18 +93,22 @@ class CC_SURFACES_EXPORT SurfaceAggregator {
       const ClipData& clip_rect,
       RenderPass* dest_pass,
       SurfaceId surface_id);
-  gfx::Rect PrewalkTree(SurfaceId surface_id);
+  gfx::Rect PrewalkTree(SurfaceId surface_id, PrewalkResult* result);
+  void CopyUndrawnSurfaces(PrewalkResult* prewalk);
   void CopyPasses(const DelegatedFrameData* frame_data, Surface* surface);
 
   // Remove Surfaces that were referenced before but aren't currently
   // referenced from the ResourceProvider.
-  void RemoveUnreferencedChildren();
+  // Also notifies SurfaceAggregatorClient of newly added and removed
+  // child surfaces.
+  void ProcessAddedAndRemovedSurfaces();
 
   int ChildIdForSurface(Surface* surface);
   gfx::Rect DamageRectForSurface(const Surface* surface,
                                  const RenderPass& source,
-                                 const gfx::Rect& full_rect);
+                                 const gfx::Rect& full_rect) const;
 
+  SurfaceAggregatorClient* client_;  // Outlives this class.
   SurfaceManager* manager_;
   ResourceProvider* provider_;
 

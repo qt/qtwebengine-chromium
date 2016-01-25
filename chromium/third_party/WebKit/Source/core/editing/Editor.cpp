@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/Editor.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -435,7 +434,7 @@ static PassRefPtr<Image> imageFromNode(const Node& node)
         ImageResource* cachedImage = layoutImage->cachedImage();
         if (!cachedImage || cachedImage->errorOccurred())
             return nullptr;
-        return cachedImage->imageForLayoutObject(layoutImage);
+        return cachedImage->image();
     }
 
     return nullptr;
@@ -1167,7 +1166,7 @@ static PassRefPtrWillBeRawPtr<Range> findStringAndScrollToVisibleAlgorithm(Edito
         return nullptr;
 
     nextMatch->firstNode()->layoutObject()->scrollRectToVisible(LayoutRect(nextMatch->boundingBox()),
-        ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
+        ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded, UserScroll);
 
     return nextMatch.release();
 }

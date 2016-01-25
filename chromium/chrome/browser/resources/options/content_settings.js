@@ -24,6 +24,7 @@ cr.define('options', function() {
     'cookies': 'cookies',
     'images': 'images',
     'javascript': 'javascript',
+    'keygen': 'keygen',
     'location': 'location',
     'media-stream-camera': 'mediaStreamCamera',
     'media-stream-mic': 'mediaStreamMic',
@@ -223,6 +224,15 @@ cr.define('options', function() {
     assert(['default', 'exceptions'].indexOf(linkType) >= 0);
     assert(['mic', 'camera'].indexOf(contentType) >= 0);
     $('media-pepper-flash-' + linkType + '-' + contentType).hidden = !show;
+  };
+
+  /**
+   * Shows/hides the fullscreen and mouselock sections.
+   * @param {boolean} visible Whether to show (or hide) the sections.
+   */
+  ContentSettings.setExclusiveAccessVisible = function(visible) {
+    $('fullscreen-section').hidden = !visible;
+    $('mouselock-section').hidden = !visible;
   };
 
   /**

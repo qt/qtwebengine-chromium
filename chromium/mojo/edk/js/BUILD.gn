@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("../mojo_edk.gni")
-
 # TODO(hansmuller): The organization of tests in this directory is weird:
 #   * Really, js_unittests tests public stuff, so that should live in public
 #     and be reworked as some sort of apptest.
@@ -13,13 +11,12 @@ import("../mojo_edk.gni")
 group("tests") {
   testonly = true
   deps = [
-    # TODO(use_chrome_edk): remove "2"
-    "test:js_unittests2",
-    "test:js_integration_tests2",
+    "test:js_integration_tests",
+    "test:js_unittests",
   ]
 }
 
-mojo_edk_source_set("js") {
+source_set("js") {
   sources = [
     "core.cc",
     "core.h",
@@ -45,21 +42,7 @@ mojo_edk_source_set("js") {
   ]
 
   deps = [
-    "//third_party/mojo/src/mojo/public/cpp/environment",
-    "//third_party/mojo/src/mojo/public/cpp/system",
-  ]
-}
-
-mojo_edk_source_set("js_unittests") {
-  testonly = true
-  sources = [
-    "handle_unittest.cc",
-  ]
-
-  deps = [
-    "//mojo/edk/js",
-    "//mojo/edk/test:test_support",
-    "//testing/gtest",
-    "//third_party/mojo/src/mojo/public/cpp/system",
+    "//mojo/public/cpp/environment",
+    "//mojo/public/cpp/system",
   ]
 }

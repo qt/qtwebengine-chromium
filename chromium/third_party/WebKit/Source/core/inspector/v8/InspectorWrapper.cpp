@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/inspector/v8/InspectorWrapper.h"
 
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "wtf/RefPtr.h"
+
+#include <v8-debug.h>
 
 namespace blink {
 
@@ -48,10 +49,11 @@ v8::Local<v8::Object> InspectorWrapperBase::createWrapper(v8::Local<v8::Function
     return result;
 }
 
-void* InspectorWrapperBase::unwrap(v8::Local<v8::Object> object, const char* name)
+void* InspectorWrapperBase::unwrap(v8::Local<v8::Context> context, v8::Local<v8::Object> object, const char* name)
 {
-    v8::Isolate* isolate = object->GetIsolate();
-    v8::Local<v8::Value> value = object->GetHiddenValue(v8InternalizedString(isolate, name));
+    v8::Isolate* isolate = context->GetIsolate();
+    ASSERT(context != v8::Debug::GetDebugContext(isolate));
+    v8::Local<v8::Value> value = V8HiddenValue::getHiddenValue(ScriptState::from(context), object, v8InternalizedString(isolate, name));
     if (value.IsEmpty())
         return nullptr;
     if (!value->IsExternal())

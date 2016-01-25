@@ -78,8 +78,9 @@ template <> void Draw::draw(const NoOp&) {}
 #define DRAW(T, call) template <> void Draw::draw(const T& r) { fCanvas->call; }
 DRAW(Restore, restore());
 DRAW(Save, save());
-DRAW(SaveLayer, saveLayer(r.bounds, r.paint, r.flags));
+DRAW(SaveLayer, saveLayer(SkCanvas::SaveLayerRec(r.bounds, r.paint, r.backdrop, r.saveLayerFlags)));
 DRAW(SetMatrix, setMatrix(SkMatrix::Concat(fInitialCTM, r.matrix)));
+DRAW(Concat, concat(r.matrix));
 
 DRAW(ClipPath, clipPath(r.path, r.opAA.op, r.opAA.aa));
 DRAW(ClipRRect, clipRRect(r.rrect, r.opAA.op, r.opAA.aa));
@@ -110,7 +111,6 @@ DRAW(DrawPosText, drawPosText(r.text, r.byteLength, r.pos, r.paint));
 DRAW(DrawPosTextH, drawPosTextH(r.text, r.byteLength, r.xpos, r.y, r.paint));
 DRAW(DrawRRect, drawRRect(r.rrect, r.paint));
 DRAW(DrawRect, drawRect(r.rect, r.paint));
-DRAW(DrawSprite, drawSprite(r.bitmap.shallowCopy(), r.left, r.top, r.paint));
 DRAW(DrawText, drawText(r.text, r.byteLength, r.x, r.y, r.paint));
 DRAW(DrawTextBlob, drawTextBlob(r.blob, r.x, r.y, r.paint));
 DRAW(DrawTextOnPath, drawTextOnPath(r.text, r.byteLength, r.path, &r.matrix, r.paint));
@@ -150,20 +150,15 @@ template <> void Draw::draw(const DrawDrawable& r) {
 // in for all the control ops we stashed away.
 class FillBounds : SkNoncopyable {
 public:
-    FillBounds(const SkRect& cullRect, const SkRecord& record)
+    FillBounds(const SkRect& cullRect, const SkRecord& record, SkRect bounds[])
         : fNumRecords(record.count())
         , fCullRect(cullRect)
-        , fBounds(record.count())
-    {
-        // Calculate bounds for all ops.  This won't go quite in order, so we'll need
-        // to store the bounds separately then feed them in to the BBH later in order.
-        fCTM = &SkMatrix::I();
+        , fBounds(bounds) {
+        fCTM = SkMatrix::I();
         fCurrentClipBounds = fCullRect;
     }
 
-    void setCurrentOp(int currentOp) { fCurrentOp = currentOp; }
-
-    void cleanUp(SkBBoxHierarchy* bbh) {
+    void cleanUp() {
         // If we have any lingering unpaired Saves, simulate restores to make
         // sure all ops in those Save blocks have their bounds calculated.
         while (!fSaveStack.isEmpty()) {
@@ -174,12 +169,10 @@ public:
         while (!fControlIndices.isEmpty()) {
             this->popControl(fCullRect);
         }
-
-        // Finally feed all stored bounds into the BBH.  They'll be returned in this order.
-        if (bbh) {
-            bbh->insert(fBounds.get(), fNumRecords);
-        }
     }
+
+    void setCurrentOp(int currentOp) { fCurrentOp = currentOp; }
+
 
     template <typename T> void operator()(const T& op) {
         this->updateCTM(op);
@@ -191,7 +184,7 @@ public:
     typedef SkRect Bounds;
 
     int currentOp() const { return fCurrentOp; }
-    const SkMatrix& ctm() const { return *fCTM; }
+    const SkMatrix& ctm() const { return fCTM; }
     const Bounds& getBounds(int index) const { return fBounds[index]; }
 
     // Adjust rect for all paints that may affect its geometry, then map it to identity space.
@@ -212,7 +205,7 @@ public:
         }
 
         // Map the rect back to identity space.
-        fCTM->mapRect(&rect);
+        fCTM.mapRect(&rect);
 
         // Nothing can draw outside the current clip.
         if (!rect.intersect(fCurrentClipBounds)) {
@@ -227,12 +220,14 @@ private:
         int controlOps;        // Number of control ops in this Save block, including the Save.
         Bounds bounds;         // Bounds of everything in the block.
         const SkPaint* paint;  // Unowned.  If set, adjusts the bounds of all ops in this block.
+        SkMatrix ctm;
     };
 
-    // Only Restore and SetMatrix change the CTM.
+    // Only Restore, SetMatrix, and Concat change the CTM.
     template <typename T> void updateCTM(const T&) {}
-    void updateCTM(const Restore& op)   { fCTM = &op.matrix; }
-    void updateCTM(const SetMatrix& op) { fCTM = &op.matrix; }
+    void updateCTM(const Restore& op)   { fCTM = op.matrix; }
+    void updateCTM(const SetMatrix& op) { fCTM = op.matrix; }
+    void updateCTM(const Concat& op)    { fCTM.preConcat(op.matrix); }
 
     // Most ops don't change the clip.
     template <typename T> void updateClipBounds(const T&) {}
@@ -285,6 +280,7 @@ private:
     void trackBounds(const Restore&) { fBounds[fCurrentOp] = this->popSaveBlock(); }
 
     void trackBounds(const SetMatrix&)         { this->pushControl(); }
+    void trackBounds(const Concat&)            { this->pushControl(); }
     void trackBounds(const ClipRect&)          { this->pushControl(); }
     void trackBounds(const ClipRRect&)         { this->pushControl(); }
     void trackBounds(const ClipPath&)          { this->pushControl(); }
@@ -305,6 +301,7 @@ private:
         sb.bounds =
             PaintMayAffectTransparentBlack(paint) ? fCurrentClipBounds : Bounds::MakeEmpty();
         sb.paint = paint;
+        sb.ctm = this->fCTM;
 
         fSaveStack.push(sb);
         this->pushControl();
@@ -390,14 +387,6 @@ private:
 
     Bounds bounds(const DrawPaint&) const { return fCurrentClipBounds; }
     Bounds bounds(const NoOp&)  const { return Bounds::MakeEmpty(); }    // NoOps don't draw.
-
-    Bounds bounds(const DrawSprite& op) const {  // Ignores the matrix, but respects the clip.
-        SkRect rect = Bounds::MakeXYWH(op.left, op.top, op.bitmap.width(), op.bitmap.height());
-        if (!rect.intersect(fCurrentClipBounds)) {
-            return Bounds::MakeEmpty();
-        }
-        return rect;
-    }
 
     Bounds bounds(const DrawRect& op) const { return this->adjustAndMap(op.rect, &op.paint); }
     Bounds bounds(const DrawOval& op) const { return this->adjustAndMap(op.oval, &op.paint); }
@@ -567,9 +556,15 @@ private:
 
     bool adjustForSaveLayerPaints(SkRect* rect, int savesToIgnore = 0) const {
         for (int i = fSaveStack.count() - 1 - savesToIgnore; i >= 0; i--) {
+            SkMatrix inverse;
+            if (!fSaveStack[i].ctm.invert(&inverse)) {
+                return false;
+            }
+            inverse.mapRect(rect);
             if (!AdjustForPaint(fSaveStack[i].paint, rect)) {
                 return false;
             }
+            fSaveStack[i].ctm.mapRect(rect);
         }
         return true;
     }
@@ -580,13 +575,13 @@ private:
     const SkRect fCullRect;
 
     // Conservative identity-space bounds for each op in the SkRecord.
-    SkAutoTMalloc<Bounds> fBounds;
+    Bounds* fBounds;
 
     // We walk fCurrentOp through the SkRecord, as we go using updateCTM()
     // and updateClipBounds() to maintain the exact CTM (fCTM) and conservative
     // identity-space bounds of the current clip (fCurrentClipBounds).
     int fCurrentOp;
-    const SkMatrix* fCTM;
+    SkMatrix fCTM;
     Bounds fCurrentClipBounds;
 
     // Used to track the bounds of Save/Restore blocks and the control ops inside them.
@@ -597,26 +592,26 @@ private:
 // SkRecord visitor to gather saveLayer/restore information.
 class CollectLayers : SkNoncopyable {
 public:
-    CollectLayers(const SkRect& cullRect, const SkRecord& record,
+    CollectLayers(const SkRect& cullRect, const SkRecord& record, SkRect bounds[],
                   const SkBigPicture::SnapshotArray* pictList, SkLayerInfo* accelData)
         : fSaveLayersInStack(0)
         , fAccelData(accelData)
         , fPictList(pictList)
-        , fFillBounds(cullRect, record)
+        , fFillBounds(cullRect, record, bounds)
     {}
 
-    void setCurrentOp(int currentOp) { fFillBounds.setCurrentOp(currentOp); }
-
-    void cleanUp(SkBBoxHierarchy* bbh) {
+    void cleanUp() {
         // fFillBounds must perform its cleanUp first so that all the bounding
         // boxes associated with unbalanced restores are updated (prior to
         // fetching their bound in popSaveLayerInfo).
-        fFillBounds.cleanUp(bbh);
-
+        fFillBounds.cleanUp();
         while (!fSaveLayerStack.isEmpty()) {
             this->popSaveLayerInfo();
         }
     }
+
+    void setCurrentOp(int currentOp) { fFillBounds.setCurrentOp(currentOp); }
+
 
     template <typename T> void operator()(const T& op) {
         fFillBounds(op);
@@ -697,7 +692,8 @@ private:
             // Store 'saveLayer ops from enclosing picture' + drawPict op + 'ops from sub-picture'
             dst.fKeySize = fSaveLayerOpStack.count() + src.fKeySize + 1;
             dst.fKey = new int[dst.fKeySize];
-            memcpy(dst.fKey, fSaveLayerOpStack.begin(), fSaveLayerOpStack.count() * sizeof(int));
+            sk_careful_memcpy(dst.fKey, fSaveLayerOpStack.begin(),
+                              fSaveLayerOpStack.count() * sizeof(int));
             dst.fKey[fSaveLayerOpStack.count()] = fFillBounds.currentOp();
             memcpy(&dst.fKey[fSaveLayerOpStack.count()+1], src.fKey, src.fKeySize * sizeof(int));
         }
@@ -792,27 +788,22 @@ private:
 
 }  // namespace SkRecords
 
-void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record, SkBBoxHierarchy* bbh) {
-    SkRecords::FillBounds visitor(cullRect, record);
-
+void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record, SkRect bounds[]) {
+    SkRecords::FillBounds visitor(cullRect, record, bounds);
     for (int curOp = 0; curOp < record.count(); curOp++) {
         visitor.setCurrentOp(curOp);
         record.visit<void>(curOp, visitor);
     }
-
-    visitor.cleanUp(bbh);
+    visitor.cleanUp();
 }
 
-void SkRecordComputeLayers(const SkRect& cullRect, const SkRecord& record,
-                           const SkBigPicture::SnapshotArray* pictList, SkBBoxHierarchy* bbh,
-                           SkLayerInfo* data) {
-    SkRecords::CollectLayers visitor(cullRect, record, pictList, data);
-
+void SkRecordComputeLayers(const SkRect& cullRect, const SkRecord& record, SkRect bounds[],
+                           const SkBigPicture::SnapshotArray* pictList, SkLayerInfo* data) {
+    SkRecords::CollectLayers visitor(cullRect, record, bounds, pictList, data);
     for (int curOp = 0; curOp < record.count(); curOp++) {
         visitor.setCurrentOp(curOp);
         record.visit<void>(curOp, visitor);
     }
-
-    visitor.cleanUp(bbh);
+    visitor.cleanUp();
 }
 

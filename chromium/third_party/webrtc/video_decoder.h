@@ -11,6 +11,7 @@
 #ifndef WEBRTC_VIDEO_DECODER_H_
 #define WEBRTC_VIDEO_DECODER_H_
 
+#include <string>
 #include <vector>
 
 #include "webrtc/common_types.h"
@@ -29,6 +30,16 @@ class DecodedImageCallback {
   virtual ~DecodedImageCallback() {}
 
   virtual int32_t Decoded(VideoFrame& decodedImage) = 0;
+  // Provides an alternative interface that allows the decoder to specify the
+  // decode time excluding waiting time for any previous pending frame to
+  // return. This is necessary for breaking positive feedback in the delay
+  // estimation when the decoder has a single output buffer.
+  // TODO(perkj): Remove default implementation when chromium has been updated.
+  virtual int32_t Decoded(VideoFrame& decodedImage, int64_t decode_time_ms) {
+    // The default implementation ignores custom decode time value.
+    return Decoded(decodedImage);
+  }
+
   virtual int32_t ReceivedDecodedReferenceFrame(const uint64_t pictureId) {
     return -1;
   }
@@ -63,6 +74,13 @@ class VideoDecoder {
 
   virtual int32_t Release() = 0;
   virtual int32_t Reset() = 0;
+
+  // Returns true if the decoder prefer to decode frames late.
+  // That is, it can not decode infinite number of frames before the decoded
+  // frame is consumed.
+  virtual bool PrefersLateDecoding() const { return true; }
+
+  virtual const char* ImplementationName() const { return "unknown"; }
 };
 
 // Class used to wrap external VideoDecoders to provide a fallback option on
@@ -87,6 +105,9 @@ class VideoDecoderSoftwareFallbackWrapper : public webrtc::VideoDecoder {
 
   int32_t Release() override;
   int32_t Reset() override;
+  bool PrefersLateDecoding() const override;
+
+  const char* ImplementationName() const override;
 
  private:
   bool InitFallbackDecoder();
@@ -96,6 +117,7 @@ class VideoDecoderSoftwareFallbackWrapper : public webrtc::VideoDecoder {
 
   VideoCodec codec_settings_;
   int32_t number_of_cores_;
+  std::string fallback_implementation_name_;
   rtc::scoped_ptr<VideoDecoder> fallback_decoder_;
   DecodedImageCallback* callback_;
 };

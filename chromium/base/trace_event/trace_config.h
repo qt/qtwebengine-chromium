@@ -5,6 +5,8 @@
 #ifndef BASE_TRACE_EVENT_TRACE_CONFIG_H_
 #define BASE_TRACE_EVENT_TRACE_CONFIG_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
@@ -15,6 +17,8 @@
 
 namespace base {
 namespace trace_event {
+
+class ConvertableToTraceFormat;
 
 // Options determines how the trace buffer stores data.
 enum TraceRecordMode {
@@ -39,7 +43,7 @@ class BASE_EXPORT TraceConfig {
   // Specifies the memory dump config for tracing. Used only when
   // "memory-infra" category is enabled.
   struct MemoryDumpTriggerConfig {
-    uint32 periodic_interval_ms;
+    uint32_t periodic_interval_ms;
     MemoryDumpLevelOfDetail level_of_detail;
   };
 
@@ -148,6 +152,9 @@ class BASE_EXPORT TraceConfig {
   // Writes the string representation of the TraceConfig. The string is JSON
   // formatted.
   std::string ToString() const;
+
+  // Returns a scoped_refptr and wrap TraceConfig in ConvertableToTraceFormat
+  scoped_refptr<ConvertableToTraceFormat> AsConvertableToTraceFormat() const;
 
   // Write the string representation of the CategoryFilter part.
   std::string ToCategoryFilterString() const;

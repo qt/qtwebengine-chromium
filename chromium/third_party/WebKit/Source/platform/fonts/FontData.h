@@ -27,7 +27,7 @@
 #define FontData_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
@@ -39,7 +39,7 @@ namespace blink {
 class SimpleFontData;
 
 class PLATFORM_EXPORT FontData : public RefCounted<FontData> {
-    WTF_MAKE_NONCOPYABLE(FontData); WTF_MAKE_FAST_ALLOCATED(FontData);
+    WTF_MAKE_NONCOPYABLE(FontData);
 public:
     FontData()
         : m_maxGlyphPageTreeLevel(0)

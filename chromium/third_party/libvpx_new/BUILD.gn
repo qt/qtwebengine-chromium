@@ -48,6 +48,18 @@ config("libvpx_config") {
     "//third_party/libvpx_new/source/libvpx",
     "$root_gen_dir/third_party/libvpx_new",  # Provides vpx_rtcd.h.
   ]
+
+  if (current_cpu == "arm" && is_clang) {
+    # TODO(hans) Enable integrated-as (crbug.com/124610).
+    asmflags = [ "-fno-integrated-as" ]
+    if (is_android) {
+      rebased_android_toolchain_root =
+          rebase_path(android_toolchain_root, root_build_dir)
+
+      # Else /usr/bin/as gets picked up.
+      asmflags += [ "-B${rebased_android_toolchain_root}/bin" ]
+    }
+  }
 }
 
 # gn orders flags on a target before flags from configs. The default config
@@ -87,6 +99,11 @@ if (current_cpu == "x86" || current_cpu == "x64") {
     }
 
     defines = [ "CHROMIUM" ]
+    if (is_android) {
+      # On Android, define __ANDROID__ to use alternative standard library
+      # functions.
+      defines += [ "__ANDROID__" ]
+    }
     include_dirs = [
       platform_include_dir,
       "//third_party/libvpx_new/source/config",
@@ -153,6 +170,23 @@ static_library("libvpx_intrinsics_sse4_1") {
     sources = libvpx_srcs_x86_sse4_1
   } else if (current_cpu == "x64") {
     sources = libvpx_srcs_x86_64_sse4_1
+  }
+}
+
+static_library("libvpx_intrinsics_avx") {
+  configs += [ ":libvpx_config" ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [ ":libvpx_warnings" ]
+  if (is_win) {
+    cflags = [ "/arch:AVX" ]
+  } else {
+    cflags = [ "-mavx" ]
+  }
+  if (current_cpu == "x86") {
+    sources = libvpx_srcs_x86_avx
+  } else if (current_cpu == "x64") {
+    sources = libvpx_srcs_x86_64_avx
   }
 }
 
@@ -260,12 +294,13 @@ static_library("libvpx_new") {
   deps = []
   if (current_cpu == "x86" || (current_cpu == "x64" && !is_msan)) {
     deps += [
-      ":libvpx_yasm",
+      ":libvpx_intrinsics_avx",
+      ":libvpx_intrinsics_avx2",
       ":libvpx_intrinsics_mmx",
       ":libvpx_intrinsics_sse2",
-      ":libvpx_intrinsics_ssse3",
       ":libvpx_intrinsics_sse4_1",
-      ":libvpx_intrinsics_avx2",
+      ":libvpx_intrinsics_ssse3",
+      ":libvpx_yasm",
     ]
   }
   if (cpu_arch_full == "arm-neon-cpu-detect") {

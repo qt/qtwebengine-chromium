@@ -36,13 +36,13 @@ class MediaStreamTrack;
 
 class SpeechRecognitionController final : public NoBaseWillBeGarbageCollectedFinalized<SpeechRecognitionController>, public WillBeHeapSupplement<Page> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognitionController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SpeechRecognitionController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(SpeechRecognitionController);
 public:
     virtual ~SpeechRecognitionController();
 
-    void start(SpeechRecognition* recognition, const SpeechGrammarList* grammars, const String& lang, const String& serviceURI, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
+    void start(SpeechRecognition* recognition, const SpeechGrammarList* grammars, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
     {
-        m_client->start(recognition, grammars, lang, serviceURI, continuous, interimResults, maxAlternatives, audioTrack);
+        m_client->start(recognition, grammars, lang, continuous, interimResults, maxAlternatives, audioTrack);
     }
 
     void stop(SpeechRecognition* recognition) { m_client->stop(recognition); }

@@ -31,9 +31,10 @@
 namespace blink {
 
 class Document;
+class LocalFrame;
 
 class DocumentTiming final {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit DocumentTiming(Document&);
 
@@ -43,7 +44,6 @@ public:
     void markDomContentLoadedEventEnd();
     void markDomComplete();
     void markFirstLayout();
-    void markFirstTextPaint();
 
     // These return monotonically-increasing seconds.
     double domLoading() const { return m_domLoading; }
@@ -52,20 +52,19 @@ public:
     double domContentLoadedEventEnd() const { return m_domContentLoadedEventEnd; }
     double domComplete() const { return m_domComplete; }
     double firstLayout() const { return m_firstLayout; }
-    double firstTextPaint() const { return m_firstTextPaint; }
 
     DECLARE_TRACE();
 
 private:
+    LocalFrame* frame() const;
     void notifyDocumentTimingChanged();
 
-    double m_domLoading;
-    double m_domInteractive;
-    double m_domContentLoadedEventStart;
-    double m_domContentLoadedEventEnd;
-    double m_domComplete;
-    double m_firstLayout;
-    double m_firstTextPaint;
+    double m_domLoading = 0.0;
+    double m_domInteractive = 0.0;
+    double m_domContentLoadedEventStart = 0.0;
+    double m_domContentLoadedEventEnd = 0.0;
+    double m_domComplete = 0.0;
+    double m_firstLayout = 0.0;
 
     RawPtrWillBeMember<Document> m_document;
 };

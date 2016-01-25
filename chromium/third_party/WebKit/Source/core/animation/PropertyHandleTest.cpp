@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/animation/PropertyHandle.h"
 
 #include "core/SVGNames.h"
 #include "core/XLinkNames.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -53,7 +51,7 @@ TEST_F(PropertyHandleTest, Accessors)
 
     EXPECT_FALSE(PropertyHandle(CSSPropertyOpacity).isSVGAttribute());
     EXPECT_TRUE(PropertyHandle(amplitudeAttr).isSVGAttribute());
-    EXPECT_EQ(PropertyHandle(amplitudeAttr).svgAttribute(), &amplitudeAttr);
+    EXPECT_EQ(PropertyHandle(amplitudeAttr).svgAttribute(), amplitudeAttr);
 }
 
 }

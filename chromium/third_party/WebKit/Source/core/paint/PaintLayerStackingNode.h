@@ -82,11 +82,8 @@ class LayoutBoxModelObject;
 // To implement any z-order list iterations, use
 // PaintLayerStackingNodeIterator and
 // PaintLayerStackingNodeReverseIterator.
-//
-// This class is NOT DEPRECATED, PaintLayer is and we match its
-// naming.
 class CORE_EXPORT PaintLayerStackingNode {
-    WTF_MAKE_FAST_ALLOCATED(PaintLayerStackingNode);
+    USING_FAST_MALLOC(PaintLayerStackingNode);
     WTF_MAKE_NONCOPYABLE(PaintLayerStackingNode);
 public:
     explicit PaintLayerStackingNode(PaintLayer*);

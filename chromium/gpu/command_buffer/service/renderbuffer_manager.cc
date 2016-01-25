@@ -4,6 +4,9 @@
 
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
@@ -49,7 +52,7 @@ RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
                                          GLint max_samples,
                                          FeatureInfo* feature_info)
     : memory_type_tracker_(
-          new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
+          new MemoryTypeTracker(memory_tracker)),
       memory_tracker_(memory_tracker),
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
@@ -61,7 +64,7 @@ RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
   // so don't register a dump provider.
   if (memory_tracker_) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "gpu::RenderbufferManager", base::ThreadTaskRunnerHandle::Get());
   }
 }
 
@@ -78,7 +81,7 @@ RenderbufferManager::~RenderbufferManager() {
 }
 
 size_t Renderbuffer::EstimatedSize() {
-  uint32 size = 0;
+  uint32_t size = 0;
   manager_->ComputeEstimatedRenderbufferSize(
       width_, height_, samples_, internal_format_, &size);
   return size;
@@ -199,14 +202,15 @@ void RenderbufferManager::RemoveRenderbuffer(GLuint client_id) {
   }
 }
 
-bool RenderbufferManager::ComputeEstimatedRenderbufferSize(int width,
-                                                           int height,
-                                                           int samples,
-                                                           int internal_format,
-                                                           uint32* size) const {
+bool RenderbufferManager::ComputeEstimatedRenderbufferSize(
+    int width,
+    int height,
+    int samples,
+    int internal_format,
+    uint32_t* size) const {
   DCHECK(size);
 
-  uint32 temp = 0;
+  uint32_t temp = 0;
   if (!SafeMultiplyUint32(width, height, &temp)) {
     return false;
   }

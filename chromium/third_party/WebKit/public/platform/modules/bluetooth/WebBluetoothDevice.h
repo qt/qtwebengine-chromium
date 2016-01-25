@@ -18,36 +18,41 @@ struct WebBluetoothDevice {
         USB
     };
 
-    WebBluetoothDevice(const WebString& instanceID,
+    WebBluetoothDevice(const WebString& id,
         const WebString& name,
+        int8_t txPower,
+        int8_t rssi,
         int32_t deviceClass,
         VendorIDSource vendorIDSource,
         uint16_t vendorID,
         uint16_t productID,
         uint16_t productVersion,
-        bool paired,
         const WebVector<WebString>& uuids)
-        : instanceID(instanceID)
+        : id(id)
         , name(name)
+        , txPower(txPower)
+        , rssi(rssi)
         , deviceClass(deviceClass)
         , vendorIDSource(vendorIDSource)
         , vendorID(vendorID)
         , productID(productID)
         , productVersion(productVersion)
-        , paired(paired)
         , uuids(uuids)
     {
     }
 
     // Members corresponding to BluetoothDevice attributes as specified in IDL.
-    const WebString instanceID;
+    const WebString id;
     const WebString name;
+    // Powers:
+    // A value of 127 denotes an invalid power.
+    const int8_t txPower;
+    const int8_t rssi;
     const int32_t deviceClass;
     const VendorIDSource vendorIDSource;
     const uint16_t vendorID;
     const uint16_t productID;
     const uint16_t productVersion;
-    const bool paired;
     const WebVector<WebString> uuids;
 };
 

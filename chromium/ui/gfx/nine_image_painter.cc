@@ -4,8 +4,11 @@
 
 #include "ui/gfx/nine_image_painter.h"
 
+#include <stddef.h>
+
 #include <limits>
 
+#include "base/macros.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
@@ -79,17 +82,20 @@ Size NineImagePainter::GetMinimumSize() const {
 
 void NineImagePainter::Paint(Canvas* canvas, const Rect& bounds) {
   // When no alpha value is specified, use default value of 100% opacity.
-  Paint(canvas, bounds, std::numeric_limits<uint8>::max());
+  Paint(canvas, bounds, std::numeric_limits<uint8_t>::max());
 }
 
 void NineImagePainter::Paint(Canvas* canvas,
                              const Rect& bounds,
-                             const uint8 alpha) {
+                             const uint8_t alpha) {
   if (IsEmpty())
     return;
 
-  // Painting at physical device pixels (undo device scale factor).
-  float scale = canvas->SaveAndUnscale();
+  ScopedCanvas scoped_canvas(canvas);
+
+  // Painting and doing layout at physical device pixels to avoid cracks or
+  // overlap.
+  const float scale = canvas->UndoDeviceScaleFactor();
 
   // Since the drawing from the following Fill() calls assumes the mapped origin
   // is at (0,0), we need to translate the canvas to the mapped origin.
@@ -156,11 +162,9 @@ void NineImagePainter::Paint(Canvas* canvas,
 
   Fill(canvas, image_reps[4], i4x, i4y, i4w, i4h, paint);
   Fill(canvas, image_reps[0], 0, 0, i0w, i0h, paint);
-  Fill(canvas, image_reps[1], i0w, 0, width_in_pixels - i0w - i2w, i1h,
-       paint);
+  Fill(canvas, image_reps[1], i0w, 0, width_in_pixels - i0w - i2w, i1h, paint);
   Fill(canvas, image_reps[2], width_in_pixels - i2w, 0, i2w, i2h, paint);
-  Fill(canvas, image_reps[3], 0, i0h, i3w, height_in_pixels - i0h - i6h,
-       paint);
+  Fill(canvas, image_reps[3], 0, i0h, i3w, height_in_pixels - i0h - i6h, paint);
   Fill(canvas, image_reps[5], width_in_pixels - i5w, i2h, i5w,
        height_in_pixels - i2h - i8h, paint);
   Fill(canvas, image_reps[6], 0, height_in_pixels - i6h, i6w, i6h, paint);
@@ -168,8 +172,6 @@ void NineImagePainter::Paint(Canvas* canvas,
        width_in_pixels - i6w - i8w, i7h, paint);
   Fill(canvas, image_reps[8], width_in_pixels - i8w, height_in_pixels - i8h,
        i8w, i8h, paint);
-
-  canvas->Restore();
 }
 
 // static

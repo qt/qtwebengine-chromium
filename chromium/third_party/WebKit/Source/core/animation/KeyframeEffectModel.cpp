@@ -28,10 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/KeyframeEffectModel.h"
 
-#include "core/StylePropertyShorthand.h"
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/CompositorAnimations.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
@@ -64,7 +62,7 @@ void KeyframeEffectModelBase::setFrames(KeyframeVector& keyframes)
     m_lastFraction = std::numeric_limits<double>::quiet_NaN();
 }
 
-bool KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration, OwnPtr<Vector<RefPtr<Interpolation>>>& result) const
+bool KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration, Vector<RefPtr<Interpolation>>& result) const
 {
     ASSERT(iteration >= 0);
     ASSERT(!isNull(fraction));
@@ -173,10 +171,12 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
         return;
 
     m_keyframeGroups = adoptPtr(new KeyframeGroupMap);
+    RefPtr<TimingFunction> zeroOffsetEasing = m_defaultKeyframeEasing;
     for (const auto& keyframe : normalizedKeyframes(getFrames())) {
+        if (keyframe->offset() == 0)
+            zeroOffsetEasing = &keyframe->easing();
+
         for (const PropertyHandle& property : keyframe->properties()) {
-            if (property.isCSSProperty())
-                ASSERT_WITH_MESSAGE(!isShorthandProperty(property.cssProperty()), "Web Animations: Encountered shorthand CSS property (%d) in normalized keyframes.", property.cssProperty());
             KeyframeGroupMap::iterator groupIter = m_keyframeGroups->find(property);
             PropertySpecificKeyframeGroup* group;
             if (groupIter == m_keyframeGroups->end())
@@ -191,7 +191,7 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
     // Add synthetic keyframes.
     m_hasSyntheticKeyframes = false;
     for (const auto& entry : *m_keyframeGroups) {
-        if (entry.value->addSyntheticKeyframeIfRequired(m_neutralKeyframeEasing))
+        if (entry.value->addSyntheticKeyframeIfRequired(zeroOffsetEasing))
             m_hasSyntheticKeyframes = true;
 
         entry.value->removeRedundantKeyframes();
@@ -261,18 +261,18 @@ void KeyframeEffectModelBase::PropertySpecificKeyframeGroup::removeRedundantKeyf
     ASSERT(m_keyframes.size() >= 2);
 }
 
-bool KeyframeEffectModelBase::PropertySpecificKeyframeGroup::addSyntheticKeyframeIfRequired(PassRefPtr<TimingFunction> easing)
+bool KeyframeEffectModelBase::PropertySpecificKeyframeGroup::addSyntheticKeyframeIfRequired(PassRefPtr<TimingFunction> zeroOffsetEasing)
 {
     ASSERT(!m_keyframes.isEmpty());
 
     bool addedSyntheticKeyframe = false;
 
     if (m_keyframes.first()->offset() != 0.0) {
-        m_keyframes.insert(0, m_keyframes.first()->neutralKeyframe(0, easing));
+        m_keyframes.insert(0, m_keyframes.first()->neutralKeyframe(0, zeroOffsetEasing));
         addedSyntheticKeyframe = true;
     }
     if (m_keyframes.last()->offset() != 1.0) {
-        appendKeyframe(m_keyframes.last()->neutralKeyframe(1, easing));
+        appendKeyframe(m_keyframes.last()->neutralKeyframe(1, nullptr));
         addedSyntheticKeyframe = true;
     }
 

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/MemoryCache.h"
 
 #include "core/fetch/MockImageResourceClient.h"
@@ -37,9 +36,8 @@
 #include "platform/network/ResourceRequest.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
-
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -52,7 +50,7 @@ public:
         {
         }
 
-        virtual void appendData(const char* data, unsigned len)
+        virtual void appendData(const char* data, size_t len)
         {
             Resource::appendData(data, len);
             setDecodedSize(this->size());
@@ -233,7 +231,7 @@ static void TestLiveResourceEvictionAtEndOfTask(Resource* cachedDeadResource, co
 
     private:
         ResourcePtr<Resource> m_live;
-        Resource* m_dead;
+        RawPtrWillBePersistent<Resource> m_dead;
     };
 
     class Task2 : public WebTaskRunner::Task {
@@ -253,8 +251,8 @@ static void TestLiveResourceEvictionAtEndOfTask(Resource* cachedDeadResource, co
     };
 
 
-    Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task1(cachedLiveResource, cachedDeadResource));
-    Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task2(cachedLiveResource->encodedSize() + cachedLiveResource->overheadSize()));
+    Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task1(cachedLiveResource, cachedDeadResource));
+    Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task2(cachedLiveResource->encodedSize() + cachedLiveResource->overheadSize()));
     testing::runPendingTasks();
 }
 
@@ -488,22 +486,6 @@ TEST_F(MemoryCacheTest, DecodeCacheOrder_MultipleResourceMaps)
     }
 }
 
-TEST_F(MemoryCacheTest, MultipleReplace)
-{
-    ResourcePtr<FakeResource> resource1 = new FakeResource(ResourceRequest("http://test/resource"), Resource::Raw);
-    memoryCache()->add(resource1.get());
-
-    ResourcePtr<FakeResource> resource2 = new FakeResource(ResourceRequest("http://test/resource"), Resource::Raw);
-    memoryCache()->replace(resource2.get(), resource1.get());
-    EXPECT_TRUE(memoryCache()->contains(resource2.get()));
-    EXPECT_FALSE(memoryCache()->contains(resource1.get()));
-
-    ResourcePtr<FakeResource> resource3 = new FakeResource(ResourceRequest("http://test/resource"), Resource::Raw);
-    memoryCache()->replace(resource3.get(), resource2.get());
-    EXPECT_TRUE(memoryCache()->contains(resource3.get()));
-    EXPECT_FALSE(memoryCache()->contains(resource2.get()));
-}
-
 TEST_F(MemoryCacheTest, RemoveDuringRevalidation)
 {
     ResourcePtr<FakeResource> resource1 = new FakeResource(ResourceRequest("http://test/resource"), Resource::Raw);
@@ -520,11 +502,6 @@ TEST_F(MemoryCacheTest, RemoveDuringRevalidation)
     memoryCache()->add(resource3.get());
     EXPECT_TRUE(memoryCache()->contains(resource3.get()));
     EXPECT_FALSE(memoryCache()->contains(resource2.get()));
-
-    memoryCache()->replace(resource1.get(), resource2.get());
-    EXPECT_TRUE(memoryCache()->contains(resource1.get()));
-    EXPECT_FALSE(memoryCache()->contains(resource2.get()));
-    EXPECT_FALSE(memoryCache()->contains(resource3.get()));
 }
 
 TEST_F(MemoryCacheTest, ResourceMapIsolation)
@@ -551,13 +528,6 @@ TEST_F(MemoryCacheTest, ResourceMapIsolation)
     EXPECT_TRUE(memoryCache()->contains(resource1.get()));
     EXPECT_FALSE(memoryCache()->contains(resource2.get()));
     EXPECT_TRUE(memoryCache()->contains(resource3.get()));
-
-    ResourcePtr<FakeResource> resource4 = new FakeResource(ResourceRequest("http://test/resource"), Resource::Raw);
-    resource4->setCacheIdentifier("foo");
-    memoryCache()->replace(resource4.get(), resource3.get());
-    EXPECT_TRUE(memoryCache()->contains(resource1.get()));
-    EXPECT_FALSE(memoryCache()->contains(resource3.get()));
-    EXPECT_TRUE(memoryCache()->contains(resource4.get()));
 
     WillBeHeapVector<RawPtrWillBeMember<Resource>> resources = memoryCache()->resourcesForURL(url);
     EXPECT_EQ(2u, resources.size());

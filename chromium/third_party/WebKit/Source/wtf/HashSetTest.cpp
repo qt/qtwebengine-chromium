@@ -23,98 +23,49 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "wtf/HashSet.h"
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
-#include <gtest/gtest.h>
 
 namespace WTF {
 
-template<int initialCapacity>
-struct InitialCapacityTestHashTraits : public UnsignedWithZeroKeyHashTraits<int> {
-    static const int minimumTableSize = initialCapacity;
-};
-
 namespace {
-
-template<unsigned size>
-void testInitialCapacity()
-{
-    const unsigned initialCapacity = HashTableCapacityForSize<size>::value;
-    HashSet<int, DefaultHash<int>::Hash, InitialCapacityTestHashTraits<initialCapacity>> testSet;
-
-    // Initial capacity is null.
-    EXPECT_EQ(0UL, testSet.capacity());
-
-    // Adding items up to size should never change the capacity.
-    for (size_t i = 0; i < size; ++i) {
-        testSet.add(i);
-        EXPECT_EQ(initialCapacity, testSet.capacity());
-    }
-
-    // Adding items up to less than half the capacity should not change the capacity.
-    unsigned capacityLimit = initialCapacity / 2 - 1;
-    for (size_t i = size; i < capacityLimit; ++i) {
-        testSet.add(i);
-        EXPECT_EQ(initialCapacity, testSet.capacity());
-    }
-
-    // Adding one more item increase the capacity.
-    testSet.add(initialCapacity);
-    EXPECT_GT(testSet.capacity(), initialCapacity);
-}
-
-template<unsigned size> void generateTestCapacityUpToSize();
-template<> void generateTestCapacityUpToSize<0>()
-{
-}
-template<unsigned size> void generateTestCapacityUpToSize()
-{
-    generateTestCapacityUpToSize<size - 1>();
-    testInitialCapacity<size>();
-}
-
-TEST(HashSetTest, InitialCapacity)
-{
-    generateTestCapacityUpToSize<128>();
-}
 
 template<unsigned size> void testReserveCapacity();
 template<> void testReserveCapacity<0>() {}
 template<unsigned size> void testReserveCapacity()
 {
     HashSet<int> testSet;
-    HashSet<int> sampleSet;
-    for (size_t i = 0; i < size; ++i) {
-        sampleSet.add(i + 1); // Avoid adding '0'.
-    }
-    const unsigned expectedInitialCapacity = sampleSet.capacity();
 
-    // Initial capacity is null.
+    // Initial capacity is zero.
     EXPECT_EQ(0UL, testSet.capacity());
 
     testSet.reserveCapacityForSize(size);
-    EXPECT_EQ(expectedInitialCapacity, testSet.capacity());
+    const unsigned initialCapacity = testSet.capacity();
+    const unsigned minimumTableSize = HashTraits<int>::minimumTableSize;
+
+    // reserveCapacityForSize should respect minimumTableSize.
+    EXPECT_GE(initialCapacity, minimumTableSize);
 
     // Adding items up to size should never change the capacity.
     for (size_t i = 0; i < size; ++i) {
         testSet.add(i + 1); // Avoid adding '0'.
-        EXPECT_EQ(expectedInitialCapacity, testSet.capacity());
+        EXPECT_EQ(initialCapacity, testSet.capacity());
     }
 
     // Adding items up to less than half the capacity should not change the capacity.
-    unsigned capacityLimit = expectedInitialCapacity / 2 - 1;
+    unsigned capacityLimit = initialCapacity / 2 - 1;
     for (size_t i = size; i < capacityLimit; ++i) {
         testSet.add(i + 1);
-        EXPECT_EQ(expectedInitialCapacity, testSet.capacity());
+        EXPECT_EQ(initialCapacity, testSet.capacity());
     }
 
-    // Adding one more item increase the capacity.
-    testSet.add(expectedInitialCapacity);
-    EXPECT_GT(testSet.capacity(), expectedInitialCapacity);
+    // Adding one more item increases the capacity.
+    testSet.add(capacityLimit + 1);
+    EXPECT_GT(testSet.capacity(), initialCapacity);
 
     testReserveCapacity<size-1>();
 }

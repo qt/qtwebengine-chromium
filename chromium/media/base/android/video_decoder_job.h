@@ -6,7 +6,9 @@
 #define MEDIA_BASE_ANDROID_VIDEO_DECODER_JOB_H_
 
 #include <jni.h>
+#include <stddef.h>
 
+#include "base/macros.h"
 #include "media/base/android/media_decoder_job.h"
 
 namespace media {

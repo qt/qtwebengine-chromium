@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DynamicsCompressorNode.h"
-
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/audio/DynamicsCompressor.h"
@@ -181,4 +178,3 @@ AudioParam* DynamicsCompressorNode::release() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

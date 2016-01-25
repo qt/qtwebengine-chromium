@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGURIReference.h"
 
 #include "core/XLinkNames.h"
@@ -103,11 +102,6 @@ Element* SVGURIReference::targetElementFromIRIString(const String& iri, const Tr
         return nullptr;
 
     return treeScope.getElementById(id);
-}
-
-void SVGURIReference::addSupportedAttributes(HashSet<QualifiedName>& supportedAttributes)
-{
-    supportedAttributes.add(XLinkNames::hrefAttr);
 }
 
 }

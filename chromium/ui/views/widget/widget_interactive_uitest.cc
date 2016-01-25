@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -847,7 +850,7 @@ TEST_F(WidgetTestInteractive, MAYBE_SystemModalWindowReleasesCapture) {
 
   ASSERT_FALSE(focus_listener.focus_changes().empty());
   EXPECT_EQ(top_level_widget.GetNativeView(),
-            focus_listener.focus_changes().back());;
+            focus_listener.focus_changes().back());
 
   EXPECT_FALSE(top_level_widget.HasCapture());
   top_level_widget.SetCapture(NULL);
@@ -890,8 +893,6 @@ TEST_F(WidgetTestInteractive, CanActivateFlagIsHonored) {
 #if defined(USE_AURA)
 // Test that touch selection quick menu is not activated when opened.
 TEST_F(WidgetTestInteractive, TouchSelectionQuickMenuIsNotActivated) {
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableTouchEditing);
 #if defined(OS_WIN)
   views_delegate()->set_use_desktop_native_widgets(true);
 #endif  // !defined(OS_WIN)

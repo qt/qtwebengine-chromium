@@ -84,8 +84,7 @@ MojoResult DataPipeProducerDispatcher::BeginWriteDataImplNoLock(
     MojoWriteDataFlags flags) {
   mutex().AssertHeld();
 
-  return data_pipe_->ProducerBeginWriteData(
-      buffer, buffer_num_bytes, (flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE));
+  return data_pipe_->ProducerBeginWriteData(buffer, buffer_num_bytes);
 }
 
 MojoResult DataPipeProducerDispatcher::EndWriteDataImplNoLock(
@@ -104,7 +103,7 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateImplNoLock()
 MojoResult DataPipeProducerDispatcher::AddAwakableImplNoLock(
     Awakable* awakable,
     MojoHandleSignals signals,
-    uint32_t context,
+    uintptr_t context,
     HandleSignalsState* signals_state) {
   mutex().AssertHeld();
   return data_pipe_->ProducerAddAwakable(awakable, signals, context,

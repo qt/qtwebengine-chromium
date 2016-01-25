@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/InlineFlowBoxPainter.h"
 
 #include "core/layout/LayoutBlock.h"
@@ -22,19 +21,19 @@ namespace blink {
 
 void InlineFlowBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, const LayoutUnit lineTop, const LayoutUnit lineBottom)
 {
-    ASSERT(paintInfo.phase != PaintPhaseOutline && paintInfo.phase != PaintPhaseSelfOutline && paintInfo.phase != PaintPhaseChildOutlines);
+    ASSERT(!shouldPaintSelfOutline(paintInfo.phase) && !shouldPaintDescendantOutlines(paintInfo.phase));
 
     LayoutRect overflowRect(m_inlineFlowBox.visualOverflowRect(lineTop, lineBottom));
     m_inlineFlowBox.flipForWritingMode(overflowRect);
     overflowRect.moveBy(paintOffset);
 
-    if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
+    if (!paintInfo.cullRect().intersectsCullRect(overflowRect))
         return;
 
     if (paintInfo.phase == PaintPhaseMask) {
-        if (DrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_inlineFlowBox, DisplayItem::paintPhaseToDrawingType(paintInfo.phase)))
+        if (DrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_inlineFlowBox, DisplayItem::paintPhaseToDrawingType(paintInfo.phase)))
             return;
-        DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, DisplayItem::paintPhaseToDrawingType(paintInfo.phase), pixelSnappedIntRect(overflowRect));
+        DrawingRecorder recorder(paintInfo.context, m_inlineFlowBox, DisplayItem::paintPhaseToDrawingType(paintInfo.phase), pixelSnappedIntRect(overflowRect));
         paintMask(paintInfo, paintOffset);
         return;
     }
@@ -46,10 +45,11 @@ void InlineFlowBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& 
 
     // Paint our children.
     PaintInfo childInfo(paintInfo);
-    if (childInfo.paintingRoot && childInfo.paintingRoot->isDescendantOf(&m_inlineFlowBox.layoutObject()))
+    LayoutObject* inlineFlowBoxLayoutObject = LineLayoutPaintShim::layoutObjectFrom(m_inlineFlowBox.lineLayoutItem());
+    if (childInfo.paintingRoot && childInfo.paintingRoot->isDescendantOf(inlineFlowBoxLayoutObject))
         childInfo.paintingRoot = 0;
     else
-        childInfo.updatePaintingRootForChildren(&m_inlineFlowBox.layoutObject());
+        childInfo.updatePaintingRootForChildren(inlineFlowBoxLayoutObject);
 
     for (InlineBox* curr = m_inlineFlowBox.firstChild(); curr; curr = curr->nextOnLine()) {
         if (curr->lineLayoutItem().isText() || !curr->boxModelObject().hasSelfPaintingLayer())
@@ -70,22 +70,22 @@ void InlineFlowBoxPainter::paintFillLayer(const PaintInfo& paintInfo, const Colo
 {
     LayoutBoxModelObject* boxModel = toLayoutBoxModelObject(LineLayoutPaintShim::layoutObjectFrom(m_inlineFlowBox.boxModelObject()));
     StyleImage* img = fillLayer.image();
-    bool hasFillImage = img && img->canRender(m_inlineFlowBox.layoutObject(), m_inlineFlowBox.lineLayoutItem().style()->effectiveZoom());
+    bool hasFillImage = img && img->canRender();
     if ((!hasFillImage && !m_inlineFlowBox.lineLayoutItem().style()->hasBorderRadius()) || (!m_inlineFlowBox.prevLineBox() && !m_inlineFlowBox.nextLineBox()) || !m_inlineFlowBox.parent()) {
-        BoxPainter::paintFillLayerExtended(*boxModel, paintInfo, c, fillLayer, rect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
+        BoxPainter::paintFillLayer(*boxModel, paintInfo, c, fillLayer, rect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
     } else if (m_inlineFlowBox.lineLayoutItem().style()->boxDecorationBreak() == DCLONE) {
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        paintInfo.context->clip(pixelSnappedIntRect(rect));
-        BoxPainter::paintFillLayerExtended(*boxModel, paintInfo, c, fillLayer, rect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
+        GraphicsContextStateSaver stateSaver(paintInfo.context);
+        paintInfo.context.clip(pixelSnappedIntRect(rect));
+        BoxPainter::paintFillLayer(*boxModel, paintInfo, c, fillLayer, rect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
     } else {
         // We have a fill image that spans multiple lines.
         // FIXME: frameSize ought to be the same as rect.size().
         LayoutSize frameSize(m_inlineFlowBox.width(), m_inlineFlowBox.height());
         LayoutRect imageStripPaintRect = paintRectForImageStrip(rect.location(), frameSize, m_inlineFlowBox.lineLayoutItem().style()->direction());
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
+        GraphicsContextStateSaver stateSaver(paintInfo.context);
         // TODO(chrishtr): this should likely be pixel-snapped.
-        paintInfo.context->clip(pixelSnappedIntRect(rect));
-        BoxPainter::paintFillLayerExtended(*boxModel, paintInfo, c, fillLayer, imageStripPaintRect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
+        paintInfo.context.clip(pixelSnappedIntRect(rect));
+        BoxPainter::paintFillLayer(*boxModel, paintInfo, c, fillLayer, imageStripPaintRect, BackgroundBleedNone, &m_inlineFlowBox, rect.size(), op);
     }
 }
 
@@ -164,8 +164,7 @@ InlineFlowBoxPainter::BorderPaintingType InlineFlowBoxPainter::getBorderPaintTyp
     if (m_inlineFlowBox.parent() && m_inlineFlowBox.lineLayoutItem().style()->hasBorderDecoration()) {
         const NinePieceImage& borderImage = m_inlineFlowBox.lineLayoutItem().style()->borderImage();
         StyleImage* borderImageSource = borderImage.image();
-        const ComputedStyle* styleToUse = m_inlineFlowBox.lineLayoutItem().style(m_inlineFlowBox.isFirstLineStyle());
-        bool hasBorderImage = borderImageSource && borderImageSource->canRender(m_inlineFlowBox.layoutObject(), styleToUse->effectiveZoom());
+        bool hasBorderImage = borderImageSource && borderImageSource->canRender();
         if (hasBorderImage && !borderImageSource->isLoaded())
             return DontPaintBorders;
 
@@ -184,7 +183,8 @@ InlineFlowBoxPainter::BorderPaintingType InlineFlowBoxPainter::getBorderPaintTyp
 void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, const LayoutRect& cullRect)
 {
     ASSERT(paintInfo.phase == PaintPhaseForeground);
-    if (!paintInfo.shouldPaintWithinRoot(&m_inlineFlowBox.layoutObject()) || m_inlineFlowBox.lineLayoutItem().style()->visibility() != VISIBLE)
+    LayoutObject* inlineFlowBoxLayoutObject = LineLayoutPaintShim::layoutObjectFrom(m_inlineFlowBox.lineLayoutItem());
+    if (!paintInfo.shouldPaintWithinRoot(inlineFlowBoxLayoutObject) || m_inlineFlowBox.lineLayoutItem().style()->visibility() != VISIBLE)
         return;
 
     // You can use p::first-line to specify a background. If so, the root line boxes for
@@ -192,17 +192,17 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
     const ComputedStyle* styleToUse = m_inlineFlowBox.lineLayoutItem().style(m_inlineFlowBox.isFirstLineStyle());
     bool shouldPaintBoxDecorationBackground;
     if (m_inlineFlowBox.parent())
-        shouldPaintBoxDecorationBackground = m_inlineFlowBox.layoutObject().hasBoxDecorationBackground();
+        shouldPaintBoxDecorationBackground = inlineFlowBoxLayoutObject->hasBoxDecorationBackground();
     else
         shouldPaintBoxDecorationBackground = m_inlineFlowBox.isFirstLineStyle() && styleToUse != m_inlineFlowBox.lineLayoutItem().style();
 
     if (!shouldPaintBoxDecorationBackground)
         return;
 
-    if (DrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground))
+    if (DrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground))
         return;
 
-    DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(cullRect));
+    DrawingRecorder recorder(paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(cullRect));
 
     LayoutRect frameRect = frameRectClampedToLineTopAndBottomIfNeeded();
 
@@ -220,7 +220,7 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
     if (!m_inlineFlowBox.boxModelObject().boxShadowShouldBeAppliedToBackground(BackgroundBleedNone, &m_inlineFlowBox))
         paintBoxShadow(paintInfo, *styleToUse, Normal, adjustedFrameRect);
 
-    Color backgroundColor = m_inlineFlowBox.layoutObject().resolveColor(*styleToUse, CSSPropertyBackgroundColor);
+    Color backgroundColor = inlineFlowBoxLayoutObject->resolveColor(*styleToUse, CSSPropertyBackgroundColor);
     paintFillLayers(paintInfo, backgroundColor, styleToUse->backgroundLayers(), adjustedFrameRect);
     paintBoxShadow(paintInfo, *styleToUse, Inset, adjustedFrameRect);
 
@@ -234,8 +234,8 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
         // FIXME: What the heck do we do with RTL here? The math we're using is obviously not right,
         // but it isn't even clear how this should work at all.
         LayoutRect imageStripPaintRect = paintRectForImageStrip(adjustedPaintOffset, frameRect.size(), LTR);
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        paintInfo.context->clip(adjustedClipRect);
+        GraphicsContextStateSaver stateSaver(paintInfo.context);
+        paintInfo.context.clip(adjustedClipRect);
         BoxPainter::paintBorder(*toLayoutBoxModelObject(LineLayoutPaintShim::layoutObjectFrom(m_inlineFlowBox.boxModelObject())), paintInfo, imageStripPaintRect, m_inlineFlowBox.lineLayoutItem().styleRef(m_inlineFlowBox.isFirstLineStyle()));
         break;
     }
@@ -243,7 +243,7 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
 
 void InlineFlowBoxPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (!paintInfo.shouldPaintWithinRoot(&m_inlineFlowBox.layoutObject()) || m_inlineFlowBox.lineLayoutItem().style()->visibility() != VISIBLE || paintInfo.phase != PaintPhaseMask)
+    if (!paintInfo.shouldPaintWithinRoot(LineLayoutPaintShim::layoutObjectFrom(m_inlineFlowBox.lineLayoutItem())) || m_inlineFlowBox.lineLayoutItem().style()->visibility() != VISIBLE || paintInfo.phase != PaintPhaseMask)
         return;
 
     LayoutRect frameRect = frameRectClampedToLineTopAndBottomIfNeeded();
@@ -264,7 +264,7 @@ void InlineFlowBoxPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoi
     if (!compositedMask || flattenCompositingLayers) {
         if ((maskBoxImage && m_inlineFlowBox.lineLayoutItem().style()->maskLayers().hasImage()) || m_inlineFlowBox.lineLayoutItem().style()->maskLayers().next()) {
             pushTransparencyLayer = true;
-            paintInfo.context->beginLayer(1.0f, SkXfermode::kDstIn_Mode);
+            paintInfo.context.beginLayer(1.0f, SkXfermode::kDstIn_Mode);
         } else {
             // TODO(fmalita): passing a dst-in xfer mode down to paintFillLayers/paintNinePieceImage
             //   seems dangerous: it is only correct if applied atomically (single draw call). While
@@ -278,10 +278,10 @@ void InlineFlowBoxPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoi
     LayoutRect paintRect = LayoutRect(adjustedPaintOffset, frameRect.size());
     paintFillLayers(paintInfo, Color::transparent, m_inlineFlowBox.lineLayoutItem().style()->maskLayers(), paintRect, compositeOp);
 
-    bool hasBoxImage = maskBoxImage && maskBoxImage->canRender(m_inlineFlowBox.layoutObject(), m_inlineFlowBox.lineLayoutItem().style()->effectiveZoom());
+    bool hasBoxImage = maskBoxImage && maskBoxImage->canRender();
     if (!hasBoxImage || !maskBoxImage->isLoaded()) {
         if (pushTransparencyLayer)
-            paintInfo.context->endLayer();
+            paintInfo.context.endLayer();
         return; // Don't paint anything while we wait for the image to load.
     }
 
@@ -296,14 +296,14 @@ void InlineFlowBoxPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoi
         // but it isn't even clear how this should work at all.
         LayoutRect imageStripPaintRect = paintRectForImageStrip(adjustedPaintOffset, frameRect.size(), LTR);
         FloatRect clipRect(clipRectForNinePieceImageStrip(m_inlineFlowBox, maskNinePieceImage, paintRect));
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
+        GraphicsContextStateSaver stateSaver(paintInfo.context);
         // TODO(chrishtr): this should be pixel-snapped.
-        paintInfo.context->clip(clipRect);
+        paintInfo.context.clip(clipRect);
         BoxPainter::paintNinePieceImage(*boxModel, paintInfo.context, imageStripPaintRect, m_inlineFlowBox.lineLayoutItem().styleRef(), maskNinePieceImage, compositeOp);
     }
 
     if (pushTransparencyLayer)
-        paintInfo.context->endLayer();
+        paintInfo.context.endLayer();
 }
 
 // This method should not be needed. See crbug.com/530659.

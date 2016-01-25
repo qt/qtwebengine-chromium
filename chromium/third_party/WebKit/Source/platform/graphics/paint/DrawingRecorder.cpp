@@ -2,30 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/CachedDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
 namespace blink {
 
-bool DrawingRecorder::useCachedDrawingIfPossible(GraphicsContext& context, const DisplayItemClientWrapper& client, DisplayItem::Type type)
+bool DrawingRecorder::useCachedDrawingIfPossible(GraphicsContext& context, const DisplayItemClient& client, DisplayItem::Type type)
 {
-    ASSERT(context.displayItemList());
     ASSERT(DisplayItem::isDrawingType(type));
 
-    if (context.displayItemList()->displayItemConstructionIsDisabled())
+    if (!context.paintController().clientCacheIsValid(client))
         return false;
 
-    if (!context.displayItemList()->clientCacheIsValid(client.displayItemClient()))
-        return false;
-
-    context.displayItemList()->createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedDrawingType(type));
+    context.paintController().createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedDrawingType(type));
 
 #if ENABLE(ASSERT)
     // When under-invalidation checking is enabled, we output CachedDrawing display item
@@ -37,21 +32,20 @@ bool DrawingRecorder::useCachedDrawingIfPossible(GraphicsContext& context, const
     return true;
 }
 
-DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClientWrapper& displayItemClient, DisplayItem::Type displayItemType, const FloatRect& cullRect)
+DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClient& displayItemClient, DisplayItem::Type displayItemType, const FloatRect& cullRect)
     : m_context(context)
     , m_displayItemClient(displayItemClient)
     , m_displayItemType(displayItemType)
 #if ENABLE(ASSERT)
-    , m_displayItemPosition(m_context.displayItemList()->newDisplayItems().size())
+    , m_displayItemPosition(m_context.paintController().newDisplayItemList().size())
     , m_underInvalidationCheckingMode(DrawingDisplayItem::CheckPicture)
 #endif
 {
-    ASSERT(context.displayItemList());
-    if (context.displayItemList()->displayItemConstructionIsDisabled())
+    if (context.paintController().displayItemConstructionIsDisabled())
         return;
 
     // Must check DrawingRecorder::useCachedDrawingIfPossible before creating the DrawingRecorder.
-    ASSERT((RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && context.displayItemList()->paintOffsetWasInvalidated(displayItemClient.displayItemClient()))
+    ASSERT((RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && context.paintController().paintOffsetWasInvalidated(displayItemClient))
         || RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled()
         || !useCachedDrawingIfPossible(m_context, m_displayItemClient, m_displayItemType));
 
@@ -82,8 +76,7 @@ DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClie
 
 DrawingRecorder::~DrawingRecorder()
 {
-    ASSERT(m_context.displayItemList());
-    if (m_context.displayItemList()->displayItemConstructionIsDisabled())
+    if (m_context.paintController().displayItemConstructionIsDisabled())
         return;
 
 #if ENABLE(ASSERT)
@@ -91,10 +84,10 @@ DrawingRecorder::~DrawingRecorder()
         m_context.restore();
 
     m_context.setInDrawingRecorder(false);
-    ASSERT(m_displayItemPosition == m_context.displayItemList()->newDisplayItems().size());
+    ASSERT(m_displayItemPosition == m_context.paintController().newDisplayItemList().size());
 #endif
 
-    m_context.displayItemList()->createAndAppend<DrawingDisplayItem>(m_displayItemClient
+    m_context.paintController().createAndAppend<DrawingDisplayItem>(m_displayItemClient
         , m_displayItemType
         , m_context.endRecording()
 #if ENABLE(ASSERT)

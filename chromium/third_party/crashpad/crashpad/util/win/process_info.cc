@@ -20,11 +20,17 @@
 #include <limits>
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "base/template_util.h"
 #include "build/build_config.h"
 #include "util/numeric/safe_assignment.h"
+#include "util/win/get_function.h"
+#include "util/win/handle.h"
+#include "util/win/nt_internals.h"
 #include "util/win/ntstatus_logging.h"
 #include "util/win/process_structs.h"
+#include "util/win/scoped_handle.h"
 
 namespace crashpad {
 
@@ -35,10 +41,8 @@ NTSTATUS NtQueryInformationProcess(HANDLE process_handle,
                                    PVOID process_information,
                                    ULONG process_information_length,
                                    PULONG return_length) {
-  static decltype(::NtQueryInformationProcess)* nt_query_information_process =
-      reinterpret_cast<decltype(::NtQueryInformationProcess)*>(GetProcAddress(
-          LoadLibrary(L"ntdll.dll"), "NtQueryInformationProcess"));
-  DCHECK(nt_query_information_process);
+  static const auto nt_query_information_process =
+      GET_FUNCTION_REQUIRED(L"ntdll.dll", ::NtQueryInformationProcess);
   return nt_query_information_process(process_handle,
                                       process_information_class,
                                       process_information,
@@ -47,9 +51,8 @@ NTSTATUS NtQueryInformationProcess(HANDLE process_handle,
 }
 
 bool IsProcessWow64(HANDLE process_handle) {
-  static decltype(IsWow64Process)* is_wow64_process =
-      reinterpret_cast<decltype(IsWow64Process)*>(
-          GetProcAddress(LoadLibrary(L"kernel32.dll"), "IsWow64Process"));
+  static const auto is_wow64_process =
+      GET_FUNCTION(L"kernel32.dll", ::IsWow64Process);
   if (!is_wow64_process)
     return false;
   BOOL is_wow64;
@@ -57,7 +60,7 @@ bool IsProcessWow64(HANDLE process_handle) {
     PLOG(ERROR) << "IsWow64Process";
     return false;
   }
-  return is_wow64;
+  return !!is_wow64;
 }
 
 template <class T>
@@ -107,10 +110,51 @@ bool ReadStruct(HANDLE process, WinVMAddress at, T* into) {
   return true;
 }
 
-bool RegionIsAccessible(const ProcessInfo::MemoryInfo& memory_info) {
-  return memory_info.state == MEM_COMMIT &&
-         (memory_info.protect & PAGE_NOACCESS) == 0 &&
-         (memory_info.protect & PAGE_GUARD) == 0;
+bool RegionIsAccessible(const MEMORY_BASIC_INFORMATION64& memory_info) {
+  return memory_info.State == MEM_COMMIT &&
+         (memory_info.Protect & PAGE_NOACCESS) == 0 &&
+         (memory_info.Protect & PAGE_GUARD) == 0;
+}
+
+MEMORY_BASIC_INFORMATION64 MemoryBasicInformationToMemoryBasicInformation64(
+    const MEMORY_BASIC_INFORMATION& mbi) {
+  MEMORY_BASIC_INFORMATION64 mbi64 = {0};
+  mbi64.BaseAddress = reinterpret_cast<ULONGLONG>(mbi.BaseAddress);
+  mbi64.AllocationBase = reinterpret_cast<ULONGLONG>(mbi.AllocationBase);
+  mbi64.AllocationProtect = mbi.AllocationProtect;
+  mbi64.RegionSize = mbi.RegionSize;
+  mbi64.State = mbi.State;
+  mbi64.Protect = mbi.Protect;
+  mbi64.Type = mbi.Type;
+  return mbi64;
+}
+
+// NtQueryObject with a retry for size mismatch as well as a minimum size to
+// retrieve (and expect).
+scoped_ptr<uint8_t[]> QueryObject(
+    HANDLE handle,
+    OBJECT_INFORMATION_CLASS object_information_class,
+    ULONG minimum_size) {
+  ULONG size = minimum_size;
+  ULONG return_length;
+  scoped_ptr<uint8_t[]> buffer(new uint8_t[size]);
+  NTSTATUS status = crashpad::NtQueryObject(
+      handle, object_information_class, buffer.get(), size, &return_length);
+  if (status == STATUS_INFO_LENGTH_MISMATCH) {
+    DCHECK_GT(return_length, size);
+    size = return_length;
+    buffer.reset(new uint8_t[size]);
+    status = crashpad::NtQueryObject(
+        handle, object_information_class, buffer.get(), size, &return_length);
+  }
+
+  if (!NT_SUCCESS(status)) {
+    NTSTATUS_LOG(ERROR, status) << "NtQueryObject";
+    return nullptr;
+  }
+
+  DCHECK_GE(return_length, minimum_size);
+  return buffer;
 }
 
 }  // namespace
@@ -138,10 +182,8 @@ bool GetProcessBasicInformation(HANDLE process,
     return false;
   }
 
-  // See https://msdn.microsoft.com/en-us/library/windows/desktop/aa384203 on
-  // 32 bit being the correct size for HANDLEs for proceses, even on Windows
-  // x64. API functions (e.g. OpenProcess) take only a DWORD, so there's no
-  // sense in maintaining the top bits.
+  // API functions (e.g. OpenProcess) take only a DWORD, so there's no sense in
+  // maintaining the top bits.
   process_info->process_id_ =
       static_cast<DWORD>(process_basic_information.UniqueProcessId);
   process_info->inherited_from_process_id_ = static_cast<DWORD>(
@@ -180,9 +222,9 @@ template <class Traits>
 bool ReadProcessData(HANDLE process,
                      WinVMAddress peb_address_vmaddr,
                      ProcessInfo* process_info) {
-  Traits::Pointer peb_address;
+  typename Traits::Pointer peb_address;
   if (!AssignIfInRange(&peb_address, peb_address_vmaddr)) {
-    LOG(ERROR) << base::StringPrintf("peb address 0x%x out of range",
+    LOG(ERROR) << base::StringPrintf("peb address 0x%llx out of range",
                                      peb_address_vmaddr);
     return false;
   }
@@ -231,8 +273,10 @@ bool ReadProcessData(HANDLE process,
   // Walk the PEB LDR structure (doubly-linked list) to get the list of loaded
   // modules. We use this method rather than EnumProcessModules to get the
   // modules in initialization order rather than memory order.
-  Traits::Pointer last = peb_ldr_data.InInitializationOrderModuleList.Blink;
-  for (Traits::Pointer cur = peb_ldr_data.InInitializationOrderModuleList.Flink;
+  typename Traits::Pointer last =
+      peb_ldr_data.InInitializationOrderModuleList.Blink;
+  for (typename Traits::Pointer cur =
+           peb_ldr_data.InInitializationOrderModuleList.Flink;
        ;
        cur = ldr_data_table_entry.InInitializationOrderLinks.Flink) {
     // |cur| is the pointer to the LIST_ENTRY embedded in the
@@ -288,7 +332,8 @@ bool ReadMemoryInfo(HANDLE process, bool is_64_bit, ProcessInfo* process_info) {
     }
 
     process_info->memory_info_.push_back(
-        ProcessInfo::MemoryInfo(memory_basic_information));
+        MemoryBasicInformationToMemoryBasicInformation64(
+            memory_basic_information));
 
     if (memory_basic_information.RegionSize == 0) {
       LOG(ERROR) << "RegionSize == 0";
@@ -299,33 +344,149 @@ bool ReadMemoryInfo(HANDLE process, bool is_64_bit, ProcessInfo* process_info) {
   return true;
 }
 
+std::vector<ProcessInfo::Handle> ProcessInfo::BuildHandleVector(
+    HANDLE process) const {
+  ULONG buffer_size = 2 * 1024 * 1024;
+  scoped_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
+
+  // Typically if the buffer were too small, STATUS_INFO_LENGTH_MISMATCH would
+  // return the correct size in the final argument, but it does not for
+  // SystemExtendedHandleInformation, so we loop and attempt larger sizes.
+  NTSTATUS status;
+  ULONG returned_length;
+  for (int tries = 0; tries < 5; ++tries) {
+    status = crashpad::NtQuerySystemInformation(
+        static_cast<SYSTEM_INFORMATION_CLASS>(SystemExtendedHandleInformation),
+        buffer.get(),
+        buffer_size,
+        &returned_length);
+    if (NT_SUCCESS(status) || status != STATUS_INFO_LENGTH_MISMATCH)
+      break;
+
+    buffer_size *= 2;
+    buffer.reset();
+    buffer.reset(new uint8_t[buffer_size]);
+  }
+
+  if (!NT_SUCCESS(status)) {
+    NTSTATUS_LOG(ERROR, status)
+        << "NtQuerySystemInformation SystemExtendedHandleInformation";
+    return std::vector<Handle>();
+  }
+
+  const auto& system_handle_information_ex =
+      *reinterpret_cast<process_types::SYSTEM_HANDLE_INFORMATION_EX*>(
+          buffer.get());
+
+  DCHECK_LE(offsetof(process_types::SYSTEM_HANDLE_INFORMATION_EX, Handles) +
+                system_handle_information_ex.NumberOfHandles *
+                    sizeof(system_handle_information_ex.Handles[0]),
+            returned_length);
+
+  std::vector<Handle> handles;
+
+  for (size_t i = 0; i < system_handle_information_ex.NumberOfHandles; ++i) {
+    const auto& handle = system_handle_information_ex.Handles[i];
+    if (handle.UniqueProcessId != process_id_)
+      continue;
+
+    Handle result_handle;
+    result_handle.handle = HandleToInt(handle.HandleValue);
+    result_handle.attributes = handle.HandleAttributes;
+    result_handle.granted_access = handle.GrantedAccess;
+
+    // TODO(scottmg): Could special case for self.
+    HANDLE dup_handle;
+    if (DuplicateHandle(process,
+                        handle.HandleValue,
+                        GetCurrentProcess(),
+                        &dup_handle,
+                        0,
+                        false,
+                        DUPLICATE_SAME_ACCESS)) {
+      // Some handles cannot be duplicated, for example, handles of type
+      // EtwRegistration. If we fail to duplicate, then we can't gather any more
+      // information, but include the information that we do have already.
+      ScopedKernelHANDLE scoped_dup_handle(dup_handle);
+
+      scoped_ptr<uint8_t[]> object_basic_information_buffer =
+          QueryObject(dup_handle,
+                      ObjectBasicInformation,
+                      sizeof(PUBLIC_OBJECT_BASIC_INFORMATION));
+      if (object_basic_information_buffer) {
+        PUBLIC_OBJECT_BASIC_INFORMATION* object_basic_information =
+            reinterpret_cast<PUBLIC_OBJECT_BASIC_INFORMATION*>(
+                object_basic_information_buffer.get());
+        // The Attributes and GrantedAccess sometimes differ slightly between
+        // the data retrieved in SYSTEM_HANDLE_INFORMATION_EX and
+        // PUBLIC_OBJECT_TYPE_INFORMATION. We prefer the values in
+        // SYSTEM_HANDLE_INFORMATION_EX because they were retrieved from the
+        // target process, rather than on the duplicated handle, so don't use
+        // them here.
+
+        // Subtract one to account for our DuplicateHandle() and another for
+        // NtQueryObject() while the query was being executed.
+        DCHECK_GT(object_basic_information->PointerCount, 2u);
+        result_handle.pointer_count =
+            object_basic_information->PointerCount - 2;
+
+        // Subtract one to account for our DuplicateHandle().
+        DCHECK_GT(object_basic_information->HandleCount, 1u);
+        result_handle.handle_count = object_basic_information->HandleCount - 1;
+      }
+
+      scoped_ptr<uint8_t[]> object_type_information_buffer =
+          QueryObject(dup_handle,
+                      ObjectTypeInformation,
+                      sizeof(PUBLIC_OBJECT_TYPE_INFORMATION));
+      if (object_type_information_buffer) {
+        PUBLIC_OBJECT_TYPE_INFORMATION* object_type_information =
+            reinterpret_cast<PUBLIC_OBJECT_TYPE_INFORMATION*>(
+                object_type_information_buffer.get());
+
+        DCHECK_EQ(object_type_information->TypeName.Length %
+                      sizeof(result_handle.type_name[0]),
+                  0u);
+        result_handle.type_name =
+            std::wstring(object_type_information->TypeName.Buffer,
+                         object_type_information->TypeName.Length /
+                             sizeof(result_handle.type_name[0]));
+      }
+    }
+
+    handles.push_back(result_handle);
+  }
+  return handles;
+}
+
 ProcessInfo::Module::Module() : name(), dll_base(0), size(0), timestamp() {
 }
 
 ProcessInfo::Module::~Module() {
 }
 
-ProcessInfo::MemoryInfo::MemoryInfo(const MEMORY_BASIC_INFORMATION& mbi)
-    : base_address(reinterpret_cast<WinVMAddress>(mbi.BaseAddress)),
-      region_size(mbi.RegionSize),
-      allocation_base(reinterpret_cast<WinVMAddress>(mbi.AllocationBase)),
-      state(mbi.State),
-      allocation_protect(mbi.AllocationProtect),
-      protect(mbi.Protect),
-      type(mbi.Type) {
+ProcessInfo::Handle::Handle()
+    : type_name(),
+      handle(0),
+      attributes(0),
+      granted_access(0),
+      pointer_count(0),
+      handle_count(0) {
 }
 
-ProcessInfo::MemoryInfo::~MemoryInfo() {
+ProcessInfo::Handle::~Handle() {
 }
 
 ProcessInfo::ProcessInfo()
     : process_id_(),
       inherited_from_process_id_(),
+      process_(),
       command_line_(),
       peb_address_(0),
       peb_size_(0),
       modules_(),
       memory_info_(),
+      handles_(),
       is_64_bit_(false),
       is_wow64_(false),
       initialized_() {
@@ -336,6 +497,8 @@ ProcessInfo::~ProcessInfo() {
 
 bool ProcessInfo::Initialize(HANDLE process) {
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
+
+  process_ = process;
 
   is_wow64_ = IsProcessWow64(process);
 
@@ -351,14 +514,14 @@ bool ProcessInfo::Initialize(HANDLE process) {
         system_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64;
   }
 
-#if ARCH_CPU_32_BITS
+#if defined(ARCH_CPU_32_BITS)
   if (is_64_bit_) {
     LOG(ERROR) << "Reading x64 process from x86 process not supported";
     return false;
   }
-#endif
+#endif  // ARCH_CPU_32_BITS
 
-#if ARCH_CPU_64_BITS
+#if defined(ARCH_CPU_64_BITS)
   bool result = GetProcessBasicInformation<process_types::internal::Traits64>(
       process, is_wow64_, this, &peb_address_, &peb_size_);
 #else
@@ -426,7 +589,7 @@ bool ProcessInfo::Modules(std::vector<Module>* modules) const {
   return true;
 }
 
-const std::vector<ProcessInfo::MemoryInfo>& ProcessInfo::MemoryInformation()
+const ProcessInfo::MemoryBasicInformation64Vector& ProcessInfo::MemoryInfo()
     const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
   return memory_info_;
@@ -435,39 +598,70 @@ const std::vector<ProcessInfo::MemoryInfo>& ProcessInfo::MemoryInformation()
 std::vector<CheckedRange<WinVMAddress, WinVMSize>>
 ProcessInfo::GetReadableRanges(
     const CheckedRange<WinVMAddress, WinVMSize>& range) const {
-  return GetReadableRangesOfMemoryMap(range, MemoryInformation());
+  return GetReadableRangesOfMemoryMap(range, MemoryInfo());
+}
+
+bool ProcessInfo::LoggingRangeIsFullyReadable(
+    const CheckedRange<WinVMAddress, WinVMSize>& range) const {
+  const auto ranges = GetReadableRanges(range);
+  if (ranges.size() != 1) {
+    LOG(ERROR) << base::StringPrintf(
+        "range at 0x%llx, size 0x%llx fully unreadable",
+        range.base(),
+        range.size());
+    return false;
+  }
+  if (ranges[0].base() != range.base() || ranges[0].size() != range.size()) {
+    LOG(ERROR) << base::StringPrintf(
+        "some of range at 0x%llx, size 0x%llx unreadable",
+        range.base(),
+        range.size());
+    return false;
+  }
+  return true;
+}
+
+const std::vector<ProcessInfo::Handle>& ProcessInfo::Handles() const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  if (handles_.empty())
+    handles_ = BuildHandleVector(process_);
+  return handles_;
 }
 
 std::vector<CheckedRange<WinVMAddress, WinVMSize>> GetReadableRangesOfMemoryMap(
     const CheckedRange<WinVMAddress, WinVMSize>& range,
-    const std::vector<ProcessInfo::MemoryInfo>& memory_info) {
+    const ProcessInfo::MemoryBasicInformation64Vector& memory_info) {
   using Range = CheckedRange<WinVMAddress, WinVMSize>;
 
   // Find all the ranges that overlap the target range, maintaining their order.
-  std::vector<ProcessInfo::MemoryInfo> overlapping;
+  ProcessInfo::MemoryBasicInformation64Vector overlapping;
   for (const auto& mi : memory_info) {
-    if (range.OverlapsRange(Range(mi.base_address, mi.region_size)))
+    static_assert(base::is_same<decltype(mi.BaseAddress), WinVMAddress>::value,
+                  "expected range address to be WinVMAddress");
+    static_assert(base::is_same<decltype(mi.RegionSize), WinVMSize>::value,
+                  "expected range size to be WinVMSize");
+    if (range.OverlapsRange(Range(mi.BaseAddress, mi.RegionSize)))
       overlapping.push_back(mi);
   }
   if (overlapping.empty())
     return std::vector<Range>();
 
   // For the first and last, trim to the boundary of the incoming range.
-  ProcessInfo::MemoryInfo& front = overlapping.front();
-  WinVMAddress original_front_base_address = front.base_address;
-  front.base_address = std::max(front.base_address, range.base());
-  front.region_size =
-      (original_front_base_address + front.region_size) - front.base_address;
+  MEMORY_BASIC_INFORMATION64& front = overlapping.front();
+  WinVMAddress original_front_base_address = front.BaseAddress;
+  front.BaseAddress = std::max(front.BaseAddress, range.base());
+  front.RegionSize =
+      (original_front_base_address + front.RegionSize) - front.BaseAddress;
 
-  ProcessInfo::MemoryInfo& back = overlapping.back();
-  WinVMAddress back_end = back.base_address + back.region_size;
-  back.region_size = std::min(range.end(), back_end) - back.base_address;
+  MEMORY_BASIC_INFORMATION64& back = overlapping.back();
+  WinVMAddress back_end = back.BaseAddress + back.RegionSize;
+  back.RegionSize = std::min(range.end(), back_end) - back.BaseAddress;
 
   // Discard all non-accessible.
   overlapping.erase(std::remove_if(overlapping.begin(),
                                    overlapping.end(),
-                                   [](const ProcessInfo::MemoryInfo& mi) {
-                                     return !RegionIsAccessible(mi);
+                                   [](const MEMORY_BASIC_INFORMATION64& mbi) {
+                                     return !RegionIsAccessible(mbi);
                                    }),
                     overlapping.end());
   if (overlapping.empty())
@@ -476,7 +670,7 @@ std::vector<CheckedRange<WinVMAddress, WinVMSize>> GetReadableRangesOfMemoryMap(
   // Convert to return type.
   std::vector<Range> as_ranges;
   for (const auto& mi : overlapping) {
-    as_ranges.push_back(Range(mi.base_address, mi.region_size));
+    as_ranges.push_back(Range(mi.BaseAddress, mi.RegionSize));
     DCHECK(as_ranges.back().IsValid());
   }
 

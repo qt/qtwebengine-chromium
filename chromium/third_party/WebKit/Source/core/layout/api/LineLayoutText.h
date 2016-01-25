@@ -25,7 +25,14 @@ public:
         ASSERT(!item || item.isText());
     }
 
+    explicit LineLayoutText(std::nullptr_t) : LineLayoutItem(nullptr) { }
+
     LineLayoutText() { }
+
+    InlineTextBox* firstTextBox() const
+    {
+        return toText()->firstTextBox();
+    }
 
     void extractTextBox(InlineTextBox* inlineTextBox)
     {
@@ -62,6 +69,11 @@ public:
         return toText()->uncheckedCharacterAt(offset);
     }
 
+    UChar32 codepointAt(unsigned offset) const
+    {
+        return toText()->codepointAt(offset);
+    }
+
     bool is8Bit() const
     {
         return toText()->is8Bit();
@@ -87,6 +99,11 @@ public:
         return toText()->textLength();
     }
 
+    unsigned resolvedTextLength() const
+    {
+        return toText()->resolvedTextLength();
+    }
+
     const String& text() const
     {
         return toText()->text();
@@ -110,11 +127,6 @@ public:
     float hyphenWidth(const Font& font, TextDirection textDirection)
     {
         return toText()->hyphenWidth(font, textDirection);
-    }
-
-    SelectionState selectionState() const
-    {
-        return toText()->selectionState();
     }
 
     void selectionStartEnd(int& spos, int& epos) const

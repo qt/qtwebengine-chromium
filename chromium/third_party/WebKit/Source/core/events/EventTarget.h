@@ -33,6 +33,7 @@
 #define EventTarget_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
 #include "core/EventNames.h"
 #include "core/EventTargetNames.h"
@@ -51,7 +52,7 @@ class MessagePort;
 class Node;
 
 struct FiringEventIterator {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     FiringEventIterator(const AtomicString& eventType, size_t& iterator, size_t& end)
         : eventType(eventType)
         , iterator(iterator)
@@ -67,7 +68,7 @@ using FiringEventIteratorVector = Vector<FiringEventIterator, 1>;
 
 class CORE_EXPORT EventTargetData final : public NoBaseWillBeGarbageCollectedFinalized<EventTargetData> {
     WTF_MAKE_NONCOPYABLE(EventTargetData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventTargetData);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(EventTargetData);
 public:
     EventTargetData();
     ~EventTargetData();
@@ -124,11 +125,17 @@ public:
     virtual ExecutionContext* executionContext() const = 0;
 
     virtual Node* toNode();
+    virtual const LocalDOMWindow* toDOMWindow() const;
     virtual LocalDOMWindow* toDOMWindow();
     virtual MessagePort* toMessagePort();
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture);
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture);
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false);
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptionsOrBoolean&);
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, EventListenerOptions&);
+
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false);
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptionsOrBoolean&);
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, EventListenerOptions&);
     virtual void removeAllEventListeners();
 
     bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -158,6 +165,8 @@ public:
 protected:
     EventTarget();
 
+    virtual bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&);
+    virtual bool removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&);
     virtual bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>);
 
     // Subclasses should likely not override these themselves; instead, they should subclass EventTargetWithInlineData.
@@ -268,18 +277,6 @@ public:
 #define DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(attribute, eventName) \
     EventListener* on##attribute() { return getAttributeEventListener(EventTypeNames::eventName); } \
     void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::eventName, listener); } \
-
-#define DECLARE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(recipient, attribute) \
-    EventListener* on##attribute(); \
-    void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener);
-
-#define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(type, recipient, attribute) \
-    EventListener* type::on##attribute() { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute) : nullptr; } \
-    void type::setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) \
-    { \
-        if (recipient) \
-            recipient->setAttributeEventListener(EventTypeNames::attribute, listener); \
-    }
 
 inline bool EventTarget::hasEventListeners() const
 {

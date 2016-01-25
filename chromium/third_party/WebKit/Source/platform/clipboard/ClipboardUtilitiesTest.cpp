@@ -28,12 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/clipboard/ClipboardUtilities.h"
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

@@ -117,63 +117,6 @@
     },
   },
   {
-    'target_name': 'blink_prerequisites',
-    'type': 'none',
-    'conditions': [
-      ['OS=="mac"', {
-        'direct_dependent_settings': {
-          'defines': [
-            # Chromium's version of WebCore includes the following Objective-C
-            # classes. The system-provided WebCore framework may also provide
-            # these classes. Because of the nature of Objective-C binding
-            # (dynamically at runtime), it's possible for the
-            # Chromium-provided versions to interfere with the system-provided
-            # versions.  This may happen when a system framework attempts to
-            # use core.framework, such as when converting an HTML-flavored
-            # string to an NSAttributedString.  The solution is to force
-            # Objective-C class names that would conflict to use alternate
-            # names.
-            #
-            # This list will hopefully shrink but may also grow.  Its
-            # performance is monitored by the "Check Objective-C Rename"
-            # postbuild step, and any suspicious-looking symbols not handled
-            # here or whitelisted in that step will cause a build failure.
-            #
-            # If this is unhandled, the console will receive log messages
-            # such as:
-            # com.google.Chrome[] objc[]: Class ScrollbarPrefsObserver is implemented in both .../Google Chrome.app/Contents/Versions/.../Google Chrome Helper.app/Contents/MacOS/../../../Google Chrome Framework.framework/Google Chrome Framework and /System/Library/Frameworks/WebKit.framework/Versions/A/Frameworks/WebCore.framework/Versions/A/WebCore. One of the two will be used. Which one is undefined.
-            'WebCascadeList=ChromiumWebCoreObjCWebCascadeList',
-            'WebScrollAnimationHelperDelegate=ChromiumWebCoreObjCWebScrollAnimationHelperDelegate',
-            'WebScrollbarPainterControllerDelegate=ChromiumWebCoreObjCWebScrollbarPainterControllerDelegate',
-            'WebScrollbarPainterDelegate=ChromiumWebCoreObjCWebScrollbarPainterDelegate',
-            'WebScrollbarPartAnimation=ChromiumWebCoreObjCWebScrollbarPartAnimation',
-            'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
-            'WebCoreScrollbarObserver=ChromiumWebCoreObjCWebCoreScrollbarObserver',
-            'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
-          ],
-          'postbuilds': [
-            {
-              # This step ensures that any Objective-C names that aren't
-              # redefined to be "safe" above will cause a build failure.
-              'postbuild_name': 'Check Objective-C Rename',
-              'variables': {
-                'class_whitelist_regex':
-                    'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver|LayoutThemeNotificationObserver',
-                'category_whitelist_regex':
-                    'WebCoreFocusRingDrawing|WebCoreTheme',
-              },
-              'action': [
-                '../build/scripts/check_objc_rename.sh',
-                '<(class_whitelist_regex)',
-                '<(category_whitelist_regex)',
-              ],
-            },
-          ],
-        },
-      }],
-    ],
-  },
-  {
     'target_name': 'blink_platform',
     'type': '<(component)',
     'dependencies': [
@@ -181,22 +124,27 @@
       '../wtf/wtf.gyp:wtf',
       'blink_common',
       'blink_heap_asm_stubs',
-      'blink_prerequisites',
+      'platform_generated.gyp:make_platform_generated',
+      '<(DEPTH)/base/base.gyp:base',
+      '<(DEPTH)/cc/cc.gyp:cc',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
       '<(DEPTH)/skia/skia.gyp:skia',
+      '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
       '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
       '<(DEPTH)/third_party/ots/ots.gyp:ots',
       '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
+      '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
+      '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
       '<(DEPTH)/url/url.gyp:url_lib',
       '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      'platform_generated.gyp:make_platform_generated',
-      '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(libjpeg_gyp_path):libjpeg',
     ],
     'export_dependent_settings': [
+      '<(DEPTH)/base/base.gyp:base',
+      '<(DEPTH)/cc/cc.gyp:cc',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
       '<(DEPTH)/skia/skia.gyp:skia',
       '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -226,10 +174,11 @@
       '<@(platform_heap_files)',
 
       # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
+      '<(blink_platform_output_dir)/ColorData.cpp',
       '<(blink_platform_output_dir)/FontFamilyNames.cpp',
+      '<(blink_platform_output_dir)/HTTPNames.cpp',
       '<(blink_platform_output_dir)/RuntimeEnabledFeatures.cpp',
       '<(blink_platform_output_dir)/RuntimeEnabledFeatures.h',
-      '<(blink_platform_output_dir)/ColorData.cpp',
     ],
     'sources/': [
       # Exclude all platform specific things, reinclude them below on a per-platform basis
@@ -292,7 +241,7 @@
           # implementation.
           ['exclude', 'KillRingNone\\.cpp$'],
 
-          # The Mac build is USE(CF).
+          # The Mac build uses Core Foundation.
           ['include', 'CF\\.cpp$'],
 
           # Use native Mac font code from core.
@@ -322,8 +271,8 @@
 
           # Mac uses only ScrollAnimatorMac.
           ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
-          ['exclude', 'scroll/ScrollAnimatorNone\\.cpp$'],
-          ['exclude', 'scroll/ScrollAnimatorNone\\.h$'],
+          ['exclude', 'scroll/ScrollAnimator\\.cpp$'],
+          ['exclude', 'scroll/ScrollAnimator\\.h$'],
 
           ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
 

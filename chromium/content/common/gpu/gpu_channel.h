@@ -5,10 +5,14 @@
 #ifndef CONTENT_COMMON_GPU_GPU_CHANNEL_H_
 #define CONTENT_COMMON_GPU_GPU_CHANNEL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -36,7 +40,7 @@ class WaitableEvent;
 
 namespace gpu {
 class PreemptionFlag;
-class SyncPointClientState;
+class SyncPointOrderData;
 class SyncPointManager;
 union ValueState;
 class ValueStateMap;
@@ -65,6 +69,7 @@ class CONTENT_EXPORT GpuChannel
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
+             gpu::SyncPointManager* sync_point_manager,
              GpuWatchdog* watchdog,
              gfx::GLShareGroup* share_group,
              gpu::gles2::MailboxManager* mailbox_manager,
@@ -117,21 +122,21 @@ class CONTENT_EXPORT GpuChannel
   CreateCommandBufferResult CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
       const GPUCreateCommandBufferConfig& init_params,
-      int32 route_id);
+      int32_t route_id);
 
   gfx::GLShareGroup* share_group() const { return share_group_.get(); }
 
-  GpuCommandBufferStub* LookupCommandBuffer(int32 route_id);
+  GpuCommandBufferStub* LookupCommandBuffer(int32_t route_id);
 
   void LoseAllContexts();
   void MarkAllContextsLost();
 
   // Called to add a listener for a particular message routing ID.
   // Returns true if succeeded.
-  bool AddRoute(int32 route_id, IPC::Listener* listener);
+  bool AddRoute(int32_t route_id, IPC::Listener* listener);
 
   // Called to remove a listener for a particular message routing ID.
-  void RemoveRoute(int32 route_id);
+  void RemoveRoute(int32_t route_id);
 
   void SetPreemptingFlag(gpu::PreemptionFlag* flag);
 
@@ -145,13 +150,13 @@ class CONTENT_EXPORT GpuChannel
   void AddFilter(IPC::MessageFilter* filter);
   void RemoveFilter(IPC::MessageFilter* filter);
 
-  uint64 GetMemoryUsage();
+  uint64_t GetMemoryUsage();
 
-  scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+  scoped_refptr<gl::GLImage> CreateImageForGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
       gfx::BufferFormat format,
-      uint32 internalformat);
+      uint32_t internalformat);
 
   bool allow_future_sync_points() const { return allow_future_sync_points_; }
 
@@ -172,8 +177,8 @@ class CONTENT_EXPORT GpuChannel
   // Returns the global order number for the last unprocessed IPC message.
   uint32_t GetUnprocessedOrderNum() const;
 
-  // Returns the shared sync point client state.
-  scoped_refptr<gpu::SyncPointClientState> GetSyncPointClientState();
+  // Returns the shared sync point global order data.
+  scoped_refptr<gpu::SyncPointOrderData> GetSyncPointOrderData();
 
   void HandleMessage();
 
@@ -191,26 +196,26 @@ class CONTENT_EXPORT GpuChannel
   scoped_refptr<GpuChannelMessageFilter> filter_;
 
   // Map of routing id to command buffer stub.
-  base::ScopedPtrHashMap<int32, scoped_ptr<GpuCommandBufferStub>> stubs_;
+  base::ScopedPtrHashMap<int32_t, scoped_ptr<GpuCommandBufferStub>> stubs_;
 
  private:
   class StreamState {
    public:
-    StreamState(int32 id, GpuStreamPriority priority);
+    StreamState(int32_t id, GpuStreamPriority priority);
     ~StreamState();
 
-    int32 id() const { return id_; }
+    int32_t id() const { return id_; }
     GpuStreamPriority priority() const { return priority_; }
 
-    void AddRoute(int32 route_id);
-    void RemoveRoute(int32 route_id);
-    bool HasRoute(int32 route_id) const;
+    void AddRoute(int32_t route_id);
+    void RemoveRoute(int32_t route_id);
+    bool HasRoute(int32_t route_id) const;
     bool HasRoutes() const;
 
    private:
-    int32 id_;
+    int32_t id_;
     GpuStreamPriority priority_;
-    base::hash_set<int32> routes_;
+    base::hash_set<int32_t> routes_;
   };
 
   void OnDestroy();
@@ -223,15 +228,19 @@ class CONTENT_EXPORT GpuChannel
   void OnCreateOffscreenCommandBuffer(
       const gfx::Size& size,
       const GPUCreateCommandBufferConfig& init_params,
-      int32 route_id,
+      int32_t route_id,
       bool* succeeded);
-  void OnDestroyCommandBuffer(int32 route_id);
-  void OnCreateJpegDecoder(int32 route_id, IPC::Message* reply_msg);
+  void OnDestroyCommandBuffer(int32_t route_id);
+  void OnCreateJpegDecoder(int32_t route_id, IPC::Message* reply_msg);
 
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
   // are destroyed. So a raw pointer is safe.
   GpuChannelManager* gpu_channel_manager_;
+
+  // Sync point manager. Outlives the channel and is guaranteed to outlive the
+  // message loop.
+  gpu::SyncPointManager* sync_point_manager_;
 
   scoped_ptr<IPC::SyncChannel> channel_;
 
@@ -279,7 +288,7 @@ class CONTENT_EXPORT GpuChannel
   size_t num_stubs_descheduled_;
 
   // Map of stream id to stream state.
-  base::hash_map<int32, StreamState> streams_;
+  base::hash_map<int32_t, StreamState> streams_;
 
   bool allow_future_sync_points_;
   bool allow_real_time_streams_;
@@ -307,7 +316,6 @@ class GpuChannelMessageFilter : public IPC::MessageFilter {
  public:
   GpuChannelMessageFilter(const base::WeakPtr<GpuChannel>& gpu_channel,
                           GpuChannelMessageQueue* message_queue,
-                          gpu::SyncPointManager* sync_point_manager,
                           base::SingleThreadTaskRunner* task_runner,
                           gpu::PreemptionFlag* preempting_flag,
                           bool future_sync_points);
@@ -315,7 +323,7 @@ class GpuChannelMessageFilter : public IPC::MessageFilter {
   // IPC::MessageFilter implementation.
   void OnFilterAdded(IPC::Sender* sender) override;
   void OnFilterRemoved() override;
-  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelConnected(int32_t peer_pid) override;
   void OnChannelError() override;
   void OnChannelClosing() override;
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -369,7 +377,6 @@ class GpuChannelMessageFilter : public IPC::MessageFilter {
   scoped_refptr<GpuChannelMessageQueue> message_queue_;
   IPC::Sender* sender_;
   base::ProcessId peer_pid_;
-  gpu::SyncPointManager* sync_point_manager_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   scoped_refptr<gpu::PreemptionFlag> preempting_flag_;
   std::vector<scoped_refptr<IPC::MessageFilter>> channel_filters_;
@@ -390,7 +397,7 @@ struct GpuChannelMessage {
 
   // TODO(dyen): Temporary sync point data, remove once new sync point lands.
   bool retire_sync_point;
-  uint32 sync_point;
+  uint32_t sync_point;
 
   GpuChannelMessage(const IPC::Message& msg)
       : order_number(0),
@@ -408,9 +415,10 @@ class GpuChannelMessageQueue
  public:
   static scoped_refptr<GpuChannelMessageQueue> Create(
       const base::WeakPtr<GpuChannel>& gpu_channel,
-      base::SingleThreadTaskRunner* task_runner);
+      base::SingleThreadTaskRunner* task_runner,
+      gpu::SyncPointManager* sync_point_manager);
 
-  scoped_refptr<gpu::SyncPointClientState> GetSyncPointClientState();
+  scoped_refptr<gpu::SyncPointOrderData> GetSyncPointOrderData();
 
   // Returns the global order number for the last unprocessed IPC message.
   uint32_t GetUnprocessedOrderNum() const;
@@ -424,33 +432,35 @@ class GpuChannelMessageQueue
 
   GpuChannelMessage* GetNextMessage() const;
 
+  // Should be called before a message begins to be processed.
   void BeginMessageProcessing(const GpuChannelMessage* msg);
+
+  // Should be called if a message began processing but did not finish.
+  void PauseMessageProcessing(const GpuChannelMessage* msg);
 
   // Should be called after a message returned by GetNextMessage is processed.
   // Returns true if there are more messages on the queue.
   bool MessageProcessed();
 
-  void PushBackMessage(gpu::SyncPointManager* sync_point_manager,
-                       const IPC::Message& message);
+  void PushBackMessage(const IPC::Message& message);
 
-  bool GenerateSyncPointMessage(gpu::SyncPointManager* sync_point_manager,
-                                const IPC::Message& message,
+  bool GenerateSyncPointMessage(const IPC::Message& message,
                                 bool retire_sync_point,
                                 uint32_t* sync_point_number);
 
-  void DeleteAndDisableMessages(GpuChannelManager* gpu_channel_manager);
+  void DeleteAndDisableMessages();
 
  private:
   friend class base::RefCountedThreadSafe<GpuChannelMessageQueue>;
 
   GpuChannelMessageQueue(const base::WeakPtr<GpuChannel>& gpu_channel,
-                         base::SingleThreadTaskRunner* task_runner);
+                         base::SingleThreadTaskRunner* task_runner,
+                         gpu::SyncPointManager* sync_point_manager);
   ~GpuChannelMessageQueue();
 
   void ScheduleHandleMessage();
 
-  void PushMessageHelper(gpu::SyncPointManager* sync_point_manager,
-                         scoped_ptr<GpuChannelMessage> msg);
+  void PushMessageHelper(scoped_ptr<GpuChannelMessage> msg);
 
   bool enabled_;
 
@@ -461,10 +471,11 @@ class GpuChannelMessageQueue
   mutable base::Lock channel_messages_lock_;
 
   // Keeps track of sync point related state such as message order numbers.
-  scoped_refptr<gpu::SyncPointClientState> sync_point_client_state_;
+  scoped_refptr<gpu::SyncPointOrderData> sync_point_order_data_;
 
   base::WeakPtr<GpuChannel> gpu_channel_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  gpu::SyncPointManager* sync_point_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannelMessageQueue);
 };

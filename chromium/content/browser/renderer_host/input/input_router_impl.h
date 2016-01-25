@@ -5,9 +5,11 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_INPUT_INPUT_ROUTER_IMPL_H_
 #define CONTENT_BROWSER_RENDERER_HOST_INPUT_INPUT_ROUTER_IMPL_H_
 
+#include <stdint.h>
+
 #include <queue>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
@@ -59,8 +61,8 @@ class CONTENT_EXPORT InputRouterImpl
   void SendMouseEvent(const MouseEventWithLatencyInfo& mouse_event) override;
   void SendWheelEvent(
       const MouseWheelEventWithLatencyInfo& wheel_event) override;
-  void SendKeyboardEvent(const NativeWebKeyboardEventWithLatencyInfo& key_event,
-                         bool is_keyboard_shortcut) override;
+  void SendKeyboardEvent(
+      const NativeWebKeyboardEventWithLatencyInfo& key_event) override;
   void SendGestureEvent(
       const GestureEventWithLatencyInfo& gesture_event) override;
   void SendTouchEvent(const TouchEventWithLatencyInfo& touch_event) override;
@@ -68,6 +70,7 @@ class CONTENT_EXPORT InputRouterImpl
   void NotifySiteIsMobileOptimized(bool is_mobile_optimized) override;
   void RequestNotificationWhenFlushed() override;
   bool HasPendingEvents() const override;
+  void SetDeviceScaleFactor(float device_scale_factor) override;
 
   // IPC::Listener
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -97,19 +100,13 @@ private:
 
   // Filters and forwards |input_event| to the appropriate handler.
   void FilterAndSendWebInputEvent(const blink::WebInputEvent& input_event,
-                                  const ui::LatencyInfo& latency_info,
-                                  bool is_keyboard_shortcut);
+                                  const ui::LatencyInfo& latency_info);
 
   // Utility routine for filtering and forwarding |input_event| to the
   // appropriate handler. |input_event| will be offered to the overscroll
   // controller, client and renderer, in that order.
   void OfferToHandlers(const blink::WebInputEvent& input_event,
-                       const ui::LatencyInfo& latency_info,
-                       bool is_keyboard_shortcut);
-
-  // Returns true if |input_event| was consumed by the overscroll controller.
-  bool OfferToOverscrollController(const blink::WebInputEvent& input_event,
-                                   const ui::LatencyInfo& latency_info);
+                       const ui::LatencyInfo& latency_info);
 
   // Returns true if |input_event| was consumed by the client.
   bool OfferToClient(const blink::WebInputEvent& input_event,
@@ -118,8 +115,7 @@ private:
   // Returns true if |input_event| was successfully sent to the renderer
   // as an async IPC Message.
   bool OfferToRenderer(const blink::WebInputEvent& input_event,
-                       const ui::LatencyInfo& latency_info,
-                       bool is_keyboard_shortcut);
+                       const ui::LatencyInfo& latency_info);
 
   // IPC message handlers
   void OnInputEventAck(const InputEventAck& ack);
@@ -143,7 +139,7 @@ private:
   void ProcessInputEventAck(blink::WebInputEvent::Type event_type,
                             InputEventAckState ack_result,
                             const ui::LatencyInfo& latency_info,
-                            uint32 unique_touch_event_id,
+                            uint32_t unique_touch_event_id,
                             AckSource ack_source);
 
   // Dispatches the ack'ed event to |ack_handler_|.
@@ -171,7 +167,7 @@ private:
   // dispatch of queued touch events, or the creation of gesture events.
   void ProcessTouchAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency,
-                       uint32 unique_touch_event_id);
+                       uint32_t unique_touch_event_id);
 
   // Called when a touch timeout-affecting bit has changed, in turn toggling the
   // touch ack timeout feature of the |touch_event_queue_| as appropriate. Input
@@ -257,6 +253,8 @@ private:
   TouchActionFilter touch_action_filter_;
   InputEventStreamValidator input_stream_validator_;
   InputEventStreamValidator output_stream_validator_;
+
+  float device_scale_factor_;
 
   DISALLOW_COPY_AND_ASSIGN(InputRouterImpl);
 };

@@ -4,6 +4,8 @@
 
 #include "cc/playback/display_list_recording_source.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 
 #include "base/numerics/safe_math.h"
@@ -12,20 +14,11 @@
 #include "cc/layers/content_layer_client.h"
 #include "cc/playback/display_item_list.h"
 #include "cc/playback/display_list_raster_source.h"
+#include "cc/proto/display_list_recording_source.pb.h"
+#include "cc/proto/gfx_conversions.h"
 #include "skia/ext/analysis_canvas.h"
 
 namespace {
-
-// Layout pixel buffer around the visible layer rect to record.  Any base
-// picture that intersects the visible layer rect expanded by this distance
-// will be recorded.
-const int kPixelDistanceToRecord = 4000;
-
-// This is the distance, in layer space, by which the recorded viewport has to
-// change before causing a paint of the new content. For example, it means
-// that one has to scroll a very large page by 512 pixels before we will
-// re-record a new DisplayItemList for an updated recorded viewport.
-const int kMinimumDistanceBeforeUpdatingRecordedViewport = 512;
 
 #ifdef NDEBUG
 const bool kDefaultClearCanvasSetting = false;
@@ -50,58 +43,72 @@ DisplayListRecordingSource::DisplayListRecordingSource()
       clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
       solid_color_(SK_ColorTRANSPARENT),
       background_color_(SK_ColorTRANSPARENT),
-      pixel_record_distance_(kPixelDistanceToRecord),
       painter_reported_memory_usage_(0) {}
 
 DisplayListRecordingSource::~DisplayListRecordingSource() {
 }
 
-// This method only really makes sense to call if the size of the layer didn't
-// change.
-bool DisplayListRecordingSource::ExposesEnoughNewArea(
-    const gfx::Rect& current_recorded_viewport,
-    const gfx::Rect& potential_new_recorded_viewport,
-    const gfx::Size& layer_size) {
-  // If both are empty, nothing to do.
-  if (current_recorded_viewport.IsEmpty() &&
-      potential_new_recorded_viewport.IsEmpty())
-    return false;
+void DisplayListRecordingSource::ToProtobuf(
+    proto::DisplayListRecordingSource* proto) const {
+  RectToProto(recorded_viewport_, proto->mutable_recorded_viewport());
+  SizeToProto(size_, proto->mutable_size());
+  proto->set_slow_down_raster_scale_factor_for_debug(
+      slow_down_raster_scale_factor_for_debug_);
+  proto->set_generate_discardable_images_metadata(
+      generate_discardable_images_metadata_);
+  proto->set_requires_clear(requires_clear_);
+  proto->set_is_solid_color(is_solid_color_);
+  proto->set_clear_canvas_with_debug_color(clear_canvas_with_debug_color_);
+  proto->set_solid_color(static_cast<uint64_t>(solid_color_));
+  proto->set_background_color(static_cast<uint64_t>(background_color_));
+  if (display_list_)
+    display_list_->ToProtobuf(proto->mutable_display_list());
+}
 
-  // Re-record when going from empty to not-empty, to cover cases where
-  // the layer is recorded for the first time, or otherwise becomes visible.
-  if (current_recorded_viewport.IsEmpty())
-    return true;
+void DisplayListRecordingSource::FromProtobuf(
+    const proto::DisplayListRecordingSource& proto) {
+  recorded_viewport_ = ProtoToRect(proto.recorded_viewport());
+  size_ = ProtoToSize(proto.size());
+  slow_down_raster_scale_factor_for_debug_ =
+      proto.slow_down_raster_scale_factor_for_debug();
+  generate_discardable_images_metadata_ =
+      proto.generate_discardable_images_metadata();
+  requires_clear_ = proto.requires_clear();
+  is_solid_color_ = proto.is_solid_color();
+  clear_canvas_with_debug_color_ = proto.clear_canvas_with_debug_color();
+  solid_color_ = static_cast<SkColor>(proto.solid_color());
+  background_color_ = static_cast<SkColor>(proto.background_color());
 
-  // Re-record if the new viewport includes area outside of a skirt around the
-  // existing viewport.
-  gfx::Rect expanded_viewport(current_recorded_viewport);
-  expanded_viewport.Inset(-kMinimumDistanceBeforeUpdatingRecordedViewport,
-                          -kMinimumDistanceBeforeUpdatingRecordedViewport);
-  if (!expanded_viewport.Contains(potential_new_recorded_viewport))
-    return true;
+  // This might not exist if the |display_list_| of the serialized
+  // DisplayListRecordingSource was null, wich can happen if |Clear()| is
+  // called.
+  if (proto.has_display_list()) {
+    display_list_ = DisplayItemList::CreateFromProto(proto.display_list());
+    FinishDisplayItemListUpdate();
+  } else {
+    display_list_ = nullptr;
+  }
+}
 
-  // Even if the new viewport doesn't include enough new area to satisfy the
-  // condition above, re-record anyway if touches a layer edge not touched by
-  // the existing viewport. Viewports are clipped to layer boundaries, so if the
-  // new viewport touches a layer edge not touched by the existing viewport,
-  // the new viewport must expose new area that touches this layer edge. Since
-  // this new area touches a layer edge, it's impossible to expose more area in
-  // that direction, so recording cannot be deferred until the exposed new area
-  // satisfies the condition above.
-  if (potential_new_recorded_viewport.x() == 0 &&
-      current_recorded_viewport.x() != 0)
-    return true;
-  if (potential_new_recorded_viewport.y() == 0 &&
-      current_recorded_viewport.y() != 0)
-    return true;
-  if (potential_new_recorded_viewport.right() == layer_size.width() &&
-      current_recorded_viewport.right() != layer_size.width())
-    return true;
-  if (potential_new_recorded_viewport.bottom() == layer_size.height() &&
-      current_recorded_viewport.bottom() != layer_size.height())
-    return true;
+void DisplayListRecordingSource::UpdateInvalidationForNewViewport(
+    const gfx::Rect& old_recorded_viewport,
+    const gfx::Rect& new_recorded_viewport,
+    Region* invalidation) {
+  // Invalidate newly-exposed and no-longer-exposed areas.
+  Region newly_exposed_region(new_recorded_viewport);
+  newly_exposed_region.Subtract(old_recorded_viewport);
+  invalidation->Union(newly_exposed_region);
 
-  return false;
+  Region no_longer_exposed_region(old_recorded_viewport);
+  no_longer_exposed_region.Subtract(new_recorded_viewport);
+  invalidation->Union(no_longer_exposed_region);
+}
+
+void DisplayListRecordingSource::FinishDisplayItemListUpdate() {
+  DetermineIfSolidColor();
+  display_list_->EmitTraceSnapshot();
+  if (generate_discardable_images_metadata_)
+    display_list_->GenerateDiscardableImagesMetadata();
 }
 
 bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
@@ -114,47 +121,25 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
   ScopedDisplayListRecordingSourceUpdateTimer timer;
   bool updated = false;
 
+  // TODO(chrishtr): delete this conditional once synchronized paint launches.
   if (size_ != layer_size) {
     size_ = layer_size;
     updated = true;
   }
 
-  // The recorded viewport is the visible layer rect, expanded
-  // by the pixel record distance, up to a maximum of the total
-  // layer size.
-  gfx::Rect potential_new_recorded_viewport = visible_layer_rect;
-  potential_new_recorded_viewport.Inset(-pixel_record_distance_,
-                                        -pixel_record_distance_);
-  potential_new_recorded_viewport.Intersect(gfx::Rect(GetSize()));
-
-  if (updated ||
-      ExposesEnoughNewArea(recorded_viewport_, potential_new_recorded_viewport,
-                           GetSize())) {
-    gfx::Rect old_recorded_viewport = recorded_viewport_;
-    recorded_viewport_ = potential_new_recorded_viewport;
-
-    // Invalidate newly-exposed and no-longer-exposed areas.
-    Region newly_exposed_region(recorded_viewport_);
-    newly_exposed_region.Subtract(old_recorded_viewport);
-    invalidation->Union(newly_exposed_region);
-
-    Region no_longer_exposed_region(old_recorded_viewport);
-    no_longer_exposed_region.Subtract(recorded_viewport_);
-    invalidation->Union(no_longer_exposed_region);
-
+  gfx::Rect new_recorded_viewport = painter->PaintableRegion();
+  if (new_recorded_viewport != recorded_viewport_) {
+    UpdateInvalidationForNewViewport(recorded_viewport_, new_recorded_viewport,
+                                     invalidation);
+    recorded_viewport_ = new_recorded_viewport;
     updated = true;
   }
 
   // Count the area that is being invalidated.
   Region recorded_invalidation(*invalidation);
   recorded_invalidation.Intersect(recorded_viewport_);
-  for (Region::Iterator it(recorded_invalidation); it.has_rect(); it.next()) {
-    // gfx::Size::GetArea might overflow in this case, so use an explicit
-    // CheckedNumeric instead.
-    base::CheckedNumeric<int> checked_area = it.rect().size().width();
-    checked_area *= it.rect().size().height();
-    timer.AddArea(checked_area);
-  }
+  for (Region::Iterator it(recorded_invalidation); it.has_rect(); it.next())
+    timer.AddArea(it.rect().size().GetCheckedArea());
 
   if (!updated && !invalidation->Intersects(recorded_viewport_))
     return false;
@@ -175,21 +160,20 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
     case RECORD_WITH_CONSTRUCTION_DISABLED:
       painting_control = ContentLayerClient::DISPLAY_LIST_CONSTRUCTION_DISABLED;
       break;
-    default:
-      // case RecordingSource::RECORD_WITH_SK_NULL_CANVAS should not be reached
+    case RECORD_WITH_SUBSEQUENCE_CACHING_DISABLED:
+      painting_control = ContentLayerClient::SUBSEQUENCE_CACHING_DISABLED;
+      break;
+    case RECORD_WITH_SK_NULL_CANVAS:
+    case RECORDING_MODE_COUNT:
       NOTREACHED();
   }
 
   // TODO(vmpstr): Add a slow_down_recording_scale_factor_for_debug_ to be able
   // to slow down recording.
-  display_list_ =
-      painter->PaintContentsToDisplayList(recorded_viewport_, painting_control);
+  display_list_ = painter->PaintContentsToDisplayList(painting_control);
   painter_reported_memory_usage_ = painter->GetApproximateUnsharedMemoryUsage();
 
-  DetermineIfSolidColor();
-  display_list_->EmitTraceSnapshot();
-  if (generate_discardable_images_metadata_)
-    display_list_->GenerateDiscardableImagesMetadata();
+  FinishDisplayItemListUpdate();
 
   return true;
 }
@@ -228,9 +212,9 @@ bool DisplayListRecordingSource::IsSuitableForGpuRasterization() const {
   return !display_list_ || display_list_->IsSuitableForGpuRasterization();
 }
 
-scoped_refptr<RasterSource> DisplayListRecordingSource::CreateRasterSource(
-    bool can_use_lcd_text) const {
-  return scoped_refptr<RasterSource>(
+scoped_refptr<DisplayListRasterSource>
+DisplayListRecordingSource::CreateRasterSource(bool can_use_lcd_text) const {
+  return scoped_refptr<DisplayListRasterSource>(
       DisplayListRasterSource::CreateFromDisplayListRecordingSource(
           this, can_use_lcd_text));
 }

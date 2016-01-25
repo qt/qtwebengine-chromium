@@ -45,7 +45,7 @@ class DatabaseContext;
 class SecurityOrigin;
 
 class MODULES_EXPORT DatabaseTracker {
-    WTF_MAKE_NONCOPYABLE(DatabaseTracker); WTF_MAKE_FAST_ALLOCATED(DatabaseTracker);
+    WTF_MAKE_NONCOPYABLE(DatabaseTracker); USING_FAST_MALLOC(DatabaseTracker);
 public:
     static DatabaseTracker& tracker();
     // This singleton will potentially be used from multiple worker threads and the page's context thread simultaneously.  To keep this safe, it's
@@ -69,9 +69,9 @@ public:
     void failedToOpenDatabase(Database*);
 
 private:
-    typedef HashSet<Database*> DatabaseSet;
-    typedef HashMap<String, DatabaseSet*> DatabaseNameMap;
-    typedef HashMap<String, DatabaseNameMap*> DatabaseOriginMap;
+    using DatabaseSet = HashSet<UntracedMember<Database>>;
+    using DatabaseNameMap = HashMap<String, DatabaseSet*>;
+    using DatabaseOriginMap = HashMap<String, DatabaseNameMap*>;
     class CloseOneDatabaseImmediatelyTask;
 
     DatabaseTracker();
@@ -79,9 +79,10 @@ private:
     void closeOneDatabaseImmediately(const String& originIdentifier, const String& name, Database*);
 
     Mutex m_openDatabaseMapGuard;
-    // This map contains raw pointers to a garbage-collected class. We can't
+
+    // This map contains untraced pointers to a garbage-collected class. We can't
     // make this traceable because it is updated by multiple database threads.
-    GC_PLUGIN_IGNORE("crbug.com/417990")
+    // See http://crbug.com/417990
     mutable OwnPtr<DatabaseOriginMap> m_openDatabaseMap;
 };
 

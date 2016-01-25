@@ -13,6 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "net/base/load_timing_info.h"
+#include "net/base/net_error_details.h"
 #include "net/base/upload_progress.h"
 #include "net/http/http_response_info.h"
 #include "net/socket/connection_attempts.h"
@@ -23,6 +24,7 @@ class AuthCredentials;
 class BoundNetLog;
 class HttpRequestHeaders;
 class IOBuffer;
+class SSLPrivateKey;
 class X509Certificate;
 
 namespace {
@@ -41,6 +43,7 @@ class FailingHttpTransaction : public HttpTransaction {
             const BoundNetLog& net_log) override;
   int RestartIgnoringLastError(const CompletionCallback& callback) override;
   int RestartWithCertificate(X509Certificate* client_cert,
+                             SSLPrivateKey* client_private_key,
                              const CompletionCallback& callback) override;
   int RestartWithAuth(const AuthCredentials& credentials,
                       const CompletionCallback& callback) override;
@@ -59,6 +62,7 @@ class FailingHttpTransaction : public HttpTransaction {
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
   bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
+  void PopulateNetErrorDetails(NetErrorDetails* details) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
@@ -95,7 +99,8 @@ int FailingHttpTransaction::RestartIgnoringLastError(
 
 int FailingHttpTransaction::RestartWithCertificate(
     X509Certificate* client_cert,
-    const CompletionCallback& callback)  {
+    SSLPrivateKey* client_private_key,
+    const CompletionCallback& callback) {
   return ERR_FAILED;
 }
 
@@ -122,7 +127,7 @@ bool FailingHttpTransaction::GetFullRequestHeaders(
   return false;
 }
 
-int64 FailingHttpTransaction::GetTotalReceivedBytes() const  {
+int64_t FailingHttpTransaction::GetTotalReceivedBytes() const {
   return 0;
 }
 
@@ -157,6 +162,11 @@ bool FailingHttpTransaction::GetLoadTimingInfo(
 
 bool FailingHttpTransaction::GetRemoteEndpoint(IPEndPoint* endpoint) const {
   return false;
+}
+
+void FailingHttpTransaction::PopulateNetErrorDetails(
+    NetErrorDetails* /*details*/) const {
+  return;
 }
 
 void FailingHttpTransaction::SetPriority(RequestPriority priority)  {}
@@ -211,4 +221,3 @@ HttpNetworkSession* FailingHttpTransactionFactory::GetSession() {
 }
 
 }  // namespace net
-

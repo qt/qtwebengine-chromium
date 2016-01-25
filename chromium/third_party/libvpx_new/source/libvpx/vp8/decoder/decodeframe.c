@@ -23,6 +23,7 @@
 #include "vp8/common/entropymode.h"
 #include "vp8/common/quant_common.h"
 #include "vpx_scale/vpx_scale.h"
+#include "vp8/common/reconintra.h"
 #include "vp8/common/setupintrarecon.h"
 
 #include "decodemv.h"
@@ -72,10 +73,9 @@ void vp8_mb_init_dequantizer(VP8D_COMP *pbi, MACROBLOCKD *xd)
 
         /* Delta Value */
         else
-        {
             QIndex = pc->base_qindex + xd->segment_feature_data[MB_LVL_ALT_Q][mbmi->segment_id];
-            QIndex = (QIndex >= 0) ? ((QIndex <= MAXQ) ? QIndex : MAXQ) : 0;    /* Clamp to valid range */
-        }
+
+        QIndex = (QIndex >= 0) ? ((QIndex <= MAXQ) ? QIndex : MAXQ) : 0;    /* Clamp to valid range */
     }
     else
         QIndex = pc->base_qindex;

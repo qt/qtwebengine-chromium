@@ -17,14 +17,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
+#include <utility>
 #include <vector>
 
 #include "base/files/file_path.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -32,6 +33,7 @@
 #include "test/multiprocess_exec.h"
 #include "test/paths.h"
 #include "util/file/file_io.h"
+#include "util/misc/random_string.h"
 #include "util/net/http_body.h"
 #include "util/net/http_headers.h"
 #include "util/net/http_multipart_builder.h"
@@ -51,7 +53,7 @@ class HTTPTransportTestFixture : public MultiprocessExec {
                            RequestValidator request_validator)
       : MultiprocessExec(),
         headers_(headers),
-        body_stream_(body_stream.Pass()),
+        body_stream_(std::move(body_stream)),
         response_code_(http_response_code),
         request_validator_(request_validator) {
     base::FilePath server_path = Paths::TestDataRoot().Append(
@@ -89,14 +91,11 @@ class HTTPTransportTestFixture : public MultiprocessExec {
     // The parent will also tell the web server what response body to send back.
     // The web server will only send the response body if the response code is
     // 200.
-    std::string expect_response_body;
-    for (size_t index = 0; index < 8; ++index) {
-      expect_response_body += static_cast<char>(base::RandInt(' ', '~'));
-    }
+    const std::string random_string = RandomString();
 
     ASSERT_TRUE(LoggingWriteFile(WritePipeHandle(),
-                                 expect_response_body.c_str(),
-                                 expect_response_body.size()));
+                                 random_string.c_str(),
+                                 random_string.size()));
 
     // Now execute the HTTP request.
     scoped_ptr<HTTPTransport> transport(HTTPTransport::Create());
@@ -105,13 +104,13 @@ class HTTPTransportTestFixture : public MultiprocessExec {
     for (const auto& pair : headers_) {
       transport->SetHeader(pair.first, pair.second);
     }
-    transport->SetBodyStream(body_stream_.Pass());
+    transport->SetBodyStream(std::move(body_stream_));
 
     std::string response_body;
     bool success = transport->ExecuteSynchronously(&response_body);
     if (response_code_ == 200) {
       EXPECT_TRUE(success);
-      expect_response_body += "\r\n";
+      std::string expect_response_body = random_string + "\r\n";
       EXPECT_EQ(expect_response_body, response_body);
     } else {
       EXPECT_FALSE(success);
@@ -121,7 +120,7 @@ class HTTPTransportTestFixture : public MultiprocessExec {
     // Read until the child's stdout closes.
     std::string request;
     char buf[32];
-    ssize_t bytes_read;
+    FileOperationResult bytes_read;
     while ((bytes_read = ReadFile(ReadPipeHandle(), buf, sizeof(buf))) != 0) {
       ASSERT_GE(bytes_read, 0);
       request.append(buf, bytes_read);
@@ -273,8 +272,8 @@ TEST(HTTPTransport, UnchunkedPlainText) {
   headers[kContentType] = kTextPlain;
   headers[kContentLength] = base::StringPrintf("%" PRIuS, strlen(kTextBody));
 
-  HTTPTransportTestFixture test(headers, body_stream.Pass(), 200,
-      &UnchunkedPlainText);
+  HTTPTransportTestFixture test(
+      headers, std::move(body_stream), 200, &UnchunkedPlainText);
   test.Run();
 }
 
@@ -294,7 +293,10 @@ void RunUpload33k(bool has_content_length) {
     headers[kContentLength] =
         base::StringPrintf("%" PRIuS, request_string.size());
   }
-  HTTPTransportTestFixture test(headers, body_stream.Pass(), 200,
+  HTTPTransportTestFixture test(
+      headers,
+      std::move(body_stream),
+      200,
       [](HTTPTransportTestFixture* fixture, const std::string& request) {
         size_t body_start = request.rfind("\r\n");
         EXPECT_EQ(33 * 1024u + 2, request.size() - body_start);

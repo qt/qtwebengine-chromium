@@ -35,7 +35,6 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBufferSurface.h"
-#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/Forward.h"
@@ -68,12 +67,12 @@ enum Multiply {
 };
 
 class PLATFORM_EXPORT ImageBuffer {
-    WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED(ImageBuffer);
+    WTF_MAKE_NONCOPYABLE(ImageBuffer); USING_FAST_MALLOC(ImageBuffer);
 public:
-    static PassOwnPtr<ImageBuffer> create(const IntSize&, OpacityMode = NonOpaque);
+    static PassOwnPtr<ImageBuffer> create(const IntSize&, OpacityMode = NonOpaque, ImageInitializationMode = InitializeImagePixels);
     static PassOwnPtr<ImageBuffer> create(PassOwnPtr<ImageBufferSurface>);
 
-    ~ImageBuffer();
+    virtual ~ImageBuffer();
 
     void setClient(ImageBufferClient* client) { m_client = client; }
 
@@ -91,8 +90,9 @@ public:
     void setFilterQuality(SkFilterQuality filterQuality) { m_surface->setFilterQuality(filterQuality); }
     void setIsHidden(bool hidden) { m_surface->setIsHidden(hidden); }
 
-    // Called by subclasses of ImageBufferSurface to install a new canvas object
-    void resetCanvas(SkCanvas*) const;
+    // Called by subclasses of ImageBufferSurface to install a new canvas object.
+    // Virtual for mocking
+    virtual void resetCanvas(SkCanvas*) const;
 
     SkCanvas* canvas() const;
     void disableDeferral() const;
@@ -102,10 +102,6 @@ public:
     void didFinalizeFrame();
 
     bool isDirty();
-
-    // FIXME: crbug.com/485243
-    // Prefer writePixels() and canvas()->draw*() for writing, and newImageSnapshot() for reading
-    const SkBitmap& deprecatedBitmapForOverwrite() const;
 
     bool writePixels(const SkImageInfo&, const void* pixels, size_t rowBytes, int x, int y);
 
@@ -134,14 +130,16 @@ public:
     PassRefPtr<SkImage> newSkImageSnapshot(AccelerationHint) const;
     PassRefPtr<Image> newImageSnapshot(AccelerationHint = PreferNoAcceleration) const;
 
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-    String debugName() const { return "ImageBuffer"; }
+    void draw(GraphicsContext&, const FloatRect&, const FloatRect*, SkXfermode::Mode);
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect*, SkXfermode::Mode);
+    void updateGPUMemoryUsage() const;
+    static intptr_t getGlobalGPUMemoryUsage() { return s_globalGPUMemoryUsage; }
+    intptr_t getGPUMemoryUsage() { return m_gpuMemoryUsage; }
 
-private:
+protected:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
 
+private:
     enum SnapshotState {
         InitialSnapshotState,
         DidAcquireSnapshot,
@@ -150,12 +148,16 @@ private:
     mutable SnapshotState m_snapshotState;
     OwnPtr<ImageBufferSurface> m_surface;
     ImageBufferClient* m_client;
+
+    mutable intptr_t m_gpuMemoryUsage;
+    static intptr_t s_globalGPUMemoryUsage;
 };
 
 struct ImageDataBuffer {
+    STACK_ALLOCATED();
     ImageDataBuffer(const IntSize& size, const unsigned char* data) : m_data(data), m_size(size) { }
     String PLATFORM_EXPORT toDataURL(const String& mimeType, const double& quality) const;
-    bool PLATFORM_EXPORT encodeImage(const String& mimeType, const double& quality, Vector<char>* output) const;
+    bool PLATFORM_EXPORT encodeImage(const String& mimeType, const double& quality, Vector<unsigned char>* encodedImage) const;
     const unsigned char* pixels() const { return m_data; }
     int height() const { return m_size.height(); }
     int width() const { return m_size.width(); }

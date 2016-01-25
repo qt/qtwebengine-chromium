@@ -99,12 +99,6 @@ void ServiceWorkerMetrics::RecordPurgeResourceResult(int net_error) {
                               std::abs(net_error));
 }
 
-void ServiceWorkerMetrics::RecordDiskCacheMigrationResult(
-    DiskCacheMigrationResult result) {
-  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.Storage.DiskCacheMigrationResult",
-                            result, NUM_MIGRATION_RESULT_TYPES);
-}
-
 void ServiceWorkerMetrics::RecordDeleteAndStartOverResult(
     DeleteAndStartOverResult result) {
   UMA_HISTOGRAM_ENUMERATION("ServiceWorker.Storage.DeleteAndStartOverResult",
@@ -174,10 +168,52 @@ void ServiceWorkerMetrics::RecordEventHandledRatio(EventType event,
     type = EVENT_HANDLED_ALL;
   else if (handled_events == 0)
     type = EVENT_HANDLED_NONE;
+
   // For now Fetch is the only type that is recorded.
-  DCHECK_EQ(EVENT_TYPE_FETCH, event);
+  if (event != EventType::FETCH)
+    return;
   UMA_HISTOGRAM_ENUMERATION("ServiceWorker.EventHandledRatioType.Fetch", type,
                             NUM_EVENT_HANDLED_RATIO_TYPE);
+}
+
+void ServiceWorkerMetrics::RecordEventTimeout(EventType event) {
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.RequestTimeouts.Count",
+                            static_cast<int>(event),
+                            static_cast<int>(EventType::NUM_TYPES));
+}
+
+void ServiceWorkerMetrics::RecordEventDuration(EventType event,
+                                               const base::TimeDelta& time) {
+  switch (event) {
+    case EventType::ACTIVATE:
+      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.ActivateEvent.Time", time);
+      break;
+    case EventType::INSTALL:
+      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.InstallEvent.Time", time);
+      break;
+    case EventType::SYNC:
+      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.BackgroundSyncEvent.Time",
+                                 time);
+      break;
+    case EventType::NOTIFICATION_CLICK:
+      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.NotificationClickEvent.Time",
+                                 time);
+      break;
+    case EventType::PUSH:
+      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.PushEvent.Time", time);
+      break;
+
+    // Event duration for fetch is recorded separately.
+    case EventType::FETCH:
+    // For now event duration for these events is not recorded.
+    case EventType::GEOFENCING:
+    case EventType::SERVICE_PORT_CONNECT:
+      break;
+
+    case EventType::NUM_TYPES:
+      NOTREACHED() << "Invalid event type";
+      break;
+  }
 }
 
 void ServiceWorkerMetrics::RecordFetchEventStatus(

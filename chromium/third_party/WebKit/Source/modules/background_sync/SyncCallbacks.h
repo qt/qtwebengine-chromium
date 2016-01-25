@@ -27,6 +27,9 @@ class WebString;
 // will pass it to the SyncRegistration.
 class SyncRegistrationCallbacks final : public WebSyncRegistrationCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncRegistrationCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    USING_FAST_MALLOC(SyncRegistrationCallbacks);
 public:
     SyncRegistrationCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncRegistrationCallbacks() override;
@@ -44,13 +47,17 @@ private:
 // depending on the result passed to the callback. It takes a
 // ServiceWorkerRegistration in its constructor and will pass it to the
 // SyncProvider.
-class SyncNotifyWhenDoneCallbacks final : public WebSyncNotifyWhenDoneCallbacks {
-    WTF_MAKE_NONCOPYABLE(SyncNotifyWhenDoneCallbacks);
-public:
-    SyncNotifyWhenDoneCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
-    ~SyncNotifyWhenDoneCallbacks() override;
+class SyncNotifyWhenFinishedCallbacks final : public WebSyncNotifyWhenFinishedCallbacks {
+    WTF_MAKE_NONCOPYABLE(SyncNotifyWhenFinishedCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    USING_FAST_MALLOC(SyncNotifyWhenFinishedCallbacks);
 
-    void onSuccess(bool) override;
+public:
+    SyncNotifyWhenFinishedCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
+    ~SyncNotifyWhenFinishedCallbacks() override;
+
+    void onSuccess() override;
     void onError(const WebSyncError&) override;
 
 private:
@@ -65,6 +72,9 @@ private:
 // SyncProvider.
 class SyncUnregistrationCallbacks final : public WebSyncUnregistrationCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncUnregistrationCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    USING_FAST_MALLOC(SyncUnregistrationCallbacks);
 public:
     SyncUnregistrationCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncUnregistrationCallbacks() override;
@@ -83,6 +93,9 @@ private:
 // will pass it to the SyncRegistration.
 class SyncGetRegistrationsCallbacks final : public WebSyncGetRegistrationsCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncGetRegistrationsCallbacks);
+    // FIXME(tasak): when making public/platform classes to use PartitionAlloc,
+    // the following macro should be moved to WebCallbacks defined in public/platformWebCallbacks.h.
+    USING_FAST_MALLOC(SyncGetRegistrationsCallbacks);
 public:
     SyncGetRegistrationsCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncGetRegistrationsCallbacks() override;
@@ -100,6 +113,7 @@ private:
 // depending on the permission status passed to the callback.
 class SyncGetPermissionStatusCallbacks final : public WebSyncGetPermissionStatusCallbacks {
     WTF_MAKE_NONCOPYABLE(SyncGetPermissionStatusCallbacks);
+    USING_FAST_MALLOC(SyncGetPermissionStatusCallbacks);
 public:
     SyncGetPermissionStatusCallbacks(ScriptPromiseResolver*, ServiceWorkerRegistration*);
     ~SyncGetPermissionStatusCallbacks() override;

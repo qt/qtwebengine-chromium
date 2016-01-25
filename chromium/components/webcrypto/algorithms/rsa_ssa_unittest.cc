@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/macros.h"
 #include "base/values.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
@@ -546,7 +549,7 @@ TEST_F(WebCryptoRsaSsaTest, SignVerifyFailures) {
   // Ensure truncated signature does not verify by passing one less byte.
   EXPECT_EQ(Status::Success(),
             Verify(algorithm, public_key,
-                   CryptoData(vector_as_array(&signature),
+                   CryptoData(signature.data(),
                               static_cast<unsigned int>(signature.size()) - 1),
                    CryptoData(data), &signature_match));
   EXPECT_FALSE(signature_match);

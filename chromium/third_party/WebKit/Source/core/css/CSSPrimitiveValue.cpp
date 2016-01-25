@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSPrimitiveValue.h"
 
 #include "core/css/CSSCalculationValue.h"
@@ -60,6 +59,7 @@ StringToUnitTable createStringToUnitTable()
     table.set(String("in"), CSSPrimitiveValue::UnitType::Inches);
     table.set(String("pt"), CSSPrimitiveValue::UnitType::Points);
     table.set(String("pc"), CSSPrimitiveValue::UnitType::Picas);
+    table.set(String(""), CSSPrimitiveValue::UnitType::UserUnits);
     table.set(String("deg"), CSSPrimitiveValue::UnitType::Degrees);
     table.set(String("rad"), CSSPrimitiveValue::UnitType::Radians);
     table.set(String("grad"), CSSPrimitiveValue::UnitType::Gradians);
@@ -120,6 +120,7 @@ CSSPrimitiveValue::UnitCategory CSSPrimitiveValue::unitCategory(UnitType type)
     case UnitType::Inches:
     case UnitType::Points:
     case UnitType::Picas:
+    case UnitType::UserUnits:
         return CSSPrimitiveValue::ULength;
     case UnitType::Milliseconds:
     case UnitType::Seconds:
@@ -155,10 +156,34 @@ bool CSSPrimitiveValue::colorIsDerivedFromElement() const
     }
 }
 
-using CSSTextCache = HashMap<const CSSPrimitiveValue*, String>;
+using CSSTextCache = WillBePersistentHeapHashMap<RawPtrWillBeWeakMember<const CSSPrimitiveValue>, String>;
+
+#if ENABLE(OILPAN) && defined(LEAK_SANITIZER)
+
+namespace {
+// With LSan, wrap the persistent cache so that the registration of the
+// (per-thread) static reference can be done.
+class CSSTextCacheWrapper {
+public:
+    CSSTextCacheWrapper()
+    {
+        m_cache.registerAsStaticReference();
+    }
+
+    operator CSSTextCache&() { return m_cache; }
+
+private:
+    CSSTextCache m_cache;
+};
+
+}
+#else
+using CSSTextCacheWrapper = CSSTextCache;
+#endif
+
 static CSSTextCache& cssTextCache()
 {
-    AtomicallyInitializedStaticReference(ThreadSpecific<CSSTextCache>, cache, new ThreadSpecific<CSSTextCache>());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<CSSTextCacheWrapper>, cache, new ThreadSpecific<CSSTextCacheWrapper>);
     return *cache;
 }
 
@@ -190,11 +215,6 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::typeWithCalcResolved() const
     return UnitType::Unknown;
 }
 
-static const AtomicString& propertyName(CSSPropertyID propertyID)
-{
-    return getPropertyNameAtomicString(propertyID);
-}
-
 static const AtomicString& valueName(CSSValueID valueID)
 {
     ASSERT_ARG(valueID, valueID >= 0);
@@ -217,35 +237,12 @@ CSSPrimitiveValue::CSSPrimitiveValue(CSSValueID valueID)
     m_value.valueID = valueID;
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(CSSPropertyID propertyID)
-    : CSSValue(PrimitiveClass)
-{
-    init(UnitType::PropertyID);
-    m_value.propertyID = propertyID;
-}
-
 CSSPrimitiveValue::CSSPrimitiveValue(double num, UnitType type)
     : CSSValue(PrimitiveClass)
 {
     init(type);
     ASSERT(std::isfinite(num));
     m_value.num = num;
-}
-
-CSSPrimitiveValue::CSSPrimitiveValue(const String& str, UnitType type)
-    : CSSValue(PrimitiveClass)
-{
-    init(type);
-    m_value.string = str.impl();
-    if (m_value.string)
-        m_value.string->ref();
-}
-
-CSSPrimitiveValue::CSSPrimitiveValue(RGBA32 color)
-    : CSSValue(PrimitiveClass)
-{
-    init(UnitType::RGBColor);
-    m_value.rgbcolor = color;
 }
 
 CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
@@ -255,14 +252,6 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
     case Auto:
         init(UnitType::ValueID);
         m_value.valueID = CSSValueAuto;
-        break;
-    case Intrinsic:
-        init(UnitType::ValueID);
-        m_value.valueID = CSSValueIntrinsic;
-        break;
-    case MinIntrinsic:
-        init(UnitType::ValueID);
-        m_value.valueID = CSSValueMinIntrinsic;
         break;
     case MinContent:
         init(UnitType::ValueID);
@@ -334,23 +323,11 @@ void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<CSSCalcValue> c)
 
 CSSPrimitiveValue::~CSSPrimitiveValue()
 {
-    cleanup();
-}
-
-void CSSPrimitiveValue::cleanup()
-{
+#if !ENABLE(OILPAN)
     switch (type()) {
-    case UnitType::CustomIdentifier:
-    case UnitType::String:
-    case UnitType::URI:
-        if (m_value.string)
-            m_value.string->deref();
-        break;
     case UnitType::Calc:
         // We must not call deref() when oilpan is enabled because m_value.calc is traced.
-#if !ENABLE(OILPAN)
         m_value.calc->deref();
-#endif
         break;
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:
@@ -370,6 +347,7 @@ void CSSPrimitiveValue::cleanup()
     case UnitType::Inches:
     case UnitType::Points:
     case UnitType::Picas:
+    case UnitType::UserUnits:
     case UnitType::Degrees:
     case UnitType::Radians:
     case UnitType::Gradians:
@@ -386,9 +364,7 @@ void CSSPrimitiveValue::cleanup()
     case UnitType::DotsPerInch:
     case UnitType::DotsPerCentimeter:
     case UnitType::Fraction:
-    case UnitType::RGBColor:
     case UnitType::Unknown:
-    case UnitType::PropertyID:
     case UnitType::ValueID:
         break;
     }
@@ -396,6 +372,7 @@ void CSSPrimitiveValue::cleanup()
         cssTextCache().remove(this);
         m_hasCachedCSSText = false;
     }
+#endif
 }
 
 double CSSPrimitiveValue::computeSeconds() const
@@ -466,75 +443,9 @@ template<> double CSSPrimitiveValue::computeLength(const CSSToLengthConversionDa
 
 double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& conversionData) const
 {
-    // The logic in this function is duplicated in MediaValues::computeLength
-    // because MediaValues::computeLength needs nearly identical logic, but we haven't found a way to make
-    // CSSPrimitiveValue::computeLengthDouble more generic (to solve both cases) without hurting performance.
     if (type() == UnitType::Calc)
         return m_value.calc->computeLengthPx(conversionData);
-
-    double factor;
-
-    switch (type()) {
-    case UnitType::Ems:
-    case UnitType::QuirkyEms:
-        factor = conversionData.emFontSize();
-        break;
-    case UnitType::Exs:
-        factor = conversionData.exFontSize();
-        break;
-    case UnitType::Rems:
-        factor = conversionData.remFontSize();
-        break;
-    case UnitType::Chs:
-        factor = conversionData.chFontSize();
-        break;
-    case UnitType::Pixels:
-        factor = 1.0;
-        break;
-    case UnitType::Centimeters:
-        factor = cssPixelsPerCentimeter;
-        break;
-    case UnitType::Millimeters:
-        factor = cssPixelsPerMillimeter;
-        break;
-    case UnitType::Inches:
-        factor = cssPixelsPerInch;
-        break;
-    case UnitType::Points:
-        factor = cssPixelsPerPoint;
-        break;
-    case UnitType::Picas:
-        factor = cssPixelsPerPica;
-        break;
-    case UnitType::ViewportWidth:
-        factor = conversionData.viewportWidthPercent();
-        break;
-    case UnitType::ViewportHeight:
-        factor = conversionData.viewportHeightPercent();
-        break;
-    case UnitType::ViewportMin:
-        factor = conversionData.viewportMinPercent();
-        break;
-    case UnitType::ViewportMax:
-        factor = conversionData.viewportMaxPercent();
-        break;
-    case UnitType::CalcPercentageWithLength:
-    case UnitType::CalcPercentageWithNumber:
-        ASSERT_NOT_REACHED();
-        return -1.0;
-    default:
-        ASSERT_NOT_REACHED();
-        return -1.0;
-    }
-
-    // We do not apply the zoom factor when we are computing the value of the font-size property. The zooming
-    // for font sizes is much more complicated, since we have to worry about enforcing the minimum font size preference
-    // as well as enforcing the implicit "smart minimum."
-    double result = getDoubleValue() * factor;
-    if (isFontRelativeLength())
-        return result;
-
-    return result * conversionData.zoom();
+    return conversionData.zoomedComputedPixels(getDoubleValue(), type());
 }
 
 void CSSPrimitiveValue::accumulateLengthArray(CSSLengthArray& lengthArray, CSSLengthTypeArray& lengthTypeArray, double multiplier) const
@@ -547,10 +458,10 @@ void CSSPrimitiveValue::accumulateLengthArray(CSSLengthArray& lengthArray, CSSLe
     }
 
     LengthUnitType lengthType;
-    if (unitTypeToLengthUnitType(type(), lengthType)) {
-        lengthArray.at(lengthType) += m_value.num * conversionToCanonicalUnitsScaleFactor(type()) * multiplier;
-        lengthTypeArray.set(lengthType);
-    }
+    bool conversionSuccess = unitTypeToLengthUnitType(type(), lengthType);
+    ASSERT_UNUSED(conversionSuccess, conversionSuccess);
+    lengthArray.at(lengthType) += m_value.num * conversionToCanonicalUnitsScaleFactor(type()) * multiplier;
+    lengthTypeArray.set(lengthType);
 }
 
 void CSSPrimitiveValue::accumulateLengthArray(CSSLengthArray& lengthArray, double multiplier) const
@@ -569,6 +480,7 @@ double CSSPrimitiveValue::conversionToCanonicalUnitsScaleFactor(UnitType unitTyp
     switch (unitType) {
     // These are "canonical" units in their respective categories.
     case UnitType::Pixels:
+    case UnitType::UserUnits:
     case UnitType::Degrees:
     case UnitType::Milliseconds:
     case UnitType::Hertz:
@@ -662,6 +574,7 @@ bool CSSPrimitiveValue::unitTypeToLengthUnitType(UnitType unitType, LengthUnitTy
     case CSSPrimitiveValue::UnitType::Inches:
     case CSSPrimitiveValue::UnitType::Points:
     case CSSPrimitiveValue::UnitType::Picas:
+    case CSSPrimitiveValue::UnitType::UserUnits:
         lengthType = UnitTypePixels;
         return true;
     case CSSPrimitiveValue::UnitType::Ems:
@@ -727,21 +640,6 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::lengthUnitTypeToUnitType(LengthUn
     return CSSPrimitiveValue::UnitType::Unknown;
 }
 
-String CSSPrimitiveValue::getStringValue() const
-{
-    switch (type()) {
-    case UnitType::CustomIdentifier:
-    case UnitType::String:
-    case UnitType::URI:
-        return m_value.string;
-    default:
-        break;
-    }
-
-    ASSERT_NOT_REACHED();
-    return String();
-}
-
 static String formatNumber(double number, const char* suffix, unsigned suffixLength)
 {
 #if OS(WIN) && _MSC_VER < 1900
@@ -771,6 +669,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     switch (type) {
     case UnitType::Number:
     case UnitType::Integer:
+    case UnitType::UserUnits:
         return "";
     case UnitType::Percentage:
         return "%";
@@ -828,12 +727,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case UnitType::ViewportMax:
         return "vmax";
     case UnitType::Unknown:
-    case UnitType::CustomIdentifier:
-    case UnitType::String:
-    case UnitType::URI:
     case UnitType::ValueID:
-    case UnitType::PropertyID:
-    case UnitType::RGBColor:
     case UnitType::Calc:
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:
@@ -874,6 +768,7 @@ String CSSPrimitiveValue::customCSSText() const
     case UnitType::Inches:
     case UnitType::Points:
     case UnitType::Picas:
+    case UnitType::UserUnits:
     case UnitType::Degrees:
     case UnitType::Radians:
     case UnitType::Gradians:
@@ -889,26 +784,9 @@ String CSSPrimitiveValue::customCSSText() const
     case UnitType::ViewportMax:
         text = formatNumber(m_value.num, unitTypeToString(type()));
         break;
-    case UnitType::CustomIdentifier:
-        text = quoteCSSStringIfNeeded(m_value.string);
-        break;
-    case UnitType::String: {
-        text = serializeString(m_value.string);
-        break;
-    }
-    case UnitType::URI:
-        text = serializeURI(m_value.string);
-        break;
     case UnitType::ValueID:
         text = valueName(m_value.valueID);
         break;
-    case UnitType::PropertyID:
-        text = propertyName(m_value.propertyID);
-        break;
-    case UnitType::RGBColor: {
-        text = Color(m_value.rgbcolor).serializedAsCSSComponentValue();
-        break;
-    }
     case UnitType::Calc:
         text = m_value.calc->customCSSText();
         break;
@@ -933,6 +811,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case UnitType::Unknown:
         return false;
     case UnitType::Number:
+    case UnitType::Integer:
     case UnitType::Percentage:
     case UnitType::Ems:
     case UnitType::Exs:
@@ -946,6 +825,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case UnitType::Inches:
     case UnitType::Points:
     case UnitType::Picas:
+    case UnitType::UserUnits:
     case UnitType::Degrees:
     case UnitType::Radians:
     case UnitType::Gradians:
@@ -960,19 +840,10 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case UnitType::ViewportMax:
     case UnitType::Fraction:
         return m_value.num == other.m_value.num;
-    case UnitType::PropertyID:
-        return m_value.propertyID == other.m_value.propertyID;
     case UnitType::ValueID:
         return m_value.valueID == other.m_value.valueID;
-    case UnitType::CustomIdentifier:
-    case UnitType::String:
-    case UnitType::URI:
-        return equal(m_value.string, other.m_value.string);
-    case UnitType::RGBColor:
-        return m_value.rgbcolor == other.m_value.rgbcolor;
     case UnitType::Calc:
         return m_value.calc && other.m_value.calc && m_value.calc->equals(*other.m_value.calc);
-    case UnitType::Integer:
     case UnitType::Chs:
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:

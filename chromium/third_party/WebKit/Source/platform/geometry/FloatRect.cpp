@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/geometry/FloatRect.h"
 
 #include "platform/FloatConversion.h"
@@ -61,6 +60,16 @@ FloatRect FloatRect::narrowPrecision(double x, double y, double width, double he
 {
     return FloatRect(narrowPrecisionToFloat(x), narrowPrecisionToFloat(y), narrowPrecisionToFloat(width), narrowPrecisionToFloat(height));
 }
+
+#if ENABLE(ASSERT)
+bool FloatRect::mayNotHaveExactIntRectRepresentation() const
+{
+    static const float maxExactlyExpressible = 1 << FLT_MANT_DIG;
+    return fabs(x()) > maxExactlyExpressible || fabs(y()) > maxExactlyExpressible
+        || fabs(width()) > maxExactlyExpressible || fabs(height()) > maxExactlyExpressible
+        || fabs(maxX()) > maxExactlyExpressible || fabs(maxY()) > maxExactlyExpressible;
+}
+#endif
 
 bool FloatRect::isExpressibleAsIntRect() const
 {
@@ -160,6 +169,14 @@ void FloatRect::scale(float sx, float sy)
     m_location.setY(y() * sy);
     m_size.setWidth(width() * sx);
     m_size.setHeight(height() * sy);
+}
+
+float FloatRect::squaredDistanceTo(const FloatPoint& point) const
+{
+    FloatPoint closestPoint;
+    closestPoint.setX(clampTo<float>(point.x(), x(), maxX()));
+    closestPoint.setY(clampTo<float>(point.y(), y(), maxY()));
+    return (point - closestPoint).diagonalLengthSquared();
 }
 
 FloatRect unionRect(const Vector<FloatRect>& rects)

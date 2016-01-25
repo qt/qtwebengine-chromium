@@ -36,7 +36,7 @@ enum ColorMatrixType {
     FECOLORMATRIX_TYPE_LUMINANCETOALPHA = 4
 };
 
-class PLATFORM_EXPORT FEColorMatrix : public FilterEffect {
+class PLATFORM_EXPORT FEColorMatrix final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FEColorMatrix> create(Filter*, ColorMatrixType, const Vector<float>&);
 
@@ -46,8 +46,6 @@ public:
     const Vector<float>& values() const;
     bool setValues(const Vector<float>&);
 
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
-
     TextStream& externalRepresentation(TextStream&, int indention) const override;
 
     static inline void calculateSaturateComponents(float* components, float value);
@@ -55,6 +53,8 @@ public:
 
 private:
     FEColorMatrix(Filter*, ColorMatrixType, const Vector<float>&);
+
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 
     bool affectsTransparentPixels() override;
 

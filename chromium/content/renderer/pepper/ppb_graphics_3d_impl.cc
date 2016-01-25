@@ -20,7 +20,7 @@
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "gpu/command_buffer/client/gles2_implementation.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/thunk/enter.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -41,8 +41,8 @@ namespace content {
 
 namespace {
 
-const int32 kCommandBufferSize = 1024 * 1024;
-const int32 kTransferBufferSize = 1024 * 1024;
+const int32_t kCommandBufferSize = 1024 * 1024;
+const int32_t kTransferBufferSize = 1024 * 1024;
 
 }  // namespace
 
@@ -50,7 +50,6 @@ PPB_Graphics3D_Impl::PPB_Graphics3D_Impl(PP_Instance instance)
     : PPB_Graphics3D_Shared(instance),
       bound_to_instance_(false),
       commit_pending_(false),
-      sync_point_(0),
       has_alpha_(false),
       weak_ptr_factory_(this) {}
 
@@ -144,6 +143,10 @@ void PPB_Graphics3D_Impl::RetireSyncPoint(uint32_t sync_point) {
   return command_buffer_->RetireSyncPoint(sync_point);
 }
 
+void PPB_Graphics3D_Impl::EnsureWorkVisible() {
+  command_buffer_->EnsureWorkVisible();
+}
+
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
   bound_to_instance_ = bind;
   return true;
@@ -171,17 +174,23 @@ gpu::GpuControl* PPB_Graphics3D_Impl::GetGpuControl() {
   return command_buffer_.get();
 }
 
-int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
+int32_t PPB_Graphics3D_Impl::DoSwapBuffers(const gpu::SyncToken& sync_token) {
   DCHECK(command_buffer_);
+  if (sync_token.HasData())
+    sync_token_ = sync_token;
+
   // We do not have a GLES2 implementation when using an OOP proxy.
   // The plugin-side proxy is responsible for adding the SwapBuffers command
   // to the command buffer in that case.
-  if (gles2_impl())
-    gles2_impl()->SwapBuffers();
+  if (gpu::gles2::GLES2Interface* gl = gles2_interface()) {
+    // A valid sync token would indicate a swap buffer already happened somehow.
+    DCHECK(!sync_token.HasData());
 
-  // Since the backing texture has been updated, a new sync point should be
-  // inserted.
-  sync_point_ = command_buffer_->InsertSyncPoint();
+    gl->SwapBuffers();
+    const GLuint64 fence_sync = gl->InsertFenceSyncCHROMIUM();
+    gl->OrderingBarrierCHROMIUM();
+    gl->GenUnverifiedSyncTokenCHROMIUM(fence_sync, sync_token_.GetData());
+  }
 
   if (bound_to_instance_) {
     // If we are bound to the instance, we need to ask the compositor
@@ -195,8 +204,8 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
     commit_pending_ = true;
   } else {
     // Wait for the command to complete on the GPU to allow for throttling.
-    command_buffer_->SignalSyncPoint(
-        sync_point_,
+    command_buffer_->SignalSyncToken(
+        sync_token_,
         base::Bind(&PPB_Graphics3D_Impl::OnSwapBuffers,
                    weak_ptr_factory_.GetWeakPtr()));
   }
@@ -229,9 +238,12 @@ bool PPB_Graphics3D_Impl::InitRaw(
   if (!plugin_instance)
     return false;
 
-  const WebPreferences& prefs =
-      static_cast<RenderViewImpl*>(plugin_instance->GetRenderView())
-          ->webkit_preferences();
+  RenderView* render_view = plugin_instance->GetRenderView();
+  if (!render_view)
+    return false;
+
+  const WebPreferences& prefs = render_view->GetWebkitPreferences();
+
   // 3D access might be disabled or blacklisted.
   if (!prefs.pepper_3d_enabled)
     return false;
@@ -251,7 +263,7 @@ bool PPB_Graphics3D_Impl::InitRaw(
     return false;
 
   gfx::Size surface_size;
-  std::vector<int32> attribs;
+  std::vector<int32_t> attribs;
   gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
   // TODO(alokp): Change GpuChannelHost::CreateOffscreenCommandBuffer()
   // interface to accept width and height in the attrib_list so that
@@ -308,7 +320,6 @@ bool PPB_Graphics3D_Impl::InitRaw(
   mailbox_ = gpu::Mailbox::Generate();
   if (!command_buffer_->ProduceFrontBuffer(mailbox_))
     return false;
-  sync_point_ = command_buffer_->InsertSyncPoint();
 
   command_buffer_->SetContextLostCallback(base::Bind(
       &PPB_Graphics3D_Impl::OnContextLost, weak_ptr_factory_.GetWeakPtr()));

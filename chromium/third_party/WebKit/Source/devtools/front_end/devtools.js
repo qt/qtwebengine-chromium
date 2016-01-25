@@ -123,6 +123,14 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
+     * @param {!Adb.PortForwardingStatus} status
+     */
+    devicesPortForwardingStatusChanged: function(status)
+    {
+        this._dispatchOnInspectorFrontendAPI("devicesPortForwardingStatusChanged", [status]);
+    },
+
+    /**
      * @param {!Array.<!Adb.Device>} devices
      */
     devicesUpdated: function(devices)
@@ -169,12 +177,16 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
-     * @param {string} errorMessage
      * @param {!{fileSystemName: string, rootURL: string, fileSystemPath: string}} fileSystem
      */
-    fileSystemAdded: function(errorMessage, fileSystem)
+    fileSystemAdded: function(fileSystem)
     {
-        this._dispatchOnInspectorFrontendAPI("fileSystemAdded", [errorMessage, fileSystem]);
+        this._dispatchOnInspectorFrontendAPI("fileSystemAdded", ["", fileSystem]);
+    },
+
+    fileSystemFilesChanged: function(path)
+    {
+        this._dispatchOnInspectorFrontendAPI("fileSystemFilesChanged", [path]);
     },
 
     /**
@@ -270,9 +282,12 @@ DevToolsAPIImpl.prototype = {
         this._dispatchOnInspectorFrontendAPI("setUseSoftMenu", [useSoftMenu]);
     },
 
-    showConsole: function()
+    /**
+     * @param {string} panelName
+     */
+    showPanel: function(panelName)
     {
-        this._dispatchOnInspectorFrontendAPI("showConsole", []);
+        this._dispatchOnInspectorFrontendAPI("showPanel", [panelName]);
     },
 
     /**
@@ -385,7 +400,13 @@ InspectorFrontendHostImpl.prototype = {
      */
     setInspectedPageBounds: function(bounds)
     {
-        DevToolsAPI.sendMessageToEmbedder("setInspectedPageBounds", [bounds], null);
+        var converted = {
+          x: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.x)),
+          y: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.y)),
+          width: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.width)),
+          height: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.height))
+        };
+        DevToolsAPI.sendMessageToEmbedder("setInspectedPageBounds", [converted], null);
     },
 
     /**
@@ -508,7 +529,7 @@ InspectorFrontendHostImpl.prototype = {
      */
     sendMessageToBackend: function(message)
     {
-        DevToolsHost.sendMessageToBackend(message);
+        DevToolsAPI.sendMessageToEmbedder("dispatchProtocolMessage", [message], null);
     },
 
     /**
@@ -541,10 +562,11 @@ InspectorFrontendHostImpl.prototype = {
 
     /**
      * @override
+     * @param {string=} fileSystemPath
      */
-    addFileSystem: function()
+    addFileSystem: function(fileSystemPath)
     {
-        DevToolsAPI.sendMessageToEmbedder("addFileSystem", [], null);
+        DevToolsAPI.sendMessageToEmbedder("addFileSystem", [fileSystemPath || ""], null);
     },
 
     /**
@@ -685,6 +707,16 @@ InspectorFrontendHostImpl.prototype = {
     performActionOnRemotePage: function(pageId, action)
     {
         DevToolsAPI.sendMessageToEmbedder("performActionOnRemotePage", [pageId, action], null);
+    },
+
+    /**
+     * @override
+     * @param {string} browserId
+     * @param {string} url
+     */
+    openRemotePage: function(browserId, url)
+    {
+        DevToolsAPI.sendMessageToEmbedder("openRemotePage", [browserId, url], null);
     },
 
     /**
@@ -919,3 +951,13 @@ if (window.domAutomationController) {
 }
 
 })(window);
+
+if (!DOMTokenList.prototype.__originalDOMTokenListToggle) {
+    DOMTokenList.prototype.__originalDOMTokenListToggle = DOMTokenList.prototype.toggle;
+    DOMTokenList.prototype.toggle = function(token, force)
+    {
+        if (arguments.length === 1)
+            force = !this.contains(token);
+        return this.__originalDOMTokenListToggle(token, !!force);
+    }
+}

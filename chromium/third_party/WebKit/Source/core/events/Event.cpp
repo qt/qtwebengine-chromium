@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/events/Event.h"
 
 #include "core/dom/StaticNodeList.h"
@@ -41,6 +40,11 @@ Event::Event()
 }
 
 Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg)
+    : Event(eventType, canBubbleArg, cancelableArg, monotonicallyIncreasingTime())
+{
+}
+
+Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, double platformTimeStamp)
     : m_type(eventType)
     , m_canBubble(canBubbleArg)
     , m_cancelable(cancelableArg)
@@ -50,10 +54,11 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_defaultHandled(false)
     , m_cancelBubble(false)
     , m_isTrusted(false)
+    , m_handlingPassive(false)
     , m_eventPhase(0)
     , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-    , m_platformTimeStamp(monotonicallyIncreasingTime())
+    , m_platformTimeStamp(platformTimeStamp)
 {
 }
 
@@ -173,6 +178,19 @@ bool Event::isBeforeTextInsertedEvent() const
 bool Event::isBeforeUnloadEvent() const
 {
     return false;
+}
+
+void Event::preventDefault()
+{
+    if (m_handlingPassive) {
+        const LocalDOMWindow* window = m_currentTarget ? m_currentTarget->toDOMWindow() : 0;
+        if (window)
+            window->printErrorMessage("Unable to preventDefault inside passive event listener invocation.");
+        return;
+    }
+
+    if (m_cancelable)
+        m_defaultPrevented = true;
 }
 
 void Event::setTarget(PassRefPtrWillBeRawPtr<EventTarget> target)

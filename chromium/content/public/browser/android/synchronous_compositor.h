@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_ANDROID_SYNCHRONOUS_COMPOSITOR_H_
 #define CONTENT_PUBLIC_BROWSER_ANDROID_SYNCHRONOUS_COMPOSITOR_H_
 
+#include <stddef.h>
+
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
@@ -45,18 +47,14 @@ class CONTENT_EXPORT SynchronousCompositor {
   static void SetGpuService(
       scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
 
-  // Turn on using ipc-based command buffer at run time. This should be removed
-  // once this feature is fully launched.
-  static void SetUseIpcCommandBuffer();
-
   // "On demand" hardware draw. The content is first clipped to |damage_area|,
   // then transformed through |transform|, and finally clipped to |view_size|.
   virtual scoped_ptr<cc::CompositorFrame> DemandDrawHw(
-      gfx::Size surface_size,
+      const gfx::Size& surface_size,
       const gfx::Transform& transform,
-      gfx::Rect viewport,
-      gfx::Rect clip,
-      gfx::Rect viewport_rect_for_tile_priority,
+      const gfx::Rect& viewport,
+      const gfx::Rect& clip,
+      const gfx::Rect& viewport_rect_for_tile_priority,
       const gfx::Transform& transform_for_tile_priority) = 0;
 
   // For delegated rendering, return resources from parent compositor to this.

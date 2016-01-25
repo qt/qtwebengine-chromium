@@ -5,6 +5,8 @@
 #ifndef SKIA_EXT_BENCHMARKING_CANVAS_H_
 #define SKIA_EXT_BENCHMARKING_CANVAS_H_
 
+#include <stddef.h>
+
 #include "base/values.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/utils/SkNWayCanvas.h"
@@ -34,9 +36,7 @@ public:
 protected:
   // SkCanvas overrides
   void willSave() override;
-  SaveLayerStrategy willSaveLayer(const SkRect*,
-                                  const SkPaint*,
-                                  SaveFlags) override;
+  SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec&) override;
   void willRestore() override;
 
   void didConcat(const SkMatrix&) override;
@@ -66,7 +66,6 @@ protected:
                        const SkPaint*, SrcRectConstraint) override;
   void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
                         const SkPaint*) override;
-  void onDrawSprite(const SkBitmap&, int left, int top, const SkPaint*) override;
 
   void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
                   const SkPaint&) override;

@@ -5,10 +5,8 @@
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 
 #include "base/logging.h"
-#include "base/numerics/safe_math.h"
+#include "build/build_config.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
-#include "ui/gfx/buffer_format_util.h"
-#include "ui/gl/gl_bindings.h"
 
 #if defined(OS_MACOSX)
 #include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
@@ -32,12 +30,11 @@ GpuMemoryBufferImpl::GpuMemoryBufferImpl(gfx::GpuMemoryBufferId id,
       size_(size),
       format_(format),
       callback_(callback),
-      mapped_(false),
-      destruction_sync_point_(0) {}
+      mapped_(false) {}
 
 GpuMemoryBufferImpl::~GpuMemoryBufferImpl() {
   DCHECK(!mapped_);
-  callback_.Run(destruction_sync_point_);
+  callback_.Run(destruction_sync_token_);
 }
 
 // static
@@ -50,7 +47,7 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
   switch (handle.type) {
     case gfx::SHARED_MEMORY_BUFFER:
       return GpuMemoryBufferImplSharedMemory::CreateFromHandle(
-          handle, size, format, callback);
+          handle, size, format, usage, callback);
 #if defined(OS_MACOSX)
     case gfx::IO_SURFACE_BUFFER:
       return GpuMemoryBufferImplIOSurface::CreateFromHandle(
@@ -59,7 +56,7 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
 #if defined(OS_ANDROID)
     case gfx::SURFACE_TEXTURE_BUFFER:
       return GpuMemoryBufferImplSurfaceTexture::CreateFromHandle(
-          handle, size, format, callback);
+          handle, size, format, usage, callback);
 #endif
 #if defined(USE_OZONE)
     case gfx::OZONE_NATIVE_PIXMAP:
@@ -78,12 +75,12 @@ GpuMemoryBufferImpl* GpuMemoryBufferImpl::FromClientBuffer(
   return reinterpret_cast<GpuMemoryBufferImpl*>(buffer);
 }
 
-gfx::BufferFormat GpuMemoryBufferImpl::GetFormat() const {
-  return format_;
+gfx::Size GpuMemoryBufferImpl::GetSize() const {
+  return size_;
 }
 
-bool GpuMemoryBufferImpl::IsMapped() const {
-  return mapped_;
+gfx::BufferFormat GpuMemoryBufferImpl::GetFormat() const {
+  return format_;
 }
 
 gfx::GpuMemoryBufferId GpuMemoryBufferImpl::GetId() const {

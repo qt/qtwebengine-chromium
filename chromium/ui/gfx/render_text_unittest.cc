@@ -4,21 +4,29 @@
 
 #include "ui/gfx/render_text.h"
 
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 
 #include "base/format_macros.h"
 #include "base/i18n/break_iterator.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "ui/gfx/break_list.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/range/range_f.h"
 #include "ui/gfx/render_text_harfbuzz.h"
@@ -154,7 +162,7 @@ class TestSkiaTextRenderer : public internal::SkiaTextRenderer {
  private:
   // internal::SkiaTextRenderer:
   void DrawPosText(const SkPoint* pos,
-                   const uint16* glyphs,
+                   const uint16_t* glyphs,
                    size_t glyph_count) override {
     TextLog log_entry;
     log_entry.glyph_count = glyph_count;
@@ -2611,7 +2619,7 @@ TEST_F(RenderTextTest, HarfBuzz_HorizontalPositions) {
 // Test TextRunHarfBuzz's cluster finding logic.
 TEST_F(RenderTextTest, HarfBuzz_Clusters) {
   struct {
-    uint32 glyph_to_char[4];
+    uint32_t glyph_to_char[4];
     Range chars[4];
     Range glyphs[4];
     bool is_rtl;
@@ -2699,7 +2707,7 @@ TEST_F(RenderTextTest, HarfBuzz_SubglyphGraphemeCases) {
 // Test the partition of a multi-grapheme cluster into grapheme ranges.
 TEST_F(RenderTextTest, HarfBuzz_SubglyphGraphemePartition) {
   struct {
-    uint32 glyph_to_char[2];
+    uint32_t glyph_to_char[2];
     Range bounds[4];
     bool is_rtl;
   } cases[] = {
@@ -2869,8 +2877,9 @@ TEST_F(RenderTextTest, HarfBuzz_NonExistentFont) {
   internal::TextRunList* run_list = render_text.GetRunList();
   ASSERT_EQ(1U, run_list->size());
   internal::TextRunHarfBuzz* run = run_list->runs()[0];
-  render_text.ShapeRunWithFont(
-      render_text.text(), "TheFontThatDoesntExist", FontRenderParams(), run);
+  render_text.ShapeRunWithFont(render_text.text(),
+                               Font("TheFontThatDoesntExist", 13),
+                               FontRenderParams(), run);
 }
 
 // Ensure an empty run returns sane values to queries.
@@ -2970,7 +2979,7 @@ TEST_F(RenderTextTest, HarfBuzz_UniscribeFallback) {
 }
 #endif  // defined(OS_WIN)
 
-// Ensure that the fallback fonts offered by gfx::GetFallbackFontFamilies() are
+// Ensure that the fallback fonts offered by gfx::GetFallbackFonts() are
 // tried. Note this test assumes the font "Arial" doesn't provide a unicode
 // glyph for a particular character, and that there exists a system fallback
 // font which does.
@@ -3032,8 +3041,8 @@ TEST_F(RenderTextTest, TextDoesntClip) {
 
     render_text->Draw(&canvas);
     ASSERT_LT(string_size.width() + kTestSize, kCanvasSize.width());
-    const uint32* buffer =
-        static_cast<const uint32*>(surface->peekPixels(nullptr, nullptr));
+    const uint32_t* buffer =
+        static_cast<const uint32_t*>(surface->peekPixels(nullptr, nullptr));
     ASSERT_NE(nullptr, buffer);
     TestRectangleBuffer rect_buffer(string, buffer, kCanvasSize.width(),
                                     kCanvasSize.height());
@@ -3108,8 +3117,8 @@ TEST_F(RenderTextTest, TextDoesClip) {
     render_text->set_clip_to_display_rect(true);
     render_text->Draw(&canvas);
     ASSERT_LT(string_size.width() + kTestSize, kCanvasSize.width());
-    const uint32* buffer =
-        static_cast<const uint32*>(surface->peekPixels(nullptr, nullptr));
+    const uint32_t* buffer =
+        static_cast<const uint32_t*>(surface->peekPixels(nullptr, nullptr));
     ASSERT_NE(nullptr, buffer);
     TestRectangleBuffer rect_buffer(string, buffer, kCanvasSize.width(),
                                     kCanvasSize.height());

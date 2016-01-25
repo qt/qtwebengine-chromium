@@ -45,7 +45,7 @@ class LayoutBox;
 class FloatingObject;
 
 class ShapeOutsideDeltas final {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     ShapeOutsideDeltas()
         : m_lineOverlapsShape(false)
@@ -83,7 +83,7 @@ private:
 };
 
 class ShapeOutsideInfo final {
-    WTF_MAKE_FAST_ALLOCATED(ShapeOutsideInfo);
+    USING_FAST_MALLOC(ShapeOutsideInfo);
 public:
     void setReferenceBoxLogicalSize(LayoutSize);
 

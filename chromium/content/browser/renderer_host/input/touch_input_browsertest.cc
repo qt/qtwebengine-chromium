@@ -5,9 +5,11 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -140,8 +142,8 @@ class TouchInputBrowserTest : public ContentBrowserTest {
   ~TouchInputBrowserTest() override {}
 
   RenderWidgetHostImpl* GetWidgetHost() {
-    return RenderWidgetHostImpl::From(shell()->web_contents()->
-                                          GetRenderViewHost());
+    return RenderWidgetHostImpl::From(
+        shell()->web_contents()->GetRenderViewHost()->GetWidget());
   }
 
   InputEventMessageFilter* filter() { return filter_.get(); }
@@ -153,8 +155,8 @@ class TouchInputBrowserTest : public ContentBrowserTest {
 
     WebContentsImpl* web_contents =
         static_cast<WebContentsImpl*>(shell()->web_contents());
-    RenderWidgetHostImpl* host =
-        RenderWidgetHostImpl::From(web_contents->GetRenderViewHost());
+    RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
+        web_contents->GetRenderViewHost()->GetWidget());
     host->GetView()->SetSize(gfx::Size(400, 400));
 
     // The page is loaded in the renderer, wait for a new frame to arrive.

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "media/base/video_frame_pool.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -49,7 +52,7 @@ TEST_F(VideoFramePoolTest, FrameInitializedAndZeroed) {
 
 TEST_F(VideoFramePoolTest, SimpleFrameReuse) {
   scoped_refptr<VideoFrame> frame = CreateFrame(PIXEL_FORMAT_YV12, 10);
-  const uint8* old_y_data = frame->data(VideoFrame::kYPlane);
+  const uint8_t* old_y_data = frame->data(VideoFrame::kYPlane);
 
   // Clear frame reference to return the frame to the pool.
   frame = NULL;

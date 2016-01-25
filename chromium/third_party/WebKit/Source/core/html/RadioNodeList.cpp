@@ -23,7 +23,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/RadioNodeList.h"
 
 #include "core/HTMLNames.h"
@@ -40,7 +39,7 @@ namespace blink {
 using namespace HTMLNames;
 
 RadioNodeList::RadioNodeList(ContainerNode& rootNode, const AtomicString& name, CollectionType type)
-    : LiveNodeList(rootNode, type, InvalidateForFormControls, isHTMLFormElement(rootNode) ? NodeListIsRootedAtDocument : NodeListIsRootedAtNode)
+    : LiveNodeList(rootNode, type, InvalidateForFormControls, isHTMLFormElement(rootNode) ? NodeListRootType::TreeScope : NodeListRootType::Node)
     , m_name(name)
 {
 }

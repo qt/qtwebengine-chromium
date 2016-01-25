@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include <utility>
 
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/debug/stack_trace.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,6 +26,7 @@
 #include "media/base/test_helpers.h"
 #include "media/base/video_frame.h"
 #include "media/base/wall_clock_time_source.h"
+#include "media/renderers/mock_gpu_memory_buffer_video_frame_pool.h"
 #include "media/renderers/video_renderer_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -63,7 +67,7 @@ class VideoRendererImplTest
 
     renderer_.reset(new VideoRendererImpl(
         message_loop_.task_runner(), message_loop_.task_runner().get(),
-        null_video_sink_.get(), decoders.Pass(), true,
+        null_video_sink_.get(), std::move(decoders), true,
         nullptr,  // gpu_factories
         new MediaLog()));
     renderer_->SetTickClockForTesting(scoped_ptr<base::TickClock>(tick_clock_));
@@ -113,12 +117,12 @@ class VideoRendererImplTest
                       bool expect_to_success) {
     if (low_delay)
       demuxer_stream_.set_liveness(DemuxerStream::LIVENESS_LIVE);
-    EXPECT_CALL(*decoder_, Initialize(_, _, _, _))
+    EXPECT_CALL(*decoder_, Initialize(_, _, _, _, _))
         .WillOnce(
-            DoAll(SaveArg<3>(&output_cb_), RunCallback<2>(expect_to_success)));
+            DoAll(SaveArg<4>(&output_cb_), RunCallback<3>(expect_to_success)));
     EXPECT_CALL(*this, OnWaitingForDecryptionKey()).Times(0);
     renderer_->Initialize(
-        &demuxer_stream_, status_cb, media::SetDecryptorReadyCB(),
+        &demuxer_stream_, status_cb, SetCdmReadyCB(),
         base::Bind(&VideoRendererImplTest::OnStatisticsUpdate,
                    base::Unretained(this)),
         base::Bind(&StrictMock<MockCB>::BufferingStateChange,
@@ -676,6 +680,7 @@ TEST_F(VideoRendererImplTest, RenderingStartedThenStopped) {
     event.RunAndWait();
     Mock::VerifyAndClearExpectations(&mock_cb_);
     EXPECT_EQ(0u, last_pipeline_statistics_.video_frames_dropped);
+    EXPECT_EQ(460800, last_pipeline_statistics_.video_memory_usage);
   }
 
   // Consider the case that rendering is faster than we setup the test event.
@@ -703,6 +708,7 @@ TEST_F(VideoRendererImplTest, RenderingStartedThenStopped) {
   // reported
   EXPECT_EQ(0u, last_pipeline_statistics_.video_frames_dropped);
   EXPECT_EQ(4u, last_pipeline_statistics_.video_frames_decoded);
+  EXPECT_EQ(460800, last_pipeline_statistics_.video_memory_usage);
 
   AdvanceTimeInMs(30);
   WaitForEnded();
@@ -737,27 +743,13 @@ TEST_F(VideoRendererImplTest, StartPlayingFromThenFlushThenEOS) {
   Destroy();
 }
 
-namespace {
-class MockGpuMemoryBufferVideoFramePool : public GpuMemoryBufferVideoFramePool {
- public:
-  MockGpuMemoryBufferVideoFramePool(std::vector<base::Closure>* frame_ready_cbs)
-      : frame_ready_cbs_(frame_ready_cbs) {}
-  void MaybeCreateHardwareFrame(const scoped_refptr<VideoFrame>& video_frame,
-                                const FrameReadyCB& frame_ready_cb) override {
-    frame_ready_cbs_->push_back(base::Bind(frame_ready_cb, video_frame));
-  }
-
- private:
-  std::vector<base::Closure>* frame_ready_cbs_;
-};
-}
-
 class VideoRendererImplAsyncAddFrameReadyTest : public VideoRendererImplTest {
  public:
   VideoRendererImplAsyncAddFrameReadyTest() {
     scoped_ptr<GpuMemoryBufferVideoFramePool> gpu_memory_buffer_pool(
         new MockGpuMemoryBufferVideoFramePool(&frame_ready_cbs_));
-    renderer_->SetGpuMemoryBufferVideoForTesting(gpu_memory_buffer_pool.Pass());
+    renderer_->SetGpuMemoryBufferVideoForTesting(
+        std::move(gpu_memory_buffer_pool));
   }
 
  protected:

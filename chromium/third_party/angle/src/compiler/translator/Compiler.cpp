@@ -153,6 +153,15 @@ TCompiler::~TCompiler()
 {
 }
 
+bool TCompiler::shouldRunLoopAndIndexingValidation(int compileOptions) const
+{
+    // If compiling an ESSL 1.00 shader for WebGL, or if its been requested through the API,
+    // validate loop and indexing as well (to verify that the shader only uses minimal functionality
+    // of ESSL 1.00 as in Appendix A of the spec).
+    return (IsWebGLBasedSpec(shaderSpec) && shaderVersion == 100) ||
+           (compileOptions & SH_VALIDATE_LOOP_INDEXING);
+}
+
 bool TCompiler::Init(const ShBuiltInResources& resources)
 {
     shaderVersion = 100;
@@ -204,13 +213,11 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         ++firstSource;
     }
 
-    bool debugShaderPrecision = getResources().WEBGL_debug_shader_precision == 1;
     TIntermediate intermediate(infoSink);
-    TParseContext parseContext(symbolTable, extensionBehavior, intermediate,
-                               shaderType, shaderSpec, compileOptions, true,
-                               infoSink, debugShaderPrecision);
+    TParseContext parseContext(symbolTable, extensionBehavior, intermediate, shaderType, shaderSpec,
+                               compileOptions, true, infoSink, getResources());
 
-    parseContext.setFragmentPrecisionHigh(fragmentPrecisionHigh);
+    parseContext.setFragmentPrecisionHighOnESSL1(fragmentPrecisionHigh);
     SetGlobalParseContext(&parseContext);
 
     // We preserve symbols at the built-in level from compile-to-compile.
@@ -230,12 +237,6 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         success = false;
     }
 
-    // If compiling an ESSL 1.00 shader for WebGL, or if its been requested through the API,
-    // validate loop and indexing as well (to verify that the shader only uses minimal functionality
-    // of ESSL 1.00 as in Appendix A of the spec).
-    bool validateLoopAndIndexing = (IsWebGLBasedSpec(shaderSpec) && shaderVersion == 100) ||
-                                   (compileOptions & SH_VALIDATE_LOOP_INDEXING);
-
     TIntermNode *root = nullptr;
 
     if (success)
@@ -248,6 +249,9 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
         root = parseContext.getTreeRoot();
         root = intermediate.postProcess(root);
+
+        // Highp might have been auto-enabled based on shader version
+        fragmentPrecisionHigh = parseContext.getFragmentPrecisionHigh();
 
         // Disallow expressions deemed too complex.
         if (success && (compileOptions & SH_LIMIT_EXPRESSION_COMPLEXITY))
@@ -278,7 +282,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && shaderVersion == 300 && shaderType == GL_FRAGMENT_SHADER)
             success = validateOutputs(root);
 
-        if (success && validateLoopAndIndexing)
+        if (success && shouldRunLoopAndIndexingValidation(compileOptions))
             success = validateLimitations(root);
 
         if (success && (compileOptions & SH_TIMING_RESTRICTIONS))
@@ -290,12 +294,14 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         // Unroll for-loop markup needs to happen after validateLimitations pass.
         if (success && (compileOptions & SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX))
         {
-            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kIntegerIndex);
+            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kIntegerIndex,
+                                       shouldRunLoopAndIndexingValidation(compileOptions));
             root->traverse(&marker);
         }
         if (success && (compileOptions & SH_UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX))
         {
-            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kSamplerArrayIndex);
+            ForLoopUnrollMarker marker(ForLoopUnrollMarker::kSamplerArrayIndex,
+                                       shouldRunLoopAndIndexingValidation(compileOptions));
             root->traverse(&marker);
             if (marker.samplerArrayIndexIsFloatLoopIndex())
             {
@@ -419,11 +425,6 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     floatingPoint.secondarySize = 1;
     floatingPoint.array = false;
 
-    TPublicType sampler;
-    sampler.primarySize = 1;
-    sampler.secondarySize = 1;
-    sampler.array = false;
-
     switch(shaderType)
     {
       case GL_FRAGMENT_SHADER:
@@ -436,20 +437,32 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
       default:
         assert(false && "Language not supported");
     }
-    // We set defaults for all the sampler types, even those that are
+    // Set defaults for sampler types that have default precision, even those that are
     // only available if an extension exists.
-    for (int samplerType = EbtGuardSamplerBegin + 1;
-         samplerType < EbtGuardSamplerEnd; ++samplerType)
-    {
-        sampler.type = static_cast<TBasicType>(samplerType);
-        symbolTable.setDefaultPrecision(sampler, EbpLow);
-    }
+    // New sampler types in ESSL3 don't have default precision. ESSL1 types do.
+    initSamplerDefaultPrecision(EbtSampler2D);
+    initSamplerDefaultPrecision(EbtSamplerCube);
+    // SamplerExternalOES is specified in the extension to have default precision.
+    initSamplerDefaultPrecision(EbtSamplerExternalOES);
+    // It isn't specified whether Sampler2DRect has default precision.
+    initSamplerDefaultPrecision(EbtSampler2DRect);
 
     InsertBuiltInFunctions(shaderType, shaderSpec, resources, symbolTable);
 
     IdentifyBuiltIns(shaderType, shaderSpec, resources, symbolTable);
 
     return true;
+}
+
+void TCompiler::initSamplerDefaultPrecision(TBasicType samplerType)
+{
+    ASSERT(samplerType > EbtGuardSamplerBegin && samplerType < EbtGuardSamplerEnd);
+    TPublicType sampler;
+    sampler.primarySize   = 1;
+    sampler.secondarySize = 1;
+    sampler.array         = false;
+    sampler.type          = samplerType;
+    symbolTable.setDefaultPrecision(sampler, EbpLow);
 }
 
 void TCompiler::setResourceString()
@@ -594,7 +607,7 @@ bool TCompiler::tagUsedFunctions()
     }
 
     infoSink.info.prefix(EPrefixError);
-    infoSink.info << "Missing main()";
+    infoSink.info << "Missing main()\n";
     return false;
 }
 
@@ -685,7 +698,7 @@ void TCompiler::rewriteCSSShader(TIntermNode* root)
 
 bool TCompiler::validateLimitations(TIntermNode* root)
 {
-    ValidateLimitations validate(shaderType, infoSink.info);
+    ValidateLimitations validate(shaderType, &infoSink.info);
     root->traverse(&validate);
     return validate.numErrors() == 0;
 }
@@ -729,17 +742,6 @@ bool TCompiler::limitExpressionComplexity(TIntermNode* root)
     {
         infoSink.info << "Expression too complex.";
         return false;
-    }
-
-    TDependencyGraph graph(root);
-
-    for (TFunctionCallVector::const_iterator iter = graph.beginUserDefinedFunctionCalls();
-         iter != graph.endUserDefinedFunctionCalls();
-         ++iter)
-    {
-        TGraphFunctionCall* samplerSymbol = *iter;
-        TDependencyGraphTraverser graphTraverser;
-        samplerSymbol->traverse(&graphTraverser);
     }
 
     return true;

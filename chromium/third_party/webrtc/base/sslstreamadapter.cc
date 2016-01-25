@@ -15,15 +15,11 @@
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/sslconfig.h"
 
-#if SSL_USE_SCHANNEL
-
-// SChannel support for DTLS and peer-to-peer mode are not
-// done.
-#elif SSL_USE_OPENSSL  // && !SSL_USE_SCHANNEL
+#if SSL_USE_OPENSSL
 
 #include "webrtc/base/opensslstreamadapter.h"
 
-#endif  // !SSL_USE_OPENSSL && !SSL_USE_SCHANNEL
+#endif  // SSL_USE_OPENSSL
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -34,57 +30,53 @@ namespace rtc {
 const char CS_AES_CM_128_HMAC_SHA1_80[] = "AES_CM_128_HMAC_SHA1_80";
 const char CS_AES_CM_128_HMAC_SHA1_32[] = "AES_CM_128_HMAC_SHA1_32";
 
-uint16_t GetSrtpCryptoSuiteFromName(const std::string& cipher) {
-  if (cipher == CS_AES_CM_128_HMAC_SHA1_32)
+std::string SrtpCryptoSuiteToName(int crypto_suite) {
+  if (crypto_suite == SRTP_AES128_CM_SHA1_32)
+    return CS_AES_CM_128_HMAC_SHA1_32;
+  if (crypto_suite == SRTP_AES128_CM_SHA1_80)
+    return CS_AES_CM_128_HMAC_SHA1_80;
+  return std::string();
+}
+
+int SrtpCryptoSuiteFromName(const std::string& crypto_suite) {
+  if (crypto_suite == CS_AES_CM_128_HMAC_SHA1_32)
     return SRTP_AES128_CM_SHA1_32;
-  if (cipher == CS_AES_CM_128_HMAC_SHA1_80)
+  if (crypto_suite == CS_AES_CM_128_HMAC_SHA1_80)
     return SRTP_AES128_CM_SHA1_80;
-  return 0;
+  return SRTP_INVALID_CRYPTO_SUITE;
 }
 
 SSLStreamAdapter* SSLStreamAdapter::Create(StreamInterface* stream) {
-#if SSL_USE_SCHANNEL
-  return NULL;
-#elif SSL_USE_OPENSSL  // !SSL_USE_SCHANNEL
+#if SSL_USE_OPENSSL
   return new OpenSSLStreamAdapter(stream);
-#else  // !SSL_USE_SCHANNEL && !SSL_USE_OPENSSL
+#else  // !SSL_USE_OPENSSL
   return NULL;
-#endif
+#endif  // SSL_USE_OPENSSL
 }
 
-bool SSLStreamAdapter::GetSslCipherSuite(uint16_t* cipher) {
+bool SSLStreamAdapter::GetSslCipherSuite(int* cipher_suite) {
   return false;
 }
 
 bool SSLStreamAdapter::ExportKeyingMaterial(const std::string& label,
-                                            const uint8* context,
+                                            const uint8_t* context,
                                             size_t context_len,
                                             bool use_context,
-                                            uint8* result,
+                                            uint8_t* result,
                                             size_t result_len) {
   return false;  // Default is unsupported
 }
 
-bool SSLStreamAdapter::SetDtlsSrtpCiphers(
-    const std::vector<std::string>& ciphers) {
+bool SSLStreamAdapter::SetDtlsSrtpCryptoSuites(
+    const std::vector<int>& crypto_suites) {
   return false;
 }
 
-bool SSLStreamAdapter::GetDtlsSrtpCipher(std::string* cipher) {
+bool SSLStreamAdapter::GetDtlsSrtpCryptoSuite(int* crypto_suite) {
   return false;
 }
 
-// Note: this matches the logic above with SCHANNEL dominating
-#if SSL_USE_SCHANNEL
-bool SSLStreamAdapter::HaveDtls() { return false; }
-bool SSLStreamAdapter::HaveDtlsSrtp() { return false; }
-bool SSLStreamAdapter::HaveExporter() { return false; }
-uint16_t SSLStreamAdapter::GetDefaultSslCipherForTest(
-    SSLProtocolVersion version,
-    KeyType key_type) {
-  return 0;
-}
-#elif SSL_USE_OPENSSL
+#if SSL_USE_OPENSSL
 bool SSLStreamAdapter::HaveDtls() {
   return OpenSSLStreamAdapter::HaveDtls();
 }
@@ -94,16 +86,15 @@ bool SSLStreamAdapter::HaveDtlsSrtp() {
 bool SSLStreamAdapter::HaveExporter() {
   return OpenSSLStreamAdapter::HaveExporter();
 }
-uint16_t SSLStreamAdapter::GetDefaultSslCipherForTest(
-    SSLProtocolVersion version,
-    KeyType key_type) {
+int SSLStreamAdapter::GetDefaultSslCipherForTest(SSLProtocolVersion version,
+                                                 KeyType key_type) {
   return OpenSSLStreamAdapter::GetDefaultSslCipherForTest(version, key_type);
 }
 
-std::string SSLStreamAdapter::GetSslCipherSuiteName(uint16_t cipher) {
-  return OpenSSLStreamAdapter::GetSslCipherSuiteName(cipher);
+std::string SSLStreamAdapter::SslCipherSuiteToName(int cipher_suite) {
+  return OpenSSLStreamAdapter::SslCipherSuiteToName(cipher_suite);
 }
-#endif  // !SSL_USE_SCHANNEL && !SSL_USE_OPENSSL
+#endif  // SSL_USE_OPENSSL
 
 ///////////////////////////////////////////////////////////////////////////////
 

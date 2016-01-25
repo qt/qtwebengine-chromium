@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 
 #include "modules/mediarecorder/BlobEvent.h"
 
@@ -41,9 +40,8 @@ DEFINE_TRACE(BlobEvent)
 
 BlobEvent::BlobEvent(const AtomicString& type, const BlobEventInit& initializer)
     : Event(type, initializer)
+    , m_blob(initializer.data())
 {
-    if (initializer.hasBlob())
-        m_blob = initializer.blob();
 }
 
 BlobEvent::BlobEvent(const AtomicString& type, Blob* blob)

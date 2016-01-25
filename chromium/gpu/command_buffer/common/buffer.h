@@ -5,6 +5,9 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_BUFFER_H_
 #define GPU_COMMAND_BUFFER_COMMON_BUFFER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -50,7 +53,7 @@ class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
   size_t size() const { return size_; }
 
   // Returns NULL if the address overflows the memory.
-  void* GetDataAddress(uint32 data_offset, uint32 data_size) const;
+  void* GetDataAddress(uint32_t data_offset, uint32_t data_size) const;
 
  private:
   friend class base::RefCountedThreadSafe<Buffer>;
@@ -67,13 +70,14 @@ static inline scoped_ptr<BufferBacking> MakeBackingFromSharedMemory(
     scoped_ptr<base::SharedMemory> shared_memory,
     size_t size) {
   return scoped_ptr<BufferBacking>(
-      new SharedMemoryBufferBacking(shared_memory.Pass(), size));
+      new SharedMemoryBufferBacking(std::move(shared_memory), size));
 }
 
 static inline scoped_refptr<Buffer> MakeBufferFromSharedMemory(
     scoped_ptr<base::SharedMemory> shared_memory,
     size_t size) {
-  return new Buffer(MakeBackingFromSharedMemory(shared_memory.Pass(), size));
+  return new Buffer(
+      MakeBackingFromSharedMemory(std::move(shared_memory), size));
 }
 
 // Generates GUID which can be used to trace buffer using an Id.

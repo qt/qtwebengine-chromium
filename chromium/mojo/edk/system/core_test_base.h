@@ -5,6 +5,8 @@
 #ifndef MOJO_EDK_SYSTEM_CORE_TEST_BASE_H_
 #define MOJO_EDK_SYSTEM_CORE_TEST_BASE_H_
 
+#include <stddef.h>
+
 #include "base/synchronization/lock.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/test_utils.h"
@@ -22,7 +24,7 @@ namespace test {
 
 class CoreTestBase_MockHandleInfo;
 
-class CoreTestBase : public MojoSystemTest {
+class CoreTestBase : public testing::Test {
  public:
   using MockHandleInfo = CoreTestBase_MockHandleInfo;
 
@@ -33,7 +35,7 @@ class CoreTestBase : public MojoSystemTest {
   // |info| must remain alive until the returned handle is closed.
   MojoHandle CreateMockHandle(MockHandleInfo* info);
 
-  Core* core() { return mojo::edk::internal::g_core; }
+  Core* core();
 
  private:
   MOJO_DISALLOW_COPY_AND_ASSIGN(CoreTestBase);

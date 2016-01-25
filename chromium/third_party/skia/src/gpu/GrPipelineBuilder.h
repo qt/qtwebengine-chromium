@@ -13,7 +13,6 @@
 #include "GrClip.h"
 #include "GrGpuResourceRef.h"
 #include "GrProcOptInfo.h"
-#include "GrProcessorDataManager.h"
 #include "GrRenderTarget.h"
 #include "GrStencil.h"
 #include "GrXferProcessor.h"
@@ -80,34 +79,30 @@ public:
      * Creates a GrSimpleTextureEffect that uses local coords as texture coordinates.
      */
     void addColorTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
-                                                                      matrix))->unref();
+        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(texture, matrix))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
-                                                                         matrix))->unref();
+        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(texture, matrix))->unref();
     }
 
     void addColorTextureProcessor(GrTexture* texture,
                                   const SkMatrix& matrix,
                                   const GrTextureParams& params) {
-        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
-                                                                      matrix,
+        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(texture, matrix,
                                                                       params))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture,
                                      const SkMatrix& matrix,
                                      const GrTextureParams& params) {
-        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
-                                                                         matrix, params))->unref();
+        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(texture, matrix,
+                                                                         params))->unref();
     }
 
     /**
      * When this object is destroyed it will remove any color/coverage FPs from the pipeline builder
-     * and also remove any additions to the GrProcessorDataManager that were added after its
-     * constructor.
+     * that were added after its constructor.
      * This class can transiently modify its "const" GrPipelineBuilder object but will restore it
      * when done - so it is notionally "const" correct.
      */
@@ -131,12 +126,8 @@ public:
 
         bool isSet() const { return SkToBool(fPipelineBuilder); }
 
-        GrProcessorDataManager* getProcessorDataManager() {
-            SkASSERT(this->isSet());
-            return fPipelineBuilder->getProcessorDataManager();
-        }
-
-        const GrFragmentProcessor* addCoverageFragmentProcessor(const GrFragmentProcessor* processor) {
+        const GrFragmentProcessor* addCoverageFragmentProcessor(
+            const GrFragmentProcessor* processor) {
             SkASSERT(this->isSet());
             return fPipelineBuilder->addCoverageFragmentProcessor(processor);
         }
@@ -159,7 +150,7 @@ public:
      * and the dst color are blended.
      */
     const GrXPFactory* setXPFactory(const GrXPFactory* xpFactory) {
-        fXPFactory.reset(SkRef(xpFactory));
+        fXPFactory.reset(SkSafeRef(xpFactory));
         return xpFactory;
     }
 
@@ -180,17 +171,14 @@ public:
     }
 
     const GrXPFactory* getXPFactory() const {
-        if (!fXPFactory) {
-            fXPFactory.reset(GrPorterDuffXPFactory::Create(SkXfermode::kSrc_Mode));
-        }
-        return fXPFactory.get();
+        return fXPFactory;
     }
 
     /**
      * Checks whether the xp will need destination in a texture to correctly blend.
      */
-    bool willXPNeedDstTexture(const GrCaps& caps, const GrProcOptInfo& colorPOI,
-                              const GrProcOptInfo& coveragePOI) const;
+    bool willXPNeedDstTexture(const GrCaps& caps, 
+                              const GrPipelineOptimizations& optimizations) const;
 
     /// @}
 
@@ -218,7 +206,8 @@ public:
      * than the color buffer. In is scenario, the higher sample rate is resolved during blending.
      */
     bool hasMixedSamples() const {
-        return this->isHWAntialias() && !fRenderTarget->isUnifiedMultisampled();
+        return fRenderTarget->hasMixedSamples() &&
+               (this->isHWAntialias() || !fStencilSettings.isDisabled());
     }
 
     /// @}
@@ -237,11 +226,6 @@ public:
      * @param settings  the stencil settings to use.
      */
     void setStencil(const GrStencilSettings& settings) { fStencilSettings = settings; }
-
-    /**
-     * Shortcut to disable stencil testing and ops.
-     */
-    void disableStencil() { fStencilSettings.setDisabled(); }
 
     GrStencilSettings* stencil() { return &fStencilSettings; }
 
@@ -376,43 +360,18 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
 
-    const GrProcOptInfo& colorProcInfo(const GrDrawBatch* batch) const {
-        this->calcColorInvariantOutput(batch);
-        return fColorProcInfo;
-    }
-
-    const GrProcOptInfo& coverageProcInfo(const GrDrawBatch* batch) const {
-        this->calcCoverageInvariantOutput(batch);
-        return fCoverageProcInfo;
-    }
+    bool usePLSDstRead(const GrDrawBatch* batch) const;
 
     void setClip(const GrClip& clip) { fClip = clip; }
     const GrClip& clip() const { return fClip; }
 
-    GrProcessorDataManager* getProcessorDataManager() { return &fProcDataManager; }
-    const GrProcessorDataManager* processorDataManager() const { return &fProcDataManager; }
-
 private:
-    // Calculating invariant color / coverage information is expensive, so we partially cache the
-    // results.
-    //
-    // canUseFracCoveragePrimProc() - Called in regular skia draw, caches results but only for a
-    //                                specific color and coverage.  May be called multiple times
-    // GrOptDrawState constructor - never caches results
-
-    /**
-     * GrBatch provides the initial seed for these loops based off of its initial geometry data
-     */
-    void calcColorInvariantOutput(const GrDrawBatch*) const;
-    void calcCoverageInvariantOutput(const GrDrawBatch*) const;
-
     // Some of the auto restore objects assume that no effects are removed during their lifetime.
     // This is used to assert that this condition holds.
     SkDEBUGCODE(mutable int fBlockEffectRemovalCnt;)
 
     typedef SkSTArray<4, const GrFragmentProcessor*, true> FragmentProcessorArray;
 
-    GrProcessorDataManager                  fProcDataManager;
     SkAutoTUnref<GrRenderTarget>            fRenderTarget;
     uint32_t                                fFlags;
     GrStencilSettings                       fStencilSettings;
@@ -422,10 +381,8 @@ private:
     FragmentProcessorArray                  fCoverageFragmentProcessors;
     GrClip                                  fClip;
 
-    mutable GrProcOptInfo fColorProcInfo;
-    mutable GrProcOptInfo fCoverageProcInfo;
-
     friend class GrPipeline;
+    friend class GrDrawTarget;
 };
 
 #endif

@@ -6,17 +6,23 @@
 
 #include "content/browser/renderer_host/media/video_capture_buffer_pool.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <utility>
+
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "build/build_config.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "content/browser/compositor/buffer_queue.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/renderer_host/media/video_capture_controller.h"
 #include "media/base/video_frame.h"
-#include "media/base/video_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,7 +36,6 @@ struct PixelFormatAndStorage {
 static const PixelFormatAndStorage kCapturePixelFormatAndStorages[] = {
     {media::PIXEL_FORMAT_I420, media::PIXEL_STORAGE_CPU},
     {media::PIXEL_FORMAT_ARGB, media::PIXEL_STORAGE_CPU},
-    {media::PIXEL_FORMAT_ARGB, media::PIXEL_STORAGE_TEXTURE},
 #if !defined(OS_ANDROID)
     {media::PIXEL_FORMAT_I420,
      media::PIXEL_STORAGE_GPUMEMORYBUFFER},
@@ -48,26 +53,32 @@ class VideoCaptureBufferPoolTest
   class MockGpuMemoryBuffer : public gfx::GpuMemoryBuffer {
    public:
     explicit MockGpuMemoryBuffer(const gfx::Size& size)
-        : size_(size), data_(new uint8[size_.GetArea() * 4]), mapped_(false) {}
+        : size_(size),
+          data_(new uint8_t[size_.GetArea() * 4]),
+          mapped_(false) {}
     ~MockGpuMemoryBuffer() override { delete[] data_; }
 
-    bool Map(void** data) override {
-      EXPECT_EQ(mapped_, false);
+    bool Map() override {
+      EXPECT_FALSE(mapped_);
       mapped_ = true;
-      data[0] = static_cast<void*>(data_);
       return true;
     }
+    void* memory(size_t plane) override {
+      EXPECT_TRUE(mapped_);
+      EXPECT_EQ(0u, plane);
+      return static_cast<void*>(data_);
+    }
     void Unmap() override {
-      EXPECT_EQ(mapped_, true);
+      EXPECT_TRUE(mapped_);
       mapped_ = false;
     }
-    bool IsMapped() const override { return mapped_; }
+    gfx::Size GetSize() const override { return size_; }
     gfx::BufferFormat GetFormat() const override {
       return gfx::BufferFormat::BGRA_8888;
     }
-    void GetStride(int* stride) const override {
-      *stride = size_.width() * 4;
-      return;
+    int stride(size_t plane) const override {
+      EXPECT_EQ(0u, plane);
+      return size_.width() * 4;
     }
     gfx::GpuMemoryBufferId GetId() const override {
       return gfx::GpuMemoryBufferId(0);
@@ -79,7 +90,7 @@ class VideoCaptureBufferPoolTest
 
    private:
     const gfx::Size size_;
-    uint8* const data_;
+    uint8_t* const data_;
     bool mapped_;
   };
 
@@ -121,7 +132,7 @@ class VideoCaptureBufferPoolTest
     Buffer(const scoped_refptr<VideoCaptureBufferPool> pool,
            scoped_ptr<VideoCaptureBufferPool::BufferHandle> buffer_handle,
            int id)
-        : id_(id), pool_(pool), buffer_handle_(buffer_handle.Pass()) {}
+        : id_(id), pool_(pool), buffer_handle_(std::move(buffer_handle)) {}
     ~Buffer() { pool_->RelinquishProducerReservation(id()); }
     int id() const { return id_; }
     size_t mapped_size() { return buffer_handle_->mapped_size(); }
@@ -173,7 +184,7 @@ class VideoCaptureBufferPoolTest
     scoped_ptr<VideoCaptureBufferPool::BufferHandle> buffer_handle =
         pool_->GetBufferHandle(buffer_id);
     return scoped_ptr<Buffer>(
-        new Buffer(pool_, buffer_handle.Pass(), buffer_id));
+        new Buffer(pool_, std::move(buffer_handle), buffer_id));
   }
 
   base::MessageLoop loop_;
@@ -221,12 +232,10 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
     ASSERT_LE(format_lo.ImageAllocationSize(), buffer3->mapped_size());
   }
 
-  // Texture backed Frames cannot be manipulated via mapping.
-  if (GetParam().pixel_storage != media::PIXEL_STORAGE_TEXTURE) {
-    ASSERT_NE(nullptr, buffer1->data());
-    ASSERT_NE(nullptr, buffer2->data());
-    ASSERT_NE(nullptr, buffer3->data());
-  }
+  ASSERT_NE(nullptr, buffer1->data());
+  ASSERT_NE(nullptr, buffer2->data());
+  ASSERT_NE(nullptr, buffer3->data());
+
   // Touch the memory.
   if (buffer1->data() != nullptr)
     memset(buffer1->data(), 0x11, buffer1->mapped_size());

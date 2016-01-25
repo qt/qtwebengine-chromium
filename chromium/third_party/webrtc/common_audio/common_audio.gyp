@@ -101,6 +101,7 @@
         'signal_processing/vector_scaling_operations.c',
         'sparse_fir_filter.cc',
         'sparse_fir_filter.h',
+        'swap_queue.h',
         'vad/include/vad.h',
         'vad/include/webrtc_vad.h',
         'vad/vad.cc',
@@ -227,9 +228,10 @@
         },
       ],  # targets
     }],
-    ['include_tests==1', {
+    ['include_tests==1 and OS!="ios"', {
       'targets' : [
         {
+          # Does not compile on iOS: webrtc:4755.
           'target_name': 'common_audio_unittests',
           'type': '<(gtest_target_type)',
           'dependencies': [
@@ -256,6 +258,7 @@
             'signal_processing/real_fft_unittest.cc',
             'signal_processing/signal_processing_unittest.cc',
             'sparse_fir_filter_unittest.cc',
+            'swap_queue_unittest.cc',
             'vad/vad_core_unittest.cc',
             'vad/vad_filterbank_unittest.cc',
             'vad/vad_gmm_unittest.cc',

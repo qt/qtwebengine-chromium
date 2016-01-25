@@ -19,6 +19,26 @@
 
 namespace webrtc {
 
+bool EqualPlane(const uint8_t* data1,
+                const uint8_t* data2,
+                int stride,
+                int width,
+                int height) {
+  for (int y = 0; y < height; ++y) {
+    if (memcmp(data1, data2, width) != 0)
+      return false;
+    data1 += stride;
+    data2 += stride;
+  }
+  return true;
+}
+
+int ExpectedSize(int plane_stride, int image_height, PlaneType type) {
+  if (type == kYPlane)
+    return plane_stride * image_height;
+  return plane_stride * ((image_height + 1) / 2);
+}
+
 VideoFrame::VideoFrame() {
   // Intentionally using Reset instead of initializer list so that any missed
   // fields in Reset will be caught by memory checkers.
@@ -200,6 +220,26 @@ VideoFrame VideoFrame::ConvertNativeToI420Frame() const {
   frame.ShallowCopy(*this);
   frame.set_video_frame_buffer(video_frame_buffer_->NativeToI420Buffer());
   return frame;
+}
+
+bool VideoFrame::EqualsFrame(const VideoFrame& frame) const {
+  if (width() != frame.width() || height() != frame.height() ||
+      stride(kYPlane) != frame.stride(kYPlane) ||
+      stride(kUPlane) != frame.stride(kUPlane) ||
+      stride(kVPlane) != frame.stride(kVPlane) ||
+      timestamp() != frame.timestamp() ||
+      ntp_time_ms() != frame.ntp_time_ms() ||
+      render_time_ms() != frame.render_time_ms()) {
+    return false;
+  }
+  const int half_width = (width() + 1) / 2;
+  const int half_height = (height() + 1) / 2;
+  return EqualPlane(buffer(kYPlane), frame.buffer(kYPlane),
+                    stride(kYPlane), width(), height()) &&
+         EqualPlane(buffer(kUPlane), frame.buffer(kUPlane),
+                    stride(kUPlane), half_width, half_height) &&
+         EqualPlane(buffer(kVPlane), frame.buffer(kVPlane),
+                    stride(kVPlane), half_width, half_height);
 }
 
 }  // namespace webrtc

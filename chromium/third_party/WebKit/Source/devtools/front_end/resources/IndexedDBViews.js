@@ -206,8 +206,7 @@ WebInspector.IDBDataView.prototype = {
 
     _createEditorToolbar: function()
     {
-        var editorToolbar = new WebInspector.Toolbar(this.element);
-        editorToolbar.element.classList.add("data-view-toolbar");
+        var editorToolbar = new WebInspector.Toolbar("data-view-toolbar", this.element);
 
         this._pageBackButton = new WebInspector.ToolbarButton(WebInspector.UIString("Show previous page"), "play-backwards-toolbar-item");
         this._pageBackButton.addEventListener("click", this._pageBackButtonClicked, this);
@@ -253,9 +252,9 @@ WebInspector.IDBDataView.prototype = {
         this._index = index;
 
         if (this._dataGrid)
-            this._dataGrid.detach();
+            this._dataGrid.asWidget().detach();
         this._dataGrid = this._createDataGrid();
-        this._dataGrid.show(this.element);
+        this._dataGrid.asWidget().show(this.element);
 
         this._skipCount = 0;
         this._updateData(true);

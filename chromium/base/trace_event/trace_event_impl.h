@@ -6,6 +6,8 @@
 #ifndef BASE_TRACE_EVENT_TRACE_EVENT_IMPL_H_
 #define BASE_TRACE_EVENT_TRACE_EVENT_IMPL_H_
 
+#include <stdint.h>
+
 #include <stack>
 #include <string>
 #include <vector>
@@ -14,6 +16,7 @@
 #include "base/base_export.h"
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/observer_list.h"
 #include "base/single_thread_task_runner.h"
@@ -23,6 +26,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_local.h"
 #include "base/trace_event/trace_event_memory_overhead.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -31,8 +35,12 @@ class MessageLoop;
 
 namespace trace_event {
 
+typedef base::Callback<bool(const char* arg_name)> ArgumentNameFilterPredicate;
+
 typedef base::Callback<bool(const char* category_group_name,
-                            const char* event_name)> ArgumentFilterPredicate;
+                            const char* event_name,
+                            ArgumentNameFilterPredicate*)>
+    ArgumentFilterPredicate;
 
 // For any argument of type TRACE_VALUE_TYPE_CONVERTABLE the provided
 // class must implement this interface.
@@ -63,7 +71,7 @@ class BASE_EXPORT ConvertableToTraceFormat
 const int kTraceMaxNumArgs = 2;
 
 struct TraceEventHandle {
-  uint32 chunk_seq;
+  uint32_t chunk_seq;
   // These numbers of bits must be kept consistent with
   // TraceBufferChunk::kMaxTrunkIndex and
   // TraceBufferChunk::kTraceBufferChunkSize (in trace_buffer.h).
@@ -91,13 +99,12 @@ class BASE_EXPORT TraceEvent {
 
   void Initialize(
       int thread_id,
-      TraceTicks timestamp,
+      TimeTicks timestamp,
       ThreadTicks thread_timestamp,
       char phase,
       const unsigned char* category_group_enabled,
       const char* name,
       unsigned long long id,
-      unsigned long long context_id,
       unsigned long long bind_id,
       int num_args,
       const char** arg_names,
@@ -108,7 +115,7 @@ class BASE_EXPORT TraceEvent {
 
   void Reset();
 
-  void UpdateDuration(const TraceTicks& now, const ThreadTicks& thread_now);
+  void UpdateDuration(const TimeTicks& now, const ThreadTicks& thread_now);
 
   void EstimateTraceMemoryOverhead(TraceEventMemoryOverhead* overhead);
 
@@ -122,14 +129,13 @@ class BASE_EXPORT TraceEvent {
                                 TraceValue value,
                                 std::string* out);
 
-  TraceTicks timestamp() const { return timestamp_; }
+  TimeTicks timestamp() const { return timestamp_; }
   ThreadTicks thread_timestamp() const { return thread_timestamp_; }
   char phase() const { return phase_; }
   int thread_id() const { return thread_id_; }
   TimeDelta duration() const { return duration_; }
   TimeDelta thread_duration() const { return thread_duration_; }
   unsigned long long id() const { return id_; }
-  unsigned long long context_id() const { return context_id_; }
   unsigned int flags() const { return flags_; }
 
   // Exposed for unittesting:
@@ -150,25 +156,29 @@ class BASE_EXPORT TraceEvent {
 
  private:
   // Note: these are ordered by size (largest first) for optimal packing.
-  TraceTicks timestamp_;
+  TimeTicks timestamp_;
   ThreadTicks thread_timestamp_;
   TimeDelta duration_;
   TimeDelta thread_duration_;
   // id_ can be used to store phase-specific data.
   unsigned long long id_;
-  // context_id_ is used to store context information.
-  unsigned long long context_id_;
   TraceValue arg_values_[kTraceMaxNumArgs];
   const char* arg_names_[kTraceMaxNumArgs];
   scoped_refptr<ConvertableToTraceFormat> convertable_values_[kTraceMaxNumArgs];
   const unsigned char* category_group_enabled_;
   const char* name_;
   scoped_refptr<base::RefCountedString> parameter_copy_storage_;
-  int thread_id_;
-  char phase_;
+  // Depending on TRACE_EVENT_FLAG_HAS_PROCESS_ID the event will have either:
+  //  tid: thread_id_, pid: current_process_id (default case).
+  //  tid: -1, pid: process_id_ (when flags_ & TRACE_EVENT_FLAG_HAS_PROCESS_ID).
+  union {
+    int thread_id_;
+    int process_id_;
+  };
   unsigned int flags_;
   unsigned long long bind_id_;
   unsigned char arg_types_[kTraceMaxNumArgs];
+  char phase_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceEvent);
 };

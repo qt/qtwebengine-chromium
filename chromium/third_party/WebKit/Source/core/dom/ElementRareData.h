@@ -24,8 +24,10 @@
 
 #include "core/animation/ElementAnimations.h"
 #include "core/dom/Attr.h"
+#include "core/dom/CompositorProxiedPropertySet.h"
 #include "core/dom/DatasetDOMStringMap.h"
 #include "core/dom/NamedNodeMap.h"
+#include "core/dom/NodeIntersectionObserverData.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/custom/CustomElementDefinition.h"
@@ -33,11 +35,13 @@
 #include "core/html/ClassList.h"
 #include "core/style/StyleInheritedData.h"
 #include "platform/heap/Handle.h"
+#include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class HTMLElement;
+class CompositorProxiedPropertySet;
 
 class ElementRareData : public NodeRareData {
 public:
@@ -110,13 +114,9 @@ public:
     bool hasPseudoElements() const;
     void clearPseudoElements();
 
-    uint32_t incrementProxyCount() { return ++m_proxyCount; }
-    uint32_t decrementProxyCount()
-    {
-        ASSERT(m_proxyCount);
-        return --m_proxyCount;
-    }
-    uint32_t proxyCount() const { return m_proxyCount; }
+    void incrementCompositorProxiedProperties(uint32_t properties);
+    void decrementCompositorProxiedProperties(uint32_t properties);
+    CompositorProxiedPropertySet* proxiedPropertyCounts() const { return m_proxiedProperties.get(); }
 
     void setCustomElementDefinition(PassRefPtrWillBeRawPtr<CustomElementDefinition> definition) { m_customElementDefinition = definition; }
     CustomElementDefinition* customElementDefinition() const { return m_customElementDefinition.get(); }
@@ -125,13 +125,21 @@ public:
     AttrNodeList* attrNodeList() { return m_attrNodeList.get(); }
     void removeAttrNodeList() { m_attrNodeList.clear(); }
 
+    NodeIntersectionObserverData* intersectionObserverData() const { return m_intersectionObserverData.get(); }
+    NodeIntersectionObserverData& ensureIntersectionObserverData()
+    {
+        if (!m_intersectionObserverData)
+            m_intersectionObserverData = new NodeIntersectionObserverData();
+        return *m_intersectionObserverData;
+    }
+
     DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
+    CompositorProxiedPropertySet& ensureCompositorProxiedPropertySet();
+    void clearCompositorProxiedPropertySet() { m_proxiedProperties = nullptr; }
+
     short m_tabindex;
-    // As m_proxyCount usually doesn't exceed 10bits (1024), if you want to add some booleans you
-    // can steal some bits from m_proxyCount by using bitfields to prevent ElementRareData bloat.
-    unsigned short m_proxyCount;
 
     LayoutSize m_minimumSizeForResizing;
     IntSize m_savedLayerScrollOffset;
@@ -141,8 +149,11 @@ private:
     OwnPtrWillBeMember<ElementShadow> m_shadow;
     OwnPtrWillBeMember<NamedNodeMap> m_attributeMap;
     OwnPtrWillBeMember<AttrNodeList> m_attrNodeList;
-    PersistentWillBeMember<ElementAnimations> m_elementAnimations;
     OwnPtrWillBeMember<InlineCSSStyleDeclaration> m_cssomWrapper;
+    OwnPtr<CompositorProxiedPropertySet> m_proxiedProperties;
+
+    PersistentWillBeMember<ElementAnimations> m_elementAnimations;
+    PersistentWillBeMember<NodeIntersectionObserverData> m_intersectionObserverData;
 
     RefPtr<ComputedStyle> m_computedStyle;
     RefPtrWillBeMember<CustomElementDefinition> m_customElementDefinition;
@@ -163,7 +174,6 @@ inline LayoutSize defaultMinimumSizeForResizing()
 inline ElementRareData::ElementRareData(LayoutObject* layoutObject)
     : NodeRareData(layoutObject)
     , m_tabindex(0)
-    , m_proxyCount(0)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {
     m_isElementRareData = true;
@@ -174,6 +184,8 @@ inline ElementRareData::~ElementRareData()
 #if !ENABLE(OILPAN)
     if (m_elementAnimations)
         m_elementAnimations->dispose();
+    if (m_intersectionObserverData)
+        m_intersectionObserverData->dispose();
     ASSERT(!m_shadow);
 #endif
     ASSERT(!m_generatedBefore);
@@ -237,6 +249,25 @@ inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
     default:
         return 0;
     }
+}
+
+inline void ElementRareData::incrementCompositorProxiedProperties(uint32_t properties)
+{
+    ensureCompositorProxiedPropertySet().increment(properties);
+}
+
+inline void ElementRareData::decrementCompositorProxiedProperties(uint32_t properties)
+{
+    m_proxiedProperties->decrement(properties);
+    if (m_proxiedProperties->isEmpty())
+        clearCompositorProxiedPropertySet();
+}
+
+inline CompositorProxiedPropertySet& ElementRareData::ensureCompositorProxiedPropertySet()
+{
+    if (!m_proxiedProperties)
+        m_proxiedProperties = CompositorProxiedPropertySet::create();
+    return *m_proxiedProperties;
 }
 
 } // namespace

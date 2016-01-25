@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/core/v8/ScriptState.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -102,6 +101,15 @@ ScriptValue ScriptState::getFromGlobalObject(const char* name)
     return ScriptValue(this, v8Value);
 }
 
+ScriptValue ScriptState::getFromExtrasExports(const char* name)
+{
+    v8::HandleScope handleScope(m_isolate);
+    v8::Local<v8::Value> v8Value;
+    if (!context()->GetExtrasBindingObject()->Get(context(), v8AtomicString(isolate(), name)).ToLocal(&v8Value))
+        return ScriptValue();
+    return ScriptValue(this, v8Value);
+}
+
 ExecutionContext* ScriptState::executionContext() const
 {
     v8::HandleScope scope(m_isolate);
@@ -127,9 +135,13 @@ ScriptState* ScriptState::forMainWorld(LocalFrame* frame)
 ScriptState* ScriptState::forWorld(LocalFrame* frame, DOMWrapperWorld& world)
 {
     ASSERT(frame);
-    v8::Isolate* isolate = toIsolate(frame);
-    v8::HandleScope handleScope(isolate);
-    return ScriptState::from(toV8ContextEvenIfDetached(frame, world));
+    v8::HandleScope handleScope(toIsolate(frame));
+    v8::Local<v8::Context> context = toV8Context(frame, world);
+    if (context.IsEmpty())
+        return nullptr;
+    ScriptState* scriptState = ScriptState::from(context);
+    ASSERT(scriptState->contextIsValid());
+    return scriptState;
 }
 
 }

@@ -23,13 +23,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/LayoutVideo.h"
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/layout/LayoutFullScreen.h"
+#include "core/layout/LayoutView.h"
 #include "core/paint/VideoPainter.h"
 #include "public/platform/WebLayer.h"
 

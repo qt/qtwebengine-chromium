@@ -25,9 +25,9 @@
 
 // https://w3c.github.io/touch-events/#touchevent-interface
 
-// TODO(rbyers): TouchEvent should have a constructor. http://crbug.com/508675
-
-interface TouchEvent : UIEvent {
+[
+    Constructor(DOMString type, optional TouchEventInit eventInitDict),
+] interface TouchEvent : UIEvent {
     readonly attribute TouchList touches;
     readonly attribute TouchList targetTouches;
     readonly attribute TouchList changedTouches;
@@ -36,18 +36,17 @@ interface TouchEvent : UIEvent {
     readonly attribute boolean ctrlKey;
     readonly attribute boolean shiftKey;
 
-    // FIXME: initTouchEvent() is not standardized. http://crbug.com/518868
-    [CallWith=ScriptState, Measure] void initTouchEvent([Default=Undefined] optional TouchList touches,
-                                                        [Default=Undefined] optional TouchList targetTouches,
-                                                        [Default=Undefined] optional TouchList changedTouches,
-                                                        [Default=Undefined] optional DOMString type,
-                                                        [Default=Undefined] optional Window view,
-                                                        [Default=Undefined] optional long unused1,
-                                                        [Default=Undefined] optional long unused2,
-                                                        [Default=Undefined] optional long unused3,
-                                                        [Default=Undefined] optional long unused4,
-                                                        [Default=Undefined] optional boolean ctrlKey,
-                                                        [Default=Undefined] optional boolean altKey,
-                                                        [Default=Undefined] optional boolean shiftKey,
-                                                        [Default=Undefined] optional boolean metaKey);
+    [CallWith=ScriptState, DeprecateAs=V8TouchEvent_InitTouchEvent_Method, LegacyInterfaceTypeChecking] void initTouchEvent([Default=Undefined] optional TouchList touches,
+                                                                                                                            [Default=Undefined] optional TouchList targetTouches,
+                                                                                                                            [Default=Undefined] optional TouchList changedTouches,
+                                                                                                                            [Default=Undefined] optional DOMString type,
+                                                                                                                            [Default=Undefined] optional Window? view,
+                                                                                                                            [Default=Undefined] optional long unused1,
+                                                                                                                            [Default=Undefined] optional long unused2,
+                                                                                                                            [Default=Undefined] optional long unused3,
+                                                                                                                            [Default=Undefined] optional long unused4,
+                                                                                                                            [Default=Undefined] optional boolean ctrlKey,
+                                                                                                                            [Default=Undefined] optional boolean altKey,
+                                                                                                                            [Default=Undefined] optional boolean shiftKey,
+                                                                                                                            [Default=Undefined] optional boolean metaKey);
 };

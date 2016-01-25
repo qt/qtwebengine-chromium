@@ -6,24 +6,10 @@
  */
 
 #include "SkDebuggerGUI.h"
-#include "PictureRenderer.h"
-#include "SkPictureData.h"
-#include "SkPicturePlayback.h"
-#include "SkPictureRecord.h"
+#include "SkPicture.h"
 #include <QListWidgetItem>
 #include <QtGui>
 #include "sk_tool_utils.h"
-
-#if defined(SK_BUILD_FOR_WIN32)
-    #include "SysTimer_windows.h"
-#elif defined(SK_BUILD_FOR_MAC)
-    #include "SysTimer_mach.h"
-#elif defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
-    #include "SysTimer_posix.h"
-#else
-    #include "SysTimer_c.h"
-#endif
-
 
 SkDebuggerGUI::SkDebuggerGUI(QWidget *parent) :
         QMainWindow(parent)
@@ -32,7 +18,6 @@ SkDebuggerGUI::SkDebuggerGUI(QWidget *parent) :
     , fToolBar(this)
     , fActionOpen(this)
     , fActionBreakpoint(this)
-    , fActionProfile(this)
     , fActionCancel(this)
     , fActionClearBreakpoints(this)
     , fActionClearDeletes(this)
@@ -71,6 +56,7 @@ SkDebuggerGUI::SkDebuggerGUI(QWidget *parent) :
     connect(&fActionOpen, SIGNAL(triggered()), this, SLOT(openFile()));
     connect(&fActionDirectory, SIGNAL(triggered()), this, SLOT(toggleDirectory()));
     connect(&fDirectoryWidget, SIGNAL(currentItemChanged(QListWidgetItem*, QListWidgetItem*)), this, SLOT(loadFile(QListWidgetItem *)));
+    connect(&fDirectoryWatcher, SIGNAL(directoryChanged(QString)), this, SLOT(populateDirectoryWidget()));
     connect(&fActionDelete, SIGNAL(triggered()), this, SLOT(actionDelete()));
     connect(&fListWidget, SIGNAL(itemDoubleClicked(QListWidgetItem*)), this, SLOT(toggleBreakpoint()));
     connect(&fActionRewind, SIGNAL(triggered()), this, SLOT(actionRewind()));
@@ -81,7 +67,6 @@ SkDebuggerGUI::SkDebuggerGUI(QWidget *parent) :
     connect(&fActionInspector, SIGNAL(triggered()), this, SLOT(actionInspector()));
     connect(&fActionSettings, SIGNAL(triggered()), this, SLOT(actionSettings()));
     connect(&fFilter, SIGNAL(activated(QString)), this, SLOT(toggleFilter(QString)));
-    connect(&fActionProfile, SIGNAL(triggered()), this, SLOT(actionProfile()));
     connect(&fActionCancel, SIGNAL(triggered()), this, SLOT(actionCancel()));
     connect(&fActionClearBreakpoints, SIGNAL(triggered()), this, SLOT(actionClearBreakpoints()));
     connect(&fActionClearDeletes, SIGNAL(triggered()), this, SLOT(actionClearDeletes()));
@@ -129,60 +114,6 @@ void SkDebuggerGUI::showDeletes() {
     for (int row = 0; row < fListWidget.count(); row++) {
         QListWidgetItem *item = fListWidget.item(row);
         item->setHidden(fDebugger.isCommandVisible(row) && deletesActivated);
-    }
-}
-// This is a simplification of PictureBenchmark's run with the addition of
-// clearing of the times after the first pass (in resetTimes)
-void SkDebuggerGUI::run(const SkPicture* pict,
-                        sk_tools::PictureRenderer* renderer,
-                        int repeats) {
-    SkASSERT(pict);
-    if (nullptr == pict) {
-        return;
-    }
-
-    SkASSERT(renderer != nullptr);
-    if (nullptr == renderer) {
-        return;
-    }
-
-    renderer->init(pict, nullptr, nullptr, nullptr, false, false);
-
-    renderer->setup();
-    renderer->render();
-    renderer->resetState(true);    // flush, swapBuffers and Finish
-
-    for (int i = 0; i < repeats; ++i) {
-        renderer->setup();
-        renderer->render();
-        renderer->resetState(false);  // flush & swapBuffers, but don't Finish
-    }
-    renderer->resetState(true);    // flush, swapBuffers and Finish
-
-    renderer->end();
-}
-
-void SkDebuggerGUI::actionProfile() {
-    // In order to profile we pass the command offsets (that were read-in
-    // in loadPicture by the SkOffsetPicture) to an SkTimedPlaybackPicture.
-    // The SkTimedPlaybackPicture in turn passes the offsets to an
-    // SkTimedPicturePlayback object which uses them to track the performance
-    // of individual commands.
-    if (fFileName.isEmpty()) {
-        return;
-    }
-
-    SkFILEStream inputStream;
-
-    inputStream.setPath(fFileName.c_str());
-    if (!inputStream.isValid()) {
-        return;
-    }
-
-    SkAutoTUnref<SkPicture> picture(SkPicture::CreateFromStream(&inputStream,
-                                        &SkImageDecoder::DecodeMemory)); // , fSkipCommands));
-    if (nullptr == picture.get()) {
-        return;
     }
 }
 
@@ -350,18 +281,25 @@ void SkDebuggerGUI::saveToFile(const SkString& filename) {
     SkFILEWStream file(filename.c_str());
     SkAutoTUnref<SkPicture> copy(fDebugger.copyPicture());
 
-    sk_tool_utils::PngPixelSerializer serializer;
-    copy->serialize(&file, &serializer);
+    SkAutoTUnref<SkPixelSerializer> serializer(
+            SkImageEncoder::CreatePixelSerializer());
+    copy->serialize(&file, serializer);
 }
 
 void SkDebuggerGUI::loadFile(QListWidgetItem *item) {
-    if (fDirectoryWidgetActive) {
-        fFileName = fPath.toAscii().data();
-        // don't add a '/' to files in the local directory
-        if (fFileName.size() > 0) {
-            fFileName.append("/");
-        }
-        fFileName.append(item->text().toAscii().data());
+    if (item == nullptr) {
+        return;
+    }
+
+    SkString fileName(fPath.toAscii().data());
+    // don't add a '/' to files in the local directory
+    if (fileName.size() > 0) {
+        fileName.append("/");
+    }
+    fileName.append(item->text().toAscii().data());
+
+    if (!fileName.equals(fFileName)) {
+        fFileName = fileName;
         loadPicture(fFileName);
     }
 }
@@ -373,13 +311,11 @@ void SkDebuggerGUI::openFile() {
 }
 
 void SkDebuggerGUI::openFile(const QString &filename) {
-    fDirectoryWidgetActive = false;
     if (!filename.isEmpty()) {
         QFileInfo pathInfo(filename);
         loadPicture(SkString(filename.toAscii().data()));
         setupDirectoryWidget(pathInfo.path());
     }
-    fDirectoryWidgetActive = true;
 }
 
 void SkDebuggerGUI::pauseDrawing(bool isPaused) {
@@ -496,13 +432,6 @@ void SkDebuggerGUI::setupUi(QMainWindow *SkDebuggerGUI) {
 
     fActionDirectory.setShortcut(QKeySequence(tr("Ctrl+D")));
     fActionDirectory.setText("Directory");
-
-    QIcon profile;
-    profile.addFile(QString::fromUtf8(":/profile.png"), QSize(),
-                    QIcon::Normal, QIcon::Off);
-    fActionProfile.setIcon(profile);
-    fActionProfile.setText("Profile");
-    fActionProfile.setDisabled(true);
 
     QIcon inspector;
     inspector.addFile(QString::fromUtf8(":/inspector.png"),
@@ -651,19 +580,14 @@ void SkDebuggerGUI::setupUi(QMainWindow *SkDebuggerGUI) {
     fToolBar.addSeparator();
     fToolBar.addAction(&fActionInspector);
     fToolBar.addAction(&fActionSettings);
-    fToolBar.addSeparator();
-    fToolBar.addAction(&fActionProfile);
 
     fToolBar.addSeparator();
     fToolBar.addWidget(&fSpacer);
     fToolBar.addWidget(&fFilter);
     fToolBar.addAction(&fActionCancel);
 
-    // TODO(chudy): Remove static call.
-    fDirectoryWidgetActive = false;
     fFileName = "";
     setupDirectoryWidget("");
-    fDirectoryWidgetActive = true;
 
     // Menu Bar
     fMenuFile.setTitle("File");
@@ -712,13 +636,36 @@ void SkDebuggerGUI::setupUi(QMainWindow *SkDebuggerGUI) {
 
 void SkDebuggerGUI::setupDirectoryWidget(const QString& path) {
     fPath = path;
-    QDir dir(path);
+    populateDirectoryWidget();
+
+    // clear the existing watched directory and setup a new directory to watch
+    if (!fDirectoryWatcher.directories().empty()) {
+        fDirectoryWatcher.removePaths(fDirectoryWatcher.directories());
+    }
+    if (!path.isEmpty()) {
+        fDirectoryWatcher.addPath(fPath);
+    }
+}
+
+void SkDebuggerGUI::populateDirectoryWidget() {
+    QDir dir(fPath);
     QRegExp r(".skp");
-    fDirectoryWidget.clear();
     const QStringList files = dir.entryList();
+
+    // check if a file has been removed
+    for (int i = fDirectoryWidget.count() - 1; i >= 0; i--) {
+        QListWidgetItem* item = fDirectoryWidget.item(i);
+        if (!files.contains(item->text())) {
+            fDirectoryWidget.removeItemWidget(item);
+            delete item;
+        }
+    }
+
+    // add any new files
     foreach (QString f, files) {
-        if (f.contains(r))
+        if (f.contains(r) && fDirectoryWidget.findItems(f, Qt::MatchExactly).size() == 0) {
             fDirectoryWidget.addItem(f);
+        }
     }
 }
 
@@ -743,8 +690,6 @@ void SkDebuggerGUI::loadPicture(const SkString& fileName) {
     }
 
     SkSafeUnref(picture);
-
-    fActionProfile.setDisabled(false);
 
     /* fDebugCanvas is reinitialized every load picture. Need it to retain value
      * of the visibility filter.

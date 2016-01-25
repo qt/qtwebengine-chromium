@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -18,6 +21,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "components/devtools_discovery/devtools_discovery_manager.h"
 #include "components/devtools_http_handler/devtools_http_handler.h"
 #include "components/devtools_http_handler/devtools_http_handler_delegate.h"
@@ -70,7 +74,7 @@ const char kTargetDevtoolsFrontendUrlField[] = "devtoolsFrontendUrl";
 // Maximum write buffer size of devtools http/websocket connections.
 // TODO(rmcilroy/pfieldman): Reduce this back to 100Mb when we have
 // added back pressure on the TraceComplete message protocol - crbug.com/456845.
-const int32 kSendBufferSizeForDevTools = 256 * 1024 * 1024;  // 256Mb
+const int32_t kSendBufferSizeForDevTools = 256 * 1024 * 1024;  // 256Mb
 
 }  // namespace
 
@@ -123,10 +127,9 @@ ServerWrapper::ServerWrapper(base::WeakPtr<DevToolsHttpHandler> handler,
                              const base::FilePath& frontend_dir,
                              bool bundles_resources)
     : handler_(handler),
-      server_(new net::HttpServer(socket.Pass(), this)),
+      server_(new net::HttpServer(std::move(socket), this)),
       frontend_dir_(frontend_dir),
-      bundles_resources_(bundles_resources) {
-}
+      bundles_resources_(bundles_resources) {}
 
 int ServerWrapper::GetLocalAddress(net::IPEndPoint* address) {
   return server_->GetLocalAddress(address);
@@ -195,7 +198,7 @@ void ServerStartedOnUI(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (handler && thread && server_wrapper) {
     handler->ServerStarted(thread, server_wrapper, socket_factory,
-                           ip_address.Pass());
+                           std::move(ip_address));
   } else {
     TerminateOnUI(thread, server_wrapper, socket_factory);
   }
@@ -214,7 +217,7 @@ void StartServerOnHandlerThread(
       server_socket_factory->CreateForHttpServer();
   scoped_ptr<net::IPEndPoint> ip_address(new net::IPEndPoint);
   if (server_socket) {
-    server_wrapper = new ServerWrapper(handler, server_socket.Pass(),
+    server_wrapper = new ServerWrapper(handler, std::move(server_socket),
                                        frontend_dir, bundles_resources);
     if (!output_directory.empty())
       server_wrapper->WriteActivePortToUserProfile(output_directory);
@@ -492,7 +495,7 @@ void ServerWrapper::OnClose(int connection_id) {
 }
 
 std::string DevToolsHttpHandler::GetFrontendURLInternal(
-    const std::string id,
+    const std::string& id,
     const std::string& host) {
   return base::StringPrintf(
       "%s%sws=%s%s%s",

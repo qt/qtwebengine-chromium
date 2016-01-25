@@ -5,6 +5,7 @@
 #ifndef NET_QUIC_P2P_QUIC_P2P_STREAM_H_
 #define NET_QUIC_P2P_QUIC_P2P_STREAM_H_
 
+#include "base/macros.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/quic/reliable_quic_stream.h"
@@ -40,7 +41,7 @@ class NET_EXPORT QuicP2PStream : public ReliableQuicStream {
   void OnDataAvailable() override;
   void OnClose() override;
   void OnCanWrite() override;
-  QuicPriority EffectivePriority() const override;
+  SpdyPriority Priority() const override;
 
   void WriteHeader(base::StringPiece data);
 
@@ -52,7 +53,7 @@ class NET_EXPORT QuicP2PStream : public ReliableQuicStream {
  private:
   Delegate* delegate_ = nullptr;
 
-  QuicPriority priority_ = 0;
+  SpdyPriority priority_ = 0;
 
   CompletionCallback write_callback_;
   int last_write_size_ = 0;

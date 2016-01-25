@@ -48,14 +48,14 @@ class Document;
 class AnimationEffect;
 
 // AnimationTimeline is constructed and owned by Document, and tied to its lifecycle.
-class CORE_EXPORT AnimationTimeline : public GarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
+class CORE_EXPORT AnimationTimeline final : public GarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
+    USING_PRE_FINALIZER(AnimationTimeline, dispose);
 public:
     class PlatformTiming : public GarbageCollectedFinalized<PlatformTiming> {
     public:
         // Calls AnimationTimeline's wake() method after duration seconds.
         virtual void wakeAfter(double duration) = 0;
-        virtual void cancelWake() = 0;
         virtual void serviceOnNextFrame() = 0;
         virtual ~PlatformTiming() { }
         DEFINE_INLINE_VIRTUAL_TRACE() { }
@@ -63,6 +63,7 @@ public:
 
     static AnimationTimeline* create(Document*, PlatformTiming* = nullptr);
     ~AnimationTimeline();
+    void dispose();
 
     void serviceAnimations(TimingUpdateReason);
     void scheduleNextService();
@@ -72,6 +73,7 @@ public:
 
     void animationAttached(Animation&);
 
+    bool isActive();
     bool hasPendingUpdates() const { return !m_animationsNeedingUpdate.isEmpty(); }
     double zeroTime();
     double currentTime(bool& isNull);
@@ -99,6 +101,7 @@ public:
     void detachFromDocument();
 #endif
     void wake();
+    void resetForTesting();
 
     DECLARE_TRACE();
 
@@ -135,7 +138,6 @@ private:
         }
 
         void wakeAfter(double duration) override;
-        void cancelWake() override;
         void serviceOnNextFrame() override;
 
         void timerFired(Timer<AnimationTimelineTiming>*) { m_timeline->wake(); }

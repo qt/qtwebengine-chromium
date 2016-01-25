@@ -23,14 +23,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 #include "platform/scroll/ScrollbarThemeOverlay.h"
 
 namespace blink {
 
-ScrollbarTheme* ScrollbarTheme::nativeTheme()
+ScrollbarTheme& ScrollbarTheme::nativeTheme()
 {
     return ScrollbarThemeOverlay::mobileTheme();
 }

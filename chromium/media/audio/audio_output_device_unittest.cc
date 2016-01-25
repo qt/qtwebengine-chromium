@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/at_exit.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process_handle.h"
@@ -35,17 +38,19 @@ namespace media {
 
 namespace {
 
-const std::string kDefaultDeviceId;
-const std::string kNonDefaultDeviceId("valid-nondefault-device-id");
-const std::string kUnauthorizedDeviceId("unauthorized-device-id");
-const url::Origin kDefaultSecurityOrigin;
+const char kDefaultDeviceId[] = "";
+const char kNonDefaultDeviceId[] = "valid-nondefault-device-id";
+const char kUnauthorizedDeviceId[] = "unauthorized-device-id";
 
 class MockRenderCallback : public AudioRendererSink::RenderCallback {
  public:
   MockRenderCallback() {}
   virtual ~MockRenderCallback() {}
 
-  MOCK_METHOD2(Render, int(AudioBus* dest, int audio_delay_milliseconds));
+  MOCK_METHOD3(Render,
+               int(AudioBus* dest,
+                   uint32_t audio_delay_milliseconds,
+                   uint32_t frames_skipped));
   MOCK_METHOD0(OnRenderError, void());
 };
 
@@ -66,14 +71,6 @@ class MockAudioOutputIPC : public AudioOutputIPC {
   MOCK_METHOD0(PauseStream, void());
   MOCK_METHOD0(CloseStream, void());
   MOCK_METHOD1(SetVolume, void(double volume));
-  MOCK_METHOD2(SwitchOutputDevice,
-               void(const std::string& device_id,
-                    const url::Origin& security_origin));
-};
-
-class MockSwitchOutputDeviceCallback {
- public:
-  MOCK_METHOD1(Callback, void(OutputDeviceStatus result));
 };
 
 ACTION_P2(SendPendingBytes, socket, pending_bytes) {
@@ -83,7 +80,7 @@ ACTION_P2(SendPendingBytes, socket, pending_bytes) {
 // Used to terminate a loop from a different thread than the loop belongs to.
 // |task_runner| should be a SingleThreadTaskRunner.
 ACTION_P(QuitLoop, task_runner) {
-  task_runner->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
+  task_runner->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 
 }  // namespace.
@@ -101,7 +98,6 @@ class AudioOutputDeviceTest
   void ExpectRenderCallback();
   void WaitUntilRenderCallback();
   void StopAudioDevice();
-  void SwitchOutputDevice();
   void SetDevice(const std::string& device_id);
 
  protected:
@@ -113,12 +109,10 @@ class AudioOutputDeviceTest
   StrictMock<MockRenderCallback> callback_;
   MockAudioOutputIPC* audio_output_ipc_;  // owned by audio_device_
   scoped_refptr<AudioOutputDevice> audio_device_;
-  MockSwitchOutputDeviceCallback switch_output_device_callback_;
   OutputDeviceStatus device_status_;
 
  private:
   int CalculateMemorySize();
-  void SwitchOutputDeviceCallback(OutputDeviceStatus result);
 
   SharedMemory shared_memory_;
   CancelableSyncSocket browser_socket_;
@@ -129,7 +123,8 @@ class AudioOutputDeviceTest
 
 int AudioOutputDeviceTest::CalculateMemorySize() {
   // Calculate output memory size.
-  return AudioBus::CalculateMemorySize(default_audio_parameters_);
+  return sizeof(AudioOutputBufferParameters) +
+         AudioBus::CalculateMemorySize(default_audio_parameters_);
 }
 
 AudioOutputDeviceTest::AudioOutputDeviceTest()
@@ -147,7 +142,7 @@ void AudioOutputDeviceTest::SetDevice(const std::string& device_id) {
   audio_output_ipc_ = new MockAudioOutputIPC();
   audio_device_ = new AudioOutputDevice(
       scoped_ptr<AudioOutputIPC>(audio_output_ipc_), io_loop_.task_runner(), 0,
-      device_id, kDefaultSecurityOrigin);
+      device_id, url::Origin());
   EXPECT_CALL(*audio_output_ipc_,
               RequestDeviceAuthorization(audio_device_.get(), 0, device_id, _));
   audio_device_->RequestDeviceAuthorization();
@@ -226,15 +221,14 @@ void AudioOutputDeviceTest::ExpectRenderCallback() {
   // So, for the sake of this test, we consider the call to Render a sign
   // of success and quit the loop.
   const int kNumberOfFramesToProcess = 0;
-  EXPECT_CALL(callback_, Render(_, _))
-      .WillOnce(DoAll(
-          QuitLoop(io_loop_.task_runner()),
-          Return(kNumberOfFramesToProcess)));
+  EXPECT_CALL(callback_, Render(_, _, _))
+      .WillOnce(DoAll(QuitLoop(io_loop_.task_runner()),
+                      Return(kNumberOfFramesToProcess)));
 }
 
 void AudioOutputDeviceTest::WaitUntilRenderCallback() {
   // Don't hang the test if we never get the Render() callback.
-  io_loop_.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitClosure(),
+  io_loop_.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
                            TestTimeouts::action_timeout());
   io_loop_.Run();
 }
@@ -244,22 +238,6 @@ void AudioOutputDeviceTest::StopAudioDevice() {
     EXPECT_CALL(*audio_output_ipc_, CloseStream());
 
   audio_device_->Stop();
-  io_loop_.RunUntilIdle();
-}
-
-void AudioOutputDeviceTest::SwitchOutputDevice() {
-  // Switch the output device and check that the IPC message is sent
-  EXPECT_CALL(*audio_output_ipc_, SwitchOutputDevice(kNonDefaultDeviceId, _));
-  audio_device_->SwitchOutputDevice(
-      kNonDefaultDeviceId, url::Origin(),
-      base::Bind(&MockSwitchOutputDeviceCallback::Callback,
-                 base::Unretained(&switch_output_device_callback_)));
-  io_loop_.RunUntilIdle();
-
-  // Simulate the reception of a successful response from the browser
-  EXPECT_CALL(switch_output_device_callback_,
-              Callback(OUTPUT_DEVICE_STATUS_OK));
-  audio_device_->OnOutputDeviceSwitched(OUTPUT_DEVICE_STATUS_OK);
   io_loop_.RunUntilIdle();
 }
 
@@ -304,13 +282,6 @@ TEST_P(AudioOutputDeviceTest, CreateStream) {
   ExpectRenderCallback();
   CreateStream();
   WaitUntilRenderCallback();
-  StopAudioDevice();
-}
-
-// Switch the output device
-TEST_P(AudioOutputDeviceTest, SwitchOutputDevice) {
-  StartAudioDevice();
-  SwitchOutputDevice();
   StopAudioDevice();
 }
 

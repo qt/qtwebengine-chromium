@@ -8,23 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H
-#define WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H
+#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H_
+#define WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H_
 
+#pragma message("WARNING: video_coding/codecs/interface is DEPRECATED; "
+    "use video_coding/include")
 #include <vector>
 
 #include "webrtc/common_types.h"
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/video_coding/codecs/interface/video_error_codes.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/video_coding/include/video_error_codes.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video_decoder.h"
 #include "webrtc/video_encoder.h"
 #include "webrtc/video_frame.h"
 
-namespace webrtc
-{
+namespace webrtc {
 
-class RTPFragmentationHeader; // forward declaration
+class RTPFragmentationHeader;  // forward declaration
 
 // Note: if any pointers are added to this struct, it must be fitted
 // with a copy-constructor. See below.
@@ -68,6 +69,10 @@ struct CodecSpecificInfoVP9 {
   uint16_t width[kMaxVp9NumberOfSpatialLayers];
   uint16_t height[kMaxVp9NumberOfSpatialLayers];
   GofInfoVP9 gof;
+
+  // Frame reference data.
+  uint8_t num_ref_pics;
+  uint8_t p_diff[kMaxVp9RefPics];
 };
 
 struct CodecSpecificInfoGeneric {
@@ -86,12 +91,11 @@ union CodecSpecificInfoUnion {
 // Note: if any pointers are added to this struct or its sub-structs, it
 // must be fitted with a copy-constructor. This is because it is copied
 // in the copy-constructor of VCMEncodedFrame.
-struct CodecSpecificInfo
-{
-    VideoCodecType   codecType;
-    CodecSpecificInfoUnion codecSpecific;
+struct CodecSpecificInfo {
+  VideoCodecType codecType;
+  CodecSpecificInfoUnion codecSpecific;
 };
 
 }  // namespace webrtc
 
-#endif // WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H
+#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_INTERFACE_VIDEO_CODEC_INTERFACE_H_

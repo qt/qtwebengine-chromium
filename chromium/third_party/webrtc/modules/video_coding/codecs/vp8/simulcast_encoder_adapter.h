@@ -42,7 +42,7 @@ class SimulcastEncoderAdapter : public VP8Encoder {
                  size_t max_payload_size) override;
   int Encode(const VideoFrame& input_image,
              const CodecSpecificInfo* codec_specific_info,
-             const std::vector<VideoFrameType>* frame_types) override;
+             const std::vector<FrameType>* frame_types) override;
   int RegisterEncodeCompleteCallback(EncodedImageCallback* callback) override;
   int SetChannelParameters(uint32_t packet_loss, int64_t rtt) override;
   int SetRates(uint32_t new_bitrate_kbit, uint32_t new_framerate) override;
@@ -58,6 +58,8 @@ class SimulcastEncoderAdapter : public VP8Encoder {
   void OnDroppedFrame() override;
 
   int GetTargetFramerate() override;
+  bool SupportsNativeHandle() const override;
+  const char* ImplementationName() const override;
 
  private:
   struct StreamInfo {
@@ -70,8 +72,8 @@ class SimulcastEncoderAdapter : public VP8Encoder {
           send_stream(true) {}
     StreamInfo(VideoEncoder* encoder,
                EncodedImageCallback* callback,
-               unsigned short width,
-               unsigned short height,
+               uint16_t width,
+               uint16_t height,
                bool send_stream)
         : encoder(encoder),
           callback(callback),
@@ -82,8 +84,8 @@ class SimulcastEncoderAdapter : public VP8Encoder {
     // Deleted by SimulcastEncoderAdapter::Release().
     VideoEncoder* encoder;
     EncodedImageCallback* callback;
-    unsigned short width;
-    unsigned short height;
+    uint16_t width;
+    uint16_t height;
     bool key_frame_request;
     bool send_stream;
   };
@@ -117,4 +119,3 @@ class SimulcastEncoderAdapter : public VP8Encoder {
 }  // namespace webrtc
 
 #endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_VP8_SIMULCAST_ENCODER_ADAPTER_H_
-

@@ -8,7 +8,9 @@
 #include "platform/PlatformExport.h"
 #include "platform/graphics/ContiguousContainer.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 
 #ifndef NDEBUG
@@ -20,9 +22,11 @@
 namespace blink {
 
 class GraphicsContext;
+class IntRect;
 class WebDisplayItemList;
 
 class PLATFORM_EXPORT DisplayItem {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     enum {
         // Must be kept in sync with core/paint/PaintPhase.h.
@@ -69,6 +73,7 @@ public:
         PopupListBoxBackground,
         PopupListBoxRow,
         PrintedContentBackground,
+        PrintedContentDestinationLocations,
         PrintedContentLineBoundary,
         PrintedContentPDFURLRect,
         Resizer,
@@ -90,8 +95,10 @@ public:
         ScrollbarVertical, // For ScrollbarThemeMacNonOverlayAPI only.
         SelectionGap,
         SelectionTint,
-        TableCellBackgroundFromContainers,
-        TableCellBackgroundFromSelfPaintingRow,
+        TableCellBackgroundFromColumnGroup,
+        TableCellBackgroundFromColumn,
+        TableCellBackgroundFromSection,
+        TableCellBackgroundFromRow,
         // Table collapsed borders can be painted together (e.g., left & top) but there are at most 4 phases of collapsed
         // border painting for a single cell. To disambiguate these phases of collapsed border painting, a mask is used.
         // TableCollapsedBorderBase can be larger than TableCollapsedBorderUnalignedBase to ensure the base lower bits are 0's.
@@ -124,6 +131,7 @@ public:
         ClipLayerOverflowControls,
         ClipNodeImage,
         ClipPopupListBoxFrame,
+        ClipScrollbarsToBoxBounds,
         ClipSelectionImage,
         PageWidgetDelegateClip,
         ClipPrintedPage,
@@ -165,14 +173,9 @@ public:
         BeginFixedPositionContainer,
         EndFixedPositionContainer,
 
-        SubsequenceFirst,
-        SubsequenceNegativeZOrder = SubsequenceFirst,
-        SubsequenceNormalFlowAndPositiveZOrder,
-        SubsequenceLast = SubsequenceNormalFlowAndPositiveZOrder,
-        EndSubsequenceFirst,
-        EndSubsequenceLast = EndSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
-        CachedSubsequenceFirst,
-        CachedSubsequenceLast = CachedSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
+        Subsequence,
+        EndSubsequence,
+        CachedSubsequence,
 
         UninitializedType,
         TypeLast = UninitializedType
@@ -181,15 +184,15 @@ public:
     static_assert(TableCollapsedBorderBase >= TableCollapsedBorderUnalignedBase, "TableCollapsedBorder types overlap with other types");
     static_assert((TableCollapsedBorderBase & 0xf) == 0, "The lowest 4 bits of TableCollapsedBorderBase should be zero");
     // Bits or'ed onto TableCollapsedBorderBase to generate a real table collapsed border type.
-    enum TableCollspaedBorderSides {
+    enum TableCollapsedBorderSides {
         TableCollapsedBorderTop = 1 << 0,
         TableCollapsedBorderRight = 1 << 1,
         TableCollapsedBorderBottom = 1 << 2,
         TableCollapsedBorderLeft = 1 << 3,
     };
 
-    DisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize)
-        : m_client(client.displayItemClient())
+    DisplayItem(const DisplayItemClient& client, Type type, size_t derivedSize)
+        : m_client(&client)
         , m_scope(0)
         , m_type(type)
         , m_derivedSize(derivedSize)
@@ -208,7 +211,8 @@ public:
 
     // Ids are for matching new DisplayItems with existing DisplayItems.
     struct Id {
-        Id(const DisplayItemClient client, const Type type, const unsigned scope)
+        STACK_ALLOCATED();
+        Id(const DisplayItemClient& client, const Type type, const unsigned scope)
             : client(client)
             , type(type)
             , scope(scope) { }
@@ -218,12 +222,12 @@ public:
             // We should always convert to non-cached types before matching.
             ASSERT(!isCachedType(item.m_type));
             ASSERT(!isCachedType(type));
-            return client == item.m_client
+            return &client == item.m_client
                 && type == item.m_type
                 && scope == item.m_scope;
         }
 
-        const DisplayItemClient client;
+        const DisplayItemClient& client;
         const Type type;
         const unsigned scope;
     };
@@ -233,20 +237,20 @@ public:
     {
         if (isCachedDrawingType(type))
             return cachedDrawingTypeToDrawingType(type);
-        if (isCachedSubsequenceType(type))
-            return cachedSubsequenceTypeToSubsequenceType(type);
+        if (type == CachedSubsequence)
+            return Subsequence;
         return type;
     }
 
     // Return the Id with cached type converted to non-cached type.
     Id nonCachedId() const
     {
-        return Id(m_client, nonCachedType(m_type), m_scope);
+        return Id(*m_client, nonCachedType(m_type), m_scope);
     }
 
-    virtual void replay(GraphicsContext&) { }
+    virtual void replay(GraphicsContext&) const { }
 
-    DisplayItemClient client() const { return m_client; }
+    const DisplayItemClient& client() const { ASSERT(m_client); return *m_client; }
     Type type() const { return m_type; }
 
     void setScope(unsigned scope) { m_scope = scope; }
@@ -258,11 +262,11 @@ public:
     // supply this to the DisplayItem constructor.
     size_t derivedSize() const { return m_derivedSize; }
 
-    // For DisplayItemList only. Painters should use DisplayItemCacheSkipper instead.
+    // For PaintController only. Painters should use DisplayItemCacheSkipper instead.
     void setSkippedCache() { m_skippedCache = true; }
     bool skippedCache() const { return m_skippedCache; }
 
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const { }
+    virtual void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const { }
 
     // See comments of enum Type for usage of the following macros.
 #define DEFINE_CATEGORY_METHODS(Category) \
@@ -314,13 +318,9 @@ public:
 
     DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D)
 
-    DEFINE_PAIRED_CATEGORY_METHODS(Subsequence, subsequence)
-    DEFINE_CATEGORY_METHODS(CachedSubsequence)
-    DEFINE_CONVERSION_METHODS(Subsequence, subsequence, CachedSubsequence, cachedSubsequence)
-
-    static bool isCachedType(Type type) { return isCachedDrawingType(type) || isCachedSubsequenceType(type); }
+    static bool isCachedType(Type type) { return isCachedDrawingType(type) || type == CachedSubsequence; }
     bool isCached() const { return isCachedType(m_type); }
-    static bool isCacheableType(Type type) { return isDrawingType(type) || isSubsequenceType(type); }
+    static bool isCacheableType(Type type) { return isDrawingType(type) || type == Subsequence; }
     bool isCacheable() const { return !skippedCache() && isCacheableType(m_type); }
 
     virtual bool isBegin() const { return false; }
@@ -336,15 +336,19 @@ public:
             && m_derivedSize == other.m_derivedSize
             && m_skippedCache == other.m_skippedCache;
     }
+
+    // True if the client is non-null. Because m_client is const, this should
+    // never be false except when we explicitly create a tombstone/"dead display
+    // item" as part of moving an item from one list to another (see:
+    // DisplayItemList::appendByMoving).
+    bool hasValidClient() const { return m_client; }
 #endif
 
     virtual bool drawsContent() const { return false; }
 
-    bool isValid() const { return m_client; }
-
 #ifndef NDEBUG
     static WTF::String typeAsDebugString(DisplayItem::Type);
-    const WTF::String& clientDebugString() const { return m_clientDebugString; }
+    const WTF::String clientDebugString() const { return m_clientDebugString; }
     void setClientDebugString(const WTF::String& s) { m_clientDebugString = s; }
     WTF::String asDebugString() const;
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const;
@@ -364,7 +368,7 @@ private:
         , m_skippedCache(false)
     { }
 
-    const DisplayItemClient m_client;
+    const DisplayItemClient* m_client;
     unsigned m_scope;
     static_assert(TypeLast < (1 << 16), "DisplayItem::Type should fit in 16 bits");
     const Type m_type : 16;
@@ -378,7 +382,7 @@ private:
 
 class PLATFORM_EXPORT PairedBeginDisplayItem : public DisplayItem {
 protected:
-    PairedBeginDisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
+    PairedBeginDisplayItem(const DisplayItemClient& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
 
 private:
     bool isBegin() const final { return true; }
@@ -386,7 +390,7 @@ private:
 
 class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
 protected:
-    PairedEndDisplayItem(const DisplayItemClientWrapper& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
+    PairedEndDisplayItem(const DisplayItemClient& client, Type type, size_t derivedSize) : DisplayItem(client, type, derivedSize) { }
 
 #if ENABLE(ASSERT)
     bool isEndAndPairedWith(DisplayItem::Type otherType) const override = 0;

@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "base/stl_util.h"
+#include "net/quic/quic_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -14,7 +15,7 @@ namespace test {
 namespace {
 
 TEST(QuicProtocolTest, AdjustErrorForVersion) {
-  ASSERT_EQ(8, QUIC_STREAM_LAST_ERROR)
+  ASSERT_EQ(9, QUIC_STREAM_LAST_ERROR)
       << "Any additions to QuicRstStreamErrorCode require an addition to "
       << "AdjustErrorForVersion and this associated test.";
 
@@ -22,7 +23,7 @@ TEST(QuicProtocolTest, AdjustErrorForVersion) {
   // following.
   //  EXPECT_EQ(QUIC_RST_ACKNOWLEDGEMENT, AdjustErrorForVersion(
   //      QUIC_RST_ACKNOWLEDGEMENT,
-  //      QUIC_VERSION_24));
+  //      QUIC_VERSION_28));
 }
 
 TEST(QuicProtocolTest, MakeQuicTag) {
@@ -45,11 +46,25 @@ TEST(QuicProtocolTest, IsAawaitingPacket) {
   EXPECT_TRUE(IsAwaitingPacket(ack_frame, 10u));
 }
 
-TEST(QuicProtocolTest, QuicVersionToQuicTag) {
-  // If you add a new version to the QuicVersion enum you will need to add a new
-  // case to QuicVersionToQuicTag, otherwise this test will fail.
+TEST(QuicProtocolTest, QuicDeprecatedErrorCodeCount) {
+  // If you deprecated any QuicErrorCode, you will need to update the
+  // deprecated QuicErrorCode count. Otherwise this test will fail.
+  int num_deprecated_errors = 0;
+  std::string invalid_error_code = "INVALID_ERROR_CODE";
+  for (int i = 0; i < QUIC_LAST_ERROR; ++i) {
+    if (QuicUtils::ErrorToString(static_cast<QuicErrorCode>(i)) ==
+        invalid_error_code) {
+      ++num_deprecated_errors;
+    }
+  }
+  EXPECT_EQ(kDeprecatedQuicErrorCount, num_deprecated_errors);
+}
 
-  // TODO(rtenneti): Enable checking of Log(ERROR) messages.
+TEST(QuicProtocolTest, QuicVersionToQuicTag) {
+// If you add a new version to the QuicVersion enum you will need to add a new
+// case to QuicVersionToQuicTag, otherwise this test will fail.
+
+// TODO(rtenneti): Enable checking of Log(ERROR) messages.
 #if 0
   // Any logs would indicate an unsupported version which we don't expect.
   ScopedMockLog log(kDoNotCaptureLogsYet);
@@ -71,7 +86,7 @@ TEST(QuicProtocolTest, QuicVersionToQuicTag) {
 }
 
 TEST(QuicProtocolTest, QuicVersionToQuicTagUnsupported) {
-  // TODO(rtenneti): Enable checking of Log(ERROR) messages.
+// TODO(rtenneti): Enable checking of Log(ERROR) messages.
 #if 0
   // TODO(rjshade): Change to DFATAL once we actually support multiple versions,
   // and QuicConnectionTest::SendVersionNegotiationPacket can be changed to use
@@ -85,10 +100,10 @@ TEST(QuicProtocolTest, QuicVersionToQuicTagUnsupported) {
 }
 
 TEST(QuicProtocolTest, QuicTagToQuicVersion) {
-  // If you add a new version to the QuicVersion enum you will need to add a new
-  // case to QuicTagToQuicVersion, otherwise this test will fail.
+// If you add a new version to the QuicVersion enum you will need to add a new
+// case to QuicTagToQuicVersion, otherwise this test will fail.
 
-  // TODO(rtenneti): Enable checking of Log(ERROR) messages.
+// TODO(rtenneti): Enable checking of Log(ERROR) messages.
 #if 0
   // Any logs would indicate an unsupported version which we don't expect.
   ScopedMockLog log(kDoNotCaptureLogsYet);
@@ -115,7 +130,7 @@ TEST(QuicProtocolTest, QuicTagToQuicVersion) {
 }
 
 TEST(QuicProtocolTest, QuicTagToQuicVersionUnsupported) {
-  // TODO(rtenneti): Enable checking of Log(ERROR) messages.
+// TODO(rtenneti): Enable checking of Log(ERROR) messages.
 #if 0
   ScopedMockLog log(kDoNotCaptureLogsYet);
 #ifndef NDEBUG

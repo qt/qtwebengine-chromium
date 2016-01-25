@@ -27,8 +27,6 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/layout/LayoutFlowThread.h"
 
 #include "core/layout/LayoutMultiColumnSet.h"
@@ -99,16 +97,16 @@ void LayoutFlowThread::validateColumnSets()
     generateColumnSetIntervalTree();
 }
 
-void LayoutFlowThread::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
+void LayoutFlowThread::mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
-    ASSERT(paintInvalidationContainer != this); // A flow thread should never be an invalidation container.
+    ASSERT(ancestor != this); // A flow thread should never be an invalidation container.
     // |rect| is a layout rectangle, where the block direction coordinate is flipped for writing
     // mode. fragmentsBoundingBox(), on the other hand, works on physical rectangles, so we need to
     // flip the rectangle before and after calling it.
     flipForWritingMode(rect);
     rect = fragmentsBoundingBox(rect);
     flipForWritingMode(rect);
-    LayoutBlockFlow::mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
+    LayoutBlockFlow::mapToVisibleRectInAncestorSpace(ancestor, rect, paintInvalidationState);
 }
 
 void LayoutFlowThread::layout()
@@ -161,6 +159,14 @@ void LayoutFlowThread::generateColumnSetIntervalTree()
     m_multiColumnSetIntervalTree.initIfNeeded();
     for (auto columnSet : m_multiColumnSetList)
         m_multiColumnSetIntervalTree.add(MultiColumnSetIntervalTree::createInterval(columnSet->logicalTopInFlowThread(), columnSet->logicalBottomInFlowThread(), columnSet));
+}
+
+LayoutUnit LayoutFlowThread::nextLogicalTopForUnbreakableContent(LayoutUnit flowThreadOffset, LayoutUnit contentLogicalHeight) const
+{
+    LayoutMultiColumnSet* columnSet = columnSetAtBlockOffset(flowThreadOffset);
+    if (!columnSet)
+        return flowThreadOffset;
+    return columnSet->nextLogicalTopForUnbreakableContent(flowThreadOffset, contentLogicalHeight);
 }
 
 void LayoutFlowThread::collectLayerFragments(PaintLayerFragments& layerFragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRectInFlowThread)

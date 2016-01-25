@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // This Polymer element shows information from media that is currently cast
-// to a device. It is assumed that |route| and |sink| correspond to each other.
+// to a device.
 Polymer({
   is: 'route-details',
 
@@ -28,12 +28,13 @@ Polymer({
     },
 
     /**
-     * The sink to show.
-     * @type {?media_router.Sink}
+     * The text for the join button.
+     * @private {string}
      */
-    sink: {
-      type: Object,
-      value: null,
+    joinButtonText_: {
+      type: String,
+      readOnly: true,
+      value: loadTimeData.getString('joinButton'),
     },
 
     /**
@@ -42,7 +43,10 @@ Polymer({
      */
     stopCastingButtonText_: {
       type: String,
-      value: loadTimeData.getString('stopCastingButton'),
+      readOnly: true,
+      value: function() {
+        return loadTimeData.getString('stopCastingButton');
+      },
     },
 
     /**
@@ -58,15 +62,6 @@ Polymer({
   },
 
   /**
-   * Fires a back-click event. This is called when the back link is clicked.
-   *
-   * @private
-   */
-  back_: function() {
-    this.fire('back-click');
-  },
-
-  /**
    * Fires a close-route-click event. This is called when the button to close
    * the current route is clicked.
    *
@@ -74,6 +69,16 @@ Polymer({
    */
   closeRoute_: function() {
     this.fire('close-route-click', {route: this.route});
+  },
+
+  /**
+   * Fires a join-route-click event. This is called when the button to join
+   * the current route is clicked.
+   *
+   * @private
+   */
+  joinRoute_: function() {
+    this.fire('join-route-click', {route: this.route});
   },
 
   /**
@@ -111,14 +116,5 @@ Polymer({
       // Load was unsuccessful; fall back to default view.
       that.isCustomControllerHidden_ = true;
     });
-  },
-
-  /**
-   * Handles a click on the close button by firing a close-button-click event.
-   *
-   * @private
-   */
-  onCloseButtonClick_: function() {
-    this.fire('close-button-click');
   },
 });

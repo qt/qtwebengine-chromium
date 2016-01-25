@@ -12,7 +12,6 @@
 #include "SkBigPicture.h"
 #include "SkCanvas.h"
 #include "SkGpuDevice.h"
-#include "SkGrPixelRef.h"
 #include "SkLayerInfo.h"
 #include "SkRecordDraw.h"
 #include "SkSurface.h"
@@ -277,15 +276,6 @@ void GrLayerHoister::DrawLayersToAtlas(GrContext* context,
     }
 }
 
-SkBitmap wrap_texture(GrTexture* texture) {
-    SkASSERT(texture);
-
-    SkBitmap result;
-    result.setInfo(texture->surfacePriv().info(kPremul_SkAlphaType));
-    result.setPixelRef(new SkGrPixelRef(result.info(), texture))->unref();
-    return result;
-}
-
 void GrLayerHoister::FilterLayer(GrContext* context,
                                  SkGpuDevice* device,
                                  const GrHoistedLayer& info) {
@@ -313,8 +303,10 @@ void GrLayerHoister::FilterLayer(GrContext* context,
     SkAutoTUnref<SkImageFilter::Cache> cache(SkImageFilter::Cache::Create(kDefaultCacheSize));
     SkImageFilter::Context filterContext(totMat, clipBounds, cache);
 
-    SkImageFilter::Proxy proxy(device);
-    const SkBitmap src = wrap_texture(layer->texture());
+    SkImageFilter::DeviceProxy proxy(device);
+    SkBitmap src;
+    GrWrapTextureInBitmap(layer->texture(), layer->texture()->width(), layer->texture()->height(),
+                          false, &src);
 
     if (!layer->filter()->filterImage(&proxy, src, filterContext, &filteredBitmap, &offset)) {
         // Filtering failed. Press on with the unfiltered version.
@@ -322,7 +314,7 @@ void GrLayerHoister::FilterLayer(GrContext* context,
     }
 
     SkIRect newRect = SkIRect::MakeWH(filteredBitmap.width(), filteredBitmap.height());
-    layer->setTexture(filteredBitmap.getTexture(), newRect);
+    layer->setTexture(filteredBitmap.getTexture(), newRect, false);
     layer->setOffset(offset);
 }
 
@@ -380,13 +372,22 @@ void GrLayerHoister::UnlockLayers(GrContext* context,
     SkDEBUGCODE(layerCache->validate();)
 }
 
-void GrLayerHoister::PurgeCache(GrContext* context) {
-#if !GR_CACHE_HOISTED_LAYERS
+void GrLayerHoister::Begin(GrContext* context) {
     GrLayerCache* layerCache = context->getLayerCache();
+
+    layerCache->begin();
+}
+
+void GrLayerHoister::End(GrContext* context) {
+    GrLayerCache* layerCache = context->getLayerCache();
+
+#if !GR_CACHE_HOISTED_LAYERS
 
     // This code completely clears out the atlas. It is required when
     // caching is disabled so the atlas doesn't fill up and force more
     // free floating layers
     layerCache->purgeAll();
 #endif
+
+    layerCache->end();
 }

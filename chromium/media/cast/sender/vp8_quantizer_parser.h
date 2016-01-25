@@ -5,6 +5,9 @@
 #ifndef MEDIA_CAST_SENDER_VP8_QUANTIZER_PARSER_H_
 #define MEDIA_CAST_SENDER_VP8_QUANTIZER_PARSER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "media/cast/cast_config.h"
 
 namespace media {
@@ -12,7 +15,7 @@ namespace cast {
 
 // Partially parse / skip data in the header and the first partition,
 // and return the base quantizer in the range [0,63], or -1 on parse error.
-int ParseVp8HeaderQuantizer(const uint8* data, size_t size);
+int ParseVp8HeaderQuantizer(const uint8_t* data, size_t size);
 
 }  // namespace cast
 }  // namespace media

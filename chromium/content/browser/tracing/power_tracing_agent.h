@@ -5,8 +5,10 @@
 #ifndef CONTENT_BROWSER_TRACING_POWER_TRACING_AGENT_H_
 #define CONTENT_BROWSER_TRACING_POWER_TRACING_AGENT_H_
 
+#include "base/macros.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/tracing_agent.h"
 
 namespace base {
 template <typename Type>
@@ -17,16 +19,23 @@ namespace content {
 
 class BattorPowerTraceProvider;
 
-class PowerTracingAgent {
+class PowerTracingAgent : public base::trace_event::TracingAgent {
  public:
-  typedef base::Callback<void(const scoped_refptr<base::RefCountedString>&)>
-      OutputCallback;
-
-  bool StartTracing();
-  void StopTracing(const OutputCallback& callback);
-
   // Retrieve the singleton instance.
   static PowerTracingAgent* GetInstance();
+
+  // base::trace_event::TracingAgent implementation.
+  std::string GetTracingAgentName() override;
+  std::string GetTraceEventLabel() override;
+
+  bool StartAgentTracing(
+      const base::trace_event::TraceConfig& trace_config) override;
+  void StopAgentTracing(const StopAgentTracingCallback& callback) override;
+
+  bool SupportsExplicitClockSync() override;
+  void RecordClockSyncMarker(
+      int sync_id,
+      const RecordClockSyncMarkerCallback& callback) override;
 
  private:
   // This allows constructor and destructor to be private and usable only
@@ -35,15 +44,19 @@ class PowerTracingAgent {
 
   // Constructor.
   PowerTracingAgent();
-  virtual ~PowerTracingAgent();
+  ~PowerTracingAgent() override;
 
-  void OnStopTracingDone(const OutputCallback& callback,
+  void OnStopTracingDone(const StopAgentTracingCallback& callback,
                          const scoped_refptr<base::RefCountedString>& result);
 
-  void FlushOnThread(const OutputCallback& callback);
+  void TraceOnThread();
+  void FlushOnThread(const StopAgentTracingCallback& callback);
+  void RecordClockSyncMarkerOnThread(
+      int sync_id,
+      const RecordClockSyncMarkerCallback& callback);
 
+  base::Thread thread_;
   scoped_ptr<BattorPowerTraceProvider> battor_trace_provider_;
-  bool is_tracing_;
 
   DISALLOW_COPY_AND_ASSIGN(PowerTracingAgent);
 };

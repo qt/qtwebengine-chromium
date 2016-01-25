@@ -4,12 +4,15 @@
 
 #include "components/scheduler/base/task_queue_manager.h"
 
+#include <stddef.h>
+
 #include "base/bind.h"
 #include "base/threading/thread.h"
-#include "components/scheduler/base/nestable_task_runner_for_test.h"
+#include "base/time/default_tick_clock.h"
 #include "components/scheduler/base/task_queue_impl.h"
+#include "components/scheduler/base/task_queue_manager_delegate_for_test.h"
 #include "components/scheduler/base/task_queue_selector.h"
-#include "components/scheduler/base/task_queue_sets.h"
+#include "components/scheduler/base/work_queue_sets.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 
@@ -24,19 +27,26 @@ class TaskQueueManagerPerfTest : public testing::Test {
         num_tasks_to_post_(0),
         num_tasks_to_run_(0) {}
 
+  void SetUp() override {
+    if (base::ThreadTicks::IsSupported())
+      base::ThreadTicks::WaitUntilInitialized();
+  }
+
   void Initialize(size_t num_queues) {
     num_queues_ = num_queues;
     message_loop_.reset(new base::MessageLoop());
     manager_ = make_scoped_ptr(new TaskQueueManager(
-        NestableTaskRunnerForTest::Create(message_loop_->task_runner()),
-        "fake.category", "fake.category.debug"));
+        TaskQueueManagerDelegateForTest::Create(
+            message_loop_->task_runner(),
+            make_scoped_ptr(new base::DefaultTickClock())),
+        "fake.category", "fake.category", "fake.category.debug"));
     for (size_t i = 0; i < num_queues; i++)
       queues_.push_back(manager_->NewTaskQueue(TaskQueue::Spec("test")));
   }
 
   void TestDelayedTask() {
     if (--num_tasks_to_run_ == 0) {
-      message_loop_->Quit();
+      message_loop_->QuitWhenIdle();
     }
 
     num_tasks_in_flight_--;

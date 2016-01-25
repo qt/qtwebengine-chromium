@@ -4,8 +4,12 @@
 
 #include "device/bluetooth/dbus/bluetooth_media_endpoint_service_provider.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/platform_thread.h"
@@ -252,7 +256,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothMediaEndpointServiceProviderImpl
     } else {
       writer.AppendArrayOfBytes(&configuration[0], configuration.size());
     }
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Origin thread (i.e. the UI thread in production).

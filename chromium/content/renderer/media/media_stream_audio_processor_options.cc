@@ -4,15 +4,20 @@
 
 #include "content/renderer/media/media_stream_audio_processor_options.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/renderer/media/media_stream_constraints_util.h"
 #include "content/renderer/media/media_stream_source.h"
@@ -64,7 +69,7 @@ struct {
   { MediaAudioConstraints::kGoogNoiseSuppression, true },
   { MediaAudioConstraints::kGoogHighpassFilter, true },
   { MediaAudioConstraints::kGoogTypingNoiseDetection, true },
-  { MediaAudioConstraints::kGoogExperimentalNoiseSuppression, false },
+  { MediaAudioConstraints::kGoogExperimentalNoiseSuppression, true },
   // Beamforming will only be enabled if we are also provided with a
   // multi-microphone geometry.
   { MediaAudioConstraints::kGoogBeamforming, true },
@@ -325,7 +330,7 @@ void StartEchoCancellationDump(AudioProcessing* audio_processing,
                                base::File aec_dump_file) {
   DCHECK(aec_dump_file.IsValid());
 
-  FILE* stream = base::FileToFILE(aec_dump_file.Pass(), "w");
+  FILE* stream = base::FileToFILE(std::move(aec_dump_file), "w");
   if (!stream) {
     LOG(ERROR) << "Failed to open AEC dump file";
     return;

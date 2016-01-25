@@ -4,6 +4,7 @@
 
 #include "net/server/web_socket_encoder.h"
 
+#include <utility>
 #include <vector>
 
 #include "base/logging.h"
@@ -91,7 +92,7 @@ WebSocket::ParseResult DecodeFrameHybi17(const base::StringPiece& frame,
   if (client_frame && !masked)  // In Hybi-17 spec client MUST mask its frame.
     return WebSocket::FRAME_ERROR;
 
-  uint64 payload_length64 = second_byte & kPayloadLengthMask;
+  uint64_t payload_length64 = second_byte & kPayloadLengthMask;
   if (payload_length64 > kMaxSingleBytePayloadLength) {
     int extended_payload_length_size;
     if (payload_length64 == kTwoBytePayloadLengthField)
@@ -110,7 +111,7 @@ WebSocket::ParseResult DecodeFrameHybi17(const base::StringPiece& frame,
   }
 
   size_t actual_masking_key_length = masked ? kMaskingKeyWidthInBytes : 0;
-  static const uint64 max_payload_length = 0x7FFFFFFFFFFFFFFFull;
+  static const uint64_t max_payload_length = 0x7FFFFFFFFFFFFFFFull;
   static size_t max_length = std::numeric_limits<size_t>::max();
   if (payload_length64 > max_payload_length ||
       payload_length64 + actual_masking_key_length > max_length) {
@@ -149,9 +150,9 @@ void EncodeFrameHybi17(const std::string& message,
   int reserved1 = compressed ? kReserved1Bit : 0;
   frame.push_back(kFinalBit | op_code | reserved1);
   char mask_key_bit = masking_key != 0 ? kMaskBit : 0;
-  if (data_length <= kMaxSingleBytePayloadLength)
-    frame.push_back(data_length | mask_key_bit);
-  else if (data_length <= 0xFFFF) {
+  if (data_length <= kMaxSingleBytePayloadLength) {
+    frame.push_back(static_cast<char>(data_length) | mask_key_bit);
+  } else if (data_length <= 0xFFFF) {
     frame.push_back(kTwoBytePayloadLengthField | mask_key_bit);
     frame.push_back((data_length & 0xFF00) >> 8);
     frame.push_back(data_length & 0xFF);
@@ -226,8 +227,8 @@ scoped_ptr<WebSocketEncoder> WebSocketEncoder::CreateServer(
       continue;
     }
     *deflate_parameters = response;
-    return make_scoped_ptr(
-        new WebSocketEncoder(FOR_SERVER, deflater.Pass(), inflater.Pass()));
+    return make_scoped_ptr(new WebSocketEncoder(FOR_SERVER, std::move(deflater),
+                                                std::move(inflater)));
   }
 
   // We cannot find an acceptable offer.
@@ -235,7 +236,7 @@ scoped_ptr<WebSocketEncoder> WebSocketEncoder::CreateServer(
 }
 
 // static
-WebSocketEncoder* WebSocketEncoder::CreateClient(
+scoped_ptr<WebSocketEncoder> WebSocketEncoder::CreateClient(
     const std::string& response_extensions) {
   // TODO(yhirano): Add a way to return an error.
 
@@ -246,12 +247,12 @@ WebSocketEncoder* WebSocketEncoder::CreateClient(
     // 2) There is a malformed Sec-WebSocketExtensions header.
     // We should return a deflate-disabled encoder for the former case and
     // fail the connection for the latter case.
-    return new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr);
+    return make_scoped_ptr(new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr));
   }
   if (parser.extensions().size() != 1) {
     // Only permessage-deflate extension is supported.
     // TODO (yhirano): Fail the connection.
-    return new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr);
+    return make_scoped_ptr(new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr));
   }
   const auto& extension = parser.extensions()[0];
   WebSocketDeflateParameters params;
@@ -259,7 +260,7 @@ WebSocketEncoder* WebSocketEncoder::CreateClient(
   if (!params.Initialize(extension, &failure_message) ||
       !params.IsValidAsResponse(&failure_message)) {
     // TODO (yhirano): Fail the connection.
-    return new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr);
+    return make_scoped_ptr(new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr));
   }
 
   auto deflater = make_scoped_ptr(
@@ -269,16 +270,19 @@ WebSocketEncoder* WebSocketEncoder::CreateClient(
   if (!deflater->Initialize(params.PermissiveClientMaxWindowBits()) ||
       !inflater->Initialize(params.PermissiveServerMaxWindowBits())) {
     // TODO (yhirano): Fail the connection.
-    return new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr);
+    return make_scoped_ptr(new WebSocketEncoder(FOR_CLIENT, nullptr, nullptr));
   }
 
-  return new WebSocketEncoder(FOR_CLIENT, deflater.Pass(), inflater.Pass());
+  return make_scoped_ptr(new WebSocketEncoder(FOR_CLIENT, std::move(deflater),
+                                              std::move(inflater)));
 }
 
 WebSocketEncoder::WebSocketEncoder(Type type,
                                    scoped_ptr<WebSocketDeflater> deflater,
                                    scoped_ptr<WebSocketInflater> inflater)
-    : type_(type), deflater_(deflater.Pass()), inflater_(inflater.Pass()) {}
+    : type_(type),
+      deflater_(std::move(deflater)),
+      inflater_(std::move(inflater)) {}
 
 WebSocketEncoder::~WebSocketEncoder() {}
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/testing/GeometryPrinters.h"
 
 #include "platform/geometry/FloatBox.h"
@@ -105,9 +104,9 @@ void PrintTo(const FloatRoundedRect::Radii& radii, std::ostream* os)
     *os << ", ";
     PrintTo(radii.topRight(), os);
     *os << ", ";
-    PrintTo(radii.bottomRight(), os);
-    *os << ", ";
     PrintTo(radii.bottomLeft(), os);
+    *os << ", ";
+    PrintTo(radii.bottomRight(), os);
     *os << ")";
 }
 

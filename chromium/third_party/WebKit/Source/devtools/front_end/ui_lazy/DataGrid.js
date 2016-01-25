@@ -25,7 +25,7 @@
 
 /**
  * @constructor
- * @extends {WebInspector.Widget}
+ * @extends {WebInspector.Object}
  * @param {!Array.<!WebInspector.DataGrid.ColumnDescriptor>} columnsArray
  * @param {function(!WebInspector.DataGridNode, string, string, string)=} editCallback
  * @param {function(!WebInspector.DataGridNode)=} deleteCallback
@@ -34,10 +34,8 @@
  */
 WebInspector.DataGrid = function(columnsArray, editCallback, deleteCallback, refreshCallback, contextMenuCallback)
 {
-    WebInspector.Widget.call(this);
-    this.registerRequiredCSS("ui_lazy/dataGrid.css");
-
-    this.element.className = "data-grid"; // Override
+    this.element = createElementWithClass("div", "data-grid");
+    WebInspector.appendStyle(this.element, "ui_lazy/dataGrid.css");
     this.element.tabIndex = 0;
     this.element.addEventListener("keydown", this._keyDown.bind(this), false);
 
@@ -85,6 +83,9 @@ WebInspector.DataGrid = function(columnsArray, editCallback, deleteCallback, ref
     /** @type {!Element} */
     this._bottomFillerRow = createElementWithClass("tr", "data-grid-filler-row revealed");
     this.setVerticalPadding(0, 0);
+
+    /** @type {boolean} */
+    this._inline = false;
 
     /** @type {!Array.<!WebInspector.DataGrid.ColumnDescriptor>} */
     this._columnsArray = columnsArray;
@@ -249,6 +250,7 @@ WebInspector.DataGrid.prototype = {
         rootNode.hasChildren = false;
         rootNode._expanded = true;
         rootNode._revealed = true;
+        rootNode.selectable = false;
         rootNode.dataGrid = this;
     },
 
@@ -314,6 +316,7 @@ WebInspector.DataGrid.prototype = {
     {
         this.element.classList.add("inline");
         this._cornerWidth = 0;
+        this._inline = true;
         this.updateWidths();
     },
 
@@ -642,7 +645,11 @@ WebInspector.DataGrid.prototype = {
 
     wasShown: function()
     {
-       this._loadColumnWeights();
+        this._loadColumnWeights();
+    },
+
+    willHide: function()
+    {
     },
 
     _applyColumnWeights: function()
@@ -796,7 +803,6 @@ WebInspector.DataGrid.prototype = {
             if (this._deleteCallback) {
                 handled = true;
                 this._deleteCallback(this.selectedNode);
-                this.changeNodeAfterDeletion();
             }
         } else if (isEnterKey(event)) {
             if (this._editCallback) {
@@ -809,26 +815,41 @@ WebInspector.DataGrid.prototype = {
             nextSelectedNode.reveal();
             nextSelectedNode.select();
         }
-
         if (handled)
             event.consume(true);
     },
 
-    changeNodeAfterDeletion: function()
+    /**
+     * @param {?WebInspector.DataGridNode} root
+     * @param {boolean} onlyAffectsSubtree
+     */
+    updateSelectionBeforeRemoval: function(root, onlyAffectsSubtree)
     {
-        var nextSelectedNode = this.selectedNode.traverseNextNode(true);
+        var ancestor = this.selectedNode;
+        while (ancestor && ancestor !== root)
+            ancestor = ancestor.parent;
+        // Selection is not in the subtree being deleted.
+        if (!ancestor)
+            return;
+
+        var nextSelectedNode;
+        // Skip subtree being deleted when looking for the next selectable node.
+        for (ancestor = root; ancestor && !ancestor.nextSibling; ancestor = ancestor.parent) { }
+        if (ancestor)
+            nextSelectedNode = ancestor.nextSibling;
         while (nextSelectedNode && !nextSelectedNode.selectable)
             nextSelectedNode = nextSelectedNode.traverseNextNode(true);
 
         if (!nextSelectedNode || nextSelectedNode.isCreationNode) {
-            nextSelectedNode = this.selectedNode.traversePreviousNode(true);
+            nextSelectedNode = root.traversePreviousNode(true);
             while (nextSelectedNode && !nextSelectedNode.selectable)
                 nextSelectedNode = nextSelectedNode.traversePreviousNode(true);
         }
-
         if (nextSelectedNode) {
             nextSelectedNode.reveal();
             nextSelectedNode.select();
+        } else {
+            this.selectedNode.deselect();
         }
     },
 
@@ -1066,11 +1087,21 @@ WebInspector.DataGrid.prototype = {
         this.dispatchEventToListeners(WebInspector.DataGrid.Events.ColumnsResized);
     },
 
+    /**
+     * @return {!WebInspector.DataGridWidget}
+     */
+    asWidget: function()
+    {
+        if (!this._dataGridWidget)
+            this._dataGridWidget = new WebInspector.DataGridWidget(this);
+        return this._dataGridWidget;
+    },
+
     ColumnResizePadding: 24,
 
     CenterResizerOverBorderAdjustment: 3,
 
-    __proto__: WebInspector.Widget.prototype
+    __proto__: WebInspector.Object.prototype
 }
 
 /** @enum {string} */
@@ -1382,8 +1413,15 @@ WebInspector.DataGridNode.prototype = {
     {
         if (!child)
             throw("insertChild: Node can't be undefined or null.");
-        if (child.parent === this)
-            throw("insertChild: Node is already a child of this node.");
+        if (child.parent === this) {
+            var currentIndex = this.children.indexOf(child);
+            if (currentIndex < 0)
+                console.assert(false, "Inconsistent DataGrid state");
+            if (currentIndex === index)
+                return;
+            if (currentIndex < index)
+                --index;
+        }
 
         child.remove();
 
@@ -1431,7 +1469,8 @@ WebInspector.DataGridNode.prototype = {
         if (child.parent !== this)
             throw("removeChild: Node is not a child of this node.");
 
-        child.deselect();
+        if (this.dataGrid)
+            this.dataGrid.updateSelectionBeforeRemoval(child, false);
         child._detach();
 
         this.children.remove(child, true);
@@ -1452,11 +1491,11 @@ WebInspector.DataGridNode.prototype = {
 
     removeChildren: function()
     {
+        if (this.dataGrid)
+            this.dataGrid.updateSelectionBeforeRemoval(this, true);
         for (var i = 0; i < this.children.length; ++i) {
             var child = this.children[i];
-            child.deselect();
             child._detach();
-
             child.dataGrid = null;
             child.parent = null;
             child.nextSibling = null;
@@ -1780,4 +1819,64 @@ WebInspector.CreationDataGridNode.prototype = {
     },
 
     __proto__: WebInspector.DataGridNode.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.VBox}
+ * @param {!WebInspector.DataGrid} dataGrid
+ */
+WebInspector.DataGridWidget = function(dataGrid)
+{
+    WebInspector.VBox.call(this);
+    this._dataGrid = dataGrid;
+    this.element.appendChild(dataGrid.element);
+}
+
+WebInspector.DataGridWidget.prototype = {
+    /**
+     * @override
+     */
+    wasShown: function()
+    {
+        this._dataGrid.wasShown();
+    },
+
+    /**
+     * @override
+     */
+    willHide: function()
+    {
+        this._dataGrid.willHide();
+    },
+
+    /**
+     * @override
+     */
+    onResize: function()
+    {
+        this._dataGrid.onResize();
+    },
+
+    /**
+     * @override
+     * @return {!Array.<!Element>}
+     */
+    elementsToRestoreScrollPositionsFor: function()
+    {
+        return [ this._dataGrid._scrollContainer ];
+    },
+
+    /**
+     * @override
+     */
+    detachChildWidgets: function()
+    {
+        WebInspector.Widget.prototype.detachChildWidgets.call(this);
+        for (var dataGrid of this._dataGrids)
+            this.element.removeChild(dataGrid.element);
+        this._dataGrids = [];
+    },
+
+    __proto__: WebInspector.VBox.prototype
 }

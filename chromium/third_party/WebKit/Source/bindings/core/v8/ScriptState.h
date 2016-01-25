@@ -65,7 +65,7 @@ public:
         v8::Local<v8::Context> context = isolate->GetCurrentContext();
         if (context.IsEmpty())
             return false;
-        return context != v8::Debug::GetDebugContext();
+        return context != v8::Debug::GetDebugContext(isolate);
     }
 
     static ScriptState* from(v8::Local<v8::Context> context)
@@ -79,8 +79,8 @@ public:
         return scriptState;
     }
 
-    // The context of the returned ScriptState may have been already detached.
-    // You must check scriptState->contextIsValid() before using the context.
+    // These methods can return nullptr if the context associated with the
+    // ScriptState has already been detached.
     static ScriptState* forMainWorld(LocalFrame*);
     static ScriptState* forWorld(LocalFrame*, DOMWrapperWorld&);
 
@@ -113,6 +113,7 @@ public:
     bool evalEnabled() const;
     void setEvalEnabled(bool);
     ScriptValue getFromGlobalObject(const char* name);
+    ScriptValue getFromExtrasExports(const char* name);
 
 protected:
     ScriptState(v8::Local<v8::Context>, PassRefPtr<DOMWrapperWorld>);
@@ -141,7 +142,7 @@ private:
 // You need to call clear() once you no longer need the context. Otherwise, the context will leak.
 class ScriptStateProtectingContext {
     WTF_MAKE_NONCOPYABLE(ScriptStateProtectingContext);
-    WTF_MAKE_FAST_ALLOCATED(ScriptStateProtectingContext);
+    USING_FAST_MALLOC(ScriptStateProtectingContext);
 public:
     ScriptStateProtectingContext(ScriptState* scriptState)
         : m_scriptState(scriptState)

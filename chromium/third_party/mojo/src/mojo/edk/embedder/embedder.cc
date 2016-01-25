@@ -4,6 +4,8 @@
 
 #include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
 
+#include <utility>
+
 #include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -13,7 +15,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/embedder.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/process_delegate.h"
+#include "mojo/edk/system/core.h"
 #include "third_party/mojo/src/mojo/edk/embedder/embedder_internal.h"
 #include "third_party/mojo/src/mojo/edk/embedder/master_process_delegate.h"
 #include "third_party/mojo/src/mojo/edk/embedder/process_delegate.h"
@@ -27,8 +31,6 @@
 #include "third_party/mojo/src/mojo/edk/system/message_pipe_dispatcher.h"
 #include "third_party/mojo/src/mojo/edk/system/platform_handle_dispatcher.h"
 #include "third_party/mojo/src/mojo/edk/system/raw_channel.h"
-#include "../../../../../../mojo/edk/system/core.h"
-#include "../../../../../../mojo/edk/embedder/embedder_internal.h"
 
 namespace mojo {
 namespace embedder {
@@ -63,6 +65,7 @@ class NewEDKProcessDelegate : public mojo::edk::ProcessDelegate {
 
   void OnShutdownComplete() {
     passed_in_delegate_->OnShutdownComplete();
+    delete this;
   }
 
  private:
@@ -92,23 +95,42 @@ system::ChannelId MakeChannelId() {
   return static_cast<system::ChannelId>(-new_counter_value);
 }
 
-// Note: Called on the I/O thread.
-void ShutdownIPCSupportHelper() {
-  // Save these before they get nuked by |ShutdownChannelOnIOThread()|.
-  scoped_refptr<base::TaskRunner> delegate_thread_task_runner(
-      internal::g_ipc_support->delegate_thread_task_runner());
-  ProcessDelegate* process_delegate =
-      internal::g_ipc_support->process_delegate();
+edk::ScopedPlatformHandle CreateEDKHandle(ScopedPlatformHandle handle) {
+  return edk::ScopedPlatformHandle(edk::PlatformHandle(
+#if defined(OS_WIN)
+        handle.release().handle));
+#else
+        handle.release().fd));
+#endif
+}
 
-  ShutdownIPCSupportOnIOThread();
-
-  bool ok = delegate_thread_task_runner->PostTask(
-      FROM_HERE, base::Bind(&ProcessDelegate::OnShutdownComplete,
-                            base::Unretained(process_delegate)));
-  DCHECK(ok);
+ScopedPlatformHandle CreateHandle(edk::ScopedPlatformHandle handle) {
+  return ScopedPlatformHandle(PlatformHandle(handle.release().handle));
 }
 
 }  // namespace
+
+void PreInitializeParentProcess() {
+  edk::PreInitializeParentProcess();
+}
+
+void PreInitializeChildProcess() {
+  edk::PreInitializeChildProcess();
+}
+
+ScopedPlatformHandle ChildProcessLaunched(base::ProcessHandle child_process) {
+  return CreateHandle(edk::ChildProcessLaunched(child_process));
+}
+
+void ChildProcessLaunched(base::ProcessHandle child_process,
+                          ScopedPlatformHandle server_pipe) {
+  return edk::ChildProcessLaunched(child_process,
+                                   CreateEDKHandle(std::move(server_pipe)));
+}
+
+void SetParentPipeHandle(ScopedPlatformHandle pipe) {
+  edk::SetParentPipeHandle(CreateEDKHandle(std::move(pipe)));
+}
 
 void SetMaxMessageSize(size_t bytes) {
   system::GetMutableConfiguration()->max_message_num_bytes = bytes;
@@ -139,18 +161,13 @@ MojoResult CreatePlatformHandleWrapper(
     MojoHandle* platform_handle_wrapper_handle) {
   DCHECK(platform_handle_wrapper_handle);
   if (UseNewEDK()) {
-    mojo::edk::ScopedPlatformHandle edk_handle(mojo::edk::PlatformHandle(
-#if defined(OS_WIN)
-        platform_handle.release().handle));
-#else
-        platform_handle.release().fd));
-#endif
     return mojo::edk::CreatePlatformHandleWrapper(
-        edk_handle.Pass(), platform_handle_wrapper_handle);
+        CreateEDKHandle(std::move(platform_handle)),
+        platform_handle_wrapper_handle);
   }
 
   scoped_refptr<system::Dispatcher> dispatcher =
-      system::PlatformHandleDispatcher::Create(platform_handle.Pass());
+      system::PlatformHandleDispatcher::Create(std::move(platform_handle));
 
   DCHECK(internal::g_core);
   MojoHandle h = internal::g_core->AddDispatcher(dispatcher);
@@ -172,11 +189,7 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
     MojoResult rv = mojo::edk::PassWrappedPlatformHandle(
         platform_handle_wrapper_handle, &edk_handle);
     platform_handle->reset(mojo::embedder::PlatformHandle(
-#if defined(OS_WIN)
         edk_handle.release().handle));
-#else
-        edk_handle.release().fd));
-#endif
     return rv;
   }
 
@@ -191,13 +204,11 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 
   *platform_handle =
       static_cast<system::PlatformHandleDispatcher*>(dispatcher.get())
-          ->PassPlatformHandle()
-          .Pass();
+          ->PassPlatformHandle();
   return MOJO_RESULT_OK;
 }
 
 void InitIPCSupport(ProcessType process_type,
-                    scoped_refptr<base::TaskRunner> delegate_thread_task_runner,
                     ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner,
                     ScopedPlatformHandle platform_handle) {
@@ -207,17 +218,14 @@ void InitIPCSupport(ProcessType process_type,
   DCHECK(!internal::g_ipc_support);
 
   internal::g_ipc_support = new system::IPCSupport(
-      internal::g_platform_support, process_type,
-      delegate_thread_task_runner, process_delegate,
-      io_thread_task_runner, platform_handle.Pass());
+      internal::g_platform_support, process_type, process_delegate,
+      io_thread_task_runner, std::move(platform_handle));
 
   // TODO(use_chrome_edk) at this point the command line to switch to the new
   // EDK might not be set yet. There's no harm in always intializing the new EDK
   // though.
   g_wrapper_process_delegate = new NewEDKProcessDelegate(process_delegate);
-  mojo::edk::InitIPCSupport(delegate_thread_task_runner,
-                            g_wrapper_process_delegate,
-                            io_thread_task_runner);
+  mojo::edk::InitIPCSupport(g_wrapper_process_delegate, io_thread_task_runner);
 }
 
 void ShutdownIPCSupportOnIOThread() {
@@ -231,6 +239,8 @@ void ShutdownIPCSupportOnIOThread() {
   internal::g_ipc_support->ShutdownOnIOThread();
   delete internal::g_ipc_support;
   internal::g_ipc_support = nullptr;
+  delete g_wrapper_process_delegate;
+  g_wrapper_process_delegate = nullptr;
 }
 
 void ShutdownIPCSupport() {
@@ -241,8 +251,12 @@ void ShutdownIPCSupport() {
 
   DCHECK(internal::g_ipc_support);
 
-  bool ok = internal::g_ipc_support->io_thread_task_runner()->PostTask(
-      FROM_HERE, base::Bind(&ShutdownIPCSupportHelper));
+  ProcessDelegate* delegate = internal::g_ipc_support->process_delegate();
+  bool ok = internal::g_ipc_support->io_thread_task_runner()->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&ShutdownIPCSupportOnIOThread),
+      base::Bind(&ProcessDelegate::OnShutdownComplete,
+                 base::Unretained(delegate)));
   DCHECK(ok);
 }
 
@@ -263,8 +277,8 @@ ScopedMessagePipeHandle ConnectToSlave(
   system::ChannelId channel_id = system::kInvalidChannelId;
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       internal::g_ipc_support->ConnectToSlave(
-          connection_id, slave_info, platform_handle.Pass(),
-          did_connect_to_slave_callback, did_connect_to_slave_runner.Pass(),
+          connection_id, slave_info, std::move(platform_handle),
+          did_connect_to_slave_callback, std::move(did_connect_to_slave_runner),
           &channel_id);
   *channel_info = new ChannelInfo(channel_id);
 
@@ -273,7 +287,7 @@ ScopedMessagePipeHandle ConnectToSlave(
   CHECK(rv.is_valid());
   // TODO(vtl): The |.Pass()| below is only needed due to an MSVS bug; remove it
   // once that's fixed.
-  return rv.Pass();
+  return rv;
 }
 
 ScopedMessagePipeHandle ConnectToMaster(
@@ -293,7 +307,7 @@ ScopedMessagePipeHandle ConnectToMaster(
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       internal::g_ipc_support->ConnectToMaster(
           connection_id, did_connect_to_master_callback,
-          did_connect_to_master_runner.Pass(), &channel_id);
+          std::move(did_connect_to_master_runner), &channel_id);
   *channel_info = new ChannelInfo(channel_id);
 
   ScopedMessagePipeHandle rv(
@@ -301,7 +315,7 @@ ScopedMessagePipeHandle ConnectToMaster(
   CHECK(rv.is_valid());
   // TODO(vtl): The |.Pass()| below is only needed due to an MSVS bug; remove it
   // once that's fixed.
-  return rv.Pass();
+  return rv;
 }
 
 // TODO(vtl): Write tests for this.
@@ -318,14 +332,14 @@ ScopedMessagePipeHandle CreateChannelOnIOThread(
   *channel_info = new ChannelInfo(MakeChannelId());
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       channel_manager->CreateChannelOnIOThread((*channel_info)->channel_id,
-                                               platform_handle.Pass());
+                                               std::move(platform_handle));
 
   ScopedMessagePipeHandle rv(
       MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
   CHECK(rv.is_valid());
   // TODO(vtl): The |.Pass()| below is only needed due to an MSVS bug; remove it
   // once that's fixed.
-  return rv.Pass();
+  return rv;
 }
 
 ScopedMessagePipeHandle CreateChannel(
@@ -337,14 +351,10 @@ ScopedMessagePipeHandle CreateChannel(
   DCHECK(internal::g_ipc_support);
 
   if (UseNewEDK()) {
-    did_create_channel_callback.Run(nullptr);
-    mojo::edk::ScopedPlatformHandle edk_handle(mojo::edk::PlatformHandle(
-#if defined(OS_WIN)
-        platform_handle.release().handle));
-#else
-        platform_handle.release().fd));
-#endif
-    return mojo::edk::CreateMessagePipe(edk_handle.Pass());
+    if (!did_create_channel_callback.is_null())
+      did_create_channel_callback.Run(nullptr);
+    return mojo::edk::CreateMessagePipe(
+        CreateEDKHandle(std::move(platform_handle)));
   }
 
   system::ChannelManager* channel_manager =
@@ -354,7 +364,7 @@ ScopedMessagePipeHandle CreateChannel(
   scoped_ptr<ChannelInfo> channel_info(new ChannelInfo(channel_id));
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       channel_manager->CreateChannel(
-          channel_id, platform_handle.Pass(),
+          channel_id, std::move(platform_handle),
           base::Bind(did_create_channel_callback,
                      base::Unretained(channel_info.release())),
           did_create_channel_runner);
@@ -364,7 +374,7 @@ ScopedMessagePipeHandle CreateChannel(
   CHECK(rv.is_valid());
   // TODO(vtl): The |.Pass()| below is only needed due to an MSVS bug; remove it
   // once that's fixed.
-  return rv.Pass();
+  return rv;
 }
 
 // TODO(vtl): Write tests for this.

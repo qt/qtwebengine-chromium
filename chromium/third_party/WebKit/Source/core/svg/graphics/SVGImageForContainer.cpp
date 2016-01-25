@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/graphics/SVGImageForContainer.h"
 
 #include "platform/geometry/FloatRect.h"
@@ -38,18 +37,18 @@ IntSize SVGImageForContainer::size() const
 void SVGImageForContainer::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dstRect,
     const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode)
 {
-    m_image->drawForContainer(canvas, paint, m_containerSize, m_zoom, dstRect, srcRect);
+    m_image->drawForContainer(canvas, paint, m_containerSize, m_zoom, dstRect, srcRect, m_url);
 }
 
-void SVGImageForContainer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale,
-    const FloatPoint& phase, SkXfermode::Mode op, const FloatRect& dstRect, const IntSize& repeatSpacing)
+void SVGImageForContainer::drawPattern(GraphicsContext& context, const FloatRect& srcRect, const FloatSize& scale,
+    const FloatPoint& phase, SkXfermode::Mode op, const FloatRect& dstRect, const FloatSize& repeatSpacing)
 {
-    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, scale, phase, op, dstRect, repeatSpacing);
+    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, scale, phase, op, dstRect, repeatSpacing, m_url);
 }
 
 PassRefPtr<SkImage> SVGImageForContainer::imageForCurrentFrame()
 {
-    return m_image->imageForCurrentFrame();
+    return m_image->imageForCurrentFrameForContainer(m_url);
 }
 
 } // namespace blink

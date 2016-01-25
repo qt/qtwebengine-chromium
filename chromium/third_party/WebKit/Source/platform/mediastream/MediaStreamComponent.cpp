@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/mediastream/MediaStreamComponent.h"
 
 #include "platform/UUID.h"
@@ -39,26 +38,31 @@
 
 namespace blink {
 
-PassRefPtr<MediaStreamComponent> MediaStreamComponent::create(PassRefPtr<MediaStreamSource> source)
+MediaStreamComponent* MediaStreamComponent::create(MediaStreamSource* source)
 {
-    return adoptRef(new MediaStreamComponent(createCanonicalUUIDString(), source));
+    return new MediaStreamComponent(createCanonicalUUIDString(), source);
 }
 
-PassRefPtr<MediaStreamComponent> MediaStreamComponent::create(const String& id, PassRefPtr<MediaStreamSource> source)
+MediaStreamComponent* MediaStreamComponent::create(const String& id, MediaStreamSource* source)
 {
-    return adoptRef(new MediaStreamComponent(id, source));
+    return new MediaStreamComponent(id, source);
 }
 
-MediaStreamComponent::MediaStreamComponent(const String& id, PassRefPtr<MediaStreamSource> source)
+MediaStreamComponent::MediaStreamComponent(const String& id, MediaStreamSource* source)
     : m_source(source)
     , m_id(id)
     , m_enabled(true)
     , m_muted(false)
 {
     ASSERT(m_id.length());
+    ThreadState::current()->registerPreFinalizer(this);
 }
 
-#if ENABLE(WEB_AUDIO)
+void MediaStreamComponent::dispose()
+{
+    m_extraData.clear();
+}
+
 void MediaStreamComponent::AudioSourceProviderImpl::wrap(WebAudioSourceProvider* provider)
 {
     MutexLocker locker(m_provideInputLock);
@@ -85,7 +89,10 @@ void MediaStreamComponent::AudioSourceProviderImpl::provideInput(AudioBus* bus, 
 
     m_webAudioSourceProvider->provideInput(webAudioData, framesToProcess);
 }
-#endif // #if ENABLE(WEB_AUDIO)
+
+DEFINE_TRACE(MediaStreamComponent)
+{
+    visitor->trace(m_source);
+}
 
 } // namespace blink
-

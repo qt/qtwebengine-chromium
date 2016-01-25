@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "media/base/android/media_codec_bridge.h"
 #include "media/base/android/media_statistics.h"
+#include "media/base/android/sdk_media_codec_bridge.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/demuxer_stream.h"
 
@@ -144,16 +144,11 @@ MediaCodecDecoder::ConfigStatus MediaCodecAudioDecoder::ConfigureInternal(
     return kConfigFailure;
 
   if (!(static_cast<AudioCodecBridge*>(media_codec_bridge_.get()))
-           ->Start(
-               configs_.audio_codec,
-               configs_.audio_sampling_rate,
-               configs_.audio_channels,
-               &configs_.audio_extra_data[0],
-               configs_.audio_extra_data.size(),
-               configs_.audio_codec_delay_ns,
-               configs_.audio_seek_preroll_ns,
-               true,
-               media_crypto)) {
+           ->ConfigureAndStart(
+               configs_.audio_codec, configs_.audio_sampling_rate,
+               configs_.audio_channels, &configs_.audio_extra_data[0],
+               configs_.audio_extra_data.size(), configs_.audio_codec_delay_ns,
+               configs_.audio_seek_preroll_ns, true, media_crypto)) {
     DVLOG(0) << class_name() << "::" << __FUNCTION__
              << " failed: cannot start audio codec";
 
@@ -207,7 +202,7 @@ void MediaCodecAudioDecoder::Render(int buffer_index,
 
     const bool postpone = (render_mode == kRenderAfterPreroll);
 
-    int64 head_position =
+    int64_t head_position =
         audio_codec->PlayOutputBuffer(buffer_index, size, offset, postpone);
 
     base::TimeTicks current_time = base::TimeTicks::Now();
@@ -232,7 +227,7 @@ void MediaCodecAudioDecoder::Render(int buffer_index,
       media_task_runner_->PostTask(
           FROM_HERE, base::Bind(update_current_time_cb_, pts, pts, true));
     } else {
-      int64 frames_to_play = frame_count_ - head_position;
+      int64_t frames_to_play = frame_count_ - head_position;
 
       DCHECK_GE(frames_to_play, 0) << class_name() << "::" << __FUNCTION__
                                    << " pts:" << pts

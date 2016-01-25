@@ -35,7 +35,7 @@ class CSSRule;
 class CSSStyleSheet;
 
 class CORE_EXPORT StyleRuleBase : public RefCountedWillBeGarbageCollectedFinalized<StyleRuleBase> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleRuleBase);
+    USING_FAST_MALLOC_WITH_TYPE_NAME_WILL_BE_REMOVED(blink::StyleRuleBase);
 public:
     enum Type {
         Charset,
@@ -101,13 +101,13 @@ private:
     unsigned m_type : 5;
 };
 
-class StyleRule : public StyleRuleBase {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleRule);
+class CORE_EXPORT StyleRule : public StyleRuleBase {
+    USING_FAST_MALLOC_WITH_TYPE_NAME_WILL_BE_REMOVED(blink::StyleRule);
 public:
     // Adopts the selector list
-    static PassRefPtrWillBeRawPtr<StyleRule> create(CSSSelectorList& selectorList, PassRefPtrWillBeRawPtr<StylePropertySet> properties)
+    static PassRefPtrWillBeRawPtr<StyleRule> create(CSSSelectorList selectorList, PassRefPtrWillBeRawPtr<StylePropertySet> properties)
     {
-        return adoptRefWillBeNoop(new StyleRule(selectorList, properties));
+        return adoptRefWillBeNoop(new StyleRule(std::move(selectorList), properties));
     }
 
     ~StyleRule();
@@ -116,7 +116,7 @@ public:
     const StylePropertySet& properties() const { return *m_properties; }
     MutableStylePropertySet& mutableProperties();
 
-    void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
+    void wrapperAdoptSelectorList(CSSSelectorList selectors) { m_selectorList = std::move(selectors); }
 
     PassRefPtrWillBeRawPtr<StyleRule> copy() const { return adoptRefWillBeNoop(new StyleRule(*this)); }
 
@@ -125,7 +125,7 @@ public:
     DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
-    StyleRule(CSSSelectorList&, PassRefPtrWillBeRawPtr<StylePropertySet>);
+    StyleRule(CSSSelectorList, PassRefPtrWillBeRawPtr<StylePropertySet>);
     StyleRule(const StyleRule&);
 
     RefPtrWillBeMember<StylePropertySet> m_properties; // Cannot be null.
@@ -158,9 +158,9 @@ private:
 class StyleRulePage : public StyleRuleBase {
 public:
     // Adopts the selector list
-    static PassRefPtrWillBeRawPtr<StyleRulePage> create(CSSSelectorList& selectorList, PassRefPtrWillBeRawPtr<StylePropertySet> properties)
+    static PassRefPtrWillBeRawPtr<StyleRulePage> create(CSSSelectorList selectorList, PassRefPtrWillBeRawPtr<StylePropertySet> properties)
     {
-        return adoptRefWillBeNoop(new StyleRulePage(selectorList, properties));
+        return adoptRefWillBeNoop(new StyleRulePage(std::move(selectorList), properties));
     }
 
     ~StyleRulePage();
@@ -169,14 +169,14 @@ public:
     const StylePropertySet& properties() const { return *m_properties; }
     MutableStylePropertySet& mutableProperties();
 
-    void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
+    void wrapperAdoptSelectorList(CSSSelectorList selectors) { m_selectorList = std::move(selectors); }
 
     PassRefPtrWillBeRawPtr<StyleRulePage> copy() const { return adoptRefWillBeNoop(new StyleRulePage(*this)); }
 
     DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
-    StyleRulePage(CSSSelectorList&, PassRefPtrWillBeRawPtr<StylePropertySet>);
+    StyleRulePage(CSSSelectorList, PassRefPtrWillBeRawPtr<StylePropertySet>);
     StyleRulePage(const StyleRulePage&);
 
     RefPtrWillBeMember<StylePropertySet> m_properties; // Cannot be null.
@@ -266,7 +266,7 @@ private:
 
 // This should only be used within the CSS Parser
 class StyleRuleCharset : public StyleRuleBase {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleRuleCharset);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(StyleRuleCharset);
 public:
     static PassRefPtrWillBeRawPtr<StyleRuleCharset> create() { return adoptRefWillBeNoop(new StyleRuleCharset()); }
     DEFINE_INLINE_TRACE_AFTER_DISPATCH() { StyleRuleBase::traceAfterDispatch(visitor); }

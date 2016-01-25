@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/OriginsUsingFeatures.h"
 
 #include "bindings/core/v8/ScriptState.h"
@@ -141,6 +140,8 @@ void OriginsUsingFeatures::Value::recordOriginToRappor(const String& origin)
 {
     if (get(Feature::ElementCreateShadowRoot))
         Platform::current()->recordRappor("WebComponents.ElementCreateShadowRoot", origin);
+    if (get(Feature::ElementAttachShadow))
+        Platform::current()->recordRappor("WebComponents.ElementAttachShadow", origin);
     if (get(Feature::DocumentRegisterElement))
         Platform::current()->recordRappor("WebComponents.DocumentRegisterElement", origin);
     if (get(Feature::EventPath))

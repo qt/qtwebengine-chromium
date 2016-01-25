@@ -34,6 +34,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/LinkResource.h"
+#include "core/html/RelList.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/LinkLoaderClient.h"
 
@@ -44,7 +45,7 @@ class KURL;
 class LinkImport;
 
 template<typename T> class EventSender;
-typedef EventSender<HTMLLinkElement> LinkEventSender;
+using LinkEventSender = EventSender<HTMLLinkElement>;
 
 //
 // LinkStyle handles dynaically change-able link resources, which is
@@ -56,7 +57,7 @@ typedef EventSender<HTMLLinkElement> LinkEventSender;
 // sticking current way so far.
 //
 class LinkStyle final : public LinkResource, ResourceOwner<StyleSheetResource> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(LinkStyle);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(LinkStyle);
 public:
     static PassOwnPtrWillBeRawPtr<LinkStyle> create(HTMLLinkElement* owner);
 
@@ -87,6 +88,7 @@ public:
 private:
     // From StyleSheetResourceClient
     void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource*) override;
+    String debugName() const override { return "LinkStyle"; }
 
     enum DisabledState {
         Unset,
@@ -111,6 +113,10 @@ private:
         ASSERT(!m_fetchFollowingCORS);
         m_fetchFollowingCORS = true;
     }
+    void clearFetchFollowingCORS()
+    {
+        m_fetchFollowingCORS = false;
+    }
 
     RefPtrWillBeMember<CSSStyleSheet> m_sheet;
     DisabledState m_disabledState;
@@ -122,8 +128,9 @@ private:
 };
 
 
-class CORE_EXPORT HTMLLinkElement final : public HTMLElement, public LinkLoaderClient {
+class CORE_EXPORT HTMLLinkElement final : public HTMLElement, public LinkLoaderClient, private DOMSettableTokenListObserver {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLLinkElement);
 public:
     static PassRefPtrWillBeRawPtr<HTMLLinkElement> create(Document&, bool createdByParser);
     ~HTMLLinkElement() override;
@@ -134,6 +141,7 @@ public:
     String typeValue() const { return m_type; }
     String asValue() const { return m_as; }
     const LinkRelAttribute& relAttribute() const { return m_relAttribute; }
+    DOMTokenList& relList() const { return static_cast<DOMTokenList&>(*m_relList); }
 
     const AtomicString& type() const;
 
@@ -176,8 +184,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    HTMLLinkElement(Document&, bool createdByParser);
 
     LinkStyle* linkStyle() const;
     LinkImport* linkImport() const;
@@ -187,6 +194,7 @@ private:
     static void processCallback(Node*);
 
     // From Node and subclassses
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void removedFrom(ContainerNode*) override;
     bool isURLAttribute(const Attribute&) const override;
@@ -205,8 +213,8 @@ private:
     void didSendLoadForLinkPrerender() override;
     void didSendDOMContentLoadedForLinkPrerender() override;
 
-private:
-    HTMLLinkElement(Document&, bool createdByParser);
+    // From DOMSettableTokenListObserver
+    void valueWasSet() final;
 
     OwnPtrWillBeMember<LinkResource> m_link;
     LinkLoader m_linkLoader;
@@ -216,6 +224,7 @@ private:
     String m_media;
     RefPtrWillBeMember<DOMSettableTokenList> m_sizes;
     Vector<IntSize> m_iconSizes;
+    OwnPtrWillBeMember<RelList> m_relList;
     LinkRelAttribute m_relAttribute;
 
     bool m_createdByParser;

@@ -4,7 +4,7 @@
 
 /**
  * @fileoverview
- * 'settings-router' is a simple router for settings. Its responsibilites:
+ * 'settings-router' is a simple router for settings. Its responsibilities:
  *  - Update the URL when the routing state changes.
  *  - Initialize the routing state with the initial URL.
  *  - Process and validate all routing state changes.
@@ -66,7 +66,12 @@ Polymer({
     currentRouteTitles: {
       notify: true,
       type: Object,
-      value: function() { return {}; },
+      value: function() {
+        return {
+          pageTitle: '',
+          subpageTitles: [],
+        };
+      },
     },
   },
 
@@ -90,12 +95,28 @@ Polymer({
       subpage: [],
       subpageTitles: [],
     },
+<if expr="chromeos">
     {
-      url: '/startup',
+      url: '/networkDetail',
       page: 'basic',
-      section: 'on-startup',
-      subpage: ['startup-urls'],
-      subpageTitles: ['onStartupSetPages'],
+      section: 'internet',
+      subpage: ['network-detail'],
+      subpageTitles: ['internetDetailPageTitle'],
+    },
+    {
+      url: '/knownNetworks',
+      page: 'basic',
+      section: 'internet',
+      subpage: ['known-networks'],
+      subpageTitles: ['internetKnownNetworksPageTitle'],
+    },
+</if>
+    {
+      url: '/fonts',
+      page: 'basic',
+      section: 'appearance',
+      subpage: ['appearance-fonts'],
+      subpageTitles: ['customizeFonts'],
     },
     {
       url: '/searchEngines',
@@ -111,6 +132,40 @@ Polymer({
       subpage: ['search-engines', 'search-engines-advanced'],
       subpageTitles: ['searchEnginesPageTitle', 'advancedPageTitle'],
     },
+<if expr="chromeos">
+    {
+      url: '/changePicture',
+      page: 'basic',
+      section: 'people',
+      subpage: ['changePicture'],
+      subpageTitles: ['changePictureTitle'],
+    },
+</if>
+<if expr="not chromeos">
+    {
+      url: '/manageProfile',
+      page: 'basic',
+      section: 'people',
+      subpage: ['manageProfile'],
+      subpageTitles: ['editPerson'],
+    },
+</if>
+    {
+      url: '/syncSetup',
+      page: 'basic',
+      section: 'people',
+      subpage: ['sync'],
+      subpageTitles: ['syncPageTitle'],
+    },
+<if expr="chromeos">
+    {
+      url: '/accounts',
+      page: 'basic',
+      section: 'people',
+      subpage: ['users'],
+      subpageTitles: ['usersPageTitle'],
+    },
+</if>
     {
       url: '/certificates',
       page: 'advanced',
@@ -119,11 +174,82 @@ Polymer({
       subpageTitles: ['manageCertificates'],
     },
     {
-      url: '/content',
+      url: '/siteSettings',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings'],
       subpageTitles: ['siteSettings'],
+    },
+    {
+      url: '/siteSettings/category/camera',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-camera'],
+      subpageTitles: ['siteSettings', 'siteSettingsCamera'],
+    },
+    {
+      url: '/siteSettings/category/cookies',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-cookies'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryCookies'],
+    },
+    {
+      url: '/siteSettings/category/fullscreen',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-fullscreen'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryFullscreen'],
+    },
+    {
+      url: '/siteSettings/category/images',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-images'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryImages'],
+    },
+    {
+      url: '/siteSettings/category/location',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-location'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryLocation'],
+    },
+    {
+      url: '/siteSettings/category/javascript',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-javascript'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryJavascript'],
+    },
+    {
+      url: '/siteSettings/category/microphone',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-microphone'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryMicrophone'],
+    },
+    {
+      url: '/siteSettings/category/notifications',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-notifications'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryNotifications'],
+    },
+    {
+      url: '/siteSettings/category/popups',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-popups'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryPopups'],
+    },
+    {
+      url: '/siteSettings/category/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category', 'site-details'],
+      subpageTitles: ['siteSettings', 'siteSettingsCategoryPageTitle',
+          'siteSettingsSiteDetailsPageTitle'],
     },
     {
       url: '/clearBrowserData',
@@ -132,20 +258,23 @@ Polymer({
       subpage: ['clear-browsing-data'],
       subpageTitles: ['clearBrowsingData'],
     },
+<if expr="chromeos">
     {
-      url: '/networkDetail',
-      page: 'basic',
-      section: 'internet',
-      subpage: ['network-detail'],
-      subpageTitles: ['internetDetailPageTitle'],
+      url: '/bluetoothAddDevice',
+      page: 'advanced',
+      section: 'bluetooth',
+      subpage: ['bluetooth-add-device'],
+      subpageTitles: ['bluetoothAddDevicePageTitle'],
     },
     {
-      url: '/knownNetworks',
-      page: 'basic',
-      section: 'internet',
-      subpage: ['known-networks'],
-      subpageTitles: ['internetKnownNetworksPageTitle'],
+      url: '/bluetoothAddDevice/bluetoothPairDevice',
+      page: 'advanced',
+      section: 'bluetooth',
+      subpage: ['bluetooth-add-device', 'bluetooth-pair-device'],
+      subpageTitles: ['bluetoothAddDevicePageTitle',
+                      'bluetoothPairDevicePageTitle'],
     },
+</if>
     {
       url: '/languages',
       page: 'advanced',
@@ -160,6 +289,15 @@ Polymer({
       subpage: ['language-detail'],
       subpageTitles: ['manageLanguagesPageTitle'],
     },
+<if expr="not is_macosx">
+    {
+      url: '/editDictionary',
+      page: 'advanced',
+      section: 'languages',
+      subpage: ['edit-dictionary'],
+      subpageTitles: ['editDictionaryPageTitle'],
+    },
+</if>
   ],
 
   /**
@@ -210,12 +348,12 @@ Polymer({
         // Push the current route to the history state, so when the user
         // navigates with the browser back button, we can recall the route.
         if (oldRoute) {
-          history.pushState(historicState, null, route.url);
+          window.history.pushState(historicState, document.title, route.url);
         } else {
           // For the very first route (oldRoute will be undefined), we replace
           // the existing state instead of pushing a new one. This is to allow
           // the user to use the browser back button to exit Settings entirely.
-          history.replaceState(historicState, null);
+          window.history.replaceState(historicState, document.title);
         }
 
         return;

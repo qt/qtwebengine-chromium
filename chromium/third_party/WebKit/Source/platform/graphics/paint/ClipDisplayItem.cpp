@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
 
 #include "platform/geometry/FloatRoundedRect.h"
@@ -12,16 +11,16 @@
 
 namespace blink {
 
-void ClipDisplayItem::replay(GraphicsContext& context)
+void ClipDisplayItem::replay(GraphicsContext& context) const
 {
     context.save();
-    context.clipRect(m_clipRect, NotAntiAliased, SkRegion::kIntersect_Op);
+    context.clipRect(m_clipRect, AntiAliased);
 
     for (const FloatRoundedRect& roundedRect : m_roundedRectClips)
-        context.clipRoundedRect(roundedRect, SkRegion::kIntersect_Op);
+        context.clipRoundedRect(roundedRect);
 }
 
-void ClipDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void ClipDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     WebVector<SkRRect> webRoundedRects(m_roundedRectClips.size());
     for (size_t i = 0; i < m_roundedRectClips.size(); ++i) {
@@ -39,17 +38,17 @@ void ClipDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
         skRoundedRect.setRectRadii(m_roundedRectClips[i].rect(), skRadii);
         webRoundedRects[i] = skRoundedRect;
     }
-    list->appendClipItem(m_clipRect, webRoundedRects);
+    list->appendClipItem(visualRect, m_clipRect, webRoundedRects);
 }
 
-void EndClipDisplayItem::replay(GraphicsContext& context)
+void EndClipDisplayItem::replay(GraphicsContext& context) const
 {
     context.restore();
 }
 
-void EndClipDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndClipDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndClipItem();
+    list->appendEndClipItem(visualRect);
 }
 
 #ifndef NDEBUG

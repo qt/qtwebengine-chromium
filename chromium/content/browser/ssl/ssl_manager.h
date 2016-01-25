@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/ssl/ssl_error_handler.h"
@@ -31,6 +31,7 @@ struct LoadCommittedDetails;
 struct LoadFromMemoryCacheDetails;
 struct ResourceRedirectDetails;
 struct ResourceRequestDetails;
+struct SSLStatus;
 
 // The SSLManager SSLManager controls the SSL UI elements in a WebContents.  It
 // listens for various events that influence when these elements should or
@@ -51,6 +52,16 @@ class CONTENT_EXPORT SSLManager {
   static void OnSSLCertificateError(
       const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
       ResourceType resource_type,
+      const GURL& url,
+      const base::Callback<WebContents*(void)>& web_contents_getter,
+      const net::SSLInfo& ssl_info,
+      bool fatal);
+
+  // Same as the above, and only works for subresources. Prefer using
+  // OnSSLCertificateError whenever possible (ie when you have access to the
+  // WebContents).
+  static void OnSSLCertificateSubresourceError(
+      const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
       const GURL& url,
       int render_process_id,
       int render_frame_id,
@@ -78,8 +89,7 @@ class CONTENT_EXPORT SSLManager {
   void DidReceiveResourceRedirect(const ResourceRedirectDetails& details);
 
   // Insecure content entry point.
-  void DidDisplayInsecureContent();
-  void DidRunInsecureContent(const std::string& security_origin);
+  void DidRunInsecureContent(const GURL& security_origin);
 
  private:
   // Updates the NavigationEntry with our current state. This will

@@ -28,12 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/DownSampler.h"
-
 #include "wtf/MathExtras.h"
 
 namespace blink {
@@ -148,4 +143,3 @@ size_t DownSampler::latencyFrames() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

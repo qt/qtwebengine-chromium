@@ -54,7 +54,7 @@ WebInspector.RevisionHistoryView = function()
     }
 
     WebInspector.workspace.uiSourceCodes().forEach(populateRevisions.bind(this));
-    WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, this._revisionAdded, this);
+    WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.WorkingCopyCommittedByUser, this._revisionAdded, this);
     WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeRemoved, this._uiSourceCodeRemoved, this);
     WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved, this);
 }
@@ -64,11 +64,17 @@ WebInspector.RevisionHistoryView = function()
  */
 WebInspector.RevisionHistoryView.showHistory = function(uiSourceCode)
 {
-    if (!WebInspector.RevisionHistoryView._view)
-        WebInspector.RevisionHistoryView._view = new WebInspector.RevisionHistoryView();
-    var view = WebInspector.RevisionHistoryView._view;
-    WebInspector.inspectorView.showCloseableViewInDrawer("history", WebInspector.UIString("History"), view);
-    view._revealUISourceCode(uiSourceCode);
+    /**
+     * @param {?WebInspector.Widget} view
+     */
+    function revealSource(view)
+    {
+        console.assert(view && view instanceof WebInspector.RevisionHistoryView);
+        var historyView = /** @type {!WebInspector.RevisionHistoryView} */(view);
+        historyView._revealUISourceCode(uiSourceCode);
+    }
+
+    WebInspector.inspectorView.showViewInDrawer("sources.history").then(revealSource);
 }
 
 WebInspector.RevisionHistoryView.prototype = {

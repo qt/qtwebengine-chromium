@@ -5,6 +5,9 @@
 #ifndef UI_OZONE_PLATFORM_CAST_SURFACE_FACTORY_CAST_H_
 #define UI_OZONE_PLATFORM_CAST_SURFACE_FACTORY_CAST_H_
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
@@ -18,17 +21,20 @@ namespace ui {
 // SurfaceFactoryOzone implementation for OzonePlatformCast.
 class SurfaceFactoryCast : public SurfaceFactoryOzone {
  public:
+  SurfaceFactoryCast();
   explicit SurfaceFactoryCast(
       scoped_ptr<chromecast::CastEglPlatform> egl_platform);
   ~SurfaceFactoryCast() override;
 
   // SurfaceFactoryOzone implementation:
+  scoped_ptr<SurfaceOzoneCanvas> CreateCanvasForWidget(
+      gfx::AcceleratedWidget widget) override;
   intptr_t GetNativeDisplay() override;
   scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) override;
-  const int32* GetEGLSurfaceProperties(const int32* desired_list) override;
+  const int32_t* GetEGLSurfaceProperties(const int32_t* desired_list) override;
   scoped_refptr<NativePixmap> CreateNativePixmap(
-      gfx::AcceleratedWidget w,
+      gfx::AcceleratedWidget widget,
       gfx::Size size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage) override;
@@ -39,6 +45,7 @@ class SurfaceFactoryCast : public SurfaceFactoryOzone {
   intptr_t GetNativeWindow();
   bool ResizeDisplay(gfx::Size viewport_size);
   void ChildDestroyed();
+  void TerminateDisplay();
   void ShutdownHardware();
 
  private:

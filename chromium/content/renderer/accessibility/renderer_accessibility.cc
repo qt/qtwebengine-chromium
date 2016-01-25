@@ -4,6 +4,9 @@
 
 #include "content/renderer/accessibility/renderer_accessibility.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <queue>
 
 #include "base/bind.h"
@@ -11,6 +14,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "content/common/accessibility_messages.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/render_frame_impl.h"
@@ -42,7 +46,7 @@ const size_t kMaxSnapshotNodeCount = 5000;
 // static
 void RendererAccessibility::SnapshotAccessibilityTree(
     RenderFrameImpl* render_frame,
-    ui::AXTreeUpdate<content::AXContentNodeData>* response) {
+    AXContentTreeUpdate* response) {
   DCHECK(render_frame);
   DCHECK(response);
   if (!render_frame->GetWebFrame())
@@ -102,7 +106,7 @@ bool RendererAccessibility::OnMessageReceived(const IPC::Message& message) {
                         OnScrollToMakeVisible)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_ScrollToPoint, OnScrollToPoint)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_SetScrollOffset, OnSetScrollOffset)
-    IPC_MESSAGE_HANDLER(AccessibilityMsg_SetTextSelection, OnSetTextSelection)
+    IPC_MESSAGE_HANDLER(AccessibilityMsg_SetSelection, OnSetSelection)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_SetValue, OnSetValue)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_ShowContextMenu, OnShowContextMenu)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_HitTest, OnHitTest)
@@ -192,7 +196,7 @@ void RendererAccessibility::HandleAXEvent(
   acc_event.event_type = event;
 
   // Discard duplicate accessibility events.
-  for (uint32 i = 0; i < pending_events_.size(); ++i) {
+  for (uint32_t i = 0; i < pending_events_.size(); ++i) {
     if (pending_events_[i].id == acc_event.id &&
         pending_events_[i].event_type == acc_event.event_type) {
       return;
@@ -373,7 +377,7 @@ void RendererAccessibility::OnSetAccessibilityFocus(int acc_obj_id) {
   if (tree_source_.accessibility_focus_id() == acc_obj_id)
     return;
 
-  tree_source_.set_accessiblity_focus_id(acc_obj_id);
+  tree_source_.set_accessibility_focus_id(acc_obj_id);
 
   const WebDocument& document = GetMainDocument();
   if (document.isNull())
@@ -493,21 +497,34 @@ void RendererAccessibility::OnSetFocus(int acc_obj_id) {
     obj.setFocused(true);
 }
 
-void RendererAccessibility::OnSetTextSelection(
-    int acc_obj_id, int start_offset, int end_offset) {
+void RendererAccessibility::OnSetSelection(int anchor_acc_obj_id,
+                                           int anchor_offset,
+                                           int focus_acc_obj_id,
+                                           int focus_offset) {
   const WebDocument& document = GetMainDocument();
   if (document.isNull())
     return;
 
-  WebAXObject obj = document.accessibilityObjectFromID(acc_obj_id);
-  if (obj.isDetached()) {
+  WebAXObject anchor_obj =
+      document.accessibilityObjectFromID(anchor_acc_obj_id);
+  if (anchor_obj.isDetached()) {
 #ifndef NDEBUG
-    LOG(WARNING) << "SetTextSelection on invalid object id " << acc_obj_id;
+    LOG(WARNING) << "SetTextSelection on invalid object id "
+                 << anchor_acc_obj_id;
 #endif
     return;
   }
 
-  obj.setSelectedTextRange(start_offset, end_offset);
+  WebAXObject focus_obj = document.accessibilityObjectFromID(focus_acc_obj_id);
+  if (focus_obj.isDetached()) {
+#ifndef NDEBUG
+    LOG(WARNING) << "SetTextSelection on invalid object id "
+                 << focus_acc_obj_id;
+#endif
+    return;
+  }
+
+  anchor_obj.setSelection(anchor_obj, anchor_offset, focus_obj, focus_offset);
   WebAXObject root = document.accessibilityObject();
   if (root.isDetached()) {
 #ifndef NDEBUG

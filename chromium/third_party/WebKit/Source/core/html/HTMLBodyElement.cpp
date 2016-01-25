@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLBodyElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
@@ -82,7 +81,7 @@ void HTMLBodyElement::collectStyleForPresentationAttribute(const QualifiedName& 
     }
 }
 
-void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == vlinkAttr || name == alinkAttr || name == linkAttr) {
         if (value.isNull()) {
@@ -93,7 +92,7 @@ void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicStri
             else
                 document().textLinkColors().resetActiveLinkColor();
         } else {
-            RGBA32 color;
+            Color color;
             if (CSSParser::parseColor(color, value, !document().inQuirksMode())) {
                 if (name == linkAttr)
                     document().textLinkColors().setLinkColor(color);
@@ -144,7 +143,7 @@ void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicStri
     } else if (name == onlanguagechangeAttr) {
         document().setWindowAttributeEventListener(EventTypeNames::languagechange, createAttributeEventListener(document().frame(), name, value, eventParameterName()));
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -159,16 +158,14 @@ void HTMLBodyElement::didNotifySubtreeInsertionsToDocument()
     // FIXME: It's surprising this is web compatible since it means a
     // marginwidth and marginheight attribute can magically appear on the <body>
     // of all documents embedded through <iframe> or <frame>.
-    HTMLFrameOwnerElement* ownerElement = document().ownerElement();
-    if (!isHTMLFrameElementBase(ownerElement))
-        return;
-    HTMLFrameElementBase& ownerFrameElement = toHTMLFrameElementBase(*ownerElement);
-    int marginWidth = ownerFrameElement.marginWidth();
-    int marginHeight = ownerFrameElement.marginHeight();
-    if (marginWidth != -1)
-        setIntegralAttribute(marginwidthAttr, marginWidth);
-    if (marginHeight != -1)
-        setIntegralAttribute(marginheightAttr, marginHeight);
+    if (document().frame() && document().frame()->owner()) {
+        int marginWidth = document().frame()->owner()->marginWidth();
+        int marginHeight = document().frame()->owner()->marginHeight();
+        if (marginWidth != -1)
+            setIntegralAttribute(marginwidthAttr, marginWidth);
+        if (marginHeight != -1)
+            setIntegralAttribute(marginheightAttr, marginHeight);
+    }
 }
 
 bool HTMLBodyElement::isURLAttribute(const Attribute& attribute) const

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "content/browser/webui/url_data_manager_backend.h"
@@ -44,7 +45,7 @@ class UrlDataManagerBackendTest : public testing::Test {
     // URLRequestJobFactory takes ownership of the passed in ProtocolHandler.
     url_request_job_factory_.SetProtocolHandler(
         "chrome", URLDataManagerBackend::CreateProtocolHandler(
-                      &resource_context_, false, nullptr, nullptr));
+                      &resource_context_, false, nullptr));
     url_request_context_.set_job_factory(&url_request_job_factory_);
   }
 
@@ -54,7 +55,7 @@ class UrlDataManagerBackendTest : public testing::Test {
         GURL("chrome://resources/polymer/v1_0/polymer/polymer-extracted.js"),
         net::HIGHEST, delegate);
     request->SetExtraRequestHeaderByName("Origin", origin, true);
-    return request.Pass();
+    return request;
   }
 
  protected:
@@ -105,6 +106,28 @@ TEST_F(UrlDataManagerBackendTest, CancelAfterFirstReadStarted) {
   EXPECT_EQ(net::URLRequestStatus::CANCELED, request->status().status());
   EXPECT_EQ(1, cancel_delegate.response_started_count());
   EXPECT_EQ("", cancel_delegate.data_received());
+}
+
+// Check for a network error page request via chrome://network-error/.
+TEST_F(UrlDataManagerBackendTest, ChromeNetworkErrorPageRequest) {
+  scoped_ptr<net::URLRequest> error_request =
+        url_request_context_.CreateRequest(
+        GURL("chrome://network-error/-105"), net::HIGHEST, &delegate_);
+  error_request->Start();
+  base::RunLoop().Run();
+  EXPECT_EQ(net::URLRequestStatus::FAILED, error_request->status().status());
+  EXPECT_EQ(net::ERR_NAME_NOT_RESOLVED, error_request->status().error());
+}
+
+// Check for an invalid network error page request via chrome://network-error/.
+TEST_F(UrlDataManagerBackendTest, ChromeNetworkErrorPageRequestFailed) {
+  scoped_ptr<net::URLRequest> error_request =
+        url_request_context_.CreateRequest(
+        GURL("chrome://network-error/-123456789"), net::HIGHEST, &delegate_);
+  error_request->Start();
+  base::RunLoop().Run();
+  EXPECT_EQ(net::URLRequestStatus::FAILED, error_request->status().status());
+  EXPECT_EQ(net::ERR_INVALID_URL, error_request->status().error());
 }
 
 }  // namespace content

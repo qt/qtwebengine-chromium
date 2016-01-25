@@ -10,13 +10,15 @@
 #ifndef MEDIA_FILTERS_SOURCE_BUFFER_STREAM_H_
 #define MEDIA_FILTERS_SOURCE_BUFFER_STREAM_H_
 
+#include <stddef.h>
+
 #include <deque>
 #include <list>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/media_export.h"
@@ -406,7 +408,8 @@ class MEDIA_EXPORT SourceBufferStream {
 
   // The timestamp of the last buffer appended to the media segment, set to
   // kNoDecodeTimestamp() if the beginning of the segment.
-  DecodeTimestamp last_appended_buffer_timestamp_;
+  DecodeTimestamp last_appended_buffer_timestamp_ = kNoDecodeTimestamp();
+  base::TimeDelta last_appended_buffer_duration_ = kNoTimestamp();
   bool last_appended_buffer_is_keyframe_ = false;
 
   // The decode timestamp on the last buffer returned by the most recent

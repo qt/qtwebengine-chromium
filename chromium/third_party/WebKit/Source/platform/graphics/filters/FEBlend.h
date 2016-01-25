@@ -28,19 +28,19 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT FEBlend : public FilterEffect {
+class PLATFORM_EXPORT FEBlend final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FEBlend> create(Filter*, WebBlendMode);
 
     WebBlendMode blendMode() const;
     bool setBlendMode(WebBlendMode);
 
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
-
     TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FEBlend(Filter*, WebBlendMode);
+
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 
     WebBlendMode m_mode;
 };

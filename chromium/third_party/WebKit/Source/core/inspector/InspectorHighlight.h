@@ -18,7 +18,7 @@ class Color;
 class JSONValue;
 
 struct CORE_EXPORT InspectorHighlightConfig {
-    WTF_MAKE_FAST_ALLOCATED(InspectorHighlightConfig);
+    USING_FAST_MALLOC(InspectorHighlightConfig);
 public:
     InspectorHighlightConfig();
 
@@ -35,6 +35,8 @@ public:
     bool showRulers;
     bool showExtensionLines;
     bool displayAsMaterial;
+
+    String selectorList;
 };
 
 class CORE_EXPORT InspectorHighlight {

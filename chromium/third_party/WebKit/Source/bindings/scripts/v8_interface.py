@@ -46,7 +46,7 @@ import v8_methods
 import v8_types
 from v8_types import cpp_ptr_type, cpp_template_type
 import v8_utilities
-from v8_utilities import (cpp_name_or_partial, capitalize, conditional_string, cpp_name, gc_type,
+from v8_utilities import (api_experiment_enabled_function, cpp_name_or_partial, capitalize, cpp_name, gc_type,
                           has_extended_attribute_value, runtime_enabled_function_name,
                           extended_attribute_value_as_list, is_legacy_interface_type_checking)
 
@@ -122,10 +122,9 @@ def interface_context(interface):
     # [DependentLifetime]
     is_dependent_lifetime = 'DependentLifetime' in extended_attributes
 
-    # [MeasureAs]
-    is_measure_as = 'MeasureAs' in extended_attributes
-    if is_measure_as:
-        includes.add('core/frame/UseCounter.h')
+    # [PrimaryGlobal] and [Global]
+    is_global = ('PrimaryGlobal' in extended_attributes or
+                 'Global' in extended_attributes)
 
     # [SetWrapperReferenceFrom]
     set_wrapper_reference_from = extended_attributes.get('SetWrapperReferenceFrom')
@@ -163,8 +162,12 @@ def interface_context(interface):
     cpp_class_name_or_partial = cpp_name_or_partial(interface)
     v8_class_name_or_partial = v8_utilities.v8_class_name_or_partial(interface)
 
+    if 'APIExperimentEnabled' in extended_attributes:
+        includes.add('core/experiments/ExperimentalFeatures.h')
+        includes.add('core/inspector/ConsoleMessage.h')
+
     context = {
-        'conditional_string': conditional_string(interface),  # [Conditional]
+        'api_experiment_name': v8_utilities.api_experiment_name(interface),
         'cpp_class': cpp_class_name,
         'cpp_class_or_partial': cpp_class_name_or_partial,
         'event_target_inheritance': 'InheritFromEventTarget' if is_event_target else 'NotInheritFromEventTarget',
@@ -183,6 +186,7 @@ def interface_context(interface):
         'is_check_security': is_check_security,
         'is_event_target': is_event_target,
         'is_exception': interface.is_exception,
+        'is_global': is_global,
         'is_node': inherits_interface(interface.name, 'Node'),
         'is_partial': interface.is_partial,
         'is_typed_array_type': is_typed_array_type,
@@ -226,11 +230,14 @@ def interface_context(interface):
     if constructors or custom_constructors or named_constructor:
         if interface.is_partial:
             raise Exception('[Constructor] and [NamedConstructor] MUST NOT be'
-                            ' specified on partial interface definitions:'
+                            ' specified on partial interface definitions: '
                             '%s' % interface.name)
 
         includes.add('bindings/core/v8/V8ObjectConstructor.h')
         includes.add('core/frame/LocalDOMWindow.h')
+    elif 'Measure' in extended_attributes or 'MeasureAs' in extended_attributes:
+        raise Exception('[Measure] or [MeasureAs] specified for interface without a constructor: '
+                        '%s' % interface.name)
 
     # [Unscopeable] attributes and methods
     unscopeables = []
@@ -258,7 +265,7 @@ def interface_context(interface):
     constant_configuration_constants = []
 
     for constant in constants:
-        if constant['measure_as'] or constant['deprecate_as']:
+        if constant['measure_as'] or constant['deprecate_as'] or constant['api_experiment_name']:
             special_getter_constants.append(constant)
             continue
         runtime_enabled_function = constant['runtime_enabled_function']
@@ -348,13 +355,15 @@ def interface_context(interface):
 
     # [Iterable], iterable<>, maplike<> and setlike<>
     iterator_method = None
+    has_array_iterator = False
+
     # FIXME: support Iterable in partial interfaces. However, we don't
     # need to support iterator overloads between interface and
     # partial interface definitions.
     # http://heycam.github.io/webidl/#idl-overloading
     if (not interface.is_partial
         and (interface.iterable or interface.maplike or interface.setlike
-             or 'Iterable' in extended_attributes)):
+             or interface.has_indexed_elements or 'Iterable' in extended_attributes)):
 
         used_extended_attributes = {}
 
@@ -387,7 +396,10 @@ def interface_context(interface):
                 extended_attributes=used_extended_attributes,
                 implemented_as=implemented_as)
 
-        iterator_method = generated_iterator_method('iterator', implemented_as='iterator')
+        if interface.iterable or interface.maplike or interface.setlike or 'Iterable' in extended_attributes:
+            iterator_method = generated_iterator_method('iterator', implemented_as='iterator')
+        elif interface.has_indexed_elements:
+            has_array_iterator = True
 
         if interface.iterable or interface.maplike or interface.setlike:
             implicit_methods = [
@@ -554,12 +566,13 @@ def interface_context(interface):
     context.update({
         'conditionally_enabled_methods': conditionally_enabled_methods,
         'custom_registration_methods': custom_registration_methods,
-        'has_origin_safe_method_setter': any(
-            method['is_check_security_for_frame'] and not method['is_read_only']
+        'has_origin_safe_method_setter': is_global and any(
+            method['is_check_security_for_receiver'] and not method['is_unforgeable']
             for method in methods),
         'has_private_script': any(attribute['is_implemented_in_private_script'] for attribute in attributes) or
             any(method['is_implemented_in_private_script'] for method in methods),
         'iterator_method': iterator_method,
+        'has_array_iterator': has_array_iterator,
         'method_configuration_methods': method_configuration_methods,
         'methods': methods,
     })
@@ -587,6 +600,9 @@ def interface_context(interface):
         'named_property_setter': property_setter(interface.named_property_setter, interface),
         'named_property_deleter': property_deleter(interface.named_property_deleter),
     })
+    context.update({
+        'has_named_properties_object': is_global and context['named_property_getter'],
+    })
 
     return context
 
@@ -594,10 +610,19 @@ def interface_context(interface):
 # [DeprecateAs], [Reflect], [RuntimeEnabled]
 def constant_context(constant, interface):
     extended_attributes = constant.extended_attributes
+
+    if 'APIExperimentEnabled' in extended_attributes:
+        includes.add('core/experiments/ExperimentalFeatures.h')
+        includes.add('core/inspector/ConsoleMessage.h')
+
     return {
+        'api_experiment_enabled': v8_utilities.api_experiment_enabled_function(constant),  # [APIExperimentEnabled]
+        'api_experiment_enabled_per_interface': v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
+        'api_experiment_name': extended_attributes.get('APIExperimentEnabled'),  # [APIExperimentEnabled]
         'cpp_class': extended_attributes.get('PartialInterfaceImplementedAs'),
         'deprecate_as': v8_utilities.deprecate_as(constant),  # [DeprecateAs]
         'idl_type': constant.idl_type.name,
+        'is_api_experiment_enabled': v8_utilities.api_experiment_enabled_function(constant) or v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
         'measure_as': v8_utilities.measure_as(constant, interface),  # [MeasureAs]
         'name': constant.name,
         # FIXME: use 'reflected_name' as correct 'name'
@@ -1206,9 +1231,12 @@ def constructor_context(interface, constructor):
     is_constructor_raises_exception = \
         interface.extended_attributes.get('RaisesException') == 'Constructor'
 
+    argument_contexts = [
+        v8_methods.argument_context(interface, constructor, argument, index)
+        for index, argument in enumerate(constructor.arguments)]
+
     return {
-        'arguments': [v8_methods.argument_context(interface, constructor, argument, index)
-                      for index, argument in enumerate(constructor.arguments)],
+        'arguments': argument_contexts,
         'cpp_type': cpp_template_type(
             cpp_ptr_type('RefPtr', 'RawPtr', gc_type(interface)),
             cpp_name(interface)),
@@ -1219,6 +1247,9 @@ def constructor_context(interface, constructor):
             any(argument for argument in constructor.arguments
                 if argument.idl_type.name == 'SerializedScriptValue' or
                    argument.idl_type.v8_conversion_needs_exception_state),
+        'has_optional_argument_without_default_value':
+            any(True for argument_context in argument_contexts
+                if argument_context['is_optional_without_default_value']),
         'is_call_with_document':
             # [ConstructorCallWith=Document]
             has_extended_attribute_value(interface,
@@ -1341,7 +1372,7 @@ def property_setter(setter, interface):
     is_call_with_script_state = v8_utilities.has_extended_attribute_value(setter, 'CallWith', 'ScriptState')
     is_raises_exception = 'RaisesException' in extended_attributes
 
-    # [TypeChecking=Interface] / [LegacyInterfaceTypeChecking]
+    # [LegacyInterfaceTypeChecking]
     has_type_checking_interface = (
         not is_legacy_interface_type_checking(interface, setter) and
         idl_type.is_wrapper_type)

@@ -61,15 +61,15 @@ static void ScalePlaneDown2(int src_width, int src_height,
     }
   }
 #endif
-#if defined(HAS_SCALEROWDOWN2_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2)) {
-    ScaleRowDown2 = filtering == kFilterNone ? ScaleRowDown2_Any_SSE2 :
-        (filtering == kFilterLinear ? ScaleRowDown2Linear_Any_SSE2 :
-        ScaleRowDown2Box_Any_SSE2);
+#if defined(HAS_SCALEROWDOWN2_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    ScaleRowDown2 = filtering == kFilterNone ? ScaleRowDown2_Any_SSSE3 :
+        (filtering == kFilterLinear ? ScaleRowDown2Linear_Any_SSSE3 :
+        ScaleRowDown2Box_Any_SSSE3);
     if (IS_ALIGNED(dst_width, 16)) {
-      ScaleRowDown2 = filtering == kFilterNone ? ScaleRowDown2_SSE2 :
-          (filtering == kFilterLinear ? ScaleRowDown2Linear_SSE2 :
-          ScaleRowDown2Box_SSE2);
+      ScaleRowDown2 = filtering == kFilterNone ? ScaleRowDown2_SSSE3 :
+          (filtering == kFilterLinear ? ScaleRowDown2Linear_SSSE3 :
+          ScaleRowDown2Box_SSSE3);
     }
   }
 #endif
@@ -182,12 +182,12 @@ static void ScalePlaneDown4(int src_width, int src_height,
     }
   }
 #endif
-#if defined(HAS_SCALEROWDOWN4_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2)) {
+#if defined(HAS_SCALEROWDOWN4_SSSE3)
+  if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowDown4 = filtering ?
-        ScaleRowDown4Box_Any_SSE2 : ScaleRowDown4_Any_SSE2;
+        ScaleRowDown4Box_Any_SSSE3 : ScaleRowDown4_Any_SSSE3;
     if (IS_ALIGNED(dst_width, 8)) {
-      ScaleRowDown4 = filtering ? ScaleRowDown4Box_SSE2 : ScaleRowDown4_SSE2;
+      ScaleRowDown4 = filtering ? ScaleRowDown4Box_SSSE3 : ScaleRowDown4_SSSE3;
     }
   }
 #endif
@@ -875,14 +875,6 @@ void ScalePlaneBilinearDown(int src_width, int src_height,
              &x, &y, &dx, &dy);
   src_width = Abs(src_width);
 
-#if defined(HAS_INTERPOLATEROW_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2)) {
-    InterpolateRow = InterpolateRow_Any_SSE2;
-    if (IS_ALIGNED(src_width, 16)) {
-      InterpolateRow = InterpolateRow_SSE2;
-    }
-  }
-#endif
 #if defined(HAS_INTERPOLATEROW_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     InterpolateRow = InterpolateRow_Any_SSSE3;
@@ -1072,14 +1064,6 @@ void ScalePlaneBilinearUp(int src_width, int src_height,
              &x, &y, &dx, &dy);
   src_width = Abs(src_width);
 
-#if defined(HAS_INTERPOLATEROW_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2)) {
-    InterpolateRow = InterpolateRow_Any_SSE2;
-    if (IS_ALIGNED(dst_width, 16)) {
-      InterpolateRow = InterpolateRow_SSE2;
-    }
-  }
-#endif
 #if defined(HAS_INTERPOLATEROW_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     InterpolateRow = InterpolateRow_Any_SSSE3;

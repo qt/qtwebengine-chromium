@@ -110,7 +110,7 @@ int SystemInfo::GetCurCpus() {
   DWORD_PTR process_mask = 0;
   DWORD_PTR system_mask = 0;
   ::GetProcessAffinityMask(::GetCurrentProcess(), &process_mask, &system_mask);
-  for (int i = 0; i < sizeof(DWORD_PTR) * 8; ++i) {
+  for (size_t i = 0; i < sizeof(DWORD_PTR) * 8; ++i) {
     if (process_mask & 1)
       ++cur_cpus;
     process_mask >>= 1;
@@ -161,8 +161,8 @@ std::string SystemInfo::GetCpuVendor() {
 
 // Returns the amount of installed physical memory in Bytes.  Cacheable.
 // Returns -1 on error.
-int64 SystemInfo::GetMemorySize() {
-  int64 memory = -1;
+int64_t SystemInfo::GetMemorySize() {
+  int64_t memory = -1;
 
 #if defined(WEBRTC_WIN)
   MEMORYSTATUSEX status = {0};
@@ -180,8 +180,8 @@ int64 SystemInfo::GetMemorySize() {
   if (error || memory == 0)
     memory = -1;
 #elif defined(WEBRTC_LINUX)
-  memory = static_cast<int64>(sysconf(_SC_PHYS_PAGES)) *
-      static_cast<int64>(sysconf(_SC_PAGESIZE));
+  memory = static_cast<int64_t>(sysconf(_SC_PHYS_PAGES)) *
+           static_cast<int64_t>(sysconf(_SC_PAGESIZE));
   if (memory < 0) {
     LOG(LS_WARNING) << "sysconf(_SC_PHYS_PAGES) failed."
                     << "sysconf(_SC_PHYS_PAGES) " << sysconf(_SC_PHYS_PAGES)

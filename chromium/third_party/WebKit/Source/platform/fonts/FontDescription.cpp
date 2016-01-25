@@ -27,23 +27,22 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/FontDescription.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
+#include "wtf/StringHasher.h"
 #include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringHash.h"
 
 namespace blink {
 
 struct SameSizeAsFontDescription {
+    DISALLOW_NEW();
     FontFamily familyList;
     RefPtr<FontFeatureSettings> m_featureSettings;
     AtomicString locale;
     float sizes[6];
-    // FXIME: Make them fit into one word.
-    uint32_t bitfields;
-    uint32_t bitfields2 : 7;
+    uint32_t bitfields[2];
 };
 
 static_assert(sizeof(FontDescription) == sizeof(SameSizeAsFontDescription), "FontDescription should stay small");
@@ -148,10 +147,10 @@ void FontDescription::setTraits(FontTraits traits)
 
 void FontDescription::setVariantLigatures(const VariantLigatures& ligatures)
 {
-    m_commonLigaturesState = ligatures.common;
-    m_discretionaryLigaturesState = ligatures.discretionary;
-    m_historicalLigaturesState = ligatures.historical;
-    m_contextualLigaturesState = ligatures.contextual;
+    m_fields.m_commonLigaturesState = ligatures.common;
+    m_fields.m_discretionaryLigaturesState = ligatures.discretionary;
+    m_fields.m_historicalLigaturesState = ligatures.historical;
+    m_fields.m_contextualLigaturesState = ligatures.contextual;
 
     updateTypesettingFeatures();
 }
@@ -169,15 +168,14 @@ FontCacheKey FontDescription::cacheKey(const FontFaceCreationParams& creationPar
     FontTraits fontTraits = desiredTraits.bitfield() ? desiredTraits : traits();
 
     unsigned options =
-        static_cast<unsigned>(m_syntheticItalic) << 6 | // bit 7
-        static_cast<unsigned>(m_syntheticBold) << 5 | // bit 6
-        static_cast<unsigned>(m_textRendering) << 3 | // bits 4-5
-        static_cast<unsigned>(m_orientation) << 1 | // bit 2-3
-        static_cast<unsigned>(m_subpixelTextPosition); // bit 1
+        static_cast<unsigned>(m_fields.m_syntheticItalic) << 6 | // bit 7
+        static_cast<unsigned>(m_fields.m_syntheticBold) << 5 | // bit 6
+        static_cast<unsigned>(m_fields.m_textRendering) << 3 | // bits 4-5
+        static_cast<unsigned>(m_fields.m_orientation) << 1 | // bit 2-3
+        static_cast<unsigned>(m_fields.m_subpixelTextPosition); // bit 1
 
-    return FontCacheKey(creationParams, effectiveFontSize(), options | fontTraits.bitfield() << 7);
+    return FontCacheKey(creationParams, effectiveFontSize(), options | fontTraits.bitfield() << 8);
 }
-
 
 void FontDescription::setDefaultTypesettingFeatures(TypesettingFeatures typesettingFeatures)
 {
@@ -189,28 +187,28 @@ TypesettingFeatures FontDescription::defaultTypesettingFeatures()
     return s_defaultTypesettingFeatures;
 }
 
-void FontDescription::updateTypesettingFeatures() const
+void FontDescription::updateTypesettingFeatures()
 {
-    m_typesettingFeatures = s_defaultTypesettingFeatures;
+    m_fields.m_typesettingFeatures = s_defaultTypesettingFeatures;
 
     switch (textRendering()) {
     case AutoTextRendering:
         break;
     case OptimizeSpeed:
-        m_typesettingFeatures &= ~(blink::Kerning | Ligatures);
+        m_fields.m_typesettingFeatures &= ~(blink::Kerning | Ligatures);
         break;
     case GeometricPrecision:
     case OptimizeLegibility:
-        m_typesettingFeatures |= blink::Kerning | Ligatures;
+        m_fields.m_typesettingFeatures |= blink::Kerning | Ligatures;
         break;
     }
 
     switch (kerning()) {
     case FontDescription::NoneKerning:
-        m_typesettingFeatures &= ~blink::Kerning;
+        m_fields.m_typesettingFeatures &= ~blink::Kerning;
         break;
     case FontDescription::NormalKerning:
-        m_typesettingFeatures |= blink::Kerning;
+        m_fields.m_typesettingFeatures |= blink::Kerning;
         break;
     case FontDescription::AutoKerning:
         break;
@@ -223,10 +221,10 @@ void FontDescription::updateTypesettingFeatures() const
     if (m_letterSpacing == 0) {
         switch (commonLigaturesState()) {
         case FontDescription::DisabledLigaturesState:
-            m_typesettingFeatures &= ~Ligatures;
+            m_fields.m_typesettingFeatures &= ~Ligatures;
             break;
         case FontDescription::EnabledLigaturesState:
-            m_typesettingFeatures |= Ligatures;
+            m_fields.m_typesettingFeatures |= Ligatures;
             break;
         case FontDescription::NormalLigaturesState:
             break;
@@ -235,9 +233,49 @@ void FontDescription::updateTypesettingFeatures() const
         if (discretionaryLigaturesState() == FontDescription::EnabledLigaturesState
             || historicalLigaturesState() == FontDescription::EnabledLigaturesState
             || contextualLigaturesState() == FontDescription::EnabledLigaturesState) {
-            m_typesettingFeatures |= blink::Ligatures;
+            m_fields.m_typesettingFeatures |= blink::Ligatures;
         }
     }
+}
+
+static inline void addToHash(unsigned& hash, unsigned key)
+{
+    hash = ((hash << 5) + hash) + key; // Djb2
+}
+
+static inline void addFloatToHash(unsigned& hash, float value)
+{
+    addToHash(hash, StringHasher::hashMemory(&value, sizeof(value)));
+}
+
+unsigned FontDescription::styleHashWithoutFamilyList() const
+{
+    unsigned hash = 0;
+    StringHasher stringHasher;
+    const FontFeatureSettings* settings = featureSettings();
+    if (settings) {
+        unsigned numFeatures = settings->size();
+        for (unsigned i = 0; i < numFeatures; ++i) {
+            const AtomicString& tag = settings->at(i).tag();
+            for (unsigned j = 0; j < tag.length(); j++)
+                stringHasher.addCharacter(tag[j]);
+            addToHash(hash, settings->at(i).value());
+        }
+    }
+    for (unsigned i = 0; i < m_locale.length(); i++)
+        stringHasher.addCharacter(m_locale[i]);
+    addToHash(hash, stringHasher.hash());
+
+    addFloatToHash(hash, m_specifiedSize);
+    addFloatToHash(hash, m_computedSize);
+    addFloatToHash(hash, m_adjustedSize);
+    addFloatToHash(hash, m_sizeAdjust);
+    addFloatToHash(hash, m_letterSpacing);
+    addFloatToHash(hash, m_wordSpacing);
+    addToHash(hash, m_fieldsAsUnsigned[0]);
+    addToHash(hash, m_fieldsAsUnsigned[1]);
+
+    return hash;
 }
 
 } // namespace blink

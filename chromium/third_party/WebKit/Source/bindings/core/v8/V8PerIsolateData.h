@@ -31,7 +31,6 @@
 #include "bindings/core/v8/V8HiddenValue.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "core/CoreExport.h"
-#include "core/inspector/ScriptDebuggerBase.h"
 #include "gin/public/isolate_holder.h"
 #include "gin/public/v8_idle_task_runner.h"
 #include "wtf/HashMap.h"
@@ -43,6 +42,7 @@
 namespace blink {
 
 class DOMDataStore;
+class MainThreadDebugger;
 class StringCache;
 class V8Debugger;
 struct WrapperTypeInfo;
@@ -50,11 +50,11 @@ struct WrapperTypeInfo;
 typedef WTF::Vector<DOMDataStore*> DOMDataStoreList;
 
 class CORE_EXPORT V8PerIsolateData {
-    WTF_MAKE_FAST_ALLOCATED(V8PerIsolateData);
+    USING_FAST_MALLOC(V8PerIsolateData);
     WTF_MAKE_NONCOPYABLE(V8PerIsolateData);
 public:
     class EndOfScopeTask {
-        WTF_MAKE_FAST_ALLOCATED(EndOfScopeTask);
+        USING_FAST_MALLOC(EndOfScopeTask);
     public:
         virtual ~EndOfScopeTask() { }
         virtual void run() = 0;
@@ -77,8 +77,6 @@ public:
 
     bool destructionPending() const { return m_destructionPending; }
     v8::Isolate* isolate() { return m_isolateHolder->isolate(); }
-
-    v8::Local<v8::FunctionTemplate> toStringTemplate();
 
     StringCache* stringCache() { return m_stringCache.get(); }
 
@@ -125,7 +123,7 @@ public:
     void runEndOfScopeTasks();
     void clearEndOfScopeTasks();
 
-    void setScriptDebugger(PassOwnPtr<ScriptDebuggerBase>);
+    void setScriptDebugger(PassOwnPtr<MainThreadDebugger>);
 
 private:
     V8PerIsolateData();
@@ -140,7 +138,6 @@ private:
     OwnPtr<gin::IsolateHolder> m_isolateHolder;
     DOMTemplateMap m_domTemplateMapForMainWorld;
     DOMTemplateMap m_domTemplateMapForNonMainWorld;
-    ScopedPersistent<v8::FunctionTemplate> m_toStringTemplate;
     OwnPtr<StringCache> m_stringCache;
     OwnPtr<V8HiddenValue> m_hiddenValue;
     ScopedPersistent<v8::Value> m_liveRoot;
@@ -161,7 +158,7 @@ private:
     bool m_performingMicrotaskCheckpoint;
 
     Vector<OwnPtr<EndOfScopeTask>> m_endOfScopeTasks;
-    OwnPtr<ScriptDebuggerBase> m_scriptDebugger;
+    OwnPtr<MainThreadDebugger> m_scriptDebugger;
 };
 
 } // namespace blink

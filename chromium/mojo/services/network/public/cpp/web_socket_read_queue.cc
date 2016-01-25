@@ -4,6 +4,8 @@
 
 #include "network/public/cpp/web_socket_read_queue.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -26,10 +28,8 @@ struct WebSocketReadQueue::Operation {
 };
 
 WebSocketReadQueue::WebSocketReadQueue(DataPipeConsumerHandle handle)
-    : handle_(handle),
-      handle_watcher_(7),
-      is_busy_(false),
-      weak_factory_(this) {}
+    : handle_(handle), is_busy_(false), weak_factory_(this) {
+}
 
 WebSocketReadQueue::~WebSocketReadQueue() {
 }

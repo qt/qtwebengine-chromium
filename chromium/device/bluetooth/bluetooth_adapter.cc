@@ -4,9 +4,12 @@
 
 #include "device/bluetooth/bluetooth_adapter.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
+#include "build/build_config.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "device/bluetooth/bluetooth_discovery_session_outcome.h"
@@ -19,7 +22,7 @@ BluetoothAdapter::ServiceOptions::~ServiceOptions() {
 }
 
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_MACOSX) && \
-    !defined(OS_WIN)
+    !defined(OS_WIN) && !defined(OS_LINUX)
 // static
 base::WeakPtr<BluetoothAdapter> BluetoothAdapter::CreateAdapter(
     const InitCallback& init_callback) {
@@ -31,7 +34,7 @@ base::WeakPtr<BluetoothAdapter> BluetoothAdapter::GetWeakPtrForTesting() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
 void BluetoothAdapter::Shutdown() {
   NOTIMPLEMENTED();
 }
@@ -156,7 +159,6 @@ BluetoothAdapter::BluetoothAdapter() : weak_ptr_factory_(this) {
 }
 
 BluetoothAdapter::~BluetoothAdapter() {
-  STLDeleteValues(&devices_);
 }
 
 void BluetoothAdapter::OnStartDiscoverySession(
@@ -168,9 +170,9 @@ void BluetoothAdapter::OnStartDiscoverySession(
 
   scoped_ptr<BluetoothDiscoverySession> discovery_session(
       new BluetoothDiscoverySession(scoped_refptr<BluetoothAdapter>(this),
-                                    discovery_filter.Pass()));
+                                    std::move(discovery_filter)));
   discovery_sessions_.insert(discovery_session.get());
-  callback.Run(discovery_session.Pass());
+  callback.Run(std::move(discovery_session));
 }
 
 void BluetoothAdapter::OnStartDiscoverySessionError(
@@ -201,11 +203,7 @@ void BluetoothAdapter::DiscoverySessionBecameInactive(
 }
 
 void BluetoothAdapter::DeleteDeviceForTesting(const std::string& address) {
-  std::map<const std::string, BluetoothDevice*>::iterator device_iterator =
-      devices_.find(address);
-  BluetoothDevice* device = device_iterator->second;
-  devices_.erase(device_iterator);
-  delete device;
+  devices_.erase(address);
 }
 
 scoped_ptr<BluetoothDiscoveryFilter>
@@ -243,7 +241,7 @@ BluetoothAdapter::GetMergedDiscoveryFilterHelper(
     result = BluetoothDiscoveryFilter::Merge(result.get(), curr_filter);
   }
 
-  return result.Pass();
+  return result;
 }
 
 // static

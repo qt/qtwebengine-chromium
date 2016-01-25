@@ -587,7 +587,7 @@ static int write_index(NUTContext *nut, AVIOContext *bc) {
     ff_put_v(bc, nut->sp_count);
 
     for (i=0; i<nut->sp_count; i++) {
-        av_tree_find(nut->syncpoints, &dummy, (void *) ff_nut_sp_pos_cmp, (void**)next_node);
+        av_tree_find(nut->syncpoints, &dummy, ff_nut_sp_pos_cmp, (void**)next_node);
         ff_put_v(bc, (next_node[1]->pos >> 4) - (dummy.pos>>4));
         dummy.pos = next_node[1]->pos;
     }
@@ -1204,7 +1204,7 @@ static const AVOption options[] = {
     { "default",     "",                                                0,             AV_OPT_TYPE_CONST, {.i64 = 0},             INT_MIN, INT_MAX, E, "syncpoints" },
     { "none",        "Disable syncpoints, low overhead and unseekable", 0,             AV_OPT_TYPE_CONST, {.i64 = NUT_PIPE},      INT_MIN, INT_MAX, E, "syncpoints" },
     { "timestamped", "Extend syncpoints with a wallclock timestamp",    0,             AV_OPT_TYPE_CONST, {.i64 = NUT_BROADCAST}, INT_MIN, INT_MAX, E, "syncpoints" },
-    { "write_index", "Write index",                               OFFSET(write_index), AV_OPT_TYPE_INT,   {.i64 = 1},                   0,       1, E, },
+    { "write_index", "Write index",                               OFFSET(write_index), AV_OPT_TYPE_BOOL,  {.i64 = 1},                   0,       1, E, },
     { NULL },
 };
 

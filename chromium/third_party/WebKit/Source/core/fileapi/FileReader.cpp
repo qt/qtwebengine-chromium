@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fileapi/FileReader.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -343,7 +342,7 @@ void FileReader::abort()
 
     // Schedule to have the abort done later since abort() might be called from the event handler and we do not want the resource loading code to be in the stack.
     executionContext()->postTask(
-        FROM_HERE, createSameThreadTask(&delayedAbort, this));
+        BLINK_FROM_HERE, createSameThreadTask(&delayedAbort, this));
 }
 
 void FileReader::doAbort()

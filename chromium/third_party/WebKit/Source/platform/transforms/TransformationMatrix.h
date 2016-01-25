@@ -31,8 +31,8 @@
 #include "platform/geometry/FloatPoint3D.h"
 #include "platform/geometry/IntPoint.h"
 #include "wtf/Alignment.h"
+#include "wtf/Allocator.h"
 #include "wtf/CPU.h"
-#include "wtf/FastAllocBase.h"
 #include <string.h> // for memcpy
 
 namespace blink {
@@ -51,7 +51,7 @@ class FloatBox;
 // Oilpan doesn't (yet) have an ability to allocate the TransformationMatrix
 // with 16-byte alignment. PartitionAlloc has the ability.
 class PLATFORM_EXPORT TransformationMatrix {
-    WTF_MAKE_FAST_ALLOCATED(TransformationMatrix);
+    USING_FAST_MALLOC(TransformationMatrix);
 public:
 
 #if CPU(APPLE_ARMV7S) || defined(TRANSFORMATION_MATRIX_USE_X86_64_SSE2)
@@ -397,6 +397,10 @@ private:
 
     Matrix4 m_matrix;
 };
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/TransformPrinters.h.
+void PrintTo(const TransformationMatrix&, std::ostream*);
 
 } // namespace blink
 

@@ -15,8 +15,8 @@
 
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/thread_annotations.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/send_time_history.h"
 
@@ -33,7 +33,11 @@ class TransportFeedbackAdapter : public TransportFeedbackObserver,
                            ProcessThread* process_thread);
   virtual ~TransportFeedbackAdapter();
 
-  void OnPacketSent(const PacketInfo& info) override;
+  void AddPacket(uint16_t sequence_number,
+                 size_t length,
+                 bool was_paced) override;
+
+  void OnSentPacket(uint16_t sequence_number, int64_t send_time_ms);
 
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override;
 

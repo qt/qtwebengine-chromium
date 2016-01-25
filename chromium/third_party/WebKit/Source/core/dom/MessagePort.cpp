@@ -24,7 +24,6 @@
  *
  */
 
-#include "config.h"
 #include "core/dom/MessagePort.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -77,7 +76,7 @@ void MessagePort::postMessage(ExecutionContext* context, PassRefPtr<SerializedSc
     // Make sure we aren't connected to any of the passed-in ports.
     if (ports) {
         for (unsigned i = 0; i < ports->size(); ++i) {
-            MessagePort* dataPort = (*ports)[i].get();
+            MessagePort* dataPort = (*ports)[i];
             if (dataPort == this) {
                 exceptionState.throwDOMException(DataCloneError, "Port at index " + String::number(i) + " contains the source port.");
                 return;
@@ -133,7 +132,7 @@ PassOwnPtr<WebMessagePortChannel> MessagePort::disentangle()
 void MessagePort::messageAvailable()
 {
     ASSERT(executionContext());
-    executionContext()->postTask(FROM_HERE, createCrossThreadTask(&MessagePort::dispatchMessages, m_weakFactory.createWeakPtr()));
+    executionContext()->postTask(BLINK_FROM_HERE, createCrossThreadTask(&MessagePort::dispatchMessages, m_weakFactory.createWeakPtr()));
 }
 
 void MessagePort::start()
@@ -232,12 +231,12 @@ PassOwnPtr<MessagePortChannelArray> MessagePort::disentanglePorts(ExecutionConte
     if (!ports || !ports->size())
         return nullptr;
 
-    // HashSet used to efficiently check for duplicates in the passed-in array.
-    HashSet<MessagePort*> portSet;
+    // HeapHashSet used to efficiently check for duplicates in the passed-in array.
+    HeapHashSet<Member<MessagePort>> portSet;
 
     // Walk the incoming array - if there are any duplicate ports, or null ports or cloned ports, throw an error (per section 8.3.3 of the HTML5 spec).
     for (unsigned i = 0; i < ports->size(); ++i) {
-        MessagePort* port = (*ports)[i].get();
+        MessagePort* port = (*ports)[i];
         if (!port || port->isNeutered() || portSet.contains(port)) {
             String type;
             if (!port)

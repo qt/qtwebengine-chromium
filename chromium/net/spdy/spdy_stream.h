@@ -5,16 +5,16 @@
 #ifndef NET_SPDY_SPDY_STREAM_H_
 #define NET_SPDY_SPDY_STREAM_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <deque>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_export.h"
@@ -170,8 +170,8 @@ class NET_EXPORT_PRIVATE SpdyStream {
              const base::WeakPtr<SpdySession>& session,
              const GURL& url,
              RequestPriority priority,
-             int32 initial_send_window_size,
-             int32 max_recv_window_size,
+             int32_t initial_send_window_size,
+             int32_t max_recv_window_size,
              const BoundNetLog& net_log);
 
   ~SpdyStream();
@@ -199,9 +199,9 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   RequestPriority priority() const { return priority_; }
 
-  int32 send_window_size() const { return send_window_size_; }
+  int32_t send_window_size() const { return send_window_size_; }
 
-  int32 recv_window_size() const { return recv_window_size_; }
+  int32_t recv_window_size() const { return recv_window_size_; }
 
   bool send_stalled_by_flow_control() const {
     return send_stalled_by_flow_control_;
@@ -221,7 +221,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // closed.
   //
   // If stream flow control is turned off, this must not be called.
-  void AdjustSendWindowSize(int32 delta_window_size);
+  void AdjustSendWindowSize(int32_t delta_window_size);
 
   // Called when bytes are consumed from a SpdyBuffer for a DATA frame
   // that is to be written or is being written. Increases the send
@@ -242,7 +242,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // nothing if the stream is already closed.
   //
   // If stream flow control is turned off, this must not be called.
-  void IncreaseSendWindowSize(int32 delta_window_size);
+  void IncreaseSendWindowSize(int32_t delta_window_size);
 
   // If stream flow control is turned on, called by the session to
   // decrease this stream's send window size by |delta_window_size|,
@@ -251,7 +251,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // to go negative. Does nothing if the stream is already closed.
   //
   // If stream flow control is turned off, this must not be called.
-  void DecreaseSendWindowSize(int32 delta_window_size);
+  void DecreaseSendWindowSize(int32_t delta_window_size);
 
   // Called when bytes are consumed by the delegate from a SpdyBuffer
   // containing received data. Increases the receive window size
@@ -268,7 +268,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // stream is not active.
   //
   // If stream flow control is turned off, this must not be called.
-  void IncreaseRecvWindowSize(int32 delta_window_size);
+  void IncreaseRecvWindowSize(int32_t delta_window_size);
 
   // Called by OnDataReceived or OnPaddingConsumed (which are in turn called by
   // the session) to decrease this stream's receive window size by
@@ -277,7 +277,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   //
   // If stream flow control is turned off or the stream is not active,
   // this must not be called.
-  void DecreaseRecvWindowSize(int32 delta_window_size);
+  void DecreaseRecvWindowSize(int32_t delta_window_size);
 
   int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
@@ -426,7 +426,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   void AddRawReceivedBytes(size_t received_bytes);
   void AddRawSentBytes(size_t sent_bytes);
 
-  int64 raw_received_bytes() const { return raw_received_bytes_; }
+  int64_t raw_received_bytes() const { return raw_received_bytes_; }
   int64_t raw_sent_bytes() const { return raw_sent_bytes_; }
 
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
@@ -510,22 +510,22 @@ class NET_EXPORT_PRIVATE SpdyStream {
   bool send_stalled_by_flow_control_;
 
   // Current send window size.
-  int32 send_window_size_;
+  int32_t send_window_size_;
 
   // Maximum receive window size.  Each time a WINDOW_UPDATE is sent, it
   // restores the receive window size to this value.
-  int32 max_recv_window_size_;
+  int32_t max_recv_window_size_;
 
   // Sum of |session_unacked_recv_window_bytes_| and current receive window
   // size.
   // TODO(bnc): Rename or change semantics so that |window_size_| is actual
   // window size.
-  int32 recv_window_size_;
+  int32_t recv_window_size_;
 
   // When bytes are consumed, SpdyIOBuffer destructor calls back to SpdySession,
   // and this member keeps count of them until the corresponding WINDOW_UPDATEs
   // are sent.
-  int32 unacked_recv_window_bytes_;
+  int32_t unacked_recv_window_bytes_;
 
   const base::WeakPtr<SpdySession> session_;
 
@@ -547,7 +547,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // after the data is fully read. Specifically, data received before the
   // delegate is attached must be buffered and later replayed. A remote FIN
   // is represented by a final, zero-length buffer.
-  ScopedVector<SpdyBuffer> pending_recv_data_;
+  std::vector<scoped_ptr<SpdyBuffer>> pending_recv_data_;
 
   // The time at which the request was made that resulted in this response.
   // For cached responses, this time could be "far" in the past.
@@ -571,7 +571,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   // Number of bytes that have been received on this stream, including frame
   // overhead and headers.
-  int64 raw_received_bytes_;
+  int64_t raw_received_bytes_;
   // Number of bytes that have been sent on this stream, including frame
   // overhead and headers.
   int64_t raw_sent_bytes_;

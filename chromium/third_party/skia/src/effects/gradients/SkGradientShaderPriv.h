@@ -58,7 +58,7 @@ static inline SkFixed repeat_tileproc(SkFixed x) {
 #endif
 
 static inline SkFixed mirror_tileproc(SkFixed x) {
-    int s = x << 15 >> 31;
+    int s = SkLeftShift(x, 15) >> 31;
     return (x ^ s) & 0xFFFF;
 }
 
@@ -126,7 +126,7 @@ public:
     // The cache is initialized on-demand when getCache16/32 is called.
     class GradientShaderCache : public SkRefCnt {
     public:
-        GradientShaderCache(U8CPU alpha, const SkGradientShaderBase& shader);
+        GradientShaderCache(U8CPU alpha, bool dither, const SkGradientShaderBase& shader);
         ~GradientShaderCache();
 
         const uint16_t*     getCache16();
@@ -135,6 +135,7 @@ public:
         SkMallocPixelRef* getCache32PixelRef() const { return fCache32PixelRef; }
 
         unsigned getAlpha() const { return fCacheAlpha; }
+        bool getDither() const { return fCacheDither; }
 
     private:
         // Working pointers. If either is nullptr, we need to recompute the corresponding cache values.
@@ -146,6 +147,7 @@ public:
         const unsigned    fCacheAlpha;        // The alpha value we used when we computed the cache.
                                               // Larger than 8bits so we can store uninitialized
                                               // value.
+        const bool        fCacheDither;       // The dither flag used when we computed the cache.
 
         const SkGradientShaderBase& fShader;
 
@@ -156,9 +158,9 @@ public:
         static void initCache16(GradientShaderCache* cache);
         static void initCache32(GradientShaderCache* cache);
 
-        static void Build16bitCache(uint16_t[], SkColor c0, SkColor c1, int count);
+        static void Build16bitCache(uint16_t[], SkColor c0, SkColor c1, int count, bool dither);
         static void Build32bitCache(SkPMColor[], SkColor c0, SkColor c1, int count,
-                                    U8CPU alpha, uint32_t gradFlags);
+                                    U8CPU alpha, uint32_t gradFlags, bool dither);
     };
 
     class GradientShaderBaseContext : public SkShader::Context {
@@ -172,6 +174,7 @@ public:
         SkMatrix::MapXYProc fDstToIndexProc;
         uint8_t     fDstToIndexClass;
         uint8_t     fFlags;
+        bool        fDither;
 
         SkAutoTUnref<GradientShaderCache> fCache;
 
@@ -256,11 +259,16 @@ private:
         kStorageSize = kColorStorageCount * (sizeof(SkColor) + sizeof(SkScalar) + sizeof(Rec))
     };
     SkColor     fStorage[(kStorageSize + 3) >> 2];
+public:
     SkColor*    fOrigColors; // original colors, before modulation by paint in context.
     SkScalar*   fOrigPos;   // original positions
+
+    bool colorsAreOpaque() const { return fColorsAreOpaque; }
+
+private:
     bool        fColorsAreOpaque;
 
-    GradientShaderCache* refCache(U8CPU alpha) const;
+    GradientShaderCache* refCache(U8CPU alpha, bool dither) const;
     mutable SkMutex                           fCacheMutex;
     mutable SkAutoTUnref<GradientShaderCache> fCache;
 
@@ -293,7 +301,8 @@ static inline int next_dither_toggle16(int toggle) {
 
 #include "GrCoordTransform.h"
 #include "GrFragmentProcessor.h"
-#include "gl/GrGLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 class GrInvariantOutput;
 
@@ -327,7 +336,6 @@ class GrGradientEffect : public GrFragmentProcessor {
 public:
 
     GrGradientEffect(GrContext* ctx,
-                     GrProcessorDataManager*,
                      const SkGradientShaderBase& shader,
                      const SkMatrix& matrix,
                      SkShader::TileMode tileMode);
@@ -393,13 +401,13 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 // Base class for GL gradient effects
-class GrGLGradientEffect : public GrGLFragmentProcessor {
+class GrGLGradientEffect : public GrGLSLFragmentProcessor {
 public:
     GrGLGradientEffect();
     virtual ~GrGLGradientEffect();
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 protected:
     /**
@@ -411,13 +419,15 @@ protected:
 
     // Emits the uniform used as the y-coord to texture samples in derived classes. Subclasses
     // should call this method from their emitCode().
-    void emitUniforms(GrGLFPBuilder* builder, const GrGradientEffect&);
+    void emitUniforms(GrGLSLUniformHandler*, const GrGradientEffect&);
 
 
     // emit code that gets a fragment's color from an expression for t; Has branches for 3 separate
     // control flows inside -- 2 color gradients, 3 color symmetric gradients (both using
     // native GLSL mix), and 4+ color gradients that use the traditional texture lookup.
-    void emitColor(GrGLFPBuilder* builder,
+    void emitColor(GrGLSLFragmentBuilder* fragBuilder,
+                   GrGLSLUniformHandler* uniformHandler,
+                   const GrGLSLCaps* caps,
                    const GrGradientEffect&,
                    const char* gradientTValue,
                    const char* outputColor,
@@ -442,12 +452,12 @@ private:
     GR_STATIC_ASSERT(kBaseKeyBitCnt <= 32);
 
     SkScalar fCachedYCoord;
-    GrGLProgramDataManager::UniformHandle fFSYUni;
-    GrGLProgramDataManager::UniformHandle fColorStartUni;
-    GrGLProgramDataManager::UniformHandle fColorMidUni;
-    GrGLProgramDataManager::UniformHandle fColorEndUni;
+    GrGLSLProgramDataManager::UniformHandle fFSYUni;
+    GrGLSLProgramDataManager::UniformHandle fColorStartUni;
+    GrGLSLProgramDataManager::UniformHandle fColorMidUni;
+    GrGLSLProgramDataManager::UniformHandle fColorEndUni;
 
-    typedef GrGLFragmentProcessor INHERITED;
+    typedef GrGLSLFragmentProcessor INHERITED;
 };
 
 #endif

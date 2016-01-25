@@ -51,7 +51,6 @@ public:
         setIsText(true);
     }
 
-    LayoutText& layoutObject() const { return toLayoutText(InlineBox::layoutObject()); }
     LineLayoutText lineLayoutItem() const { return LineLayoutText(InlineBox::lineLayoutItem()); }
 
     void destroy() final;
@@ -110,8 +109,9 @@ public:
     void selectionStartEnd(int& sPos, int& ePos) const;
 
     // These functions both paint markers and update the DocumentMarker's renderedRect.
-    virtual void paintDocumentMarker(GraphicsContext*, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&, bool grammar) const;
-    virtual void paintTextMatchMarker(GraphicsContext*, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&) const;
+    virtual void paintDocumentMarker(GraphicsContext&, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&, bool grammar) const;
+    virtual void paintTextMatchMarkerForeground(const PaintInfo&, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&) const;
+    virtual void paintTextMatchMarkerBackground(const PaintInfo&, const LayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&) const;
 
     void move(const LayoutSize&) final;
 

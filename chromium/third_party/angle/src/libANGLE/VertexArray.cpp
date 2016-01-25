@@ -15,8 +15,7 @@ namespace gl
 {
 
 VertexArray::Data::Data(size_t maxAttribs)
-    : mVertexAttributes(maxAttribs),
-      mMaxEnabledAttribute(0)
+    : mLabel(), mVertexAttributes(maxAttribs), mMaxEnabledAttribute(0)
 {
 }
 
@@ -34,7 +33,6 @@ VertexArray::VertexArray(rx::ImplFactory *factory, GLuint id, size_t maxAttribs)
       mVertexArray(factory->createVertexArray(mData)),
       mData(maxAttribs)
 {
-    ASSERT(mVertexArray != nullptr);
 }
 
 VertexArray::~VertexArray()
@@ -45,6 +43,16 @@ VertexArray::~VertexArray()
 GLuint VertexArray::id() const
 {
     return mId;
+}
+
+void VertexArray::setLabel(const std::string &label)
+{
+    mData.mLabel = label;
+}
+
+const std::string &VertexArray::getLabel() const
+{
+    return mData.mLabel;
 }
 
 void VertexArray::detachBuffer(GLuint bufferName)

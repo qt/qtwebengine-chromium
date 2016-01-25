@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/DataConsumerHandleUtil.h"
 
 #include "platform/Task.h"
@@ -22,11 +21,6 @@ class WaitingHandle final : public WebDataConsumerHandle {
 private:
     class ReaderImpl final : public WebDataConsumerHandle::Reader {
     public:
-        Result read(void*, size_t, WebDataConsumerHandle::Flags, size_t *readSize) override
-        {
-            *readSize = 0;
-            return ShouldWait;
-        }
         Result beginRead(const void** buffer, WebDataConsumerHandle::Flags, size_t *available) override
         {
             *available = 0;
@@ -48,11 +42,6 @@ public:
     explicit RepeatingReader(Result result, WebDataConsumerHandle::Client* client) : m_result(result), m_notifier(client) { }
 
 private:
-    Result read(void*, size_t, WebDataConsumerHandle::Flags, size_t *readSize) override
-    {
-        *readSize = 0;
-        return m_result;
-    }
     Result beginRead(const void** buffer, WebDataConsumerHandle::Flags, size_t *available) override
     {
         *available = 0;
@@ -140,7 +129,7 @@ NotifyOnReaderCreationHelper::NotifyOnReaderCreationHelper(WebDataConsumerHandle
         return;
     // Note we don't need thread safety here because this object is
     // bound to the current thread.
-    Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task(bind(&NotifyOnReaderCreationHelper::notify, m_factory.createWeakPtr(), client)));
+    Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task(bind(&NotifyOnReaderCreationHelper::notify, m_factory.createWeakPtr(), client)));
 }
 
 void NotifyOnReaderCreationHelper::notify(WebDataConsumerHandle::Client* client)

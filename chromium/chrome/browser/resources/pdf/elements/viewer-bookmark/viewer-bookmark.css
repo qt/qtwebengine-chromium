@@ -17,6 +17,16 @@
   color: rgb(20, 20, 20);
 }
 
+paper-ripple {
+  /* Allowing the ripple to capture pointer events prevents a focus rectangle
+   * for showing up for clicks, while still allowing it with tab-navigation.
+   * This undoes a paper-ripple bugfix aimed at non-Chrome browsers.
+   * TODO(tsergeant): Improve focus in viewer-bookmark so this can be removed
+   * (https://crbug.com/5448190).
+   */
+  pointer-events: auto;
+}
+
 #title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -27,11 +37,11 @@
   --iron-icon-height: 16px;
   --iron-icon-width: 16px;
   --paper-icon-button-ink-color: var(--paper-grey-900);
-  height: 16px;
-  min-width: 16px;
+  height: 28px;
+  min-width: 28px;
   padding: 6px;
   transition: transform 150ms;
-  width: 16px;
+  width: 28px;
 }
 
 :host-context([dir=rtl]) #expand {

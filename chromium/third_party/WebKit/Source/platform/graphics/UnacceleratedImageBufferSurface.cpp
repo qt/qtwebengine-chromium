@@ -28,17 +28,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "wtf/PassRefPtr.h"
 
+class SkCanvas;
+
 namespace blink {
 
-UnacceleratedImageBufferSurface::UnacceleratedImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
+UnacceleratedImageBufferSurface::UnacceleratedImageBufferSurface(const IntSize& size, OpacityMode opacityMode, ImageInitializationMode initializationMode)
     : ImageBufferSurface(size, opacityMode)
 {
     SkAlphaType alphaType = (Opaque == opacityMode) ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
@@ -46,8 +45,10 @@ UnacceleratedImageBufferSurface::UnacceleratedImageBufferSurface(const IntSize& 
     SkSurfaceProps disableLCDProps(0, kUnknown_SkPixelGeometry);
     m_surface = adoptRef(SkSurface::NewRaster(info, Opaque == opacityMode ? 0 : &disableLCDProps));
 
-    if (m_surface)
-        clear();
+    if (initializationMode == InitializeImagePixels) {
+        if (m_surface)
+            clear();
+    }
 }
 
 UnacceleratedImageBufferSurface::~UnacceleratedImageBufferSurface() { }
@@ -55,12 +56,6 @@ UnacceleratedImageBufferSurface::~UnacceleratedImageBufferSurface() { }
 SkCanvas* UnacceleratedImageBufferSurface::canvas()
 {
     return m_surface->getCanvas();
-}
-
-const SkBitmap& UnacceleratedImageBufferSurface::deprecatedBitmapForOverwrite()
-{
-    m_surface->notifyContentWillChange(SkSurface::kDiscard_ContentChangeMode);
-    return m_surface->getCanvas()->getDevice()->accessBitmap(false);
 }
 
 bool UnacceleratedImageBufferSurface::isValid() const

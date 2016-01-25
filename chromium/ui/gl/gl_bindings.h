@@ -5,8 +5,6 @@
 #ifndef UI_GL_GL_BINDINGS_H_
 #define UI_GL_GL_BINDINGS_H_
 
-#include <string>
-
 // Includes the platform independent and platform dependent GL headers.
 // Only include this in cc files. It pulls in system headers, including
 // the X11 headers on linux, which define all kinds of macros that are
@@ -16,6 +14,9 @@
 #include <GL/glext.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <stdint.h>
+
+#include <string>
 
 #include "base/logging.h"
 #include "base/threading/thread_local.h"
@@ -73,14 +74,6 @@
 #define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM         0x9243
 #define GL_BIND_GENERATES_RESOURCE_CHROMIUM              0x9244
 
-// GL_CHROMIUM_gpu_memory_manager
-#define GL_TEXTURE_POOL_CHROMIUM                         0x6000
-#define GL_TEXTURE_POOL_MANAGED_CHROMIUM                 0x6001
-#define GL_TEXTURE_POOL_UNMANAGED_CHROMIUM               0x6002
-
-// GL_ANGLE_pack_reverse_row_order
-#define GL_PACK_REVERSE_ROW_ORDER_ANGLE                  0x93A4
-
 // GL_ANGLE_texture_usage
 #define GL_TEXTURE_USAGE_ANGLE                           0x93A2
 #define GL_FRAMEBUFFER_ATTACHMENT_ANGLE                  0x93A3
@@ -132,14 +125,16 @@
 #define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
 
 // GL_CHROMIUM_gpu_memory_buffer_image
-#define GL_MAP_CHROMIUM                                  0x78F1
-#define GL_SCANOUT_CHROMIUM                              0x78F2
+#define GL_READ_WRITE_CHROMIUM                           0x78F2
 
 // GL_CHROMIUM_yuv_420_image
 #define GL_RGB_YUV_420_CHROMIUM                          0x78FA
 
 // GL_CHROMIUM_ycbcr_422_image
 #define GL_RGB_YCBCR_422_CHROMIUM                        0x78FB
+
+// GL_CHROMIUM_ycbcr_420v_image
+#define GL_RGB_YCBCR_420V_CHROMIUM 0x78FC
 
 // GL_CHROMIUM_schedule_overlay_plane
 #define GL_OVERLAY_TRANSFORM_NONE_CHROMIUM               0x9245
@@ -240,6 +235,9 @@
 #define GL_QUADRATIC_CURVE_TO_CHROMIUM 0x0A
 #define GL_CUBIC_CURVE_TO_CHROMIUM 0x0C
 #define GL_CONIC_CURVE_TO_CHROMIUM 0x1A
+#define GL_EYE_LINEAR_CHROMIUM 0x2400
+#define GL_OBJECT_LINEAR_CHROMIUM 0x2401
+#define GL_CONSTANT_CHROMIUM 0x8576
 #define GL_PATH_STROKE_WIDTH_CHROMIUM 0x9075
 #define GL_PATH_END_CAPS_CHROMIUM 0x9076
 #define GL_PATH_JOIN_STYLE_CHROMIUM 0x9079
@@ -249,6 +247,15 @@
 #define GL_COUNT_DOWN_CHROMIUM 0x9089
 #define GL_CONVEX_HULL_CHROMIUM 0x908B
 #define GL_BOUNDING_BOX_CHROMIUM 0x908D
+#define GL_TRANSLATE_X_CHROMIUM 0x908E
+#define GL_TRANSLATE_Y_CHROMIUM 0x908F
+#define GL_TRANSLATE_2D_CHROMIUM 0x9090
+#define GL_TRANSLATE_3D_CHROMIUM 0x9091
+#define GL_AFFINE_2D_CHROMIUM 0x9092
+#define GL_AFFINE_3D_CHROMIUM 0x9094
+#define GL_TRANSPOSE_AFFINE_2D_CHROMIUM 0x9096
+#define GL_TRANSPOSE_AFFINE_3D_CHROMIUM 0x9098
+#define GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM 0x909C
 #define GL_SQUARE_CHROMIUM 0x90a3
 #define GL_ROUND_CHROMIUM 0x90a4
 #define GL_BEVEL_CHROMIUM 0x90a6
@@ -257,6 +264,17 @@
 #define GL_PATH_STENCIL_REF_CHROMIUM 0x90B8
 #define GL_PATH_STENCIL_VALUE_MASK_CHROMIUM 0x90B9
 #endif
+
+#ifndef GL_EXT_multisample_compatibility
+#define GL_EXT_multisample_compatibility 1
+#define GL_MULTISAMPLE_EXT 0x809D
+#define GL_SAMPLE_ALPHA_TO_ONE_EXT 0x809F
+#endif /* GL_EXT_multisample_compatibility */
+
+#ifndef GL_CHROMIUM_framebuffer_mixed_samples
+#define GL_CHROMIUM_framebuffer_mixed_samples 1
+#define GL_COVERAGE_MODULATION_CHROMIUM 0x9332
+#endif /* GL_CHROMIUM_framebuffer_mixed_samples */
 
 #ifndef GL_KHR_blend_equation_advanced
 #define GL_KHR_blend_equation_advanced 1
@@ -310,6 +328,25 @@
 #define GL_RG8_EXT 0x822B
 #endif /* GL_EXT_texture_rg */
 
+// This is from NV_path_rendering, but the Mesa GL header is not up-to-date with
+// the most recent
+// version of the extension. This definition could be removed once glext.h
+// r27498 or later is
+// imported.
+#ifndef GL_FRAGMENT_INPUT_NV
+#define GL_FRAGMENT_INPUT_NV 0x936D
+#endif
+
+#ifndef GL_EXT_blend_func_extended
+#define GL_EXT_blend_func_extended 1
+#define GL_SRC_ALPHA_SATURATE_EXT 0x0308
+#define GL_SRC1_ALPHA_EXT 0x8589  // OpenGL 1.5 token value
+#define GL_SRC1_COLOR_EXT 0x88F9
+#define GL_ONE_MINUS_SRC1_COLOR_EXT 0x88FA
+#define GL_ONE_MINUS_SRC1_ALPHA_EXT 0x88FB
+#define GL_MAX_DUAL_SOURCE_DRAW_BUFFERS_EXT 0x88FC
+#endif /* GL_EXT_blend_func_extended */
+
 #define GL_GLEXT_PROTOTYPES 1
 
 #if defined(OS_WIN)
@@ -330,7 +367,7 @@ typedef struct osmesa_context *OSMesaContext;
 typedef void (*OSMESAproc)();
 
 // Forward declare EGL types.
-typedef uint64 EGLuint64CHROMIUM;
+typedef uint64_t EGLuint64CHROMIUM;
 
 #include "gl_bindings_autogen_gl.h"
 #include "gl_bindings_autogen_osmesa.h"

@@ -7,6 +7,7 @@
 
 #include "third_party/WebKit/public/web/WebPlugin.h"
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -97,8 +98,9 @@ class CONTENT_EXPORT BrowserPlugin :
   void updateFocus(bool focused, blink::WebFocusType focus_type) override;
   void updateVisibility(bool visible) override;
   bool acceptsInputEvents() override;
-  bool handleInputEvent(const blink::WebInputEvent& event,
-                        blink::WebCursorInfo& cursor_info) override;
+  blink::WebInputEventResult handleInputEvent(
+      const blink::WebInputEvent& event,
+      blink::WebCursorInfo& cursor_info) override;
   bool handleDragStatusUpdate(blink::WebDragStatus drag_status,
                               const blink::WebDragData& drag_data,
                               blink::WebDragOperationsMask mask,
@@ -108,11 +110,6 @@ class CONTENT_EXPORT BrowserPlugin :
   void didReceiveData(const char* data, int data_length) override;
   void didFinishLoading() override;
   void didFailLoading(const blink::WebURLError& error) override;
-  void didFinishLoadingFrameRequest(const blink::WebURL& url,
-                                    void* notify_data) override;
-  void didFailLoadingFrameRequest(const blink::WebURL& url,
-                                  void* notify_data,
-                                  const blink::WebURLError& error) override;
   bool executeEditCommand(const blink::WebString& name) override;
   bool executeEditCommand(const blink::WebString& name,
                           const blink::WebString& value) override;

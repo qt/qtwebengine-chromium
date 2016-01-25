@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebHeap.h"
 
 #include "platform/heap/Handle.h"
@@ -38,7 +37,7 @@ namespace blink {
 WebHeap::SafePointScope::SafePointScope()
 {
     RELEASE_ASSERT(!ThreadState::current()->isAtSafePoint());
-    ThreadState::current()->enterSafePoint(ThreadState::HeapPointersOnStack, this);
+    ThreadState::current()->enterSafePoint(BlinkGC::HeapPointersOnStack, this);
 }
 
 WebHeap::SafePointScope::~SafePointScope()
@@ -48,7 +47,7 @@ WebHeap::SafePointScope::~SafePointScope()
 
 void WebHeap::collectGarbageForTesting()
 {
-    Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+    Heap::collectGarbage(BlinkGC::HeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
 }
 
 void WebHeap::collectAllGarbageForTesting()

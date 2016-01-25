@@ -24,11 +24,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/EditingStyle.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
+#include "core/css/CSSColorValue.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSRuleList.h"
@@ -160,10 +160,10 @@ static int legacyFontSizeFromCSSValue(Document*, CSSPrimitiveValue*, bool, Legac
 static bool isTransparentColorValue(CSSValue*);
 static bool hasTransparentBackgroundColor(CSSStyleDeclaration*);
 static bool hasTransparentBackgroundColor(StylePropertySet*);
-static PassRefPtrWillBeRawPtr<CSSValue> backgroundColorInEffect(Node*);
+static PassRefPtrWillBeRawPtr<CSSValue> backgroundColorValueInEffect(Node*);
 
 class HTMLElementEquivalent : public NoBaseWillBeGarbageCollected<HTMLElementEquivalent> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLElementEquivalent);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLElementEquivalent);
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(HTMLElementEquivalent);
 public:
     static PassOwnPtrWillBeRawPtr<HTMLElementEquivalent> create(CSSPropertyID propertyID, CSSValueID primitiveValue, const HTMLQualifiedName& tagName)
@@ -394,44 +394,43 @@ EditingStyle::~EditingStyle()
 {
 }
 
-static RGBA32 cssValueToRGBA(CSSValue* colorValue)
+static Color cssValueToColor(CSSValue* colorValue)
 {
-    if (!colorValue || !colorValue->isPrimitiveValue())
+    if (!colorValue || (!colorValue->isColorValue() && !colorValue->isPrimitiveValue()))
         return Color::transparent;
 
-    CSSPrimitiveValue* primitiveColor = toCSSPrimitiveValue(colorValue);
-    if (primitiveColor->isRGBColor())
-        return primitiveColor->getRGBA32Value();
+    if (colorValue->isColorValue())
+        return toCSSColorValue(colorValue)->value();
 
-    RGBA32 rgba = 0;
+    Color color = 0;
     // FIXME: Why ignore the return value?
-    CSSParser::parseColor(rgba, colorValue->cssText());
-    return rgba;
+    CSSParser::parseColor(color, colorValue->cssText());
+    return color;
 }
 
-static inline RGBA32 getRGBAFontColor(CSSStyleDeclaration* style)
+static inline Color getFontColor(CSSStyleDeclaration* style)
 {
-    return cssValueToRGBA(style->getPropertyCSSValueInternal(CSSPropertyColor).get());
+    return cssValueToColor(style->getPropertyCSSValueInternal(CSSPropertyColor).get());
 }
 
-static inline RGBA32 getRGBAFontColor(StylePropertySet* style)
+static inline Color getFontColor(StylePropertySet* style)
 {
-    return cssValueToRGBA(style->getPropertyCSSValue(CSSPropertyColor).get());
+    return cssValueToColor(style->getPropertyCSSValue(CSSPropertyColor).get());
 }
 
-static inline RGBA32 getRGBABackgroundColor(CSSStyleDeclaration* style)
+static inline Color getBackgroundColor(CSSStyleDeclaration* style)
 {
-    return cssValueToRGBA(style->getPropertyCSSValueInternal(CSSPropertyBackgroundColor).get());
+    return cssValueToColor(style->getPropertyCSSValueInternal(CSSPropertyBackgroundColor).get());
 }
 
-static inline RGBA32 getRGBABackgroundColor(StylePropertySet* style)
+static inline Color getBackgroundColor(StylePropertySet* style)
 {
-    return cssValueToRGBA(style->getPropertyCSSValue(CSSPropertyBackgroundColor).get());
+    return cssValueToColor(style->getPropertyCSSValue(CSSPropertyBackgroundColor).get());
 }
 
-static inline RGBA32 rgbaBackgroundColorInEffect(Node* node)
+static inline Color backgroundColorInEffect(Node* node)
 {
-    return cssValueToRGBA(backgroundColorInEffect(node).get());
+    return cssValueToColor(backgroundColorValueInEffect(node).get());
 }
 
 static int textAlignResolvingStartAndEnd(int textAlign, int direction)
@@ -473,7 +472,7 @@ void EditingStyle::init(Node* node, PropertiesToInclude propertiesToInclude)
     m_mutableStyle = propertiesToInclude == AllProperties && computedStyleAtPosition ? computedStyleAtPosition->copyProperties() : editingStyleFromComputedStyle(computedStyleAtPosition);
 
     if (propertiesToInclude == EditingPropertiesInEffect) {
-        if (RefPtrWillBeRawPtr<CSSValue> value = backgroundColorInEffect(node))
+        if (RefPtrWillBeRawPtr<CSSValue> value = backgroundColorValueInEffect(node))
             m_mutableStyle->setProperty(CSSPropertyBackgroundColor, value->cssText());
         if (RefPtrWillBeRawPtr<CSSValue> value = computedStyleAtPosition->getPropertyCSSValue(CSSPropertyWebkitTextDecorationsInEffect))
             m_mutableStyle->setProperty(CSSPropertyTextDecoration, value->cssText());
@@ -557,7 +556,7 @@ bool EditingStyle::textDirection(WritingDirection& writingDirection) const
         return false;
 
     CSSValueID unicodeBidiValue = toCSSPrimitiveValue(unicodeBidi.get())->getValueID();
-    if (unicodeBidiValue == CSSValueEmbed) {
+    if (isEmbedOrIsolate(unicodeBidiValue)) {
         RefPtrWillBeRawPtr<CSSValue> direction = m_mutableStyle->getPropertyCSSValue(CSSPropertyDirection);
         if (!direction || !direction->isPrimitiveValue())
             return false;
@@ -649,7 +648,7 @@ PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::extractAndRemoveTextDirection
 {
     RefPtrWillBeRawPtr<EditingStyle> textDirection = EditingStyle::create();
     textDirection->m_mutableStyle = MutableStylePropertySet::create(HTMLQuirksMode);
-    textDirection->m_mutableStyle->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed, m_mutableStyle->propertyIsImportant(CSSPropertyUnicodeBidi));
+    textDirection->m_mutableStyle->setProperty(CSSPropertyUnicodeBidi, CSSValueIsolate, m_mutableStyle->propertyIsImportant(CSSPropertyUnicodeBidi));
     textDirection->m_mutableStyle->setProperty(CSSPropertyDirection, m_mutableStyle->getPropertyValue(CSSPropertyDirection),
         m_mutableStyle->propertyIsImportant(CSSPropertyDirection));
 
@@ -1005,11 +1004,11 @@ void EditingStyle::prepareToApplyAt(const Position& position, ShouldPreserveWrit
     if (textAlignResolvingStartAndEnd(m_mutableStyle.get()) == textAlignResolvingStartAndEnd(styleAtPosition))
         m_mutableStyle->removeProperty(CSSPropertyTextAlign);
 
-    if (getRGBAFontColor(m_mutableStyle.get()) == getRGBAFontColor(styleAtPosition))
+    if (getFontColor(m_mutableStyle.get()) == getFontColor(styleAtPosition))
         m_mutableStyle->removeProperty(CSSPropertyColor);
 
     if (hasTransparentBackgroundColor(m_mutableStyle.get())
-        || cssValueToRGBA(m_mutableStyle->getPropertyCSSValue(CSSPropertyBackgroundColor).get()) == rgbaBackgroundColorInEffect(position.computeContainerNode()))
+        || cssValueToColor(m_mutableStyle->getPropertyCSSValue(CSSPropertyBackgroundColor).get()) == backgroundColorInEffect(position.computeContainerNode()))
         m_mutableStyle->removeProperty(CSSPropertyBackgroundColor);
 
     if (unicodeBidi && unicodeBidi->isPrimitiveValue()) {
@@ -1339,11 +1338,18 @@ PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::styleAtSelectionStart(const V
     // and find the background color of the common ancestor.
     if (shouldUseBackgroundColorInEffect && (selection.isRange() || hasTransparentBackgroundColor(style->m_mutableStyle.get()))) {
         const EphemeralRange range(selection.toNormalizedEphemeralRange());
-        if (PassRefPtrWillBeRawPtr<CSSValue> value = backgroundColorInEffect(Range::commonAncestorContainer(range.startPosition().computeContainerNode(), range.endPosition().computeContainerNode())))
+        if (PassRefPtrWillBeRawPtr<CSSValue> value = backgroundColorValueInEffect(Range::commonAncestorContainer(range.startPosition().computeContainerNode(), range.endPosition().computeContainerNode())))
             style->setProperty(CSSPropertyBackgroundColor, value->cssText());
     }
 
     return style;
+}
+
+static bool isUnicodeBidiNestedOrMultipleEmbeddings(CSSValueID valueID)
+{
+    return valueID == CSSValueEmbed || valueID == CSSValueBidiOverride
+        || valueID == CSSValueWebkitIsolate || valueID == CSSValueWebkitIsolateOverride || valueID == CSSValueWebkitPlaintext
+        || valueID == CSSValueIsolate || valueID == CSSValueIsolateOverride || valueID == CSSValuePlaintext;
 }
 
 WritingDirection EditingStyle::textDirectionForSelection(const VisibleSelection& selection, EditingStyle* typingStyle, bool& hasNestedOrMultipleEmbeddings)
@@ -1375,7 +1381,7 @@ WritingDirection EditingStyle::textDirectionForSelection(const VisibleSelection&
                 continue;
 
             CSSValueID unicodeBidiValue = toCSSPrimitiveValue(unicodeBidi.get())->getValueID();
-            if (unicodeBidiValue == CSSValueEmbed || unicodeBidiValue == CSSValueBidiOverride)
+            if (isUnicodeBidiNestedOrMultipleEmbeddings(unicodeBidiValue))
                 return NaturalWritingDirection;
         }
     }
@@ -1411,7 +1417,7 @@ WritingDirection EditingStyle::textDirectionForSelection(const VisibleSelection&
         if (unicodeBidiValue == CSSValueBidiOverride)
             return NaturalWritingDirection;
 
-        ASSERT(unicodeBidiValue == CSSValueEmbed);
+        ASSERT(isEmbedOrIsolate(unicodeBidiValue));
         RefPtrWillBeRawPtr<CSSValue> direction = style->getPropertyCSSValue(CSSPropertyDirection);
         if (!direction || !direction->isPrimitiveValue())
             continue;
@@ -1544,7 +1550,7 @@ void StyleChange::extractTextStyles(Document* document, MutableStylePropertySet*
     }
 
     if (style->getPropertyCSSValue(CSSPropertyColor)) {
-        m_applyFontColor = Color(getRGBAFontColor(style)).serialized();
+        m_applyFontColor = getFontColor(style).serialized();
         style->removeProperty(CSSPropertyColor);
     }
 
@@ -1636,14 +1642,14 @@ PassRefPtrWillBeRawPtr<MutableStylePropertySet> getPropertiesNotIn(StyleProperty
         }
     }
 
-    if (baseStyle->getPropertyCSSValueInternal(CSSPropertyColor) && getRGBAFontColor(result.get()) == getRGBAFontColor(baseStyle))
+    if (baseStyle->getPropertyCSSValueInternal(CSSPropertyColor) && getFontColor(result.get()) == getFontColor(baseStyle))
         result->removeProperty(CSSPropertyColor);
 
     if (baseStyle->getPropertyCSSValueInternal(CSSPropertyTextAlign)
         && textAlignResolvingStartAndEnd(result.get()) == textAlignResolvingStartAndEnd(baseStyle))
         result->removeProperty(CSSPropertyTextAlign);
 
-    if (baseStyle->getPropertyCSSValueInternal(CSSPropertyBackgroundColor) && getRGBABackgroundColor(result.get()) == getRGBABackgroundColor(baseStyle))
+    if (baseStyle->getPropertyCSSValueInternal(CSSPropertyBackgroundColor) && getBackgroundColor(result.get()) == getBackgroundColor(baseStyle))
         result->removeProperty(CSSPropertyBackgroundColor);
 
     return result.release();
@@ -1694,11 +1700,11 @@ bool isTransparentColorValue(CSSValue* cssValue)
 {
     if (!cssValue)
         return true;
+    if (cssValue->isColorValue())
+        return !toCSSColorValue(cssValue)->value().alpha();
     if (!cssValue->isPrimitiveValue())
         return false;
     CSSPrimitiveValue* value = toCSSPrimitiveValue(cssValue);
-    if (value->isRGBColor())
-        return !alphaChannel(value->getRGBA32Value());
     return value->getValueID() == CSSValueTransparent;
 }
 
@@ -1714,7 +1720,7 @@ bool hasTransparentBackgroundColor(StylePropertySet* style)
     return isTransparentColorValue(cssValue.get());
 }
 
-PassRefPtrWillBeRawPtr<CSSValue> backgroundColorInEffect(Node* node)
+PassRefPtrWillBeRawPtr<CSSValue> backgroundColorValueInEffect(Node* node)
 {
     for (Node* ancestor = node; ancestor; ancestor = ancestor->parentNode()) {
         RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> ancestorStyle = CSSComputedStyleDeclaration::create(ancestor);

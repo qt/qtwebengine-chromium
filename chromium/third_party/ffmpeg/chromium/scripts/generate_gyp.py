@@ -107,7 +107,7 @@ GN_SOURCE_END = """]
 Attr = enum('ARCHITECTURE', 'TARGET', 'PLATFORM')
 SUPPORT_MATRIX = {
     Attr.ARCHITECTURE:
-        set(['ia32', 'x64', 'arm', 'arm64', 'arm-neon', 'mipsel']),
+        set(['ia32', 'x64', 'arm', 'arm64', 'arm-neon', 'mipsel', 'mips64el']),
     Attr.TARGET: set(['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS']),
     Attr.PLATFORM: set(['android', 'linux', 'win', 'mac'])
 }
@@ -759,6 +759,7 @@ IGNORED_INCLUDE_FILES = [
 # licenses are okay to add.
 LICENSE_WHITELIST = [
     'BSD (3 clause) LGPL (v2.1 or later)',
+    'BSL (v1) LGPL (v2.1 or later)',
     'ISC GENERATED FILE',
     'LGPL (v2.1 or later)',
     'LGPL (v2.1 or later) GENERATED FILE',

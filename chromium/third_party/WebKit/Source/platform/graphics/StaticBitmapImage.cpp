@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/StaticBitmapImage.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -14,7 +13,7 @@
 
 namespace blink {
 
-PassRefPtr<Image> StaticBitmapImage::create(PassRefPtr<SkImage> image)
+PassRefPtr<StaticBitmapImage> StaticBitmapImage::create(PassRefPtr<SkImage> image)
 {
     if (!image)
         return nullptr;
@@ -33,7 +32,7 @@ IntSize StaticBitmapImage::size() const
     return IntSize(m_image->width(), m_image->height());
 }
 
-bool StaticBitmapImage::currentFrameKnownToBeOpaque()
+bool StaticBitmapImage::currentFrameKnownToBeOpaque(MetadataMode)
 {
     return m_image->isOpaque();
 }
@@ -58,6 +57,11 @@ void StaticBitmapImage::draw(SkCanvas* canvas, const SkPaint& paint, const Float
 
     if (ImageObserver* observer = imageObserver())
         observer->didDraw(this);
+}
+
+PassRefPtr<SkImage> StaticBitmapImage::imageForCurrentFrame()
+{
+    return m_image;
 }
 
 } // namespace blink

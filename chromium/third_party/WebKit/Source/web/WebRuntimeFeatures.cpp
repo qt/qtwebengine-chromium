@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebRuntimeFeatures.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
@@ -51,19 +50,6 @@ void WebRuntimeFeatures::enableFeatureFromString(const std::string& name, bool e
     RuntimeEnabledFeatures::setFeatureEnabledFromString(name, enable);
 }
 
-// TODO(bashi): Remove.
-void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
-{
-    RuntimeEnabledFeatures::setFeatureEnabledFromString(name.latin1(), enable);
-}
-
-void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
-{
-    ASSERT(enable);
-    RuntimeEnabledFeatures::setBleedingEdgeFastPathsEnabled(enable);
-    RuntimeEnabledFeatures::setWebAnimationsAPIEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableCompositorAnimationTimelines(bool enable)
 {
     RuntimeEnabledFeatures::setCompositorAnimationTimelinesEnabled(enable);
@@ -77,6 +63,11 @@ void WebRuntimeFeatures::enableTestOnlyFeatures(bool enable)
 void WebRuntimeFeatures::enableApplicationCache(bool enable)
 {
     RuntimeEnabledFeatures::setApplicationCacheEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableAudioOutputDevices(bool enable)
+{
+    RuntimeEnabledFeatures::setAudioOutputDevicesEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableCompositedSelectionUpdate(bool enable)
@@ -132,6 +123,16 @@ bool WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()
 void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
 {
     RuntimeEnabledFeatures::setExperimentalCanvasFeaturesEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableExperimentalFramework(bool enable)
+{
+    RuntimeEnabledFeatures::setExperimentalFrameworkEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isExperimentalFrameworkEnabled()
+{
+    return RuntimeEnabledFeatures::experimentalFrameworkEnabled();
 }
 
 void WebRuntimeFeatures::enableFastMobileScrolling(bool enable)
@@ -209,11 +210,6 @@ void WebRuntimeFeatures::enableRequestAutocomplete(bool enable)
     RuntimeEnabledFeatures::setRequestAutocompleteEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableScreenOrientation(bool enable)
-{
-    RuntimeEnabledFeatures::setScreenOrientationEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
 {
     RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
@@ -227,11 +223,6 @@ void WebRuntimeFeatures::enableSlimmingPaintV2(bool enable)
 void WebRuntimeFeatures::enableTouch(bool enable)
 {
     RuntimeEnabledFeatures::setTouchEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableTouchIconLoading(bool enable)
-{
-    RuntimeEnabledFeatures::setTouchIconLoadingEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableWebAudio(bool enable)
@@ -289,11 +280,6 @@ void WebRuntimeFeatures::enableV8IdleTasks(bool enable)
     RuntimeEnabledFeatures::setV8IdleTasksEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableSVG1DOM(bool enable)
-{
-    RuntimeEnabledFeatures::setSVG1DOMEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableReducedReferrerGranularity(bool enable)
 {
     RuntimeEnabledFeatures::setReducedReferrerGranularityEnabled(enable);
@@ -327,6 +313,11 @@ void WebRuntimeFeatures::enableNewMediaPlaybackUi(bool enable)
 void WebRuntimeFeatures::enablePresentationAPI(bool enable)
 {
     RuntimeEnabledFeatures::setPresentationEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableWebFontsIntervention(bool enable)
+{
+    RuntimeEnabledFeatures::setWebFontsInterventionEnabled(enable);
 }
 
 } // namespace blink

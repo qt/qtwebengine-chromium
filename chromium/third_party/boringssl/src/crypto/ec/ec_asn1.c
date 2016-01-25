@@ -212,7 +212,7 @@ EC_GROUP *ec_asn1_pkparameters2group(const ECPKPARAMETERS *params) {
     for (i = 0; OPENSSL_built_in_curves[i].nid != NID_undef; i++) {
       curve = &OPENSSL_built_in_curves[i];
       const unsigned param_len = curve->data->param_len;
-      if (ecparams->order->length == param_len &&
+      if ((unsigned) ecparams->order->length == param_len &&
           memcmp(ecparams->order->data, &curve->data->data[param_len * 5],
                  param_len) == 0) {
         nid = curve->nid;
@@ -326,6 +326,11 @@ EC_KEY *d2i_ECPrivateKey(EC_KEY **a, const uint8_t **inp, long len) {
     }
   } else {
     OPENSSL_PUT_ERROR(EC, EC_R_MISSING_PRIVATE_KEY);
+    goto err;
+  }
+
+  if (BN_cmp(ret->priv_key, EC_GROUP_get0_order(ret->group)) >= 0) {
+    OPENSSL_PUT_ERROR(EC, EC_R_WRONG_ORDER);
     goto err;
   }
 

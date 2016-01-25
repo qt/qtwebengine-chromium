@@ -6,8 +6,10 @@
 #define CONTENT_BROWSER_DEVICE_SENSORS_SENSOR_MANAGER_ANDROID_H_
 
 #include "base/android/scoped_java_ref.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "content/browser/device_sensors/device_sensors_consts.h"
 #include "content/common/content_export.h"
 #include "content/common/device_sensors/device_light_hardware_buffer.h"
 #include "content/common/device_sensors/device_motion_hardware_buffer.h"
@@ -34,45 +36,77 @@ class CONTENT_EXPORT SensorManagerAndroid {
   static SensorManagerAndroid* GetInstance();
 
   // Called from Java via JNI.
-  void GotLight(JNIEnv*, jobject, double value);
-  void GotOrientation(JNIEnv*, jobject,
-                      double alpha, double beta, double gamma);
-  void GotAcceleration(JNIEnv*, jobject,
-                       double x, double y, double z);
-  void GotAccelerationIncludingGravity(JNIEnv*, jobject,
-                                       double x, double y, double z);
-  void GotRotationRate(JNIEnv*, jobject,
-                       double alpha, double beta, double gamma);
+  void GotLight(JNIEnv*,
+                const base::android::JavaParamRef<jobject>&,
+                double value);
+  void GotOrientation(JNIEnv*,
+                      const base::android::JavaParamRef<jobject>&,
+                      double alpha,
+                      double beta,
+                      double gamma);
+  void GotOrientationAbsolute(JNIEnv*,
+                              const base::android::JavaParamRef<jobject>&,
+                              double alpha,
+                              double beta,
+                              double gamma);
+  void GotAcceleration(JNIEnv*,
+                       const base::android::JavaParamRef<jobject>&,
+                       double x,
+                       double y,
+                       double z);
+  void GotAccelerationIncludingGravity(
+      JNIEnv*,
+      const base::android::JavaParamRef<jobject>&,
+      double x,
+      double y,
+      double z);
+  void GotRotationRate(JNIEnv*,
+                       const base::android::JavaParamRef<jobject>&,
+                       double alpha,
+                       double beta,
+                       double gamma);
 
   // Shared memory related methods.
-  bool StartFetchingDeviceLightData(DeviceLightHardwareBuffer* buffer);
+  void StartFetchingDeviceLightData(DeviceLightHardwareBuffer* buffer);
   void StopFetchingDeviceLightData();
 
-  bool StartFetchingDeviceMotionData(DeviceMotionHardwareBuffer* buffer);
+  void StartFetchingDeviceMotionData(DeviceMotionHardwareBuffer* buffer);
   void StopFetchingDeviceMotionData();
 
-  bool StartFetchingDeviceOrientationData(
+  void StartFetchingDeviceOrientationData(
       DeviceOrientationHardwareBuffer* buffer);
   void StopFetchingDeviceOrientationData();
 
+  void StartFetchingDeviceOrientationAbsoluteData(
+      DeviceOrientationHardwareBuffer* buffer);
+  void StopFetchingDeviceOrientationAbsoluteData();
+
   void Shutdown();
 
- protected:
-  enum EventType {
-    // These constants should match DEVICE_ORIENTATION, DEVICE_MOTION and
-    // DEVICE_LIGHT constants in content/public/android/java/src/org/
-    // chromium/content/browser/DeviceSensors.java
-    kTypeOrientation = 0,
-    kTypeMotion = 1,
-    kTypeLight = 2
+  // A Java counterpart will be generated for this enum.
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.content.browser
+  // When adding new constants don't modify the order as they are used for UMA.
+  enum OrientationSensorType {
+    NOT_AVAILABLE = 0,
+    ROTATION_VECTOR = 1,
+    ACCELEROMETER_MAGNETIC = 2,
+    GAME_ROTATION_VECTOR = 3,
+    ORIENTATION_SENSOR_MAX = 4,
   };
 
+ protected:
   SensorManagerAndroid();
   virtual ~SensorManagerAndroid();
 
-  virtual bool Start(EventType event_type);
-  virtual void Stop(EventType event_type);
-  virtual int GetOrientationSensorTypeUsed();
+  // Starts listening to the sensors corresponding to the consumer_type.
+  // Returns true if the registration with sensors was successful.
+  virtual bool Start(ConsumerType consumer_type);
+  // Stops listening to the sensors corresponding to the consumer_type.
+  virtual void Stop(ConsumerType consumer_type);
+  // Returns currently used sensor type for device orientation.
+  virtual OrientationSensorType GetOrientationSensorTypeUsed();
+  // Returns the number of active sensors corresponding to
+  // ConsumerType.DEVICE_MOTION.
   virtual int GetNumberActiveDeviceMotionSensors();
 
   void StartFetchingLightDataOnUI(DeviceLightHardwareBuffer* buffer);
@@ -84,6 +118,10 @@ class CONTENT_EXPORT SensorManagerAndroid {
   void StartFetchingOrientationDataOnUI(
       DeviceOrientationHardwareBuffer* buffer);
   void StopFetchingOrientationDataOnUI();
+
+  void StartFetchingOrientationAbsoluteDataOnUI(
+      DeviceOrientationHardwareBuffer* buffer);
+  void StopFetchingOrientationAbsoluteDataOnUI();
 
  private:
   friend struct base::DefaultSingletonTraits<SensorManagerAndroid>;
@@ -101,22 +139,25 @@ class CONTENT_EXPORT SensorManagerAndroid {
   void SetMotionBufferReadyStatus(bool ready);
   void ClearInternalMotionBuffers();
 
-  void SetOrientationBufferStatus(bool ready, bool absolute);
-
   // The Java provider of sensors info.
   base::android::ScopedJavaGlobalRef<jobject> device_sensors_;
   int number_active_device_motion_sensors_;
   int received_motion_data_[RECEIVED_MOTION_DATA_MAX];
+
+  // Cached pointers to buffers, owned by DataFetcherSharedMemoryBase.
   DeviceLightHardwareBuffer* device_light_buffer_;
   DeviceMotionHardwareBuffer* device_motion_buffer_;
   DeviceOrientationHardwareBuffer* device_orientation_buffer_;
+  DeviceOrientationHardwareBuffer* device_orientation_absolute_buffer_;
 
   bool motion_buffer_initialized_;
   bool orientation_buffer_initialized_;
+  bool orientation_absolute_buffer_initialized_;
 
   base::Lock light_buffer_lock_;
   base::Lock motion_buffer_lock_;
   base::Lock orientation_buffer_lock_;
+  base::Lock orientation_absolute_buffer_lock_;
 
   bool is_shutdown_;
 

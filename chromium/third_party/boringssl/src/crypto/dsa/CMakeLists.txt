@@ -6,7 +6,6 @@ add_library(
   OBJECT
 
   dsa.c
-  dsa_impl.c
   dsa_asn1.c
 )
 
@@ -19,3 +18,4 @@ add_executable(
 )
 
 target_link_libraries(dsa_test crypto)
+add_dependencies(all_tests dsa_test)

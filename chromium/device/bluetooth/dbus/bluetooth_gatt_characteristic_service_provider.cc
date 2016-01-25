@@ -4,8 +4,12 @@
 
 #include "device/bluetooth/dbus/bluetooth_gatt_characteristic_service_provider.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/threading/platform_thread.h"
@@ -84,7 +88,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
   }
 
   // BluetoothGattCharacteristicServiceProvider override.
-  void SendValueChanged(const std::vector<uint8>& value) override {
+  void SendValueChanged(const std::vector<uint8_t>& value) override {
     VLOG(2) << "Emitting a PropertiesChanged signal for characteristic value.";
     dbus::Signal signal(dbus::kDBusPropertiesInterface,
                         dbus::kDBusPropertiesChangedSignal);
@@ -138,7 +142,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 'ss'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -149,7 +153,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -187,7 +191,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
           "No such property: '" + property_name + "'.");
     }
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by dbus:: when the Bluetooth daemon sets a single property of the
@@ -209,7 +213,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 'ssv'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -220,7 +224,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -239,24 +243,24 @@ class BluetoothGattCharacteristicServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, error_name,
                                               error_message);
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
     // Obtain the value.
-    const uint8* bytes = NULL;
+    const uint8_t* bytes = NULL;
     size_t length = 0;
     if (!variant_reader.PopArrayOfBytes(&bytes, &length)) {
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "Property '" + property_name + "' has type 'ay'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
     // Pass the set request onto the delegate.
-    std::vector<uint8> value(bytes, bytes + length);
+    std::vector<uint8_t> value(bytes, bytes + length);
     DCHECK(delegate_);
     delegate_->SetCharacteristicValue(
         value,
@@ -283,7 +287,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
       scoped_ptr<dbus::ErrorResponse> error_response =
           dbus::ErrorResponse::FromMethodCall(method_call, kErrorInvalidArgs,
                                               "Expected 's'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -294,7 +298,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
           dbus::ErrorResponse::FromMethodCall(
               method_call, kErrorInvalidArgs,
               "No such interface: '" + interface_name + "'.");
-      response_sender.Run(error_response.Pass());
+      response_sender.Run(std::move(error_response));
       return;
     }
 
@@ -323,7 +327,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
   // characteristic value.
   void OnGetAll(dbus::MethodCall* method_call,
                 dbus::ExportedObject::ResponseSender response_sender,
-                const std::vector<uint8>& value) {
+                const std::vector<uint8_t>& value) {
     VLOG(2) << "Characteristic value obtained from delegate. Responding to "
             << "GetAll.";
 
@@ -360,14 +364,14 @@ class BluetoothGattCharacteristicServiceProviderImpl
 
     writer.CloseContainer(&array_writer);
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by the Delegate in response to a successful method call to get the
   // characteristic value.
   void OnGet(dbus::MethodCall* method_call,
              dbus::ExportedObject::ResponseSender response_sender,
-             const std::vector<uint8>& value) {
+             const std::vector<uint8_t>& value) {
     VLOG(2) << "Returning characteristic value obtained from delegate.";
     scoped_ptr<dbus::Response> response =
         dbus::Response::FromMethodCall(method_call);
@@ -378,7 +382,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
     variant_writer.AppendArrayOfBytes(value.data(), value.size());
     writer.CloseContainer(&variant_writer);
 
-    response_sender.Run(response.Pass());
+    response_sender.Run(std::move(response));
   }
 
   // Called by the Delegate in response to a successful method call to set the
@@ -398,7 +402,7 @@ class BluetoothGattCharacteristicServiceProviderImpl
         dbus::ErrorResponse::FromMethodCall(
             method_call, kErrorFailed,
             "Failed to get/set characteristic value.");
-    response_sender.Run(error_response.Pass());
+    response_sender.Run(std::move(error_response));
   }
 
   // Origin thread (i.e. the UI thread in production).

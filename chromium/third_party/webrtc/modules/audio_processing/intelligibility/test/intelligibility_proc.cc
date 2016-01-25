@@ -27,7 +27,7 @@
 #include "webrtc/common_audio/wav_file.h"
 #include "webrtc/modules/audio_processing/intelligibility/intelligibility_enhancer.h"
 #include "webrtc/modules/audio_processing/intelligibility/intelligibility_utils.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using std::complex;
@@ -68,7 +68,7 @@ DEFINE_string(out_file,
               "Enhanced output. Use '-' to "
               "play through aplay immediately.");
 
-const int kNumChannels = 1;
+const size_t kNumChannels = 1;
 
 // void function for gtest
 void void_main(int argc, char* argv[]) {

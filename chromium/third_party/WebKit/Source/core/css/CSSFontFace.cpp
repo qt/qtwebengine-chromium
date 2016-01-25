@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSFontFace.h"
 
 #include "core/css/CSSFontFaceSource.h"
@@ -34,6 +33,7 @@
 #include "core/frame/UseCounter.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/SimpleFontData.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -63,6 +63,9 @@ void CSSFontFace::fontLoaded(RemoteFontFaceSource* source)
     if (loadStatus() == FontFace::Loading) {
         if (source->isValid()) {
             setLoadStatus(FontFace::Loaded);
+        } else if (source->displayPeriod() == RemoteFontFaceSource::FailurePeriod) {
+            m_sources.clear();
+            setLoadStatus(FontFace::Error);
         } else {
             m_sources.removeFirst();
             load();
@@ -70,15 +73,15 @@ void CSSFontFace::fontLoaded(RemoteFontFaceSource* source)
     }
 
     if (m_segmentedFontFace)
-        m_segmentedFontFace->fontLoaded(this);
+        m_segmentedFontFace->fontFaceInvalidated();
 }
 
-void CSSFontFace::fontLoadWaitLimitExceeded(RemoteFontFaceSource* source)
+void CSSFontFace::didBecomeVisibleFallback(RemoteFontFaceSource* source)
 {
     if (!isValid() || source != m_sources.first())
         return;
     if (m_segmentedFontFace)
-        m_segmentedFontFace->fontLoadWaitLimitExceeded(this);
+        m_segmentedFontFace->fontFaceInvalidated();
 }
 
 PassRefPtr<SimpleFontData> CSSFontFace::getFontData(const FontDescription& fontDescription)
@@ -110,6 +113,17 @@ bool CSSFontFace::maybeScheduleFontLoad(const FontDescription& fontDescription, 
     if (m_ranges.contains(character)) {
         if (loadStatus() == FontFace::Unloaded)
             load(fontDescription);
+        return true;
+    }
+    return false;
+}
+
+bool CSSFontFace::maybeScheduleFontLoad(const FontDescription& fontDescription, const FontDataRange& range)
+{
+    if (m_ranges.contains(range) || (range.isEntireRange() && m_ranges.isEntireRange())) {
+        if (loadStatus() == FontFace::Unloaded) {
+            load(fontDescription);
+        }
         return true;
     }
     return false;
@@ -212,6 +226,15 @@ bool CSSFontFace::UnicodeRangeSet::contains(UChar32 c) const
         return true;
     Vector<UnicodeRange>::const_iterator it = std::lower_bound(m_ranges.begin(), m_ranges.end(), c);
     return it != m_ranges.end() && it->contains(c);
+}
+
+bool CSSFontFace::UnicodeRangeSet::contains(const FontDataRange& range) const
+{
+    for (auto it = m_ranges.begin(); it != m_ranges.end(); ++it) {
+        if (*it == range)
+            return true;
+    }
+    return false;
 }
 
 bool CSSFontFace::UnicodeRangeSet::intersectsWith(const String& text) const

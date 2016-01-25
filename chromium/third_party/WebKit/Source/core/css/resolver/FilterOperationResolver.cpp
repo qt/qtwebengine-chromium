@@ -26,13 +26,13 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/resolver/FilterOperationResolver.h"
 
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSShadowValue.h"
-#include "core/css/resolver/TransformBuilder.h"
+#include "core/css/resolver/StyleResolverState.h"
+#include "core/frame/UseCounter.h"
 #include "core/layout/svg/ReferenceFilterBuilder.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
@@ -71,19 +71,66 @@ static FilterOperation::OperationType filterOperationForType(CSSValueID type)
     }
 }
 
-void FilterOperationResolver::createFilterOperations(const CSSValue& inValue, const CSSToLengthConversionData& conversionData, FilterOperations& outOperations, StyleResolverState& state)
+static void countFilterUse(FilterOperation::OperationType operationType, const Document& document)
 {
-    ASSERT(outOperations.isEmpty());
+    // This variable is always reassigned, but MSVC thinks it might be left
+    // uninitialized.
+    UseCounter::Feature feature = UseCounter::NumberOfFeatures;
+    switch (operationType) {
+    case FilterOperation::NONE:
+        ASSERT_NOT_REACHED();
+        return;
+    case FilterOperation::REFERENCE:
+        feature = UseCounter::CSSFilterReference;
+        break;
+    case FilterOperation::GRAYSCALE:
+        feature = UseCounter::CSSFilterGrayscale;
+        break;
+    case FilterOperation::SEPIA:
+        feature = UseCounter::CSSFilterSepia;
+        break;
+    case FilterOperation::SATURATE:
+        feature = UseCounter::CSSFilterSaturate;
+        break;
+    case FilterOperation::HUE_ROTATE:
+        feature = UseCounter::CSSFilterHueRotate;
+        break;
+    case FilterOperation::INVERT:
+        feature = UseCounter::CSSFilterInvert;
+        break;
+    case FilterOperation::OPACITY:
+        feature = UseCounter::CSSFilterOpacity;
+        break;
+    case FilterOperation::BRIGHTNESS:
+        feature = UseCounter::CSSFilterBrightness;
+        break;
+    case FilterOperation::CONTRAST:
+        feature = UseCounter::CSSFilterContrast;
+        break;
+    case FilterOperation::BLUR:
+        feature = UseCounter::CSSFilterBlur;
+        break;
+    case FilterOperation::DROP_SHADOW:
+        feature = UseCounter::CSSFilterDropShadow;
+        break;
+    };
+    UseCounter::count(document, feature);
+}
+
+FilterOperations FilterOperationResolver::createFilterOperations(StyleResolverState& state, const CSSValue& inValue)
+{
+    FilterOperations operations;
 
     if (inValue.isPrimitiveValue()) {
         ASSERT(toCSSPrimitiveValue(inValue).getValueID() == CSSValueNone);
-        return;
+        return operations;
     }
 
-    FilterOperations operations;
+    const CSSToLengthConversionData& conversionData = state.cssToLengthConversionData();
     for (auto& currValue : toCSSValueList(inValue)) {
         CSSFunctionValue* filterValue = toCSSFunctionValue(currValue.get());
         FilterOperation::OperationType operationType = filterOperationForType(filterValue->functionType());
+        countFilterUse(operationType, state.document());
         ASSERT(filterValue->length() <= 1);
 
         if (operationType == FilterOperation::REFERENCE) {
@@ -151,7 +198,7 @@ void FilterOperationResolver::createFilterOperations(const CSSValue& inValue, co
             int blur = item->blur ? item->blur->computeLength<int>(conversionData) : 0;
             Color shadowColor = Color::black;
             if (item->color)
-                shadowColor = state.document().textLinkColors().colorFromPrimitiveValue(item->color.get(), state.style()->color());
+                shadowColor = state.document().textLinkColors().colorFromCSSValue(*item->color, state.style()->color());
 
             operations.operations().append(DropShadowFilterOperation::create(location, blur, shadowColor));
             break;
@@ -162,7 +209,7 @@ void FilterOperationResolver::createFilterOperations(const CSSValue& inValue, co
         }
     }
 
-    outOperations = operations;
+    return operations;
 }
 
 } // namespace blink

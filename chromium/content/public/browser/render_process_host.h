@@ -5,9 +5,11 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_PROCESS_HOST_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <list>
 
-#include "base/basictypes.h"
 #include "base/id_map.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
@@ -29,7 +31,7 @@ union ValueState;
 
 namespace media {
 class AudioOutputController;
-class BrowserCdm;
+class MediaKeys;
 }
 
 namespace content {
@@ -78,8 +80,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Used for refcounting, each holder of this object must AddRoute and
   // RemoveRoute. This object should be allocated on the heap; when no
   // listeners own it any more, it will delete itself.
-  virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
-  virtual void RemoveRoute(int32 routing_id) = 0;
+  virtual void AddRoute(int32_t routing_id, IPC::Listener* listener) = 0;
+  virtual void RemoveRoute(int32_t routing_id) = 0;
 
   // Add and remove observers for lifecycle events. The order in which
   // notifications are sent to observers is undefined. Observers must be sure to
@@ -98,6 +100,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void WidgetRestored() = 0;
   virtual void WidgetHidden() = 0;
   virtual int VisibleWidgetCount() const = 0;
+
+  // Called when the audio state changes for this render process host.
+  virtual void AudioStateChanged() = 0;
 
   // Indicates whether the current RenderProcessHost is exclusively hosting
   // guest RenderFrames. Not all guest RenderFrames are created equal.  A guest,
@@ -221,13 +226,16 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void EnableAudioDebugRecordings(const base::FilePath& file) = 0;
   virtual void DisableAudioDebugRecordings() = 0;
 
+  virtual void EnableEventLogRecordings(const base::FilePath& file) = 0;
+  virtual void DisableEventLogRecordings() = 0;
+
   // When set, |callback| receives log messages regarding, for example, media
   // devices (webcams, mics, etc) that were initially requested in the render
   // process associated with this RenderProcessHost.
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) = 0;
 
-  typedef base::Callback<void(scoped_ptr<uint8[]> packet_header,
+  typedef base::Callback<void(scoped_ptr<uint8_t[]> packet_header,
                               size_t header_length,
                               size_t packet_length,
                               bool incoming)> WebRtcRtpPacketCallback;
@@ -284,11 +292,19 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
       const GetAudioOutputControllersCallback& callback) const = 0;
 
 #if defined(ENABLE_BROWSER_CDMS)
-  // Returns the ::media::BrowserCdm instance associated with |render_frame_id|
-  // and |cdm_id|, or nullptr if not found.
-  virtual media::BrowserCdm* GetBrowserCdm(int render_frame_id,
-                                           int cdm_id) const = 0;
+  // Returns the CDM instance associated with |render_frame_id| and |cdm_id|,
+  // or nullptr if not found.
+  virtual scoped_refptr<media::MediaKeys> GetCdm(int render_frame_id,
+                                                 int cdm_id) const = 0;
 #endif
+
+  // Returns true if this process currently has backgrounded priority.
+  virtual bool IsProcessBackgrounded() const = 0;
+
+  // Called when the existence of the other renderer process which is connected
+  // to the Worker in this renderer process has changed.
+  virtual void IncrementWorkerRefCount() = 0;
+  virtual void DecrementWorkerRefCount() = 0;
 
   // Returns the current number of active views in this process.  Excludes
   // any RenderViewHosts that are swapped out.

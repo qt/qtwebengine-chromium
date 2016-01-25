@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
@@ -65,6 +66,7 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   bool GetRemoteEndpoint(IPEndPoint* endpoint) override;
   void Drain(HttpNetworkSession* session) override;
   void SetPriority(RequestPriority priority) override;
+  void PopulateNetErrorDetails(NetErrorDetails* details) override;
   UploadProgress GetUploadProgress() const override;
   HttpStream* RenewStreamForAuth() override;
 

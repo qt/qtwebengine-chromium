@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/test/test_simple_task_runner.h"
+#include "build/build_config.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_mac.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
@@ -77,8 +79,8 @@ class BluetoothAdapterMacTest : public testing::Test {
 
   NSDictionary* CreateAdvertisementData() {
     NSDictionary* advertisement_data = @{
-      @"CBAdvertisementDataIsConnectable" : @(YES),
-      @"CBAdvertisementDataServiceDataKey" : [NSDictionary dictionary],
+      CBAdvertisementDataIsConnectable : @(YES),
+      CBAdvertisementDataServiceDataKey : [NSDictionary dictionary],
     };
     [advertisement_data retain];
     return advertisement_data;
@@ -95,7 +97,8 @@ class BluetoothAdapterMacTest : public testing::Test {
   }
 
   void AddLowEnergyDevice(BluetoothLowEnergyDeviceMac* device) {
-    adapter_mac_->devices_[device->GetAddress()] = device;
+    adapter_mac_->devices_.set(device->GetAddress(),
+                               scoped_ptr<BluetoothDevice>(device));
   }
 
   int NumDevices() { return adapter_mac_->devices_.size(); }

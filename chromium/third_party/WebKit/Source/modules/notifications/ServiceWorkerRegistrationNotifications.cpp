@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/notifications/ServiceWorkerRegistrationNotifications.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -59,6 +58,9 @@ ScriptPromise ServiceWorkerRegistrationNotifications::showNotification(ScriptSta
     WebNotificationData data = createWebNotificationData(executionContext, title, options, exceptionState);
     if (exceptionState.hadException())
         return exceptionState.reject(scriptState);
+
+    // Log number of actions developer provided in linear histogram: 0 -> underflow bucket, 1-16 -> distinct buckets, 17+ -> overflow bucket.
+    Platform::current()->histogramEnumeration("Notifications.PersistentNotificationActionCount", options.actions().size(), 17);
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();

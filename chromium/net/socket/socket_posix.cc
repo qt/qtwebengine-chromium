@@ -7,14 +7,16 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <utility>
 
 #include "base/callback_helpers.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/sockaddr_storage.h"
 
 namespace net {
 
@@ -79,7 +81,7 @@ int SocketPosix::Open(int address_family) {
     return MapSystemError(errno);
   }
 
-  if (SetNonBlocking(socket_fd_)) {
+  if (!base::SetNonBlocking(socket_fd_)) {
     int rv = MapSystemError(errno);
     Close();
     return rv;
@@ -95,7 +97,7 @@ int SocketPosix::AdoptConnectedSocket(SocketDescriptor socket,
 
   socket_fd_ = socket;
 
-  if (SetNonBlocking(socket_fd_)) {
+  if (!base::SetNonBlocking(socket_fd_)) {
     int rv = MapSystemError(errno);
     Close();
     return rv;
@@ -341,6 +343,10 @@ void SocketPosix::Close() {
   }
 }
 
+void SocketPosix::DetachFromThread() {
+  thread_checker_.DetachFromThread();
+}
+
 void SocketPosix::OnFileCanReadWithoutBlocking(int fd) {
   DCHECK(!accept_callback_.is_null() || !read_callback_.is_null());
   if (!accept_callback_.is_null()) {
@@ -372,7 +378,7 @@ int SocketPosix::DoAccept(scoped_ptr<SocketPosix>* socket) {
   if (rv != OK)
     return rv;
 
-  *socket = accepted_socket.Pass();
+  *socket = std::move(accepted_socket);
   return OK;
 }
 

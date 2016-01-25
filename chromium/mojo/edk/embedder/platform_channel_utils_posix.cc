@@ -4,6 +4,7 @@
 
 #include "mojo/edk/embedder/platform_channel_utils_posix.h"
 
+#include <stddef.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -11,6 +12,10 @@
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
+
+#if !defined(SO_PEEK_OFF)
+#define SO_PEEK_OFF 42
+#endif
 
 namespace mojo {
 namespace edk {
@@ -52,9 +57,9 @@ ssize_t PlatformChannelWrite(PlatformHandle h,
   DCHECK_GT(num_bytes, 0u);
 
 #if defined(OS_MACOSX)
-  return HANDLE_EINTR(write(h.fd, bytes, num_bytes));
+  return HANDLE_EINTR(write(h.handle, bytes, num_bytes));
 #else
-  return send(h.fd, bytes, num_bytes, kSendFlags);
+  return send(h.handle, bytes, num_bytes, kSendFlags);
 #endif
 }
 
@@ -66,12 +71,12 @@ ssize_t PlatformChannelWritev(PlatformHandle h,
   DCHECK_GT(num_iov, 0u);
 
 #if defined(OS_MACOSX)
-  return HANDLE_EINTR(writev(h.fd, iov, static_cast<int>(num_iov)));
+  return HANDLE_EINTR(writev(h.handle, iov, static_cast<int>(num_iov)));
 #else
   struct msghdr msg = {};
   msg.msg_iov = iov;
   msg.msg_iovlen = num_iov;
-  return HANDLE_EINTR(sendmsg(h.fd, &msg, kSendFlags));
+  return HANDLE_EINTR(sendmsg(h.handle, &msg, kSendFlags));
 #endif
 }
 
@@ -98,10 +103,10 @@ ssize_t PlatformChannelSendmsgWithHandles(PlatformHandle h,
   cmsg->cmsg_len = CMSG_LEN(num_platform_handles * sizeof(int));
   for (size_t i = 0; i < num_platform_handles; i++) {
     DCHECK(platform_handles[i].is_valid());
-    reinterpret_cast<int*>(CMSG_DATA(cmsg))[i] = platform_handles[i].fd;
+    reinterpret_cast<int*>(CMSG_DATA(cmsg))[i] = platform_handles[i].handle;
   }
 
-  return HANDLE_EINTR(sendmsg(h.fd, &msg, kSendFlags));
+  return HANDLE_EINTR(sendmsg(h.handle, &msg, kSendFlags));
 }
 
 bool PlatformChannelSendHandles(PlatformHandle h,
@@ -125,10 +130,10 @@ bool PlatformChannelSendHandles(PlatformHandle h,
   cmsg->cmsg_len = CMSG_LEN(num_handles * sizeof(int));
   for (size_t i = 0; i < num_handles; i++) {
     DCHECK(handles[i].is_valid());
-    reinterpret_cast<int*>(CMSG_DATA(cmsg))[i] = handles[i].fd;
+    reinterpret_cast<int*>(CMSG_DATA(cmsg))[i] = handles[i].handle;
   }
 
-  ssize_t result = HANDLE_EINTR(sendmsg(h.fd, &msg, kSendFlags));
+  ssize_t result = HANDLE_EINTR(sendmsg(h.handle, &msg, kSendFlags));
   if (result < 1) {
     DCHECK_EQ(result, -1);
     return false;
@@ -142,7 +147,8 @@ bool PlatformChannelSendHandles(PlatformHandle h,
 ssize_t PlatformChannelRecvmsg(PlatformHandle h,
                                void* buf,
                                size_t num_bytes,
-                               std::deque<PlatformHandle>* platform_handles) {
+                               std::deque<PlatformHandle>* platform_handles,
+                               bool should_block) {
   DCHECK(buf);
   DCHECK_GT(num_bytes, 0u);
   DCHECK(platform_handles);
@@ -155,9 +161,18 @@ ssize_t PlatformChannelRecvmsg(PlatformHandle h,
   msg.msg_control = cmsg_buf;
   msg.msg_controllen = sizeof(cmsg_buf);
 
-  ssize_t result = HANDLE_EINTR(recvmsg(h.fd, &msg, MSG_DONTWAIT));
+  // We use SO_PEEK_OFF to hold a common identifier between sockets to detect if
+  // they're connected. recvmsg modifies it, so we cache it and set it again
+  // after the call.
+  int id = 0;
+  socklen_t peek_off_size = sizeof(id);
+  getsockopt(h.handle, SOL_SOCKET, SO_PEEK_OFF, &id, &peek_off_size);
+  ssize_t result =
+      HANDLE_EINTR(recvmsg(h.handle, &msg, should_block ? 0 : MSG_DONTWAIT));
   if (result < 0)
     return result;
+
+  setsockopt(h.handle, SOL_SOCKET, SO_PEEK_OFF, &id, sizeof(id));
 
   // Success; no control messages.
   if (msg.msg_controllen == 0)

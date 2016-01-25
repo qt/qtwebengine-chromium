@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
@@ -47,7 +49,7 @@ class MemoryTracingTest : public ContentBrowserTest {
   void OnGlobalMemoryDumpDone(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
       base::Closure closure,
-      uint64 dump_guid,
+      uint64_t dump_guid,
       bool success) {
     // Make sure we run the RunLoop closure on the same thread that originated
     // the run loop (which is the IN_PROC_BROWSER_TEST_F main thread).
@@ -72,7 +74,9 @@ class MemoryTracingTest : public ContentBrowserTest {
 
     mock_dump_provider_.reset(new MockDumpProvider());
     MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        mock_dump_provider_.get());
+        mock_dump_provider_.get(), "MockDumpProvider", nullptr);
+    MemoryDumpManager::GetInstance()
+        ->set_dumper_registrations_ignored_for_testing(false);
     ContentBrowserTest::SetUp();
   }
 
@@ -90,14 +94,14 @@ class MemoryTracingTest : public ContentBrowserTest {
             GetTraceConfig_EmptyTriggers());
 
     base::RunLoop run_loop;
-    bool success = TracingController::GetInstance()->EnableRecording(
+    bool success = TracingController::GetInstance()->StartTracing(
       trace_config, run_loop.QuitClosure());
     EXPECT_TRUE(success);
     run_loop.Run();
   }
 
   void DisableTracing() {
-    bool success = TracingController::GetInstance()->DisableRecording(NULL);
+    bool success = TracingController::GetInstance()->StopTracing(NULL);
     EXPECT_TRUE(success);
     base::RunLoop().RunUntilIdle();
   }
@@ -123,8 +127,8 @@ class MemoryTracingTest : public ContentBrowserTest {
 
   base::Closure on_memory_dump_complete_closure_;
   scoped_ptr<MockDumpProvider> mock_dump_provider_;
-  uint32 callback_call_count_;
-  uint64 last_callback_dump_guid_;
+  uint32_t callback_call_count_;
+  uint64_t last_callback_dump_guid_;
   bool last_callback_success_;
 };
 
@@ -204,9 +208,15 @@ IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest, ManyInterleavedDumps) {
 
 #endif  // !defined(GOOGLE_CHROME_BUILD)
 
+// Non-deterministic races under TSan. crbug.com/529678
+#if defined(THREAD_SANITIZER)
+#define MAYBE_BrowserInitiatedDump DISABLED_BrowserInitiatedDump
+#else
+#define MAYBE_BrowserInitiatedDump BrowserInitiatedDump
+#endif
 // Checks that a memory dump initiated from a the main browser thread ends up in
 // a successful dump.
-IN_PROC_BROWSER_TEST_F(MemoryTracingTest, BrowserInitiatedDump) {
+IN_PROC_BROWSER_TEST_F(MemoryTracingTest, MAYBE_BrowserInitiatedDump) {
   Navigate(shell());
 
   EXPECT_CALL(*mock_dump_provider_, OnMemoryDump(_,_)).WillOnce(Return(true));

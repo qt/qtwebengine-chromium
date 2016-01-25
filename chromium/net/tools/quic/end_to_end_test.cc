@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 #include <stddef.h>
-#include <string>
 #include <sys/epoll.h>
+#include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,7 +22,9 @@
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_server_id.h"
+#include "net/quic/quic_session.h"
 #include "net/quic/quic_utils.h"
+#include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_flow_controller_peer.h"
 #include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
@@ -37,6 +38,7 @@
 #include "net/tools/quic/quic_in_memory_cache.h"
 #include "net/tools/quic/quic_packet_writer_wrapper.h"
 #include "net/tools/quic/quic_server.h"
+#include "net/tools/quic/quic_simple_server_stream.h"
 #include "net/tools/quic/quic_socket_utils.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 #include "net/tools/quic/test_tools/http_message.h"
@@ -46,14 +48,17 @@
 #include "net/tools/quic/test_tools/quic_in_memory_cache_peer.h"
 #include "net/tools/quic/test_tools/quic_server_peer.h"
 #include "net/tools/quic/test_tools/quic_test_client.h"
+#include "net/tools/quic/test_tools/quic_test_server.h"
 #include "net/tools/quic/test_tools/server_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::IntToString;
 using base::StringPiece;
 using base::WaitableEvent;
 using net::EpollServer;
 using net::IPAddressNumber;
 using net::test::ConstructEncryptedPacket;
+using net::test::CryptoTestUtils;
 using net::test::GenerateBody;
 using net::test::Loopback4;
 using net::test::MockQuicConnectionDebugVisitor;
@@ -63,7 +68,6 @@ using net::test::QuicSentPacketManagerPeer;
 using net::test::QuicSessionPeer;
 using net::test::QuicSpdySessionPeer;
 using net::test::ReliableQuicStreamPeer;
-using net::test::TestWriterFactory;
 using net::test::ValueRestore;
 using net::test::kClientDataStreamId1;
 using net::test::kInitialSessionFlowControlWindowForTest;
@@ -82,6 +86,7 @@ namespace {
 
 const char kFooResponseBody[] = "Artichoke hearts make me happy.";
 const char kBarResponseBody[] = "Palm hearts are pretty delicious, also.";
+const float kSessionToStreamRatio = 1.5;
 
 // Run all tests with the cross products of all versions.
 struct TestParams {
@@ -142,34 +147,51 @@ vector<TestParams> GetTestParams() {
   // to do 0-RTT across incompatible versions. Chromium only supports
   // a single version at a time anyway. :)
   QuicVersionVector all_supported_versions = QuicSupportedVersions();
-  QuicVersionVector client_version_buckets[3];
+  QuicVersionVector version_buckets[2];
   for (const QuicVersion version : all_supported_versions) {
-    if (version <= QUIC_VERSION_24) {
-      // SPDY/4 compression but SPDY/3 headers
-      client_version_buckets[0].push_back(version);
-    } else if (version <= QUIC_VERSION_25) {
+    if (version <= QUIC_VERSION_25) {
       // SPDY/4
-      client_version_buckets[1].push_back(version);
+      version_buckets[0].push_back(version);
     } else {
       // QUIC_VERSION_26 changes the kdf in a way that is incompatible with
       // version negotiation across the version 26 boundary.
-      client_version_buckets[2].push_back(version);
+      version_buckets[1].push_back(version);
     }
   }
 
   vector<TestParams> params;
-  // TODO(rtenneti): Add kTBBR after BBR code is checked in.
-  // for (const QuicTag congestion_control_tag : {kRENO, kTBBR, kQBIC}) {
-  for (const QuicTag congestion_control_tag : {kRENO, kQBIC}) {
-    for (const bool use_fec : {false, true}) {
-      for (const QuicVersionVector& client_versions : client_version_buckets) {
-        // A number of end to end tests fail when stateless rejects are enabled
-        // *and* there are more than two QUIC versions.
-        // TODO(b/23745998) Re-enable client stateless reject support.
-        for (bool client_supports_stateless_rejects : {false}) {
-          // TODO(b/23745998) Re-enable server stateless reject support.
-          for (bool server_uses_stateless_rejects_if_peer_supported : {false}) {
-            for (bool auto_tune_flow_control_window : {true, false}) {
+  for (bool server_uses_stateless_rejects_if_peer_supported : {true, false}) {
+    for (bool client_supports_stateless_rejects : {true, false}) {
+      // TODO(rtenneti): Add kTBBR after BBR code is checked in.
+      for (const QuicTag congestion_control_tag : {kRENO, kQBIC}) {
+        for (bool auto_tune_flow_control_window : {true, false}) {
+          for (const bool use_fec : {false, true}) {
+            const int kMaxEnabledOptions = 5;
+            int enabled_options = 0;
+            if (congestion_control_tag != kQBIC) {
+              ++enabled_options;
+            }
+            if (use_fec) {
+              ++enabled_options;
+            }
+            if (auto_tune_flow_control_window) {
+              ++enabled_options;
+            }
+            if (client_supports_stateless_rejects) {
+              ++enabled_options;
+            }
+            if (server_uses_stateless_rejects_if_peer_supported) {
+              ++enabled_options;
+            }
+            CHECK_GE(kMaxEnabledOptions, enabled_options);
+
+            // Run tests with no options, a single option, or all the options
+            // enabled to avoid a combinatorial explosion.
+            if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
+              continue;
+            }
+
+            for (const QuicVersionVector& client_versions : version_buckets) {
               CHECK(!client_versions.empty());
               // Add an entry for server and client supporting all versions.
               params.push_back(TestParams(
@@ -179,13 +201,19 @@ vector<TestParams> GetTestParams() {
                   server_uses_stateless_rejects_if_peer_supported,
                   congestion_control_tag, auto_tune_flow_control_window));
 
+              // Run version negotiation tests tests with no options, or all
+              // the options enabled to avoid a combinatorial explosion.
+              if (enabled_options > 0 && enabled_options < kMaxEnabledOptions) {
+                continue;
+              }
+
               // Test client supporting all versions and server supporting 1
               // version. Simulate an old server and exercise version downgrade
               // in the client. Protocol negotiation should occur. Skip the i =
               // 0 case because it is essentially the same as the default case.
-              for (const QuicVersion version : client_versions) {
+              for (size_t i = 1; i < client_versions.size(); ++i) {
                 QuicVersionVector server_supported_versions;
-                server_supported_versions.push_back(version);
+                server_supported_versions.push_back(client_versions[i]);
                 params.push_back(TestParams(
                     client_versions, server_supported_versions,
                     server_supported_versions.front(), use_fec,
@@ -204,18 +232,12 @@ vector<TestParams> GetTestParams() {
 
 class ServerDelegate : public PacketDroppingTestWriter::Delegate {
  public:
-  ServerDelegate(TestWriterFactory* writer_factory,
-                 QuicDispatcher* dispatcher)
-      : writer_factory_(writer_factory),
-        dispatcher_(dispatcher) {}
+  explicit ServerDelegate(QuicDispatcher* dispatcher)
+      : dispatcher_(dispatcher) {}
   ~ServerDelegate() override {}
-  void OnPacketSent(WriteResult result) override {
-    writer_factory_->OnPacketSent(result);
-  }
   void OnCanWrite() override { dispatcher_->OnCanWrite(); }
 
  private:
-  TestWriterFactory* writer_factory_;
   QuicDispatcher* dispatcher_;
 };
 
@@ -223,7 +245,6 @@ class ClientDelegate : public PacketDroppingTestWriter::Delegate {
  public:
   explicit ClientDelegate(QuicClient* client) : client_(client) {}
   ~ClientDelegate() override {}
-  void OnPacketSent(WriteResult result) override {}
   void OnCanWrite() override {
     EpollEvent event(EPOLLOUT, false);
     client_->OnEvent(client_->fd(), &event);
@@ -240,7 +261,9 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
         server_address_(IPEndPoint(Loopback4(), 0)),
         server_hostname_("example.com"),
         server_started_(false),
-        strike_register_no_startup_period_(false) {
+        strike_register_no_startup_period_(false),
+        chlo_multiplier_(0),
+        stream_factory_(nullptr) {
     client_supported_versions_ = GetParam().client_supported_versions;
     server_supported_versions_ = GetParam().server_supported_versions;
     negotiated_version_ = GetParam().negotiated_version;
@@ -259,8 +282,8 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
         3 * kInitialSessionFlowControlWindowForTest);
 
     QuicInMemoryCachePeer::ResetForTests();
-    AddToCache("/foo", 200, "OK", kFooResponseBody);
-    AddToCache("/bar", 200, "OK", kBarResponseBody);
+    AddToCache("/foo", 200, kFooResponseBody);
+    AddToCache("/bar", 200, kBarResponseBody);
   }
 
   ~EndToEndTest() override {
@@ -270,43 +293,53 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   }
 
   QuicTestClient* CreateQuicClient(QuicPacketWriterWrapper* writer) {
-    QuicTestClient* client = new QuicTestClient(
-        server_address_, server_hostname_,
-        /*secure=*/true, client_config_, client_supported_versions_);
+    QuicTestClient* client =
+        new QuicTestClient(server_address_, server_hostname_, client_config_,
+                           client_supported_versions_);
     client->UseWriter(writer);
     client->Connect();
     return client;
   }
 
-  void set_client_initial_stream_flow_control_receive_window(uint32 window) {
+  void set_smaller_flow_control_receive_window() {
+    const uint32_t kClientIFCW = 64 * 1024;
+    const uint32_t kServerIFCW = 1024 * 1024;
+    set_client_initial_stream_flow_control_receive_window(kClientIFCW);
+    set_client_initial_session_flow_control_receive_window(
+        kSessionToStreamRatio * kClientIFCW);
+    set_server_initial_stream_flow_control_receive_window(kServerIFCW);
+    set_server_initial_session_flow_control_receive_window(
+        kSessionToStreamRatio * kServerIFCW);
+  }
+
+  void set_client_initial_stream_flow_control_receive_window(uint32_t window) {
     CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial stream flow control window: " << window;
     client_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
-  void set_client_initial_session_flow_control_receive_window(uint32 window) {
+  void set_client_initial_session_flow_control_receive_window(uint32_t window) {
     CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial session flow control window: "
              << window;
     client_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
-  void set_server_initial_stream_flow_control_receive_window(uint32 window) {
+  void set_server_initial_stream_flow_control_receive_window(uint32_t window) {
     CHECK(server_thread_.get() == nullptr);
-    DVLOG(1) << "Setting server initial stream flow control window: "
-             << window;
+    DVLOG(1) << "Setting server initial stream flow control window: " << window;
     server_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
-  void set_server_initial_session_flow_control_receive_window(uint32 window) {
+  void set_server_initial_session_flow_control_receive_window(uint32_t window) {
     CHECK(server_thread_.get() == nullptr);
     DVLOG(1) << "Setting server initial session flow control window: "
              << window;
     server_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
-  const QuicSentPacketManager *
-  GetSentPacketManagerFromFirstServerSession() const {
+  const QuicSentPacketManager* GetSentPacketManagerFromFirstServerSession()
+      const {
     QuicDispatcher* dispatcher =
         QuicServerPeer::GetDispatcher(server_thread_->server());
     QuicSession* session = dispatcher->session_map().begin()->second;
@@ -337,6 +370,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     // Start the server first, because CreateQuicClient() attempts
     // to connect to the server.
     StartServer();
+
     client_.reset(CreateQuicClient(client_writer_));
     if (GetParam().use_fec) {
       // Set FecPolicy to always protect data on all streams.
@@ -354,7 +388,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
 
   void SetUp() override {
     // The ownership of these gets transferred to the QuicPacketWriterWrapper
-    // and TestWriterFactory when Initialize() is executed.
+    // when Initialize() is executed.
     client_writer_ = new PacketDroppingTestWriter();
     server_writer_ = new PacketDroppingTestWriter();
   }
@@ -367,32 +401,29 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
 
   void StartServer() {
     server_thread_.reset(new ServerThread(
-        new QuicServer(server_config_, server_supported_versions_),
-        /*is_secure=*/true, server_address_,
-        strike_register_no_startup_period_));
+        new QuicTestServer(CryptoTestUtils::ProofSourceForTesting(),
+                           server_config_, server_supported_versions_),
+        server_address_, strike_register_no_startup_period_));
+    if (chlo_multiplier_ != 0) {
+      server_thread_->server()->SetChloMultiplier(chlo_multiplier_);
+    }
     server_thread_->Initialize();
-    server_address_ = IPEndPoint(server_address_.address(),
-                                 server_thread_->GetPort());
+    server_address_ =
+        IPEndPoint(server_address_.address(), server_thread_->GetPort());
     QuicDispatcher* dispatcher =
         QuicServerPeer::GetDispatcher(server_thread_->server());
-    TestWriterFactory* packet_writer_factory = new TestWriterFactory();
-    QuicDispatcherPeer::SetPacketWriterFactory(dispatcher,
-                                               packet_writer_factory);
     QuicDispatcherPeer::UseWriter(dispatcher, server_writer_);
 
-    if (GetParam().server_uses_stateless_rejects_if_peer_supported) {
-      // Enable stateless rejects and force the server to always send
-      // them.
-      FLAGS_enable_quic_stateless_reject_support = true;
-      FLAGS_quic_session_map_threshold_for_stateless_rejects = 0;
-    } else {
-      FLAGS_enable_quic_stateless_reject_support = false;
-      FLAGS_quic_session_map_threshold_for_stateless_rejects = -1;
+    FLAGS_enable_quic_stateless_reject_support =
+        GetParam().server_uses_stateless_rejects_if_peer_supported;
+
+    server_writer_->Initialize(QuicDispatcherPeer::GetHelper(dispatcher),
+                               new ServerDelegate(dispatcher));
+    if (stream_factory_ != nullptr) {
+      static_cast<QuicTestServer*>(server_thread_->server())
+          ->SetSpdyStreamFactory(stream_factory_);
     }
 
-    server_writer_->Initialize(
-        QuicDispatcherPeer::GetHelper(dispatcher),
-        new ServerDelegate(packet_writer_factory, dispatcher));
     server_thread_->Start();
     server_started_ = true;
   }
@@ -406,15 +437,12 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     }
   }
 
-  void AddToCache(StringPiece path,
-                  int response_code,
-                  StringPiece response_detail,
-                  StringPiece body) {
-    QuicInMemoryCache::GetInstance()->AddSimpleResponse(
-        "www.google.com", path, response_code, response_detail, body);
+  void AddToCache(StringPiece path, int response_code, StringPiece body) {
+    QuicInMemoryCache::GetInstance()->AddSimpleResponse("www.google.com", path,
+                                                        response_code, body);
   }
 
-  void SetPacketLossPercentage(int32 loss) {
+  void SetPacketLossPercentage(int32_t loss) {
     // TODO(rtenneti): enable when we can do random packet loss tests in
     // chrome's tree.
     if (loss != 0 && loss != 100)
@@ -430,7 +458,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     // server_writer_->set_fake_packet_delay(delay);
   }
 
-  void SetReorderPercentage(int32 reorder) {
+  void SetReorderPercentage(int32_t reorder) {
     // TODO(rtenneti): enable when we can do random packet reorder tests in
     // chrome's tree.
     // client_writer_->set_fake_reorder_percentage(reorder);
@@ -441,7 +469,7 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   // being discarded, based on connection stats.
   // Calls server_thread_ Pause() and Resume(), which may only be called once
   // per test.
-  void VerifyCleanConnection(bool had_packet_loss) {
+  void VerifyCleanConnection(bool /*had_packet_loss*/) {
     QuicConnectionStats client_stats =
         client_->client()->session()->connection()->GetStats();
     // TODO(ianswett): Re-enable this check once b/19572432 is fixed.
@@ -449,7 +477,11 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     //   EXPECT_EQ(0u, client_stats.packets_lost);
     // }
     EXPECT_EQ(0u, client_stats.packets_discarded);
-    EXPECT_EQ(0u, client_stats.packets_dropped);
+    // When doing 0-RTT with stateless rejects, the encrypted requests cause
+    // a retranmission of the SREJ packets which are dropped by the client.
+    if (!BothSidesSupportStatelessRejects()) {
+      EXPECT_EQ(0u, client_stats.packets_dropped);
+    }
     EXPECT_EQ(client_stats.packets_received, client_stats.packets_processed);
 
     const int num_expected_stateless_rejects =
@@ -490,6 +522,11 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
               QuicFlowControllerPeer::SendWindowSize(server));
   }
 
+  // Must be called before Initialize to have effect.
+  void SetSpdyStreamFactory(QuicTestServer::StreamFactory* factory) {
+    stream_factory_ = factory;
+  }
+
   bool initialized_;
   IPEndPoint server_address_;
   string server_hostname_;
@@ -504,6 +541,8 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   QuicVersionVector server_supported_versions_;
   QuicVersion negotiated_version_;
   bool strike_register_no_startup_period_;
+  size_t chlo_multiplier_;
+  QuicTestServer::StreamFactory* stream_factory_;
 };
 
 // Run all end to end tests with all supported versions.
@@ -516,6 +555,16 @@ TEST_P(EndToEndTest, SimpleRequestResponse) {
 
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  EXPECT_EQ(2, client_->client()->GetNumSentClientHellos());
+}
+
+TEST_P(EndToEndTest, SimpleRequestResponseWithLargeReject) {
+  chlo_multiplier_ = 1;
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  EXPECT_EQ(3, client_->client()->GetNumSentClientHellos());
 }
 
 // TODO(rch): figure out how to detect missing v6 supprt (like on the linux
@@ -586,7 +635,7 @@ TEST_P(EndToEndTest, MultipleClients) {
 TEST_P(EndToEndTest, RequestOverMultiplePackets) {
   // Send a large enough request to guarantee fragmentation.
   string huge_request = "/some/path?query=" + string(kMaxPacketSize, '.');
-  AddToCache(huge_request, 200, "OK", kBarResponseBody);
+  AddToCache(huge_request, 200, kBarResponseBody);
 
   ASSERT_TRUE(Initialize());
 
@@ -597,7 +646,7 @@ TEST_P(EndToEndTest, RequestOverMultiplePackets) {
 TEST_P(EndToEndTest, MultiplePacketsRandomOrder) {
   // Send a large enough request to guarantee fragmentation.
   string huge_request = "/some/path?query=" + string(kMaxPacketSize, '.');
-  AddToCache(huge_request, 200, "OK", kBarResponseBody);
+  AddToCache(huge_request, 200, kBarResponseBody);
 
   ASSERT_TRUE(Initialize());
   SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
@@ -618,13 +667,12 @@ TEST_P(EndToEndTest, PostMissingBytes) {
   // This should be detected as stream fin without complete request,
   // triggering an error response.
   client_->SendCustomSynchronousRequest(request);
-  EXPECT_EQ("bad", client_->response_body());
+  EXPECT_EQ(QuicSimpleServerStream::kErrorResponseBody,
+            client_->response_body());
   EXPECT_EQ(500u, client_->response_headers()->parsed_response_code());
 }
 
-// TODO(rtenneti): DISABLED_LargePostNoPacketLoss seems to be flaky.
-// http://crbug.com/297040.
-TEST_P(EndToEndTest, DISABLED_LargePostNoPacketLoss) {
+TEST_P(EndToEndTest, LargePostNoPacketLoss) {
   ASSERT_TRUE(Initialize());
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
@@ -759,8 +807,14 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   client_->WaitForResponseForMs(-1);
   ASSERT_TRUE(client_->client()->connected());
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
-  EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
-  EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  if (FLAGS_require_strike_register_or_server_nonce) {
+    EXPECT_EQ(expected_num_hellos_latest_session,
+              client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(2, client_->client()->GetNumSentClientHellos());
+  } else {
+    EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  }
 
   client_->Disconnect();
 
@@ -811,8 +865,14 @@ TEST_P(EndToEndTest, SynchronousRequestZeroRTTFailure) {
   client_->WaitForInitialResponse();
   ASSERT_TRUE(client_->client()->connected());
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
-  EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
-  EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  if (FLAGS_require_strike_register_or_server_nonce) {
+    EXPECT_EQ(expected_num_hellos_latest_session,
+              client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(2, client_->client()->GetNumSentClientHellos());
+  } else {
+    EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  }
 
   client_->Disconnect();
 
@@ -869,8 +929,14 @@ TEST_P(EndToEndTest, LargePostSynchronousRequest) {
   client_->WaitForInitialResponse();
   ASSERT_TRUE(client_->client()->connected());
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
-  EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
-  EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  if (FLAGS_require_strike_register_or_server_nonce) {
+    EXPECT_EQ(expected_num_hellos_latest_session,
+              client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(2, client_->client()->GetNumSentClientHellos());
+  } else {
+    EXPECT_EQ(1, client_->client()->session()->GetNumSentClientHellos());
+    EXPECT_EQ(1, client_->client()->GetNumSentClientHellos());
+  }
 
   client_->Disconnect();
 
@@ -897,15 +963,9 @@ TEST_P(EndToEndTest, LargePostSynchronousRequest) {
 TEST_P(EndToEndTest, StatelessRejectWithPacketLoss) {
   // In this test, we intentionally drop the first packet from the
   // server, which corresponds with the initial REJ/SREJ response from
-  // the server.  The REJ case will succeed, due to redundancy in the
-  // stateful handshake.  The SREJ will fail, because there is
-  // (currently) no way to recover from a loss of the first SREJ, and
-  // all remaining state for the first handshake is black-holed on the
-  // time-wait list.
-  // TODO(jokulik): Once redundant SREJ support is added, this test
-  // should succeed.
+  // the server.
   server_writer_->set_fake_drop_first_n_packets(1);
-  ASSERT_EQ(!BothSidesSupportStatelessRejects(), Initialize());
+  ASSERT_TRUE(Initialize());
 }
 
 TEST_P(EndToEndTest, SetInitialReceivedConnectionOptions) {
@@ -953,10 +1013,10 @@ TEST_P(EndToEndTest, CorrectlyConfiguredFec) {
   server_thread_->Resume();
 
   // Verify that client's FEC configuration is correct.
-  EXPECT_EQ(expected_policy, QuicSpdySessionPeer::GetHeadersStream(
-                                 client_->client()->session())->fec_policy());
   EXPECT_EQ(expected_policy,
-            client_->GetOrCreateStream()->fec_policy());
+            QuicSpdySessionPeer::GetHeadersStream(client_->client()->session())
+                ->fec_policy());
+  EXPECT_EQ(expected_policy, client_->GetOrCreateStream()->fec_policy());
 }
 
 TEST_P(EndToEndTest, LargePostSmallBandwidthLargeBuffer) {
@@ -993,7 +1053,7 @@ TEST_P(EndToEndTest, DoNotSetResumeWriteAlarmIfConnectionFlowControlBlocked) {
 
   // Ensure both stream and connection level are flow control blocked by setting
   // the send window offset to 0.
-  const uint64 flow_control_window =
+  const uint64_t flow_control_window =
       server_config_.GetInitialStreamFlowControlWindowToSend();
   QuicSpdyClientStream* stream = client_->GetOrCreateStream();
   QuicSession* session = client_->client()->session();
@@ -1033,11 +1093,34 @@ TEST_P(EndToEndTest, InvalidStream) {
   request.AddBody(body, true);
   // Force the client to write with a stream ID belonging to a nonexistent
   // server-side stream.
-  QuicSessionPeer::SetNextStreamId(client_->client()->session(), 2);
+  QuicSessionPeer::SetNextOutgoingStreamId(client_->client()->session(), 2);
 
   client_->SendCustomSynchronousRequest(request);
   // EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
-  EXPECT_EQ(QUIC_PACKET_FOR_NONEXISTENT_STREAM, client_->connection_error());
+  EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
+  EXPECT_EQ(QUIC_INVALID_STREAM_ID, client_->connection_error());
+}
+
+TEST_P(EndToEndTest, EarlyResponseWithQuicStreamNoError) {
+  ASSERT_TRUE(Initialize());
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+
+  string large_body;
+  GenerateBody(&large_body, 1024 * 1024);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/foo");
+  request.AddBody(large_body, false);
+
+  // Insert an invalid content_length field in request to trigger an early
+  // response from server.
+  request.AddHeader("content-length", "-3");
+
+  request.set_skip_message_validation(true);
+  client_->SendCustomSynchronousRequest(request);
+  EXPECT_EQ("bad", client_->response_body());
+  EXPECT_EQ(500u, client_->response_headers()->parsed_response_code());
+  EXPECT_EQ(QUIC_STREAM_NO_ERROR, client_->stream_error());
+  EXPECT_EQ(QUIC_NO_ERROR, client_->connection_error());
 }
 
 // TODO(rch): this test seems to cause net_unittests timeouts :|
@@ -1060,8 +1143,8 @@ TEST_P(EndToEndTest, DISABLED_MultipleTermination) {
 
   // By default the stream protects itself from writes after terminte is set.
   // Override this to test the server handling buggy clients.
-  ReliableQuicStreamPeer::SetWriteSideClosed(
-      false, client_->GetOrCreateStream());
+  ReliableQuicStreamPeer::SetWriteSideClosed(false,
+                                             client_->GetOrCreateStream());
 
   EXPECT_DFATAL(client_->SendData("eep", true), "Fin already buffered");
 }
@@ -1100,9 +1183,15 @@ TEST_P(EndToEndTest, NegotiateMaxOpenStreams) {
   }
   client_->WaitForResponse();
 
-  EXPECT_FALSE(client_->connected());
-  EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
-  EXPECT_EQ(QUIC_TOO_MANY_OPEN_STREAMS, client_->connection_error());
+  if (negotiated_version_ <= QUIC_VERSION_27) {
+    EXPECT_FALSE(client_->connected());
+    EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
+    EXPECT_EQ(QUIC_TOO_MANY_OPEN_STREAMS, client_->connection_error());
+  } else {
+    EXPECT_TRUE(client_->connected());
+    EXPECT_EQ(QUIC_REFUSED_STREAM, client_->stream_error());
+    EXPECT_EQ(QUIC_NO_ERROR, client_->connection_error());
+  }
 }
 
 TEST_P(EndToEndTest, NegotiateCongestionControl) {
@@ -1128,7 +1217,7 @@ TEST_P(EndToEndTest, NegotiateCongestionControl) {
   EXPECT_EQ(expected_congestion_control_type,
             QuicSentPacketManagerPeer::GetSendAlgorithm(
                 *GetSentPacketManagerFromFirstServerSession())
-            ->GetCongestionControlType());
+                ->GetCongestionControlType());
 }
 
 TEST_P(EndToEndTest, LimitMaxOpenStreams) {
@@ -1145,7 +1234,7 @@ TEST_P(EndToEndTest, LimitMaxOpenStreams) {
 
 TEST_P(EndToEndTest, ClientSuggestsRTT) {
   // Client suggests initial RTT, verify it is used.
-  const uint32 kInitialRTT = 20000;
+  const uint32_t kInitialRTT = 20000;
   client_config_.SetInitialRoundTripTimeUsToSend(kInitialRTT);
 
   ASSERT_TRUE(Initialize());
@@ -1172,8 +1261,8 @@ TEST_P(EndToEndTest, ClientSuggestsRTT) {
 TEST_P(EndToEndTest, MaxInitialRTT) {
   // Client tries to suggest twice the server's max initial rtt and the server
   // uses the max.
-  client_config_.SetInitialRoundTripTimeUsToSend(
-      2 * kMaxInitialRoundTripTimeUs);
+  client_config_.SetInitialRoundTripTimeUsToSend(2 *
+                                                 kMaxInitialRoundTripTimeUs);
 
   ASSERT_TRUE(Initialize());
   client_->client()->WaitForCryptoHandshakeConfirmed();
@@ -1194,9 +1283,9 @@ TEST_P(EndToEndTest, MaxInitialRTT) {
       client_sent_packet_manager.GetRttStats()->smoothed_rtt().IsInfinite());
   const RttStats& server_rtt_stats =
       *session->connection()->sent_packet_manager().GetRttStats();
-  EXPECT_EQ(static_cast<int64>(kMaxInitialRoundTripTimeUs),
+  EXPECT_EQ(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
             server_rtt_stats.initial_rtt_us());
-  EXPECT_GE(static_cast<int64>(kMaxInitialRoundTripTimeUs),
+  EXPECT_GE(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
             server_rtt_stats.smoothed_rtt().ToMicroseconds());
   server_thread_->Resume();
 }
@@ -1225,7 +1314,7 @@ TEST_P(EndToEndTest, MinInitialRTT) {
   EXPECT_FALSE(
       client_sent_packet_manager.GetRttStats()->smoothed_rtt().IsInfinite());
   // Expect the default rtt of 100ms.
-  EXPECT_EQ(static_cast<int64>(100 * kNumMicrosPerMilli),
+  EXPECT_EQ(static_cast<int64_t>(100 * kNumMicrosPerMilli),
             server_sent_packet_manager.GetRttStats()->initial_rtt_us());
   // Ensure the bandwidth is valid.
   client_sent_packet_manager.BandwidthEstimate();
@@ -1319,7 +1408,7 @@ TEST_P(EndToEndTest, MaxStreamsUberTest) {
   GenerateBody(&large_body, 10240);
   int max_streams = 100;
 
-  AddToCache("/large_response", 200, "OK", large_body);;
+  AddToCache("/large_response", 200, large_body);
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
   SetPacketLossPercentage(10);
@@ -1339,7 +1428,7 @@ TEST_P(EndToEndTest, StreamCancelErrorTest) {
   string small_body;
   GenerateBody(&small_body, 256);
 
-  AddToCache("/small_response", 200, "OK", small_body);
+  AddToCache("/small_response", 200, small_body);
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
@@ -1372,7 +1461,7 @@ class WrongAddressWriter : public QuicPacketWriterWrapper {
 
   WriteResult WritePacket(const char* buffer,
                           size_t buf_len,
-                          const IPAddressNumber& real_self_address,
+                          const IPAddressNumber& /*real_self_address*/,
                           const IPEndPoint& peer_address) override {
     // Use wrong address!
     return QuicPacketWriterWrapper::WritePacket(
@@ -1459,14 +1548,14 @@ TEST_P(EndToEndTest, DifferentFlowControlWindows) {
   // Client and server can set different initial flow control receive windows.
   // These are sent in CHLO/SHLO. Tests that these values are exchanged properly
   // in the crypto handshake.
-  const uint32 kClientStreamIFCW = 123456;
-  const uint32 kClientSessionIFCW = 234567;
+  const uint32_t kClientStreamIFCW = 123456;
+  const uint32_t kClientSessionIFCW = 234567;
   set_client_initial_stream_flow_control_receive_window(kClientStreamIFCW);
   set_client_initial_session_flow_control_receive_window(kClientSessionIFCW);
 
-  uint32 kServerStreamIFCW =
+  uint32_t kServerStreamIFCW =
       GetParam().auto_tune_flow_control_window ? 32 * 1024 : 654321;
-  uint32 kServerSessionIFCW =
+  uint32_t kServerSessionIFCW =
       GetParam().auto_tune_flow_control_window ? 48 * 1024 : 765432;
   set_server_initial_stream_flow_control_receive_window(kServerStreamIFCW);
   set_server_initial_session_flow_control_receive_window(kServerSessionIFCW);
@@ -1515,9 +1604,9 @@ TEST_P(EndToEndTest, DifferentFlowControlWindows) {
 TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
   // The special headers and crypto streams should be subject to per-stream flow
   // control limits, but should not be subject to connection level flow control.
-  const uint32 kStreamIFCW =
+  const uint32_t kStreamIFCW =
       GetParam().auto_tune_flow_control_window ? 32 * 1024 : 123456;
-  const uint32 kSessionIFCW =
+  const uint32_t kSessionIFCW =
       GetParam().auto_tune_flow_control_window ? 48 * 1024 : 234567;
   set_client_initial_stream_flow_control_receive_window(kStreamIFCW);
   set_client_initial_session_flow_control_receive_window(kSessionIFCW);
@@ -1561,20 +1650,12 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
   QuicFlowController* server_connection_flow_controller =
       session->flow_controller();
   EXPECT_EQ(kSessionIFCW, QuicFlowControllerPeer::ReceiveWindowSize(
-      server_connection_flow_controller));
+                              server_connection_flow_controller));
   server_thread_->Resume();
 }
 
 TEST_P(EndToEndTest, FlowControlsSynced) {
-  const uint32 kClientIFCW = 64 * 1024;
-  const uint32 kServerIFCW = 1024 * 1024;
-  const float kSessionToStreamRatio = 1.5;
-  set_client_initial_stream_flow_control_receive_window(kClientIFCW);
-  set_client_initial_session_flow_control_receive_window(kSessionToStreamRatio *
-                                                         kClientIFCW);
-  set_server_initial_stream_flow_control_receive_window(kServerIFCW);
-  set_server_initial_session_flow_control_receive_window(kSessionToStreamRatio *
-                                                         kServerIFCW);
+  set_smaller_flow_control_receive_window();
 
   ASSERT_TRUE(Initialize());
 
@@ -1621,32 +1702,33 @@ TEST_P(EndToEndTest, RequestWithNoBodyWillNeverSendStreamFrameWithFIN) {
   QuicDispatcher* dispatcher =
       QuicServerPeer::GetDispatcher(server_thread_->server());
   QuicSession* session = dispatcher->session_map().begin()->second;
-  EXPECT_EQ(0u, QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(
-      session).size());
+  EXPECT_EQ(0u, QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(session)
+                    .size());
   server_thread_->Resume();
 }
 
-// A TestAckNotifierDelegate verifies that its OnAckNotification method has been
+// A TestAckListener verifies that its OnAckNotification method has been
 // called exactly once on destruction.
-class TestAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
+class TestAckListener : public QuicAckListenerInterface {
  public:
-  TestAckNotifierDelegate() {}
+  explicit TestAckListener(int num_packets) : num_notifications_(num_packets) {}
 
-  void OnAckNotification(int /*num_retransmitted_packets*/,
-                         int /*num_retransmitted_bytes*/,
-                         QuicTime::Delta /*delta_largest_observed*/) override {
-    ASSERT_FALSE(has_been_notified_);
-    has_been_notified_ = true;
+  void OnPacketAcked(int /*acked_bytes*/,
+                     QuicTime::Delta /*delta_largest_observed*/) override {
+    ASSERT_LT(0, num_notifications_);
+    num_notifications_--;
   }
 
-  bool has_been_notified() const { return has_been_notified_; }
+  void OnPacketRetransmitted(int /*retransmitted_bytes*/) override {}
+
+  bool has_been_notified() const { return num_notifications_ == 0; }
 
  protected:
   // Object is ref counted.
-  ~TestAckNotifierDelegate() override { EXPECT_TRUE(has_been_notified_); }
+  ~TestAckListener() override { EXPECT_EQ(0, num_notifications_); }
 
  private:
-  bool has_been_notified_ = false;
+  int num_notifications_;
 };
 
 TEST_P(EndToEndTest, AckNotifierWithPacketLossAndBlockedSocket) {
@@ -1671,8 +1753,8 @@ TEST_P(EndToEndTest, AckNotifierWithPacketLossAndBlockedSocket) {
   request.set_has_complete_message(false);
   client_->SendMessage(request);
 
-  // The TestAckNotifierDelegate will cause a failure if not notified.
-  scoped_refptr<TestAckNotifierDelegate> delegate(new TestAckNotifierDelegate);
+  // The TestAckListener will cause a failure if not notified.
+  scoped_refptr<TestAckListener> delegate(new TestAckListener(2));
 
   // Test the AckNotifier's ability to track multiple packets by making the
   // request body exceed the size of a single packet.
@@ -1686,7 +1768,7 @@ TEST_P(EndToEndTest, AckNotifierWithPacketLossAndBlockedSocket) {
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
 
   // Send another request to flush out any pending ACKs on the server.
-  client_->SendSynchronousRequest(request_string);
+  client_->SendSynchronousRequest("/bar");
 
   // Pause the server to avoid races.
   server_thread_->Pause();
@@ -1766,14 +1848,9 @@ TEST_P(EndToEndTest, ServerSendVersionNegotiationWithDifferentConnectionId) {
   // Send the version negotiation packet.
   QuicConnectionId incorrect_connection_id =
       client_->client()->session()->connection()->connection_id() + 1;
-  QuicVersionNegotiationPacket header;
-  header.connection_id = incorrect_connection_id;
-  header.reset_flag = true;
-  header.version_flag = true;
-  QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
-                    Perspective::IS_SERVER);
   scoped_ptr<QuicEncryptedPacket> packet(
-      framer.BuildVersionNegotiationPacket(header, server_supported_versions_));
+      QuicFramer::BuildVersionNegotiationPacket(incorrect_connection_id,
+                                                server_supported_versions_));
   testing::NiceMock<MockQuicConnectionDebugVisitor> visitor;
   client_->client()->session()->connection()->set_debug_visitor(&visitor);
   EXPECT_CALL(visitor, OnIncorrectConnectionId(incorrect_connection_id))
@@ -1839,21 +1916,9 @@ TEST_P(EndToEndTest, BadPacketHeaderFlags) {
       // invalid public flags
       0xFF,
       // connection_id
-      0x10,
-      0x32,
-      0x54,
-      0x76,
-      0x98,
-      0xBA,
-      0xDC,
-      0xFE,
+      0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE,
       // packet sequence number
-      0xBC,
-      0x9A,
-      0x78,
-      0x56,
-      0x34,
-      0x12,
+      0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12,
       // private flags
       0x00,
   };
@@ -1910,6 +1975,195 @@ TEST_P(EndToEndTest, BadEncryptedData) {
   // The connection should not be terminated.
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+}
+
+// A test stream that gives |response_body_| as an error response body.
+class ServerStreamWithErrorResponseBody : public QuicSimpleServerStream {
+ public:
+  ServerStreamWithErrorResponseBody(QuicStreamId id,
+                                    QuicSpdySession* session,
+                                    string response_body)
+      : QuicSimpleServerStream(id, session), response_body_(response_body) {}
+
+  ~ServerStreamWithErrorResponseBody() override {}
+
+ protected:
+  void SendErrorResponse() override {
+    DVLOG(1) << "Sending error response for stream " << id();
+    SpdyHeaderBlock headers;
+    headers[":status"] = "500";
+    headers["content-length"] = base::UintToString(response_body_.size());
+    // This method must call CloseReadSide to cause the test case, StopReading
+    // is not sufficient.
+    ReliableQuicStreamPeer::CloseReadSide(this);
+    SendHeadersAndBody(headers, response_body_);
+  }
+
+  string response_body_;
+};
+
+class StreamWithErrorFactory : public QuicTestServer::StreamFactory {
+ public:
+  explicit StreamWithErrorFactory(string response_body)
+      : response_body_(response_body) {}
+
+  ~StreamWithErrorFactory() override {}
+
+  QuicSimpleServerStream* CreateStream(QuicStreamId id,
+                                       QuicSpdySession* session) override {
+    return new ServerStreamWithErrorResponseBody(id, session, response_body_);
+  }
+
+ private:
+  string response_body_;
+};
+
+TEST_P(EndToEndTest, EarlyResponseFinRecording) {
+  set_smaller_flow_control_receive_window();
+
+  // Verify that an incoming FIN is recorded in a stream object even if the read
+  // side has been closed.  This prevents an entry from being made in
+  // locally_close_streams_highest_offset_ (which will never be deleted).
+  // To set up the test condition, the server must do the following in order:
+  // start sending the response and call CloseReadSide
+  // receive the FIN of the request
+  // send the FIN of the response
+
+  string response_body;
+  // The response body must be larger than the flow control window so the server
+  // must receive a window update from the client before it can finish sending
+  // it.
+  uint32_t response_body_size =
+      2 * client_config_.GetInitialStreamFlowControlWindowToSend();
+  GenerateBody(&response_body, response_body_size);
+
+  StreamWithErrorFactory stream_factory(response_body);
+  SetSpdyStreamFactory(&stream_factory);
+
+  ASSERT_TRUE(Initialize());
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+
+  // A POST that gets an early error response, after the headers are received
+  // and before the body is received, due to invalid content-length.
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/garbage");
+  // The body must be large enough that the FIN will be in a different packet
+  // than the end of the headers, but short enough to not require a flow control
+  // update.  This allows headers processing to trigger the error response
+  // before the request FIN is processed but receive the request FIN before the
+  // response is sent completely.
+  const uint32_t kRequestBodySize = kMaxPacketSize + 10;
+  string request_body;
+  GenerateBody(&request_body, kRequestBodySize);
+  request.AddBody(request_body, false);
+  // Set an invalid content-length, so the request will receive an early 500
+  // response.  Must be done after AddBody, which also sets content-length.
+  request.AddHeader("content-length", "-1");
+  request.set_skip_message_validation(true);
+
+  // Send the request.
+  client_->SendMessage(request);
+  client_->WaitForResponse();
+  EXPECT_EQ(500u, client_->response_headers()->parsed_response_code());
+
+  // Pause the server so we can access the server's internals without races.
+  server_thread_->Pause();
+
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  QuicDispatcher::SessionMap const& map =
+      QuicDispatcherPeer::session_map(dispatcher);
+  QuicDispatcher::SessionMap::const_iterator it = map.begin();
+  EXPECT_TRUE(it != map.end());
+  QuicServerSessionBase* server_session = it->second;
+
+  // The stream is not waiting for the arrival of the peer's final offset.
+  EXPECT_EQ(
+      0u, QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(server_session)
+              .size());
+
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, LargePostEarlyResponse) {
+  const uint32_t kWindowSize = 65536;
+  set_client_initial_stream_flow_control_receive_window(kWindowSize);
+  set_client_initial_session_flow_control_receive_window(kWindowSize);
+  set_server_initial_stream_flow_control_receive_window(kWindowSize);
+  set_server_initial_session_flow_control_receive_window(kWindowSize);
+
+  ASSERT_TRUE(Initialize());
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+
+  // POST to a URL that gets an early error response, after the headers are
+  // received and before the body is received.
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/garbage");
+  const uint32_t kBodySize = 2 * kWindowSize;
+  // Invalid content-length so the request will receive an early 500 response.
+  request.AddHeader("content-length", "-1");
+  request.set_skip_message_validation(true);
+  request.set_has_complete_message(false);
+
+  // Tell the client to not close the stream if it receives an early response.
+  client_->set_allow_bidirectional_data(true);
+  // Send the headers.
+  client_->SendMessage(request);
+  // Receive the response and let the server close writing.
+  client_->WaitForInitialResponse();
+  EXPECT_EQ(500u, client_->response_headers()->parsed_response_code());
+
+  if (negotiated_version_ > QUIC_VERSION_28) {
+    // Receive the reset stream from server on early response.
+    client_->WaitForResponseForMs(100);
+    ReliableQuicStream* stream =
+        client_->client()->session()->GetStream(kClientDataStreamId1);
+    // The stream is reset by server's reset stream.
+    EXPECT_EQ(stream, nullptr);
+    return;
+  }
+
+  // Send a body larger than the stream flow control window.
+  string body;
+  GenerateBody(&body, kBodySize);
+  client_->SendData(body, true);
+
+  // Run the client to let any buffered data be sent.
+  // (This is OK despite already waiting for a response.)
+  client_->WaitForResponse();
+  // There should be no buffered data to write in the client's stream.
+  ReliableQuicStream* stream =
+      client_->client()->session()->GetStream(kClientDataStreamId1);
+  EXPECT_FALSE(stream != nullptr && stream->HasBufferedData());
+}
+
+TEST_P(EndToEndTest, Trailers) {
+  // Test sending and receiving HTTP/2 Trailers (trailing HEADERS frames).
+  ValueRestore<bool> old_flag(&FLAGS_quic_supports_trailers, true);
+  ASSERT_TRUE(Initialize());
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+
+  // Set reordering to ensure that Trailers arriving before body is ok.
+  SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
+  SetReorderPercentage(30);
+
+  // Add a response with headers, body, and trailers.
+  const string kBody = "body content";
+
+  SpdyHeaderBlock headers;
+  headers[":status"] = "200";
+  headers[":version"] = "HTTP/1.1";
+  headers["content-length"] = IntToString(kBody.size());
+
+  SpdyHeaderBlock trailers;
+  trailers["some-trailing-header"] = "trailing-header-value";
+
+  QuicInMemoryCache::GetInstance()->AddResponse(
+      "www.google.com", "/trailer_url", headers, kBody, trailers);
+
+  EXPECT_EQ(kBody, client_->SendSynchronousRequest("/trailer_url"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  EXPECT_EQ(trailers, client_->response_trailers());
 }
 
 }  // namespace

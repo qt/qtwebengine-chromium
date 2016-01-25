@@ -11,6 +11,7 @@
 #include "SkColorFilter.h"
 #include "SkData.h"
 #include "../private/SkMutex.h"
+#include "../private/SkTemplates.h"
 
 class SK_API SkColorCubeFilter : public SkColorFilter {
 public:
@@ -25,8 +26,7 @@ public:
     uint32_t getFlags() const override;
 
 #if SK_SUPPORT_GPU
-    const GrFragmentProcessor* asFragmentProcessor(GrContext*,
-                                                   GrProcessorDataManager*) const override;
+    const GrFragmentProcessor* asFragmentProcessor(GrContext*) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
@@ -56,7 +56,7 @@ private:
         SkScalar* fColorToFactors[2];
         SkScalar* fColorToScalar;
 
-        SkAutoMalloc fLutStorage;
+        SkAutoTMalloc<uint8_t> fLutStorage;
 
         const int fCubeDimension;
 

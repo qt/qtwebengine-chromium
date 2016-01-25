@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "webrtc/base/array_view.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -60,7 +61,7 @@ class AudioEncoder {
   // Returns the input sample rate in Hz and the number of input channels.
   // These are constants set at instantiation time.
   virtual int SampleRateHz() const = 0;
-  virtual int NumChannels() const = 0;
+  virtual size_t NumChannels() const = 0;
 
   // Returns the rate at which the RTP timestamps are updated. The default
   // implementation returns SampleRateHz().
@@ -91,13 +92,12 @@ class AudioEncoder {
   // Encode() checks some preconditions, calls EncodeInternal() which does the
   // actual work, and then checks some postconditions.
   EncodedInfo Encode(uint32_t rtp_timestamp,
-                     const int16_t* audio,
-                     size_t num_samples_per_channel,
+                     rtc::ArrayView<const int16_t> audio,
                      size_t max_encoded_bytes,
                      uint8_t* encoded);
 
   virtual EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
-                                     const int16_t* audio,
+                                     rtc::ArrayView<const int16_t> audio,
                                      size_t max_encoded_bytes,
                                      uint8_t* encoded) = 0;
 
@@ -125,7 +125,7 @@ class AudioEncoder {
   // Tells the encoder about the highest sample rate the decoder is expected to
   // use when decoding the bitstream. The encoder would typically use this
   // information to adjust the quality of the encoding. The default
-  // implementation just returns true.
+  // implementation does nothing.
   virtual void SetMaxPlaybackRate(int frequency_hz);
 
   // Tells the encoder what the projected packet loss rate is. The rate is in

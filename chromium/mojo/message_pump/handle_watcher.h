@@ -5,13 +5,12 @@
 #ifndef MOJO_MESSAGE_PUMP_HANDLE_WATCHER_H_
 #define MOJO_MESSAGE_PUMP_HANDLE_WATCHER_H_
 
-#include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "mojo/message_pump/mojo_message_pump_export.h"
-#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
+#include "mojo/public/cpp/system/core.h"
 
 namespace base {
 class Thread;
@@ -27,12 +26,9 @@ class HandleWatcherTest;
 // when the handle is ready, or the deadline has expired.
 class MOJO_MESSAGE_PUMP_EXPORT HandleWatcher {
  public:
-  explicit HandleWatcher(int location);
+  HandleWatcher();
 
-  // The destructor implicitly stops listening. See Stop() for details.
   ~HandleWatcher();
-
-  int location() const { return location_; }
 
   // Starts listening for |handle|. This implicitly invokes Stop(). In other
   // words, Start() performs one asynchronous watch at a time. It is ok to call
@@ -46,16 +42,13 @@ class MOJO_MESSAGE_PUMP_EXPORT HandleWatcher {
              MojoDeadline deadline,
              const base::Callback<void(MojoResult)>& callback);
 
-  // Stops listening. Does nothing if not in the process of listening. Blocks
-  // until no longer listening on the handle.
+  // Stops listening. Does nothing if not in the process of listening.
   void Stop();
 
  private:
   class StateBase;
   class SameThreadWatchingState;
   class SecondaryThreadWatchingState;
-
-  const int location_;
 
   // If non-NULL Start() has been invoked.
   scoped_ptr<StateBase> state_;

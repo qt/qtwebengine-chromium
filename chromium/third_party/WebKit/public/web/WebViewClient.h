@@ -41,7 +41,6 @@
 #include "WebFileChooserParams.h"
 #include "WebFrame.h"
 #include "WebPopupType.h"
-#include "WebTextAffinity.h"
 #include "WebTextDirection.h"
 #include "WebWidgetClient.h"
 
@@ -153,14 +152,12 @@ public:
     // Show a notification popup for the specified form validation messages
     // besides the anchor rectangle. An implementation of this function should
     // not hide the popup until hideValidationMessage call.
-    // FIXME: Clarify anchor coordinates in variable name on Chromium-side.
     virtual void showValidationMessage(const WebRect& anchorInViewport, const WebString& mainText, WebTextDirection mainTextDir, const WebString& supplementalText, WebTextDirection supplementalTextDir) { }
 
     // Hide notifation popup for form validation messages.
     virtual void hideValidationMessage() { }
 
     // Move the existing notifation popup to the new anchor position.
-    // FIXME: Clarify anchor coordinates in variable name on Chromium-side.
     virtual void moveValidationMessage(const WebRect& anchorInViewport) { }
 
 
@@ -199,7 +196,7 @@ public:
     virtual void didUpdateLayout() { }
 
     // Return true to swallow the input event if the embedder will start a disambiguation popup
-    virtual bool didTapMultipleTargets(const WebSize& pinchViewportOffset, const WebRect& touchRect, const WebVector<WebRect>& targetRects) { return false; }
+    virtual bool didTapMultipleTargets(const WebSize& visualViewportOffset, const WebRect& touchRect, const WebVector<WebRect>& targetRects) { return false; }
 
     // Returns comma separated list of accept languages.
     virtual WebString acceptLanguages() { return WebString(); }
@@ -260,7 +257,9 @@ public:
     virtual WebContentDetectionResult detectContentAround(const WebHitTestResult&) { return WebContentDetectionResult(); }
 
     // Schedules a new content intent with the provided url.
-    virtual void scheduleContentIntent(const WebURL&) { }
+    // The boolean flag is set to true when the user gesture has been applied
+    // to the element from the main frame.
+    virtual void scheduleContentIntent(const WebURL&, bool isMainFrame) { }
 
     // Cancels any previously scheduled content intents that have not yet launched.
     virtual void cancelScheduledContentIntents() { }

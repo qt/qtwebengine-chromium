@@ -37,7 +37,7 @@ class SubstituteData;
 
 class CORE_EXPORT RawResource final : public Resource {
 public:
-    typedef RawResourceClient ClientType;
+    using ClientType = RawResourceClient;
 
     static ResourcePtr<Resource> fetchSynchronously(FetchRequest&, ResourceFetcher*);
     static ResourcePtr<RawResource> fetch(FetchRequest&, ResourceFetcher*);
@@ -45,6 +45,7 @@ public:
     static ResourcePtr<RawResource> fetchImport(FetchRequest&, ResourceFetcher*);
     static ResourcePtr<RawResource> fetchMedia(FetchRequest&, ResourceFetcher*);
     static ResourcePtr<RawResource> fetchTextTrack(FetchRequest&, ResourceFetcher*);
+    static ResourcePtr<RawResource> fetchManifest(FetchRequest&, ResourceFetcher*);
 
     // Exposed for testing
     RawResource(const ResourceRequest&, Type);
@@ -69,7 +70,7 @@ private:
     };
 
     void didAddClient(ResourceClient*) override;
-    void appendData(const char*, unsigned) override;
+    void appendData(const char*, size_t) override;
 
     bool shouldIgnoreHTTPStatusCodeErrors() const override { return true; }
 
@@ -86,7 +87,7 @@ private:
 inline bool isRawResource(const Resource& resource)
 {
     Resource::Type type = resource.type();
-    return type == Resource::MainResource || type == Resource::Raw || type == Resource::TextTrack || type == Resource::Media || type == Resource::ImportResource;
+    return type == Resource::MainResource || type == Resource::Raw || type == Resource::TextTrack || type == Resource::Media || type == Resource::Manifest || type == Resource::ImportResource;
 }
 #endif
 inline RawResource* toRawResource(const ResourcePtr<Resource>& resource)
@@ -104,7 +105,7 @@ public:
     virtual void dataSent(Resource*, unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
     virtual void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) { }
     virtual void setSerializedCachedMetadata(Resource*, const char*, size_t) { }
-    virtual void dataReceived(Resource*, const char* /* data */, unsigned /* length */) { }
+    virtual void dataReceived(Resource*, const char* /* data */, size_t /* length */) { }
     virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) { }
     virtual void updateRequest(Resource*, const ResourceRequest&) { }
     virtual void dataDownloaded(Resource*, int) { }

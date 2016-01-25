@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "core/workers/WorkerInspectorProxy.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -61,7 +59,7 @@ void WorkerInspectorProxy::connectToInspector(WorkerInspectorProxy::PageInspecto
         return;
     ASSERT(!m_pageInspector);
     m_pageInspector = pageInspector;
-    addDebuggerTaskForWorker(FROM_HERE, adoptPtr(new Task(threadSafeBind(connectToWorkerGlobalScopeInspectorTask, AllowCrossThreadAccess(m_workerThread)))));
+    addDebuggerTaskForWorker(BLINK_FROM_HERE, adoptPtr(new Task(threadSafeBind(connectToWorkerGlobalScopeInspectorTask, AllowCrossThreadAccess(m_workerThread)))));
 }
 
 static void disconnectFromWorkerGlobalScopeInspectorTask(WorkerThread* workerThread)
@@ -74,7 +72,7 @@ void WorkerInspectorProxy::disconnectFromInspector()
     m_pageInspector = nullptr;
     if (!m_workerThread)
         return;
-    addDebuggerTaskForWorker(FROM_HERE, adoptPtr(new Task(threadSafeBind(disconnectFromWorkerGlobalScopeInspectorTask, AllowCrossThreadAccess(m_workerThread)))));
+    addDebuggerTaskForWorker(BLINK_FROM_HERE, adoptPtr(new Task(threadSafeBind(disconnectFromWorkerGlobalScopeInspectorTask, AllowCrossThreadAccess(m_workerThread)))));
 }
 
 static void dispatchOnInspectorBackendTask(const String& message, WorkerThread* workerThread)
@@ -86,7 +84,7 @@ void WorkerInspectorProxy::sendMessageToInspector(const String& message)
 {
     if (!m_workerThread)
         return;
-    addDebuggerTaskForWorker(FROM_HERE, adoptPtr(new Task(threadSafeBind(dispatchOnInspectorBackendTask, message, AllowCrossThreadAccess(m_workerThread)))));
+    addDebuggerTaskForWorker(BLINK_FROM_HERE, adoptPtr(new Task(threadSafeBind(dispatchOnInspectorBackendTask, message, AllowCrossThreadAccess(m_workerThread)))));
     m_workerThread->interruptAndDispatchInspectorCommands();
 }
 

@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <utility>
+
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
@@ -74,8 +78,8 @@ class TouchActionBrowserTest : public ContentBrowserTest {
   ~TouchActionBrowserTest() override {}
 
   RenderWidgetHostImpl* GetWidgetHost() {
-    return RenderWidgetHostImpl::From(shell()->web_contents()->
-                                          GetRenderViewHost());
+    return RenderWidgetHostImpl::From(
+        shell()->web_contents()->GetRenderViewHost()->GetWidget());
   }
 
   void OnSyntheticGestureCompleted(SyntheticGesture::Result result) {
@@ -138,7 +142,7 @@ class TouchActionBrowserTest : public ContentBrowserTest {
 
     SyntheticSmoothScrollGestureParams params;
     params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-    params.anchor = point;
+    params.anchor = gfx::PointF(point);
     params.distances.push_back(-distance);
 
     runner_ = new MessageLoopRunner();
@@ -146,7 +150,7 @@ class TouchActionBrowserTest : public ContentBrowserTest {
     scoped_ptr<SyntheticSmoothScrollGesture> gesture(
         new SyntheticSmoothScrollGesture(params));
     GetWidgetHost()->QueueSyntheticGesture(
-        gesture.Pass(),
+        std::move(gesture),
         base::Bind(&TouchActionBrowserTest::OnSyntheticGestureCompleted,
                    base::Unretained(this)));
 

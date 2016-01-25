@@ -106,6 +106,8 @@ public:
         bool hasBorderRadius;
         int arrowX;
         int arrowY;
+        int arrowSize;
+        WebColor arrowColor;
         WebColor backgroundColor;
     };
 

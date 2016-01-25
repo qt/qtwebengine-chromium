@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/track/CueTimeline.h"
 
 #include "core/events/Event.h"
@@ -27,7 +26,7 @@ void CueTimeline::addCues(TextTrack* track, const TextTrackCueList* cues)
 {
     ASSERT(track->mode() != TextTrack::disabledKeyword());
     for (size_t i = 0; i < cues->length(); ++i)
-        addCueInternal(cues->item(i));
+        addCueInternal(cues->anonymousIndexedGetter(i));
     updateActiveCues(mediaElement().currentTime());
 }
 
@@ -52,7 +51,7 @@ void CueTimeline::addCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue> cue)
 void CueTimeline::removeCues(TextTrack*, const TextTrackCueList* cues)
 {
     for (size_t i = 0; i < cues->length(); ++i)
-        removeCueInternal(cues->item(i));
+        removeCueInternal(cues->anonymousIndexedGetter(i));
     updateActiveCues(mediaElement().currentTime());
 }
 
@@ -86,7 +85,7 @@ void CueTimeline::removeCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue> cue)
 void CueTimeline::hideCues(TextTrack*, const TextTrackCueList* cues)
 {
     for (size_t i = 0; i < cues->length(); ++i)
-        cues->item(i)->removeDisplayTree();
+        cues->anonymousIndexedGetter(i)->removeDisplayTree();
 }
 
 static bool trackIndexCompare(TextTrack* a, TextTrack* b)

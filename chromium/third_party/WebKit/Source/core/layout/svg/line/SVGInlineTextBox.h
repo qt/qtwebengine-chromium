@@ -60,8 +60,9 @@ public:
     TextRun constructTextRun(const ComputedStyle&, const SVGTextFragment&) const;
 
 private:
-    void paintDocumentMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool) const final;
-    void paintTextMatchMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&) const final;
+    void paintDocumentMarker(GraphicsContext&, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool) const final;
+    void paintTextMatchMarkerForeground(const PaintInfo&, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&) const final;
+    void paintTextMatchMarkerBackground(const PaintInfo&, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&) const final;
 
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 

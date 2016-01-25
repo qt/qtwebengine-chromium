@@ -5,32 +5,30 @@
 #ifndef UI_OZONE_PLATFORM_DRM_GPU_GBM_SURFACE_FACTORY_H_
 #define UI_OZONE_PLATFORM_DRM_GPU_GBM_SURFACE_FACTORY_H_
 
+#include <stdint.h>
+
 #include <map>
 
+#include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace ui {
 
-class DrmDeviceManager;
-class DrmWindow;
+class DrmThreadProxy;
 class GbmDevice;
 class GbmSurfaceless;
-class ScreenManager;
 
 class GbmSurfaceFactory : public SurfaceFactoryOzone {
  public:
-  GbmSurfaceFactory();
+  GbmSurfaceFactory(DrmThreadProxy* drm_thread);
   ~GbmSurfaceFactory() override;
-
-  void InitializeGpu(DrmDeviceManager* drm_device_manager,
-                     ScreenManager* screen_manager);
 
   void RegisterSurface(gfx::AcceleratedWidget widget, GbmSurfaceless* surface);
   void UnregisterSurface(gfx::AcceleratedWidget widget);
   GbmSurfaceless* GetSurface(gfx::AcceleratedWidget widget) const;
 
-  // DrmSurfaceFactory:
+  // SurfaceFactoryOzone:
   intptr_t GetNativeDisplay() override;
   const int32_t* GetEGLSurfaceProperties(const int32_t* desired_list) override;
   bool LoadEGLGLES2Bindings(
@@ -47,14 +45,13 @@ class GbmSurfaceFactory : public SurfaceFactoryOzone {
       gfx::Size size,
       gfx::BufferFormat format,
       gfx::BufferUsage usage) override;
+  scoped_refptr<NativePixmap> CreateNativePixmapFromHandle(
+      const gfx::NativePixmapHandle& handle) override;
 
  private:
-  scoped_refptr<GbmDevice> GetGbmDevice(gfx::AcceleratedWidget widget);
-
-  DrmDeviceManager* drm_device_manager_;  // Not owned.
-  ScreenManager* screen_manager_;         // Not owned.
-
   base::ThreadChecker thread_checker_;
+
+  DrmThreadProxy* drm_thread_;
 
   std::map<gfx::AcceleratedWidget, GbmSurfaceless*> widget_to_surface_map_;
 

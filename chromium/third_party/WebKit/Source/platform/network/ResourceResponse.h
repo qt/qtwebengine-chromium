@@ -43,10 +43,14 @@ namespace blink {
 
 struct CrossThreadResourceResponseData;
 
-class PLATFORM_EXPORT ResourceResponse {
-    WTF_MAKE_FAST_ALLOCATED(ResourceResponse);
+class PLATFORM_EXPORT ResourceResponse final {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
-    enum HTTPVersion { Unknown, HTTP_0_9, HTTP_1_0, HTTP_1_1 };
+    enum HTTPVersion { HTTPVersionUnknown,
+        HTTPVersion_0_9,
+        HTTPVersion_1_0,
+        HTTPVersion_1_1,
+        HTTPVersion_2_0 };
     enum SecurityStyle {
         SecurityStyleUnknown,
         SecurityStyleUnauthenticated,
@@ -56,6 +60,7 @@ public:
     };
 
     struct SecurityDetails {
+        DISALLOW_NEW();
         SecurityDetails() : certID(0) {}
         // All strings are human-readable values.
         String protocol;
@@ -72,7 +77,7 @@ public:
         virtual ~ExtraData() { }
     };
 
-    static PassOwnPtr<ResourceResponse> adopt(PassOwnPtr<CrossThreadResourceResponseData>);
+    explicit ResourceResponse(CrossThreadResourceResponseData*);
 
     // Gets a copy of the data suitable for passing to another thread.
     PassOwnPtr<CrossThreadResourceResponseData> copyData() const;
@@ -107,7 +112,6 @@ public:
     void setHTTPStatusText(const AtomicString&);
 
     const AtomicString& httpHeaderField(const AtomicString& name) const;
-    const AtomicString& httpHeaderField(const char* name) const;
     void setHTTPHeaderField(const AtomicString& name, const AtomicString& value);
     void addHTTPHeaderField(const AtomicString& name, const AtomicString& value);
     void clearHTTPHeaderField(const AtomicString& name);
@@ -156,6 +160,9 @@ public:
     const CString& getSecurityInfo() const { return m_securityInfo; }
     void setSecurityInfo(const CString& securityInfo) { m_securityInfo = securityInfo; }
 
+    bool hasMajorCertificateErrors() const { return m_hasMajorCertificateErrors; }
+    void setHasMajorCertificateErrors(bool hasMajorCertificateErrors) { m_hasMajorCertificateErrors = hasMajorCertificateErrors; }
+
     SecurityStyle securityStyle() const { return m_securityStyle; }
     void setSecurityStyle(SecurityStyle securityStyle) { m_securityStyle = securityStyle; }
 
@@ -201,8 +208,8 @@ public:
     bool isMultipartPayload() const { return m_isMultipartPayload; }
     void setIsMultipartPayload(bool value) { m_isMultipartPayload = value; }
 
-    int64 responseTime() const { return m_responseTime; }
-    void setResponseTime(int64 responseTime) { m_responseTime = responseTime; }
+    int64_t responseTime() const { return m_responseTime; }
+    void setResponseTime(int64_t responseTime) { m_responseTime = responseTime; }
 
     const AtomicString& remoteIPAddress() const { return m_remoteIPAddress; }
     void setRemoteIPAddress(const AtomicString& value) { m_remoteIPAddress = value; }
@@ -264,6 +271,10 @@ private:
     // string if not over HTTPS).
     CString m_securityInfo;
 
+    // True if the resource was retrieved by the embedder in spite of
+    // certificate errors.
+    bool m_hasMajorCertificateErrors;
+
     // The security style of the resource.
     // This only contains a valid value when the DevTools Network domain is
     // enabled. (Otherwise, it contains a default value of Unknown.)
@@ -316,7 +327,7 @@ private:
 
     // The time at which the response headers were received.  For cached
     // responses, this time could be "far" in the past.
-    int64 m_responseTime;
+    int64_t m_responseTime;
 
     // Remote IP address of the socket which fetched this resource.
     AtomicString m_remoteIPAddress;
@@ -339,7 +350,7 @@ inline bool operator==(const ResourceResponse& a, const ResourceResponse& b) { r
 inline bool operator!=(const ResourceResponse& a, const ResourceResponse& b) { return !(a == b); }
 
 struct CrossThreadResourceResponseData {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceResponseData);
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); USING_FAST_MALLOC(CrossThreadResourceResponseData);
 public:
     CrossThreadResourceResponseData() { }
     KURL m_url;
@@ -353,6 +364,7 @@ public:
     time_t m_lastModifiedDate;
     RefPtr<ResourceLoadTiming> m_resourceLoadTiming;
     CString m_securityInfo;
+    bool m_hasMajorCertificateErrors;
     ResourceResponse::SecurityStyle m_securityStyle;
     ResourceResponse::SecurityDetails m_securityDetails;
     ResourceResponse::HTTPVersion m_httpVersion;
@@ -367,7 +379,7 @@ public:
     bool m_wasFallbackRequiredByServiceWorker;
     WebServiceWorkerResponseType m_serviceWorkerResponseType;
     KURL m_originalURLViaServiceWorker;
-    int64 m_responseTime;
+    int64_t m_responseTime;
     String m_remoteIPAddress;
     unsigned short m_remotePort;
     String m_downloadedFilePath;

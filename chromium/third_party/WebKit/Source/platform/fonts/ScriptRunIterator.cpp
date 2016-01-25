@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "ScriptRunIterator.h"
 
 #include "platform/Logging.h"
 #include "wtf/Threading.h"
+
+#include <algorithm>
 
 namespace blink {
 
@@ -111,7 +112,7 @@ PairedBracketType ICUScriptData::getPairedBracketType(UChar32 ch) const
 
 const ICUScriptData* ICUScriptData::instance()
 {
-    AtomicallyInitializedStaticReference(const ICUScriptData, icuScriptDataInstance, (new ICUScriptData()));
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(const ICUScriptData, icuScriptDataInstance, (new ICUScriptData()));
     return &icuScriptDataInstance;
 }
 

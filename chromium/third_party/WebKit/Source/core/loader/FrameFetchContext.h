@@ -34,6 +34,7 @@
 #include "core/CoreExport.h"
 #include "core/fetch/FetchContext.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/PassOwnPtr.h"
@@ -81,11 +82,12 @@ public:
 
     bool shouldLoadNewResource(Resource::Type) const override;
     void willStartLoadingResource(ResourceRequest&) override;
-    void didLoadResource() override;
+    void didLoadResource(Resource*) override;
 
     void addResourceTiming(const ResourceTimingInfo&) override;
     bool allowImage(bool imagesEnabled, const KURL&) const override;
     bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const override;
+    bool allowResponse(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&) const override;
 
     bool isControlledByServiceWorker() const override;
     int64_t serviceWorkerID() const override;
@@ -102,12 +104,13 @@ public:
     void addClientHintsIfNecessary(FetchRequest&) override;
     void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&) override;
 
-    bool fetchIncreasePriorities() const override;
-    ResourceLoadPriority modifyPriorityForExperiments(ResourceLoadPriority, Resource::Type, const FetchRequest&) override;
+    ResourceLoadPriority modifyPriorityForExperiments(ResourceLoadPriority, Resource::Type, const FetchRequest&, ResourcePriority::VisibilityStatus) override;
 
     void countClientHintsDPR() override;
     void countClientHintsResourceWidth() override;
     void countClientHintsViewportWidth() override;
+
+    WebTaskRunner* loadingTaskRunner() const override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -117,7 +120,7 @@ private:
 
     LocalFrame* frame() const; // Can be null
     void printAccessDeniedMessage(const KURL&) const;
-    ResourceRequestBlockedReason canRequestInternal(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const;
+    ResourceRequestBlockedReason canRequestInternal(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction, ContentSecurityPolicy::RedirectStatus) const;
 
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
     // currently leak because ComputedStyle and its data are not on the heap.

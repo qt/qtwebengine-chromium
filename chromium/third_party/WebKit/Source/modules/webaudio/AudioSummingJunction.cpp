@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioSummingJunction.h"
-
 #include "modules/webaudio/AudioNodeOutput.h"
 #include <algorithm>
 
@@ -72,4 +69,3 @@ void AudioSummingJunction::updateRenderingState()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

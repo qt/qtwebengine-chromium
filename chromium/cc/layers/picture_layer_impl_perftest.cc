@@ -4,10 +4,11 @@
 
 #include "cc/layers/picture_layer_impl.h"
 
+#include "base/macros.h"
 #include "base/thread_task_runner_handle.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/test/fake_display_list_raster_source.h"
-#include "cc/test/fake_impl_proxy.h"
+#include "cc/test/fake_impl_task_runner_provider.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_picture_layer_impl.h"
@@ -40,10 +41,10 @@ void AddTiling(float scale,
 class PictureLayerImplPerfTest : public testing::Test {
  public:
   PictureLayerImplPerfTest()
-      : proxy_(base::ThreadTaskRunnerHandle::Get()),
+      : task_runner_provider_(base::ThreadTaskRunnerHandle::Get()),
         output_surface_(FakeOutputSurface::Create3d()),
         host_impl_(LayerTreeSettings(),
-                   &proxy_,
+                   &task_runner_provider_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_),
         timer_(kWarmupRuns,
@@ -51,6 +52,7 @@ class PictureLayerImplPerfTest : public testing::Test {
                kTimeCheckInterval) {}
 
   void SetUp() override {
+    host_impl_.SetVisible(true);
     host_impl_.InitializeRenderer(output_surface_.get());
   }
 
@@ -65,8 +67,9 @@ class PictureLayerImplPerfTest : public testing::Test {
         FakePictureLayerImpl::CreateWithRasterSource(pending_tree, 7,
                                                      raster_source);
     pending_layer->SetDrawsContent(true);
-    pending_layer->SetHasRenderSurface(true);
-    pending_tree->SetRootLayer(pending_layer.Pass());
+    pending_layer->SetForceRenderSurface(true);
+    pending_tree->SetRootLayer(std::move(pending_layer));
+    pending_tree->BuildPropertyTreesForTesting();
 
     pending_layer_ = static_cast<FakePictureLayerImpl*>(
         host_impl_.pending_tree()->LayerById(7));
@@ -163,7 +166,7 @@ class PictureLayerImplPerfTest : public testing::Test {
  protected:
   TestSharedBitmapManager shared_bitmap_manager_;
   TestTaskGraphRunner task_graph_runner_;
-  FakeImplProxy proxy_;
+  FakeImplTaskRunnerProvider task_runner_provider_;
   scoped_ptr<OutputSurface> output_surface_;
   FakeLayerTreeHostImpl host_impl_;
   FakePictureLayerImpl* pending_layer_;

@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/StorageClientImpl.h"
 
 #include "modules/storage/StorageNamespace.h"
@@ -42,6 +41,8 @@ StorageClientImpl::StorageClientImpl(WebViewImpl* webView)
 
 PassOwnPtr<StorageNamespace> StorageClientImpl::createSessionStorageNamespace()
 {
+    if (!m_webView->client())
+        return nullptr;
     return adoptPtr(new StorageNamespace(adoptPtr(m_webView->client()->createSessionStorageNamespace())));
 }
 

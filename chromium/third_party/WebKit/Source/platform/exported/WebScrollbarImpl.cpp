@@ -22,8 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/exported/WebScrollbarImpl.h"
 
 #include "platform/geometry/IntRect.h"
@@ -121,16 +119,6 @@ bool WebScrollbarImpl::isLeftSideVerticalScrollbar() const
 bool WebScrollbarImpl::isCustomScrollbar() const
 {
     return m_scrollbar->isCustomScrollbar();
-}
-
-bool WebScrollbarImpl::isAlphaLocked() const
-{
-    return m_scrollbar->isAlphaLocked();
-}
-
-void WebScrollbarImpl::setIsAlphaLocked(bool flag)
-{
-    m_scrollbar->setIsAlphaLocked(flag);
 }
 
 float WebScrollbarImpl::elasticOverscroll() const

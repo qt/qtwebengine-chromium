@@ -139,7 +139,6 @@ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
       seek_buffer_timestamp_(kNoTimestamp()),
       media_segment_start_time_(kNoDecodeTimestamp()),
       range_for_next_append_(ranges_.end()),
-      last_appended_buffer_timestamp_(kNoDecodeTimestamp()),
       last_output_buffer_timestamp_(kNoDecodeTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kSourceBufferAudioMemoryLimit),
@@ -155,7 +154,6 @@ SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
       seek_buffer_timestamp_(kNoTimestamp()),
       media_segment_start_time_(kNoDecodeTimestamp()),
       range_for_next_append_(ranges_.end()),
-      last_appended_buffer_timestamp_(kNoDecodeTimestamp()),
       last_output_buffer_timestamp_(kNoDecodeTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kSourceBufferVideoMemoryLimit),
@@ -172,7 +170,6 @@ SourceBufferStream::SourceBufferStream(const TextTrackConfig& text_config,
       seek_buffer_timestamp_(kNoTimestamp()),
       media_segment_start_time_(kNoDecodeTimestamp()),
       range_for_next_append_(ranges_.end()),
-      last_appended_buffer_timestamp_(kNoDecodeTimestamp()),
       last_output_buffer_timestamp_(kNoDecodeTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
       memory_limit_(kSourceBufferAudioMemoryLimit),
@@ -202,6 +199,7 @@ void SourceBufferStream::OnNewMediaSegment(
       !AreAdjacentInSequence(last_appended_buffer_timestamp_,
                              media_segment_start_time)) {
     last_appended_buffer_timestamp_ = kNoDecodeTimestamp();
+    last_appended_buffer_duration_ = kNoTimestamp();
     last_appended_buffer_is_keyframe_ = false;
     DVLOG(3) << __FUNCTION__ << " next appended buffers will be in a new range";
   } else if (last_range != ranges_.end()) {
@@ -269,6 +267,7 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
   if (range_for_next_append_ != ranges_.end()) {
     (*range_for_next_append_)->AppendBuffersToEnd(buffers);
     last_appended_buffer_timestamp_ = buffers.back()->GetDecodeTimestamp();
+    last_appended_buffer_duration_ = buffers.back()->duration();
     last_appended_buffer_is_keyframe_ = buffers.back()->is_key_frame();
   } else {
     DecodeTimestamp new_range_start_time = std::min(
@@ -292,6 +291,7 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
       // buffer state and return.
       if (itr == buffers.end()) {
         last_appended_buffer_timestamp_ = buffers.back()->GetDecodeTimestamp();
+        last_appended_buffer_duration_ = buffers.back()->duration();
         last_appended_buffer_is_keyframe_ = buffers.back()->is_key_frame();
         DVLOG(1) << __FUNCTION__ << " " << GetStreamTypeName()
                  << ": new buffers in the middle of media segment depend on"
@@ -319,6 +319,7 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
                        base::Unretained(this))));
     last_appended_buffer_timestamp_ =
         buffers_for_new_range->back()->GetDecodeTimestamp();
+    last_appended_buffer_duration_ = buffers_for_new_range->back()->duration();
     last_appended_buffer_is_keyframe_ =
         buffers_for_new_range->back()->is_key_frame();
   }
@@ -651,12 +652,36 @@ bool SourceBufferStream::GarbageCollectIfNeeded(DecodeTimestamp media_time,
            << " last_appended_buffer_timestamp_="
            << last_appended_buffer_timestamp_.InSecondsF();
 
+  if (selected_range_ && !seek_pending_ &&
+      media_time > selected_range_->GetBufferedEndTimestamp()) {
+    // Strictly speaking |media_time| (taken from HTMLMediaElement::currentTime)
+    // should always be in the buffered ranges, but media::Pipeline uses audio
+    // stream as the main time source, when audio is present.
+    // In cases when audio and video streams have different buffered ranges, the
+    // |media_time| value might be slightly outside of the video stream buffered
+    // range. In those cases we need to clamp |media_time| value to the current
+    // stream buffered ranges, to ensure the MSE garbage collection algorithm
+    // works correctly (see crbug.com/563292 for details).
+    DecodeTimestamp selected_buffered_end =
+        selected_range_->GetBufferedEndTimestamp();
+
+    DVLOG(2) << __FUNCTION__ << " media_time " << media_time.InSecondsF()
+             << " is outside of selected_range_=["
+             << selected_range_->GetStartTimestamp().InSecondsF() << ";"
+             << selected_buffered_end.InSecondsF()
+             << "] clamping media_time to be "
+             << selected_buffered_end.InSecondsF();
+    media_time = selected_buffered_end;
+  }
+
   size_t bytes_freed = 0;
 
   // If last appended buffer position was earlier than the current playback time
   // then try deleting data between last append and current media_time.
   if (last_appended_buffer_timestamp_ != kNoDecodeTimestamp() &&
-      last_appended_buffer_timestamp_ < media_time) {
+      last_appended_buffer_duration_ != kNoTimestamp() &&
+      media_time >
+          last_appended_buffer_timestamp_ + last_appended_buffer_duration_) {
     size_t between = FreeBuffersAfterLastAppended(bytes_to_free, media_time);
     DVLOG(3) << __FUNCTION__ << " FreeBuffersAfterLastAppended "
              << " released " << between << " bytes"
@@ -674,6 +699,8 @@ bool SourceBufferStream::GarbageCollectIfNeeded(DecodeTimestamp media_time,
     if (range_for_next_append_ != ranges_.end()) {
       DCHECK((*range_for_next_append_)->GetStartTimestamp() <= media_time);
       media_time = (*range_for_next_append_)->GetStartTimestamp();
+      DVLOG(3) << __FUNCTION__ << " media_time adjusted to "
+               << media_time.InSecondsF();
     }
   }
 
@@ -893,29 +920,6 @@ void SourceBufferStream::PrepareRangesForNextAppend(
     const BufferQueue& new_buffers, BufferQueue* deleted_buffers) {
   DCHECK(deleted_buffers);
 
-  bool temporarily_select_range = false;
-  if (!track_buffer_.empty()) {
-    DecodeTimestamp tb_timestamp = track_buffer_.back()->GetDecodeTimestamp();
-    DecodeTimestamp seek_timestamp = FindKeyframeAfterTimestamp(tb_timestamp);
-    if (seek_timestamp != kNoDecodeTimestamp() &&
-        seek_timestamp < new_buffers.front()->GetDecodeTimestamp() &&
-        range_for_next_append_ != ranges_.end() &&
-        (*range_for_next_append_)->BelongsToRange(seek_timestamp)) {
-      DCHECK(tb_timestamp < seek_timestamp);
-      DCHECK(!selected_range_);
-      DCHECK(!(*range_for_next_append_)->HasNextBufferPosition());
-
-      // If there are GOPs between the end of the track buffer and the
-      // beginning of the new buffers, then temporarily seek the range
-      // so that the buffers between these two times will be deposited in
-      // |deleted_buffers| as if they were part of the current playback
-      // position.
-      // TODO(acolwell): Figure out a more elegant way to do this.
-      SeekAndSetSelectedRange(*range_for_next_append_, seek_timestamp);
-      temporarily_select_range = true;
-    }
-  }
-
   // Handle splices between the existing buffers and the new buffers.  If a
   // splice is generated the timestamp and duration of the first buffer in
   // |new_buffers| will be modified.
@@ -966,10 +970,6 @@ void SourceBufferStream::PrepareRangesForNextAppend(
   }
 
   RemoveInternal(start, end, exclude_start, deleted_buffers);
-
-  // Restore the range seek state if necessary.
-  if (temporarily_select_range)
-    SetSelectedRange(NULL);
 }
 
 bool SourceBufferStream::AreAdjacentInSequence(

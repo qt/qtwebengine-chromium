@@ -36,10 +36,7 @@
  * version of this file under any of the LGPL, the MPL or the GPL.
  */
 
-#include "config.h"
 #include "platform/image-decoders/png/PNGImageDecoder.h"
-
-#include "wtf/PassOwnPtr.h"
 
 #include "png.h"
 #if !defined(PNG_LIBPNG_VER_MAJOR) || !defined(PNG_LIBPNG_VER_MINOR)
@@ -86,12 +83,13 @@ void PNGAPI pngFailed(png_structp png, png_const_charp)
 
 namespace blink {
 
-class PNGImageReader {
-    WTF_MAKE_FAST_ALLOCATED(PNGImageReader);
+class PNGImageReader final {
+    USING_FAST_MALLOC(PNGImageReader);
+    WTF_MAKE_NONCOPYABLE(PNGImageReader);
 public:
-    PNGImageReader(PNGImageDecoder* decoder)
+    PNGImageReader(PNGImageDecoder* decoder, size_t readOffset)
         : m_decoder(decoder)
-        , m_readOffset(0)
+        , m_readOffset(readOffset)
         , m_currentBufferSize(0)
         , m_decodingSizeOnly(false)
         , m_hasAlpha(false)
@@ -107,17 +105,12 @@ public:
 
     ~PNGImageReader()
     {
-        close();
-    }
-
-    void close()
-    {
-        if (m_png && m_info)
-            // This will zero the pointers.
-            png_destroy_read_struct(&m_png, &m_info, 0);
 #if USE(QCMSLIB)
         clearColorTransform();
 #endif
+        png_destroy_read_struct(m_png ? &m_png : 0, m_info ? &m_info : 0, 0);
+        ASSERT(!m_png && !m_info);
+
         m_readOffset = 0;
     }
 
@@ -130,7 +123,7 @@ public:
             return m_decoder->setFailed();
 
         const char* segment;
-        while (unsigned segmentLength = data.getSomeData(segment, m_readOffset)) {
+        while (size_t segmentLength = data.getSomeData(segment, m_readOffset)) {
             m_readOffset += segmentLength;
             m_currentBufferSize = m_readOffset;
             png_process_data(m_png, m_info, reinterpret_cast<png_bytep>(const_cast<char*>(segment)), segmentLength);
@@ -144,8 +137,8 @@ public:
     png_structp pngPtr() const { return m_png; }
     png_infop infoPtr() const { return m_info; }
 
-    void setReadOffset(unsigned offset) { m_readOffset = offset; }
-    unsigned currentBufferSize() const { return m_currentBufferSize; }
+    void setReadOffset(size_t offset) { m_readOffset = offset; }
+    size_t currentBufferSize() const { return m_currentBufferSize; }
     bool decodingSizeOnly() const { return m_decodingSizeOnly; }
     void setHasAlpha(bool hasAlpha) { m_hasAlpha = hasAlpha; }
     bool hasAlpha() const { return m_hasAlpha; }
@@ -180,11 +173,19 @@ public:
             inputProfile = qcms_profile_sRGB();
         if (!inputProfile)
             return;
+
         // We currently only support color profiles for RGB and RGBA images.
         ASSERT(rgbData == qcms_profile_get_color_space(inputProfile));
-        qcms_data_type dataFormat = hasAlpha ? QCMS_DATA_RGBA_8 : QCMS_DATA_RGB_8;
+
+        if (qcms_profile_match(inputProfile, deviceProfile)) {
+            qcms_profile_release(inputProfile);
+            return;
+        }
+
         // FIXME: Don't force perceptual intent if the image profile contains an intent.
+        qcms_data_type dataFormat = hasAlpha ? QCMS_DATA_RGBA_8 : QCMS_DATA_RGB_8;
         m_transform = qcms_transform_create(inputProfile, dataFormat, deviceProfile, dataFormat, QCMS_INTENT_PERCEPTUAL);
+
         qcms_profile_release(inputProfile);
     }
 #endif
@@ -193,8 +194,8 @@ private:
     png_structp m_png;
     png_infop m_info;
     PNGImageDecoder* m_decoder;
-    unsigned m_readOffset;
-    unsigned m_currentBufferSize;
+    size_t m_readOffset;
+    size_t m_currentBufferSize;
     bool m_decodingSizeOnly;
     bool m_hasAlpha;
     OwnPtr<png_byte[]> m_interlaceBuffer;
@@ -204,9 +205,10 @@ private:
 #endif
 };
 
-PNGImageDecoder::PNGImageDecoder(AlphaOption alphaOption, GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
+PNGImageDecoder::PNGImageDecoder(AlphaOption alphaOption, GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes, size_t offset)
     : ImageDecoder(alphaOption, colorOptions, maxDecodedBytes)
     , m_hasColorProfile(false)
+    , m_offset(offset)
 {
 }
 
@@ -495,7 +497,7 @@ void PNGImageDecoder::decode(bool onlySize)
         return;
 
     if (!m_reader)
-        m_reader = adoptPtr(new PNGImageReader(this));
+        m_reader = adoptPtr(new PNGImageReader(this, m_offset));
 
     // If we couldn't decode the image but have received all the data, decoding
     // has failed.

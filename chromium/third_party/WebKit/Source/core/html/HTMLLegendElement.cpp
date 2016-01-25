@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLLegendElement.h"
 
 #include "core/HTMLNames.h"
@@ -54,14 +53,16 @@ HTMLFormControlElement* HTMLLegendElement::associatedControl()
     return Traversal<HTMLFormControlElement>::next(*fieldset, fieldset);
 }
 
-void HTMLLegendElement::focus(bool, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
+void HTMLLegendElement::focus(const FocusParams& params)
 {
-    if (isFocusable())
-        Element::focus(true, type, sourceCapabilities);
+    if (isFocusable()) {
+        Element::focus(params);
+        return;
+    }
 
     // To match other browsers' behavior, never restore previous selection.
     if (HTMLFormControlElement* control = associatedControl())
-        control->focus(false, type, sourceCapabilities);
+        control->focus(FocusParams(SelectionBehaviorOnFocus::Reset, params.type, params.sourceCapabilities));
 }
 
 void HTMLLegendElement::accessKeyAction(bool sendMouseEvents)

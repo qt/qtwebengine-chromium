@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/indexed_db/mock_browsertest_indexed_db_class_factory.h"
+
+#include <stddef.h>
 #include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/leveldb/leveldb_iterator_impl.h"
 #include "content/browser/indexed_db/leveldb/leveldb_transaction.h"
-#include "content/browser/indexed_db/mock_browsertest_indexed_db_class_factory.h"
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 
@@ -60,9 +63,9 @@ class IndexedDBTestDatabase : public IndexedDBDatabase {
 class IndexedDBTestTransaction : public IndexedDBTransaction {
  public:
   IndexedDBTestTransaction(
-      int64 id,
+      int64_t id,
       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-      const std::set<int64>& scope,
+      const std::set<int64_t>& scope,
       blink::WebIDBTransactionMode mode,
       IndexedDBDatabase* db,
       IndexedDBBackingStore::Transaction* backing_store_transaction)
@@ -164,7 +167,7 @@ const std::string LevelDBTraceTransaction::s_class_name = "LevelDBTransaction";
 class LevelDBTraceIteratorImpl : public LevelDBIteratorImpl {
  public:
   LevelDBTraceIteratorImpl(scoped_ptr<leveldb::Iterator> iterator, int inst_num)
-      : LevelDBIteratorImpl(iterator.Pass()),
+      : LevelDBIteratorImpl(std::move(iterator)),
         is_valid_tracer_(s_class_name, "IsValid", inst_num),
         seek_to_last_tracer_(s_class_name, "SeekToLast", inst_num),
         seek_tracer_(s_class_name, "Seek", inst_num),
@@ -222,7 +225,7 @@ class LevelDBTestIteratorImpl : public content::LevelDBIteratorImpl {
   LevelDBTestIteratorImpl(scoped_ptr<leveldb::Iterator> iterator,
                           FailMethod fail_method,
                           int fail_on_call_num)
-      : LevelDBIteratorImpl(iterator.Pass()),
+      : LevelDBIteratorImpl(std::move(iterator)),
         fail_method_(fail_method),
         fail_on_call_num_(fail_on_call_num),
         current_call_num_(0) {}
@@ -262,9 +265,9 @@ MockBrowserTestIndexedDBClassFactory::CreateIndexedDBDatabase(
 
 IndexedDBTransaction*
 MockBrowserTestIndexedDBClassFactory::CreateIndexedDBTransaction(
-    int64 id,
+    int64_t id,
     scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
-    const std::set<int64>& scope,
+    const std::set<int64_t>& scope,
     blink::WebIDBTransactionMode mode,
     IndexedDBDatabase* db,
     IndexedDBBackingStore::Transaction* backing_store_transaction) {
@@ -300,17 +303,16 @@ LevelDBIteratorImpl* MockBrowserTestIndexedDBClassFactory::CreateIteratorImpl(
       instance_count_[FAIL_CLASS_LEVELDB_ITERATOR] + 1;
   if (only_trace_calls_) {
     return new LevelDBTraceIteratorImpl(
-        iterator.Pass(), instance_count_[FAIL_CLASS_LEVELDB_ITERATOR]);
+        std::move(iterator), instance_count_[FAIL_CLASS_LEVELDB_ITERATOR]);
   } else {
     if (failure_class_ == FAIL_CLASS_LEVELDB_ITERATOR &&
         instance_count_[FAIL_CLASS_LEVELDB_ITERATOR] ==
             fail_on_instance_num_[FAIL_CLASS_LEVELDB_ITERATOR]) {
       return new LevelDBTestIteratorImpl(
-          iterator.Pass(),
-          failure_method_,
+          std::move(iterator), failure_method_,
           fail_on_call_num_[FAIL_CLASS_LEVELDB_ITERATOR]);
     } else {
-      return new LevelDBIteratorImpl(iterator.Pass());
+      return new LevelDBIteratorImpl(std::move(iterator));
     }
   }
 }

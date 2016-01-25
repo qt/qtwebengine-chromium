@@ -10,6 +10,7 @@
 #include "net/http/http_response_headers.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/format_macros.h"
 #include "base/logging.h"
@@ -361,10 +362,9 @@ void HttpResponseHeaders::ReplaceStatusLine(const std::string& new_status) {
   MergeWithHeaders(new_raw_headers, empty_to_remove);
 }
 
-void HttpResponseHeaders::UpdateWithNewRange(
-    const HttpByteRange& byte_range,
-    int64 resource_size,
-    bool replace_status_line) {
+void HttpResponseHeaders::UpdateWithNewRange(const HttpByteRange& byte_range,
+                                             int64_t resource_size,
+                                             bool replace_status_line) {
   DCHECK(byte_range.IsValid());
   DCHECK(byte_range.HasFirstBytePosition());
   DCHECK(byte_range.HasLastBytePosition());
@@ -375,9 +375,9 @@ void HttpResponseHeaders::UpdateWithNewRange(
   RemoveHeader(kLengthHeader);
   RemoveHeader(kRangeHeader);
 
-  int64 start = byte_range.first_byte_position();
-  int64 end = byte_range.last_byte_position();
-  int64 range_len = end - start + 1;
+  int64_t start = byte_range.first_byte_position();
+  int64_t end = byte_range.last_byte_position();
+  int64_t range_len = end - start + 1;
 
   if (replace_status_line)
     ReplaceStatusLine("HTTP/1.1 206 Partial Content");
@@ -530,12 +530,22 @@ std::string HttpResponseHeaders::GetStatusLine() const {
 
 std::string HttpResponseHeaders::GetStatusText() const {
   // GetStatusLine() is already normalized, so it has the format:
-  // <http_version> SP <response_code> SP <status_text>
+  // '<http_version> SP <response_code>' or
+  // '<http_version> SP <response_code> SP <status_text>'.
   std::string status_text = GetStatusLine();
   std::string::const_iterator begin = status_text.begin();
   std::string::const_iterator end = status_text.end();
-  for (int i = 0; i < 2; ++i)
-    begin = std::find(begin, end, ' ') + 1;
+  // Seek to beginning of <response_code>.
+  begin = std::find(begin, end, ' ');
+  CHECK(begin != end);
+  ++begin;
+  CHECK(begin != end);
+  // See if there is another space.
+  begin = std::find(begin, end, ' ');
+  if (begin == end)
+    return std::string();
+  ++begin;
+  CHECK(begin != end);
   return std::string(begin, end);
 }
 
@@ -649,8 +659,8 @@ HttpVersion HttpResponseHeaders::ParseVersion(
     return HttpVersion();
   }
 
-  uint16 major = *p - '0';
-  uint16 minor = *dot - '0';
+  uint16_t major = *p - '0';
+  uint16_t minor = *dot - '0';
 
   return HttpVersion(major, minor);
 }
@@ -662,13 +672,16 @@ void HttpResponseHeaders::ParseStatusLine(
     std::string::const_iterator line_end,
     bool has_headers) {
   // Extract the version number
-  parsed_http_version_ = ParseVersion(line_begin, line_end);
+  HttpVersion parsed_http_version = ParseVersion(line_begin, line_end);
 
-  // Clamp the version number to one of: {0.9, 1.0, 1.1}
-  if (parsed_http_version_ == HttpVersion(0, 9) && !has_headers) {
+  // Clamp the version number to one of: {0.9, 1.0, 1.1, 2.0}
+  if (parsed_http_version == HttpVersion(0, 9) && !has_headers) {
     http_version_ = HttpVersion(0, 9);
     raw_headers_ = "HTTP/0.9";
-  } else if (parsed_http_version_ >= HttpVersion(1, 1)) {
+  } else if (parsed_http_version == HttpVersion(2, 0)) {
+    http_version_ = HttpVersion(2, 0);
+    raw_headers_ = "HTTP/2.0";
+  } else if (parsed_http_version >= HttpVersion(1, 1)) {
     http_version_ = HttpVersion(1, 1);
     raw_headers_ = "HTTP/1.1";
   } else {
@@ -676,7 +689,7 @@ void HttpResponseHeaders::ParseStatusLine(
     http_version_ = HttpVersion(1, 0);
     raw_headers_ = "HTTP/1.0";
   }
-  if (parsed_http_version_ != http_version_) {
+  if (parsed_http_version != http_version_) {
     DVLOG(1) << "assuming HTTP/" << http_version_.major_value() << "."
              << http_version_.minor_value();
   }
@@ -692,40 +705,36 @@ void HttpResponseHeaders::ParseStatusLine(
   }
 
   // Skip whitespace.
-  while (*p == ' ')
+  while (p < line_end && *p == ' ')
     ++p;
 
   std::string::const_iterator code = p;
-  while (*p >= '0' && *p <= '9')
+  while (p < line_end && *p >= '0' && *p <= '9')
     ++p;
 
   if (p == code) {
     DVLOG(1) << "missing response status number; assuming 200";
-    raw_headers_.append(" 200 OK");
+    raw_headers_.append(" 200");
     response_code_ = 200;
     return;
   }
   raw_headers_.push_back(' ');
   raw_headers_.append(code, p);
-  raw_headers_.push_back(' ');
   base::StringToInt(StringPiece(code, p), &response_code_);
 
   // Skip whitespace.
-  while (*p == ' ')
+  while (p < line_end && *p == ' ')
     ++p;
 
   // Trim trailing whitespace.
   while (line_end > p && line_end[-1] == ' ')
     --line_end;
 
-  if (p == line_end) {
-    DVLOG(1) << "missing response status text; assuming OK";
-    // Not super critical what we put here. Just use "OK"
-    // even if it isn't descriptive of response_code_.
-    raw_headers_.append("OK");
-  } else {
-    raw_headers_.append(p, line_end);
-  }
+  if (p == line_end)
+    return;
+
+  raw_headers_.push_back(' ');
+  raw_headers_.append(p, line_end);
 }
 
 size_t HttpResponseHeaders::FindHeader(size_t from,
@@ -754,7 +763,7 @@ bool HttpResponseHeaders::GetCacheControlDirective(const StringPiece& directive,
         base::StartsWith(value, directive,
                          base::CompareCase::INSENSITIVE_ASCII) &&
         value[directive_size] == '=') {
-      int64 seconds;
+      int64_t seconds;
       base::StringToInt64(
           StringPiece(value.begin() + directive_size + 1, value.end()),
           &seconds);
@@ -1146,7 +1155,7 @@ bool HttpResponseHeaders::GetAgeValue(TimeDelta* result) const {
   if (!EnumerateHeader(NULL, "Age", &value))
     return false;
 
-  int64 seconds;
+  int64_t seconds;
   base::StringToInt64(value, &seconds);
   *result = TimeDelta::FromSeconds(seconds);
   return true;
@@ -1241,11 +1250,11 @@ bool HttpResponseHeaders::HasStrongValidators() const {
 
 // From RFC 2616:
 // Content-Length = "Content-Length" ":" 1*DIGIT
-int64 HttpResponseHeaders::GetContentLength() const {
+int64_t HttpResponseHeaders::GetContentLength() const {
   return GetInt64HeaderValue("content-length");
 }
 
-int64 HttpResponseHeaders::GetInt64HeaderValue(
+int64_t HttpResponseHeaders::GetInt64HeaderValue(
     const std::string& header) const {
   void* iter = NULL;
   std::string content_length_val;
@@ -1258,7 +1267,7 @@ int64 HttpResponseHeaders::GetInt64HeaderValue(
   if (content_length_val[0] == '+')
     return -1;
 
-  int64 result;
+  int64_t result;
   bool ok = base::StringToInt64(content_length_val, &result);
   if (!ok || result < 0)
     return -1;
@@ -1272,9 +1281,9 @@ int64 HttpResponseHeaders::GetInt64HeaderValue(
 // byte-range-resp-spec = (first-byte-pos "-" last-byte-pos) | "*"
 // instance-length = 1*DIGIT
 // bytes-unit = "bytes"
-bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
-                                          int64* last_byte_position,
-                                          int64* instance_length) const {
+bool HttpResponseHeaders::GetContentRange(int64_t* first_byte_position,
+                                          int64_t* last_byte_position,
+                                          int64_t* instance_length) const {
   void* iter = NULL;
   std::string content_range_spec;
   *first_byte_position = *last_byte_position = *instance_length = -1;
@@ -1399,7 +1408,7 @@ scoped_ptr<base::Value> HttpResponseHeaders::NetLogCallback(
                              escaped_value.c_str())));
   }
   dict->Set("headers", headers);
-  return dict.Pass();
+  return std::move(dict);
 }
 
 // static

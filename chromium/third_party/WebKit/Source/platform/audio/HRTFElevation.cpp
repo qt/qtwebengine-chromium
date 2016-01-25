@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/HRTFElevation.h"
-
 #include <math.h>
 #include <algorithm>
 #include "platform/audio/AudioBus.h"
@@ -71,8 +66,8 @@ const int ElevationIndexTable[ElevationIndexTableSize] = {
 static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const String& subjectName)
 {
     typedef HashMap<String, RefPtr<AudioBus>> AudioBusMap;
-    AtomicallyInitializedStaticReference(AudioBusMap, audioBusMap, new AudioBusMap());
-    AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(AudioBusMap, audioBusMap, new AudioBusMap());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, new Mutex());
 
     MutexLocker locker(mutex);
     RefPtr<AudioBus> bus;
@@ -329,4 +324,3 @@ void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthI
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

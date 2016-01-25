@@ -245,35 +245,57 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *main_formats;
-    AVFilterFormats *overlay_formats;
+    AVFilterFormats *main_formats = NULL;
+    AVFilterFormats *overlay_formats = NULL;
+    int ret;
 
     switch (s->format) {
     case OVERLAY_FORMAT_YUV420:
-        main_formats    = ff_make_format_list(main_pix_fmts_yuv420);
-        overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv420);
+        if (!(main_formats    = ff_make_format_list(main_pix_fmts_yuv420)) ||
+            !(overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv420))) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
         break;
     case OVERLAY_FORMAT_YUV422:
-        main_formats    = ff_make_format_list(main_pix_fmts_yuv422);
-        overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv422);
+        if (!(main_formats    = ff_make_format_list(main_pix_fmts_yuv422)) ||
+            !(overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv422))) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
         break;
     case OVERLAY_FORMAT_YUV444:
-        main_formats    = ff_make_format_list(main_pix_fmts_yuv444);
-        overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv444);
+        if (!(main_formats    = ff_make_format_list(main_pix_fmts_yuv444)) ||
+            !(overlay_formats = ff_make_format_list(overlay_pix_fmts_yuv444))) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
         break;
     case OVERLAY_FORMAT_RGB:
-        main_formats    = ff_make_format_list(main_pix_fmts_rgb);
-        overlay_formats = ff_make_format_list(overlay_pix_fmts_rgb);
+        if (!(main_formats    = ff_make_format_list(main_pix_fmts_rgb)) ||
+            !(overlay_formats = ff_make_format_list(overlay_pix_fmts_rgb))) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
         break;
     default:
         av_assert0(0);
     }
 
-    ff_formats_ref(main_formats,    &ctx->inputs [MAIN   ]->out_formats);
-    ff_formats_ref(overlay_formats, &ctx->inputs [OVERLAY]->out_formats);
-    ff_formats_ref(main_formats,    &ctx->outputs[MAIN   ]->in_formats );
+    if ((ret = ff_formats_ref(main_formats   , &ctx->inputs[MAIN]->out_formats   )) < 0 ||
+        (ret = ff_formats_ref(overlay_formats, &ctx->inputs[OVERLAY]->out_formats)) < 0 ||
+        (ret = ff_formats_ref(main_formats   , &ctx->outputs[MAIN]->in_formats   )) < 0)
+            goto fail;
 
     return 0;
+fail:
+    if (main_formats)
+        av_freep(&main_formats->formats);
+    av_freep(&main_formats);
+    if (overlay_formats)
+        av_freep(&overlay_formats->formats);
+    av_freep(&overlay_formats);
+    return ret;
 }
 
 static const enum AVPixelFormat alpha_pix_fmts[] = {

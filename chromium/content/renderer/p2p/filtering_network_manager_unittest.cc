@@ -4,6 +4,9 @@
 
 #include "content/renderer/p2p/filtering_network_manager.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -134,11 +137,12 @@ class FilteringNetworkManagerTest : public testing::Test,
     if (multiple_routes_requested) {
       FilteringNetworkManager* filtering_network_manager =
           new FilteringNetworkManager(mock_network_manager_.get(), GURL(),
-                                      media_permission.Pass());
+                                      std::move(media_permission));
       filtering_network_manager->Initialize();
       network_manager_.reset(filtering_network_manager);
     } else {
-      network_manager_.reset(new EmptyNetworkManager());
+      network_manager_.reset(
+          new EmptyNetworkManager(mock_network_manager_.get()));
     }
     network_manager_->SignalNetworksChanged.connect(
         this, &FilteringNetworkManagerTest::OnNetworksChanged);

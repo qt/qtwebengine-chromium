@@ -5,10 +5,15 @@
 #ifndef CONTENT_RENDERER_P2P_EMPTY_NETWORK_MANAGER_H_
 #define CONTENT_RENDERER_P2P_EMPTY_NETWORK_MANAGER_H_
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "third_party/webrtc/base/network.h"
+
+namespace rtc {
+class IPAddress;
+}  // namespace rtc
 
 namespace content {
 
@@ -19,13 +24,16 @@ class EmptyNetworkManager : public rtc::NetworkManagerBase {
  public:
   // This class is created by WebRTC's signaling thread but used by WebRTC's
   // worker thread |task_runner|.
-  CONTENT_EXPORT EmptyNetworkManager();
+  CONTENT_EXPORT explicit EmptyNetworkManager(
+      rtc::NetworkManager* network_manager);
   CONTENT_EXPORT ~EmptyNetworkManager() override;
 
   // rtc::NetworkManager:
   void StartUpdating() override;
   void StopUpdating() override;
   void GetNetworks(NetworkList* networks) const override;
+  bool GetDefaultLocalAddress(int family,
+                              rtc::IPAddress* ipaddress) const override;
 
  private:
   void FireEvent();
@@ -35,6 +43,10 @@ class EmptyNetworkManager : public rtc::NetworkManagerBase {
 
   // Track whether StartUpdating() has been called before.
   bool updating_started_ = false;
+
+  // |network_manager_| is just a reference, owned by
+  // PeerConnectionDependencyFactory.
+  rtc::NetworkManager* network_manager_;
 
   base::WeakPtrFactory<EmptyNetworkManager> weak_ptr_factory_;
 

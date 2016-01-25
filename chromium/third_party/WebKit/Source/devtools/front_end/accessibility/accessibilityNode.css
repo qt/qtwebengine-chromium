@@ -36,6 +36,11 @@ div.ax-text-alternatives {
 
 .ax-readable-name {
     flex-shrink: 0;
+    padding-left: 2px;
+}
+
+.ax-readable-string {
+    font-style: italic;
 }
 
 span.ax-role {
@@ -55,5 +60,33 @@ span.ax-internal-role {
 }
 
 .tree-outline li {
-    padding-top: 5px;
+    padding-left: 1px;
+}
+
+.tree-outline li.invalid {
+    position: relative;
+    left: -2px;
+    text-decoration: line-through;
+}
+
+.tree-outline label[is=dt-icon-label] {
+    position: relative;
+    left: -11px;
+}
+
+span.ax-value-undefined {
+    font-style: italic;
+}
+
+.ax-value-source-unused {
+    opacity: 0.5;
+}
+
+.ax-value-source-superseded,
+.ax-value-source-invalid {
+    text-decoration: line-through;
+}
+
+.tree-outline label[is=dt-icon-label] + .ax-name {
+    margin-left: -11px;
 }

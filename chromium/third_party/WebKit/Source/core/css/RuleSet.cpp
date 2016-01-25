@@ -26,7 +26,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/RuleSet.h"
 
 #include "core/HTMLNames.h"
@@ -50,16 +49,16 @@ using namespace HTMLNames;
 
 // -----------------------------------------------------------------
 
+static bool containsUncommonAttributeSelector(const CSSSelector&);
+
 static inline bool selectorListContainsUncommonAttributeSelector(const CSSSelector* selector)
 {
     const CSSSelectorList* selectorList = selector->selectorList();
     if (!selectorList)
         return false;
     for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(*selector)) {
-        for (const CSSSelector* component = selector; component; component = component->tagHistory()) {
-            if (component->isAttributeSelector())
-                return true;
-        }
+        if (containsUncommonAttributeSelector(*selector))
+            return true;
     }
     return false;
 }
@@ -70,7 +69,7 @@ static inline bool isCommonAttributeSelectorAttribute(const QualifiedName& attri
     return attribute == typeAttr || attribute == readonlyAttr;
 }
 
-static inline bool containsUncommonAttributeSelector(const CSSSelector& selector)
+static bool containsUncommonAttributeSelector(const CSSSelector& selector)
 {
     const CSSSelector* current = &selector;
     for (; current; current = current->tagHistory()) {
@@ -259,9 +258,9 @@ void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleB
 
             const CSSSelectorList& selectorList = styleRule->selectorList();
             for (size_t selectorIndex = 0; selectorIndex != kNotFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                if (selectorList.selectorCrossesTreeScopes(selectorIndex)) {
-                    m_treeBoundaryCrossingRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
-                } else if (selectorList.hasShadowDistributedAt(selectorIndex)) {
+                if (selectorList.selectorUsesDeepCombinatorOrShadowPseudo(selectorIndex)) {
+                    m_deepCombinatorOrShadowPseudoRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
+                } else if (selectorList.selectorHasShadowDistributed(selectorIndex)) {
                     m_shadowDistributedRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
                 } else {
                     addRule(styleRule, selectorIndex, addRuleFlags);
@@ -271,7 +270,7 @@ void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleB
             addPageRule(toStyleRulePage(rule));
         } else if (rule->isMediaRule()) {
             StyleRuleMedia* mediaRule = toStyleRuleMedia(rule);
-            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
+            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), &m_viewportDependentMediaQueryResults, &m_deviceDependentMediaQueryResults)))
                 addChildRules(mediaRule->childRules(), medium, addRuleFlags);
         } else if (rule->isFontFaceRule()) {
             addFontFaceRule(toStyleRuleFontFace(rule));
@@ -294,7 +293,7 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
     const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport>>& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
-        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
+        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), &m_viewportDependentMediaQueryResults, &m_deviceDependentMediaQueryResults)))
             addRulesFromSheet(importRule->styleSheet(), medium, addRuleFlags);
     }
 
@@ -341,7 +340,7 @@ void RuleSet::compactRules()
     m_viewportRules.shrinkToFit();
     m_fontFaceRules.shrinkToFit();
     m_keyframesRules.shrinkToFit();
-    m_treeBoundaryCrossingRules.shrinkToFit();
+    m_deepCombinatorOrShadowPseudoRules.shrinkToFit();
     m_shadowDistributedRules.shrinkToFit();
 }
 
@@ -382,9 +381,10 @@ DEFINE_TRACE(RuleSet)
     visitor->trace(m_viewportRules);
     visitor->trace(m_fontFaceRules);
     visitor->trace(m_keyframesRules);
-    visitor->trace(m_treeBoundaryCrossingRules);
+    visitor->trace(m_deepCombinatorOrShadowPseudoRules);
     visitor->trace(m_shadowDistributedRules);
     visitor->trace(m_viewportDependentMediaQueryResults);
+    visitor->trace(m_deviceDependentMediaQueryResults);
     visitor->trace(m_pendingRules);
 #ifndef NDEBUG
     visitor->trace(m_allRules);
@@ -393,7 +393,7 @@ DEFINE_TRACE(RuleSet)
 }
 
 #ifndef NDEBUG
-void RuleSet::show()
+void RuleSet::show() const
 {
     for (const auto& rule: m_allRules)
         rule.selector().show();

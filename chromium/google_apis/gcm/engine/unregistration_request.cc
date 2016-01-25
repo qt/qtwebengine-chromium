@@ -4,6 +4,8 @@
 
 #include "google_apis/gcm/engine/unregistration_request.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
@@ -35,13 +37,10 @@ const char kLoginHeader[] = "AidLogin";
 
 }  // namespace
 
-UnregistrationRequest::RequestInfo::RequestInfo(
-    uint64 android_id,
-    uint64 security_token,
-    const std::string& app_id)
-    : android_id(android_id),
-      security_token(security_token),
-      app_id(app_id) {
+UnregistrationRequest::RequestInfo::RequestInfo(uint64_t android_id,
+                                                uint64_t security_token,
+                                                const std::string& app_id)
+    : android_id(android_id), security_token(security_token), app_id(app_id) {
   DCHECK(android_id != 0UL);
   DCHECK(security_token != 0UL);
 }
@@ -64,7 +63,7 @@ UnregistrationRequest::UnregistrationRequest(
     const std::string& source_to_record)
     : callback_(callback),
       request_info_(request_info),
-      custom_request_handler_(custom_request_handler.Pass()),
+      custom_request_handler_(std::move(custom_request_handler)),
       registration_url_(registration_url),
       backoff_entry_(&backoff_policy),
       request_context_getter_(request_context_getter),

@@ -38,7 +38,6 @@ WebInspector.ConsoleView = function()
 {
     WebInspector.VBox.call(this);
     this.setMinimumSize(0, 35);
-    this.registerRequiredCSS("ui/filter.css");
     this.registerRequiredCSS("console/consoleView.css");
 
     this._searchableView = new WebInspector.SearchableView(this);
@@ -58,8 +57,6 @@ WebInspector.ConsoleView = function()
      */
     this._regexMatchRanges = [];
 
-    this._clearConsoleButton = WebInspector.ToolbarButton.createActionButton("console.clear");
-
     this._executionContextComboBox = new WebInspector.ToolbarComboBox(null, "console-context");
     this._executionContextComboBox.setMaxWidth(200);
     this._executionContextModel = new WebInspector.ExecutionContextModel(this._executionContextComboBox.selectElement());
@@ -72,14 +69,14 @@ WebInspector.ConsoleView = function()
     this._preserveLogCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Preserve log"), WebInspector.UIString("Do not clear log on page reload / navigation"), WebInspector.moduleSetting("preserveConsoleLog"));
     this._progressToolbarItem = new WebInspector.ToolbarItem(createElement("div"));
 
-    var toolbar = new WebInspector.Toolbar(this._contentsElement);
-    toolbar.appendToolbarItem(this._clearConsoleButton);
+    var toolbar = new WebInspector.Toolbar("", this._contentsElement);
+    toolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(WebInspector.actionRegistry.action("console.clear")));
     toolbar.appendToolbarItem(this._filterBar.filterButton());
     toolbar.appendToolbarItem(this._executionContextComboBox);
     toolbar.appendToolbarItem(this._preserveLogCheckbox);
     toolbar.appendToolbarItem(this._progressToolbarItem);
 
-    this._contentsElement.appendChild(this._filterBar.filtersElement());
+    this._filterBar.show(this._contentsElement);
     this._filter.addFilters(this._filterBar);
 
     this._viewport = new WebInspector.ViewportControl(this);
@@ -361,6 +358,8 @@ WebInspector.ConsoleView.prototype = {
         this._hidePromptSuggestBox();
         if (this._viewport.scrolledToBottom())
             this._immediatelyScrollToBottom();
+        for (var i = 0; i < this._visibleViewMessages.length; ++i)
+            this._visibleViewMessages[i].onResize();
     },
 
     _hidePromptSuggestBox: function()
@@ -1288,13 +1287,19 @@ WebInspector.ConsoleView.ActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
-        if (actionId === "console.show")
+        switch (actionId) {
+        case "console.show":
             WebInspector.console.show();
-        else if (actionId === "console.clear")
+            return true;
+        case "console.clear":
             WebInspector.ConsoleModel.clearConsole();
+            return true;
+        }
+        return false;
     }
 }
 

@@ -60,6 +60,7 @@ public:
 #endif
 
     const TextCheckingRequestData& data() const override;
+    bool isValid() const;
     void didSucceed(const Vector<TextCheckingResult>&) override;
     void didCancel() override;
 
@@ -79,7 +80,7 @@ private:
 };
 
 class SpellCheckRequester final : public NoBaseWillBeGarbageCollectedFinalized<SpellCheckRequester> {
-    WTF_MAKE_NONCOPYABLE(SpellCheckRequester); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SpellCheckRequester);
+    WTF_MAKE_NONCOPYABLE(SpellCheckRequester); USING_FAST_MALLOC_WILL_BE_REMOVED(SpellCheckRequester);
 public:
     static PassOwnPtrWillBeRawPtr<SpellCheckRequester> create(LocalFrame& frame)
     {
@@ -89,7 +90,6 @@ public:
     ~SpellCheckRequester();
     DECLARE_TRACE();
 
-    bool isAsynchronousEnabled() const;
     bool isCheckable(Range*) const;
 
     void requestCheckingFor(PassRefPtrWillBeRawPtr<SpellCheckRequest>);

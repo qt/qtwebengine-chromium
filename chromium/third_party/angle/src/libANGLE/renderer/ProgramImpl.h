@@ -37,6 +37,7 @@ class ProgramImpl : angle::NonCopyable
 
     virtual LinkResult load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream) = 0;
     virtual gl::Error save(gl::BinaryOutputStream *stream) = 0;
+    virtual void setBinaryRetrievableHint(bool retrievable) = 0;
 
     virtual LinkResult link(const gl::Data &data, gl::InfoLog &infoLog) = 0;
     virtual GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) = 0;
@@ -66,9 +67,14 @@ class ProgramImpl : angle::NonCopyable
     // TODO: synchronize in syncState when dirty bits exist.
     virtual void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) = 0;
 
-    // Gather uniform block active uniform indices, and uniform block offset info.
-    virtual void gatherUniformBlockInfo(std::vector<gl::UniformBlock> *uniformBlocks,
-                                        std::vector<gl::LinkedUniform> *uniforms) = 0;
+    // May only be called after a successful link operation.
+    // Return false for inactive blocks.
+    virtual bool getUniformBlockSize(const std::string &blockName, size_t *sizeOut) const = 0;
+
+    // May only be called after a successful link operation.
+    // Returns false for inactive members.
+    virtual bool getUniformBlockMemberInfo(const std::string &memberUniformName,
+                                           sh::BlockMemberInfo *memberInfoOut) const = 0;
 
   protected:
     const gl::Program::Data &mData;

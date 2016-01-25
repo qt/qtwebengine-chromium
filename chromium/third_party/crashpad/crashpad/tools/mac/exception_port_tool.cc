@@ -16,18 +16,18 @@
 #include <getopt.h>
 #include <libgen.h>
 #include <mach/mach.h>
-#include <servers/bootstrap.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/mac/mach_logging.h"
 #include "base/mac/scoped_mach_port.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "tools/tool_support.h"
 #include "util/mach/exception_ports.h"
@@ -75,13 +75,20 @@ class MachSendRightPool {
   //! \brief Adds a send right to the pool.
   //!
   //! \param[in] send_right The send right to be added. The pool object takes
-  //!     ownership of the send right, which remains valid until the pool object
-  //!     is destroyed.
+  //!     its own reference to the send right, which remains valid until the
+  //!     pool object is destroyed. The caller remains responsible for its
+  //!     reference to the send right.
   //!
   //! It is possible and in fact likely that one pool will wind up owning the
   //! same send right multiple times. This is acceptable, because send rights
   //! are reference-counted.
   void AddSendRight(mach_port_t send_right) {
+    kern_return_t kr = mach_port_mod_refs(mach_task_self(),
+                                          send_right,
+                                          MACH_PORT_RIGHT_SEND,
+                                          1);
+    MACH_CHECK(kr == KERN_SUCCESS, kr) << "mach_port_mod_refs";
+
     send_rights_.push_back(send_right);
   }
 
@@ -184,17 +191,14 @@ bool ParseHandlerString(const char* handler_string_ro,
 // |mach_send_right_pool|.
 void ShowBootstrapService(const std::string& service_name,
                           MachSendRightPool* mach_send_right_pool) {
-  mach_port_t service_port;
-  kern_return_t kr = bootstrap_look_up(
-      bootstrap_port, service_name.c_str(), &service_port);
-  if (kr != BOOTSTRAP_SUCCESS) {
-    BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_look_up " << service_name;
+  base::mac::ScopedMachSendRight service_port(BootstrapLookUp(service_name));
+  if (service_port == kMachPortNull) {
     return;
   }
 
-  mach_send_right_pool->AddSendRight(service_port);
+  mach_send_right_pool->AddSendRight(service_port.get());
 
-  printf("service %s %#x\n", service_name.c_str(), service_port);
+  printf("service %s %#x\n", service_name.c_str(), service_port.get());
 }
 
 // Prints information about all exception ports known for |exception_ports|. If
@@ -210,14 +214,14 @@ void ShowExceptionPorts(const ExceptionPorts& exception_ports,
                         MachSendRightPool* mach_send_right_pool) {
   const char* target_name = exception_ports.TargetTypeName();
 
-  std::vector<ExceptionPorts::ExceptionHandler> handlers;
+  ExceptionPorts::ExceptionHandlerVector handlers;
   if (!exception_ports.GetExceptionPorts(ExcMaskValid(), &handlers)) {
     return;
   }
 
   const char* age_name = is_new ? "new " : "";
 
-  if (handlers.size() == 0) {
+  if (handlers.empty()) {
     printf("no %s%s exception ports\n", age_name, target_name);
   }
 
@@ -279,29 +283,25 @@ void ShowExceptionPorts(const ExceptionPorts& exception_ports,
 // desired.
 bool SetExceptionPort(const ExceptionHandlerDescription* description,
                       mach_port_t target_port) {
-  base::mac::ScopedMachSendRight service_port_owner;
-  exception_handler_t service_port = MACH_PORT_NULL;
-  kern_return_t kr;
+  base::mac::ScopedMachSendRight service_port;
   if (description->handler.compare(
           0, strlen(kHandlerBootstrapColon), kHandlerBootstrapColon) == 0) {
     const char* service_name =
         description->handler.c_str() + strlen(kHandlerBootstrapColon);
-    kr = bootstrap_look_up(bootstrap_port, service_name, &service_port);
-    if (kr != BOOTSTRAP_SUCCESS) {
-      BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_look_up " << service_name;
+    service_port = BootstrapLookUp(service_name);
+    if (service_port == kMachPortNull) {
       return false;
     }
 
     // The service port doesn’t need to be added to a MachSendRightPool because
     // it’s not used for display at all. ScopedMachSendRight is sufficient.
-    service_port_owner.reset(service_port);
   } else if (description->handler != kHandlerNull) {
     return false;
   }
 
   ExceptionPorts exception_ports(description->target_type, target_port);
   if (!exception_ports.SetExceptionPort(description->mask,
-                                        service_port,
+                                        service_port.get(),
                                         description->behavior,
                                         description->flavor)) {
     return false;

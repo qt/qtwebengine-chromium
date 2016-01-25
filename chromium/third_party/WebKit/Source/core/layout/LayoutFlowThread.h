@@ -82,15 +82,20 @@ public:
     void invalidateColumnSets();
     bool hasValidColumnSetInfo() const { return !m_columnSetsInvalidated && !m_multiColumnSetList.isEmpty(); }
 
-    void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    void mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, const PaintInvalidationState*) const override;
 
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule);
 
-    virtual void setPageBreak(LayoutUnit /*offset*/, LayoutUnit /*spaceShortage*/) { }
-    virtual void updateMinimumPageHeight(LayoutUnit /*offset*/, LayoutUnit /*minHeight*/) { }
+    virtual void contentWasLaidOut(LayoutUnit logicalTopInFlowThreadAfterPagination) = 0;
 
-    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) { return false; }
+    // Find and return the next logical top after |flowThreadOffset| that can fit unbreakable
+    // content as tall as |contentLogicalHeight|. |flowThreadOffset| is expected to be at the exact
+    // top of a column that's known to not have enough space for |contentLogicalHeight|. This method
+    // is called when the current column is too short to fit the content, in the hope that there
+    // exists one that's tall enough further ahead. If no such column can be found,
+    // |flowThreadOffset| will be returned.
+    LayoutUnit nextLogicalTopForUnbreakableContent(LayoutUnit flowThreadOffset, LayoutUnit contentLogicalHeight) const;
 
     virtual bool isPageLogicalHeightKnown() const { return true; }
     bool pageLogicalSizeChanged() const { return m_pageLogicalSizeChanged; }
@@ -149,10 +154,6 @@ DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutFlowThread, isLayoutFlowThread());
 
 // These structures are used by PODIntervalTree for debugging.
 #ifndef NDEBUG
-template <> struct ValueToString<LayoutUnit> {
-    static String string(const LayoutUnit value) { return String::number(value.toFloat()); }
-};
-
 template <> struct ValueToString<LayoutMultiColumnSet*> {
     static String string(const LayoutMultiColumnSet* value) { return String::format("%p", value); }
 };

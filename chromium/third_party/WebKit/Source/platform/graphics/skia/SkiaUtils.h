@@ -34,13 +34,10 @@
 #define SkiaUtils_h
 
 #include "platform/PlatformExport.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/Image.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/effects/SkCornerPathEffect.h"
 #include "wtf/MathExtras.h"
 
 namespace blink {
@@ -96,14 +93,11 @@ inline WindRule SkFillTypeToWindRule(SkPath::FillType fillType)
     return RULE_NONZERO;
 }
 
-// Determine if a given WebKit point is contained in a path
-bool SkPathContainsPoint(const SkPath&, const FloatPoint&, SkPath::FillType);
-
 SkMatrix PLATFORM_EXPORT affineTransformToSkMatrix(const AffineTransform&);
 
 bool nearlyIntegral(float value);
 
-InterpolationQuality limitInterpolationQuality(const GraphicsContext*, InterpolationQuality resampling);
+InterpolationQuality limitInterpolationQuality(const GraphicsContext&, InterpolationQuality resampling);
 
 InterpolationQuality computeInterpolationQuality(
     float srcWidth,
@@ -116,6 +110,8 @@ InterpolationQuality computeInterpolationQuality(
 inline SkScalar skBlurRadiusToSigma(SkScalar radius)
 {
     SkASSERT(radius >= 0);
+    if (radius == 0)
+        return 0.0f;
     return 0.288675f * radius + 0.5f;
 }
 

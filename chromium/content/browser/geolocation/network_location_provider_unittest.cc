@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -41,7 +44,7 @@ class MessageLoopQuitListener {
                         const Geoposition& position) {
     EXPECT_EQ(client_message_loop_, base::MessageLoop::current());
     updated_provider_ = provider;
-    client_message_loop_->Quit();
+    client_message_loop_->QuitWhenIdle();
   }
 
   base::MessageLoop* client_message_loop_;

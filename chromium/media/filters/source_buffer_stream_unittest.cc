@@ -4,6 +4,7 @@
 
 #include "media/filters/source_buffer_stream.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -34,8 +36,8 @@ typedef StreamParser::BufferQueue BufferQueue;
 
 static const int kDefaultFramesPerSecond = 30;
 static const int kDefaultKeyframesPerSecond = 6;
-static const uint8 kDataA = 0x11;
-static const uint8 kDataB = 0x33;
+static const uint8_t kDataA = 0x11;
+static const uint8_t kDataB = 0x33;
 static const int kDataSize = 1;
 
 // Matchers for verifying common media log entry strings.
@@ -118,8 +120,9 @@ class SourceBufferStreamTest : public testing::Test {
                   base::TimeDelta(), true, &kDataA, kDataSize);
   }
 
-  void NewSegmentAppend(int starting_position, int number_of_buffers,
-                        const uint8* data) {
+  void NewSegmentAppend(int starting_position,
+                        int number_of_buffers,
+                        const uint8_t* data) {
     AppendBuffers(starting_position, number_of_buffers, true,
                   base::TimeDelta(), true, data, kDataSize);
   }
@@ -142,8 +145,9 @@ class SourceBufferStreamTest : public testing::Test {
                   base::TimeDelta(), true, &kDataA, kDataSize);
   }
 
-  void AppendBuffers(int starting_position, int number_of_buffers,
-                     const uint8* data) {
+  void AppendBuffers(int starting_position,
+                     int number_of_buffers,
+                     const uint8_t* data) {
     AppendBuffers(starting_position, number_of_buffers, false,
                   base::TimeDelta(), true, data, kDataSize);
   }
@@ -220,8 +224,8 @@ class SourceBufferStreamTest : public testing::Test {
     std::stringstream ss;
     ss << "{ ";
     for (size_t i = 0; i < r.size(); ++i) {
-      int64 start = (r.start(i) / frame_duration_);
-      int64 end = (r.end(i) / frame_duration_) - 1;
+      int64_t start = (r.start(i) / frame_duration_);
+      int64_t end = (r.end(i) / frame_duration_) - 1;
       ss << "[" << start << "," << end << ") ";
     }
     ss << "}";
@@ -234,8 +238,8 @@ class SourceBufferStreamTest : public testing::Test {
     std::stringstream ss;
     ss << "{ ";
     for (size_t i = 0; i < r.size(); ++i) {
-      int64 start = r.start(i).InMilliseconds();
-      int64 end = r.end(i).InMilliseconds();
+      int64_t start = r.start(i).InMilliseconds();
+      int64_t end = r.end(i).InMilliseconds();
       ss << "[" << start << "," << end << ") ";
     }
     ss << "}";
@@ -253,22 +257,26 @@ class SourceBufferStreamTest : public testing::Test {
                          NULL, 0);
   }
 
-  void CheckExpectedBuffers(
-      int starting_position, int ending_position, const uint8* data) {
+  void CheckExpectedBuffers(int starting_position,
+                            int ending_position,
+                            const uint8_t* data) {
     CheckExpectedBuffers(starting_position, ending_position, false, data,
                          kDataSize);
   }
 
-  void CheckExpectedBuffers(
-      int starting_position, int ending_position, const uint8* data,
-      bool expect_keyframe) {
+  void CheckExpectedBuffers(int starting_position,
+                            int ending_position,
+                            const uint8_t* data,
+                            bool expect_keyframe) {
     CheckExpectedBuffers(starting_position, ending_position, expect_keyframe,
                          data, kDataSize);
   }
 
-  void CheckExpectedBuffers(
-      int starting_position, int ending_position, bool expect_keyframe,
-      const uint8* expected_data, int expected_size) {
+  void CheckExpectedBuffers(int starting_position,
+                            int ending_position,
+                            bool expect_keyframe,
+                            const uint8_t* expected_data,
+                            int expected_size) {
     int current_position = starting_position;
     for (; current_position <= ending_position; current_position++) {
       scoped_refptr<StreamParserBuffer> buffer;
@@ -282,7 +290,7 @@ class SourceBufferStreamTest : public testing::Test {
         EXPECT_TRUE(buffer->is_key_frame());
 
       if (expected_data) {
-        const uint8* actual_data = buffer->data();
+        const uint8_t* actual_data = buffer->data();
         const int actual_size = buffer->data_size();
         EXPECT_EQ(expected_size, actual_size);
         for (int i = 0; i < std::min(actual_size, expected_size); i++) {
@@ -434,7 +442,7 @@ class SourceBufferStreamTest : public testing::Test {
                      bool begin_media_segment,
                      base::TimeDelta first_buffer_offset,
                      bool expect_success,
-                     const uint8* data,
+                     const uint8_t* data,
                      int size) {
     if (begin_media_segment)
       stream_->OnNewMediaSegment(DecodeTimestamp::FromPresentationTime(
@@ -1059,8 +1067,8 @@ TEST_F(SourceBufferStreamTest, Complete_Overlap_Selected_EdgeCase) {
 }
 
 TEST_F(SourceBufferStreamTest, Complete_Overlap_Selected_Multiple) {
-  static const uint8 kDataC = 0x55;
-  static const uint8 kDataD = 0x77;
+  static const uint8_t kDataC = 0x55;
+  static const uint8_t kDataD = 0x77;
 
   // Append 5 buffers at positions 5 through 9.
   NewSegmentAppend(5, 5, &kDataA);
@@ -3059,6 +3067,54 @@ TEST_F(SourceBufferStreamTest, GarbageCollection_Performance) {
     AppendBuffers(buffers_appended, kBuffersToAppend);
     buffers_appended += kBuffersToAppend;
   }
+}
+
+TEST_F(SourceBufferStreamTest, GarbageCollection_MediaTimeAfterLastAppendTime) {
+  // Set memory limit to 10 buffers.
+  SetMemoryLimit(10);
+
+  // Append 12 buffers. The duration of the last buffer is 30
+  NewSegmentAppend("0K 30 60 90 120K 150 180 210K 240 270 300K 330D30");
+  CheckExpectedRangesByTimestamp("{ [0,360) }");
+
+  // Do a garbage collection with the media time higher than the timestamp of
+  // the last appended buffer (330), but still within buffered ranges, taking
+  // into account the duration of the last frame (timestamp of the last frame is
+  // 330, duration is 30, so the latest valid buffered position is 330+30=360).
+  EXPECT_TRUE(stream_->GarbageCollectIfNeeded(
+      DecodeTimestamp::FromMilliseconds(360), 0));
+
+  // GC should collect one GOP from the front to bring us back under memory
+  // limit of 10 buffers.
+  CheckExpectedRangesByTimestamp("{ [120,360) }");
+}
+
+TEST_F(SourceBufferStreamTest,
+       GarbageCollection_MediaTimeOutsideOfStreamBufferedRange) {
+  // Set memory limit to 10 buffers.
+  SetMemoryLimit(10);
+
+  // Append 12 buffers.
+  NewSegmentAppend("0K 30 60 90 120K 150 180 210K 240 270 300K 330");
+  CheckExpectedRangesByTimestamp("{ [0,360) }");
+
+  // Seek in order to set the stream read position to 330 an ensure that the
+  // stream selects the buffered range.
+  SeekToTimestampMs(330);
+
+  // Do a garbage collection with the media time outside the buffered ranges
+  // (this might happen when there's both audio and video streams, audio stream
+  // buffered range is longer than the video stream buffered range, since
+  // media::Pipeline uses audio stream as a time source in that case, it might
+  // return a media_time that is slightly outside of video buffered range). In
+  // those cases the GC algorithm should clamp the media_time value to the
+  // buffered ranges to work correctly (see crbug.com/563292).
+  EXPECT_TRUE(stream_->GarbageCollectIfNeeded(
+      DecodeTimestamp::FromMilliseconds(361), 0));
+
+  // GC should collect one GOP from the front to bring us back under memory
+  // limit of 10 buffers.
+  CheckExpectedRangesByTimestamp("{ [120,360) }");
 }
 
 TEST_F(SourceBufferStreamTest, GetRemovalRange_BytesToFree) {

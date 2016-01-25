@@ -23,29 +23,27 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBRequest.h"
 
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
-#include "core/dom/DOMError.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/testing/NullExecutionContext.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBKey.h"
-#include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "modules/indexeddb/IDBValue.h"
+#include "modules/indexeddb/MockWebIDBDatabase.h"
 #include "platform/SharedBuffer.h"
-#include "public/platform/WebBlobInfo.h"
-#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/dtoa/utils.h"
-#include <gtest/gtest.h>
 #include <v8.h>
 
 namespace blink {
@@ -87,7 +85,7 @@ TEST_F(IDBRequestTest, EventsAfterStopping)
     executionContext()->stopActiveDOMObjects();
 
     // Ensure none of the following raise assertions in stopped state:
-    request->onError(DOMError::create(AbortError, "Description goes here."));
+    request->onError(DOMException::create(AbortError, "Description goes here."));
     request->onSuccess(Vector<String>());
     request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), IDBValue::create());
     request->onSuccess(IDBKey::createInvalid());
@@ -108,38 +106,12 @@ TEST_F(IDBRequestTest, AbortErrorAfterAbort)
 
     // Now simulate the back end having fired an abort error at the request to clear up any intermediaries.
     // Ensure an assertion is not raised.
-    request->onError(DOMError::create(AbortError, "Description goes here."));
+    request->onError(DOMException::create(AbortError, "Description goes here."));
 
     // Stop the request lest it be GCed and its destructor
     // finds the object in a pending state (and asserts.)
     executionContext()->stopActiveDOMObjects();
 }
-
-class MockWebIDBDatabase : public WebIDBDatabase {
-public:
-    static PassOwnPtr<MockWebIDBDatabase> create()
-    {
-        return adoptPtr(new MockWebIDBDatabase());
-    }
-    ~MockWebIDBDatabase() override
-    {
-        EXPECT_TRUE(m_closeCalled);
-    }
-
-    void close() override
-    {
-        m_closeCalled = true;
-    }
-    void abort(long long transactionId) override { }
-
-private:
-    MockWebIDBDatabase()
-        : m_closeCalled(false)
-    {
-    }
-
-    bool m_closeCalled;
-};
 
 TEST_F(IDBRequestTest, ConnectionsAfterStopping)
 {
@@ -151,6 +123,10 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
 
     {
         OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+        EXPECT_CALL(*backend, abort(transactionId))
+            .Times(1);
+        EXPECT_CALL(*backend, close())
+            .Times(1);
         IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 
@@ -160,6 +136,8 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
 
     {
         OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+        EXPECT_CALL(*backend, close())
+            .Times(1);
         IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 

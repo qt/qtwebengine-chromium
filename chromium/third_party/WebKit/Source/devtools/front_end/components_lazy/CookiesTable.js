@@ -67,7 +67,7 @@ WebInspector.CookiesTable = function(expandable, refreshCallback, selectedCallba
 
     this._nextSelectedCookie = /** @type {?WebInspector.Cookie} */ (null);
 
-    this._dataGrid.show(this.element);
+    this._dataGrid.asWidget().show(this.element);
     this._data = [];
 }
 

@@ -9,8 +9,8 @@
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_proxy.h"
-#include "fake_bluetooth_le_advertisement_service_provider.h"
-#include "fake_bluetooth_le_advertising_manager_client.h"
+#include "device/bluetooth/dbus/fake_bluetooth_le_advertisement_service_provider.h"
+#include "device/bluetooth/dbus/fake_bluetooth_le_advertising_manager_client.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace bluez {

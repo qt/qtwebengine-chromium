@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "gpu/config/gpu_info.h"
 
 namespace {
@@ -46,6 +48,11 @@ void EnumerateVideoEncodeAcceleratorSupportedProfile(
 
 namespace gpu {
 
+VideoDecodeAcceleratorCapabilities::VideoDecodeAcceleratorCapabilities()
+    : flags(0) {}
+
+VideoDecodeAcceleratorCapabilities::~VideoDecodeAcceleratorCapabilities() {}
+
 GPUInfo::GPUDevice::GPUDevice()
     : vendor_id(0),
       device_id(0),
@@ -85,7 +92,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     Version display_link_version;
     GPUDevice gpu;
     std::vector<GPUDevice> secondary_gpus;
-    uint64 adapter_luid;
+    uint64_t adapter_luid;
     std::string driver_vendor;
     std::string driver_version;
     std::string driver_date;
@@ -101,7 +108,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string gl_ws_vendor;
     std::string gl_ws_version;
     std::string gl_ws_extensions;
-    uint32 gl_reset_notification_strategy;
+    uint32_t gl_reset_notification_strategy;
     bool can_lose_context;
     bool software_rendering;
     bool direct_rendering;
@@ -114,8 +121,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     CollectInfoResult dx_diagnostics_info_state;
     DxDiagNode dx_diagnostics;
 #endif
-    VideoDecodeAcceleratorSupportedProfiles
-        video_decode_accelerator_supported_profiles;
+    VideoDecodeAcceleratorCapabilities video_decode_accelerator_capabilities;
     VideoEncodeAcceleratorSupportedProfiles
         video_encode_accelerator_supported_profiles;
     bool jpeg_decode_accelerator_supported;
@@ -175,7 +181,10 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddInt("DxDiagnosticsInfoState", dx_diagnostics_info_state);
 #endif
   // TODO(kbr): add dx_diagnostics on Windows.
-  for (const auto& profile : video_decode_accelerator_supported_profiles)
+  enumerator->AddInt("videoDecodeAcceleratorFlags",
+                     video_decode_accelerator_capabilities.flags);
+  for (const auto& profile :
+       video_decode_accelerator_capabilities.supported_profiles)
     EnumerateVideoDecodeAcceleratorSupportedProfile(profile, enumerator);
   for (const auto& profile : video_encode_accelerator_supported_profiles)
     EnumerateVideoEncodeAcceleratorSupportedProfile(profile, enumerator);

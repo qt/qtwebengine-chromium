@@ -6,6 +6,7 @@
 
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
@@ -84,7 +85,7 @@ void RtcDataChannelHandler::Observer::OnStateChange() {
 }
 
 void RtcDataChannelHandler::Observer::OnBufferedAmountChange(
-    uint64 previous_amount) {
+    uint64_t previous_amount) {
   // Optimization: Only post a task if the change is a decrease, because the web
   // interface does not perform any action when there is an increase.
   if (previous_amount > channel_->buffered_amount()) {
@@ -122,7 +123,7 @@ void RtcDataChannelHandler::Observer::OnMessageImpl(
     scoped_ptr<webrtc::DataBuffer> buffer) {
   DCHECK(main_thread_->BelongsToCurrentThread());
   if (handler_)
-    handler_->OnMessage(buffer.Pass());
+    handler_->OnMessage(std::move(buffer));
 }
 
 RtcDataChannelHandler::RtcDataChannelHandler(

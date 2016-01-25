@@ -20,7 +20,6 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include "config.h"
 #include "core/frame/Navigator.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -70,7 +69,7 @@ String Navigator::userAgent() const
     if (!m_frame || !m_frame->page())
         return String();
 
-    return m_frame->loader().userAgent(m_frame->document()->url());
+    return m_frame->loader().userAgent();
 }
 
 bool Navigator::cookieEnabled() const
@@ -83,11 +82,6 @@ bool Navigator::cookieEnabled() const
         return false;
 
     return cookiesEnabled(m_frame->document());
-}
-
-void Navigator::getStorageUpdates()
-{
-    // FIXME: Remove this method or rename to yieldForStorageUpdates.
 }
 
 Vector<String> Navigator::languages()

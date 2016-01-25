@@ -59,6 +59,8 @@ public:
     // Returns the element containing this plugin.
     virtual WebElement element() = 0;
 
+    virtual void dispatchProgressEvent(const WebString& type, bool lengthComputable, unsigned long long loaded, unsigned long long total, const WebString& url) = 0;
+
     virtual void invalidate() = 0;
     virtual void invalidateRect(const WebRect&) = 0;
     virtual void scrollRect(const WebRect&) = 0;
@@ -104,7 +106,7 @@ public:
     // called if the load failed.  The given notifyData is passed along to
     // the callback.
     virtual void loadFrameRequest(
-        const WebURLRequest&, const WebString& target, bool notifyNeeded, void* notifyData) = 0;
+        const WebURLRequest&, const WebString& target) = 0;
 
     // Determines whether the given rectangle in this plugin is above all other
     // content. The rectangle is in the plugin's coordinate system.
@@ -125,7 +127,13 @@ public:
     // Converts plugin's local coordinate to root frame's coordinates.
     virtual WebPoint localToRootFramePoint(const WebPoint&) = 0;
 
+    // Returns the plugin this container owns. This plugin will be
+    // automatically destroyed when the container is destroyed.
     virtual WebPlugin* plugin() = 0;
+
+    // Sets the plugin owned by this container. If the container already owned
+    // a different plugin before this call, that old plugin is now unowned.
+    // The caller is then responsible for destroying the old plugin.
     virtual void setPlugin(WebPlugin*) = 0;
 
     virtual float deviceScaleFactor() = 0;

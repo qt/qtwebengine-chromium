@@ -4,6 +4,8 @@
 
 #include "third_party/mojo/src/mojo/edk/system/message_pipe.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "third_party/mojo/src/mojo/edk/system/channel.h"
 #include "third_party/mojo/src/mojo/edk/system/channel_endpoint.h"
@@ -184,7 +186,7 @@ HandleSignalsState MessagePipe::GetHandleSignalsState(unsigned port) const {
 MojoResult MessagePipe::AddAwakable(unsigned port,
                                     Awakable* awakable,
                                     MojoHandleSignals signals,
-                                    uint32_t context,
+                                    uintptr_t context,
                                     HandleSignalsState* signals_state) {
   DCHECK(port == 0 || port == 1);
 
@@ -332,7 +334,7 @@ MojoResult MessagePipe::EnqueueMessageNoLock(
   }
 
   // The endpoint's |EnqueueMessage()| may not report failure.
-  endpoints_[port]->EnqueueMessage(message.Pass());
+  endpoints_[port]->EnqueueMessage(std::move(message));
   return MOJO_RESULT_OK;
 }
 
@@ -376,7 +378,7 @@ MojoResult MessagePipe::AttachTransportsNoLock(
       dispatchers->push_back(nullptr);
     }
   }
-  message->SetDispatchers(dispatchers.Pass());
+  message->SetDispatchers(std::move(dispatchers));
   return MOJO_RESULT_OK;
 }
 

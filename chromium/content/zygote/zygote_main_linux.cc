@@ -9,14 +9,15 @@
 #include <openssl/rand.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-
+#include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -373,7 +374,7 @@ static bool EnterSuidSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
     LOG(WARNING) <<
         "You are using a wrong version of the setuid binary!\n"
         "Please read "
-        "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment."
+        "https://chromium.googlesource.com/chromium/src/+/master/docs/linux_suid_sandbox_development.md."
         "\n\n";
   }
 
@@ -587,7 +588,7 @@ bool ZygoteMain(const MainFunctionParams& params,
 
 #if defined(SANITIZER_COVERAGE)
   pid_t sancov_helper_pid = ForkSanitizerCoverageHelper(
-      sancov_socket_fds[0], sancov_socket_fds[1], sancov_file_fd.Pass(),
+      sancov_socket_fds[0], sancov_socket_fds[1], std::move(sancov_file_fd),
       sandbox_fds_to_close_post_fork);
   // It's important that the zygote reaps the helper before dying. Otherwise,
   // the destruction of the PID namespace could kill the helper before it
@@ -608,7 +609,7 @@ bool ZygoteMain(const MainFunctionParams& params,
   const bool namespace_sandbox_engaged = sandbox_flags & kSandboxLinuxUserNS;
   CHECK_EQ(using_namespace_sandbox, namespace_sandbox_engaged);
 
-  Zygote zygote(sandbox_flags, fork_delegates.Pass(), extra_children,
+  Zygote zygote(sandbox_flags, std::move(fork_delegates), extra_children,
                 extra_fds);
   // This function call can return multiple times, once per fork().
   return zygote.ProcessRequests();

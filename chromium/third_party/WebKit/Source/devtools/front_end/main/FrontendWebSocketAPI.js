@@ -16,15 +16,15 @@ WebInspector.FrontendWebSocketAPI = function()
 WebInspector.FrontendWebSocketAPI.prototype = {
     _onAttach: function()
     {
-        WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, this._workingCopyCommitted, this);
-        WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeWorkingCopyChanged, this._workingCopyChanged, this);
+        WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.WorkingCopyCommittedByUser, this._workingCopyCommitted, this);
+        WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.WorkingCopyChanged, this._workingCopyChanged, this);
         WebInspector.Linkifier.setLinkHandler(this);
     },
 
     _onDetach: function()
     {
-        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, this._workingCopyCommitted, this);
-        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.UISourceCodeWorkingCopyChanged, this._workingCopyChanged, this);
+        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.WorkingCopyCommittedByUser, this._workingCopyCommitted, this);
+        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.WorkingCopyChanged, this._workingCopyChanged, this);
         WebInspector.Linkifier.setLinkHandler(null);
     },
 
@@ -38,7 +38,7 @@ WebInspector.FrontendWebSocketAPI.prototype = {
     {
         var uiSourceCode = WebInspector.networkMapping.uiSourceCodeForURLForAnyTarget(url);
         if (uiSourceCode)
-            url = uiSourceCode.originURL();
+            url = uiSourceCode.url();
         if (url.startsWith("file://")) {
             var file = url.substring(7);
             this._issueFrontendAPINotification("Frontend.revealLocation", { file: file, line: lineNumber });
@@ -69,18 +69,18 @@ WebInspector.FrontendWebSocketAPI.prototype = {
             var file = params["file"];
             var buffer = params["buffer"];
             var saved = params["saved"];
-            var uiSourceCode = WebInspector.workspace.filesystemUISourceCode("file://" + file);
+            var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL("file://" + file);
             if (uiSourceCode) {
                 if (buffer !== uiSourceCode.workingCopy())
                     uiSourceCode.setWorkingCopy(buffer);
                 if (saved)
-                    uiSourceCode.checkContentUpdated();
+                    uiSourceCode.checkContentUpdated(true);
             }
-            this._issueResponse(id);
             break;
         default:
             WebInspector.console.log("Unhandled API message: " + method);
         }
+        this._issueResponse(id);
         this._dispatchingFrontendMessage = false;
     },
 
@@ -93,7 +93,7 @@ WebInspector.FrontendWebSocketAPI.prototype = {
         if (this._dispatchingFrontendMessage)
             return;
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data["uiSourceCode"]);
-        var url = uiSourceCode.originURL();
+        var url = uiSourceCode.url();
         if (url.startsWith("file://"))
             url = url.substring(7);
         var params = { file: url, buffer: uiSourceCode.workingCopy() };

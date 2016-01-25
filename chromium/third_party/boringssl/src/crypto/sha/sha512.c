@@ -60,49 +60,39 @@
 
 #include <openssl/mem.h>
 
-#include "../internal.h"
-
 
 /* IMPLEMENTATION NOTES.
  *
- * As you might have noticed 32-bit hash algorithms:
- *
- * - permit SHA_LONG to be wider than 32-bit (case on CRAY);
- * - optimized versions implement two transform functions: one operating
- *   on [aligned] data in host byte order and one - on data in input
- *   stream byte order;
- * - share common byte-order neutral collector and padding function
- *   implementations, ../md32_common.h;
- *
- * Neither of the above applies to this SHA-512 implementations. Reasons
+ * The 32-bit hash algorithms share a common byte-order neutral collector and
+ * padding function implementations that operate on unaligned data,
+ * ../md32_common.h. This SHA-512 implementation does not. Reasons
  * [in reverse order] are:
  *
- * - it's the only 64-bit hash algorithm for the moment of this writing,
+ * - It's the only 64-bit hash algorithm for the moment of this writing,
  *   there is no need for common collector/padding implementation [yet];
- * - by supporting only one transform function [which operates on
- *   *aligned* data in input stream byte order, big-endian in this case]
- *   we minimize burden of maintenance in two ways: a) collector/padding
- *   function is simpler; b) only one transform function to stare at;
- * - SHA_LONG64 is required to be exactly 64-bit in order to be able to
- *   apply a number of optimizations to mitigate potential performance
- *   penalties caused by previous design decision; */
+ * - By supporting only a transform function that operates on *aligned* data
+ *   the collector/padding function is simpler and easier to optimize. */
 
 #if !defined(OPENSSL_NO_ASM) &&                         \
     (defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || \
      defined(OPENSSL_ARM) || defined(OPENSSL_AARCH64))
-#define SHA512_BLOCK_CAN_MANAGE_UNALIGNED_DATA
 #define SHA512_ASM
 #endif
 
+#if defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || \
+    defined(__ARM_FEATURE_UNALIGNED)
+#define SHA512_BLOCK_CAN_MANAGE_UNALIGNED_DATA
+#endif
+
 int SHA384_Init(SHA512_CTX *sha) {
-  sha->h[0] = OPENSSL_U64(0xcbbb9d5dc1059ed8);
-  sha->h[1] = OPENSSL_U64(0x629a292a367cd507);
-  sha->h[2] = OPENSSL_U64(0x9159015a3070dd17);
-  sha->h[3] = OPENSSL_U64(0x152fecd8f70e5939);
-  sha->h[4] = OPENSSL_U64(0x67332667ffc00b31);
-  sha->h[5] = OPENSSL_U64(0x8eb44a8768581511);
-  sha->h[6] = OPENSSL_U64(0xdb0c2e0d64f98fa7);
-  sha->h[7] = OPENSSL_U64(0x47b5481dbefa4fa4);
+  sha->h[0] = UINT64_C(0xcbbb9d5dc1059ed8);
+  sha->h[1] = UINT64_C(0x629a292a367cd507);
+  sha->h[2] = UINT64_C(0x9159015a3070dd17);
+  sha->h[3] = UINT64_C(0x152fecd8f70e5939);
+  sha->h[4] = UINT64_C(0x67332667ffc00b31);
+  sha->h[5] = UINT64_C(0x8eb44a8768581511);
+  sha->h[6] = UINT64_C(0xdb0c2e0d64f98fa7);
+  sha->h[7] = UINT64_C(0x47b5481dbefa4fa4);
 
   sha->Nl = 0;
   sha->Nh = 0;
@@ -113,14 +103,14 @@ int SHA384_Init(SHA512_CTX *sha) {
 
 
 int SHA512_Init(SHA512_CTX *sha) {
-  sha->h[0] = OPENSSL_U64(0x6a09e667f3bcc908);
-  sha->h[1] = OPENSSL_U64(0xbb67ae8584caa73b);
-  sha->h[2] = OPENSSL_U64(0x3c6ef372fe94f82b);
-  sha->h[3] = OPENSSL_U64(0xa54ff53a5f1d36f1);
-  sha->h[4] = OPENSSL_U64(0x510e527fade682d1);
-  sha->h[5] = OPENSSL_U64(0x9b05688c2b3e6c1f);
-  sha->h[6] = OPENSSL_U64(0x1f83d9abfb41bd6b);
-  sha->h[7] = OPENSSL_U64(0x5be0cd19137e2179);
+  sha->h[0] = UINT64_C(0x6a09e667f3bcc908);
+  sha->h[1] = UINT64_C(0xbb67ae8584caa73b);
+  sha->h[2] = UINT64_C(0x3c6ef372fe94f82b);
+  sha->h[3] = UINT64_C(0xa54ff53a5f1d36f1);
+  sha->h[4] = UINT64_C(0x510e527fade682d1);
+  sha->h[5] = UINT64_C(0x9b05688c2b3e6c1f);
+  sha->h[6] = UINT64_C(0x1f83d9abfb41bd6b);
+  sha->h[7] = UINT64_C(0x5be0cd19137e2179);
 
   sha->Nl = 0;
   sha->Nh = 0;
@@ -163,7 +153,7 @@ uint8_t *SHA512(const uint8_t *data, size_t len, uint8_t *out) {
 #if !defined(SHA512_ASM)
 static
 #endif
-void sha512_block_data_order(SHA512_CTX *ctx, const void *in, size_t num);
+void sha512_block_data_order(uint64_t *state, const uint64_t *W, size_t num);
 
 
 int SHA384_Final(uint8_t *md, SHA512_CTX *sha) {
@@ -181,7 +171,7 @@ void SHA512_Transform(SHA512_CTX *c, const uint8_t *data) {
     data = c->u.p;
   }
 #endif
-  sha512_block_data_order(c, data, 1);
+  sha512_block_data_order(c->h, (uint64_t *)data, 1);
 }
 
 int SHA512_Update(SHA512_CTX *c, const void *in_data, size_t len) {
@@ -193,7 +183,7 @@ int SHA512_Update(SHA512_CTX *c, const void *in_data, size_t len) {
     return 1;
   }
 
-  l = (c->Nl + (((uint64_t)len) << 3)) & OPENSSL_U64(0xffffffffffffffff);
+  l = (c->Nl + (((uint64_t)len) << 3)) & UINT64_C(0xffffffffffffffff);
   if (l < c->Nl) {
     c->Nh++;
   }
@@ -213,7 +203,7 @@ int SHA512_Update(SHA512_CTX *c, const void *in_data, size_t len) {
       memcpy(p + c->num, data, n), c->num = 0;
       len -= n;
       data += n;
-      sha512_block_data_order(c, p, 1);
+      sha512_block_data_order(c->h, (uint64_t *)p, 1);
     }
   }
 
@@ -222,14 +212,14 @@ int SHA512_Update(SHA512_CTX *c, const void *in_data, size_t len) {
     if ((size_t)data % sizeof(c->u.d[0]) != 0) {
       while (len >= sizeof(c->u)) {
         memcpy(p, data, sizeof(c->u));
-        sha512_block_data_order(c, p, 1);
+        sha512_block_data_order(c->h, (uint64_t *)p, 1);
         len -= sizeof(c->u);
         data += sizeof(c->u);
       }
     } else
 #endif
     {
-      sha512_block_data_order(c, data, len / sizeof(c->u));
+      sha512_block_data_order(c->h, (uint64_t *)data, len / sizeof(c->u));
       data += len;
       len %= sizeof(c->u);
       data -= len;
@@ -253,7 +243,7 @@ int SHA512_Final(uint8_t *md, SHA512_CTX *sha) {
   if (n > (sizeof(sha->u) - 16)) {
     memset(p + n, 0, sizeof(sha->u) - n);
     n = 0;
-    sha512_block_data_order(sha, p, 1);
+    sha512_block_data_order(sha->h, (uint64_t *)p, 1);
   }
 
   memset(p + n, 0, sizeof(sha->u) - 16 - n);
@@ -274,7 +264,7 @@ int SHA512_Final(uint8_t *md, SHA512_CTX *sha) {
   p[sizeof(sha->u) - 15] = (uint8_t)(sha->Nh >> 48);
   p[sizeof(sha->u) - 16] = (uint8_t)(sha->Nh >> 56);
 
-  sha512_block_data_order(sha, p, 1);
+  sha512_block_data_order(sha->h, (uint64_t *)p, 1);
 
   if (md == NULL) {
     /* TODO(davidben): This NULL check is absent in other low-level hash 'final'
@@ -324,77 +314,91 @@ int SHA512_Final(uint8_t *md, SHA512_CTX *sha) {
 
 #ifndef SHA512_ASM
 static const uint64_t K512[80] = {
-    0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f,
-    0xe9b5dba58189dbbc, 0x3956c25bf348b538, 0x59f111f1b605d019,
-    0x923f82a4af194f9b, 0xab1c5ed5da6d8118, 0xd807aa98a3030242,
-    0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
-    0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235,
-    0xc19bf174cf692694, 0xe49b69c19ef14ad2, 0xefbe4786384f25e3,
-    0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65, 0x2de92c6f592b0275,
-    0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
-    0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f,
-    0xbf597fc7beef0ee4, 0xc6e00bf33da88fc2, 0xd5a79147930aa725,
-    0x06ca6351e003826f, 0x142929670a0e6e70, 0x27b70a8546d22ffc,
-    0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
-    0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6,
-    0x92722c851482353b, 0xa2bfe8a14cf10364, 0xa81a664bbc423001,
-    0xc24b8b70d0f89791, 0xc76c51a30654be30, 0xd192e819d6ef5218,
-    0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
-    0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99,
-    0x34b0bcb5e19b48a8, 0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb,
-    0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3, 0x748f82ee5defb2fc,
-    0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
-    0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915,
-    0xc67178f2e372532b, 0xca273eceea26619c, 0xd186b8c721c0c207,
-    0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178, 0x06f067aa72176fba,
-    0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
-    0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc,
-    0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a,
-    0x5fcb6fab3ad6faec, 0x6c44198c4a475817};
+    UINT64_C(0x428a2f98d728ae22), UINT64_C(0x7137449123ef65cd),
+    UINT64_C(0xb5c0fbcfec4d3b2f), UINT64_C(0xe9b5dba58189dbbc),
+    UINT64_C(0x3956c25bf348b538), UINT64_C(0x59f111f1b605d019),
+    UINT64_C(0x923f82a4af194f9b), UINT64_C(0xab1c5ed5da6d8118),
+    UINT64_C(0xd807aa98a3030242), UINT64_C(0x12835b0145706fbe),
+    UINT64_C(0x243185be4ee4b28c), UINT64_C(0x550c7dc3d5ffb4e2),
+    UINT64_C(0x72be5d74f27b896f), UINT64_C(0x80deb1fe3b1696b1),
+    UINT64_C(0x9bdc06a725c71235), UINT64_C(0xc19bf174cf692694),
+    UINT64_C(0xe49b69c19ef14ad2), UINT64_C(0xefbe4786384f25e3),
+    UINT64_C(0x0fc19dc68b8cd5b5), UINT64_C(0x240ca1cc77ac9c65),
+    UINT64_C(0x2de92c6f592b0275), UINT64_C(0x4a7484aa6ea6e483),
+    UINT64_C(0x5cb0a9dcbd41fbd4), UINT64_C(0x76f988da831153b5),
+    UINT64_C(0x983e5152ee66dfab), UINT64_C(0xa831c66d2db43210),
+    UINT64_C(0xb00327c898fb213f), UINT64_C(0xbf597fc7beef0ee4),
+    UINT64_C(0xc6e00bf33da88fc2), UINT64_C(0xd5a79147930aa725),
+    UINT64_C(0x06ca6351e003826f), UINT64_C(0x142929670a0e6e70),
+    UINT64_C(0x27b70a8546d22ffc), UINT64_C(0x2e1b21385c26c926),
+    UINT64_C(0x4d2c6dfc5ac42aed), UINT64_C(0x53380d139d95b3df),
+    UINT64_C(0x650a73548baf63de), UINT64_C(0x766a0abb3c77b2a8),
+    UINT64_C(0x81c2c92e47edaee6), UINT64_C(0x92722c851482353b),
+    UINT64_C(0xa2bfe8a14cf10364), UINT64_C(0xa81a664bbc423001),
+    UINT64_C(0xc24b8b70d0f89791), UINT64_C(0xc76c51a30654be30),
+    UINT64_C(0xd192e819d6ef5218), UINT64_C(0xd69906245565a910),
+    UINT64_C(0xf40e35855771202a), UINT64_C(0x106aa07032bbd1b8),
+    UINT64_C(0x19a4c116b8d2d0c8), UINT64_C(0x1e376c085141ab53),
+    UINT64_C(0x2748774cdf8eeb99), UINT64_C(0x34b0bcb5e19b48a8),
+    UINT64_C(0x391c0cb3c5c95a63), UINT64_C(0x4ed8aa4ae3418acb),
+    UINT64_C(0x5b9cca4f7763e373), UINT64_C(0x682e6ff3d6b2b8a3),
+    UINT64_C(0x748f82ee5defb2fc), UINT64_C(0x78a5636f43172f60),
+    UINT64_C(0x84c87814a1f0ab72), UINT64_C(0x8cc702081a6439ec),
+    UINT64_C(0x90befffa23631e28), UINT64_C(0xa4506cebde82bde9),
+    UINT64_C(0xbef9a3f7b2c67915), UINT64_C(0xc67178f2e372532b),
+    UINT64_C(0xca273eceea26619c), UINT64_C(0xd186b8c721c0c207),
+    UINT64_C(0xeada7dd6cde0eb1e), UINT64_C(0xf57d4f7fee6ed178),
+    UINT64_C(0x06f067aa72176fba), UINT64_C(0x0a637dc5a2c898a6),
+    UINT64_C(0x113f9804bef90dae), UINT64_C(0x1b710b35131c471b),
+    UINT64_C(0x28db77f523047d84), UINT64_C(0x32caab7b40c72493),
+    UINT64_C(0x3c9ebe0a15c9bebc), UINT64_C(0x431d67c49c100d4c),
+    UINT64_C(0x4cc5d4becb3e42b6), UINT64_C(0x597f299cfc657e2a),
+    UINT64_C(0x5fcb6fab3ad6faec), UINT64_C(0x6c44198c4a475817),
+};
 
 #if defined(__GNUC__) && __GNUC__ >= 2 && !defined(OPENSSL_NO_ASM)
 #if defined(__x86_64) || defined(__x86_64__)
-#define ROTR(a, n)                                         \
-  ({                                                       \
-    uint64_t ret;                                          \
-    asm("rorq %1,%0" : "=r"(ret) : "J"(n), "0"(a) : "cc"); \
-    ret;                                                   \
+#define ROTR(a, n)                                              \
+  ({                                                            \
+    uint64_t ret;                                               \
+    __asm__("rorq %1, %0" : "=r"(ret) : "J"(n), "0"(a) : "cc"); \
+    ret;                                                        \
   })
-#define PULL64(x)                               \
-  ({                                            \
-    uint64_t ret = *((const uint64_t *)(&(x))); \
-    asm("bswapq	%0" : "=r"(ret) : "0"(ret));    \
-    ret;                                        \
+#define PULL64(x)                                \
+  ({                                             \
+    uint64_t ret = *((const uint64_t *)(&(x)));  \
+    __asm__("bswapq %0" : "=r"(ret) : "0"(ret)); \
+    ret;                                         \
   })
 #elif(defined(__i386) || defined(__i386__))
-#define PULL64(x)                                                         \
-  ({                                                                      \
-    const unsigned int *p = (const unsigned int *)(&(x));                 \
-    unsigned int hi = p[0], lo = p[1];                                    \
-    asm("bswapl %0; bswapl %1;" : "=r"(lo), "=r"(hi) : "0"(lo), "1"(hi)); \
-    ((uint64_t)hi) << 32 | lo;                                            \
+#define PULL64(x)                                                             \
+  ({                                                                          \
+    const unsigned int *p = (const unsigned int *)(&(x));                     \
+    unsigned int hi = p[0], lo = p[1];                                        \
+    __asm__("bswapl %0; bswapl %1;" : "=r"(lo), "=r"(hi) : "0"(lo), "1"(hi)); \
+    ((uint64_t)hi) << 32 | lo;                                                \
   })
 #elif(defined(_ARCH_PPC) && defined(__64BIT__)) || defined(_ARCH_PPC64)
-#define ROTR(a, n)                                       \
-  ({                                                     \
-    uint64_t ret;                                        \
-    asm("rotrdi %0,%1,%2" : "=r"(ret) : "r"(a), "K"(n)); \
-    ret;                                                 \
+#define ROTR(a, n)                                             \
+  ({                                                           \
+    uint64_t ret;                                              \
+    __asm__("rotrdi %0, %1, %2" : "=r"(ret) : "r"(a), "K"(n)); \
+    ret;                                                       \
   })
 #elif defined(__aarch64__)
-#define ROTR(a, n)                                    \
-  ({                                                  \
-    uint64_t ret;                                     \
-    asm("ror %0,%1,%2" : "=r"(ret) : "r"(a), "I"(n)); \
-    ret;                                              \
+#define ROTR(a, n)                                          \
+  ({                                                        \
+    uint64_t ret;                                           \
+    __asm__("ror %0, %1, %2" : "=r"(ret) : "r"(a), "I"(n)); \
+    ret;                                                    \
   })
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define PULL64(x)                                                       \
-  ({                                                                    \
-    uint64_t ret;                                                       \
-    asm("rev	%0,%1" : "=r"(ret) : "r"(*((const uint64_t *)(&(x))))); \
-    ret;                                                                \
+#define PULL64(x)                                                         \
+  ({                                                                      \
+    uint64_t ret;                                                         \
+    __asm__("rev %0, %1" : "=r"(ret) : "r"(*((const uint64_t *)(&(x))))); \
+    ret;                                                                  \
   })
 #endif
 #endif
@@ -443,23 +447,22 @@ static uint64_t __fastcall __pull64be(const void *x) {
  * This code should give better results on 32-bit CPU with less than
  * ~24 registers, both size and performance wise...
  */
-static void sha512_block_data_order(SHA512_CTX *ctx, const void *in,
+static void sha512_block_data_order(uint64_t *state, const uint64_t *W,
                                     size_t num) {
-  const uint64_t *W = in;
   uint64_t A, E, T;
   uint64_t X[9 + 80], *F;
   int i;
 
   while (num--) {
     F = X + 80;
-    A = ctx->h[0];
-    F[1] = ctx->h[1];
-    F[2] = ctx->h[2];
-    F[3] = ctx->h[3];
-    E = ctx->h[4];
-    F[5] = ctx->h[5];
-    F[6] = ctx->h[6];
-    F[7] = ctx->h[7];
+    A = state[0];
+    F[1] = state[1];
+    F[2] = state[2];
+    F[3] = state[3];
+    E = state[4];
+    F[5] = state[5];
+    F[6] = state[6];
+    F[7] = state[7];
 
     for (i = 0; i < 16; i++, F--) {
       T = PULL64(W[i]);
@@ -484,14 +487,14 @@ static void sha512_block_data_order(SHA512_CTX *ctx, const void *in,
       A = T + Sigma0(A) + Maj(A, F[1], F[2]);
     }
 
-    ctx->h[0] += A;
-    ctx->h[1] += F[1];
-    ctx->h[2] += F[2];
-    ctx->h[3] += F[3];
-    ctx->h[4] += E;
-    ctx->h[5] += F[5];
-    ctx->h[6] += F[6];
-    ctx->h[7] += F[7];
+    state[0] += A;
+    state[1] += F[1];
+    state[2] += F[2];
+    state[3] += F[3];
+    state[4] += E;
+    state[5] += F[5];
+    state[6] += F[6];
+    state[7] += F[7];
 
     W += 16;
   }
@@ -517,23 +520,22 @@ static void sha512_block_data_order(SHA512_CTX *ctx, const void *in,
     ROUND_00_15(i + j, a, b, c, d, e, f, g, h);        \
   } while (0)
 
-static void sha512_block_data_order(SHA512_CTX *ctx, const void *in,
+static void sha512_block_data_order(uint64_t *state, const uint64_t *W,
                                     size_t num) {
-  const uint64_t *W = in;
   uint64_t a, b, c, d, e, f, g, h, s0, s1, T1;
   uint64_t X[16];
   int i;
 
   while (num--) {
 
-    a = ctx->h[0];
-    b = ctx->h[1];
-    c = ctx->h[2];
-    d = ctx->h[3];
-    e = ctx->h[4];
-    f = ctx->h[5];
-    g = ctx->h[6];
-    h = ctx->h[7];
+    a = state[0];
+    b = state[1];
+    c = state[2];
+    d = state[3];
+    e = state[4];
+    f = state[5];
+    g = state[6];
+    h = state[7];
 
     T1 = X[0] = PULL64(W[0]);
     ROUND_00_15(0, a, b, c, d, e, f, g, h);
@@ -587,14 +589,14 @@ static void sha512_block_data_order(SHA512_CTX *ctx, const void *in,
       ROUND_16_80(i, 15, b, c, d, e, f, g, h, a, X);
     }
 
-    ctx->h[0] += a;
-    ctx->h[1] += b;
-    ctx->h[2] += c;
-    ctx->h[3] += d;
-    ctx->h[4] += e;
-    ctx->h[5] += f;
-    ctx->h[6] += g;
-    ctx->h[7] += h;
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+    state[5] += f;
+    state[6] += g;
+    state[7] += h;
 
     W += 16;
   }

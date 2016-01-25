@@ -5,6 +5,7 @@
 #ifndef UI_TOUCH_SELECTION_TOUCH_SELECTION_CONTROLLER_H_
 #define UI_TOUCH_SELECTION_TOUCH_SELECTION_CONTROLLER_H_
 
+#include "base/macros.h"
 #include "base/time/time.h"
 #include "ui/base/touch/selection_bound.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -56,12 +57,18 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
     // Defaults to 8 DIPs.
     float tap_slop;
 
+    // Controls whether adaptive orientation for selection handles is enabled.
+    // Defaults to false.
+    bool enable_adaptive_handle_orientation;
+
     // Controls whether drag selection after a longpress is enabled.
     // Defaults to false.
     bool enable_longpress_drag_selection;
 
     // Controls whether an insertion handle is shown on a tap for an empty
     // editable text. Defauls to false.
+    // TODO(mohsen): This flag used to be set to |true| on Aura. That's not the
+    // case anymore and it is always |false|. Consider removing it.
     bool show_on_tap_for_empty_editable;
   };
 
@@ -74,6 +81,10 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
   // by an appropriate call to allow automatic showing.
   void OnSelectionBoundsChanged(const SelectionBound& start,
                                 const SelectionBound& end);
+
+  // To be called when the viewport rect has been changed. This is used for
+  // setting the state of the handles.
+  void OnViewportChanged(const gfx::RectF viewport_rect);
 
   // Allows touch-dragging of the handle.
   // Returns true iff the event was consumed, in which case the caller should
@@ -90,6 +101,10 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
   // showing the selection or insertion handles from subsequent bounds changes.
   bool WillHandleLongPressEvent(base::TimeTicks event_time,
                                 const gfx::PointF& location);
+
+  // To be called before forwarding a gesture scroll begin event to prevent
+  // long-press drag.
+  void OnScrollBeginEvent();
 
   // Allow showing the selection handles from the most recent selection bounds
   // update (if valid), or a future valid bounds update.
@@ -148,6 +163,7 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
   void SetNeedsAnimate() override;
   scoped_ptr<TouchHandleDrawable> CreateDrawable() override;
   base::TimeDelta GetMaxTapDuration() const override;
+  bool IsAdaptiveHandleOrientationEnabled() const override;
 
   // LongPressDragSelectorClient implementation.
   void OnLongPressDragActiveStateChanged() override;
@@ -168,6 +184,7 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
   bool ActivateSelectionIfNecessary();
   void DeactivateSelection();
   void ForceNextUpdateIfInactive();
+  void UpdateHandleLayoutIfNecessary();
 
   bool WillHandleTouchEventForLongPressDrag(const MotionEvent& event);
   void SetTemporarilyHiddenForLongPressDrag(bool hidden);
@@ -217,6 +234,8 @@ class UI_TOUCH_SELECTION_EXPORT TouchSelectionController
 
   // Longpress drag allows direct manipulation of longpress-initiated selection.
   LongPressDragSelector longpress_drag_selector_;
+
+  gfx::RectF viewport_rect_;
 
   base::TimeTicks selection_start_time_;
   // Whether a selection handle was dragged during the current 'selection

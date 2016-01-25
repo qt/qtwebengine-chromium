@@ -20,6 +20,7 @@
 #ifndef SVGRect_h
 #define SVGRect_h
 
+#include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyHelper.h"
 #include "platform/geometry/FloatRect.h"
 #include "wtf/Allocator.h"
@@ -64,7 +65,7 @@ public:
     void setHeight(float f) { m_value.setHeight(f); }
 
     String valueAsString() const override;
-    void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
 
     void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
     void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
@@ -80,18 +81,13 @@ private:
     SVGRect(const FloatRect&);
 
     template<typename CharType>
-    void parse(const CharType*& ptr, const CharType* end, ExceptionState&);
+    bool parse(const CharType*& ptr, const CharType* end);
 
     bool m_isValid;
     FloatRect m_value;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGRect> toSVGRect(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGRect::classType());
-    return static_pointer_cast<SVGRect>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGRect);
 
 } // namespace blink
 

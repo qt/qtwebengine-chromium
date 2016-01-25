@@ -25,9 +25,7 @@ enum NativeScrollBehavior { "disable-native-scroll", "perform-before-native-scro
 
 // https://dom.spec.whatwg.org/#interface-element
 
-[
-    TypeChecking=Interface,
-] interface Element : Node {
+interface Element : Node {
     readonly attribute DOMString? namespaceURI;
     readonly attribute DOMString? prefix;
     readonly attribute DOMString localName;
@@ -70,9 +68,10 @@ enum NativeScrollBehavior { "disable-native-scroll", "perform-before-native-scro
     // Shadow DOM
     // http://w3c.github.io/webcomponents/spec/shadow/#extensions-to-element-interface
     [RaisesException, CallWith=ScriptState, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
-    [RuntimeEnabled=CreateShadowRootWithParameter, RaisesException, CallWith=ScriptState, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot(ShadowRootInit shadowRootInitDict);
+    [RuntimeEnabled=ShadowDOMV1, RaisesException, CallWith=ScriptState, MeasureAs=ElementAttachShadow] ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
     NodeList getDestinationInsertionPoints();
     [PerWorldBindings, ImplementedAs=openShadowRoot] readonly attribute ShadowRoot? shadowRoot;
+    [RuntimeEnabled=ShadowDOMV1, Reflect] attribute DOMString slot;
 
     // Pointer Lock
     // https://dvcs.w3.org/hg/pointerlock/raw-file/default/index.html#extensions-to-the-element-interface
@@ -125,10 +124,6 @@ enum NativeScrollBehavior { "disable-native-scroll", "perform-before-native-scro
     attribute EventHandler onpaste;
     attribute EventHandler onsearch;
     attribute EventHandler onselectstart;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchcancel;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchend;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchmove;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchstart;
     attribute EventHandler onwheel;
 };
 

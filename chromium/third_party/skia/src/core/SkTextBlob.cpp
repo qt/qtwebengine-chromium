@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "SkTextBlob.h"
+#include "SkTextBlobRunIterator.h"
 
 #include "SkReadBuffer.h"
 #include "SkTypeface.h"
@@ -21,6 +21,7 @@ public:
         , fScaleX(paint.getTextScaleX())
         , fTypeface(SkSafeRef(paint.getTypeface()))
         , fSkewX(paint.getTextSkewX())
+        , fAlign(paint.getTextAlign())
         , fHinting(paint.getHinting())
         , fFlags(paint.getFlags() & kFlagsMask) { }
 
@@ -30,6 +31,7 @@ public:
         paint->setTextSize(fSize);
         paint->setTextScaleX(fScaleX);
         paint->setTextSkewX(fSkewX);
+        paint->setTextAlign(static_cast<SkPaint::Align>(fAlign));
         paint->setHinting(static_cast<SkPaint::Hinting>(fHinting));
 
         paint->setFlags((paint->getFlags() & ~kFlagsMask) | fFlags);
@@ -40,6 +42,7 @@ public:
             && fSize == other.fSize
             && fScaleX == other.fScaleX
             && fSkewX == other.fSkewX
+            && fAlign == other.fAlign
             && fHinting == other.fHinting
             && fFlags == other.fFlags;
     }
@@ -73,6 +76,8 @@ private:
     SkAutoTUnref<SkTypeface> fTypeface;
     SkScalar                 fSkewX;
 
+    static_assert(SkPaint::kAlignCount < 4, "insufficient_align_bits");
+    uint32_t                 fAlign : 2;
     static_assert(SkPaint::kFull_Hinting < 4, "insufficient_hinting_bits");
     uint32_t                 fHinting : 2;
     static_assert((kFlagsMask & 0xffff) == kFlagsMask, "insufficient_flags_bits");
@@ -157,7 +162,7 @@ public:
             + StorageSize(run->glyphCount(), run->positioning()));
     }
 
-    void validate(uint8_t* storageTop) const {
+    void validate(const uint8_t* storageTop) const {
         SkASSERT(kRunRecordMagic == fMagic);
         SkASSERT((uint8_t*)Next(this) <= storageTop);
         SkASSERT(glyphBuffer() + fCount <= (uint16_t*)posBuffer());
@@ -220,7 +225,7 @@ void SkTextBlob::flatten(SkWriteBuffer& buffer) const {
     buffer.writeRect(fBounds);
 
     SkPaint runPaint;
-    RunIterator it(this);
+    SkTextBlobRunIterator it(this);
     while (!it.done()) {
         SkASSERT(it.glyphCount() > 0);
 
@@ -294,58 +299,58 @@ unsigned SkTextBlob::ScalarsPerGlyph(GlyphPositioning pos) {
     return pos;
 }
 
-SkTextBlob::RunIterator::RunIterator(const SkTextBlob* blob)
-    : fCurrentRun(RunRecord::First(blob))
+SkTextBlobRunIterator::SkTextBlobRunIterator(const SkTextBlob* blob)
+    : fCurrentRun(SkTextBlob::RunRecord::First(blob))
     , fRemainingRuns(blob->fRunCount) {
     SkDEBUGCODE(fStorageTop = (uint8_t*)blob + blob->fStorageSize;)
 }
 
-bool SkTextBlob::RunIterator::done() const {
+bool SkTextBlobRunIterator::done() const {
     return fRemainingRuns <= 0;
 }
 
-void SkTextBlob::RunIterator::next() {
+void SkTextBlobRunIterator::next() {
     SkASSERT(!this->done());
 
     if (!this->done()) {
         SkDEBUGCODE(fCurrentRun->validate(fStorageTop);)
-        fCurrentRun = RunRecord::Next(fCurrentRun);
+        fCurrentRun = SkTextBlob::RunRecord::Next(fCurrentRun);
         fRemainingRuns--;
     }
 }
 
-uint32_t SkTextBlob::RunIterator::glyphCount() const {
+uint32_t SkTextBlobRunIterator::glyphCount() const {
     SkASSERT(!this->done());
     return fCurrentRun->glyphCount();
 }
 
-const uint16_t* SkTextBlob::RunIterator::glyphs() const {
+const uint16_t* SkTextBlobRunIterator::glyphs() const {
     SkASSERT(!this->done());
     return fCurrentRun->glyphBuffer();
 }
 
-const SkScalar* SkTextBlob::RunIterator::pos() const {
+const SkScalar* SkTextBlobRunIterator::pos() const {
     SkASSERT(!this->done());
     return fCurrentRun->posBuffer();
 }
 
-const SkPoint& SkTextBlob::RunIterator::offset() const {
+const SkPoint& SkTextBlobRunIterator::offset() const {
     SkASSERT(!this->done());
     return fCurrentRun->offset();
 }
 
-SkTextBlob::GlyphPositioning SkTextBlob::RunIterator::positioning() const {
+SkTextBlob::GlyphPositioning SkTextBlobRunIterator::positioning() const {
     SkASSERT(!this->done());
     return fCurrentRun->positioning();
 }
 
-void SkTextBlob::RunIterator::applyFontToPaint(SkPaint* paint) const {
+void SkTextBlobRunIterator::applyFontToPaint(SkPaint* paint) const {
     SkASSERT(!this->done());
 
     fCurrentRun->font().applyToPaint(paint);
 }
 
-bool SkTextBlob::RunIterator::isLCD() const {
+bool SkTextBlobRunIterator::isLCD() const {
     return SkToBool(fCurrentRun->font().flags() & SkPaint::kLCDRenderText_Flag);
 }
 
@@ -367,12 +372,42 @@ SkTextBlobBuilder::~SkTextBlobBuilder() {
 }
 
 SkRect SkTextBlobBuilder::TightRunBounds(const SkTextBlob::RunRecord& run) {
-    SkASSERT(SkTextBlob::kDefault_Positioning == run.positioning());
-
     SkRect bounds;
     SkPaint paint;
     run.font().applyToPaint(&paint);
-    paint.measureText(run.glyphBuffer(), run.glyphCount() * sizeof(uint16_t), &bounds);
+
+    if (SkTextBlob::kDefault_Positioning == run.positioning()) {
+        paint.measureText(run.glyphBuffer(), run.glyphCount() * sizeof(uint16_t), &bounds);
+        return bounds.makeOffset(run.offset().x(), run.offset().y());
+    }
+
+    SkAutoSTArray<16, SkRect> glyphBounds(run.glyphCount());
+    paint.getTextWidths(run.glyphBuffer(),
+                        run.glyphCount() * sizeof(uint16_t),
+                        NULL,
+                        glyphBounds.get());
+
+    SkASSERT(SkTextBlob::kFull_Positioning == run.positioning() ||
+             SkTextBlob::kHorizontal_Positioning == run.positioning());
+    // kFull_Positioning       => [ x, y, x, y... ]
+    // kHorizontal_Positioning => [ x, x, x... ]
+    //                            (const y applied by runBounds.offset(run->offset()) later)
+    const SkScalar horizontalConstY = 0;
+    const SkScalar* glyphPosX = run.posBuffer();
+    const SkScalar* glyphPosY = (run.positioning() == SkTextBlob::kFull_Positioning) ?
+                                                      glyphPosX + 1 : &horizontalConstY;
+    const unsigned posXInc = SkTextBlob::ScalarsPerGlyph(run.positioning());
+    const unsigned posYInc = (run.positioning() == SkTextBlob::kFull_Positioning) ?
+                                                   posXInc : 0;
+
+    bounds.setEmpty();
+    for (unsigned i = 0; i < run.glyphCount(); ++i) {
+        bounds.join(glyphBounds[i].makeOffset(*glyphPosX, *glyphPosY));
+        glyphPosX += posXInc;
+        glyphPosY += posYInc;
+    }
+
+    SkASSERT((void*)glyphPosX <= SkTextBlob::RunRecord::Next(&run));
 
     return bounds.makeOffset(run.offset().x(), run.offset().y());
 }
@@ -382,7 +417,16 @@ SkRect SkTextBlobBuilder::ConservativeRunBounds(const SkTextBlob::RunRecord& run
     SkASSERT(SkTextBlob::kFull_Positioning == run.positioning() ||
              SkTextBlob::kHorizontal_Positioning == run.positioning());
 
-    // First, compute the glyph position bbox.
+    SkPaint paint;
+    run.font().applyToPaint(&paint);
+    const SkRect fontBounds = paint.getFontBounds();
+    if (fontBounds.isEmpty()) {
+        // Empty font bounds are likely a font bug.  TightBounds has a better chance of
+        // producing useful results in this case.
+        return TightRunBounds(run);
+    }
+
+    // Compute the glyph position bbox.
     SkRect bounds;
     switch (run.positioning()) {
     case SkTextBlob::kHorizontal_Positioning: {
@@ -410,9 +454,6 @@ SkRect SkTextBlobBuilder::ConservativeRunBounds(const SkTextBlob::RunRecord& run
     }
 
     // Expand by typeface glyph bounds.
-    SkPaint paint;
-    run.font().applyToPaint(&paint);
-    const SkRect fontBounds = paint.getFontBounds();
     bounds.fLeft   += fontBounds.left();
     bounds.fTop    += fontBounds.top();
     bounds.fRight  += fontBounds.right();
@@ -583,20 +624,19 @@ const SkTextBlob* SkTextBlobBuilder::build() {
         fStorage.realloc(fStorageUsed);
     }
 
+    const SkTextBlob* blob = new (fStorage.detach()) SkTextBlob(fRunCount, fBounds);
+    SkDEBUGCODE(const_cast<SkTextBlob*>(blob)->fStorageSize = fStorageSize;)
+
     SkDEBUGCODE(
         size_t validateSize = sizeof(SkTextBlob);
-        const SkTextBlob::RunRecord* run =
-            SkTextBlob::RunRecord::First(reinterpret_cast<const SkTextBlob*>(fStorage.get()));
+        const SkTextBlob::RunRecord* run = SkTextBlob::RunRecord::First(blob);
         for (int i = 0; i < fRunCount; ++i) {
             validateSize += SkTextBlob::RunRecord::StorageSize(run->fCount, run->fPositioning);
-            run->validate(fStorage.get() + fStorageUsed);
+            run->validate(reinterpret_cast<const uint8_t*>(blob) + fStorageUsed);
             run = SkTextBlob::RunRecord::Next(run);
         }
         SkASSERT(validateSize == fStorageUsed);
     )
-
-    const SkTextBlob* blob = new (fStorage.detach()) SkTextBlob(fRunCount, fBounds);
-    SkDEBUGCODE(const_cast<SkTextBlob*>(blob)->fStorageSize = fStorageSize;)
 
     fStorageUsed = 0;
     fStorageSize = 0;

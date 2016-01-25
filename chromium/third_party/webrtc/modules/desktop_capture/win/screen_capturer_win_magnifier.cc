@@ -12,6 +12,8 @@
 
 #include <assert.h>
 
+#include <utility>
+
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_frame_win.h"
@@ -21,8 +23,8 @@
 #include "webrtc/modules/desktop_capture/win/cursor.h"
 #include "webrtc/modules/desktop_capture/win/desktop.h"
 #include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/logging.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -37,7 +39,7 @@ Atomic32 ScreenCapturerWinMagnifier::tls_index_(TLS_OUT_OF_INDEXES);
 
 ScreenCapturerWinMagnifier::ScreenCapturerWinMagnifier(
     rtc::scoped_ptr<ScreenCapturer> fallback_capturer)
-    : fallback_capturer_(fallback_capturer.Pass()),
+    : fallback_capturer_(std::move(fallback_capturer)),
       fallback_capturer_started_(false),
       callback_(NULL),
       current_screen_id_(kFullDesktopScreenId),
@@ -53,8 +55,7 @@ ScreenCapturerWinMagnifier::ScreenCapturerWinMagnifier(
       host_window_(NULL),
       magnifier_window_(NULL),
       magnifier_initialized_(false),
-      magnifier_capture_succeeded_(true) {
-}
+      magnifier_capture_succeeded_(true) {}
 
 ScreenCapturerWinMagnifier::~ScreenCapturerWinMagnifier() {
   // DestroyWindow must be called before MagUninitialize. magnifier_window_ is
@@ -236,7 +237,7 @@ BOOL ScreenCapturerWinMagnifier::OnMagImageScalingCallback(
     RECT unclipped,
     RECT clipped,
     HRGN dirty) {
-  assert(tls_index_.Value() != TLS_OUT_OF_INDEXES);
+  assert(tls_index_.Value() != static_cast<int32_t>(TLS_OUT_OF_INDEXES));
 
   ScreenCapturerWinMagnifier* owner =
       reinterpret_cast<ScreenCapturerWinMagnifier*>(
@@ -369,7 +370,7 @@ bool ScreenCapturerWinMagnifier::InitializeMagnifier() {
     }
   }
 
-  if (tls_index_.Value() == TLS_OUT_OF_INDEXES) {
+  if (tls_index_.Value() == static_cast<int32_t>(TLS_OUT_OF_INDEXES)) {
     // More than one threads may get here at the same time, but only one will
     // write to tls_index_ using CompareExchange.
     DWORD new_tls_index = TlsAlloc();
@@ -377,7 +378,7 @@ bool ScreenCapturerWinMagnifier::InitializeMagnifier() {
       TlsFree(new_tls_index);
   }
 
-  assert(tls_index_.Value() != TLS_OUT_OF_INDEXES);
+  assert(tls_index_.Value() != static_cast<int32_t>(TLS_OUT_OF_INDEXES));
   TlsSetValue(tls_index_.Value(), this);
 
   magnifier_initialized_ = true;

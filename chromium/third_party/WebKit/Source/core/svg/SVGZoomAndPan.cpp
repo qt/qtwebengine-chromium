@@ -19,10 +19,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGZoomAndPan.h"
 
-#include "core/svg/SVGParserUtilities.h"
+#include "platform/text/ParserUtilities.h"
 
 namespace blink {
 
@@ -39,11 +38,6 @@ void SVGZoomAndPan::resetZoomAndPan()
 bool SVGZoomAndPan::isKnownAttribute(const QualifiedName& attrName)
 {
     return attrName == SVGNames::zoomAndPanAttr;
-}
-
-void SVGZoomAndPan::addSupportedAttributes(HashSet<QualifiedName>& supportedAttributes)
-{
-    supportedAttributes.add(SVGNames::zoomAndPanAttr);
 }
 
 static const LChar disable[] =  {'d', 'i', 's', 'a', 'b', 'l', 'e'};

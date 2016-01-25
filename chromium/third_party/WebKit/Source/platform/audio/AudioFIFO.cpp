@@ -26,10 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioFIFO.h"
 
 namespace blink {
@@ -141,4 +137,3 @@ void AudioFIFO::findWrapLengths(size_t index, size_t size, size_t& part1Length, 
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

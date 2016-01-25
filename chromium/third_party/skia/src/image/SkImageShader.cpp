@@ -78,6 +78,7 @@ void SkImageShader::toString(SkString* str) const {
 
 #include "GrTextureAccess.h"
 #include "SkGr.h"
+#include "SkGrPriv.h"
 #include "effects/GrSimpleTextureEffect.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
@@ -85,8 +86,7 @@ void SkImageShader::toString(SkString* str) const {
 const GrFragmentProcessor* SkImageShader::asFragmentProcessor(GrContext* context,
                                                               const SkMatrix& viewM,
                                                               const SkMatrix* localMatrix,
-                                                              SkFilterQuality filterQuality,
-                                                              GrProcessorDataManager* mgr) const {
+                                                              SkFilterQuality filterQuality) const {
     SkMatrix matrix;
     matrix.setIDiv(fImage->width(), fImage->height());
 
@@ -113,26 +113,16 @@ const GrFragmentProcessor* SkImageShader::asFragmentProcessor(GrContext* context
     GrTextureParams::FilterMode textureFilterMode =
     GrSkFilterQualityToGrFilterMode(filterQuality, viewM, this->getLocalMatrix(), &doBicubic);
     GrTextureParams params(tm, textureFilterMode);
-
-    SkImageUsageType usageType;
-    if (kClamp_TileMode == fTileModeX && kClamp_TileMode == fTileModeY) {
-        usageType = kUntiled_SkImageUsageType;
-    } else if (GrTextureParams::kNone_FilterMode == textureFilterMode) {
-        usageType = kTiled_Unfiltered_SkImageUsageType;
-    } else {
-        usageType = kTiled_Filtered_SkImageUsageType;
-    }
-
-    SkAutoTUnref<GrTexture> texture(as_IB(fImage)->asTextureRef(context, usageType));
+    SkAutoTUnref<GrTexture> texture(as_IB(fImage)->asTextureRef(context, params));
     if (!texture) {
         return nullptr;
     }
 
-    SkAutoTUnref<GrFragmentProcessor> inner;
+    SkAutoTUnref<const GrFragmentProcessor> inner;
     if (doBicubic) {
-        inner.reset(GrBicubicEffect::Create(mgr, texture, matrix, tm));
+        inner.reset(GrBicubicEffect::Create(texture, matrix, tm));
     } else {
-        inner.reset(GrSimpleTextureEffect::Create(mgr, texture, matrix, params));
+        inner.reset(GrSimpleTextureEffect::Create(texture, matrix, params));
     }
 
     if (GrPixelConfigIsAlphaOnly(texture->config())) {

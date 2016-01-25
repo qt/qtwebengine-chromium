@@ -32,13 +32,13 @@
  * file.
  */
 
-#include "config.h"
-#include "dtoa.h"
+#include "wtf/dtoa.h"
 
 #include "wtf/CPU.h"
 #include "wtf/MathExtras.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/Vector.h"
+#include <string.h>
 
 #if COMPILER(MSVC)
 #pragma warning(disable: 4244)
@@ -354,7 +354,7 @@ static void mult(BigInt& aRef, const BigInt& bRef)
 }
 
 struct P5Node {
-    WTF_MAKE_NONCOPYABLE(P5Node); WTF_MAKE_FAST_ALLOCATED(P5Node);
+    WTF_MAKE_NONCOPYABLE(P5Node); USING_FAST_MALLOC(P5Node);
 public:
     P5Node() { }
     BigInt val;
@@ -1233,6 +1233,12 @@ const char* numberToString(double d, NumberToStringBuffer buffer)
 static inline const char* formatStringTruncatingTrailingZerosIfNeeded(NumberToStringBuffer buffer, double_conversion::StringBuilder& builder)
 {
     size_t length = builder.position();
+
+    // If there is an exponent, stripping trailing zeros would be incorrect.
+    // FIXME: Zeros should be stripped before the 'e'.
+    if (memchr(buffer, 'e', length))
+        return builder.Finalize();
+
     size_t decimalPointPosition = 0;
     for (; decimalPointPosition < length; ++decimalPointPosition) {
         if (buffer[decimalPointPosition] == '.')
@@ -1276,6 +1282,9 @@ const char* numberToFixedPrecisionString(double d, unsigned significantFigures, 
     converter.ToPrecision(d, significantFigures, &builder);
     if (!truncateTrailingZeros)
         return builder.Finalize();
+    // FIXME: Trailing zeros should never be added in the first place. The
+    // current implementation does not strip when there is an exponent, eg.
+    // 1.50000e+10.
     return formatStringTruncatingTrailingZerosIfNeeded(buffer, builder);
 }
 

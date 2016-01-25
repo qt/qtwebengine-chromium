@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -135,7 +134,7 @@ void ApplicationCacheHost::didReceiveResponseForMainResource(const ResourceRespo
     }
 }
 
-void ApplicationCacheHost::mainResourceDataReceived(const char* data, unsigned length)
+void ApplicationCacheHost::mainResourceDataReceived(const char* data, size_t length)
 {
     if (m_host)
         m_host->didReceiveDataForMainResource(data, length);

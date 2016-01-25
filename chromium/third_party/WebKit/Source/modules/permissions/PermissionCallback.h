@@ -9,7 +9,7 @@
 #include "public/platform/modules/permissions/WebPermissionClient.h"
 #include "public/platform/modules/permissions/WebPermissionStatus.h"
 #include "public/platform/modules/permissions/WebPermissionType.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
@@ -21,7 +21,7 @@ class ScriptPromiseResolver;
 // the callback. It takes a WebPermissionType in its constructor and will pass
 // it to the PermissionStatus.
 class PermissionCallback final : public WebPermissionCallback {
-    WTF_MAKE_FAST_ALLOCATED(PermissionCallback);
+    USING_FAST_MALLOC(PermissionCallback);
     WTF_MAKE_NONCOPYABLE(PermissionCallback);
 public:
     PermissionCallback(ScriptPromiseResolver*, WebPermissionType);

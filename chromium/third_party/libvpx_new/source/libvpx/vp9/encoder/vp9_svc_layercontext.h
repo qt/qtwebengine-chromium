@@ -45,6 +45,7 @@ typedef struct {
   int sb_index;
   signed char *map;
   uint8_t *last_coded_q_map;
+  uint8_t *consec_zero_mv;
 } LAYER_CONTEXT;
 
 typedef struct {
@@ -54,6 +55,8 @@ typedef struct {
   int number_temporal_layers;
 
   int spatial_layer_to_encode;
+  int first_spatial_layer_to_encode;
+  int rc_drop_superframe;
 
   // Workaround for multiple frame contexts
   enum {
@@ -80,6 +83,9 @@ typedef struct {
   int ext_lst_fb_idx[VPX_MAX_LAYERS];
   int ext_gld_fb_idx[VPX_MAX_LAYERS];
   int ext_alt_fb_idx[VPX_MAX_LAYERS];
+  int ref_frame_index[REF_FRAMES];
+  int force_zero_mode_spatial_ref;
+  int current_superframe;
 } SVC;
 
 struct VP9_COMP;

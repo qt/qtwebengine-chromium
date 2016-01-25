@@ -6,10 +6,11 @@
 #define WebRemoteFrameImpl_h
 
 #include "core/frame/FrameOwner.h"
-#include "platform/heap/Handle.h"
+#include "core/frame/RemoteFrame.h"
 #include "public/web/WebRemoteFrame.h"
 #include "public/web/WebRemoteFrameClient.h"
 #include "web/RemoteFrameClientImpl.h"
+#include "web/WebFrameImplBase.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -20,12 +21,12 @@ class FrameHost;
 class FrameOwner;
 class RemoteFrame;
 
-class WebRemoteFrameImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebRemoteFrameImpl>, public WebRemoteFrame {
+class WebRemoteFrameImpl final : public WebFrameImplBase, public WebRemoteFrame {
 public:
-    static WebRemoteFrame* create(WebTreeScopeType, WebRemoteFrameClient*);
+    static WebRemoteFrameImpl* create(WebTreeScopeType, WebRemoteFrameClient*);
     ~WebRemoteFrameImpl() override;
 
-    // WebRemoteFrame methods.
+    // WebFrame methods:
     bool isWebLocalFrame() const override;
     WebLocalFrame* toWebLocalFrame() override;
     bool isWebRemoteFrame() const override;
@@ -94,7 +95,6 @@ public:
     void dispatchWillSendRequest(WebURLRequest&) override;
     WebURLLoader* createAssociatedURLLoader(const WebURLLoaderOptions&) override;
     unsigned unloadListenerCount() const override;
-    void replaceSelection(const WebString&) override;
     void insertText(const WebString&) override;
     void setMarkedText(const WebString&, unsigned location, unsigned length) override;
     void unmarkText() override;
@@ -108,7 +108,6 @@ public:
     void enableContinuousSpellChecking(bool) override;
     bool isContinuousSpellCheckingEnabled() const override;
     void requestTextChecking(const WebElement&) override;
-    void replaceMisspelledRange(const WebString&) override;
     void removeSpellingMarkers() override;
     bool hasSelection() const override;
     WebRange selectionRange() const override;
@@ -167,23 +166,28 @@ public:
     bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
     WebString layerTreeAsText(bool showDebugInfo = false) const override;
 
-    WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling) override;
-    WebRemoteFrame* createRemoteChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebRemoteFrameClient*) override;
+    WebFrameImplBase* toImplBase() { return this; }
 
-    void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name);
+    // WebFrameImplBase methods:
+    void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& fallbackName) override;
+    RemoteFrame* frame() const override { return m_frame.get(); }
 
     void setCoreFrame(PassRefPtrWillBeRawPtr<RemoteFrame>);
-    RemoteFrame* frame() const { return m_frame.get(); }
 
     WebRemoteFrameClient* client() const { return m_client; }
 
     static WebRemoteFrameImpl* fromFrame(RemoteFrame&);
+
+    // WebRemoteFrame methods:
+    WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling, const WebFrameOwnerProperties&) override;
+    WebRemoteFrame* createRemoteChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebRemoteFrameClient*) override;
 
     void initializeFromFrame(WebLocalFrame*) const override;
 
     void setReplicatedOrigin(const WebSecurityOrigin&) const override;
     void setReplicatedSandboxFlags(WebSandboxFlags) const override;
     void setReplicatedName(const WebString&) const override;
+    void setReplicatedShouldEnforceStrictMixedContentChecking(bool) const override;
     void DispatchLoadEventForFrameOwner() const override;
 
     void didStartLoading() override;

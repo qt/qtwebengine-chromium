@@ -5,6 +5,9 @@
 #ifndef UI_PLATFORM_WINDOW_X11_X11_WINDOW_H_
 #define UI_PLATFORM_WINDOW_X11_X11_WINDOW_H_
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
@@ -56,6 +59,8 @@ class X11_WINDOW_EXPORT X11Window : public PlatformWindow,
   XID xwindow_;
   XID xroot_window_;
   X11AtomCache atom_cache_;
+
+  base::string16 window_title_;
 
   // Setting the bounds is an asynchronous operation in X11. |requested_bounds_|
   // is the bounds requested using XConfigureWindow, and |confirmed_bounds_| is

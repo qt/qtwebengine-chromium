@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/FormData.h"
 
 #include "core/fileapi/Blob.h"
@@ -78,13 +77,11 @@ private:
 
 FormData::FormData(const WTF::TextEncoding& encoding)
     : m_encoding(encoding)
-    , m_opaque(false)
 {
 }
 
 FormData::FormData(HTMLFormElement* form)
     : m_encoding(UTF8Encoding())
-    , m_opaque(false)
 {
     if (!form)
         return;
@@ -141,8 +138,6 @@ void FormData::deleteEntry(const String& name)
 
 void FormData::get(const String& name, FormDataEntryValue& result)
 {
-    if (m_opaque)
-        return;
     const CString encodedName = encodeAndNormalize(name);
     for (const auto& entry : entries()) {
         if (entry->name() == encodedName) {
@@ -160,9 +155,6 @@ void FormData::get(const String& name, FormDataEntryValue& result)
 HeapVector<FormDataEntryValue> FormData::getAll(const String& name)
 {
     HeapVector<FormDataEntryValue> results;
-
-    if (m_opaque)
-        return results;
 
     const CString encodedName = encodeAndNormalize(name);
     for (const auto& entry : entries()) {
@@ -182,8 +174,6 @@ HeapVector<FormDataEntryValue> FormData::getAll(const String& name)
 
 bool FormData::has(const String& name)
 {
-    if (m_opaque)
-        return false;
     const CString encodedName = encodeAndNormalize(name);
     for (const auto& entry : entries()) {
         if (entry->name() == encodedName)
@@ -327,9 +317,6 @@ PassRefPtr<EncodedFormData> FormData::encodeMultiPartFormData()
 
 PairIterable<String, FormDataEntryValue>::IterationSource* FormData::startIteration(ScriptState*, ExceptionState&)
 {
-    if (m_opaque)
-        return new FormDataIterationSource(new FormData(nullptr));
-
     return new FormDataIterationSource(this);
 }
 

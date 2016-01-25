@@ -23,27 +23,26 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 
-#include "SkBitmapDevice.h"
-#include "SkCanvas.h"
-#include "SkPicture.h"
-#include "SkPictureRecorder.h"
-#include "SkSurface.h"
 #include "platform/SharedBuffer.h"
 #include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "platform/graphics/ImageDecodingStore.h"
+#include "platform/graphics/ImageFrameGenerator.h"
 #include "platform/graphics/test/MockImageDecoder.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkPixmap.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -226,7 +225,7 @@ TEST_F(DeferredImageDecoderTest, decodeOnOtherThread)
 
     // Create a thread to rasterize SkPicture.
     OwnPtr<WebThread> thread = adoptPtr(Platform::current()->createThread("RasterThread"));
-    thread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&rasterizeMain, AllowCrossThreadAccess(m_surface->getCanvas()), AllowCrossThreadAccess(picture.get()))));
+    thread->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&rasterizeMain, AllowCrossThreadAccess(m_surface->getCanvas()), AllowCrossThreadAccess(picture.get()))));
     thread.clear();
     EXPECT_EQ(0, m_decodeRequestCount);
 
@@ -249,7 +248,7 @@ TEST_F(DeferredImageDecoderTest, singleFrameImageLoading)
     EXPECT_TRUE(m_actualDecoder);
 
     m_status = ImageFrame::FrameComplete;
-    m_data->append(" ", 1);
+    m_data->append(" ", 1u);
     m_lazyDecoder->setData(*m_data, true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
@@ -278,7 +277,7 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_frameCount = 2;
     m_frameDuration = 20;
     m_status = ImageFrame::FrameComplete;
-    m_data->append(" ", 1);
+    m_data->append(" ", 1u);
     m_lazyDecoder->setData(*m_data, false);
 
     image = m_lazyDecoder->createFrameAtIndex(0);

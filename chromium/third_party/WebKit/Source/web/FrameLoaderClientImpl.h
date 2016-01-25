@@ -41,7 +41,6 @@
 namespace blink {
 
 class WebLocalFrameImpl;
-class WebPluginLoadObserver;
 
 class FrameLoaderClientImpl final : public FrameLoaderClient {
 public:
@@ -100,24 +99,26 @@ public:
     void dispatchDidFinishLoad() override;
 
     void dispatchDidChangeThemeColor() override;
-    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
+    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool shouldReplaceCurrentEntry) override;
     bool hasPendingNavigation() override;
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
     void dispatchWillSubmitForm(HTMLFormElement*) override;
     void didStartLoading(LoadStartType) override;
     void didStopLoading() override;
     void progressEstimateChanged(double progressEstimate) override;
-    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) override;
+    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName, bool shouldReplaceCurrentEntry) override;
     bool navigateBackForward(int offset) const override;
     void didAccessInitialDocument() override;
     void didDisplayInsecureContent() override;
     void didRunInsecureContent(SecurityOrigin*, const KURL& insecureURL) override;
     void didDetectXSS(const KURL&, bool didBlockEntirePage) override;
     void didDispatchPingLoader(const KURL&) override;
+    void didDisplayContentWithCertificateErrors(const KURL&, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) override;
+    void didRunContentWithCertificateErrors(const KURL&, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) override;
     void didChangePerformanceTiming() override;
     void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) override;
     PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
-    WTF::String userAgent(const KURL&) override;
+    WTF::String userAgent() override;
     WTF::String doNotTrackValue() override;
     void transitionToCommittedForNewPage() override;
     PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const WTF::AtomicString& name, HTMLFrameOwnerElement*) override;
@@ -127,6 +128,7 @@ public:
         const Vector<WTF::String>&, const Vector<WTF::String>&,
         const WTF::String&, bool loadManually, DetachedPluginPolicy) override;
     PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
+    PassOwnPtr<WebMediaSession> createWebMediaSession() override;
     ObjectContentType objectContentType(
         const KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages) override;
     void didChangeScrollOffset() override;
@@ -137,15 +139,19 @@ public:
     bool allowPlugins(bool enabledPerSettings) override;
     bool allowImage(bool enabledPerSettings, const KURL& imageURL) override;
     bool allowMedia(const KURL& mediaURL) override;
-    bool allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) override;
+    bool allowDisplayingInsecureContent(bool enabledPerSettings, const KURL&) override;
     bool allowRunningInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) override;
     void didNotAllowScript() override;
     void didNotAllowPlugins() override;
+    void didUseKeygen() override;
 
     WebCookieJar* cookieJar() const override;
     bool willCheckAndDispatchMessageEvent(SecurityOrigin* target, MessageEvent*, LocalFrame* sourceFrame) const override;
+    void frameFocused() const override;
     void didChangeName(const String&) override;
+    void didEnforceStrictMixedContentChecking() override;
     void didChangeSandboxFlags(Frame* childFrame, SandboxFlags) override;
+    void didChangeFrameOwnerProperties(HTMLFrameElementBase*) override;
 
     void dispatchWillOpenWebSocket(WebSocketHandle*) override;
 
@@ -167,8 +173,6 @@ public:
 
     PassOwnPtr<WebApplicationCacheHost> createApplicationCacheHost(WebApplicationCacheHostClient*) override;
 
-    void didStopAllLoaders() override;
-
     void dispatchDidChangeManifest() override;
 
     unsigned backForwardLength() override;
@@ -179,8 +183,6 @@ private:
     explicit FrameLoaderClientImpl(WebLocalFrameImpl*);
 
     bool isFrameLoaderClientImpl() const override { return true; }
-
-    PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver(DocumentLoader*);
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.

@@ -5,6 +5,8 @@
 #ifndef BASE_MEMORY_SHARED_MEMORY_HANDLE_H_
 #define BASE_MEMORY_SHARED_MEMORY_HANDLE_H_
 
+#include <stddef.h>
+
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
@@ -75,12 +77,15 @@ class BASE_EXPORT SharedMemoryHandle {
 #else
 class BASE_EXPORT SharedMemoryHandle {
  public:
+  // The values of these enums must not change, as they are used by the
+  // histogram OSX.SharedMemory.Mechanism.
   enum Type {
     // The SharedMemoryHandle is backed by a POSIX fd.
     POSIX,
     // The SharedMemoryHandle is backed by the Mach primitive "memory object".
     MACH,
   };
+  static const int TypeMax = 2;
 
   // The format that should be used to transmit |Type| over the wire.
   typedef int TypeWireFormat;
@@ -156,6 +161,9 @@ class BASE_EXPORT SharedMemoryHandle {
   // Closes the underlying OS primitive.
   void Close() const;
 
+  void SetOwnershipPassesToIPC(bool ownership_passes);
+  bool OwnershipPassesToIPC() const;
+
  private:
   // Shared code between copy constructor and operator=.
   void CopyRelevantData(const SharedMemoryHandle& handle);
@@ -177,6 +185,12 @@ class BASE_EXPORT SharedMemoryHandle {
       // The pid of the process in which |memory_object_| is usable. Only
       // relevant if |memory_object_| is not |MACH_PORT_NULL|.
       base::ProcessId pid_;
+
+      // Whether passing this object as a parameter to an IPC message passes
+      // ownership of |memory_object_| to the IPC stack. This is meant to mimic
+      // the behavior of the |auto_close| parameter of FileDescriptor.
+      // Defaults to |false|.
+      bool ownership_passes_to_ipc_;
     };
   };
 };

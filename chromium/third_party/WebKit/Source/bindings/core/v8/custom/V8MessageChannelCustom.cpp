@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8MessageChannel.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -51,8 +50,9 @@ void V8MessageChannel::constructorCustom(const v8::FunctionCallbackInfo<v8::Valu
     // Create references from the MessageChannel wrapper to the two
     // MessagePort wrappers to make sure that the MessagePort wrappers
     // stay alive as long as the MessageChannel wrapper is around.
-    V8HiddenValue::setHiddenValue(info.GetIsolate(), wrapper, V8HiddenValue::port1(info.GetIsolate()), toV8(channel->port1(), info.Holder(), info.GetIsolate()));
-    V8HiddenValue::setHiddenValue(info.GetIsolate(), wrapper, V8HiddenValue::port2(info.GetIsolate()), toV8(channel->port2(), info.Holder(), info.GetIsolate()));
+    ScriptState* scriptState = ScriptState::current(info.GetIsolate());
+    V8HiddenValue::setHiddenValue(scriptState, wrapper, V8HiddenValue::port1(info.GetIsolate()), toV8(channel->port1(), info.Holder(), info.GetIsolate()));
+    V8HiddenValue::setHiddenValue(scriptState, wrapper, V8HiddenValue::port2(info.GetIsolate()), toV8(channel->port2(), info.Holder(), info.GetIsolate()));
 
     v8SetReturnValue(info, V8DOMWrapper::associateObjectWithWrapper(info.GetIsolate(), channel, &wrapperTypeInfo, wrapper));
 }

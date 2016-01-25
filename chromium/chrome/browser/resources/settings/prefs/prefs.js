@@ -4,7 +4,7 @@
 
 /**
  * @fileoverview
- * 'cr-settings-prefs' exposes a singleton model of Chrome settings and
+ * 'settings-prefs' exposes a singleton model of Chrome settings and
  * preferences, which listens to changes to Chrome prefs whitelisted in
  * chrome.settingsPrivate. When changing prefs in this element's 'prefs'
  * property via the UI, the singleton model tries to set those preferences in
@@ -13,12 +13,12 @@
  *
  * Example:
  *
- *    <cr-settings-prefs prefs="{{prefs}}"></cr-settings-prefs>
- *    <cr-settings-checkbox pref="{{prefs.homepage_is_newtabpage}}">
- *    </cr-settings-checkbox>
+ *    <settings-prefs prefs="{{prefs}}"></settings-prefs>
+ *    <settings-checkbox pref="{{prefs.homepage_is_newtabpage}}">
+ *    </settings-checkbox>
  *
  * @group Chrome Settings Elements
- * @element cr-settings-prefs
+ * @element settings-prefs
  */
 
 (function() {
@@ -125,7 +125,7 @@
   }
 
   Polymer({
-    is: 'cr-settings-prefs',
+    is: 'settings-prefs',
 
     properties: {
       /**
@@ -142,7 +142,7 @@
        */
       singleton_: {
         type: Object,
-        value: document.createElement('cr-settings-prefs-singleton'),
+        value: document.createElement('settings-prefs-singleton'),
       },
     },
 
@@ -152,12 +152,17 @@
 
     /** @override */
     ready: function() {
-      this.singleton_.initialize();
+      // Register a callback on CrSettingsPrefs.initialized immediately so prefs
+      // is set as soon as the settings API returns. This enables other elements
+      // dependent on |prefs| to add their own callbacks to
+      // CrSettingsPrefs.initialized.
       this.startListening_();
+      if (!CrSettingsPrefs.deferInitialization)
+        this.initialize();
     },
 
     /**
-     * Binds this.prefs to the cr-settings-prefs-singleton's shared prefs once
+     * Binds this.prefs to the settings-prefs-singleton's shared prefs once
      * preferences are initialized.
      * @private
      */
@@ -174,7 +179,7 @@
     },
 
     /**
-     * Stops listening for changes to cr-settings-prefs-singleton's shared
+     * Stops listening for changes to settings-prefs-singleton's shared
      * prefs.
      * @private
      */
@@ -196,14 +201,14 @@
     },
 
     /**
-     * Forwards changes to this.prefs to cr-settings-prefs-singleton.
+     * Forwards changes to this.prefs to settings-prefs-singleton.
      * @private
      */
     prefsChanged_: function(info) {
       // Ignore changes that came from singleton_ so we don't re-process
       // changes made in other instances of this element.
       if (!this.ignoreChanges_)
-        this.singleton_.fire('prefs-changed', info, {bubbles: false});
+        this.singleton_.fire('shared-prefs-changed', info, {bubbles: false});
     },
 
     /**
@@ -222,13 +227,25 @@
       this.ignoreChanges_ = false;
     },
 
+    /** Initializes the singleton, which will fetch the prefs. */
+    initialize: function() {
+      this.singleton_.initialize();
+    },
+
+    /**
+     * Used to initialize the singleton with a fake SettingsPrivate.
+     * @param {SettingsPrivate} settingsApi Fake implementation to use.
+     */
+    initializeForTesting: function(settingsApi) {
+      this.singleton_.initialize(settingsApi);
+    },
+
     /**
      * Uninitializes this element to remove it from tests. Also resets
-     * cr-settings-prefs-singleton, allowing newly created elements to
+     * settings-prefs-singleton, allowing newly created elements to
      * re-initialize it.
      */
     resetForTesting: function() {
-      this.stopListening_();
       this.singleton_.resetForTesting();
     },
   });
@@ -238,7 +255,7 @@
    * prefs state.
    */
   Polymer({
-    is: 'cr-settings-prefs-singleton',
+    is: 'settings-prefs-singleton',
 
     properties: {
       /**
@@ -262,37 +279,42 @@
       },
     },
 
-    // Listen for the manually fired prefs-changed event.
+    // Listen for the manually fired shared-prefs-changed event, fired when
+    // a shared-prefs instance is changed by another element.
     listeners: {
-      'prefs-changed': 'prefsChanged_',
+      'shared-prefs-changed': 'sharedPrefsChanged_',
     },
 
-    settingsApi_: chrome.settingsPrivate,
+    /** @type {SettingsPrivate} */
+    settingsApi_: /** @type {SettingsPrivate} */(chrome.settingsPrivate),
 
-    initialize: function() {
+    /**
+     * @param {SettingsPrivate=} opt_settingsApi SettingsPrivate implementation
+     *     to use (chrome.settingsPrivate by default).
+     */
+    initialize: function(opt_settingsApi) {
       // Only initialize once (or after resetForTesting() is called).
       if (this.initialized_)
         return;
       this.initialized_ = true;
 
-      // Set window.mockApi to pass a custom settings API, i.e. for tests.
-      // TODO(michaelpg): don't use a global.
-      if (window.mockApi)
-        this.settingsApi_ = window.mockApi;
+      if (opt_settingsApi)
+        this.settingsApi_ = opt_settingsApi;
 
-      this.settingsApi_.onPrefsChanged.addListener(
-          this.onSettingsPrivatePrefsChanged_.bind(this));
+      /** @private {function(!Array<!chrome.settingsPrivate.PrefObject>)} */
+      this.boundPrefsChanged_ = this.onSettingsPrivatePrefsChanged_.bind(this);
+      this.settingsApi_.onPrefsChanged.addListener(this.boundPrefsChanged_);
       this.settingsApi_.getAllPrefs(
           this.onSettingsPrivatePrefsFetched_.bind(this));
     },
 
     /**
-     * Polymer callback for changes to this.prefs.
+     * Polymer callback for changes to prefs.* from a shared-prefs element.
      * @param {!CustomEvent} e
      * @param {!{path: string}} change
      * @private
      */
-    prefsChanged_: function(e, change) {
+    sharedPrefsChanged_: function(e, change) {
       if (!CrSettingsPrefs.isInitialized)
         return;
 
@@ -302,17 +324,19 @@
       var prefObj = /** @type {chrome.settingsPrivate.PrefObject} */(
           this.get(key, this.prefs));
 
-      // If settingsPrivate already has this value, do nothing. (Otherwise,
+      // If settingsPrivate already has this value, ignore it. (Otherwise,
       // a change event from settingsPrivate could make us call
       // settingsPrivate.setPref and potentially trigger an IPC loop.)
-      if (deepEqual(prefStoreValue, prefObj.value))
-        return;
+      if (!deepEqual(prefStoreValue, prefObj.value)) {
+        this.settingsApi_.setPref(
+            key,
+            prefObj.value,
+            /* pageId */ '',
+            /* callback */ this.setPrefCallback_.bind(this, key));
+      }
 
-      this.settingsApi_.setPref(
-          key,
-          prefObj.value,
-          /* pageId */ '',
-          /* callback */ this.setPrefCallback_.bind(this, key));
+      // Package the event as a prefs-changed event for other elements.
+      this.fire('prefs-changed', change);
     },
 
     /**
@@ -405,9 +429,15 @@
      * Resets the element so it can be re-initialized with a new prefs state.
      */
     resetForTesting: function() {
+      if (!this.initialized_)
+        return;
       this.prefs = undefined;
       this.lastPrefValues_ = {};
       this.initialized_ = false;
+      // Remove the listener added in initialize().
+      this.settingsApi_.onPrefsChanged.removeListener(this.boundPrefsChanged_);
+      this.settingsApi_ =
+          /** @type {SettingsPrivate} */(chrome.settingsPrivate);
     },
   });
 })();

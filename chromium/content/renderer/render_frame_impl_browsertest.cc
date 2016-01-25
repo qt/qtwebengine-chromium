@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
+#include "build/build_config.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/test/frame_load_waiter.h"
@@ -14,12 +17,13 @@
 #include "content/test/fake_compositor_dependencies.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 namespace {
-const int32 kSubframeRouteId = 20;
-const int32 kSubframeWidgetRouteId = 21;
-const int32 kFrameProxyRouteId = 22;
+const int32_t kSubframeRouteId = 20;
+const int32_t kSubframeWidgetRouteId = 21;
+const int32_t kFrameProxyRouteId = 22;
 }  // namespace
 
 namespace content {
@@ -51,7 +55,8 @@ class RenderFrameImplTest : public RenderViewTest {
     RenderFrameImpl::CreateFrame(kSubframeRouteId, MSG_ROUTING_NONE,
                                  MSG_ROUTING_NONE, kFrameProxyRouteId,
                                  MSG_ROUTING_NONE, FrameReplicationState(),
-                                 &compositor_deps_, widget_params);
+                                 &compositor_deps_, widget_params,
+                                 blink::WebFrameOwnerProperties());
 
     frame_ = RenderFrameImpl::FromRoutingID(kSubframeRouteId);
     EXPECT_FALSE(frame_->is_main_frame_);
@@ -98,10 +103,12 @@ class RenderFrameTestObserver : public RenderFrameObserver {
 #define MAYBE_SubframeWidget DISABLED_SubframeWidget
 #define MAYBE_FrameResize DISABLED_FrameResize
 #define MAYBE_FrameWasShown DISABLED_FrameWasShown
+#define MAYBE_FrameWasShownAfterWidgetClose DISABLED_FrameWasShownAfterWidgetClose
 #else
 #define MAYBE_SubframeWidget SubframeWidget
 #define MAYBE_FrameResize FrameResize
 #define MAYBE_FrameWasShown FrameWasShown
+#define MAYBE_FrameWasShownAfterWidgetClose FrameWasShownAfterWidgetClose
 #endif
 
 // Verify that a frame with a RenderFrameProxy as a parent has its own
@@ -151,6 +158,22 @@ TEST_F(RenderFrameImplTest, MAYBE_FrameWasShown) {
   frame_widget()->OnMessageReceived(was_shown_message);
 
   EXPECT_FALSE(frame_widget()->is_hidden());
+  EXPECT_TRUE(observer.visible());
+}
+
+// Ensure that a RenderFrameImpl does not crash if the RenderView receives
+// a WasShown message after the frame's widget has been closed.
+TEST_F(RenderFrameImplTest, MAYBE_FrameWasShownAfterWidgetClose) {
+  RenderFrameTestObserver observer(frame());
+
+  ViewMsg_Close close_message(0);
+  frame_widget()->OnMessageReceived(close_message);
+
+  ViewMsg_WasShown was_shown_message(0, true, ui::LatencyInfo());
+  static_cast<RenderViewImpl*>(view_)->OnMessageReceived(was_shown_message);
+
+  // This test is primarily checking that this case does not crash, but
+  // observers should still be notified.
   EXPECT_TRUE(observer.visible());
 }
 

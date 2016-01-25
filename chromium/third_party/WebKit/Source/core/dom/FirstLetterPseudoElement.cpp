@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/FirstLetterPseudoElement.h"
 
 #include "core/dom/Element.h"
@@ -109,7 +108,7 @@ LayoutObject* FirstLetterPseudoElement::firstLetterTextLayoutObject(const Elemen
     if (!parentLayoutObject
         || !parentLayoutObject->style()->hasPseudoStyle(FIRST_LETTER)
         || !canHaveGeneratedChildren(*parentLayoutObject)
-        || !(parentLayoutObject->isLayoutBlockFlow() || parentLayoutObject->isLayoutButton()))
+        || !parentLayoutObject->canHaveFirstLineOrFirstLetterStyle())
         return nullptr;
 
     // Drill down into our children and look for our first text child.
@@ -137,7 +136,7 @@ LayoutObject* FirstLetterPseudoElement::firstLetterTextLayoutObject(const Elemen
                 break;
             }
             firstLetterTextLayoutObject = firstLetterTextLayoutObject->nextSibling();
-        } else if (firstLetterTextLayoutObject->isReplaced() || firstLetterTextLayoutObject->isLayoutButton()
+        } else if (firstLetterTextLayoutObject->isAtomicInlineLevel() || firstLetterTextLayoutObject->isLayoutButton()
             || firstLetterTextLayoutObject->isMenuList()) {
             return nullptr;
         } else if (firstLetterTextLayoutObject->isFlexibleBoxIncludingDeprecated() || firstLetterTextLayoutObject->isLayoutGrid()) {
@@ -170,6 +169,7 @@ FirstLetterPseudoElement::FirstLetterPseudoElement(Element* parent)
 
 FirstLetterPseudoElement::~FirstLetterPseudoElement()
 {
+    ASSERT(!m_remainingTextLayoutObject);
 }
 
 void FirstLetterPseudoElement::updateTextFragments()

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/ActiveDOMCallback.h"
 
 #include "core/dom/ActiveDOMObject.h"
@@ -56,7 +55,7 @@ bool ActiveDOMCallback::isScriptControllerTerminating() const
 {
     ExecutionContext* context = executionContext();
     if (context && context->isWorkerGlobalScope()) {
-        WorkerScriptController* scriptController = toWorkerGlobalScope(context)->script();
+        WorkerOrWorkletScriptController* scriptController = toWorkerGlobalScope(context)->script();
         if (!scriptController || scriptController->isExecutionForbidden() || scriptController->isExecutionTerminating())
             return true;
     }

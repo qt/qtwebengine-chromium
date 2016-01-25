@@ -2,15 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/indexeddb/IDBValue.h"
 
 #include "platform/blob/BlobData.h"
 #include "public/platform/WebBlobInfo.h"
+#include "public/platform/modules/indexeddb/WebIDBValue.h"
 
 namespace blink {
 
 IDBValue::IDBValue() = default;
+
+IDBValue::IDBValue(const WebIDBValue& value)
+    : IDBValue(value.data, value.webBlobInfo, value.primaryKey, value.keyPath)
+{
+}
 
 IDBValue::IDBValue(PassRefPtr<SharedBuffer> data, const WebVector<WebBlobInfo>& webBlobInfo, IDBKey* primaryKey, const IDBKeyPath& keyPath)
     : m_data(data)
@@ -23,11 +28,6 @@ IDBValue::IDBValue(PassRefPtr<SharedBuffer> data, const WebVector<WebBlobInfo>& 
         const WebBlobInfo& info = (*m_blobInfo)[i] = webBlobInfo[i];
         m_blobData->append(BlobDataHandle::create(info.uuid(), info.type(), info.size()));
     }
-}
-
-IDBValue::IDBValue(PassRefPtr<SharedBuffer> data, const WebVector<WebBlobInfo>& webBlobInfo)
-    : IDBValue(data, webBlobInfo, nullptr, IDBKeyPath())
-{
 }
 
 IDBValue::IDBValue(const IDBValue* value, IDBKey* primaryKey, const IDBKeyPath& keyPath)
@@ -48,14 +48,9 @@ PassRefPtr<IDBValue> IDBValue::create()
     return adoptRef(new IDBValue());
 }
 
-PassRefPtr<IDBValue> IDBValue::create(PassRefPtr<SharedBuffer>data, const WebVector<WebBlobInfo>& webBlobInfo)
+PassRefPtr<IDBValue> IDBValue::create(const WebIDBValue& value)
 {
-    return adoptRef(new IDBValue(data, webBlobInfo));
-}
-
-PassRefPtr<IDBValue> IDBValue::create(PassRefPtr<SharedBuffer>data, const WebVector<WebBlobInfo>& webBlobInfo, IDBKey* primaryKey, const IDBKeyPath& keyPath)
-{
-    return adoptRef(new IDBValue(data, webBlobInfo, primaryKey, keyPath));
+    return adoptRef(new IDBValue(value));
 }
 
 PassRefPtr<IDBValue> IDBValue::create(const IDBValue* value, IDBKey* primaryKey, const IDBKeyPath& keyPath)

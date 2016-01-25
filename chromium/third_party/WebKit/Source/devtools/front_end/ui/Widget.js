@@ -49,21 +49,6 @@ WebInspector.Widget = function(isWebComponent)
     this._notificationDepth = 0;
 }
 
-/**
- * @param {string} cssFile
- * @return {!Element}
- */
-WebInspector.Widget.createStyleElement = function(cssFile)
-{
-    var content = Runtime.cachedResources[cssFile] || "";
-    if (!content)
-        console.error(cssFile + " not preloaded. Check module.json");
-    var styleElement = createElement("style");
-    styleElement.type = "text/css";
-    styleElement.textContent = content;
-    return styleElement;
-}
-
 WebInspector.Widget.prototype = {
     markAsRoot: function()
     {
@@ -374,7 +359,7 @@ WebInspector.Widget.prototype = {
      */
     registerRequiredCSS: function(cssFile)
     {
-        (this._isWebComponent ? this._shadowRoot : this.element).appendChild(WebInspector.Widget.createStyleElement(cssFile));
+        WebInspector.appendStyle(this._isWebComponent ? this._shadowRoot : this.element, cssFile);
     },
 
     printWidgetHierarchy: function()
@@ -503,6 +488,12 @@ WebInspector.Widget.prototype = {
             this._parentWidget.invalidateConstraints();
         else
             this.doLayout();
+    },
+
+    invalidateSize: function()
+    {
+        if (this._parentWidget)
+            this._parentWidget.doLayout();
     },
 
     __proto__: WebInspector.Object.prototype
@@ -636,6 +627,27 @@ WebInspector.VBoxWithResizeCallback.prototype = {
     onResize: function()
     {
         this._resizeCallback();
+    },
+
+    __proto__: WebInspector.VBox.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.VBox}
+ */
+WebInspector.VBoxWithToolbarItems = function()
+{
+    WebInspector.VBox.call(this);
+}
+
+WebInspector.VBoxWithToolbarItems.prototype = {
+    /**
+     * @return {!Array<!WebInspector.ToolbarItem>}
+     */
+    toolbarItems: function()
+    {
+        return [];
     },
 
     __proto__: WebInspector.VBox.prototype

@@ -20,6 +20,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/internal.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -50,8 +51,8 @@ static av_cold int encode_init(AVCodecContext *avctx)
 
     if (avctx->bit_rate < 24 * 1000) {
         av_log(avctx, AV_LOG_ERROR,
-               "bitrate too low: got %i, need 24000 or higher\n",
-               avctx->bit_rate);
+               "bitrate too low: got %"PRId64", need 24000 or higher\n",
+               (int64_t)avctx->bit_rate);
         return AVERROR(EINVAL);
     }
 
@@ -132,7 +133,7 @@ static void init_exp(WMACodecContext *s, int ch, const int *exp_param)
     max_scale = 0;
     while (q < q_end) {
         /* XXX: use a table */
-        v         = pow(10, *exp_param++ *(1.0 / 16.0));
+        v         = ff_exp10(*exp_param++ *(1.0 / 16.0));
         max_scale = FFMAX(max_scale, v);
         n         = *ptr++;
         do {
@@ -227,7 +228,7 @@ static int encode_block(WMACodecContext *s, float (*src_coefs)[BLOCK_MAX_SIZE],
 
             coefs1    = s->coefs1[ch];
             exponents = s->exponents[ch];
-            mult      = pow(10, total_gain * 0.05) / s->max_exponent[ch];
+            mult      = ff_exp10(total_gain * 0.05) / s->max_exponent[ch];
             mult     *= mdct_norm;
             coefs     = src_coefs[ch];
             if (s->use_noise_coding && 0) {

@@ -27,13 +27,14 @@
 {
   'includes': ['common.gypi',],
   'conditions': [
-    ['OS=="ios" or (OS=="mac" and mac_sdk>="10.8")', {
+    ['OS=="ios" or OS=="mac"', {
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_objc_no_op',
           'includes': [ 'objc_app.gypi' ],
           'type': 'executable',
           'dependencies': [
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:field_trial_default',
             '../libjingle.gyp:libjingle_peerconnection_objc',
           ],
           'sources': ['<(DEPTH)/webrtc/build/no_op.cc',],

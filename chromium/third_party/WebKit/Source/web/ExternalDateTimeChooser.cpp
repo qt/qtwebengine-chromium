@@ -23,10 +23,9 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
-#if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "web/ExternalDateTimeChooser.h"
 
+#if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/InputTypeNames.h"
 #include "core/html/forms/DateTimeChooserClient.h"
 #include "public/web/WebDateTimeChooserCompletion.h"
@@ -63,11 +62,17 @@ private:
         delete this;
     }
 
-    RefPtr<ExternalDateTimeChooser> m_chooser;
+    RefPtrWillBePersistent<ExternalDateTimeChooser> m_chooser;
 };
 
 ExternalDateTimeChooser::~ExternalDateTimeChooser()
 {
+}
+
+DEFINE_TRACE(ExternalDateTimeChooser)
+{
+    visitor->trace(m_client);
+    DateTimeChooser::trace(visitor);
 }
 
 ExternalDateTimeChooser::ExternalDateTimeChooser(DateTimeChooserClient* client)
@@ -76,10 +81,10 @@ ExternalDateTimeChooser::ExternalDateTimeChooser(DateTimeChooserClient* client)
     ASSERT(client);
 }
 
-PassRefPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     ASSERT(chromeClient);
-    RefPtr<ExternalDateTimeChooser> chooser = adoptRef(new ExternalDateTimeChooser(client));
+    RefPtrWillBeRawPtr<ExternalDateTimeChooser> chooser = adoptRefWillBeNoop(new ExternalDateTimeChooser(client));
     if (!chooser->openDateTimeChooser(chromeClient, webViewClient, parameters))
         chooser.clear();
     return chooser.release();
@@ -162,13 +167,13 @@ void ExternalDateTimeChooser::didCancelChooser()
 void ExternalDateTimeChooser::endChooser()
 {
     DateTimeChooserClient* client = m_client;
-    m_client = 0;
+    m_client = nullptr;
     client->didEndChooser();
 }
 
 AXObject* ExternalDateTimeChooser::rootAXObject()
 {
-    return 0;
+    return nullptr;
 }
 
 } // namespace blink

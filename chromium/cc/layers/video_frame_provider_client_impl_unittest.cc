@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "cc/layers/video_frame_provider_client_impl.h"
 #include "cc/layers/video_layer_impl.h"
 #include "cc/output/begin_frame_args.h"
@@ -18,10 +19,11 @@ namespace cc {
 // NOTE: We cannot use DebugScopedSetImplThreadAndMainThreadBlocked in these
 // tests because it gets destroyed before the VideoLayerImpl is destroyed. This
 // causes a DCHECK in VideoLayerImpl's destructor to fail.
-static void DebugSetImplThreadAndMainThreadBlocked(Proxy* proxy) {
+static void DebugSetImplThreadAndMainThreadBlocked(
+    TaskRunnerProvider* task_runner_provider) {
 #if DCHECK_IS_ON()
-  proxy->SetCurrentThreadIsImplThread(true);
-  proxy->SetMainThreadBlocked(true);
+  task_runner_provider->SetCurrentThreadIsImplThread(true);
+  task_runner_provider->SetMainThreadBlocked(true);
 #endif
 }
 
@@ -36,7 +38,7 @@ class VideoFrameProviderClientImplTest : public testing::Test,
                                                    gfx::Rect(10, 10),
                                                    gfx::Size(10, 10),
                                                    base::TimeDelta())) {
-    DebugSetImplThreadAndMainThreadBlocked(impl_.proxy());
+    DebugSetImplThreadAndMainThreadBlocked(impl_.task_runner_provider());
   }
 
   ~VideoFrameProviderClientImplTest() {

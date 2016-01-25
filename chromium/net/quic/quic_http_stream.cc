@@ -12,8 +12,8 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
 #include "net/quic/quic_chromium_client_session.h"
+#include "net/quic/quic_chromium_client_stream.h"
 #include "net/quic/quic_http_utils.h"
-#include "net/quic/quic_reliable_client_stream.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/socket/next_proto.h"
@@ -42,6 +42,7 @@ QuicHttpStream::QuicHttpStream(
       closed_stream_received_bytes_(0),
       closed_stream_sent_bytes_(0),
       user_buffer_len_(0),
+      quic_connection_error_(QUIC_NO_ERROR),
       weak_factory_(this) {
   DCHECK(session_);
   session_->AddObserver(this);
@@ -59,22 +60,12 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
                                      const CompletionCallback& callback) {
   DCHECK(!stream_);
   if (!session_)
-    return was_handshake_confirmed_ ? ERR_CONNECTION_CLOSED :
-        ERR_QUIC_HANDSHAKE_FAILED;
+    return was_handshake_confirmed_ ? ERR_CONNECTION_CLOSED
+                                    : ERR_QUIC_HANDSHAKE_FAILED;
 
   stream_net_log.AddEvent(
       NetLog::TYPE_HTTP_STREAM_REQUEST_BOUND_TO_QUIC_SESSION,
       session_->net_log().source().ToEventParametersCallback());
-
-  if (request_info->url.SchemeIsCryptographic()) {
-    SSLInfo ssl_info;
-    bool secure_session =
-        session_->GetSSLInfo(&ssl_info) && ssl_info.cert.get();
-    UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.SecureResourceSecureSession",
-                          secure_session);
-    if (!secure_session)
-      return ERR_REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC;
-  }
 
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
@@ -82,8 +73,8 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
   priority_ = priority;
 
   int rv = stream_request_.StartRequest(
-      session_, &stream_, base::Bind(&QuicHttpStream::OnStreamReady,
-                                     weak_factory_.GetWeakPtr()));
+      session_, &stream_,
+      base::Bind(&QuicHttpStream::OnStreamReady, weak_factory_.GetWeakPtr()));
   if (rv == ERR_IO_PENDING) {
     callback_ = callback;
   } else if (rv == OK) {
@@ -130,11 +121,10 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     return ERR_CONNECTION_CLOSED;
   }
 
-  QuicPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
-  stream_->set_priority(priority);
+  SpdyPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
+  stream_->SetPriority(priority);
   // Store the serialized request headers.
-  CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   GetSpdyVersion(),
+  CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers, HTTP2,
                                    /*direct=*/true, &request_headers_);
 
   // Store the request body.
@@ -188,8 +178,9 @@ int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   return ERR_IO_PENDING;
 }
 
-int QuicHttpStream::ReadResponseBody(
-    IOBuffer* buf, int buf_len, const CompletionCallback& callback) {
+int QuicHttpStream::ReadResponseBody(IOBuffer* buf,
+                                     int buf_len,
+                                     const CompletionCallback& callback) {
   if (!stream_) {
     // If the stream is already closed, there is no body to read.
     return response_status_;
@@ -215,8 +206,8 @@ void QuicHttpStream::Close(bool not_reusable) {
     stream_->SetDelegate(nullptr);
     stream_->Reset(QUIC_STREAM_CANCELLED);
     ResetStream();
-    response_status_ = was_handshake_confirmed_ ?
-        ERR_CONNECTION_CLOSED : ERR_QUIC_HANDSHAKE_FAILED;
+    response_status_ = was_handshake_confirmed_ ? ERR_CONNECTION_CLOSED
+                                                : ERR_QUIC_HANDSHAKE_FAILED;
   }
 }
 
@@ -296,6 +287,11 @@ void QuicHttpStream::Drain(HttpNetworkSession* session) {
   delete this;
 }
 
+void QuicHttpStream::PopulateNetErrorDetails(NetErrorDetails* details) {
+  if (was_handshake_confirmed_)
+    details->quic_connection_error = quic_connection_error_;
+}
+
 void QuicHttpStream::SetPriority(RequestPriority priority) {
   priority_ = priority;
 }
@@ -332,21 +328,23 @@ void QuicHttpStream::OnDataAvailable() {
 
 void QuicHttpStream::OnClose(QuicErrorCode error) {
   if (error != QUIC_NO_ERROR) {
-    response_status_ = was_handshake_confirmed_ ?
-        ERR_QUIC_PROTOCOL_ERROR : ERR_QUIC_HANDSHAKE_FAILED;
+    response_status_ = was_handshake_confirmed_ ? ERR_QUIC_PROTOCOL_ERROR
+                                                : ERR_QUIC_HANDSHAKE_FAILED;
   } else if (!response_headers_received_) {
     response_status_ = ERR_ABORTED;
   }
 
   ResetStream();
-  if (!callback_.is_null())
+  if (!callback_.is_null()) {
+    quic_connection_error_ = error;
     DoCallback(response_status_);
+  }
 }
 
 void QuicHttpStream::OnError(int error) {
   ResetStream();
-  response_status_ = was_handshake_confirmed_ ?
-      error : ERR_QUIC_HANDSHAKE_FAILED;
+  response_status_ =
+      was_handshake_confirmed_ ? error : ERR_QUIC_HANDSHAKE_FAILED;
   if (!callback_.is_null())
     DoCallback(response_status_);
 }
@@ -451,8 +449,11 @@ int QuicHttpStream::DoSendHeadersComplete(int rv) {
   if (rv < 0)
     return rv;
 
-  next_state_ = request_body_stream_ ?
-      STATE_READ_REQUEST_BODY : STATE_OPEN;
+  // If the stream is already closed, don't read the request the body.
+  if (!stream_)
+    return response_status_;
+
+  next_state_ = request_body_stream_ ? STATE_READ_REQUEST_BODY : STATE_OPEN;
 
   return OK;
 }
@@ -460,8 +461,7 @@ int QuicHttpStream::DoSendHeadersComplete(int rv) {
 int QuicHttpStream::DoReadRequestBody() {
   next_state_ = STATE_READ_REQUEST_BODY_COMPLETE;
   return request_body_stream_->Read(
-      raw_request_body_buf_.get(),
-      raw_request_body_buf_->size(),
+      raw_request_body_buf_.get(), raw_request_body_buf_->size(),
       base::Bind(&QuicHttpStream::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 
@@ -522,7 +522,7 @@ int QuicHttpStream::ProcessResponseHeaders(const SpdyHeaderBlock& headers) {
       NetLog::TYPE_QUIC_HTTP_STREAM_READ_RESPONSE_HEADERS,
       base::Bind(&SpdyHeaderBlockNetLogCallback, &headers));
 
-  if (!SpdyHeadersToHttpResponse(headers, GetSpdyVersion(), response_info_)) {
+  if (!SpdyHeadersToHttpResponse(headers, HTTP2, response_info_)) {
     DLOG(WARNING) << "Invalid headers";
     return ERR_QUIC_PROTOCOL_ERROR;
   }
@@ -531,8 +531,8 @@ int QuicHttpStream::ProcessResponseHeaders(const SpdyHeaderBlock& headers) {
   response_info_->socket_address = HostPortPair::FromIPEndPoint(address);
   response_info_->connection_info =
       HttpResponseInfo::CONNECTION_INFO_QUIC1_SPDY3;
-  response_info_->vary_data
-      .Init(*request_info_, *response_info_->headers.get());
+  response_info_->vary_data.Init(*request_info_,
+                                 *response_info_->headers.get());
   response_info_->was_npn_negotiated = true;
   response_info_->npn_negotiated_protocol = "quic/1+spdy/3";
   response_info_->response_time = base::Time::Now();
@@ -550,10 +550,6 @@ int QuicHttpStream::ReadAvailableData(IOBuffer* buf, int buf_len) {
     ResetStream();
   }
   return rv;
-}
-
-SpdyMajorVersion QuicHttpStream::GetSpdyVersion() {
-  return SpdyUtils::GetSpdyVersionForQuicVersion(stream_->version());
 }
 
 void QuicHttpStream::ResetStream() {

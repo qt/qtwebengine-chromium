@@ -5,6 +5,7 @@
 #include "ui/events/gesture_detection/gesture_configuration.h"
 
 #include "base/android/build_info.h"
+#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "ui/gfx/android/view_configuration.h"
 #include "ui/gfx/screen.h"
@@ -37,13 +38,14 @@ class GestureConfigurationAndroid : public GestureConfiguration {
     // TODO(jdduke): Enable this on Android M after the implicit conflict with
     // stylus selection is resolved.
     set_stylus_scale_enabled(false);
+#if defined(USE_AURA)
+    set_gesture_begin_end_types_enabled(true);
+#else
     set_gesture_begin_end_types_enabled(false);
+#endif
     set_long_press_time_in_ms(ViewConfiguration::GetLongPressTimeoutInMs());
     set_max_distance_between_taps_for_double_tap(
         ViewConfiguration::GetDoubleTapSlopInDips());
-    // TODO(jdduke): Set this to 2 after double-click triggers selection only in
-    // editable elements, see crbug.com/522268.
-    set_max_tap_count(1);
     set_max_fling_velocity(
         ViewConfiguration::GetMaximumFlingVelocityInDipsPerSecond());
     set_max_gesture_bounds_length(kMaxGestureBoundsLengthDips);

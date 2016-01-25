@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <string>
@@ -9,6 +12,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decrypt_config.h"
@@ -319,7 +323,7 @@ class WebMClusterParserTest : public testing::Test {
       base::TimeDelta audio_default_duration,
       base::TimeDelta video_default_duration,
       const WebMTracksParser::TextTracks& text_tracks,
-      const std::set<int64>& ignored_tracks,
+      const std::set<int64_t>& ignored_tracks,
       const std::string& audio_encryption_key_id,
       const std::string& video_encryption_key_id,
       const AudioCodec audio_codec) {
@@ -333,7 +337,7 @@ class WebMClusterParserTest : public testing::Test {
   // Create a default version of the parser for test.
   WebMClusterParser* CreateDefaultParser() {
     return CreateParserHelper(kNoTimestamp(), kNoTimestamp(), TextTracks(),
-                              std::set<int64>(), std::string(), std::string(),
+                              std::set<int64_t>(), std::string(), std::string(),
                               kUnknownAudioCodec);
   }
 
@@ -344,13 +348,13 @@ class WebMClusterParserTest : public testing::Test {
       base::TimeDelta video_default_duration,
       const WebMTracksParser::TextTracks& text_tracks = TextTracks()) {
     return CreateParserHelper(audio_default_duration, video_default_duration,
-                              text_tracks, std::set<int64>(), std::string(),
+                              text_tracks, std::set<int64_t>(), std::string(),
                               std::string(), kUnknownAudioCodec);
   }
 
   // Create a parser for test with custom ignored tracks.
   WebMClusterParser* CreateParserWithIgnoredTracks(
-      std::set<int64>& ignored_tracks) {
+      std::set<int64_t>& ignored_tracks) {
     return CreateParserHelper(kNoTimestamp(), kNoTimestamp(), TextTracks(),
                               ignored_tracks, std::string(), std::string(),
                               kUnknownAudioCodec);
@@ -362,7 +366,7 @@ class WebMClusterParserTest : public testing::Test {
       const std::string& video_encryption_key_id,
       const AudioCodec audio_codec) {
     return CreateParserHelper(kNoTimestamp(), kNoTimestamp(), TextTracks(),
-                              std::set<int64>(), audio_encryption_key_id,
+                              std::set<int64_t>(), audio_encryption_key_id,
                               video_encryption_key_id, audio_codec);
   }
 
@@ -579,7 +583,7 @@ TEST_F(WebMClusterParserTest, ParseSimpleBlockAndBlockGroupMixture) {
 }
 
 TEST_F(WebMClusterParserTest, IgnoredTracks) {
-  std::set<int64> ignored_tracks;
+  std::set<int64_t> ignored_tracks;
   ignored_tracks.insert(kTextTrackNum);
 
   parser_.reset(CreateParserWithIgnoredTracks(ignored_tracks));

@@ -33,6 +33,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/build_config.h"
 
 #define DEBUG_AUDIONODE_REFERENCES 0
 
@@ -88,6 +89,7 @@ public:
         NodeTypeAnalyser,
         NodeTypeDynamicsCompressor,
         NodeTypeWaveShaper,
+        NodeTypeIIRFilter,
         NodeTypeEnd
     };
 
@@ -107,7 +109,7 @@ public:
     // nullptr otherwise.  This always returns a valid object in an audio
     // rendering thread, and inside dispose().  We must not call context() in
     // the destructor.
-    AbstractAudioContext* context() const;
+    virtual AbstractAudioContext* context() const;
     void clearContext() { m_context = nullptr; }
 
     enum ChannelCountMode {
@@ -235,17 +237,17 @@ private:
     volatile bool m_isInitialized;
     NodeType m_nodeType;
 
-    // The owner AudioNode.  This raw pointer is safe because dispose() is
+    // The owner AudioNode.  This untraced member is safe because dispose() is
     // called before the AudioNode death, and it clears m_node.  Do not access
     // m_node directly, use node() instead.
-    GC_PLUGIN_IGNORE("http://crbug.com/404527")
-    AudioNode* m_node;
+    // See http://crbug.com/404527 for the detail.
+    UntracedMember<AudioNode> m_node;
 
-    // This raw pointer is safe because this is cleared for all of live
+    // This untraced member is safe because this is cleared for all of live
     // AudioHandlers when the AbstractAudioContext dies.  Do not access m_context
     // directly, use context() instead.
-    GC_PLUGIN_IGNORE("http://crbug.com/404527")
-    AbstractAudioContext* m_context;
+    // See http://crbug.com/404527 for the detail.
+    UntracedMember<AbstractAudioContext> m_context;
 
     float m_sampleRate;
     Vector<OwnPtr<AudioNodeInput>> m_inputs;
@@ -280,7 +282,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
     AudioHandler& handler() const;
 
-    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
+    virtual AudioNode* connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
     void connect(AudioParam*, unsigned outputIndex, ExceptionState&);
     void disconnect();
     virtual void disconnect(unsigned outputIndex, ExceptionState&);

@@ -33,7 +33,7 @@ namespace SkOpts {
     // May return nullptr if we haven't specialized the given Mode.
     extern SkXfermode* (*create_xfermode)(const ProcCoeff&, SkXfermode::Mode);
 
-    typedef void (*BoxBlur)(const SkPMColor*, int, SkPMColor*, int, int, int, int, int);
+    typedef void (*BoxBlur)(const SkPMColor*, int, const SkIRect& srcBounds, SkPMColor*, int, int, int, int, int);
     extern BoxBlur box_blur_xx, box_blur_xy, box_blur_yx;
 
     typedef void (*Morph)(const SkPMColor*, SkPMColor*, int, int, int, int, int);
@@ -57,6 +57,11 @@ namespace SkOpts {
                                           const SkColor*);
 
     extern SkMatrix::MapPtsProc matrix_translate, matrix_scale_translate, matrix_affine;
+
+    typedef void (*Swizzle_8888_8888)(uint32_t[], const uint32_t[], int);
+    extern Swizzle_8888_8888 premul_xxxa,  // BGRA -> bgrA or RGBA -> rgbA
+                             swaprb_xxxa,  // BGRA -> RGBA or RGBA -> BGRA
+                      premul_swaprb_xxxa;  // BGRA -> rgbA or RGBA -> bgrA
 }
 
 #endif//SkOpts_DEFINED

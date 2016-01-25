@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/netinfo/NetworkInformation.h"
 
 #include "core/dom/ExecutionContext.h"
@@ -19,7 +18,9 @@ using namespace blink;
 String connectionTypeToString(WebConnectionType type)
 {
     switch (type) {
-    case WebConnectionTypeCellular:
+    case WebConnectionTypeCellular2G:
+    case WebConnectionTypeCellular3G:
+    case WebConnectionTypeCellular4G:
         return "cellular";
     case WebConnectionTypeBluetooth:
         return "bluetooth";
@@ -102,17 +103,17 @@ ExecutionContext* NetworkInformation::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool NetworkInformation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool NetworkInformation::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    if (!EventTargetWithInlineData::addEventListener(eventType, listener, useCapture))
+    if (!EventTargetWithInlineData::addEventListenerInternal(eventType, listener, options))
         return false;
     startObserving();
     return true;
 }
 
-bool NetworkInformation::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool NetworkInformation::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    if (!EventTargetWithInlineData::removeEventListener(eventType, listener, useCapture))
+    if (!EventTargetWithInlineData::removeEventListenerInternal(eventType, listener, options))
         return false;
     if (!hasEventListeners())
         stopObserving();

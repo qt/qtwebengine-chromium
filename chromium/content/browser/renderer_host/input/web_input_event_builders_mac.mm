@@ -33,6 +33,8 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
+#include <stdint.h>
+
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_util.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
@@ -117,16 +119,34 @@ bool IsKeyUpEvent(NSEvent* event) {
   return false;
 }
 
+inline NSString* FilterSpecialCharacter(NSString* str) {
+  if ([str length] != 1)
+    return str;
+  unichar c = [str characterAtIndex:0];
+  NSString* result = str;
+  if (c == 0x7F) {
+    // Backspace should be 8
+    result = @"\x8";
+  } else if (c >= 0xF700 && c <= 0xF7FF) {
+    // Mac private use characters should be @"\0" (@"" won't work)
+    // NSDeleteFunctionKey will also go into here
+    // Use the range 0xF700~0xF7FF to match
+    // http://www.opensource.apple.com/source/WebCore/WebCore-7601.1.55/platform/mac/KeyEventMac.mm
+    result = @"\0";
+  }
+  return result;
+}
+
 inline NSString* TextFromEvent(NSEvent* event) {
   if ([event type] == NSFlagsChanged)
     return @"";
-  return [event characters];
+  return FilterSpecialCharacter([event characters]);
 }
 
 inline NSString* UnmodifiedTextFromEvent(NSEvent* event) {
   if ([event type] == NSFlagsChanged)
     return @"";
-  return [event charactersIgnoringModifiers];
+  return FilterSpecialCharacter([event charactersIgnoringModifiers]);
 }
 
 NSString* KeyIdentifierForKeyEvent(NSEvent* event) {
@@ -502,7 +522,7 @@ void SetWebEventLocationFromEventInView(blink::WebMouseEvent* result,
   result->globalX = screen_local.x;
   // Flip y.
   NSScreen* primary_screen = ([[NSScreen screens] count] > 0)
-                                 ? [[NSScreen screens] objectAtIndex:0]
+                                 ? [[NSScreen screens] firstObject]
                                  : nil;
   if (primary_screen)
     result->globalY = [primary_screen frame].size.height - screen_local.y;
@@ -614,14 +634,6 @@ blink::WebKeyboardEvent WebKeyboardEventBuilder::Build(NSEvent* event) {
     unmodified_str = @"\r";
   }
 
-  // The adjustments below are only needed in backward compatibility mode,
-  // but we cannot tell what mode we are in from here.
-
-  // Turn 0x7F into 8, because backspace needs to always be 8.
-  if ([text_str isEqualToString:@"\x7F"])
-    text_str = @"\x8";
-  if ([unmodified_str isEqualToString:@"\x7F"])
-    unmodified_str = @"\x8";
   // Always use 9 for tab -- we don't want to use AppKit's different character
   // for shift-tab.
   if (result.windowsKeyCode == 9) {

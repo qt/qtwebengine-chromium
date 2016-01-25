@@ -5,6 +5,8 @@
 #ifndef NET_DER_PARSE_VALUES_H_
 #define NET_DER_PARSE_VALUES_H_
 
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
 #include "net/base/net_export.h"
 #include "net/der/input.h"
@@ -41,6 +43,9 @@ NET_EXPORT bool IsValidInteger(const Input& in,
 // integer.
 NET_EXPORT bool ParseUint64(const Input& in, uint64_t* out) WARN_UNUSED_RESULT;
 
+// Same as ParseUint64() but for a uint8_t.
+NET_EXPORT bool ParseUint8(const Input& in, uint8_t* out) WARN_UNUSED_RESULT;
+
 // The BitString class is a helper for representing a valid parsed BIT STRING.
 //
 // * The bits are ordered within each octet of bytes() from most to least
@@ -58,6 +63,14 @@ class NET_EXPORT BitString {
 
   const Input& bytes() const { return bytes_; }
   uint8_t unused_bits() const { return unused_bits_; }
+
+  // Returns true if the bit string contains 1 at the specified position.
+  // Otherwise returns false.
+  //
+  // A return value of false can mean either:
+  //  * The bit value at |bit_index| is 0.
+  //  * There is no bit at |bit_index| (index is beyond the end).
+  bool AssertsBit(size_t bit_index) const WARN_UNUSED_RESULT;
 
  private:
   Input bytes_;
@@ -100,7 +113,7 @@ NET_EXPORT bool ParseUTCTimeRelaxed(const Input& in,
 
 // Reads a DER-encoded ASN.1 GeneralizedTime value from |in| and puts the
 // resulting value in |out|, returning true if the GeneralizedTime could
-// be parsed sucessfully. This function is even more restrictive than the
+// be parsed successfully. This function is even more restrictive than the
 // DER rules - it follows the rules from RFC5280, which does not allow for
 // fractional seconds.
 NET_EXPORT bool ParseGeneralizedTime(const Input& in,

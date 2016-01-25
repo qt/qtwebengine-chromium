@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -228,6 +229,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
 
   void SetPendingFetch(bool pending_fetch);
 
+  // Set the headers to use during the Logout call.
+  void SetLogoutHeaders(const std::string& headers);
+
  private:
   // The format of the POST body for IssueAuthToken.
   static const char kIssueAuthTokenFormat[];
@@ -382,10 +386,11 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static std::string MakeGetUserInfoBody(const std::string& lsid);
 
   // Supply the authentication token returned from StartIssueAuthToken.
-  static std::string MakeMergeSessionBody(const std::string& auth_token,
-                                          const std::string& external_cc_result,
-                                          const std::string& continue_url,
-                                          const std::string& source);
+  static std::string MakeMergeSessionQuery(
+      const std::string& auth_token,
+      const std::string& external_cc_result,
+      const std::string& continue_url,
+      const std::string& source);
 
   static std::string MakeGetAuthCodeHeader(const std::string& auth_token);
 
@@ -428,6 +433,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   std::string request_body_;
   std::string requested_service_;
   bool fetch_pending_;
+
+  // Headers used during the Logout call.
+  std::string logout_headers_;
 
   friend class GaiaAuthFetcherTest;
   FRIEND_TEST_ALL_PREFIXES(GaiaAuthFetcherTest, CaptchaParse);

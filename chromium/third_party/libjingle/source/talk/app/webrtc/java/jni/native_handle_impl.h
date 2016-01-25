@@ -31,33 +31,45 @@
 
 #include <jni.h>
 
-#include "webrtc/common_video/interface/video_frame_buffer.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
+#include "webrtc/common_video/rotation.h"
 
 namespace webrtc_jni {
 
 // Wrapper for texture object.
-class NativeHandleImpl {
- public:
-  NativeHandleImpl();
+struct NativeHandleImpl {
+  NativeHandleImpl(JNIEnv* jni,
+                   jint j_oes_texture_id,
+                   jfloatArray j_transform_matrix);
 
-  void* GetHandle();
-  int GetTextureId();
-  void SetTextureObject(void* texture_object, int texture_id);
-
- private:
-  jobject texture_object_;
-  int32_t texture_id_;
+  const int oes_texture_id;
+  float sampling_matrix[16];
 };
 
-class JniNativeHandleBuffer : public webrtc::NativeHandleBuffer {
+class AndroidTextureBuffer : public webrtc::NativeHandleBuffer {
  public:
-  JniNativeHandleBuffer(void* native_handle, int width, int height);
+  AndroidTextureBuffer(int width,
+                       int height,
+                       const NativeHandleImpl& native_handle,
+                       jobject surface_texture_helper,
+                       const rtc::Callback0<void>& no_longer_used);
+  ~AndroidTextureBuffer();
+  rtc::scoped_refptr<VideoFrameBuffer> NativeToI420Buffer() override;
 
-  // TODO(pbos): Override destructor to release native handle, at the moment the
-  // native handle is not released based on refcount.
+  rtc::scoped_refptr<AndroidTextureBuffer> ScaleAndRotate(
+      int dst_widht,
+      int dst_height,
+      webrtc::VideoRotation rotation);
 
  private:
-  rtc::scoped_refptr<webrtc::VideoFrameBuffer> NativeToI420Buffer() override;
+  NativeHandleImpl native_handle_;
+  // Raw object pointer, relying on the caller, i.e.,
+  // AndroidVideoCapturerJni or the C++ SurfaceTextureHelper, to keep
+  // a global reference. TODO(nisse): Make this a reference to the C++
+  // SurfaceTextureHelper instead, but that requires some refactoring
+  // of AndroidVideoCapturerJni.
+  jobject surface_texture_helper_;
+  rtc::Callback0<void> no_longer_used_cb_;
 };
 
 }  // namespace webrtc_jni

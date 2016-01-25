@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSStyleRule.h"
 
 #include "core/css/CSSSelector.h"
@@ -32,7 +31,8 @@
 
 namespace blink {
 
-using SelectorTextCache = HashMap<const CSSStyleRule*, String>;
+using SelectorTextCache = WillBePersistentHeapHashMap<RawPtrWillBeWeakMember<const CSSStyleRule>, String>;
+
 static SelectorTextCache& selectorTextCache()
 {
     DEFINE_STATIC_LOCAL(SelectorTextCache, cache, ());
@@ -52,7 +52,9 @@ CSSStyleRule::~CSSStyleRule()
         m_propertiesCSSOMWrapper->clearParentRule();
 #endif
     if (hasCachedSelectorText()) {
+#if !ENABLE(OILPAN)
         selectorTextCache().remove(this);
+#endif
         setHasCachedSelectorText(false);
     }
 }
@@ -93,14 +95,13 @@ String CSSStyleRule::selectorText() const
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
     CSSParserContext context(parserContext(), 0);
-    CSSSelectorList selectorList;
-    CSSParser::parseSelector(context, selectorText, selectorList);
+    CSSSelectorList selectorList = CSSParser::parseSelector(context, selectorText);
     if (!selectorList.isValid())
         return;
 
     CSSStyleSheet::RuleMutationScope mutationScope(this);
 
-    m_styleRule->wrapperAdoptSelectorList(selectorList);
+    m_styleRule->wrapperAdoptSelectorList(std::move(selectorList));
 
     if (hasCachedSelectorText()) {
         selectorTextCache().remove(this);

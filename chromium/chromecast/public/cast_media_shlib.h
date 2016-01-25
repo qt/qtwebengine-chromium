@@ -42,11 +42,26 @@ class CHROMECAST_EXPORT CastMediaShlib {
   // called at any time.  The VideoPlane object must be destroyed in Finalize.
   static VideoPlane* GetVideoPlane();
 
-  // Creates a factory object for a media pipeline backend.  Called in the
-  // browser process, any number of times (once per media pipeline).  Each call
-  // must instantiate a new factory object
+  // Creates a media pipeline backend.  Called in the browser process for each
+  // media pipeline and raw audio stream. The caller owns the returned
+  // MediaPipelineBackend instance.
   static MediaPipelineBackend* CreateMediaPipelineBackend(
       const MediaPipelineDeviceParams& params);
+
+  // Fetches the renderer clock rate (Hz).
+  static double GetMediaClockRate();
+
+  // Fetches the granularity of clock rate adjustments.
+  static double MediaClockRatePrecision();
+
+  // Fetches the possible range of clock rate adjustments.
+  static void MediaClockRateRange(double* minimum_rate, double* maximum_rate);
+
+  // Sets the renderer clock rate (Hz).
+  static bool SetMediaClockRate(double new_rate);
+
+  // Tests if the implementation supports renderer clock rate adjustments.
+  static bool SupportsMediaClockRateChange();
 };
 
 }  // namespace media

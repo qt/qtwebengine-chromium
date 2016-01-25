@@ -8,7 +8,6 @@
 #include <iostream>
 
 #include "base/at_exit.h"
-#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
@@ -20,16 +19,16 @@
 #include "net/tools/quic/quic_server.h"
 
 // The port the quic server will listen on.
-int32 FLAGS_port = 6121;
+int32_t FLAGS_port = 6121;
 
 net::ProofSource* CreateProofSource(const base::FilePath& cert_path,
                                     const base::FilePath& key_path) {
   net::ProofSourceChromium* proof_source = new net::ProofSourceChromium();
-  CHECK(proof_source->Initialize(cert_path, key_path));
+  CHECK(proof_source->Initialize(cert_path, key_path, base::FilePath()));
   return proof_source;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   base::AtExitManager exit_manager;
   base::MessageLoopForIO message_loop;
 
@@ -67,23 +66,25 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  net::IPAddressNumber ip;
-  CHECK(net::ParseIPLiteralToNumber("::", &ip));
-
-  net::QuicConfig config;
-  net::tools::QuicServer server(config, net::QuicSupportedVersions());
-  server.SetStrikeRegisterNoStartupPeriod();
   if (!line->HasSwitch("certificate_file")) {
     LOG(ERROR) << "missing --certificate_file";
     return 1;
   }
+
   if (!line->HasSwitch("key_file")) {
     LOG(ERROR) << "missing --key_file";
     return 1;
   }
-  server.SetProofSource(
+
+  net::IPAddressNumber ip;
+  CHECK(net::ParseIPLiteralToNumber("::", &ip));
+
+  net::QuicConfig config;
+  net::tools::QuicServer server(
       CreateProofSource(line->GetSwitchValuePath("certificate_file"),
-                        line->GetSwitchValuePath("key_file")));
+                        line->GetSwitchValuePath("key_file")),
+      config, net::QuicSupportedVersions());
+  server.SetStrikeRegisterNoStartupPeriod();
 
   int rc = server.Listen(net::IPEndPoint(ip, FLAGS_port));
   if (rc < 0) {

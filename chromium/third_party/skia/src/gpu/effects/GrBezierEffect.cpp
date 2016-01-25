@@ -7,11 +7,15 @@
 
 #include "GrBezierEffect.h"
 
-#include "gl/GrGLFragmentProcessor.h"
-#include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLGeometryProcessor.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
+#include "glsl/GrGLSLUtil.h"
+#include "glsl/GrGLSLVarying.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
-class GrGLConicEffect : public GrGLGeometryProcessor {
+class GrGLConicEffect : public GrGLSLGeometryProcessor {
 public:
     GrGLConicEffect(const GrGeometryProcessor&);
 
@@ -21,19 +25,19 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager& pdman,
+    void setData(const GrGLSLProgramDataManager& pdman,
                  const GrPrimitiveProcessor& primProc) override {
         const GrConicEffect& ce = primProc.cast<GrConicEffect>();
 
         if (!ce.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(ce.viewMatrix())) {
             fViewMatrix = ce.viewMatrix();
-            GrGLfloat viewMatrix[3 * 3];
-            GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
+            float viewMatrix[3 * 3];
+            GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
 
         if (ce.color() != fColor) {
-            GrGLfloat c[4];
+            float c[4];
             GrColorToRGBAFloat(ce.color(), c);
             pdman.set4fv(fColorUniform, 1, c);
             fColor = ce.color();
@@ -46,7 +50,7 @@ public:
     }
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataHelper<GrConicEffect>(primProc, pdman, index, transforms);
@@ -61,7 +65,7 @@ private:
     UniformHandle fCoverageScaleUniform;
     UniformHandle fViewMatrixUniform;
 
-    typedef GrGLGeometryProcessor INHERITED;
+    typedef GrGLSLGeometryProcessor INHERITED;
 };
 
 GrGLConicEffect::GrGLConicEffect(const GrGeometryProcessor& processor)
@@ -71,80 +75,137 @@ GrGLConicEffect::GrGLConicEffect(const GrGeometryProcessor& processor)
 }
 
 void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
-    GrGLGPBuilder* pb = args.fPB;
-    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
     const GrConicEffect& gp = args.fGP.cast<GrConicEffect>();
+    GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
+    GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
     // emit attributes
-    vsBuilder->emitAttributes(gp);
+    varyingHandler->emitAttributes(gp);
 
-    GrGLVertToFrag v(kVec4f_GrSLType);
-    args.fPB->addVarying("ConicCoeffs", &v);
-    vsBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inConicCoeffs()->fName);
+    GrGLSLVertToFrag v(kVec4f_GrSLType);
+    varyingHandler->addVarying("ConicCoeffs", &v, kHigh_GrSLPrecision);
+    vertBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inConicCoeffs()->fName);
 
+    GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     // Setup pass through color
     if (!gp.colorIgnored()) {
-        this->setupUniformColor(args.fPB, args.fOutputColor, &fColorUniform);
+        this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
     }
 
     // Setup position
-    this->setupPosition(pb, gpArgs, gp.inPosition()->fName, gp.viewMatrix(), &fViewMatrixUniform);
+    this->setupPosition(vertBuilder,
+                        uniformHandler,
+                        gpArgs,
+                        gp.inPosition()->fName,
+                        gp.viewMatrix(),
+                        &fViewMatrixUniform);
 
     // emit transforms with position
-    this->emitTransforms(pb, gpArgs->fPositionVar, gp.inPosition()->fName, gp.localMatrix(),
-                         args.fTransformsIn, args.fTransformsOut);
+    this->emitTransforms(vertBuilder,
+                         varyingHandler,
+                         uniformHandler,
+                         gpArgs->fPositionVar,
+                         gp.inPosition()->fName,
+                         gp.localMatrix(),
+                         args.fTransformsIn,
+                         args.fTransformsOut);
 
-    GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
-    fsBuilder->codeAppend("float edgeAlpha;");
+    // TODO: this precision check should actually be a check on the number of bits
+    // high and medium provide and the selection of the lowest level that suffices.
+    // Additionally we should assert that the upstream code only lets us get here if
+    // either high or medium provides the required number of bits.
+    GrSLPrecision precision = kHigh_GrSLPrecision;
+    const GrShaderCaps::PrecisionInfo& highP = args.fGLSLCaps->getFloatShaderPrecisionInfo(
+                                                             kFragment_GrShaderType,
+                                                             kHigh_GrSLPrecision);
+    if (!highP.supported()) {
+        precision = kMedium_GrSLPrecision;
+    }
+
+    GrGLSLShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0, precision);
+    GrGLSLShaderVar dklmdx("dklmdx", kVec3f_GrSLType, 0, precision);
+    GrGLSLShaderVar dklmdy("dklmdy", kVec3f_GrSLType, 0, precision);
+    GrGLSLShaderVar dfdx("dfdx", kFloat_GrSLType, 0, precision);
+    GrGLSLShaderVar dfdy("dfdy", kFloat_GrSLType, 0, precision);
+    GrGLSLShaderVar gF("gF", kVec2f_GrSLType, 0, precision);
+    GrGLSLShaderVar gFM("gFM", kFloat_GrSLType, 0, precision);
+    GrGLSLShaderVar func("func", kFloat_GrSLType, 0, precision);
+
+    fragBuilder->declAppend(edgeAlpha);
+    fragBuilder->declAppend(dklmdx);
+    fragBuilder->declAppend(dklmdy);
+    fragBuilder->declAppend(dfdx);
+    fragBuilder->declAppend(dfdy);
+    fragBuilder->declAppend(gF);
+    fragBuilder->declAppend(gFM);
+    fragBuilder->declAppend(func);
 
     switch (fEdgeType) {
         case kHairlineAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("vec3 dklmdx = dFdx(%s.xyz);", v.fsIn());
-            fsBuilder->codeAppendf("vec3 dklmdy = dFdy(%s.xyz);", v.fsIn());
-            fsBuilder->codeAppendf("float dfdx ="
-                                   "2.0 * %s.x * dklmdx.x - %s.y * dklmdx.z - %s.z * dklmdx.y;",
-                                   v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("float dfdy ="
-                                   "2.0 * %s.x * dklmdy.x - %s.y * dklmdy.z - %s.z * dklmdy.y;",
-                                   v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("vec2 gF = vec2(dfdx, dfdy);");
-            fsBuilder->codeAppend("float gFM = sqrt(dot(gF, gF));");
-            fsBuilder->codeAppendf("float func = %s.x*%s.x - %s.y*%s.z;", v.fsIn(), v.fsIn(),
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("func = abs(func);");
-            fsBuilder->codeAppend("edgeAlpha = func / gFM;");
-            fsBuilder->codeAppend("edgeAlpha = max(1.0 - edgeAlpha, 0.0);");
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = 2.0 * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str());
+            fragBuilder->codeAppendf("%s = 2.0 * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str());
+            fragBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
+                                     gFM.c_str(), gF.c_str(), gF.c_str());
+            fragBuilder->codeAppendf("%s = %s.x*%s.x - %s.y*%s.z;",
+                                     func.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = abs(%s);", func.c_str(), func.c_str());
+            fragBuilder->codeAppendf("%s = %s / %s;",
+                                     edgeAlpha.c_str(), func.c_str(), gFM.c_str());
+            fragBuilder->codeAppendf("%s = max(1.0 - %s, 0.0);",
+                                     edgeAlpha.c_str(), edgeAlpha.c_str());
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
+            // fragBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
             break;
         }
         case kFillAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("vec3 dklmdx = dFdx(%s.xyz);", v.fsIn());
-            fsBuilder->codeAppendf("vec3 dklmdy = dFdy(%s.xyz);", v.fsIn());
-            fsBuilder->codeAppendf("float dfdx ="
-                                   "2.0 * %s.x * dklmdx.x - %s.y * dklmdx.z - %s.z * dklmdx.y;",
-                                   v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("float dfdy ="
-                                   "2.0 * %s.x * dklmdy.x - %s.y * dklmdy.z - %s.z * dklmdy.y;",
-                                   v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("vec2 gF = vec2(dfdx, dfdy);");
-            fsBuilder->codeAppend("float gFM = sqrt(dot(gF, gF));");
-            fsBuilder->codeAppendf("float func = %s.x * %s.x - %s.y * %s.z;", v.fsIn(), v.fsIn(),
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("edgeAlpha = func / gFM;");
-            fsBuilder->codeAppend("edgeAlpha = clamp(1.0 - edgeAlpha, 0.0, 1.0);");
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s ="
+                                     "2.0 * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str(),
+                                     v.fsIn(), dklmdx.c_str());
+            fragBuilder->codeAppendf("%s ="
+                                     "2.0 * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str(),
+                                     v.fsIn(), dklmdy.c_str());
+            fragBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
+                                     gFM.c_str(), gF.c_str(), gF.c_str());
+            fragBuilder->codeAppendf("%s = %s.x * %s.x - %s.y * %s.z;",
+                                     func.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = %s / %s;",
+                                     edgeAlpha.c_str(), func.c_str(), gFM.c_str());
+            fragBuilder->codeAppendf("%s = clamp(1.0 - %s, 0.0, 1.0);",
+                                     edgeAlpha.c_str(), edgeAlpha.c_str());
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
+            // fragBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
             break;
         }
         case kFillBW_GrProcessorEdgeType: {
-            fsBuilder->codeAppendf("edgeAlpha = %s.x * %s.x - %s.y * %s.z;", v.fsIn(), v.fsIn(),
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("edgeAlpha = float(edgeAlpha < 0.0);");
+            fragBuilder->codeAppendf("%s = %s.x * %s.x - %s.y * %s.z;",
+                                     edgeAlpha.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = float(%s < 0.0);",
+                                     edgeAlpha.c_str(), edgeAlpha.c_str());
             break;
         }
         default:
@@ -154,14 +215,16 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     // TODO should we really be doing this?
     if (gp.coverageScale() != 0xff) {
         const char* coverageScale;
-        fCoverageScaleUniform = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                               kFloat_GrSLType,
-                                               kDefault_GrSLPrecision,
-                                               "Coverage",
-                                               &coverageScale);
-        fsBuilder->codeAppendf("%s = vec4(%s * edgeAlpha);", args.fOutputCoverage, coverageScale);
+        fCoverageScaleUniform = uniformHandler->addUniform(
+                                                         GrGLSLUniformHandler::kFragment_Visibility,
+                                                         kFloat_GrSLType,
+                                                         kHigh_GrSLPrecision,
+                                                         "Coverage",
+                                                         &coverageScale);
+        fragBuilder->codeAppendf("%s = vec4(%s * %s);",
+                                 args.fOutputCoverage, coverageScale, edgeAlpha.c_str());
     } else {
-        fsBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("%s = vec4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
     }
 }
 
@@ -181,12 +244,12 @@ void GrGLConicEffect::GenKey(const GrGeometryProcessor& gp,
 
 GrConicEffect::~GrConicEffect() {}
 
-void GrConicEffect::getGLProcessorKey(const GrGLSLCaps& caps,
-                                      GrProcessorKeyBuilder* b) const {
+void GrConicEffect::getGLSLProcessorKey(const GrGLSLCaps& caps,
+                                        GrProcessorKeyBuilder* b) const {
     GrGLConicEffect::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor* GrConicEffect::createGLInstance(const GrGLSLCaps&) const {
+GrGLSLPrimitiveProcessor* GrConicEffect::createGLSLInstance(const GrGLSLCaps&) const {
     return new GrGLConicEffect(*this);
 }
 
@@ -227,7 +290,7 @@ const GrGeometryProcessor* GrConicEffect::TestCreate(GrProcessorTestData* d) {
 // Quad
 //////////////////////////////////////////////////////////////////////////////
 
-class GrGLQuadEffect : public GrGLGeometryProcessor {
+class GrGLQuadEffect : public GrGLSLGeometryProcessor {
 public:
     GrGLQuadEffect(const GrGeometryProcessor&);
 
@@ -237,19 +300,19 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager& pdman,
+    void setData(const GrGLSLProgramDataManager& pdman,
                  const GrPrimitiveProcessor& primProc) override {
         const GrQuadEffect& qe = primProc.cast<GrQuadEffect>();
 
         if (!qe.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(qe.viewMatrix())) {
             fViewMatrix = qe.viewMatrix();
-            GrGLfloat viewMatrix[3 * 3];
-            GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
+            float viewMatrix[3 * 3];
+            GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
 
         if (qe.color() != fColor) {
-            GrGLfloat c[4];
+            float c[4];
             GrColorToRGBAFloat(qe.color(), c);
             pdman.set4fv(fColorUniform, 1, c);
             fColor = qe.color();
@@ -262,7 +325,7 @@ public:
     }
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataHelper<GrQuadEffect>(primProc, pdman, index, transforms);
@@ -277,7 +340,7 @@ private:
     UniformHandle fCoverageScaleUniform;
     UniformHandle fViewMatrixUniform;
 
-    typedef GrGLGeometryProcessor INHERITED;
+    typedef GrGLSLGeometryProcessor INHERITED;
 };
 
 GrGLQuadEffect::GrGLQuadEffect(const GrGeometryProcessor& processor)
@@ -287,66 +350,81 @@ GrGLQuadEffect::GrGLQuadEffect(const GrGeometryProcessor& processor)
 }
 
 void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
-    GrGLGPBuilder* pb = args.fPB;
-    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
     const GrQuadEffect& gp = args.fGP.cast<GrQuadEffect>();
+    GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
+    GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
     // emit attributes
-    vsBuilder->emitAttributes(gp);
+    varyingHandler->emitAttributes(gp);
 
-    GrGLVertToFrag v(kVec4f_GrSLType);
-    args.fPB->addVarying("HairQuadEdge", &v);
-    vsBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inHairQuadEdge()->fName);
+    GrGLSLVertToFrag v(kVec4f_GrSLType);
+    varyingHandler->addVarying("HairQuadEdge", &v);
+    vertBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inHairQuadEdge()->fName);
 
+    GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     // Setup pass through color
     if (!gp.colorIgnored()) {
-        this->setupUniformColor(args.fPB, args.fOutputColor, &fColorUniform);
+        this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
     }
 
     // Setup position
-    this->setupPosition(pb, gpArgs, gp.inPosition()->fName, gp.viewMatrix(), &fViewMatrixUniform);
+    this->setupPosition(vertBuilder,
+                        uniformHandler,
+                        gpArgs,
+                        gp.inPosition()->fName,
+                        gp.viewMatrix(),
+                        &fViewMatrixUniform);
 
     // emit transforms with position
-    this->emitTransforms(pb, gpArgs->fPositionVar, gp.inPosition()->fName, gp.localMatrix(),
-                         args.fTransformsIn, args.fTransformsOut);
+    this->emitTransforms(vertBuilder,
+                         varyingHandler,
+                         uniformHandler,
+                         gpArgs->fPositionVar,
+                         gp.inPosition()->fName,
+                         gp.localMatrix(),
+                         args.fTransformsIn,
+                         args.fTransformsOut);
 
-    GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
-    fsBuilder->codeAppendf("float edgeAlpha;");
+    fragBuilder->codeAppendf("float edgeAlpha;");
 
     switch (fEdgeType) {
         case kHairlineAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("vec2 gF = vec2(2.0 * %s.x * duvdx.x - duvdx.y,"
-                                   "               2.0 * %s.x * duvdy.x - duvdy.y);",
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);", v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("edgeAlpha = sqrt(edgeAlpha * edgeAlpha / dot(gF, gF));");
-            fsBuilder->codeAppend("edgeAlpha = max(1.0 - edgeAlpha, 0.0);");
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("vec2 gF = vec2(2.0 * %s.x * duvdx.x - duvdx.y,"
+                                     "               2.0 * %s.x * duvdy.x - duvdy.y);",
+                                     v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
+                                     v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppend("edgeAlpha = sqrt(edgeAlpha * edgeAlpha / dot(gF, gF));");
+            fragBuilder->codeAppend("edgeAlpha = max(1.0 - edgeAlpha, 0.0);");
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
+            // fragBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
             break;
         }
         case kFillAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
-            fsBuilder->codeAppendf("vec2 gF = vec2(2.0 * %s.x * duvdx.x - duvdx.y,"
-                                   "               2.0 * %s.x * duvdy.x - duvdy.y);",
-                                   v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);", v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("edgeAlpha = edgeAlpha / sqrt(dot(gF, gF));");
-            fsBuilder->codeAppend("edgeAlpha = clamp(1.0 - edgeAlpha, 0.0, 1.0);");
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("vec2 gF = vec2(2.0 * %s.x * duvdx.x - duvdx.y,"
+                                     "               2.0 * %s.x * duvdy.x - duvdy.y);",
+                                     v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
+                                     v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppend("edgeAlpha = edgeAlpha / sqrt(dot(gF, gF));");
+            fragBuilder->codeAppend("edgeAlpha = clamp(1.0 - edgeAlpha, 0.0, 1.0);");
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
+            // fragBuilder->codeAppend("edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);");
             break;
         }
         case kFillBW_GrProcessorEdgeType: {
-            fsBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);", v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppend("edgeAlpha = float(edgeAlpha < 0.0);");
+            fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
+                                     v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppend("edgeAlpha = float(edgeAlpha < 0.0);");
             break;
         }
         default:
@@ -355,14 +433,15 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     if (0xff != gp.coverageScale()) {
         const char* coverageScale;
-        fCoverageScaleUniform = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                          kFloat_GrSLType,
-                                          kDefault_GrSLPrecision,
-                                          "Coverage",
-                                          &coverageScale);
-        fsBuilder->codeAppendf("%s = vec4(%s * edgeAlpha);", args.fOutputCoverage, coverageScale);
+        fCoverageScaleUniform = uniformHandler->addUniform(
+                                                         GrGLSLUniformHandler::kFragment_Visibility,
+                                                         kFloat_GrSLType,
+                                                         kDefault_GrSLPrecision,
+                                                         "Coverage",
+                                                         &coverageScale);
+        fragBuilder->codeAppendf("%s = vec4(%s * edgeAlpha);", args.fOutputCoverage, coverageScale);
     } else {
-        fsBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
     }
 }
 
@@ -382,12 +461,12 @@ void GrGLQuadEffect::GenKey(const GrGeometryProcessor& gp,
 
 GrQuadEffect::~GrQuadEffect() {}
 
-void GrQuadEffect::getGLProcessorKey(const GrGLSLCaps& caps,
-                                     GrProcessorKeyBuilder* b) const {
+void GrQuadEffect::getGLSLProcessorKey(const GrGLSLCaps& caps,
+                                       GrProcessorKeyBuilder* b) const {
     GrGLQuadEffect::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor* GrQuadEffect::createGLInstance(const GrGLSLCaps&) const {
+GrGLSLPrimitiveProcessor* GrQuadEffect::createGLSLInstance(const GrGLSLCaps&) const {
     return new GrGLQuadEffect(*this);
 }
 
@@ -429,7 +508,7 @@ const GrGeometryProcessor* GrQuadEffect::TestCreate(GrProcessorTestData* d) {
 // Cubic
 //////////////////////////////////////////////////////////////////////////////
 
-class GrGLCubicEffect : public GrGLGeometryProcessor {
+class GrGLCubicEffect : public GrGLSLGeometryProcessor {
 public:
     GrGLCubicEffect(const GrGeometryProcessor&);
 
@@ -439,19 +518,19 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager& pdman,
+    void setData(const GrGLSLProgramDataManager& pdman,
                  const GrPrimitiveProcessor& primProc) override {
         const GrCubicEffect& ce = primProc.cast<GrCubicEffect>();
 
         if (!ce.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(ce.viewMatrix())) {
             fViewMatrix = ce.viewMatrix();
-            GrGLfloat viewMatrix[3 * 3];
-            GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
+            float viewMatrix[3 * 3];
+            GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
 
         if (ce.color() != fColor) {
-            GrGLfloat c[4];
+            float c[4];
             GrColorToRGBAFloat(ce.color(), c);
             pdman.set4fv(fColorUniform, 1, c);
             fColor = ce.color();
@@ -465,7 +544,7 @@ private:
     UniformHandle fColorUniform;
     UniformHandle fViewMatrixUniform;
 
-    typedef GrGLGeometryProcessor INHERITED;
+    typedef GrGLSLGeometryProcessor INHERITED;
 };
 
 GrGLCubicEffect::GrGLCubicEffect(const GrGeometryProcessor& processor)
@@ -475,106 +554,122 @@ GrGLCubicEffect::GrGLCubicEffect(const GrGeometryProcessor& processor)
 }
 
 void GrGLCubicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
-    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
     const GrCubicEffect& gp = args.fGP.cast<GrCubicEffect>();
+    GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
+    GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
 
     // emit attributes
-    vsBuilder->emitAttributes(gp);
+    varyingHandler->emitAttributes(gp);
 
-    GrGLVertToFrag v(kVec4f_GrSLType);
-    args.fPB->addVarying("CubicCoeffs", &v, kHigh_GrSLPrecision);
-    vsBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inCubicCoeffs()->fName);
+    GrGLSLVertToFrag v(kVec4f_GrSLType);
+    varyingHandler->addVarying("CubicCoeffs", &v, kHigh_GrSLPrecision);
+    vertBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inCubicCoeffs()->fName);
 
+    GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     // Setup pass through color
     if (!gp.colorIgnored()) {
-        this->setupUniformColor(args.fPB, args.fOutputColor, &fColorUniform);
+        this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
     }
 
     // Setup position
-    this->setupPosition(args.fPB, gpArgs, gp.inPosition()->fName, gp.viewMatrix(),
+    this->setupPosition(vertBuilder,
+                        uniformHandler,
+                        gpArgs,
+                        gp.inPosition()->fName,
+                        gp.viewMatrix(),
                         &fViewMatrixUniform);
 
     // emit transforms with position
-    this->emitTransforms(args.fPB, gpArgs->fPositionVar, gp.inPosition()->fName, args.fTransformsIn,
+    this->emitTransforms(vertBuilder,
+                         varyingHandler,
+                         uniformHandler,
+                         gpArgs->fPositionVar,
+                         gp.inPosition()->fName,
+                         args.fTransformsIn,
                          args.fTransformsOut);
 
-    GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
 
-    GrGLShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar dklmdx("dklmdx", kVec3f_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar dklmdy("dklmdy", kVec3f_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar dfdx("dfdx", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar dfdy("dfdy", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar gF("gF", kVec2f_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar gFM("gFM", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
-    GrGLShaderVar func("func", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar dklmdx("dklmdx", kVec3f_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar dklmdy("dklmdy", kVec3f_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar dfdx("dfdx", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar dfdy("dfdy", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar gF("gF", kVec2f_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar gFM("gFM", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrGLSLShaderVar func("func", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
 
-    fsBuilder->declAppend(edgeAlpha);
-    fsBuilder->declAppend(dklmdx);
-    fsBuilder->declAppend(dklmdy);
-    fsBuilder->declAppend(dfdx);
-    fsBuilder->declAppend(dfdy);
-    fsBuilder->declAppend(gF);
-    fsBuilder->declAppend(gFM);
-    fsBuilder->declAppend(func);
+    fragBuilder->declAppend(edgeAlpha);
+    fragBuilder->declAppend(dklmdx);
+    fragBuilder->declAppend(dklmdy);
+    fragBuilder->declAppend(dfdx);
+    fragBuilder->declAppend(dfdy);
+    fragBuilder->declAppend(gF);
+    fragBuilder->declAppend(gFM);
+    fragBuilder->declAppend(func);
 
     switch (fEdgeType) {
         case kHairlineAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
-            fsBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
-            fsBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
-                                   dfdx.c_str(), v.fsIn(), v.fsIn(), dklmdx.c_str(), v.fsIn(),
-                                   dklmdx.c_str(), v.fsIn(), dklmdx.c_str());
-            fsBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
-                                   dfdy.c_str(), v.fsIn(), v.fsIn(), dklmdy.c_str(), v.fsIn(),
-                                   dklmdy.c_str(), v.fsIn(), dklmdy.c_str());
-            fsBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
-            fsBuilder->codeAppendf("%s = sqrt(dot(%s, %s));", gFM.c_str(), gF.c_str(), gF.c_str());
-            fsBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
-                                   func.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("%s = abs(%s);", func.c_str(), func.c_str());
-            fsBuilder->codeAppendf("%s = %s / %s;",
-                                   edgeAlpha.c_str(), func.c_str(), gFM.c_str());
-            fsBuilder->codeAppendf("%s = max(1.0 - %s, 0.0);",
-                                   edgeAlpha.c_str(), edgeAlpha.c_str());
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdx.c_str(), v.fsIn(), v.fsIn(), dklmdx.c_str(), v.fsIn(),
+                                     dklmdx.c_str(), v.fsIn(), dklmdx.c_str());
+            fragBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdy.c_str(), v.fsIn(), v.fsIn(), dklmdy.c_str(), v.fsIn(),
+                                     dklmdy.c_str(), v.fsIn(), dklmdy.c_str());
+            fragBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
+                                     gFM.c_str(), gF.c_str(), gF.c_str());
+            fragBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
+                                     func.c_str(), v.fsIn(), v.fsIn(),
+                                     v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = abs(%s);", func.c_str(), func.c_str());
+            fragBuilder->codeAppendf("%s = %s / %s;",
+                                     edgeAlpha.c_str(), func.c_str(), gFM.c_str());
+            fragBuilder->codeAppendf("%s = max(1.0 - %s, 0.0);",
+                                     edgeAlpha.c_str(), edgeAlpha.c_str());
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppendf("%s = %s * %s * (3.0 - 2.0 * %s);",
+            // fragBuilder->codeAppendf("%s = %s * %s * (3.0 - 2.0 * %s);",
             //                        edgeAlpha.c_str(), edgeAlpha.c_str(), edgeAlpha.c_str(),
             //                        edgeAlpha.c_str());
             break;
         }
         case kFillAA_GrProcessorEdgeType: {
-            SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
-            fsBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
-            fsBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
-            fsBuilder->codeAppendf("%s ="
-                                   "3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
-                                   dfdx.c_str(), v.fsIn(), v.fsIn(), dklmdx.c_str(), v.fsIn(),
-                                   dklmdx.c_str(), v.fsIn(), dklmdx.c_str());
-            fsBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
-                                   dfdy.c_str(), v.fsIn(), v.fsIn(), dklmdy.c_str(), v.fsIn(),
-                                   dklmdy.c_str(), v.fsIn(), dklmdy.c_str());
-            fsBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
-            fsBuilder->codeAppendf("%s = sqrt(dot(%s, %s));", gFM.c_str(), gF.c_str(), gF.c_str());
-            fsBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
-                                   func.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("%s = %s / %s;",
-                                   edgeAlpha.c_str(), func.c_str(), gFM.c_str());
-            fsBuilder->codeAppendf("%s = clamp(1.0 - %s, 0.0, 1.0);",
-                                   edgeAlpha.c_str(), edgeAlpha.c_str());
+            SkAssertResult(fragBuilder->enableFeature(
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+            fragBuilder->codeAppendf("%s = dFdx(%s.xyz);", dklmdx.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s = dFdy(%s.xyz);", dklmdy.c_str(), v.fsIn());
+            fragBuilder->codeAppendf("%s ="
+                                     "3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdx.c_str(), v.fsIn(), v.fsIn(), dklmdx.c_str(), v.fsIn(),
+                                     dklmdx.c_str(), v.fsIn(), dklmdx.c_str());
+            fragBuilder->codeAppendf("%s = 3.0 * %s.x * %s.x * %s.x - %s.y * %s.z - %s.z * %s.y;",
+                                     dfdy.c_str(), v.fsIn(), v.fsIn(), dklmdy.c_str(), v.fsIn(),
+                                     dklmdy.c_str(), v.fsIn(), dklmdy.c_str());
+            fragBuilder->codeAppendf("%s = vec2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
+                                     gFM.c_str(), gF.c_str(), gF.c_str());
+            fragBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
+                                     func.c_str(),
+                                     v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = %s / %s;",
+                                     edgeAlpha.c_str(), func.c_str(), gFM.c_str());
+            fragBuilder->codeAppendf("%s = clamp(1.0 - %s, 0.0, 1.0);",
+                                     edgeAlpha.c_str(), edgeAlpha.c_str());
             // Add line below for smooth cubic ramp
-            // fsBuilder->codeAppendf("%s = %s * %s * (3.0 - 2.0 * %s);",
+            // fragBuilder->codeAppendf("%s = %s * %s * (3.0 - 2.0 * %s);",
             //                        edgeAlpha.c_str(), edgeAlpha.c_str(), edgeAlpha.c_str(),
             //                        edgeAlpha.c_str());
             break;
         }
         case kFillBW_GrProcessorEdgeType: {
-            fsBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
-                                   edgeAlpha.c_str(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn(), v.fsIn());
-            fsBuilder->codeAppendf("%s = float(%s < 0.0);", edgeAlpha.c_str(), edgeAlpha.c_str());
+            fragBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
+                                     edgeAlpha.c_str(), v.fsIn(), v.fsIn(),
+                                     v.fsIn(), v.fsIn(), v.fsIn());
+            fragBuilder->codeAppendf("%s = float(%s < 0.0);", edgeAlpha.c_str(), edgeAlpha.c_str());
             break;
         }
         default:
@@ -582,7 +677,7 @@ void GrGLCubicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     }
 
 
-    fsBuilder->codeAppendf("%s = vec4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
+    fragBuilder->codeAppendf("%s = vec4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
 }
 
 void GrGLCubicEffect::GenKey(const GrGeometryProcessor& gp,
@@ -599,11 +694,11 @@ void GrGLCubicEffect::GenKey(const GrGeometryProcessor& gp,
 
 GrCubicEffect::~GrCubicEffect() {}
 
-void GrCubicEffect::getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void GrCubicEffect::getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GrGLCubicEffect::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor* GrCubicEffect::createGLInstance(const GrGLSLCaps&) const {
+GrGLSLPrimitiveProcessor* GrCubicEffect::createGLSLInstance(const GrGLSLCaps&) const {
     return new GrGLCubicEffect(*this);
 }
 

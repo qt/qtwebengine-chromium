@@ -5,20 +5,24 @@
 #ifndef IPC_IPC_CHANNEL_MOJO_H_
 #define IPC_IPC_CHANNEL_MOJO_H_
 
+#include <stdint.h>
+
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
+#include "build/build_config.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_export.h"
 #include "ipc/mojo/ipc_message_pipe_reader.h"
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
 #include "ipc/mojo/scoped_ipc_support.h"
+#include "mojo/public/cpp/system/core.h"
 #include "third_party/mojo/src/mojo/edk/embedder/channel_info_forward.h"
-#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace IPC {
 

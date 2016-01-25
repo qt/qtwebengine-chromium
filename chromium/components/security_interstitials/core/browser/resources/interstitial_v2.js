@@ -31,16 +31,25 @@ var CMD_REPORT_PHISHING_ERROR = 11;
  * @param {string} cmd  The command to send.
  */
 function sendCommand(cmd) {
+<if expr="not is_ios">
   window.domAutomationController.setAutomationId(1);
   window.domAutomationController.send(cmd);
+</if>
+<if expr="is_ios">
+  // TODO(crbug.com/565877): Revisit message passing for WKWebView.
+  var iframe = document.createElement('IFRAME');
+  iframe.setAttribute('src', 'js-command:' + cmd);
+  document.documentElement.appendChild(iframe);
+  iframe.parentNode.removeChild(iframe);
+</if>
 }
 
 /**
- * This allows errors to be skippped by typing "danger" into the page.
+ * This allows errors to be skippped by typing a secret phrase into the page.
  * @param {string} e The key that was just pressed.
  */
 function handleKeypress(e) {
-  var BYPASS_SEQUENCE = 'danger';
+  var BYPASS_SEQUENCE = 'badidea';
   if (BYPASS_SEQUENCE.charCodeAt(keyPressState) == e.keyCode) {
     keyPressState++;
     if (keyPressState == BYPASS_SEQUENCE.length) {

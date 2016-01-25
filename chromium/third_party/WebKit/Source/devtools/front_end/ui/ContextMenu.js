@@ -158,9 +158,10 @@ WebInspector.ContextSubMenuItem.prototype = {
      */
     appendAction: function(actionId, label)
     {
+        var action = WebInspector.actionRegistry.action(actionId);
         if (!label)
-            label = WebInspector.actionRegistry.actionTitle(actionId);
-        var result = this.appendItem(label, WebInspector.actionRegistry.execute.bind(WebInspector.actionRegistry, actionId));
+            label = action.title();
+        var result = this.appendItem(label, action.execute.bind(action));
         var shortcut = WebInspector.shortcutRegistry.shortcutTitleForAction(actionId);
         if (shortcut)
             result.setShortcut(shortcut);
@@ -230,6 +231,58 @@ WebInspector.ContextSubMenuItem.prototype = {
         for (var i = 0; i < this._items.length; ++i)
             result.subItems.push(this._items[i]._buildDescriptor());
         return result;
+    },
+
+    /**
+     * @param {string} location
+     */
+    appendItemsAtLocation: function(location)
+    {
+        /**
+         * @param {!WebInspector.ContextSubMenuItem} menu
+         * @param {!Runtime.Extension} extension
+         */
+        function appendExtension(menu, extension)
+        {
+            var subMenuId = extension.descriptor()["subMenuId"];
+            if (subMenuId) {
+                var subMenuItem = menu.appendSubMenuItem(extension.title(WebInspector.platform()));
+                subMenuItem.appendItemsAtLocation(subMenuId);
+            } else {
+                menu.appendAction(extension.descriptor()["actionId"]);
+            }
+        }
+
+        // Hard-coded named groups for elements to maintain generic order.
+        var groupWeights = ["new", "open", "clipboard", "navigate", "footer"];
+
+        /** @type {!Map.<string, !Array.<!Runtime.Extension>>} */
+        var groups = new Map();
+        var extensions = self.runtime.extensions("context-menu-item");
+        for (var extension of extensions) {
+            var itemLocation = extension.descriptor()["location"] || "";
+            if (!itemLocation.startsWith(location + "/"))
+                continue;
+
+            var itemGroup = itemLocation.substr(location.length + 1);
+            if (!itemGroup || itemGroup.includes("/"))
+                continue;
+            var group = groups.get(itemGroup);
+            if (!group) {
+                group = [];
+                groups.set(itemGroup, group);
+                if (groupWeights.indexOf(itemGroup) === -1)
+                    groupWeights.splice(4, 0, itemGroup);
+            }
+            group.push(extension);
+        }
+        for (var groupName of groupWeights) {
+            var group = groups.get(groupName);
+            if (!group)
+                continue;
+            group.forEach(appendExtension.bind(null, this));
+            this.appendSeparator();
+        }
     },
 
     __proto__: WebInspector.ContextMenuItem.prototype
@@ -348,8 +401,19 @@ WebInspector.ContextMenu.prototype = {
             this._softMenu.show(this._event.target.ownerDocument, this._x, this._y);
         } else {
             InspectorFrontendHost.showContextMenuAtPoint(this._x, this._y, menuObject, this._event.target.ownerDocument);
-            InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuCleared, this._menuCleared, this);
-            InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuItemSelected, this._onItemSelected, this);
+
+            /**
+             * @this {WebInspector.ContextMenu}
+             */
+            function listenToEvents()
+            {
+                InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuCleared, this._menuCleared, this);
+                InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.ContextMenuItemSelected, this._onItemSelected, this);
+            }
+
+            // showContextMenuAtPoint call above synchronously issues a clear event for previous context menu (if any),
+            // so we skip it before subscribing to the clear event.
+            setImmediate(listenToEvents.bind(this));
         }
     },
 
@@ -405,41 +469,6 @@ WebInspector.ContextMenu.prototype = {
     {
         this._pendingPromises.push(self.runtime.instancesPromise(WebInspector.ContextMenu.Provider, target));
         this._pendingTargets.push(target);
-    },
-
-    /**
-     * @param {string} location
-     */
-    appendItemsAtLocation: function(location)
-    {
-        // Hard-coded named groups for elements to maintain generic order.
-        var groupWeights = ["new", "open", "clipboard", "navigate", "footer"];
-
-        var groups = new Map();
-        var extensions = self.runtime.extensions("context-menu-item");
-        for (var extension of extensions) {
-            var itemLocation = extension.descriptor()["location"] || "";
-            if (itemLocation !== location && !itemLocation.startsWith(location + "/"))
-                continue;
-
-            var itemGroup = itemLocation.includes("/") ? itemLocation.substr(location.length + 1) : "misc";
-            var group = groups.get(itemGroup);
-            if (!group) {
-                group = [];
-                groups.set(itemGroup, group);
-                if (groupWeights.indexOf(itemGroup) === -1)
-                    groupWeights.splice(4, 0, itemGroup);
-            }
-            group.push(extension);
-        }
-        for (var groupName of groupWeights) {
-            var group = groups.get(groupName);
-            if (!group)
-                continue;
-            for (var extension of group)
-                this.appendAction(extension.descriptor()["actionId"]);
-            this.appendSeparator();
-        }
     },
 
     __proto__: WebInspector.ContextSubMenuItem.prototype

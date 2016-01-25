@@ -4,7 +4,7 @@
 
 #include "media/base/android/media_player_android.h"
 
-#include "base/android/jni_android.h"
+#include "base/android/context_utils.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
@@ -42,7 +42,7 @@ GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
   return GURL();
 }
 
-void MediaPlayerAndroid::SetCdm(BrowserCdm* /* cdm */) {
+void MediaPlayerAndroid::SetCdm(const scoped_refptr<MediaKeys>& /* cdm */) {
   // Players that support EME should override this.
   LOG(ERROR) << "EME not supported on base MediaPlayerAndroid class.";
   return;

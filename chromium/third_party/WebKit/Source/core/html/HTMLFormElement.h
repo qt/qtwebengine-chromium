@@ -128,8 +128,7 @@ private:
 
     void handleLocalEvents(Event&) override;
 
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isURLAttribute(const Attribute&) const override;
     bool hasLegalLinkAttribute(const QualifiedName&) const override;
 

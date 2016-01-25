@@ -26,9 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXImageMapLink.h"
 
+#include "core/dom/ElementTraversal.h"
 #include "modules/accessibility/AXLayoutObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 
@@ -36,59 +36,52 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXImageMapLink::AXImageMapLink(AXObjectCacheImpl& axObjectCache)
-    : AXMockObject(axObjectCache)
-    , m_areaElement(nullptr)
-    , m_mapElement(nullptr)
+AXImageMapLink::AXImageMapLink(HTMLAreaElement* area, AXObjectCacheImpl& axObjectCache)
+    : AXNodeObject(area, axObjectCache)
 {
 }
 
 AXImageMapLink::~AXImageMapLink()
 {
-    ASSERT(!m_areaElement);
-    ASSERT(!m_mapElement);
 }
 
-void AXImageMapLink::detach()
+AXImageMapLink* AXImageMapLink::create(HTMLAreaElement* area, AXObjectCacheImpl& axObjectCache)
 {
-    AXMockObject::detach();
-    m_areaElement = nullptr;
-    m_mapElement = nullptr;
+    return new AXImageMapLink(area, axObjectCache);
 }
 
-void AXImageMapLink::detachFromParent()
+HTMLMapElement* AXImageMapLink::mapElement() const
 {
-    AXMockObject::detachFromParent();
-    m_areaElement = nullptr;
-    m_mapElement = nullptr;
-}
-
-AXImageMapLink* AXImageMapLink::create(AXObjectCacheImpl& axObjectCache)
-{
-    return new AXImageMapLink(axObjectCache);
+    HTMLAreaElement* area = areaElement();
+    if (!area)
+        return nullptr;
+    return Traversal<HTMLMapElement>::firstAncestor(*area);
 }
 
 AXObject* AXImageMapLink::computeParent() const
 {
+    ASSERT(!isDetached());
     if (m_parent)
         return m_parent;
 
-    if (!m_mapElement.get() || !m_mapElement->layoutObject())
-        return 0;
+    if (!mapElement())
+        return nullptr;
 
-    return axObjectCache().getOrCreate(m_mapElement->layoutObject());
+    return axObjectCache().getOrCreate(mapElement()->layoutObject());
 }
 
 AccessibilityRole AXImageMapLink::roleValue() const
 {
-    if (!m_areaElement)
-        return LinkRole;
-
     const AtomicString& ariaRole = getAttribute(roleAttr);
     if (!ariaRole.isEmpty())
         return AXObject::ariaRoleToWebCoreRole(ariaRole);
 
     return LinkRole;
+}
+
+bool AXImageMapLink::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReasons) const
+{
+    return accessibilityIsIgnoredByDefault(ignoredReasons);
 }
 
 Element* AXImageMapLink::actionElement() const
@@ -98,63 +91,39 @@ Element* AXImageMapLink::actionElement() const
 
 Element* AXImageMapLink::anchorElement() const
 {
-    return m_areaElement.get();
+    return node() ? toElement(node()) : nullptr;
 }
 
 KURL AXImageMapLink::url() const
 {
-    if (!m_areaElement.get())
+    if (!areaElement())
         return KURL();
 
-    return m_areaElement->href();
-}
-
-String AXImageMapLink::deprecatedAccessibilityDescription() const
-{
-    const AtomicString& ariaLabel = getAttribute(aria_labelAttr);
-    if (!ariaLabel.isEmpty())
-        return ariaLabel;
-    const AtomicString& alt = getAttribute(altAttr);
-    if (!alt.isEmpty())
-        return alt;
-
-    return String();
-}
-
-String AXImageMapLink::deprecatedTitle(TextUnderElementMode mode) const
-{
-    const AtomicString& title = getAttribute(titleAttr);
-    if (!title.isEmpty())
-        return title;
-    const AtomicString& summary = getAttribute(summaryAttr);
-    if (!summary.isEmpty())
-        return summary;
-
-    return String();
+    return areaElement()->href();
 }
 
 LayoutRect AXImageMapLink::elementRect() const
 {
-    if (!m_mapElement.get() || !m_areaElement.get())
+    HTMLAreaElement* area = areaElement();
+    HTMLMapElement* map = mapElement();
+    if (!area || !map)
         return LayoutRect();
 
     LayoutObject* layoutObject;
     if (m_parent && m_parent->isAXLayoutObject())
         layoutObject = toAXLayoutObject(m_parent)->layoutObject();
     else
-        layoutObject = m_mapElement->layoutObject();
+        layoutObject = map->layoutObject();
 
     if (!layoutObject)
         return LayoutRect();
 
-    return m_areaElement->computeRect(layoutObject);
+    return area->computeRect(layoutObject);
 }
 
 DEFINE_TRACE(AXImageMapLink)
 {
-    visitor->trace(m_areaElement);
-    visitor->trace(m_mapElement);
-    AXMockObject::trace(visitor);
+    AXNodeObject::trace(visitor);
 }
 
 } // namespace blink

@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXARIAGridRow.h"
 
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -58,7 +57,7 @@ bool AXARIAGridRow::isARIATreeGridRow() const
     return parent->ariaRoleAttribute() == TreeGridRole;
 }
 
-void AXARIAGridRow::headerObjectsForRow(AccessibilityChildrenVector& headers)
+void AXARIAGridRow::headerObjectsForRow(AXObjectVector& headers)
 {
     for (const auto& cell : children()) {
         if (cell->roleValue() == RowHeaderRole)

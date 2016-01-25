@@ -61,7 +61,9 @@ class ImageFrameGenerator;
 //
 // All public methods can be used on any thread.
 
-class PLATFORM_EXPORT ImageDecodingStore {
+class PLATFORM_EXPORT ImageDecodingStore final {
+    USING_FAST_MALLOC(ImageDecodingStore);
+    WTF_MAKE_NONCOPYABLE(ImageDecodingStore);
 public:
     static PassOwnPtr<ImageDecodingStore> create() { return adoptPtr(new ImageDecodingStore); }
     ~ImageDecodingStore();
@@ -92,6 +94,8 @@ private:
 
     // Base class for all cache entries.
     class CacheEntry : public DoublyLinkedListNode<CacheEntry> {
+        USING_FAST_MALLOC(CacheEntry);
+        WTF_MAKE_NONCOPYABLE(CacheEntry);
         friend class WTF::DoublyLinkedListNode<CacheEntry>;
     public:
         enum CacheType {
@@ -134,12 +138,12 @@ private:
     public:
         static PassOwnPtr<DecoderCacheEntry> create(const ImageFrameGenerator* generator, PassOwnPtr<ImageDecoder> decoder)
         {
-            return adoptPtr(new DecoderCacheEntry(generator, 0, decoder));
+            return adoptPtr(new DecoderCacheEntry(generator, 0, std::move(decoder)));
         }
 
         DecoderCacheEntry(const ImageFrameGenerator* generator, int count, PassOwnPtr<ImageDecoder> decoder)
             : CacheEntry(generator, count)
-            , m_cachedDecoder(decoder)
+            , m_cachedDecoder(std::move(decoder))
             , m_size(SkISize::Make(m_cachedDecoder->decodedSize().width(), m_cachedDecoder->decodedSize().height()))
         {
         }
@@ -213,6 +217,11 @@ private:
     // This mutex also protects calls to underlying skBitmap's
     // lockPixels()/unlockPixels() as they are not threadsafe.
     Mutex m_mutex;
+
+#if COMPILER(MSVC)
+    friend struct ::WTF::OwnedPtrDeleter<CacheEntry>;
+    friend struct ::WTF::OwnedPtrDeleter<DecoderCacheEntry>;
+#endif
 };
 
 } // namespace blink

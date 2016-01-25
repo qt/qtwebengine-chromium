@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/DragCaretController.h"
 
 #include "core/editing/EditingUtilities.h"
@@ -112,10 +111,10 @@ bool DragCaretController::isContentEditable() const
     return rootEditableElementOf(m_position);
 }
 
-void DragCaretController::paintDragCaret(LocalFrame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const
+void DragCaretController::paintDragCaret(LocalFrame* frame, GraphicsContext& context, const LayoutPoint& paintOffset) const
 {
     if (m_position.deepEquivalent().anchorNode()->document().frame() == frame)
-        paintCaret(m_position.deepEquivalent().anchorNode(), p, paintOffset, clipRect);
+        paintCaret(m_position.deepEquivalent().anchorNode(), context, paintOffset);
 }
 
 } // namespace blink

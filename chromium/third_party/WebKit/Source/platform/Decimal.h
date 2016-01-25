@@ -32,6 +32,7 @@
 #define Decimal_h
 
 #include "platform/PlatformExport.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
 #include <stdint.h>
@@ -48,7 +49,7 @@ class SpecialValueHandler;
 // class to compiler supported one. See below URI for current status of decimal
 // type for C++: // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n1977.html
 class PLATFORM_EXPORT Decimal {
-    WTF_MAKE_FAST_ALLOCATED(Decimal);
+    USING_FAST_MALLOC(Decimal);
 public:
     enum Sign {
         Positive,
@@ -57,6 +58,7 @@ public:
 
     // You should not use EncodedData other than unit testing.
     class EncodedData {
+        DISALLOW_NEW();
         // For accessing FormatClass.
         friend class Decimal;
         friend class DecimalPrivate::SpecialValueHandler;

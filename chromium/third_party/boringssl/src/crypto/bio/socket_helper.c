@@ -59,7 +59,7 @@ int bio_ip_and_port_to_socket_and_addr(int *out_sock,
   ret = 0;
 
   for (cur = result; cur; cur = cur->ai_next) {
-    if (cur->ai_addrlen > sizeof(struct sockaddr_storage)) {
+    if ((size_t) cur->ai_addrlen > sizeof(struct sockaddr_storage)) {
       continue;
     }
     memset(out_addr, 0, sizeof(struct sockaddr_storage));
@@ -68,7 +68,7 @@ int bio_ip_and_port_to_socket_and_addr(int *out_sock,
 
     *out_sock = socket(cur->ai_family, cur->ai_socktype, cur->ai_protocol);
     if (*out_sock < 0) {
-      OPENSSL_PUT_SYSTEM_ERROR(socket);
+      OPENSSL_PUT_SYSTEM_ERROR();
       goto out;
     }
 

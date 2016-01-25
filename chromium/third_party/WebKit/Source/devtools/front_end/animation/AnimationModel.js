@@ -19,14 +19,25 @@ WebInspector.AnimationModel = function(target)
     this._animationGroups = new Map();
     /** @type {!Array.<string>} */
     this._pendingAnimations = [];
+    this._playbackRate = 1;
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._reset, this);
+    this._screenshotCapture = new WebInspector.AnimationModel.ScreenshotCapture(target, this);
 }
 
 WebInspector.AnimationModel.Events = {
     AnimationGroupStarted: "AnimationGroupStarted",
-    AnimationCanceled: "AnimationCanceled"
+    ModelReset: "ModelReset"
 }
 
 WebInspector.AnimationModel.prototype = {
+    _reset: function()
+    {
+        this._animationsById.clear();
+        this._animationGroups.clear();
+        this._pendingAnimations = [];
+        this.dispatchEventToListeners(WebInspector.AnimationModel.Events.ModelReset);
+    },
+
     /**
      * @param {string} id
      */
@@ -36,23 +47,65 @@ WebInspector.AnimationModel.prototype = {
     },
 
     /**
+     * @param {string} id
+     */
+    _animationCanceled: function(id)
+    {
+        this._pendingAnimations.remove(id);
+        this._flushPendingAnimationsIfNeeded();
+    },
+
+    /**
      * @param {!AnimationAgent.Animation} payload
      */
     animationStarted: function(payload)
     {
         var animation = WebInspector.AnimationModel.Animation.parsePayload(this.target(), payload);
-        this._animationsById.set(animation.id(), animation);
 
+        // Ignore Web Animations custom effects & groups.
+        if (animation.type() === "WebAnimation" && animation.source().keyframesRule().keyframes().length === 0) {
+            this._pendingAnimations.remove(animation.id());
+        } else {
+           this._animationsById.set(animation.id(), animation);
+           if (this._pendingAnimations.indexOf(animation.id()) === -1)
+                this._pendingAnimations.push(animation.id());
+        }
+
+        this._flushPendingAnimationsIfNeeded();
+    },
+
+    _flushPendingAnimationsIfNeeded: function()
+    {
         for (var id of this._pendingAnimations) {
             if (!this._animationsById.get(id))
                 return;
         }
 
-        while (this._pendingAnimations.length) {
-            var group = this._createGroupFromPendingAnimations();
-            this._animationGroups.set(group.id(), group);
-            this.dispatchEventToListeners(WebInspector.AnimationModel.Events.AnimationGroupStarted, group);
+        while (this._pendingAnimations.length)
+            this._matchExistingGroups(this._createGroupFromPendingAnimations());
+    },
+
+    /**
+     * @param {!WebInspector.AnimationModel.AnimationGroup} incomingGroup
+     * @return {boolean}
+     */
+    _matchExistingGroups: function(incomingGroup)
+    {
+        var matchedGroup = null;
+        for (var group of this._animationGroups.values()) {
+            if (group._matches(incomingGroup)) {
+                matchedGroup = group;
+                group._update(incomingGroup);
+                break;
+            }
         }
+
+        if (!matchedGroup) {
+            this._animationGroups.set(incomingGroup.id(), incomingGroup);
+            this._screenshotCapture.captureScreenshots(incomingGroup.finiteDuration(), incomingGroup._screenshots);
+        }
+        this.dispatchEventToListeners(WebInspector.AnimationModel.Events.AnimationGroupStarted, matchedGroup || incomingGroup);
+        return !!matchedGroup;
     },
 
     /**
@@ -71,7 +124,7 @@ WebInspector.AnimationModel.prototype = {
                 remainingAnimations.push(id);
         }
         this._pendingAnimations = remainingAnimations;
-        return new WebInspector.AnimationModel.AnimationGroup(this.target(), groupedAnimations[0].id(), groupedAnimations);
+        return new WebInspector.AnimationModel.AnimationGroup(this, groupedAnimations[0].id(), groupedAnimations);
     },
 
     /**
@@ -83,15 +136,17 @@ WebInspector.AnimationModel.prototype = {
          * @param {?Protocol.Error} error
          * @param {number} playbackRate
          * @return {number}
+         * @this {!WebInspector.AnimationModel}
          */
         function callback(error, playbackRate)
         {
             if (error)
                 return 1;
+            this._playbackRate = playbackRate;
             return playbackRate;
         }
 
-        return this._agent.getPlaybackRate(callback).catchException(1);
+        return this._agent.getPlaybackRate(callback.bind(this)).catchException(1);
     },
 
     /**
@@ -99,7 +154,37 @@ WebInspector.AnimationModel.prototype = {
      */
     setPlaybackRate: function(playbackRate)
     {
+        this._playbackRate = playbackRate;
         this._agent.setPlaybackRate(playbackRate);
+    },
+
+    /**
+     * @param {!Array.<string>} animations
+     */
+    _releaseAnimations: function(animations)
+    {
+        this.target().animationAgent().releaseAnimations(animations);
+    },
+
+    /**
+     * @override
+     * @return {!Promise}
+     */
+    suspendModel: function()
+    {
+        this._reset();
+        return this._agent.disable();
+    },
+
+    /**
+     * @override
+     * @return {!Promise}
+     */
+    resumeModel: function()
+    {
+        if (!this._enabled)
+            return Promise.resolve();
+        return this._agent.enable();
     },
 
     ensureEnabled: function()
@@ -235,6 +320,15 @@ WebInspector.AnimationModel.Animation.prototype = {
     /**
      * @return {number}
      */
+    _finiteDuration: function()
+    {
+        var iterations = Math.min(this.source().iterations(), 3);
+        return this.source().delay() + this.source().duration() * iterations;
+    },
+
+    /**
+     * @return {number}
+     */
     currentTime: function()
     {
         return this._payload.currentTime;
@@ -280,8 +374,7 @@ WebInspector.AnimationModel.Animation.prototype = {
         this._source.node().then(this._updateNodeStyle.bind(this, duration, delay));
         this._source._duration = duration;
         this._source._delay = delay;
-        if (this.type() !== WebInspector.AnimationModel.Animation.Type.CSSAnimation)
-            this.target().animationAgent().setTiming(this.id(), duration, delay);
+        this.target().animationAgent().setTiming(this.id(), duration, delay);
     },
 
     /**
@@ -304,6 +397,33 @@ WebInspector.AnimationModel.Animation.prototype = {
             return;
         cssModel.setEffectivePropertyValueForNode(node.id, animationPrefix + "duration", duration + "ms");
         cssModel.setEffectivePropertyValueForNode(node.id, animationPrefix + "delay", delay + "ms");
+    },
+
+    /**
+     * @return {!Promise.<?WebInspector.RemoteObject>}
+     */
+    remoteObjectPromise: function()
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {!RuntimeAgent.RemoteObject} payload
+         * @return {?WebInspector.RemoteObject}
+         * @this {!WebInspector.AnimationModel.Animation}
+         */
+        function callback(error, payload)
+        {
+            return !error ? this.target().runtimeModel.createRemoteObject(payload) : null;
+        }
+
+        return this.target().animationAgent().resolveAnimation(this.id(), callback.bind(this));
+    },
+
+    /**
+     * @return {string}
+     */
+    _cssId: function()
+    {
+        return this._payload.cssId || "";
     },
 
     __proto__: WebInspector.SDKObject.prototype
@@ -363,6 +483,9 @@ WebInspector.AnimationModel.AnimationEffect.prototype = {
      */
     iterations: function()
     {
+        // Animations with zero duration, zero delays and infinite iterations can't be shown.
+        if (!this.delay() && !this.endDelay() && !this.duration())
+            return 0;
         return this._payload.iterations || Infinity;
     },
 
@@ -540,15 +663,19 @@ WebInspector.AnimationModel.KeyframeStyle.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.SDKObject}
- * @param {!WebInspector.Target} target
+ * @param {!WebInspector.AnimationModel} model
  * @param {string} id
  * @param {!Array.<!WebInspector.AnimationModel.Animation>} animations
  */
-WebInspector.AnimationModel.AnimationGroup = function(target, id, animations)
+WebInspector.AnimationModel.AnimationGroup = function(model, id, animations)
 {
-    WebInspector.SDKObject.call(this, target);
+    WebInspector.SDKObject.call(this, model.target());
+    this._model = model;
     this._id = id;
     this._animations = animations;
+    this._paused = false;
+    this._screenshots = [];
+    this._screenshotImages = [];
 }
 
 WebInspector.AnimationModel.AnimationGroup.prototype = {
@@ -568,18 +695,16 @@ WebInspector.AnimationModel.AnimationGroup.prototype = {
         return this._animations;
     },
 
-    /**
-     * @return {number}
-     */
-    startTime: function()
+    release: function()
     {
-        return this._animations[0].startTime();
+        this._model._animationGroups.remove(this.id());
+        this._model._releaseAnimations(this._animationIds());
     },
 
     /**
-     * @param {number} currentTime
+     * @return {!Array.<string>}
      */
-    seekTo: function(currentTime)
+    _animationIds: function()
     {
         /**
          * @param {!WebInspector.AnimationModel.Animation} animation
@@ -590,7 +715,53 @@ WebInspector.AnimationModel.AnimationGroup.prototype = {
             return animation.id();
         }
 
-        this.target().animationAgent().seekAnimations(this._animations.map(extractId), currentTime);
+        return this._animations.map(extractId);
+    },
+
+    /**
+     * @return {number}
+     */
+    startTime: function()
+    {
+        return this._animations[0].startTime();
+    },
+
+    /**
+     * @return {number}
+     */
+    finiteDuration: function()
+    {
+        var maxDuration = 0;
+        for (var i = 0; i < this._animations.length; ++i)
+            maxDuration = Math.max(maxDuration, this._animations[i]._finiteDuration());
+        return maxDuration;
+    },
+
+    /**
+     * @param {number} currentTime
+     */
+    seekTo: function(currentTime)
+    {
+        this.target().animationAgent().seekAnimations(this._animationIds(), currentTime);
+    },
+
+    /**
+     * @return {boolean}
+     */
+    paused: function()
+    {
+        return this._paused;
+    },
+
+    /**
+     * @param {boolean} paused
+     */
+    togglePause: function(paused)
+    {
+        if (paused === this._paused)
+            return;
+        this._paused = paused;
+        this.target().animationAgent().setPaused(this._animationIds(), paused);
     },
 
     /**
@@ -609,6 +780,58 @@ WebInspector.AnimationModel.AnimationGroup.prototype = {
         }
 
         return this.target().animationAgent().getCurrentTime(this._animations[0].id(), callback).catchException(0);
+    },
+
+    /**
+     * @param {!WebInspector.AnimationModel.AnimationGroup} group
+     * @return {boolean}
+     */
+    _matches: function(group)
+    {
+        /**
+         * @param {!WebInspector.AnimationModel.Animation} anim
+         * @return {string}
+         */
+        function extractId(anim)
+        {
+            if (anim.type() === WebInspector.AnimationModel.Animation.Type.WebAnimation)
+                return anim.type() + anim.id();
+            else
+                return anim._cssId();
+        }
+
+        if (this._animations.length !== group._animations.length)
+            return false;
+        var left = this._animations.map(extractId).sort();
+        var right = group._animations.map(extractId).sort();
+        for (var i = 0; i < left.length; i++) {
+            if (left[i] !== right[i])
+                return false;
+        }
+        return true;
+    },
+
+    /**
+     * @param {!WebInspector.AnimationModel.AnimationGroup} group
+     */
+    _update: function(group)
+    {
+        this._model._releaseAnimations(this._animationIds());
+        this._animations = group._animations;
+    },
+
+    /**
+     * @return {!Array.<!Image>}
+     */
+    screenshots: function()
+    {
+        for (var i = 0; i < this._screenshots.length; ++i) {
+            var image = new Image();
+            image.src = "data:image/jpeg;base64," + this._screenshots[i];
+            this._screenshotImages.push(image);
+        }
+        this._screenshots = [];
+        return this._screenshotImages;
     },
 
     __proto__: WebInspector.SDKObject.prototype
@@ -636,10 +859,97 @@ WebInspector.AnimationDispatcher.prototype = {
 
     /**
      * @override
+     * @param {string} id
+     */
+    animationCanceled: function(id)
+    {
+        this._animationModel._animationCanceled(id);
+    },
+
+    /**
+     * @override
      * @param {!AnimationAgent.Animation} payload
      */
     animationStarted: function(payload)
     {
         this._animationModel.animationStarted(payload);
+    }
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.Target} target
+ * @param {!WebInspector.AnimationModel} model
+ */
+WebInspector.AnimationModel.ScreenshotCapture = function(target, model)
+{
+    this._target = target;
+    /** @type {!Array<!WebInspector.AnimationModel.ScreenshotCapture.Request>} */
+    this._requests = [];
+    this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, this._screencastFrame, this);
+    this._model = model;
+    this._model.addEventListener(WebInspector.AnimationModel.Events.ModelReset, this._stopScreencast, this);
+}
+
+/** @typedef {{ time: number, screenshots: !Array.<string>}} */
+WebInspector.AnimationModel.ScreenshotCapture.Request;
+
+WebInspector.AnimationModel.ScreenshotCapture.prototype = {
+    /**
+     * @param {number} duration
+     * @param {!Array<string>} screenshots
+     */
+    captureScreenshots: function(duration, screenshots)
+    {
+        var screencastDuration = Math.min(duration / this._model._playbackRate, 3000);
+        var endTime = screencastDuration + window.performance.now();
+        this._requests.push({ endTime: endTime, screenshots: screenshots });
+
+        if (!this._endTime || endTime > this._endTime) {
+            clearTimeout(this._stopTimer);
+            this._stopTimer = setTimeout(this._stopScreencast.bind(this), screencastDuration);
+            this._endTime = endTime;
+        }
+
+        if (this._capturing)
+            return;
+        this._capturing = true;
+        this._target.pageAgent().startScreencast("jpeg", 80, undefined, 300, 2);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _screencastFrame: function(event)
+    {
+        /**
+         * @param {!WebInspector.AnimationModel.ScreenshotCapture.Request} request
+         * @return {boolean}
+         */
+        function isAnimating(request)
+        {
+            return request.endTime >= now;
+        }
+
+        if (!this._capturing)
+            return;
+
+        var base64Data = /** type {string} */(event.data["data"]);
+        var now = window.performance.now();
+        this._requests = this._requests.filter(isAnimating);
+        for (var request of this._requests)
+            request.screenshots.push(base64Data);
+    },
+
+    _stopScreencast: function()
+    {
+        if (!this._capturing)
+            return;
+
+        delete this._stopTimer;
+        delete this._endTime;
+        this._requests = [];
+        this._capturing = false;
+        this._target.pageAgent().stopScreencast();
     }
 }

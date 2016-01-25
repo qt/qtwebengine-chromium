@@ -49,6 +49,10 @@ template("android_gcc_toolchain") {
     nm = tool_prefix + "nm"
     strip = "${tool_prefix}strip"
 
+    # Don't use .cr.so for loadable_modules since they are always loaded via
+    # absolute path.
+    loadable_module_extension = ".so"
+
     toolchain_os = "android"
     toolchain_cpu = invoker.toolchain_cpu
   }
@@ -107,7 +111,7 @@ android_gcc_toolchains_helper("arm64") {
   android_ndk_sysroot = "$android_ndk_root/$arm64_android_sysroot_subdir"
   android_ndk_lib_dir = "usr/lib"
 
-  tool_prefix = "$arm64_android_toolchain_root/bin/arm-linux-androideabi-"
+  tool_prefix = "$arm64_android_toolchain_root/bin/aarch64-linux-android-"
   toolchain_cpu = "aarch64"
 }
 
@@ -115,6 +119,6 @@ android_gcc_toolchains_helper("mips64el") {
   android_ndk_sysroot = "$android_ndk_root/$mips64_android_sysroot_subdir"
   android_ndk_lib_dir = "usr/lib64"
 
-  tool_prefix = "$mips64_android_toolchain_root/bin/mipsel-linux-android-"
+  tool_prefix = "$mips64_android_toolchain_root/bin/mips64el-linux-android-"
   toolchain_cpu = "mipsel64el"
 }

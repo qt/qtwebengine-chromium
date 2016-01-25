@@ -45,7 +45,7 @@ class TransformState;
 
 // Can be used while walking the layout tree to cache data about offsets and transforms.
 class CORE_EXPORT LayoutGeometryMap {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(LayoutGeometryMap);
 public:
     LayoutGeometryMap(MapCoordinatesFlags = UseTransforms);
@@ -55,20 +55,18 @@ public:
 
     FloatRect absoluteRect(const FloatRect& rect) const
     {
-        return mapToContainer(rect, 0).boundingBox();
+        return mapToAncestor(rect, 0).boundingBox();
     }
 
-    // Map to a container. Will assert that the container has been pushed onto this map.
-    // A null container maps through the LayoutView (including its scale transform, if any).
-    // If the container is the LayoutView, the scroll offset is applied, but not the scale.
-    FloatPoint mapToContainer(const FloatPoint&, const LayoutBoxModelObject*) const;
-    FloatQuad mapToContainer(const FloatRect&, const LayoutBoxModelObject*) const;
+    // Map to an ancestor. Will assert that the ancestor has been pushed onto this map.
+    // A null ancestor maps through the LayoutView (including its scale transform, if any).
+    // If the ancestor is the LayoutView, the scroll offset is applied, but not the scale.
+    FloatQuad mapToAncestor(const FloatRect&, const LayoutBoxModelObject*) const;
 
     // Called by code walking the layout or layer trees.
     void pushMappingsToAncestor(const PaintLayer*, const PaintLayer* ancestorLayer);
     void popMappingsToAncestor(const PaintLayer*);
     void pushMappingsToAncestor(const LayoutObject*, const LayoutBoxModelObject* ancestorLayoutObject);
-    void popMappingsToAncestor(const LayoutBoxModelObject*);
 
     // The following methods should only be called by layoutObjects inside a call to pushMappingsToAncestor().
 
@@ -78,7 +76,8 @@ public:
     void push(const LayoutObject*, const TransformationMatrix&, bool accumulatingTransform = false, bool isNonUniform = false, bool isFixedPosition = false, bool hasTransform = false, LayoutSize offsetForFixedPosition = LayoutSize());
 
 private:
-    void mapToContainer(TransformState&, const LayoutBoxModelObject* container = nullptr) const;
+    void popMappingsToAncestor(const LayoutBoxModelObject*);
+    void mapToAncestor(TransformState&, const LayoutBoxModelObject* ancestor = nullptr) const;
 
     void stepInserted(const LayoutGeometryMapStep&);
     void stepRemoved(const LayoutGeometryMapStep&);

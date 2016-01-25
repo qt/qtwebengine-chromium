@@ -34,7 +34,7 @@ BRANDINGS = [
 
 USAGE = """Usage: %prog TARGET_OS TARGET_ARCH [options] -- [configure_args]
 
-Valid combinations are android     [ia32|x64|mipsel|arm|arm64]
+Valid combinations are android     [ia32|x64|mipsel|mips64el|arm|arm64]
                        linux       [ia32|x64|mipsel|arm|arm-neon|arm64]
                        linux-noasm [x64]
                        mac         [x64]
@@ -178,6 +178,10 @@ def SetupAndroidToolchain(target_arch):
   elif target_arch == 'mipsel':
     sysroot_arch = 'mips'
     toolchain_bin_prefix = toolchain_dir_prefix = 'mipsel-linux-android'
+  elif target_arch == 'mips64el':
+    toolchain_level = api64_level
+    sysroot_arch = 'mips64'
+    toolchain_bin_prefix = toolchain_dir_prefix = 'mips64el-linux-android'
 
   sysroot = (NDK_ROOT_DIR + '/platforms/android-' + toolchain_level +
              '/arch-' + sysroot_arch)
@@ -299,6 +303,7 @@ def main(argv):
       '--disable-iconv',
       '--disable-lzo',
       '--disable-network',
+      '--disable-schannel',
       '--disable-sdl',
       '--disable-symver',
       '--disable-xlib',
@@ -316,7 +321,7 @@ def main(argv):
 
       # Common codecs.
       '--enable-decoder=vorbis',
-      '--enable-decoder=pcm_u8,pcm_s16le,pcm_s24le,pcm_f32le',
+      '--enable-decoder=pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le',
       '--enable-decoder=pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw',
       '--enable-demuxer=ogg,matroska,wav',
       '--enable-parser=opus,vorbis',
@@ -345,14 +350,27 @@ def main(argv):
         configure_flags['Common'].extend([
             '--arch=x86_64',
         ])
+      if target_os != 'android':
+        # TODO(krasin): move this to Common, when https://crbug.com/537368
+        # is fixed and CFI is unblocked from launching on ChromeOS.
+        configure_flags['EnableLTO'].extend(['--enable-lto'])
       pass
     elif target_arch == 'ia32':
       configure_flags['Common'].extend([
           '--arch=i686',
-          '--enable-yasm',
           '--extra-cflags="-m32"',
           '--extra-ldflags="-m32"',
       ])
+      # Android ia32 can't handle textrels and ffmpeg can't compile without
+      # them.  http://crbug.com/559379
+      if target_os != 'android':
+        configure_flags['Common'].extend([
+          '--enable-yasm',
+        ])
+      else:
+        configure_flags['Common'].extend([
+          '--disable-yasm',
+        ])
     elif target_arch == 'arm' or target_arch == 'arm-neon':
       # TODO(ihf): ARM compile flags are tricky. The final options
       # overriding everything live in chroot /build/*/etc/make.conf
@@ -435,8 +453,16 @@ def main(argv):
           '--arch=mips',
           '--extra-cflags=-mips32',
           '--disable-mipsfpu',
-          '--disable-mipsdspr1',
+          '--disable-mipsdsp',
           '--disable-mipsdspr2',
+      ])
+    elif target_arch == 'mips64el' and target_os == "android":
+      configure_flags['Common'].extend([
+          '--arch=mips',
+          '--cpu=i6400',
+          '--extra-cflags=-mhard-float',
+          '--extra-cflags=-mips64r6',
+          '--disable-msa',
       ])
     else:
       print('Error: Unknown target arch %r for target OS %r!' % (
@@ -554,10 +580,12 @@ def main(argv):
     do_build_ffmpeg('Chromium',
                     configure_flags['Common'] +
                     configure_flags['Chromium'] +
+                    configure_flags['EnableLTO'] +
                     configure_args)
     do_build_ffmpeg('Chrome',
                     configure_flags['Common'] +
                     configure_flags['Chrome'] +
+                    configure_flags['EnableLTO'] +
                     configure_args)
   elif target_arch != 'arm-neon':
     do_build_ffmpeg('Chromium',

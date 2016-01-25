@@ -158,7 +158,6 @@ again:
       SSL3_RECORD *rr = &ssl->s3->rrec;
       rr->type = type;
       rr->length = (uint16_t)len;
-      rr->off = 0;
       rr->data = out;
       return 1;
 
@@ -249,6 +248,23 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len) {
   }
 }
 
+static int ssl3_write_pending(SSL *s, int type, const uint8_t *buf,
+                              unsigned int len) {
+  if (s->s3->wpend_tot > (int)len ||
+      (s->s3->wpend_buf != buf &&
+       !(s->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)) ||
+      s->s3->wpend_type != type) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_WRITE_RETRY);
+    return -1;
+  }
+
+  int ret = ssl_write_buffer_flush(s);
+  if (ret <= 0) {
+    return ret;
+  }
+  return s->s3->wpend_ret;
+}
+
 /* do_ssl3_write writes an SSL record of the given type. */
 static int do_ssl3_write(SSL *s, int type, const uint8_t *buf, unsigned len) {
   /* If there is still data from the previous record, flush it. */
@@ -298,106 +314,78 @@ static int do_ssl3_write(SSL *s, int type, const uint8_t *buf, unsigned len) {
   return ssl3_write_pending(s, type, buf, len);
 }
 
-int ssl3_write_pending(SSL *s, int type, const uint8_t *buf, unsigned int len) {
-  if (s->s3->wpend_tot > (int)len ||
-      (s->s3->wpend_buf != buf &&
-       !(s->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)) ||
-      s->s3->wpend_type != type) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_WRITE_RETRY);
-    return -1;
-  }
+int ssl3_read_app_data(SSL *ssl, uint8_t *buf, int len, int peek) {
+  return ssl3_read_bytes(ssl, SSL3_RT_APPLICATION_DATA, buf, len, peek);
+}
 
-  int ret = ssl_write_buffer_flush(s);
+int ssl3_read_change_cipher_spec(SSL *ssl) {
+  uint8_t byte;
+  int ret = ssl3_read_bytes(ssl, SSL3_RT_CHANGE_CIPHER_SPEC, &byte, 1 /* len */,
+                            0 /* no peek */);
   if (ret <= 0) {
     return ret;
   }
-  return s->s3->wpend_ret;
-}
+  assert(ret == 1);
 
-/* ssl3_expect_change_cipher_spec informs the record layer that a
- * ChangeCipherSpec record is required at this point. If a Handshake record is
- * received before ChangeCipherSpec, the connection will fail. Moreover, if
- * there are unprocessed handshake bytes, the handshake will also fail and the
- * function returns zero. Otherwise, the function returns one. */
-int ssl3_expect_change_cipher_spec(SSL *s) {
-  if (s->s3->handshake_fragment_len > 0 || s->s3->tmp.reuse_message) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_UNPROCESSED_HANDSHAKE_DATA);
-    return 0;
+  if (ssl->s3->rrec.length != 0 || byte != SSL3_MT_CCS) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_CHANGE_CIPHER_SPEC);
+    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+    return -1;
   }
 
-  s->s3->flags |= SSL3_FLAGS_EXPECT_CCS;
-  return 1;
-}
+  if (ssl->msg_callback != NULL) {
+    ssl->msg_callback(0, ssl->version, SSL3_RT_CHANGE_CIPHER_SPEC, &byte, 1,
+                      ssl, ssl->msg_callback_arg);
+  }
 
-int ssl3_read_app_data(SSL *ssl, uint8_t *buf, int len, int peek) {
-  return ssl3_read_bytes(ssl, SSL3_RT_APPLICATION_DATA, buf, len, peek);
+  return 1;
 }
 
 void ssl3_read_close_notify(SSL *ssl) {
   ssl3_read_bytes(ssl, 0, NULL, 0, 0);
 }
 
+static int ssl3_can_renegotiate(SSL *ssl) {
+  switch (ssl->renegotiate_mode) {
+    case ssl_renegotiate_never:
+      return 0;
+    case ssl_renegotiate_once:
+      return ssl->s3->total_renegotiations == 0;
+    case ssl_renegotiate_freely:
+      return 1;
+    case ssl_renegotiate_ignore:
+      return 1;
+  }
+
+  assert(0);
+  return 0;
+}
+
 /* Return up to 'len' payload bytes received in 'type' records.
  * 'type' is one of the following:
  *
  *   -  SSL3_RT_HANDSHAKE (when ssl3_get_message calls us)
- *   -  SSL3_RT_APPLICATION_DATA (when ssl3_read calls us)
+ *   -  SSL3_RT_CHANGE_CIPHER_SPEC (when ssl3_read_change_cipher_spec calls us)
+ *   -  SSL3_RT_APPLICATION_DATA (when ssl3_read_app_data calls us)
  *   -  0 (during a shutdown, no data has to be returned)
  *
  * If we don't have stored data to work from, read a SSL/TLS record first
  * (possibly multiple records if we still don't have anything to return).
  *
  * This function must handle any surprises the peer may have for us, such as
- * Alert records (e.g. close_notify), ChangeCipherSpec records (not really
- * a surprise, but handled as if it were), or renegotiation requests.
- * Also if record payloads contain fragments too small to process, we store
- * them until there is enough for the respective protocol (the record protocol
- * may use arbitrary fragmentation and even interleaving):
- *     Change cipher spec protocol
- *             just 1 byte needed, no need for keeping anything stored
- *     Alert protocol
- *             2 bytes needed (AlertLevel, AlertDescription)
- *     Handshake protocol
- *             4 bytes needed (HandshakeType, uint24 length) -- we just have
- *             to detect unexpected Client Hello and Hello Request messages
- *             here, anything else is handled by higher layers
- *     Application data protocol
- *             none of our business
- */
+ * Alert records (e.g. close_notify) or renegotiation requests. */
 int ssl3_read_bytes(SSL *s, int type, uint8_t *buf, int len, int peek) {
   int al, i, ret;
   unsigned int n;
   SSL3_RECORD *rr;
-  void (*cb)(const SSL *ssl, int type2, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
 
-  if ((type && type != SSL3_RT_APPLICATION_DATA && type != SSL3_RT_HANDSHAKE) ||
+  if ((type && type != SSL3_RT_APPLICATION_DATA && type != SSL3_RT_HANDSHAKE &&
+       type != SSL3_RT_CHANGE_CIPHER_SPEC) ||
       (peek && type != SSL3_RT_APPLICATION_DATA)) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
     return -1;
   }
-
-  if (type == SSL3_RT_HANDSHAKE && s->s3->handshake_fragment_len > 0) {
-    /* (partially) satisfy request from storage */
-    uint8_t *src = s->s3->handshake_fragment;
-    uint8_t *dst = buf;
-    unsigned int k;
-
-    /* peek == 0 */
-    n = 0;
-    while (len > 0 && s->s3->handshake_fragment_len > 0) {
-      *dst++ = *src++;
-      len--;
-      s->s3->handshake_fragment_len--;
-      n++;
-    }
-    /* move any remaining fragment bytes: */
-    for (k = 0; k < s->s3->handshake_fragment_len; k++) {
-      s->s3->handshake_fragment[k] = *src++;
-    }
-    return n;
-  }
-
-  /* Now s->s3->handshake_fragment_len == 0 if type == SSL3_RT_HANDSHAKE. */
 
   /* This may require multiple iterations. False Start will cause
    * |s->handshake_func| to signal success one step early, but the handshake
@@ -435,23 +423,6 @@ start:
 
   /* we now have a packet which can be read and processed */
 
-  /* |change_cipher_spec is set when we receive a ChangeCipherSpec and reset by
-   * ssl3_get_finished. */
-  if (s->s3->change_cipher_spec && rr->type != SSL3_RT_HANDSHAKE &&
-      rr->type != SSL3_RT_ALERT) {
-    al = SSL_AD_UNEXPECTED_MESSAGE;
-    OPENSSL_PUT_ERROR(SSL, SSL_R_DATA_BETWEEN_CCS_AND_FINISHED);
-    goto f_err;
-  }
-
-  /* If we are expecting a ChangeCipherSpec, it is illegal to receive a
-   * Handshake record. */
-  if (rr->type == SSL3_RT_HANDSHAKE && (s->s3->flags & SSL3_FLAGS_EXPECT_CCS)) {
-    al = SSL_AD_UNEXPECTED_MESSAGE;
-    OPENSSL_PUT_ERROR(SSL, SSL_R_HANDSHAKE_RECORD_BEFORE_CCS);
-    goto f_err;
-  }
-
   /* If the other end has shut down, throw anything we read away (even in
    * 'peek' mode) */
   if (s->shutdown & SSL_RECEIVED_SHUTDOWN) {
@@ -463,9 +434,8 @@ start:
   if (type != 0 && type == rr->type) {
     s->s3->warning_alert_count = 0;
 
-    /* SSL3_RT_APPLICATION_DATA or SSL3_RT_HANDSHAKE */
-    /* make sure that we are not getting application data when we are doing a
-     * handshake for the first time */
+    /* Make sure that we are not getting application data when we are doing a
+     * handshake for the first time. */
     if (SSL_in_init(s) && type == SSL3_RT_APPLICATION_DATA &&
         s->aead_read_ctx == NULL) {
       /* TODO(davidben): Is this check redundant with the handshake_func
@@ -490,12 +460,11 @@ start:
       n = (unsigned int)len;
     }
 
-    memcpy(buf, &(rr->data[rr->off]), n);
+    memcpy(buf, rr->data, n);
     if (!peek) {
       rr->length -= n;
-      rr->off += n;
+      rr->data += n;
       if (rr->length == 0) {
-        rr->off = 0;
         /* The record has been consumed, so we may now clear the buffer. */
         ssl_read_buffer_discard(s);
       }
@@ -506,42 +475,37 @@ start:
 
   /* Process unexpected records. */
 
-  if (rr->type == SSL3_RT_HANDSHAKE) {
+  if (type == SSL3_RT_APPLICATION_DATA && rr->type == SSL3_RT_HANDSHAKE) {
     /* If peer renegotiations are disabled, all out-of-order handshake records
      * are fatal. Renegotiations as a server are never supported. */
-    if (!s->accept_peer_renegotiations || s->server) {
+    if (s->server || !ssl3_can_renegotiate(s)) {
       al = SSL_AD_NO_RENEGOTIATION;
       OPENSSL_PUT_ERROR(SSL, SSL_R_NO_RENEGOTIATION);
       goto f_err;
     }
 
-    /* HelloRequests may be fragmented across multiple records. */
-    const size_t size = sizeof(s->s3->handshake_fragment);
-    const size_t avail = size - s->s3->handshake_fragment_len;
-    const size_t todo = (rr->length < avail) ? rr->length : avail;
-    memcpy(s->s3->handshake_fragment + s->s3->handshake_fragment_len,
-           &rr->data[rr->off], todo);
-    rr->off += todo;
-    rr->length -= todo;
-    s->s3->handshake_fragment_len += todo;
-    if (s->s3->handshake_fragment_len < size) {
-      goto start; /* fragment was too small */
+    /* This must be a HelloRequest, possibly fragmented over multiple records.
+     * Consume data from the handshake protocol until it is complete. */
+    static const uint8_t kHelloRequest[] = {SSL3_MT_HELLO_REQUEST, 0, 0, 0};
+    while (s->s3->hello_request_len < sizeof(kHelloRequest)) {
+      if (rr->length == 0) {
+        /* Get a new record. */
+        goto start;
+      }
+      if (rr->data[0] != kHelloRequest[s->s3->hello_request_len]) {
+        al = SSL_AD_DECODE_ERROR;
+        OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_HELLO_REQUEST);
+        goto f_err;
+      }
+      rr->data++;
+      rr->length--;
+      s->s3->hello_request_len++;
     }
-
-    /* Parse out and consume a HelloRequest. */
-    if (s->s3->handshake_fragment[0] != SSL3_MT_HELLO_REQUEST ||
-        s->s3->handshake_fragment[1] != 0 ||
-        s->s3->handshake_fragment[2] != 0 ||
-        s->s3->handshake_fragment[3] != 0) {
-      al = SSL_AD_DECODE_ERROR;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_HELLO_REQUEST);
-      goto f_err;
-    }
-    s->s3->handshake_fragment_len = 0;
+    s->s3->hello_request_len = 0;
 
     if (s->msg_callback) {
-      s->msg_callback(0, s->version, SSL3_RT_HANDSHAKE,
-                      s->s3->handshake_fragment, 4, s, s->msg_callback_arg);
+      s->msg_callback(0, s->version, SSL3_RT_HANDSHAKE, kHelloRequest,
+                      sizeof(kHelloRequest), s, s->msg_callback_arg);
     }
 
     if (!SSL_is_init_finished(s) || !s->s3->initial_handshake_complete) {
@@ -550,6 +514,10 @@ start:
       assert(0);
       OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
       goto err;
+    }
+
+    if (s->renegotiate_mode == ssl_renegotiate_ignore) {
+      goto start;
     }
 
     /* Renegotiation is only supported at quiescent points in the application
@@ -563,6 +531,7 @@ start:
     }
 
     /* Begin a new handshake. */
+    s->s3->total_renegotiations++;
     s->state = SSL_ST_CONNECT;
     i = s->handshake_func(s);
     if (i < 0) {
@@ -588,12 +557,13 @@ start:
     }
 
     if (s->msg_callback) {
-      s->msg_callback(0, s->version, SSL3_RT_ALERT, &rr->data[rr->off], 2, s,
+      s->msg_callback(0, s->version, SSL3_RT_ALERT, rr->data, 2, s,
                       s->msg_callback_arg);
     }
-    const uint8_t alert_level = rr->data[rr->off++];
-    const uint8_t alert_descr = rr->data[rr->off++];
+    const uint8_t alert_level = rr->data[0];
+    const uint8_t alert_descr = rr->data[1];
     rr->length -= 2;
+    rr->data += 2;
 
     if (s->info_callback != NULL) {
       cb = s->info_callback;
@@ -657,49 +627,6 @@ start:
     rr->length = 0;
     goto start;
   }
-
-  if (rr->type == SSL3_RT_CHANGE_CIPHER_SPEC) {
-    /* 'Change Cipher Spec' is just a single byte, so we know exactly what the
-     * record payload has to look like */
-    if (rr->length != 1 || rr->off != 0 || rr->data[0] != SSL3_MT_CCS) {
-      al = SSL_AD_ILLEGAL_PARAMETER;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_CHANGE_CIPHER_SPEC);
-      goto f_err;
-    }
-
-    /* Check we have a cipher to change to */
-    if (s->s3->tmp.new_cipher == NULL) {
-      al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_CCS_RECEIVED_EARLY);
-      goto f_err;
-    }
-
-    if (!(s->s3->flags & SSL3_FLAGS_EXPECT_CCS)) {
-      al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_CCS_RECEIVED_EARLY);
-      goto f_err;
-    }
-
-    s->s3->flags &= ~SSL3_FLAGS_EXPECT_CCS;
-
-    rr->length = 0;
-
-    if (s->msg_callback) {
-      s->msg_callback(0, s->version, SSL3_RT_CHANGE_CIPHER_SPEC, rr->data, 1, s,
-                      s->msg_callback_arg);
-    }
-
-    s->s3->change_cipher_spec = 1;
-    if (!ssl3_do_change_cipher_spec(s)) {
-      goto err;
-    } else {
-      goto start;
-    }
-  }
-
-  /* We already handled these. */
-  assert(rr->type != SSL3_RT_CHANGE_CIPHER_SPEC && rr->type != SSL3_RT_ALERT &&
-         rr->type != SSL3_RT_HANDSHAKE);
 
   al = SSL_AD_UNEXPECTED_MESSAGE;
   OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
@@ -771,7 +698,7 @@ int ssl3_send_alert(SSL *s, int level, int desc) {
 
 int ssl3_dispatch_alert(SSL *s) {
   int i, j;
-  void (*cb)(const SSL *ssl, int type, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
 
   s->s3->alert_dispatch = 0;
   i = do_ssl3_write(s, SSL3_RT_ALERT, &s->s3->send_alert[0], 2);

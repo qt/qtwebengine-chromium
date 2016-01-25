@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/CompositorPendingAnimations.h"
 
 #include "core/animation/AnimationTimeline.h"
@@ -52,7 +51,7 @@ void CompositorPendingAnimations::add(Animation* animation)
 
     bool visible = document->page() && document->page()->visibilityState() == PageVisibilityStateVisible;
     if (!visible && !m_timer.isActive()) {
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
     }
 }
 
@@ -77,10 +76,11 @@ bool CompositorPendingAnimations::update(bool startOnCompositor)
         // Animations with a start time do not participate in compositor start-time grouping.
         if (animation->preCommit(animation->hasStartTime() ? 1 : compositorGroup, startOnCompositor)) {
             if (animation->hasActiveAnimationsOnCompositor() && !hadCompositorAnimation) {
+
                 startedSynchronizedOnCompositor = true;
             }
 
-            if (animation->playing() && !animation->hasStartTime()) {
+            if (animation->playing() && !animation->hasStartTime() && animation->timeline() && animation->timeline()->isActive()) {
                 waitingForStartTime.append(animation.get());
             }
         } else {
@@ -110,11 +110,10 @@ bool CompositorPendingAnimations::update(bool startOnCompositor)
         animation->postCommit(animation->timeline()->currentTimeInternal());
 
     ASSERT(m_pending.isEmpty());
+    ASSERT(startOnCompositor || deferred.isEmpty());
     for (auto& animation : deferred)
         animation->setCompositorPending();
-#if ENABLE(ASSERT)
-    size_t pendingSize = m_pending.size();
-#endif
+    ASSERT(m_pending.size() == deferred.size());
 
     if (startedSynchronizedOnCompositor)
         return true;
@@ -131,7 +130,7 @@ bool CompositorPendingAnimations::update(bool startOnCompositor)
     // If not, go ahead and start any animations that were waiting.
     notifyCompositorAnimationStarted(monotonicallyIncreasingTime());
 
-    ASSERT(pendingSize == m_pending.size());
+    ASSERT(m_pending.size() == deferred.size());
     return false;
 }
 
@@ -142,7 +141,7 @@ void CompositorPendingAnimations::notifyCompositorAnimationStarted(double monoto
     animations.swap(m_waitingForCompositorAnimationStart);
 
     for (auto animation : animations) {
-        if (animation->hasStartTime() || animation->playStateInternal() != Animation::Pending) {
+        if (animation->hasStartTime() || animation->playStateInternal() != Animation::Pending || !animation->timeline() || !animation->timeline()->isActive()) {
             // Already started or no longer relevant.
             continue;
         }

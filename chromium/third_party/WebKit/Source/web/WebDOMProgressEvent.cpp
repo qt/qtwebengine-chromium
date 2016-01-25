@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebDOMProgressEvent.h"
 
 #include "core/events/ProgressEvent.h"
@@ -40,7 +39,6 @@ WebDOMProgressEvent::WebDOMProgressEvent(const WebString& type, bool lengthIsCom
     : WebDOMEvent(ProgressEvent::create(type, lengthIsComputable, loaded, total))
 {
     ASSERT(m_private.get());
-    ASSERT(isProgressEvent());
 }
 
 } // namespace blink

@@ -4,6 +4,9 @@
 
 #include "ipc/ipc_message_utils.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
@@ -12,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_attachment.h"
 #include "ipc/ipc_message_attachment_set.h"
@@ -23,6 +27,10 @@
 #if (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_WIN)
 #include "base/memory/shared_memory_handle.h"
 #endif  // (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_WIN)
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "ipc/mach_port_mac.h"
+#endif
 
 #if defined(OS_WIN)
 #include <tchar.h>
@@ -268,6 +276,24 @@ LogData::~LogData() {
 
 void ParamTraits<bool>::Log(const param_type& p, std::string* l) {
   l->append(p ? "true" : "false");
+}
+
+void ParamTraits<signed char>::Write(Message* m, const param_type& p) {
+  m->WriteBytes(&p, sizeof(param_type));
+}
+
+bool ParamTraits<signed char>::Read(const Message* m,
+                             base::PickleIterator* iter,
+                             param_type* r) {
+  const char* data;
+  if (!iter->ReadBytes(&data, sizeof(param_type)))
+    return false;
+  memcpy(r, data, sizeof(param_type));
+  return true;
+}
+
+void ParamTraits<signed char>::Log(const param_type& p, std::string* l) {
+  l->append(base::IntToString(p));
 }
 
 void ParamTraits<unsigned char>::Write(Message* m, const param_type& p) {
@@ -553,7 +579,18 @@ void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
       ParamTraits<base::FileDescriptor>::Write(m, p.GetFileDescriptor());
       break;
     case base::SharedMemoryHandle::MACH:
-      // TODO(erikchen): Implement me. http://crbug.com/535711
+      MachPortMac mach_port_mac(p.GetMemoryObject());
+      ParamTraits<MachPortMac>::Write(m, mach_port_mac);
+      size_t size = 0;
+      bool result = p.GetSize(&size);
+      DCHECK(result);
+      ParamTraits<size_t>::Write(m, size);
+
+      // If the caller intended to pass ownership to the IPC stack, release a
+      // reference.
+      if (p.OwnershipPassesToIPC())
+        p.Close();
+
       break;
   }
 }
@@ -591,7 +628,16 @@ bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
       return true;
     }
     case base::SharedMemoryHandle::MACH: {
-      // TODO(erikchen): Implement me. http://crbug.com/535711
+      MachPortMac mach_port_mac;
+      if (!ParamTraits<MachPortMac>::Read(m, iter, &mach_port_mac))
+        return false;
+
+      size_t size;
+      if (!ParamTraits<size_t>::Read(m, iter, &size))
+        return false;
+
+      *r = base::SharedMemoryHandle(mach_port_mac.get_mach_port(), size,
+                                    base::GetCurrentProcId());
       return true;
     }
   }
@@ -605,7 +651,8 @@ void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
       ParamTraits<base::FileDescriptor>::Log(p.GetFileDescriptor(), l);
       break;
     case base::SharedMemoryHandle::MACH:
-      // TODO(erikchen): Implement me. http://crbug.com/535711
+      l->append("Mach port: ");
+      LogParam(p.GetMemoryObject(), l);
       break;
   }
 }
@@ -613,9 +660,6 @@ void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
 #elif defined(OS_WIN)
 void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
                                                   const param_type& p) {
-  // Longs on windows are 32 bits.
-  uint32_t pid = p.GetPID();
-  m->WriteUInt32(pid);
   m->WriteBool(p.NeedsBrokering());
 
   if (p.NeedsBrokering()) {
@@ -629,11 +673,6 @@ void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
 bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
                                                  base::PickleIterator* iter,
                                                  param_type* r) {
-  uint32_t pid_int;
-  if (!iter->ReadUInt32(&pid_int))
-    return false;
-  base::ProcessId pid = pid_int;
-
   bool needs_brokering;
   if (!iter->ReadBool(&needs_brokering))
     return false;
@@ -642,7 +681,8 @@ bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
     HandleWin handle_win;
     if (!ParamTraits<HandleWin>::Read(m, iter, &handle_win))
       return false;
-    *r = base::SharedMemoryHandle(handle_win.get_handle(), pid);
+    *r = base::SharedMemoryHandle(handle_win.get_handle(),
+                                  base::GetCurrentProcId());
     return true;
   }
 
@@ -650,14 +690,12 @@ bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
   if (!iter->ReadInt(&handle_int))
     return false;
   HANDLE handle = LongToHandle(handle_int);
-  *r = base::SharedMemoryHandle(handle, pid);
+  *r = base::SharedMemoryHandle(handle, base::GetCurrentProcId());
   return true;
 }
 
 void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
                                                 std::string* l) {
-  LogParam(p.GetPID(), l);
-  l->append(" ");
   LogParam(p.GetHandle(), l);
   l->append(" needs brokering: ");
   LogParam(p.NeedsBrokering(), l);
@@ -822,25 +860,6 @@ void ParamTraits<base::TimeTicks>::Log(const param_type& p, std::string* l) {
   ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
 }
 
-void ParamTraits<base::TraceTicks>::Write(Message* m, const param_type& p) {
-  ParamTraits<int64_t>::Write(m, p.ToInternalValue());
-}
-
-bool ParamTraits<base::TraceTicks>::Read(const Message* m,
-                                         base::PickleIterator* iter,
-                                         param_type* r) {
-  int64_t value;
-  bool ret = ParamTraits<int64_t>::Read(m, iter, &value);
-  if (ret)
-    *r = base::TraceTicks::FromInternalValue(value);
-
-  return ret;
-}
-
-void ParamTraits<base::TraceTicks>::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64_t>::Log(p.ToInternalValue(), l);
-}
-
 void ParamTraits<IPC::ChannelHandle>::Write(Message* m, const param_type& p) {
 #if defined(OS_WIN)
   // On Windows marshalling pipe handle is not supported.
@@ -966,7 +985,7 @@ bool ParamTraits<HANDLE>::Read(const Message* m,
 }
 
 void ParamTraits<HANDLE>::Log(const param_type& p, std::string* l) {
-  l->append(base::StringPrintf("0x%X", p));
+  l->append(base::StringPrintf("0x%p", p));
 }
 
 void ParamTraits<LOGFONT>::Write(Message* m, const param_type& p) {

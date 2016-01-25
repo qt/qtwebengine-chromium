@@ -38,19 +38,24 @@
 #include "talk/media/base/mediaengine.h"
 #include "talk/media/base/streamparams.h"
 #include "talk/media/base/videocapturer.h"
-#include "webrtc/p2p/base/transportcontroller.h"
-#include "webrtc/p2p/client/socketmonitor.h"
 #include "talk/session/media/audiomonitor.h"
 #include "talk/session/media/bundlefilter.h"
 #include "talk/session/media/mediamonitor.h"
 #include "talk/session/media/mediasession.h"
 #include "talk/session/media/rtcpmuxfilter.h"
 #include "talk/session/media/srtpfilter.h"
+#include "webrtc/audio/audio_sink.h"
 #include "webrtc/base/asyncudpsocket.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/network.h"
 #include "webrtc/base/sigslot.h"
 #include "webrtc/base/window.h"
+#include "webrtc/p2p/base/transportcontroller.h"
+#include "webrtc/p2p/client/socketmonitor.h"
+
+namespace webrtc {
+class AudioSinkInterface;
+}  // namespace webrtc
 
 namespace cricket {
 
@@ -134,9 +139,9 @@ class BaseChannel
 
   // Multiplexing
   bool AddRecvStream(const StreamParams& sp);
-  bool RemoveRecvStream(uint32 ssrc);
+  bool RemoveRecvStream(uint32_t ssrc);
   bool AddSendStream(const StreamParams& sp);
-  bool RemoveSendStream(uint32 ssrc);
+  bool RemoveSendStream(uint32_t ssrc);
 
   // Monitoring
   void StartConnectionMonitor(int cms);
@@ -164,7 +169,8 @@ class BaseChannel
   void SetReadyToSend(bool rtcp, bool ready);
 
   // Only public for unit tests.  Otherwise, consider protected.
-  virtual int SetOption(SocketType type, rtc::Socket::Option o, int val);
+  int SetOption(SocketType type, rtc::Socket::Option o, int val)
+      override;
 
   SrtpFilter* srtp_filter() { return &srtp_filter_; }
 
@@ -173,8 +179,11 @@ class BaseChannel
   // Sets the |transport_channel_| (and |rtcp_transport_channel_|, if |rtcp_| is
   // true). Gets the transport channels from |transport_controller_|.
   bool SetTransport_w(const std::string& transport_name);
+
   void set_transport_channel(TransportChannel* transport);
-  void set_rtcp_transport_channel(TransportChannel* transport);
+  void set_rtcp_transport_channel(TransportChannel* transport,
+                                  bool update_writablity);
+
   bool was_ever_writable() const { return was_ever_writable_; }
   void set_local_content_direction(MediaContentDirection direction) {
     local_content_direction_ = direction;
@@ -198,10 +207,10 @@ class BaseChannel
   void FlushRtcpMessages();
 
   // NetworkInterface implementation, called by MediaEngine
-  virtual bool SendPacket(rtc::Buffer* packet,
-                          rtc::DiffServCodePoint dscp);
-  virtual bool SendRtcp(rtc::Buffer* packet,
-                        rtc::DiffServCodePoint dscp);
+  bool SendPacket(rtc::Buffer* packet,
+                          const rtc::PacketOptions& options) override;
+  bool SendRtcp(rtc::Buffer* packet, const rtc::PacketOptions& options)
+      override;
 
   // From TransportChannel
   void OnWritableState(TransportChannel* channel);
@@ -212,10 +221,13 @@ class BaseChannel
                              int flags);
   void OnReadyToSend(TransportChannel* channel);
 
+  void OnDtlsState(TransportChannel* channel, DtlsTransportState state);
+
   bool PacketIsRtcp(const TransportChannel* channel, const char* data,
                     size_t len);
-  bool SendPacket(bool rtcp, rtc::Buffer* packet,
-                  rtc::DiffServCodePoint dscp);
+  bool SendPacket(bool rtcp,
+                  rtc::Buffer* packet,
+                  const rtc::PacketOptions& options);
   virtual bool WantsPacket(bool rtcp, rtc::Buffer* packet);
   void HandlePacket(bool rtcp, rtc::Buffer* packet,
                     const rtc::PacketTime& packet_time);
@@ -226,15 +238,16 @@ class BaseChannel
   void ChannelWritable_w();
   void ChannelNotWritable_w();
   bool AddRecvStream_w(const StreamParams& sp);
-  bool RemoveRecvStream_w(uint32 ssrc);
+  bool RemoveRecvStream_w(uint32_t ssrc);
   bool AddSendStream_w(const StreamParams& sp);
-  bool RemoveSendStream_w(uint32 ssrc);
+  bool RemoveSendStream_w(uint32_t ssrc);
   virtual bool ShouldSetupDtlsSrtp() const;
   // Do the DTLS key expansion and impose it on the SRTP/SRTCP filters.
   // |rtcp_channel| indicates whether to set up the RTP or RTCP filter.
   bool SetupDtlsSrtp(bool rtcp_channel);
+  void MaybeSetupDtlsSrtp_w();
   // Set the DTLS-SRTP cipher policy on this channel as appropriate.
-  bool SetDtlsSrtpCiphers(TransportChannel *tc, bool rtcp);
+  bool SetDtlsSrtpCryptoSuites(TransportChannel* tc, bool rtcp);
 
   virtual void ChangeState() = 0;
 
@@ -261,7 +274,7 @@ class BaseChannel
   // Helper method to get RTP Absoulute SendTime extension header id if
   // present in remote supported extensions list.
   void MaybeCacheRtpAbsSendTimeHeaderExtension(
-    const std::vector<RtpHeaderExtension>& extensions);
+      const std::vector<RtpHeaderExtension>& extensions);
 
   bool CheckSrtpConfig(const std::vector<CryptoParams>& cryptos,
                        bool* dtls,
@@ -277,12 +290,11 @@ class BaseChannel
                     std::string* error_desc);
 
   // From MessageHandler
-  virtual void OnMessage(rtc::Message* pmsg);
+  void OnMessage(rtc::Message* pmsg) override;
 
   // Handled in derived classes
-  // Get the SRTP ciphers to use for RTP media
-  virtual void GetSrtpCryptoSuiteNames(
-      std::vector<std::string>* ciphers) const = 0;
+  // Get the SRTP crypto suites to use for RTP media
+  virtual void GetSrtpCryptoSuites(std::vector<int>* crypto_suites) const = 0;
   virtual void OnConnectionMonitorUpdate(ConnectionMonitor* monitor,
       const std::vector<ConnectionInfo>& infos) = 0;
 
@@ -335,11 +347,10 @@ class VoiceChannel : public BaseChannel {
                bool rtcp);
   ~VoiceChannel();
   bool Init();
-  bool SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer);
 
   // Configure sending media on the stream with SSRC |ssrc|
   // If there is only one sending stream SSRC 0 can be used.
-  bool SetAudioSend(uint32 ssrc,
+  bool SetAudioSend(uint32_t ssrc,
                     bool enable,
                     const AudioOptions* options,
                     AudioRenderer* renderer);
@@ -355,8 +366,6 @@ class VoiceChannel : public BaseChannel {
   // own ringing sound
   sigslot::signal1<VoiceChannel*> SignalEarlyMediaTimeout;
 
-  // TODO(ronghuawu): Replace PressDTMF with InsertDtmf.
-  bool PressDTMF(int digit, bool playout);
   // Returns if the telephone-event has been negotiated.
   bool CanInsertDtmf();
   // Send and/or play a DTMF |event| according to the |flags|.
@@ -364,8 +373,11 @@ class VoiceChannel : public BaseChannel {
   // The |ssrc| should be either 0 or a valid send stream ssrc.
   // The valid value for the |event| are 0 which corresponding to DTMF
   // event 0-9, *, #, A-D.
-  bool InsertDtmf(uint32 ssrc, int event_code, int duration, int flags);
-  bool SetOutputScaling(uint32 ssrc, double left, double right);
+  bool InsertDtmf(uint32_t ssrc, int event_code, int duration);
+  bool SetOutputVolume(uint32_t ssrc, double volume);
+  void SetRawAudioSink(uint32_t ssrc,
+                       rtc::scoped_ptr<webrtc::AudioSinkInterface> sink);
+
   // Get statistics about the current media session.
   bool GetStats(VoiceMediaInfo* stats);
 
@@ -401,12 +413,12 @@ class VoiceChannel : public BaseChannel {
                                   ContentAction action,
                                   std::string* error_desc);
   void HandleEarlyMediaTimeout();
-  bool InsertDtmf_w(uint32 ssrc, int event, int duration, int flags);
-  bool SetOutputScaling_w(uint32 ssrc, double left, double right);
+  bool InsertDtmf_w(uint32_t ssrc, int event, int duration);
+  bool SetOutputVolume_w(uint32_t ssrc, double volume);
   bool GetStats_w(VoiceMediaInfo* stats);
 
   virtual void OnMessage(rtc::Message* pmsg);
-  virtual void GetSrtpCryptoSuiteNames(std::vector<std::string>* ciphers) const;
+  virtual void GetSrtpCryptoSuites(std::vector<int>* crypto_suites) const;
   virtual void OnConnectionMonitorUpdate(
       ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
@@ -443,20 +455,18 @@ class VideoChannel : public BaseChannel {
     return static_cast<VideoMediaChannel*>(BaseChannel::media_channel());
   }
 
-  bool SetRenderer(uint32 ssrc, VideoRenderer* renderer);
+  bool SetRenderer(uint32_t ssrc, VideoRenderer* renderer);
   bool ApplyViewRequest(const ViewRequest& request);
 
   // TODO(pthatcher): Refactor to use a "capture id" instead of an
   // ssrc here as the "key".
   // Passes ownership of the capturer to the channel.
-  bool AddScreencast(uint32 ssrc, VideoCapturer* capturer);
-  bool SetCapturer(uint32 ssrc, VideoCapturer* capturer);
-  bool RemoveScreencast(uint32 ssrc);
+  bool AddScreencast(uint32_t ssrc, VideoCapturer* capturer);
+  bool SetCapturer(uint32_t ssrc, VideoCapturer* capturer);
+  bool RemoveScreencast(uint32_t ssrc);
   // True if we've added a screencast.  Doesn't matter if the capturer
   // has been started or not.
   bool IsScreencasting();
-  int GetScreencastFps(uint32 ssrc);
-  int GetScreencastMaxPixels(uint32 ssrc);
   // Get statistics about the current media session.
   bool GetStats(VideoMediaInfo* stats);
 
@@ -466,18 +476,15 @@ class VideoChannel : public BaseChannel {
   void StartMediaMonitor(int cms);
   void StopMediaMonitor();
   sigslot::signal2<VideoChannel*, const VideoMediaInfo&> SignalMediaMonitor;
-  sigslot::signal2<uint32, rtc::WindowEvent> SignalScreencastWindowEvent;
+  sigslot::signal2<uint32_t, rtc::WindowEvent> SignalScreencastWindowEvent;
 
   bool SendIntraFrame();
   bool RequestIntraFrame();
 
-  // Configure sending media on the stream with SSRC |ssrc|
-  // If there is only one sending stream SSRC 0 can be used.
-  bool SetVideoSend(uint32 ssrc, bool enable, const VideoOptions* options);
+  bool SetVideoSend(uint32_t ssrc, bool enable, const VideoOptions* options);
 
  private:
-  typedef std::map<uint32, VideoCapturer*> ScreencastMap;
-  struct ScreencastDetailsData;
+  typedef std::map<uint32_t, VideoCapturer*> ScreencastMap;
 
   // overrides from BaseChannel
   virtual void ChangeState();
@@ -490,23 +497,21 @@ class VideoChannel : public BaseChannel {
                                   std::string* error_desc);
   bool ApplyViewRequest_w(const ViewRequest& request);
 
-  bool AddScreencast_w(uint32 ssrc, VideoCapturer* capturer);
-  bool RemoveScreencast_w(uint32 ssrc);
-  void OnScreencastWindowEvent_s(uint32 ssrc, rtc::WindowEvent we);
+  bool AddScreencast_w(uint32_t ssrc, VideoCapturer* capturer);
+  bool RemoveScreencast_w(uint32_t ssrc);
+  void OnScreencastWindowEvent_s(uint32_t ssrc, rtc::WindowEvent we);
   bool IsScreencasting_w() const;
-  void GetScreencastDetails_w(ScreencastDetailsData* d) const;
   bool GetStats_w(VideoMediaInfo* stats);
 
   virtual void OnMessage(rtc::Message* pmsg);
-  virtual void GetSrtpCryptoSuiteNames(std::vector<std::string>* ciphers) const;
+  virtual void GetSrtpCryptoSuites(std::vector<int>* crypto_suites) const;
   virtual void OnConnectionMonitorUpdate(
       ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
       VideoMediaChannel* media_channel, const VideoMediaInfo& info);
-  virtual void OnScreencastWindowEvent(uint32 ssrc,
-                                       rtc::WindowEvent event);
+  virtual void OnScreencastWindowEvent(uint32_t ssrc, rtc::WindowEvent event);
   virtual void OnStateChange(VideoCapturer* capturer, CaptureState ev);
-  bool GetLocalSsrc(const VideoCapturer* capturer, uint32* ssrc);
+  bool GetLocalSsrc(const VideoCapturer* capturer, uint32_t* ssrc);
 
   VideoRenderer* renderer_;
   ScreencastMap screencast_capturers_;
@@ -548,16 +553,14 @@ class DataChannel : public BaseChannel {
   sigslot::signal2<DataChannel*, const DataMediaInfo&> SignalMediaMonitor;
   sigslot::signal2<DataChannel*, const std::vector<ConnectionInfo>&>
       SignalConnectionMonitor;
-  sigslot::signal3<DataChannel*,
-                   const ReceiveDataParams&,
-                   const rtc::Buffer&>
+  sigslot::signal3<DataChannel*, const ReceiveDataParams&, const rtc::Buffer&>
       SignalDataReceived;
   // Signal for notifying when the channel becomes ready to send data.
   // That occurs when the channel is enabled, the transport is writable,
   // both local and remote descriptions are set, and the channel is unblocked.
   sigslot::signal1<bool> SignalReadyToSendData;
   // Signal for notifying that the remote side has closed the DataChannel.
-  sigslot::signal1<uint32> SignalStreamClosedRemotely;
+  sigslot::signal1<uint32_t> SignalStreamClosedRemotely;
 
  protected:
   // downcasts a MediaChannel.
@@ -618,7 +621,7 @@ class DataChannel : public BaseChannel {
   virtual bool WantsPacket(bool rtcp, rtc::Buffer* packet);
 
   virtual void OnMessage(rtc::Message* pmsg);
-  virtual void GetSrtpCryptoSuiteNames(std::vector<std::string>* ciphers) const;
+  virtual void GetSrtpCryptoSuites(std::vector<int>* crypto_suites) const;
   virtual void OnConnectionMonitorUpdate(
       ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
@@ -626,9 +629,9 @@ class DataChannel : public BaseChannel {
   virtual bool ShouldSetupDtlsSrtp() const;
   void OnDataReceived(
       const ReceiveDataParams& params, const char* data, size_t len);
-  void OnDataChannelError(uint32 ssrc, DataMediaChannel::Error error);
+  void OnDataChannelError(uint32_t ssrc, DataMediaChannel::Error error);
   void OnDataChannelReadyToSend(bool writable);
-  void OnStreamClosedRemotely(uint32 sid);
+  void OnStreamClosedRemotely(uint32_t sid);
 
   rtc::scoped_ptr<DataMediaMonitor> media_monitor_;
   // TODO(pthatcher): Make a separate SctpDataChannel and

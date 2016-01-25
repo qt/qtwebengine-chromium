@@ -60,14 +60,14 @@ class DocumentFragment;
 class Element;
 class HTMLDocument;
 class HTMLParserScheduler;
+class HTMLResourcePreloader;
 class HTMLScriptRunner;
 class HTMLTreeBuilder;
-class HTMLResourcePreloader;
-
+class ParsedChunkQueue;
 class PumpSession;
 
 class HTMLDocumentParser :  public ScriptableDocumentParser, private HTMLScriptRunnerHost {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLDocumentParser);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLDocumentParser);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLDocumentParser);
 public:
     static PassRefPtrWillBeRawPtr<HTMLDocumentParser> create(HTMLDocument& document, bool reportErrors, ParserSynchronizationPolicy backgroundParsingPolicy)
@@ -92,7 +92,7 @@ public:
     void resumeScheduledTasks() final;
 
     struct ParsedChunk {
-        WTF_MAKE_FAST_ALLOCATED(ParsedChunk);
+        USING_FAST_MALLOC(ParsedChunk);
     public:
         OwnPtr<CompactHTMLTokenStream> tokens;
         PreloadRequestStream preloads;
@@ -103,7 +103,7 @@ public:
         TokenPreloadScannerCheckpoint preloadScannerCheckpoint;
         bool startingScript;
     };
-    void didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk>);
+    void notifyPendingParsedChunks();
     void didReceiveEncodingDataFromBackgroundParser(const DocumentEncodingData&);
 
     void appendBytes(const char* bytes, size_t length) override;
@@ -187,7 +187,8 @@ private:
     OwnPtrWillBeMember<HTMLTreeBuilder> m_treeBuilder;
     OwnPtr<HTMLPreloadScanner> m_preloadScanner;
     OwnPtr<HTMLPreloadScanner> m_insertionPreloadScanner;
-    OwnPtr<HTMLParserScheduler> m_parserScheduler;
+    OwnPtr<WebTaskRunner> m_loadingTaskRunner;
+    OwnPtrWillBeMember<HTMLParserScheduler> m_parserScheduler;
     HTMLSourceTracker m_sourceTracker;
     TextPosition m_textPosition;
     XSSAuditor m_xssAuditor;
@@ -201,6 +202,7 @@ private:
     WeakPtr<BackgroundHTMLParser> m_backgroundParser;
     OwnPtrWillBeMember<HTMLResourcePreloader> m_preloader;
     PreloadRequestStream m_queuedPreloads;
+    RefPtr<ParsedChunkQueue> m_parsedChunkQueue;
 
     bool m_shouldUseThreading;
     bool m_endWasDelayed;

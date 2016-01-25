@@ -5,10 +5,12 @@
 #ifndef MOJO_COMMON_WEAK_INTERFACE_PTR_SET_H_
 #define MOJO_COMMON_WEAK_INTERFACE_PTR_SET_H_
 
+#include <utility>
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 
 namespace mojo {
 
@@ -22,7 +24,7 @@ class WeakInterfacePtrSet {
   ~WeakInterfacePtrSet() { CloseAll(); }
 
   void AddInterfacePtr(InterfacePtr<Interface> ptr) {
-    auto weak_interface_ptr = new WeakInterfacePtr<Interface>(ptr.Pass());
+    auto weak_interface_ptr = new WeakInterfacePtr<Interface>(std::move(ptr));
     ptrs_.push_back(weak_interface_ptr->GetWeakPtr());
     ClearNullInterfacePtrs();
   }
@@ -60,7 +62,7 @@ template <typename Interface>
 class WeakInterfacePtr {
  public:
   explicit WeakInterfacePtr(InterfacePtr<Interface> ptr)
-      : ptr_(ptr.Pass()), weak_ptr_factory_(this) {
+      : ptr_(std::move(ptr)), weak_ptr_factory_(this) {
     ptr_.set_connection_error_handler([this]() { delete this; });
   }
   ~WeakInterfacePtr() {}

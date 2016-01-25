@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLCollection.h"
 
 #include "core/HTMLNames.h"
@@ -94,7 +93,7 @@ static NodeListRootType rootTypeFromCollectionType(CollectionType type)
     case WindowNamedItems:
     case DocumentNamedItems:
     case FormControls:
-        return NodeListIsRootedAtDocument;
+        return NodeListRootType::TreeScope;
     case ClassCollectionType:
     case TagCollectionType:
     case HTMLTagCollectionType:
@@ -107,7 +106,7 @@ static NodeListRootType rootTypeFromCollectionType(CollectionType type)
     case SelectedOptions:
     case DataListOptions:
     case MapAreas:
-        return NodeListIsRootedAtNode;
+        return NodeListRootType::Node;
     case NameNodeListType:
     case RadioNodeListType:
     case RadioImgNodeListType:
@@ -115,7 +114,7 @@ static NodeListRootType rootTypeFromCollectionType(CollectionType type)
         break;
     }
     ASSERT_NOT_REACHED();
-    return NodeListIsRootedAtNode;
+    return NodeListRootType::Node;
 }
 
 static NodeListInvalidationType invalidationTypeExcludingIdAndNameAttributes(CollectionType type)
@@ -418,7 +417,7 @@ bool HTMLCollection::namedPropertyQuery(const AtomicString& name, ExceptionState
 
 void HTMLCollection::supportedPropertyNames(Vector<String>& names)
 {
-    // As per the specification (http://dom.spec.whatwg.org/#htmlcollection):
+    // As per the specification (https://dom.spec.whatwg.org/#htmlcollection):
     // The supported property names are the values from the list returned by these steps:
     // 1. Let result be an empty list.
     // 2. For each element represented by the collection, in tree order, run these substeps:

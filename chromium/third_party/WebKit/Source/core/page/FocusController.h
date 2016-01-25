@@ -37,27 +37,45 @@
 namespace blink {
 
 struct FocusCandidate;
+struct FocusParams;
+class Document;
 class Element;
 class Frame;
+class HTMLFrameOwnerElement;
 class InputDeviceCapabilities;
+class LocalFrame;
 class Node;
 class Page;
+class RemoteFrame;
 
 class CORE_EXPORT FocusController final : public NoBaseWillBeGarbageCollectedFinalized<FocusController> {
-    WTF_MAKE_NONCOPYABLE(FocusController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FocusController);
+    WTF_MAKE_NONCOPYABLE(FocusController); USING_FAST_MALLOC_WILL_BE_REMOVED(FocusController);
 public:
     static PassOwnPtrWillBeRawPtr<FocusController> create(Page*);
 
-    void setFocusedFrame(PassRefPtrWillBeRawPtr<Frame>);
-    void focusDocumentView(PassRefPtrWillBeRawPtr<Frame>);
-    Frame* focusedFrame() const { return m_focusedFrame.get(); }
+    void setFocusedFrame(PassRefPtrWillBeRawPtr<Frame>, bool notifyEmbedder = true);
+    void focusDocumentView(PassRefPtrWillBeRawPtr<Frame>, bool notifyEmbedder = true);
+    LocalFrame* focusedFrame() const;
     Frame* focusedOrMainFrame() const;
+
+    // Finds the focused HTMLFrameOwnerElement, if any, in the provided frame.
+    // An HTMLFrameOwnerElement is considered focused if the frame it owns, or
+    // one of its descendant frames, is currently focused.
+    HTMLFrameOwnerElement* focusedFrameOwnerElement(LocalFrame& currentFrame) const;
+
+    // Determines whether the provided Document has focus according to
+    // http://www.w3.org/TR/html5/editing.html#dom-document-hasfocus
+    bool isDocumentFocused(const Document&) const;
 
     bool setInitialFocus(WebFocusType);
     bool advanceFocus(WebFocusType type, InputDeviceCapabilities* sourceCapabilities = nullptr) { return advanceFocus(type, false, sourceCapabilities); }
+    bool advanceFocusAcrossFrames(WebFocusType, RemoteFrame* from, LocalFrame* to, InputDeviceCapabilities* sourceCapabilities = nullptr);
     Element* findFocusableElement(WebFocusType, Node&);
 
-    bool setFocusedElement(Element*, PassRefPtrWillBeRawPtr<Frame>, WebFocusType = WebFocusTypeNone, InputDeviceCapabilities* sourceCapabilities = nullptr);
+    bool setFocusedElement(Element*, PassRefPtrWillBeRawPtr<Frame>, const FocusParams&);
+    // |setFocusedElement| variant with SelectionBehaviorOnFocus::None,
+    // |WebFocusTypeNone, and null InputDeviceCapabilities.
+    bool setFocusedElement(Element*, PassRefPtrWillBeRawPtr<Frame>);
 
     void setActive(bool);
     bool isActive() const { return m_isActive; }
@@ -72,7 +90,7 @@ private:
 
     bool advanceFocus(WebFocusType, bool initialFocus, InputDeviceCapabilities* sourceCapabilities = nullptr);
     bool advanceFocusDirectionally(WebFocusType);
-    bool advanceFocusInDocumentOrder(WebFocusType, bool initialFocus, InputDeviceCapabilities* sourceCapabilities);
+    bool advanceFocusInDocumentOrder(LocalFrame*, Node* startingNode, WebFocusType, bool initialFocus, InputDeviceCapabilities* sourceCapabilities);
 
     bool advanceFocusDirectionallyInContainer(Node* container, const LayoutRect& startingRect, WebFocusType);
     void findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, WebFocusType, FocusCandidate& closest);

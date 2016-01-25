@@ -17,7 +17,6 @@
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_client.h"
 #include "skia/ext/platform_canvas.h"
-#include "skia/ext/platform_device.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "ui/gfx/canvas.h"
 #include "url/url_constants.h"
@@ -270,46 +269,6 @@ void WebPluginProxy::OnResourceCreated(int resource_id,
   resource_clients_[resource_id] = client;
 }
 
-void WebPluginProxy::HandleURLRequest(const char* url,
-                                      const char* method,
-                                      const char* target,
-                                      const char* buf,
-                                      unsigned int len,
-                                      int notify_id,
-                                      bool popups_allowed,
-                                      bool notify_redirects) {
-  if (!target && base::EqualsCaseInsensitiveASCII(method, "GET")) {
-    // Please refer to https://bugzilla.mozilla.org/show_bug.cgi?id=366082
-    // for more details on this.
-    if (delegate_->GetQuirks() &
-        WebPluginDelegateImpl::PLUGIN_QUIRK_BLOCK_NONSTANDARD_GETURL_REQUESTS) {
-      GURL request_url(url);
-      if (!request_url.SchemeIs(url::kHttpScheme) &&
-          !request_url.SchemeIs(url::kHttpsScheme) &&
-          !request_url.SchemeIs(url::kFtpScheme)) {
-        return;
-      }
-    }
-  }
-
-  PluginHostMsg_URLRequest_Params params;
-  params.url = url;
-  params.method = method;
-  if (target)
-    params.target = std::string(target);
-
-  if (len) {
-    params.buffer.resize(len);
-    memcpy(&params.buffer.front(), buf, len);
-  }
-
-  params.notify_id = notify_id;
-  params.popups_allowed = popups_allowed;
-  params.notify_redirects = notify_redirects;
-
-  Send(new PluginHostMsg_URLRequest(route_id_, params));
-}
-
 void WebPluginProxy::Paint(const gfx::Rect& rect) {
 #if defined(OS_MACOSX)
   if (!windowless_context())
@@ -501,12 +460,6 @@ void WebPluginProxy::CancelDocumentLoad() {
   Send(new PluginHostMsg_CancelDocumentLoad(route_id_));
 }
 
-void WebPluginProxy::InitiateHTTPRangeRequest(
-    const char* url, const char* range_info, int range_request_id) {
-  Send(new PluginHostMsg_InitiateHTTPRangeRequest(
-      route_id_, url, range_info, range_request_id));
-}
-
 void WebPluginProxy::DidStartLoading() {
   Send(new PluginHostMsg_DidStartLoading(route_id_));
 }
@@ -546,9 +499,9 @@ void WebPluginProxy::AcceleratedPluginEnabledRendering() {
   Send(new PluginHostMsg_AcceleratedPluginEnabledRendering(route_id_));
 }
 
-void WebPluginProxy::AcceleratedPluginAllocatedIOSurface(int32 width,
-                                                         int32 height,
-                                                         uint32 surface_id) {
+void WebPluginProxy::AcceleratedPluginAllocatedIOSurface(int32_t width,
+                                                         int32_t height,
+                                                         uint32_t surface_id) {
   Send(new PluginHostMsg_AcceleratedPluginAllocatedIOSurface(
       route_id_, width, height, surface_id));
 }

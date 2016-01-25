@@ -24,7 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/testing/Internals.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -46,6 +45,7 @@
 #include "core/dom/ClientRect.h"
 #include "core/dom/ClientRectList.h"
 #include "core/dom/DOMArrayBuffer.h"
+#include "core/dom/DOMNodeIds.h"
 #include "core/dom/DOMPoint.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
@@ -134,8 +134,6 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsLayer.h"
-#include "platform/graphics/filters/FilterOperation.h"
-#include "platform/graphics/filters/FilterOperations.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "public/platform/Platform.h"
@@ -147,6 +145,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/dtoa.h"
 #include "wtf/text/StringBuffer.h"
+#include <deque>
 #include <v8.h>
 
 namespace blink {
@@ -189,6 +188,24 @@ static SpellCheckRequester* spellCheckRequester(Document* document)
     return &document->frame()->spellChecker().spellCheckRequester();
 }
 
+static ScrollableArea* scrollableAreaForNode(Node* node)
+{
+    if (!node)
+        return nullptr;
+
+    if (node->isDocumentNode()) {
+        // This can be removed after root layer scrolling is enabled.
+        if (FrameView* frameView = toDocument(node)->view())
+            return frameView->scrollableArea();
+    }
+
+    LayoutObject* layoutObject = node->layoutObject();
+    if (!layoutObject || !layoutObject->isBox())
+        return nullptr;
+
+    return toLayoutBox(layoutObject)->scrollableArea();
+}
+
 const char* Internals::internalsId = "internals";
 
 Internals* Internals::create(ScriptState* scriptState)
@@ -209,7 +226,6 @@ void Internals::resetToConsistentState(Page* page)
     if (!sFeaturesBackup)
         sFeaturesBackup = new RuntimeEnabledFeatures::Backup;
     sFeaturesBackup->restore();
-    page->setDeviceScaleFactor(1);
     page->setIsCursorVisible(true);
     page->setPageScaleFactor(1);
     page->deprecatedLocalMainFrame()->view()->layoutViewportScrollableArea()->setScrollPosition(IntPoint(0, 0), ProgrammaticScroll);
@@ -486,6 +502,11 @@ void Internals::disableCompositedAnimation(Animation* animation)
     animation->disableCompositedAnimationForTesting();
 }
 
+void Internals::disableCSSAdditiveAnimations()
+{
+    RuntimeEnabledFeatures::setCSSAdditiveAnimationsEnabled(false);
+}
+
 void Internals::advanceTimeForImage(Element* image, double deltaTimeInSeconds, ExceptionState& exceptionState)
 {
     ASSERT(image);
@@ -657,7 +678,7 @@ ShadowRoot* Internals::youngestShadowRoot(Element* host)
 {
     ASSERT(host);
     if (ElementShadow* shadow = host->shadow())
-        return shadow->youngestShadowRoot();
+        return &shadow->youngestShadowRoot();
     return 0;
 }
 
@@ -691,8 +712,8 @@ String Internals::shadowRootType(const Node* root, ExceptionState& exceptionStat
     switch (toShadowRoot(root)->type()) {
     case ShadowRootType::UserAgent:
         return String("UserAgentShadowRoot");
-    case ShadowRootType::OpenByDefault:
-        return String("OpenByDefaultShadowRoot");
+    case ShadowRootType::V0:
+        return String("V0ShadowRoot");
     case ShadowRootType::Open:
         return String("OpenShadowRoot");
     case ShadowRootType::Closed:
@@ -921,7 +942,7 @@ String Internals::viewportAsText(Document* document, float, int availableWidth, 
     document->page()->deprecatedLocalMainFrame()->view()->setFrameRect(IntRect(IntPoint::zero(), initialViewportSize));
 
     ViewportDescription description = page->viewportDescription();
-    PageScaleConstraints constraints = description.resolve(initialViewportSize, Length());
+    PageScaleConstraints constraints = description.resolve(FloatSize(initialViewportSize), Length());
 
     constraints.fitToContentsWidth(constraints.layoutSize.width(), availableWidth);
     constraints.resolveAutoInitialScale();
@@ -944,19 +965,6 @@ String Internals::viewportAsText(Document* document, float, int availableWidth, 
     builder.append(description.userZoom ? "true" : "false");
 
     return builder.toString();
-}
-
-bool Internals::wasLastChangeUserEdit(Element* textField, ExceptionState& exceptionState)
-{
-    ASSERT(textField);
-    if (isHTMLInputElement(*textField))
-        return toHTMLInputElement(*textField).lastChangeWasUserEdit();
-
-    if (isHTMLTextAreaElement(*textField))
-        return toHTMLTextAreaElement(*textField).lastChangeWasUserEdit();
-
-    exceptionState.throwDOMException(InvalidNodeTypeError, "The element provided is not a TEXTAREA.");
-    return false;
 }
 
 bool Internals::elementShouldAutoComplete(Element* element, ExceptionState& exceptionState)
@@ -1419,11 +1427,8 @@ LayerRectList* Internals::touchEventTargetLayerRects(Document* document, Excepti
         return nullptr;
     }
 
-    // Do any pending layout and compositing update (which may call touchEventTargetRectsChange) to ensure this
-    // really takes any previous changes into account.
-    forceCompositingUpdate(document, exceptionState);
-    if (exceptionState.hadException())
-        return nullptr;
+    if (ScrollingCoordinator* scrollingCoordinator = document->page()->scrollingCoordinator())
+        scrollingCoordinator->updateAfterCompositingChangeIfNeeded();
 
     if (LayoutView* view = document->layoutView()) {
         if (PaintLayerCompositor* compositor = view->compositor()) {
@@ -1737,15 +1742,6 @@ ClientRectList* Internals::nonFastScrollableRects(Document* document, ExceptionS
     return page->nonFastScrollableRects(document->frame());
 }
 
-void Internals::garbageCollectDocumentResources(Document* document) const
-{
-    ASSERT(document);
-    ResourceFetcher* fetcher = document->fetcher();
-    if (!fetcher)
-        return;
-    fetcher->garbageCollectDocumentResources();
-}
-
 void Internals::evictAllResources() const
 {
     memoryCache()->evictResources();
@@ -1759,10 +1755,15 @@ String Internals::counterValue(Element* element)
     return counterValueForElement(element);
 }
 
-int Internals::pageNumber(Element* element, float pageWidth, float pageHeight)
+int Internals::pageNumber(Element* element, float pageWidth, float pageHeight, ExceptionState& exceptionState)
 {
     if (!element)
         return 0;
+
+    if (pageWidth <= 0 || pageHeight <= 0) {
+        exceptionState.throwDOMException(V8TypeError, "Page width and height must be larger than 0.");
+        return 0;
+    }
 
     return PrintContext::pageNumberForElement(element, FloatSize(pageWidth, pageHeight));
 }
@@ -1788,10 +1789,15 @@ Vector<String> Internals::allIconURLs(Document* document) const
     return iconURLs(document, Favicon | TouchIcon | TouchPrecomposedIcon);
 }
 
-int Internals::numberOfPages(float pageWidth, float pageHeight)
+int Internals::numberOfPages(float pageWidth, float pageHeight, ExceptionState& exceptionState)
 {
     if (!frame())
         return -1;
+
+    if (pageWidth <= 0 || pageHeight <= 0) {
+        exceptionState.throwDOMException(V8TypeError, "Page width and height must be larger than 0.");
+        return -1;
+    }
 
     return PrintContext::numberOfPages(frame(), FloatSize(pageWidth, pageHeight));
 }
@@ -1997,19 +2003,26 @@ void Internals::forceFullRepaint(Document* document, ExceptionState& exceptionSt
 void Internals::startTrackingPaintInvalidationObjects()
 {
     ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
-    toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking()->displayItemList()->startTrackingPaintInvalidationObjects();
+    GraphicsLayer* graphicsLayer = toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking();
+    if (graphicsLayer->drawsContent())
+        graphicsLayer->paintController().startTrackingPaintInvalidationObjects();
 }
 
 void Internals::stopTrackingPaintInvalidationObjects()
 {
     ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
-    toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking()->displayItemList()->stopTrackingPaintInvalidationObjects();
+    GraphicsLayer* graphicsLayer = toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking();
+    if (graphicsLayer->drawsContent())
+        graphicsLayer->paintController().stopTrackingPaintInvalidationObjects();
 }
 
 Vector<String> Internals::trackedPaintInvalidationObjects()
 {
     ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
-    return toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking()->displayItemList()->trackedPaintInvalidationObjects();
+    GraphicsLayer* graphicsLayer = toLocalFrame(frame()->page()->mainFrame())->view()->layoutView()->layer()->graphicsLayerBacking();
+    if (!graphicsLayer->drawsContent())
+        return Vector<String>();
+    return graphicsLayer->paintController().trackedPaintInvalidationObjects();
 }
 
 ClientRectList* Internals::draggableRegions(Document* document, ExceptionState& exceptionState)
@@ -2367,7 +2380,7 @@ void Internals::setFocused(bool focused)
 
 void Internals::setInitialFocus(bool reverse)
 {
-    frame()->document()->setFocusedElement(nullptr);
+    frame()->document()->clearFocusedElement();
     frame()->page()->focusController().setInitialFocus(reverse ? WebFocusTypeBackward : WebFocusTypeForward);
 }
 
@@ -2385,8 +2398,12 @@ void Internals::setNetworkStateNotifierTestOnly(bool testOnly)
 void Internals::setNetworkConnectionInfo(const String& type, double downlinkMaxMbps, ExceptionState& exceptionState)
 {
     WebConnectionType webtype;
-    if (type == "cellular") {
-        webtype = WebConnectionTypeCellular;
+    if (type == "cellular2g") {
+        webtype = WebConnectionTypeCellular2G;
+    } else if (type == "cellular3g") {
+        webtype = WebConnectionTypeCellular3G;
+    } else if (type == "cellular4g") {
+        webtype = WebConnectionTypeCellular4G;
     } else if (type == "bluetooth") {
         webtype = WebConnectionTypeBluetooth;
     } else if (type == "ethernet") {
@@ -2423,18 +2440,12 @@ unsigned Internals::canvasFontCacheMaxFonts()
     return CanvasFontCache::maxFonts();
 }
 
-ClientRect* Internals::boundsInViewportSpace(Element* element)
-{
-    ASSERT(element);
-    return ClientRect::create(element->boundsInViewportSpace());
-}
-
 void Internals::setScrollChain(
     ScrollState* scrollState, const WillBeHeapVector<RefPtrWillBeMember<Element>>& elements, ExceptionState&)
 {
-    WillBeHeapDeque<RefPtrWillBeMember<Element>> scrollChain;
+    std::deque<int> scrollChain;
     for (size_t i = 0; i < elements.size(); ++i)
-        scrollChain.append(elements[i]);
+        scrollChain.push_back(DOMNodeIds::idForNode(elements[i].get()));
     scrollState->setScrollChain(scrollChain);
 }
 
@@ -2456,6 +2467,26 @@ String Internals::selectedTextForClipboard()
 void Internals::setVisualViewportOffset(int x, int y)
 {
     frame()->host()->visualViewport().setLocation(FloatPoint(x, y));
+}
+
+int Internals::visualViewportHeight()
+{
+    return expandedIntSize(frame()->host()->visualViewport().visibleRect().size()).height();
+}
+
+int Internals::visualViewportWidth()
+{
+    return expandedIntSize(frame()->host()->visualViewport().visibleRect().size()).width();
+}
+
+double Internals::visualViewportScrollX()
+{
+    return frame()->view()->scrollableArea()->scrollPositionDouble().x();
+}
+
+double Internals::visualViewportScrollY()
+{
+    return frame()->view()->scrollableArea()->scrollPositionDouble().y();
 }
 
 ValueIterable<int>::IterationSource* Internals::startIteration(ScriptState*, ExceptionState&)
@@ -2509,20 +2540,9 @@ void Internals::setSelectionPaintingWithoutSelectionGapsEnabled(bool enabled)
 
 bool Internals::setScrollbarVisibilityInScrollableArea(Node* node, bool visible)
 {
-    LayoutObject* layoutObject = node->layoutObject();
-    if (!layoutObject)
-        return false;
-    PaintLayer* layer = layoutObject->enclosingLayer();
-    if (!layer)
-        return false;
-    ScrollableArea* scrollableArea = layer->scrollableArea();
-    if (!scrollableArea)
-        return false;
-    ScrollAnimator* animator = layer->scrollableArea()->scrollAnimator();
-    if (!animator)
-        return false;
-
-    return animator->setScrollbarsVisibleForTesting(visible);
+    if (ScrollableArea* scrollableArea = scrollableAreaForNode(node))
+        return scrollableArea->scrollAnimator().setScrollbarsVisibleForTesting(visible);
+    return false;
 }
 
 void Internals::forceRestrictIFramePermissions()
@@ -2539,6 +2559,27 @@ double Internals::monotonicTimeToZeroBasedDocumentTime(double platformTime, Exce
     }
 
     return document->loader()->timing().monotonicTimeToZeroBasedDocumentTime(platformTime);
+}
+
+void Internals::setMediaElementNetworkState(HTMLMediaElement* mediaElement, int state)
+{
+    ASSERT(mediaElement);
+    ASSERT(state >= HTMLMediaElement::NetworkState::NETWORK_EMPTY);
+    ASSERT(state <= HTMLMediaElement::NetworkState::NETWORK_NO_SOURCE);
+    mediaElement->setNetworkState(static_cast<WebMediaPlayer::NetworkState>(state));
+}
+
+// TODO(liberato): remove once autoplay gesture override experiment concludes.
+void Internals::triggerAutoplayViewportCheck(HTMLMediaElement* element)
+{
+    element->triggerAutoplayViewportCheckForTesting();
+}
+
+int Internals::getScrollAnimationState(Node* node) const
+{
+    if (ScrollableArea* scrollableArea = scrollableAreaForNode(node))
+        return static_cast<int>(scrollableArea->scrollAnimator().m_runState);
+    return -1;
 }
 
 } // namespace blink

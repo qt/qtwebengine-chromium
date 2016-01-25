@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/LabelsNodeList.h"
 
 #include "core/HTMLNames.h"
@@ -34,7 +33,7 @@ namespace blink {
 using namespace HTMLNames;
 
 LabelsNodeList::LabelsNodeList(ContainerNode& ownerNode)
-    : LiveNodeList(ownerNode, LabelsNodeListType, InvalidateOnForAttrChange, NodeListIsRootedAtDocument)
+    : LiveNodeList(ownerNode, LabelsNodeListType, InvalidateOnForAttrChange, NodeListRootType::TreeScope)
 {
 }
 

@@ -5,6 +5,9 @@
 #ifndef NET_SPDY_SPDY_HEADERS_BLOCK_PARSER_H_
 #define NET_SPDY_SPDY_HEADERS_BLOCK_PARSER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
@@ -61,11 +64,8 @@ class NET_EXPORT_PRIVATE SpdyHeadersBlockParser {
 
   SpdyMajorVersion spdy_version() const { return spdy_version_; }
 
-  // Returns the size in bytes of a length field in a SPDY header.
-  static size_t LengthFieldSizeForVersion(SpdyMajorVersion spdy_version);
-
   // Returns the maximal number of headers in a SPDY headers block.
-  static size_t MaxNumberOfHeadersForVersion(SpdyMajorVersion spdy_version);
+  static size_t MaxNumberOfHeaders();
 
  private:
   typedef SpdyPrefixedBufferReader Reader;
@@ -89,9 +89,6 @@ class NET_EXPORT_PRIVATE SpdyHeadersBlockParser {
     FINISHED_HEADER
   };
   ParserState state_;
-
-  // Size in bytes of a length field in the spdy header.
-  const size_t length_field_size_;
 
   // The maximal number of headers in a SPDY headers block.
   const size_t max_headers_in_block_;

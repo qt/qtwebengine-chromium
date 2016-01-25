@@ -22,7 +22,7 @@ public:
     };
 #endif
 
-    DrawingDisplayItem(const DisplayItemClientWrapper& client
+    DrawingDisplayItem(const DisplayItemClient& client
         , Type type
         , PassRefPtr<const SkPicture> picture
 #if ENABLE(ASSERT)
@@ -38,8 +38,8 @@ public:
         ASSERT(isDrawingType(type));
     }
 
-    virtual void replay(GraphicsContext&);
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
     bool drawsContent() const override;
 
     const SkPicture* picture() const { return m_picture.get(); }

@@ -10,8 +10,8 @@
 #include <limits>
 
 #include "mojo/public/cpp/system/macros.h"
-#include "third_party/mojo/src/mojo/edk/system/configuration.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/edk/system/configuration.h"
 
 namespace mojo {
 namespace system {

@@ -168,7 +168,7 @@ static_assert(sizeof(SkString) == sizeof(void*), "SkString_size");
 /** This class is a SkPDFUnion with SkPDFObject virtuals attached.
     The only use case of this is when a non-compound PDF object is
     referenced indirectly. */
-class SkPDFAtom : public SkPDFObject {
+class SkPDFAtom final : public SkPDFObject {
 public:
     void emitObject(SkWStream* stream,
                     const SkPDFObjNumMap& objNumMap,
@@ -188,7 +188,7 @@ private:
 
     An array object in a PDF.
 */
-class SkPDFArray : public SkPDFObject {
+class SkPDFArray final : public SkPDFObject {
 public:
     static const int kMaxLen = 8191;
 
@@ -314,7 +314,7 @@ private:
     descriptor). That is: no memory savings can be made by holding on
     to a compressed version instead.
  */
-class SkPDFSharedStream : public SkPDFObject {
+class SkPDFSharedStream final : public SkPDFObject {
 public:
     // Takes ownership of asset.
     SkPDFSharedStream(SkStreamAsset* data) : fAsset(data), fDict(new SkPDFDict) { SkASSERT(data); }
@@ -345,6 +345,12 @@ public:
      *  @return True iff the object was not already added to the catalog.
      */
     bool addObject(SkPDFObject* obj);
+
+    /** Add the passed object to the catalog, as well as all its dependencies.
+     *  @param obj   The object to add.  If nullptr, this is a noop.
+     *  @param subs  Will be passed to obj->addResources().
+     */
+    void addObjectRecursively(SkPDFObject* obj, const SkPDFSubstituteMap& subs);
 
     /** Get the object number for the passed object.
      *  @param obj         The object of interest.

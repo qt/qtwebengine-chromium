@@ -8,35 +8,46 @@
       'target_name': 'qcms',
       'product_name': 'qcms',
       'type': 'static_library',
-      'sources': [
-        'src/chain.c',
-        'src/chain.h',
-        'src/iccread.c',
-        'src/matrix.c',
-        'src/matrix.h',
-        'src/qcms.h',
-        'src/qcmsint.h',
-        'src/qcmstypes.h',
-        'src/transform.c',
-        'src/transform_util.c',
-        'src/transform_util.h',
-      ],
+
+      # Warning (sign-conversion) fixed upstream by large refactoring. Can be
+      # removed on next roll.
+      'msvs_disabled_warnings': [ 4018 ],
+
       'direct_dependent_settings': {
         'include_dirs': [
           './src',
         ],
       },
-      # Warning (sign-conversion) fixed upstream by large refactoring. Can be
-      # removed on next roll.
-      'msvs_disabled_warnings': [ 4018 ],
 
       'conditions': [
-        ['target_arch=="ia32" or target_arch=="x64"', {
-          'defines': [
-            'SSE2_ENABLE',
-          ],
+        ['OS=="android" or OS=="ios"', {
           'sources': [
-            'src/transform-sse2.c',
+            'src/empty.c',
+          ],
+        }],
+        ['OS!="android" and OS!="ios"', {
+          'sources': [
+            'src/chain.c',
+            'src/chain.h',
+            'src/iccread.c',
+            'src/matrix.c',
+            'src/matrix.h',
+            'src/qcms.h',
+            'src/qcmsint.h',
+            'src/qcmstypes.h',
+            'src/transform.c',
+            'src/transform_util.c',
+            'src/transform_util.h',
+          ],
+          'conditions': [
+            ['target_arch=="ia32" or target_arch=="x64"', {
+              'defines': [
+                'SSE2_ENABLE',
+              ],
+              'sources': [
+                'src/transform-sse2.c',
+              ],
+            }],
           ],
         }],
         ['OS == "win"', {
@@ -48,8 +59,8 @@
       ],
     },
     {
-      'target_name': 'qcms_test',
-      'product_name': 'qcms_test',
+      'target_name': 'qcms_tests',
+      'product_name': 'qcms_tests',
       'type': 'executable',
       'conditions': [
         ['target_arch=="ia32" or target_arch=="x64"', {
@@ -58,6 +69,8 @@
           ],
           'sources': [
             'src/tests/qcms_test_tetra_clut_rgba.c',
+            'src/tests/qcms_test_main.c',
+            'src/tests/qcms_test_munsell.c',
           ],
           'dependencies': [
             'qcms',
@@ -68,10 +81,10 @@
                 '-lm',
               ],
             }],
-          ],            
+          ],
         }],
       ],
-    },    
+    },  
   ],
 }
 

@@ -45,8 +45,6 @@ class Locale;
 
 class CORE_EXPORT PagePopupClient {
 public:
-    virtual IntSize contentSize() = 0;
-
     // Provide an HTML source to the specified buffer. The HTML
     // source is rendered in a PagePopup.
     // The content HTML supports:
@@ -58,6 +56,9 @@ public:
     virtual void selectFontsFromOwnerDocument(Document&) = 0;
 
     virtual Element& ownerElement() = 0;
+    // Returns effective zoom factor of ownerElement, or the page zoom factor if
+    // the effective zoom factor is not available.
+    float zoomFactor();
     // Returns a Locale object associated to the client.
     virtual Locale& locale() = 0;
 

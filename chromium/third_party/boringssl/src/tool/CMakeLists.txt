@@ -4,9 +4,11 @@ add_executable(
   bssl
 
   args.cc
+  ciphers.cc
   client.cc
   const.cc
   digest.cc
+  generate_ed25519.cc
   genrsa.cc
   pkcs12.cc
   rand.cc

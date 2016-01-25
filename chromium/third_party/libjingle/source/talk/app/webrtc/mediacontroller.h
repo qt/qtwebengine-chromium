@@ -30,6 +30,10 @@
 
 #include "webrtc/base/thread.h"
 
+namespace cricket {
+class ChannelManager;
+}  // namespace cricket
+
 namespace webrtc {
 class Call;
 class VoiceEngine;
@@ -38,11 +42,13 @@ class VoiceEngine;
 // in the future will create and own RtpSenders and RtpReceivers.
 class MediaControllerInterface {
  public:
-  static MediaControllerInterface* Create(rtc::Thread* worker_thread,
-                                          webrtc::VoiceEngine* voice_engine);
+  static MediaControllerInterface* Create(
+      rtc::Thread* worker_thread,
+      cricket::ChannelManager* channel_manager);
 
   virtual ~MediaControllerInterface() {}
   virtual webrtc::Call* call_w() = 0;
+  virtual cricket::ChannelManager* channel_manager() const = 0;
 };
 }  // namespace webrtc
 

@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/forms/EmailInputType.h"
 
 #include "bindings/core/v8/ScriptRegexp.h"
@@ -33,6 +32,7 @@
 #include "platform/JSONValues.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
+#include "wtf/LeakAnnotations.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 #include <unicode/idna.h>
@@ -55,7 +55,7 @@ static const int32_t maximumDomainNameLength = 255;
 // Use the same option as in url/url_canon_icu.cc
 static const int32_t idnaConversionOption = UIDNA_CHECK_BIDI;
 
-static String convertEmailAddressToASCII(const String& address)
+String EmailInputType::convertEmailAddressToASCII(const String& address)
 {
     if (address.containsOnlyASCII())
         return address;
@@ -63,11 +63,12 @@ static String convertEmailAddressToASCII(const String& address)
     size_t atPosition = address.find('@');
     if (atPosition == kNotFound)
         return address;
+    String host = address.substring(atPosition + 1);
 
     // UnicodeString ctor for copy-on-write does not work reliably (in debug
     // build.) TODO(jshin): In an unlikely case this is a perf-issue, treat
     // 8bit and non-8bit strings separately.
-    icu::UnicodeString idnDomainName(address.charactersWithNullTermination().data() + atPosition + 1, address.length() - atPosition - 1);
+    icu::UnicodeString idnDomainName(host.charactersWithNullTermination().data(), host.length());
     icu::UnicodeString domainName;
 
     // Leak |idna| at the end.
@@ -82,7 +83,8 @@ static String convertEmailAddressToASCII(const String& address)
     StringBuilder builder;
     builder.append(address, 0, atPosition + 1);
     builder.append(domainName.getBuffer(), domainName.length());
-    return builder.toString();
+    String asciiEmail = builder.toString();
+    return isValidEmailAddress(asciiEmail) ? asciiEmail : address;
 }
 
 String EmailInputType::convertEmailAddressToUnicode(const String& address) const
@@ -132,12 +134,13 @@ static bool checkValidDotUsage(const String& domain)
     return domain.find("..") == kNotFound;
 }
 
-static bool isValidEmailAddress(const String& address)
+bool EmailInputType::isValidEmailAddress(const String& address)
 {
     int addressLength = address.length();
     if (!addressLength)
         return false;
 
+    LEAK_SANITIZER_DISABLED_SCOPE;
     DEFINE_STATIC_LOCAL(const ScriptRegexp, regExp, (emailPattern, TextCaseInsensitive));
 
     int matchLength;

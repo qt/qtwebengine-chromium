@@ -5,11 +5,13 @@
 #ifndef UI_EVENTS_EVENT_H_
 #define UI_EVENTS_EVENT_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
 #include "base/event_types.h"
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "ui/events/event_constants.h"
@@ -87,11 +89,10 @@ class EVENTS_EXPORT Event {
   // the time the event was created.
   bool IsShiftDown() const { return (flags_ & EF_SHIFT_DOWN) != 0; }
   bool IsControlDown() const { return (flags_ & EF_CONTROL_DOWN) != 0; }
-  bool IsCapsLockDown() const { return (flags_ & EF_CAPS_LOCK_DOWN) != 0; }
   bool IsAltDown() const { return (flags_ & EF_ALT_DOWN) != 0; }
-  bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
   bool IsCommandDown() const { return (flags_ & EF_COMMAND_DOWN) != 0; }
-  bool IsRepeat() const { return (flags_ & EF_IS_REPEAT) != 0; }
+  bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
+  bool IsCapsLockOn() const { return (flags_ & EF_CAPS_LOCK_ON) != 0; }
 
   bool IsKeyEvent() const {
     return type_ == ET_KEY_PRESSED || type_ == ET_KEY_RELEASED;
@@ -262,10 +263,16 @@ class EVENTS_EXPORT LocatedEvent : public Event {
 
   float x() const { return location_.x(); }
   float y() const { return location_.y(); }
-  void set_location(const gfx::PointF& location) { location_ = location; }
+  void set_location(const gfx::Point& location) {
+    location_ = gfx::PointF(location);
+  }
+  void set_location_f(const gfx::PointF& location) { location_ = location; }
   gfx::Point location() const { return gfx::ToFlooredPoint(location_); }
   const gfx::PointF& location_f() const { return location_; }
-  void set_root_location(const gfx::PointF& root_location) {
+  void set_root_location(const gfx::Point& root_location) {
+    root_location_ = gfx::PointF(root_location);
+  }
+  void set_root_location_f(const gfx::PointF& root_location) {
     root_location_ = root_location;
   }
   gfx::Point root_location() const {
@@ -401,8 +408,8 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
 
   // Used for synthetic events in testing, gesture recognizer and Ozone
   MouseEvent(EventType type,
-             const gfx::PointF& location,
-             const gfx::PointF& root_location,
+             const gfx::Point& location,
+             const gfx::Point& root_location,
              base::TimeDelta time_stamp,
              int flags,
              int changed_button_flags);
@@ -436,6 +443,13 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
     return button_flags() != 0;
   }
 
+  // Returns the flags for the mouse buttons.
+  int button_flags() const {
+    return flags() & (EF_LEFT_MOUSE_BUTTON | EF_MIDDLE_MOUSE_BUTTON |
+                      EF_RIGHT_MOUSE_BUTTON | EF_BACK_MOUSE_BUTTON |
+                      EF_FORWARD_MOUSE_BUTTON);
+  }
+
   // Compares two mouse down events and returns true if the second one should
   // be considered a repeat of the first.
   static bool IsRepeatedClickEvent(
@@ -467,13 +481,6 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
  private:
   FRIEND_TEST_ALL_PREFIXES(EventTest, DoubleClickRequiresRelease);
   FRIEND_TEST_ALL_PREFIXES(EventTest, SingleClickRightLeft);
-
-  // Returns the flags for the mouse buttons.
-  int button_flags() const {
-    return flags() & (EF_LEFT_MOUSE_BUTTON | EF_MIDDLE_MOUSE_BUTTON |
-                      EF_RIGHT_MOUSE_BUTTON | EF_BACK_MOUSE_BUTTON |
-                      EF_FORWARD_MOUSE_BUTTON);
-  }
 
   // Returns the repeat count based on the previous mouse click, if it is
   // recent enough and within a small enough distance.
@@ -518,8 +525,8 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
 
   // Used for synthetic events in testing and by the gesture recognizer.
   MouseWheelEvent(const gfx::Vector2d& offset,
-                  const gfx::PointF& location,
-                  const gfx::PointF& root_location,
+                  const gfx::Point& location,
+                  const gfx::Point& root_location,
                   base::TimeDelta time_stamp,
                   int flags,
                   int changed_button_flags);
@@ -552,12 +559,12 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
         pointer_details_(model.pointer_details_) {}
 
   TouchEvent(EventType type,
-             const gfx::PointF& location,
+             const gfx::Point& location,
              int touch_id,
              base::TimeDelta time_stamp);
 
   TouchEvent(EventType type,
-             const gfx::PointF& location,
+             const gfx::Point& location,
              int flags,
              int touch_id,
              base::TimeDelta timestamp,
@@ -573,7 +580,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   // The id of the pointer this event modifies.
   int touch_id() const { return touch_id_; }
   // A unique identifier for this event.
-  uint32 unique_event_id() const { return unique_event_id_; }
+  uint32_t unique_event_id() const { return unique_event_id_; }
 
   float rotation_angle() const { return rotation_angle_; }
 
@@ -613,7 +620,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   const int touch_id_;
 
   // A unique identifier for the touch event.
-  const uint32 unique_event_id_;
+  const uint32_t unique_event_id_;
 
   // Clockwise angle (in degrees) of the major axis from the X axis. Must be
   // less than 180 and non-negative.
@@ -750,15 +757,17 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // as GetUnmodifiedText().
   base::char16 GetText() const;
 
+  // True if this is a character event, false if this is a keystroke event.
+  bool is_char() const { return is_char_; }
+
+  bool is_repeat() const { return (flags() & EF_IS_REPEAT) != 0; }
+
   // Gets the associated (Windows-based) KeyboardCode for this key event.
   // Historically, this has also been used to obtain the character associated
   // with a character event, because both use the Window message 'wParam' field.
   // This should be avoided; if necessary for backwards compatibility, use
   // GetConflatedWindowsKeyCode().
   KeyboardCode key_code() const { return key_code_; }
-
-  // True if this is a character event, false if this is a keystroke event.
-  bool is_char() const { return is_char_; }
 
   // This is only intended to be used externally by classes that are modifying
   // events in an EventRewriter.
@@ -773,7 +782,7 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // For a keystroke event, returns the same value as key_code().
   // For a character event, returns the same value as GetCharacter().
   // This exists for backwards compatibility with Windows key events.
-  uint16 GetConflatedWindowsKeyCode() const;
+  uint16_t GetConflatedWindowsKeyCode() const;
 
   // Returns true for [Alt]+<num-pad digit> Unicode alt key codes used by Win.
   // TODO(msw): Additional work may be needed for analogues on other platforms.
@@ -802,7 +811,7 @@ class EVENTS_EXPORT KeyEvent : public Event {
 
   KeyboardCode key_code_;
 
-  // DOM KeyboardEvent |code| (e.g. DomCode::KEY_A, DomCode::SPACE).
+  // DOM KeyboardEvent |code| (e.g. DomCode::US_A, DomCode::SPACE).
   // http://www.w3.org/TR/DOM-Level-3-Events-code/
   //
   // This value represents the physical position in the keyboard and can be
@@ -854,7 +863,7 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
 
   // Used for tests.
   ScrollEvent(EventType type,
-              const gfx::PointF& location,
+              const gfx::Point& location,
               base::TimeDelta time_stamp,
               int flags,
               float x_offset,

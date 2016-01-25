@@ -31,8 +31,8 @@ shared_library("chrome_elf") {
     ":blacklist",
     ":breakpad",
     ":chrome_elf_manifest",
-    ":lib",
     ":chrome_elf_resources",
+    ":common",
     "//build/config/sanitizers:deps",
   ]
   configs += [ "//build/config/win:windowed" ]
@@ -47,20 +47,6 @@ shared_library("chrome_elf") {
   }
 }
 
-source_set("lib") {
-  sources = [
-    "create_file/chrome_create_file.cc",
-    "create_file/chrome_create_file.h",
-    "ntdll_cache.cc",
-    "ntdll_cache.h",
-  ]
-  deps = [
-    ":common",
-    "//base:base_static",
-    "//sandbox",
-  ]
-}
-
 source_set("constants") {
   sources = [
     "chrome_elf_constants.cc",
@@ -69,11 +55,14 @@ source_set("constants") {
 }
 
 source_set("common") {
-  deps = [
+  public_deps = [
     ":constants",
   ]
+  deps = [
+    "//base",
+    "//sandbox",
+  ]
   sources = [
-    "chrome_elf_types.h",
     "chrome_elf_util.cc",
     "chrome_elf_util.h",
     "thunk_getter.cc",
@@ -89,28 +78,10 @@ source_set("breakpad") {
   ]
   deps = [
     ":common",
+    "//base",
     "//breakpad:breakpad_handler",
-    "//chrome:version_header",
+    "//chrome/common:version_header",
   ]
-}
-
-if (is_component_build) {
-  shared_library("chrome_redirects") {
-    sources = [
-      "chrome_redirects_main.cc",
-    ]
-    deps = [
-      ":lib",
-      "//build/config/sanitizers:deps",
-    ]
-    configs += [ "//build/config/win:windowed" ]
-    ldflags = [ "/DEF:" + rebase_path("chrome_redirects.def") ]
-
-    if (current_cpu == "x86") {
-      # Don't set an x64 base address (to avoid breaking HE-ASLR).
-      ldflags += [ "/BASE:0x01c20000" ]
-    }
-  }
 }
 
 source_set("dll_hash") {
@@ -140,14 +111,14 @@ static_library("blacklist") {
     "blacklist/blacklist_interceptions.cc",
     "blacklist/blacklist_interceptions.h",
   ]
+  public_deps = [
+    "//sandbox",
+  ]
   deps = [
-    # Depend on base_static, but do NOT take a dependency on base.gyp:base
-    # as that would risk pulling in base's link-time dependencies which
-    # chrome_elf cannot do.
     ":breakpad",
+    ":common",
     ":constants",
-    "//base:base_static",
-    "//sandbox:sandbox",
+    "//base",
   ]
 }
 
@@ -156,18 +127,17 @@ test("chrome_elf_unittests") {
   sources = [
     "blacklist/test/blacklist_test.cc",
     "chrome_elf_util_unittest.cc",
-    "create_file/chrome_create_file_unittest.cc",
     "elf_imports_unittest.cc",
-    "ntdll_cache_unittest.cc",
   ]
   include_dirs = [ "$target_gen_dir" ]
   deps = [
     ":blacklist",
     ":blacklist_test_main_dll",
-    ":lib",
+    ":common",
     "//base",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
+    "//chrome/common:version_header",
     "//sandbox",
     "//testing/gtest",
   ]
@@ -186,6 +156,7 @@ shared_library("blacklist_test_main_dll") {
   ]
   deps = [
     ":blacklist",
+    ":common",
     "//base",
     "//build/config/sanitizers:deps",
   ]

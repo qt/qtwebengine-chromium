@@ -5,13 +5,16 @@
 #ifndef CONTENT_PUBLIC_RENDERER_RENDER_FRAME_OBSERVER_H_
 #define CONTENT_PUBLIC_RENDERER_RENDER_FRAME_OBSERVER_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebMeaningfulLayout.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -93,8 +96,15 @@ class CONTENT_EXPORT RenderFrameObserver : public IPC::Listener,
   virtual void DetailedConsoleMessageAdded(const base::string16& message,
                                            const base::string16& source,
                                            const base::string16& stack_trace,
-                                           int32 line_number,
-                                           int32 severity_level) {}
+                                           int32_t line_number,
+                                           int32_t severity_level) {}
+
+  // Called when an interesting (from document lifecycle perspective),
+  // compositor-driven layout had happened. This is a reasonable hook to use
+  // to inspect the document and layout information, since it is in a clean
+  // state and you won't accidentally force new layouts.
+  // The interestingness of layouts is explained in WebMeaningfulLayout.h.
+  virtual void DidMeaningfulLayout(blink::WebMeaningfulLayout layout_type) {}
 
   // Called when a compositor frame has committed.
   virtual void DidCommitCompositorFrame() {}

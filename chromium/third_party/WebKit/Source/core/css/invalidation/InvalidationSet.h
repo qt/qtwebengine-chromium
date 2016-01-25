@@ -32,7 +32,8 @@
 #define InvalidationSet_h
 
 #include "core/CoreExport.h"
-#include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
+#include "wtf/Assertions.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefCounted.h"
@@ -42,24 +43,27 @@
 
 namespace blink {
 
+class DescendantInvalidationSet;
 class Element;
 class TracedValue;
 
-// Tracks data to determine which elements of a DOM subtree need to have style
-// recalculated.
-class CORE_EXPORT InvalidationSet final : public RefCountedWillBeGarbageCollected<InvalidationSet> {
+enum InvalidationType {
+    InvalidateDescendants,
+    InvalidateSiblings
+};
+
+// Tracks data to determine which descendants in a DOM subtree, or
+// siblings and their descendants, need to have style recalculated.
+class CORE_EXPORT InvalidationSet : public RefCounted<InvalidationSet> {
     WTF_MAKE_NONCOPYABLE(InvalidationSet);
+    USING_FAST_MALLOC_WITH_TYPE_NAME(blink::InvalidationSet);
 public:
-    static PassRefPtrWillBeRawPtr<InvalidationSet> create()
-    {
-        return adoptRefWillBeNoop(new InvalidationSet);
-    }
+    bool isDescendantInvalidationSet() const { return m_type == InvalidateDescendants; }
+    bool isSiblingInvalidationSet() const { return m_type == InvalidateSiblings; }
 
     static void cacheTracingFlag();
 
     bool invalidatesElement(Element&) const;
-
-    void combine(const InvalidationSet& other);
 
     void addClass(const AtomicString& className);
     void addId(const AtomicString& id);
@@ -81,9 +85,7 @@ public:
     void setCustomPseudoInvalid() { m_customPseudoInvalid = true; }
     bool customPseudoInvalid() const { return m_customPseudoInvalid; }
 
-    bool isEmpty() const { return !m_classes && !m_ids && !m_tagNames && !m_attributes && !m_customPseudoInvalid; }
-
-    DECLARE_TRACE();
+    bool isEmpty() const { return !m_classes && !m_ids && !m_tagNames && !m_attributes && !m_customPseudoInvalid && !m_insertionPointCrossing; }
 
     void toTracedValue(TracedValue*) const;
 
@@ -91,19 +93,38 @@ public:
     void show() const;
 #endif
 
-private:
-    InvalidationSet();
+    const HashSet<AtomicString>& classSetForTesting() const { ASSERT(m_classes); return *m_classes; }
+    const HashSet<AtomicString>& idSetForTesting() const { ASSERT(m_ids); return *m_ids; }
+    const HashSet<AtomicString>& tagNameSetForTesting() const { ASSERT(m_tagNames); return *m_tagNames; }
+    const HashSet<AtomicString>& attributeSetForTesting() const { ASSERT(m_attributes); return *m_attributes; }
 
-    WillBeHeapHashSet<AtomicString>& ensureClassSet();
-    WillBeHeapHashSet<AtomicString>& ensureIdSet();
-    WillBeHeapHashSet<AtomicString>& ensureTagNameSet();
-    WillBeHeapHashSet<AtomicString>& ensureAttributeSet();
+    void deref()
+    {
+        if (!derefBase())
+            return;
+        destroy();
+    }
+
+protected:
+    InvalidationSet(InvalidationType);
+
+    void combine(const InvalidationSet& other);
+
+private:
+    void destroy();
+
+    HashSet<AtomicString>& ensureClassSet();
+    HashSet<AtomicString>& ensureIdSet();
+    HashSet<AtomicString>& ensureTagNameSet();
+    HashSet<AtomicString>& ensureAttributeSet();
 
     // FIXME: optimize this if it becomes a memory issue.
-    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString>> m_classes;
-    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString>> m_ids;
-    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString>> m_tagNames;
-    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString>> m_attributes;
+    OwnPtr<HashSet<AtomicString>> m_classes;
+    OwnPtr<HashSet<AtomicString>> m_ids;
+    OwnPtr<HashSet<AtomicString>> m_tagNames;
+    OwnPtr<HashSet<AtomicString>> m_attributes;
+
+    unsigned m_type : 1;
 
     // If true, all descendants might be invalidated, so a full subtree recalc is required.
     unsigned m_allDescendantsMightBeInvalid : 1;
@@ -120,6 +141,58 @@ private:
     // If true, insertion point descendants must be invalidated.
     unsigned m_insertionPointCrossing : 1;
 };
+
+class CORE_EXPORT DescendantInvalidationSet final : public InvalidationSet {
+public:
+    static PassRefPtr<DescendantInvalidationSet> create()
+    {
+        return adoptRef(new DescendantInvalidationSet);
+    }
+
+    void combine(const DescendantInvalidationSet& other)
+    {
+        InvalidationSet::combine(other);
+    }
+
+private:
+    DescendantInvalidationSet()
+        : InvalidationSet(InvalidateDescendants) {}
+};
+
+class CORE_EXPORT SiblingInvalidationSet final : public InvalidationSet {
+public:
+    static PassRefPtr<SiblingInvalidationSet> create()
+    {
+        return adoptRef(new SiblingInvalidationSet);
+    }
+
+    void combine(const SiblingInvalidationSet& other);
+
+    DescendantInvalidationSet& descendants() { return *m_descendantInvalidationSet; }
+    const DescendantInvalidationSet& descendants() const { return *m_descendantInvalidationSet; }
+
+    unsigned maxDirectAdjacentSelectors() const { return m_maxDirectAdjacentSelectors; }
+    void updateMaxDirectAdjacentSelectors(unsigned value) { m_maxDirectAdjacentSelectors = std::max(value, m_maxDirectAdjacentSelectors); }
+
+private:
+    SiblingInvalidationSet();
+
+    // Indicates the maximum possible number of siblings affected.
+    unsigned m_maxDirectAdjacentSelectors;
+
+    // Indicates the descendants of siblings.
+    RefPtr<DescendantInvalidationSet> m_descendantInvalidationSet;
+};
+
+using InvalidationSetVector = Vector<RefPtr<InvalidationSet>>;
+
+struct InvalidationLists {
+    InvalidationSetVector descendants;
+    InvalidationSetVector siblings;
+};
+
+DEFINE_TYPE_CASTS(DescendantInvalidationSet, InvalidationSet, value, value->isDescendantInvalidationSet(), value.isDescendantInvalidationSet());
+DEFINE_TYPE_CASTS(SiblingInvalidationSet, InvalidationSet, value, value->isSiblingInvalidationSet(), value.isSiblingInvalidationSet());
 
 } // namespace blink
 

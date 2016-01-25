@@ -31,7 +31,7 @@ bool ValidateES2TexImageParameters(Context *context, GLenum target, GLint level,
         return false;
     }
 
-    if (!ValidImageSize(context, target, level, width, height, 1))
+    if (!ValidImageSizeParameters(context, target, level, width, height, 1, isSubImage))
     {
         context->recordError(Error(GL_INVALID_VALUE));
         return false;
@@ -147,6 +147,13 @@ bool ValidateES2TexImageParameters(Context *context, GLenum target, GLint level,
             break;
           case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
             if (!context->getExtensions().textureCompressionDXT5)
+            {
+                context->recordError(Error(GL_INVALID_ENUM));
+                return false;
+            }
+            break;
+          case GL_ETC1_RGB8_OES:
+            if (!context->getExtensions().compressedETC1RGB8Texture)
             {
                 context->recordError(Error(GL_INVALID_ENUM));
                 return false;
@@ -343,6 +350,18 @@ bool ValidateES2TexImageParameters(Context *context, GLenum target, GLint level,
                 return false;
             }
             break;
+          case GL_ETC1_RGB8_OES:
+            if (context->getExtensions().compressedETC1RGB8Texture)
+            {
+                context->recordError(Error(GL_INVALID_OPERATION));
+                return false;
+            }
+            else
+            {
+                context->recordError(Error(GL_INVALID_ENUM));
+                return false;
+            }
+            break;
           case GL_DEPTH_COMPONENT:
           case GL_DEPTH_STENCIL_OES:
             if (!context->getExtensions().depthTextures)
@@ -495,6 +514,7 @@ bool ValidateES2CopyTexImageParameters(Context* context, GLenum target, GLint le
           case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
           case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
           case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
+          case GL_ETC1_RGB8_OES:
             context->recordError(Error(GL_INVALID_OPERATION));
             return false;
           case GL_DEPTH_COMPONENT:
@@ -635,6 +655,18 @@ bool ValidateES2CopyTexImageParameters(Context* context, GLenum target, GLint le
                 return false;
             }
             break;
+          case GL_ETC1_RGB8_OES:
+            if (context->getExtensions().compressedETC1RGB8Texture)
+            {
+                context->recordError(Error(GL_INVALID_OPERATION));
+                return false;
+            }
+            else
+            {
+                context->recordError(Error(GL_INVALID_ENUM));
+                return false;
+            }
+            break;
           case GL_DEPTH_COMPONENT:
           case GL_DEPTH_COMPONENT16:
           case GL_DEPTH_COMPONENT32_OES:
@@ -747,6 +779,13 @@ bool ValidateES2TexStorageParameters(Context *context, GLenum target, GLsizei le
         break;
       case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
         if (!context->getExtensions().textureCompressionDXT5)
+        {
+            context->recordError(Error(GL_INVALID_ENUM));
+            return false;
+        }
+        break;
+      case GL_ETC1_RGB8_OES:
+        if (!context->getExtensions().compressedETC1RGB8Texture)
         {
             context->recordError(Error(GL_INVALID_ENUM));
             return false;
@@ -950,6 +989,572 @@ bool ValidateDrawBuffers(Context *context, GLsizei n, const GLenum *bufs)
                 "Only NONE or BACK are valid values when drawing to the default framebuffer"));
             return false;
         }
+    }
+
+    return true;
+}
+
+bool ValidateBindVertexArrayOES(Context *context, GLuint array)
+{
+    if (!context->getExtensions().vertexArrayObject)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return ValidateBindVertexArrayBase(context, array);
+}
+
+bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n)
+{
+    if (!context->getExtensions().vertexArrayObject)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return ValidateDeleteVertexArraysBase(context, n);
+}
+
+bool ValidateGenVertexArraysOES(Context *context, GLsizei n)
+{
+    if (!context->getExtensions().vertexArrayObject)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return ValidateGenVertexArraysBase(context, n);
+}
+
+bool ValidateIsVertexArrayOES(Context *context)
+{
+    if (!context->getExtensions().vertexArrayObject)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateProgramBinaryOES(Context *context,
+                              GLuint program,
+                              GLenum binaryFormat,
+                              const void *binary,
+                              GLint length)
+{
+    if (!context->getExtensions().getProgramBinary)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return ValidateProgramBinaryBase(context, program, binaryFormat, binary, length);
+}
+
+bool ValidateGetProgramBinaryOES(Context *context,
+                                 GLuint program,
+                                 GLsizei bufSize,
+                                 GLsizei *length,
+                                 GLenum *binaryFormat,
+                                 void *binary)
+{
+    if (!context->getExtensions().getProgramBinary)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return ValidateGetProgramBinaryBase(context, program, bufSize, length, binaryFormat, binary);
+}
+
+static bool ValidDebugSource(GLenum source, bool mustBeThirdPartyOrApplication)
+{
+    switch (source)
+    {
+        case GL_DEBUG_SOURCE_API:
+        case GL_DEBUG_SOURCE_SHADER_COMPILER:
+        case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
+        case GL_DEBUG_SOURCE_OTHER:
+            // Only THIRD_PARTY and APPLICATION sources are allowed to be manually inserted
+            return !mustBeThirdPartyOrApplication;
+
+        case GL_DEBUG_SOURCE_THIRD_PARTY:
+        case GL_DEBUG_SOURCE_APPLICATION:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool ValidDebugType(GLenum type)
+{
+    switch (type)
+    {
+        case GL_DEBUG_TYPE_ERROR:
+        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+        case GL_DEBUG_TYPE_PERFORMANCE:
+        case GL_DEBUG_TYPE_PORTABILITY:
+        case GL_DEBUG_TYPE_OTHER:
+        case GL_DEBUG_TYPE_MARKER:
+        case GL_DEBUG_TYPE_PUSH_GROUP:
+        case GL_DEBUG_TYPE_POP_GROUP:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool ValidDebugSeverity(GLenum severity)
+{
+    switch (severity)
+    {
+        case GL_DEBUG_SEVERITY_HIGH:
+        case GL_DEBUG_SEVERITY_MEDIUM:
+        case GL_DEBUG_SEVERITY_LOW:
+        case GL_DEBUG_SEVERITY_NOTIFICATION:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+bool ValidateDebugMessageControlKHR(Context *context,
+                                    GLenum source,
+                                    GLenum type,
+                                    GLenum severity,
+                                    GLsizei count,
+                                    const GLuint *ids,
+                                    GLboolean enabled)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (!ValidDebugSource(source, false) && source != GL_DONT_CARE)
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug source."));
+        return false;
+    }
+
+    if (!ValidDebugType(type) && type != GL_DONT_CARE)
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug type."));
+        return false;
+    }
+
+    if (!ValidDebugSeverity(severity) && severity != GL_DONT_CARE)
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug severity."));
+        return false;
+    }
+
+    if (count > 0)
+    {
+        if (source == GL_DONT_CARE || type == GL_DONT_CARE)
+        {
+            context->recordError(Error(
+                GL_INVALID_OPERATION,
+                "If count is greater than zero, source and severity cannot be GL_DONT_CARE."));
+            return false;
+        }
+
+        if (severity != GL_DONT_CARE)
+        {
+            context->recordError(
+                Error(GL_INVALID_OPERATION,
+                      "If count is greater than zero, severity must be GL_DONT_CARE."));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateDebugMessageInsertKHR(Context *context,
+                                   GLenum source,
+                                   GLenum type,
+                                   GLuint id,
+                                   GLenum severity,
+                                   GLsizei length,
+                                   const GLchar *buf)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (!context->getState().getDebug().isOutputEnabled())
+    {
+        // If the DEBUG_OUTPUT state is disabled calls to DebugMessageInsert are discarded and do
+        // not generate an error.
+        return false;
+    }
+
+    if (!ValidDebugSeverity(severity))
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug severity."));
+        return false;
+    }
+
+    if (!ValidDebugType(type))
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug type."));
+        return false;
+    }
+
+    if (!ValidDebugSource(source, true))
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug source."));
+        return false;
+    }
+
+    size_t messageLength = (length < 0) ? strlen(buf) : length;
+    if (messageLength > context->getExtensions().maxDebugMessageLength)
+    {
+        context->recordError(
+            Error(GL_INVALID_VALUE, "Message length is larger than GL_MAX_DEBUG_MESSAGE_LENGTH."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateDebugMessageCallbackKHR(Context *context,
+                                     GLDEBUGPROCKHR callback,
+                                     const void *userParam)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetDebugMessageLogKHR(Context *context,
+                                   GLuint count,
+                                   GLsizei bufSize,
+                                   GLenum *sources,
+                                   GLenum *types,
+                                   GLuint *ids,
+                                   GLenum *severities,
+                                   GLsizei *lengths,
+                                   GLchar *messageLog)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (bufSize < 0 && messageLog != nullptr)
+    {
+        context->recordError(
+            Error(GL_INVALID_VALUE, "bufSize must be positive if messageLog is not null."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidatePushDebugGroupKHR(Context *context,
+                               GLenum source,
+                               GLuint id,
+                               GLsizei length,
+                               const GLchar *message)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (!ValidDebugSource(source, true))
+    {
+        context->recordError(Error(GL_INVALID_ENUM, "Invalid debug source."));
+        return false;
+    }
+
+    size_t messageLength = (length < 0) ? strlen(message) : length;
+    if (messageLength > context->getExtensions().maxDebugMessageLength)
+    {
+        context->recordError(
+            Error(GL_INVALID_VALUE, "Message length is larger than GL_MAX_DEBUG_MESSAGE_LENGTH."));
+        return false;
+    }
+
+    size_t currentStackSize = context->getState().getDebug().getGroupStackDepth();
+    if (currentStackSize >= context->getExtensions().maxDebugGroupStackDepth)
+    {
+        context->recordError(
+            Error(GL_STACK_OVERFLOW,
+                  "Cannot push more than GL_MAX_DEBUG_GROUP_STACK_DEPTH debug groups."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidatePopDebugGroupKHR(Context *context)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    size_t currentStackSize = context->getState().getDebug().getGroupStackDepth();
+    if (currentStackSize <= 1)
+    {
+        context->recordError(Error(GL_STACK_UNDERFLOW, "Cannot pop the default debug group."));
+        return false;
+    }
+
+    return true;
+}
+
+static bool ValidateObjectIdentifierAndName(Context *context, GLenum identifier, GLuint name)
+{
+    switch (identifier)
+    {
+        case GL_BUFFER:
+            if (context->getBuffer(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid buffer."));
+                return false;
+            }
+            return true;
+
+        case GL_SHADER:
+            if (context->getShader(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid shader."));
+                return false;
+            }
+            return true;
+
+        case GL_PROGRAM:
+            if (context->getProgram(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid program."));
+                return false;
+            }
+            return true;
+
+        case GL_VERTEX_ARRAY:
+            if (context->getVertexArray(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid vertex array."));
+                return false;
+            }
+            return true;
+
+        case GL_QUERY:
+            if (context->getQuery(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid query."));
+                return false;
+            }
+            return true;
+
+        case GL_TRANSFORM_FEEDBACK:
+            if (context->getTransformFeedback(name) == nullptr)
+            {
+                context->recordError(
+                    Error(GL_INVALID_VALUE, "name is not a valid transform feedback."));
+                return false;
+            }
+            return true;
+
+        case GL_SAMPLER:
+            if (context->getSampler(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid sampler."));
+                return false;
+            }
+            return true;
+
+        case GL_TEXTURE:
+            if (context->getTexture(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid texture."));
+                return false;
+            }
+            return true;
+
+        case GL_RENDERBUFFER:
+            if (context->getRenderbuffer(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid renderbuffer."));
+                return false;
+            }
+            return true;
+
+        case GL_FRAMEBUFFER:
+            if (context->getFramebuffer(name) == nullptr)
+            {
+                context->recordError(Error(GL_INVALID_VALUE, "name is not a valid framebuffer."));
+                return false;
+            }
+            return true;
+
+        default:
+            context->recordError(Error(GL_INVALID_ENUM, "Invalid identifier."));
+            return false;
+    }
+
+    return true;
+}
+
+bool ValidateObjectLabelKHR(Context *context,
+                            GLenum identifier,
+                            GLuint name,
+                            GLsizei length,
+                            const GLchar *label)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (!ValidateObjectIdentifierAndName(context, identifier, name))
+    {
+        return false;
+    }
+
+    size_t labelLength = (length < 0) ? strlen(label) : length;
+    if (labelLength > context->getExtensions().maxLabelLength)
+    {
+        context->recordError(
+            Error(GL_INVALID_VALUE, "Label length is larger than GL_MAX_LABEL_LENGTH."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetObjectLabelKHR(Context *context,
+                               GLenum identifier,
+                               GLuint name,
+                               GLsizei bufSize,
+                               GLsizei *length,
+                               GLchar *label)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (bufSize < 0)
+    {
+        context->recordError(Error(GL_INVALID_VALUE, "bufSize cannot be negative."));
+        return false;
+    }
+
+    if (!ValidateObjectIdentifierAndName(context, identifier, name))
+    {
+        return false;
+    }
+
+    // Can no-op if bufSize is zero.
+    return bufSize > 0;
+}
+
+static bool ValidateObjectPtrName(Context *context, const void *ptr)
+{
+    if (context->getFenceSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr))) == nullptr)
+    {
+        context->recordError(Error(GL_INVALID_VALUE, "name is not a valid sync."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateObjectPtrLabelKHR(Context *context,
+                               const void *ptr,
+                               GLsizei length,
+                               const GLchar *label)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (!ValidateObjectPtrName(context, ptr))
+    {
+        return false;
+    }
+
+    size_t labelLength = (length < 0) ? strlen(label) : length;
+    if (labelLength > context->getExtensions().maxLabelLength)
+    {
+        context->recordError(
+            Error(GL_INVALID_VALUE, "Label length is larger than GL_MAX_LABEL_LENGTH."));
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetObjectPtrLabelKHR(Context *context,
+                                  const void *ptr,
+                                  GLsizei bufSize,
+                                  GLsizei *length,
+                                  GLchar *label)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    if (bufSize < 0)
+    {
+        context->recordError(Error(GL_INVALID_VALUE, "bufSize cannot be negative."));
+        return false;
+    }
+
+    if (!ValidateObjectPtrName(context, ptr))
+    {
+        return false;
+    }
+
+    // Can no-op if bufSize is zero.
+    return bufSize > 0;
+}
+
+bool ValidateGetPointervKHR(Context *context, GLenum pname, void **params)
+{
+    if (!context->getExtensions().debug)
+    {
+        context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+        return false;
+    }
+
+    // TODO: represent this in Context::getQueryParameterInfo.
+    switch (pname)
+    {
+        case GL_DEBUG_CALLBACK_FUNCTION:
+        case GL_DEBUG_CALLBACK_USER_PARAM:
+            break;
+
+        default:
+            context->recordError(Error(GL_INVALID_ENUM, "Invalid pname."));
+            return false;
     }
 
     return true;

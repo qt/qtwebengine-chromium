@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webdatabase/DatabaseManager.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -220,7 +219,7 @@ Database* DatabaseManager::openDatabase(ExecutionContext* context,
 
     if (database->isNew() && creationCallback) {
         WTF_LOG(StorageAPI, "Scheduling DatabaseCreationCallbackTask for database %p\n", database);
-        database->executionContext()->postTask(FROM_HERE, DatabaseCreationCallbackTask::create(database, creationCallback));
+        database->executionContext()->postTask(BLINK_FROM_HERE, DatabaseCreationCallbackTask::create(database, creationCallback));
     }
 
     ASSERT(database);

@@ -63,15 +63,6 @@ typedef struct __WGC3Dsync *WGC3Dsync;
 // Typedef for server-side objects like OpenGL textures and program objects.
 typedef WGC3Duint WebGLId;
 
-struct WebGLInfo {
-    WGC3Duint vendorId;
-    WGC3Duint deviceId;
-    WebString vendorInfo;
-    WebString rendererInfo;
-    WebString driverVersion;
-    WebString contextInfoCollectionFailure;
-};
-
 // This interface abstracts the operations performed by the
 // GraphicsContext3D in order to implement WebGL. Nearly all of the
 // methods exposed on this interface map directly to entry points in
@@ -87,40 +78,38 @@ public:
 
     // Context creation attributes.
     struct Attributes {
-        Attributes()
-            : alpha(true)
-            , depth(true)
-            , stencil(true)
-            , antialias(true)
-            , premultipliedAlpha(true)
-            , canRecoverFromContextLoss(true)
-            , noExtensions(false)
-            , shareResources(true)
-            , preferDiscreteGPU(false)
-            , noAutomaticFlushes(false)
-            , failIfMajorPerformanceCaveat(false)
-            , webGL(false)
-            , webGLVersion(0)
-        {
-        }
-
-        bool alpha;
-        bool depth;
-        bool stencil;
-        bool antialias;
-        bool premultipliedAlpha;
-        bool canRecoverFromContextLoss;
-        bool noExtensions;
-        bool shareResources;
-        bool preferDiscreteGPU;
-        bool noAutomaticFlushes;
-        bool failIfMajorPerformanceCaveat;
-        bool webGL;
-        unsigned webGLVersion;
+        bool alpha = true;
+        bool depth = true;
+        bool stencil = true;
+        bool antialias = true;
+        bool premultipliedAlpha = true;
+        bool canRecoverFromContextLoss = true;
+        bool noExtensions = false;
+        bool shareResources = true;
+        bool preferDiscreteGPU = false;
+        bool noAutomaticFlushes = false;
+        bool failIfMajorPerformanceCaveat = false;
+        bool webGL = false;
+        unsigned webGLVersion = 0;
         // FIXME: ideally this would be a WebURL, but it is currently not
         // possible to pass a WebURL by value across the WebKit API boundary.
         // See https://bugs.webkit.org/show_bug.cgi?id=103793#c13 .
         WebString topDocumentURL;
+    };
+
+    struct WebGraphicsInfo {
+        unsigned vendorId = 0;
+        unsigned deviceId = 0;
+        unsigned processCrashCount = 0;
+        unsigned resetNotificationStrategy = 0;
+        bool sandboxed = false;
+        bool testFailContext = false;
+        bool amdSwitchable = false;
+        bool optimus = false;
+        WebString vendorInfo;
+        WebString rendererInfo;
+        WebString driverVersion;
+        WebString errorMessage;
     };
 
     class WebGraphicsContextLostCallback {
@@ -159,8 +148,10 @@ public:
     virtual void discardBackbufferCHROMIUM() { }
     virtual void ensureBackbufferCHROMIUM() { }
 
-    virtual unsigned insertSyncPoint() { return 0; }
-    virtual void waitSyncPoint(unsigned) { }
+    virtual bool insertSyncPoint(WGC3Dbyte*) { return false; }
+    virtual WGC3Duint64 insertFenceSyncCHROMIUM() { return 0; }
+    virtual bool genSyncTokenCHROMIUM(WGC3Duint64, WGC3Dbyte*) { return false; }
+    virtual void waitSyncTokenCHROMIUM(const WGC3Dbyte*) {}
 
     // Copies the contents of the off-screen render target used by the WebGL
     // context to the corresponding texture used by the compositor.
@@ -400,10 +391,10 @@ public:
     virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location, const WGC3Dchar* uniform) { }
 
     // GL_CHROMIUM_copy_texture
-    virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Duint sourceId,
+    virtual void copyTextureCHROMIUM(WGC3Duint sourceId,
         WGC3Duint destId, WGC3Denum internalFormat, WGC3Denum destType,
         WGC3Dboolean unpackFlipY, WGC3Dboolean unpackPremultiplyAlpha, WGC3Dboolean unpackUnmultiplyAlpha) { }
-    virtual void copySubTextureCHROMIUM(WGC3Denum target, WGC3Duint sourceId,
+    virtual void copySubTextureCHROMIUM(WGC3Duint sourceId,
         WGC3Duint destId, WGC3Dint xoffset, WGC3Dint yoffset, WGC3Dint x,
         WGC3Dint y, WGC3Dsizei width, WGC3Dsizei height,
         WGC3Dboolean unpackFlipY, WGC3Dboolean unpackPremultiplyAlpha, WGC3Dboolean unpackUnmultiplyAlpha) { }
@@ -461,8 +452,6 @@ public:
 
     // GL_EXT_draw_buffers
     virtual void drawBuffersEXT(WGC3Dsizei n, const WGC3Denum* bufs) { }
-
-    virtual GrGLInterface* createGrGLInterface() { return nullptr; }
 
     // GL_CHROMIUM_image
     virtual void destroyImageCHROMIUM(WGC3Duint imageId) { }

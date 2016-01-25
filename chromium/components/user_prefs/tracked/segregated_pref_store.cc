@@ -4,6 +4,8 @@
 
 #include "components/user_prefs/tracked/segregated_pref_store.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/values.h"
@@ -84,11 +86,11 @@ bool SegregatedPrefStore::GetValue(const std::string& key,
 
 void SegregatedPrefStore::SetValue(const std::string& key,
                                    scoped_ptr<base::Value> value,
-                                   uint32 flags) {
-  StoreForKey(key)->SetValue(key, value.Pass(), flags);
+                                   uint32_t flags) {
+  StoreForKey(key)->SetValue(key, std::move(value), flags);
 }
 
-void SegregatedPrefStore::RemoveValue(const std::string& key, uint32 flags) {
+void SegregatedPrefStore::RemoveValue(const std::string& key, uint32_t flags) {
   StoreForKey(key)->RemoveValue(key, flags);
 }
 
@@ -98,14 +100,14 @@ bool SegregatedPrefStore::GetMutableValue(const std::string& key,
 }
 
 void SegregatedPrefStore::ReportValueChanged(const std::string& key,
-                                             uint32 flags) {
+                                             uint32_t flags) {
   StoreForKey(key)->ReportValueChanged(key, flags);
 }
 
 void SegregatedPrefStore::SetValueSilently(const std::string& key,
                                            scoped_ptr<base::Value> value,
-                                           uint32 flags) {
-  StoreForKey(key)->SetValueSilently(key, value.Pass(), flags);
+                                           uint32_t flags) {
+  StoreForKey(key)->SetValueSilently(key, std::move(value), flags);
 }
 
 bool SegregatedPrefStore::ReadOnly() const {

@@ -27,9 +27,7 @@
 // FFTFrame implementation using Intel IPP's DFT algorithm,
 // suitable for use on Linux.
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
+#include "wtf/build_config.h"
 
 #if USE(WEBAUDIO_IPP)
 
@@ -140,4 +138,3 @@ float* FFTFrame::getUpToDateComplexData()
 
 #endif // USE(WEBAUDIO_IPP)
 
-#endif // ENABLE(WEB_AUDIO)

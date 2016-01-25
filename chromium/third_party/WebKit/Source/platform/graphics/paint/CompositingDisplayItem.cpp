@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/CompositingDisplayItem.h"
 
 #include "platform/RuntimeEnabledFeatures.h"
@@ -12,15 +11,17 @@
 
 namespace blink {
 
-void BeginCompositingDisplayItem::replay(GraphicsContext& context)
+void BeginCompositingDisplayItem::replay(GraphicsContext& context) const
 {
     context.beginLayer(m_opacity, m_xferMode, m_hasBounds ? &m_bounds : nullptr, m_colorFilter);
 }
 
-void BeginCompositingDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void BeginCompositingDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     SkRect bounds = m_bounds;
-    list->appendCompositingItem(m_opacity, m_xferMode, m_hasBounds ? &bounds : nullptr, GraphicsContext::WebCoreColorFilterToSkiaColorFilter(m_colorFilter).get());
+    list->appendCompositingItem(visualRect, m_opacity, m_xferMode,
+        m_hasBounds ? &bounds : nullptr,
+        GraphicsContext::WebCoreColorFilterToSkiaColorFilter(m_colorFilter).get());
 }
 
 #ifndef NDEBUG
@@ -33,14 +34,14 @@ void BeginCompositingDisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder
 }
 #endif
 
-void EndCompositingDisplayItem::replay(GraphicsContext& context)
+void EndCompositingDisplayItem::replay(GraphicsContext& context) const
 {
     context.endLayer();
 }
 
-void EndCompositingDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndCompositingDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndCompositingItem();
+    list->appendEndCompositingItem(visualRect);
 }
 
 } // namespace blink

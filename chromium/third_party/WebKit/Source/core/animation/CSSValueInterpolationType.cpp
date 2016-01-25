@@ -2,52 +2,51 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/animation/CSSValueInterpolationType.h"
 
+#include "core/animation/InterpolationEnvironment.h"
+#include "core/animation/StringKeyframe.h"
 #include "core/css/resolver/StyleBuilder.h"
 
 namespace blink {
 
 class CSSValueNonInterpolableValue : public NonInterpolableValue {
 public:
-    ~CSSValueNonInterpolableValue() override { }
-    static PassRefPtrWillBeRawPtr<CSSValueNonInterpolableValue> create(PassRefPtrWillBeRawPtr<CSSValue> cssValue)
+    ~CSSValueNonInterpolableValue() final { }
+
+    static PassRefPtr<CSSValueNonInterpolableValue> create(PassRefPtrWillBeRawPtr<CSSValue> cssValue)
     {
-        return adoptRefWillBeNoop(new CSSValueNonInterpolableValue(cssValue));
+        return adoptRef(new CSSValueNonInterpolableValue(cssValue));
     }
 
     CSSValue* cssValue() const { return m_cssValue.get(); }
-
-    DEFINE_INLINE_VIRTUAL_TRACE()
-    {
-        NonInterpolableValue::trace(visitor);
-        visitor->trace(m_cssValue);
-    }
 
     DECLARE_NON_INTERPOLABLE_VALUE_TYPE();
 
 private:
     CSSValueNonInterpolableValue(PassRefPtrWillBeRawPtr<CSSValue> cssValue)
         : m_cssValue(cssValue)
-    { }
+    {
+        ASSERT(m_cssValue);
+    }
 
-    RefPtrWillBeMember<CSSValue> m_cssValue;
+    RefPtrWillBePersistent<CSSValue> m_cssValue;
 };
 
 DEFINE_NON_INTERPOLABLE_VALUE_TYPE(CSSValueNonInterpolableValue);
 DEFINE_NON_INTERPOLABLE_VALUE_TYPE_CASTS(CSSValueNonInterpolableValue);
 
-PassOwnPtr<InterpolationValue> CSSValueInterpolationType::maybeConvertSingle(const CSSPropertySpecificKeyframe& keyframe, const StyleResolverState*, ConversionCheckers&) const
+PassOwnPtr<InterpolationValue> CSSValueInterpolationType::maybeConvertSingle(const PropertySpecificKeyframe& keyframe, const InterpolationEnvironment&, const UnderlyingValue&, ConversionCheckers&) const
 {
-    return InterpolationValue::create(*this, InterpolableList::create(0), CSSValueNonInterpolableValue::create(keyframe.value()));
+    if (keyframe.isNeutral())
+        return nullptr;
+
+    return InterpolationValue::create(*this, InterpolableList::create(0), CSSValueNonInterpolableValue::create(toCSSPropertySpecificKeyframe(keyframe).value()));
 }
 
-void CSSValueInterpolationType::apply(const InterpolableValue&, const NonInterpolableValue* nonInterpolableValue, StyleResolverState& state) const
+void CSSValueInterpolationType::apply(const InterpolableValue&, const NonInterpolableValue* nonInterpolableValue, InterpolationEnvironment& environment) const
 {
-    CSSValue* value = toCSSValueNonInterpolableValue(nonInterpolableValue)->cssValue();
-    if (value)
-        StyleBuilder::applyProperty(m_property, state, value);
+    StyleBuilder::applyProperty(cssProperty(), environment.state(), toCSSValueNonInterpolableValue(nonInterpolableValue)->cssValue());
 }
 
 } // namespace blink

@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/VRDevice.h"
 
 namespace blink {
+
+VRDevice::~VRDevice()
+{
+}
 
 VRDevice::VRDevice(VRHardwareUnit* hardwareUnit, unsigned deviceId)
     : m_hardwareUnit(hardwareUnit)

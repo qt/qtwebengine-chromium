@@ -7,13 +7,15 @@
 #include <dwmapi.h>
 #include <oleacc.h>
 #include <shellapi.h>
+#include <tchar.h>
+#include <tpcshrd.h>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/debug/alias.h"
+#include "base/macros.h"
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_gdi_object.h"
-#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/view_prop.h"
@@ -25,6 +27,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
+#include "ui/events/win/system_event_state_lookup.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/icon_util.h"
@@ -329,6 +332,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       last_mouse_hwheel_time_(0),
       dwm_transition_desired_(false),
       sent_window_size_changing_(false),
+      left_button_down_on_caption_(false),
       autohide_factory_(this),
       weak_factory_(this) {}
 
@@ -379,6 +383,18 @@ void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
       gfx::win::DirectManipulationHelper::CreateInstance();
   if (direct_manipulation_helper_)
     direct_manipulation_helper_->Initialize(hwnd());
+
+  // Disable pen flicks (http://crbug.com/506977)
+  if (base::win::GetVersion() >= base::win::VERSION_WIN7) {
+    ATOM atom = ::GlobalAddAtom(MICROSOFT_TABLETPENSERVICE_PROPERTY);
+    DCHECK(atom);
+
+    ::SetProp(hwnd(), MICROSOFT_TABLETPENSERVICE_PROPERTY,
+        reinterpret_cast<HANDLE>(TABLET_DISABLE_FLICKS |
+            TABLET_DISABLE_FLICKFALLBACKKEYS));
+
+    ::GlobalDeleteAtom(atom);
+  }
 }
 
 void HWNDMessageHandler::InitModalType(ui::ModalType modal_type) {
@@ -404,6 +420,11 @@ void HWNDMessageHandler::Close() {
   // Modal dialog windows disable their owner windows; re-enable them now so
   // they can activate as foreground windows upon this window's destruction.
   RestoreEnabledIfNecessary();
+
+  // Remove the property which disables pen flicks (http://crbug.com/506977)
+  // for this window.
+  if (base::win::GetVersion() >= base::win::VERSION_WIN7)
+    ::RemoveProp(hwnd(), MICROSOFT_TABLETPENSERVICE_PROPERTY);
 
   if (!waiting_for_close_now_) {
     // And we delay the close so that if we are called from an ATL callback,
@@ -538,7 +559,7 @@ void HWNDMessageHandler::CenterWindow(const gfx::Size& size) {
 }
 
 void HWNDMessageHandler::SetRegion(HRGN region) {
-  custom_window_region_.Set(region);
+  custom_window_region_.reset(region);
   ResetWindowRegion(true, true);
 }
 
@@ -730,7 +751,7 @@ void HWNDMessageHandler::FlashFrame(bool flash) {
   fwi.cbSize = sizeof(fwi);
   fwi.hwnd = hwnd();
   if (flash) {
-    fwi.dwFlags = custom_window_region_ ? FLASHW_TRAY : FLASHW_ALL;
+    fwi.dwFlags = custom_window_region_.is_valid() ? FLASHW_TRAY : FLASHW_ALL;
     fwi.uCount = 4;
     fwi.dwTimeout = 0;
   } else {
@@ -798,7 +819,7 @@ void HWNDMessageHandler::FrameTypeChanged() {
     delegate_->HandleFrameChanged();
     InvalidateRect(hwnd(), NULL, FALSE);
   } else {
-    if (!custom_window_region_ && !delegate_->IsUsingCustomFrame())
+    if (!custom_window_region_.is_valid() && !delegate_->IsUsingCustomFrame())
       dwm_transition_desired_ = true;
     if (!dwm_transition_desired_ || !fullscreen_handler_->fullscreen())
       PerformDwmTransition();
@@ -808,23 +829,17 @@ void HWNDMessageHandler::FrameTypeChanged() {
 void HWNDMessageHandler::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                         const gfx::ImageSkia& app_icon) {
   if (!window_icon.isNull()) {
-    HICON windows_icon = IconUtil::CreateHICONFromSkBitmap(
-        *window_icon.bitmap());
-    // We need to make sure to destroy the previous icon, otherwise we'll leak
-    // these GDI objects until we crash!
-    HICON old_icon = reinterpret_cast<HICON>(
-        SendMessage(hwnd(), WM_SETICON, ICON_SMALL,
-                    reinterpret_cast<LPARAM>(windows_icon)));
-    if (old_icon)
-      DestroyIcon(old_icon);
+    base::win::ScopedHICON previous_icon = window_icon_.Pass();
+    window_icon_ =
+        IconUtil::CreateHICONFromSkBitmap(*window_icon.bitmap()).Pass();
+    SendMessage(hwnd(), WM_SETICON, ICON_SMALL,
+                reinterpret_cast<LPARAM>(window_icon_.get()));
   }
   if (!app_icon.isNull()) {
-    HICON windows_icon = IconUtil::CreateHICONFromSkBitmap(*app_icon.bitmap());
-    HICON old_icon = reinterpret_cast<HICON>(
-        SendMessage(hwnd(), WM_SETICON, ICON_BIG,
-                    reinterpret_cast<LPARAM>(windows_icon)));
-    if (old_icon)
-      DestroyIcon(old_icon);
+    base::win::ScopedHICON previous_icon = app_icon_.Pass();
+    app_icon_ = IconUtil::CreateHICONFromSkBitmap(*app_icon.bitmap()).Pass();
+    SendMessage(hwnd(), WM_SETICON, ICON_BIG,
+                reinterpret_cast<LPARAM>(app_icon_.get()));
   }
 }
 
@@ -1070,7 +1085,7 @@ void HWNDMessageHandler::ClientAreaSizeChanged() {
 bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
   if (delegate_->GetClientAreaInsets(insets))
     return true;
-  DCHECK(insets->empty());
+  DCHECK(insets->IsEmpty());
 
   // Returning false causes the default handling in OnNCCalcSize() to
   // be invoked.
@@ -1101,7 +1116,8 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   // automatically makes clicks on transparent pixels fall through, that isn't
   // the case with WS_EX_COMPOSITED. So, we route WS_EX_COMPOSITED through to
   // the delegate to allow for a custom hit mask.
-  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 && !custom_window_region_ &&
+  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 &&
+      !custom_window_region_.is_valid() &&
       (!delegate_->IsUsingCustomFrame() || !delegate_->IsWidgetWindow())) {
     if (force)
       SetWindowRgn(hwnd(), NULL, redraw);
@@ -1111,14 +1127,14 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   // Changing the window region is going to force a paint. Only change the
   // window region if the region really differs.
   base::win::ScopedRegion current_rgn(CreateRectRgn(0, 0, 0, 0));
-  GetWindowRgn(hwnd(), current_rgn);
+  GetWindowRgn(hwnd(), current_rgn.get());
 
   RECT window_rect;
   GetWindowRect(hwnd(), &window_rect);
   base::win::ScopedRegion new_region;
-  if (custom_window_region_) {
-    new_region.Set(::CreateRectRgn(0, 0, 0, 0));
-    ::CombineRgn(new_region, custom_window_region_.Get(), NULL, RGN_COPY);
+  if (custom_window_region_.is_valid()) {
+    new_region.reset(CreateRectRgn(0, 0, 0, 0));
+    CombineRgn(new_region.get(), custom_window_region_.get(), NULL, RGN_COPY);
   } else if (IsMaximized()) {
     HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi;
@@ -1126,20 +1142,20 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
     GetMonitorInfo(monitor, &mi);
     RECT work_rect = mi.rcWork;
     OffsetRect(&work_rect, -window_rect.left, -window_rect.top);
-    new_region.Set(CreateRectRgnIndirect(&work_rect));
+    new_region.reset(CreateRectRgnIndirect(&work_rect));
   } else {
     gfx::Path window_mask;
     delegate_->GetWindowMask(gfx::Size(window_rect.right - window_rect.left,
                                        window_rect.bottom - window_rect.top),
                              &window_mask);
     if (!window_mask.isEmpty())
-      new_region.Set(gfx::CreateHRGNFromSkPath(window_mask));
+      new_region.reset(gfx::CreateHRGNFromSkPath(window_mask));
   }
 
   const bool has_current_region = current_rgn != 0;
   const bool has_new_region = new_region != 0;
   if (has_current_region != has_new_region ||
-      (has_current_region && !EqualRgn(current_rgn, new_region))) {
+      (has_current_region && !EqualRgn(current_rgn.get(), new_region.get()))) {
     // SetWindowRgn takes ownership of the HRGN.
     SetWindowRgn(hwnd(), new_region.release(), redraw);
   }
@@ -1153,8 +1169,9 @@ void HWNDMessageHandler::UpdateDwmNcRenderingPolicy() {
     return;
 
   DWMNCRENDERINGPOLICY policy =
-      custom_window_region_ || delegate_->IsUsingCustomFrame() ?
-          DWMNCRP_DISABLED : DWMNCRP_ENABLED;
+      custom_window_region_.is_valid() || delegate_->IsUsingCustomFrame()
+          ? DWMNCRP_DISABLED
+          : DWMNCRP_ENABLED;
 
   DwmSetWindowAttribute(hwnd(), DWMWA_NCRENDERING_POLICY,
                         &policy, sizeof(DWMNCRENDERINGPOLICY));
@@ -1313,6 +1330,7 @@ void HWNDMessageHandler::OnDestroy() {
 void HWNDMessageHandler::OnDisplayChange(UINT bits_per_pixel,
                                          const gfx::Size& screen_size) {
   delegate_->HandleDisplayChange();
+  SendFrameChanged();
 }
 
 LRESULT HWNDMessageHandler::OnDwmCompositionChanged(UINT msg,
@@ -1413,7 +1431,7 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
   DWORD obj_id = static_cast<DWORD>(static_cast<DWORD_PTR>(l_param));
 
   // Accessibility readers will send an OBJID_CLIENT message
-  if (OBJID_CLIENT == obj_id) {
+  if (static_cast<DWORD>(OBJID_CLIENT) == obj_id) {
     // Retrieve MSAA dispatch object for the root view.
     base::win::ScopedComPtr<IAccessible> root(
         delegate_->GetNativeViewAccessible());
@@ -1518,8 +1536,13 @@ LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
 
   // TODO(beng): resolve this with the GetWindowLong() check on the subsequent
   //             line.
-  if (delegate_->IsWidgetWindow())
-    return delegate_->CanActivate() ? MA_ACTIVATE : MA_NOACTIVATEANDEAT;
+  if (delegate_->IsWidgetWindow()) {
+    if (delegate_->CanActivate())
+      return MA_ACTIVATE;
+    if (delegate_->WantsMouseEventsWhenInactive())
+      return MA_NOACTIVATE;
+    return MA_NOACTIVATEANDEAT;
+  }
   if (GetWindowLong(hwnd(), GWL_EXSTYLE) & WS_EX_NOACTIVATE)
     return MA_NOACTIVATE;
   SetMsgHandled(FALSE);
@@ -2021,9 +2044,9 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
   // key and released it, so we should focus the menu bar.
   if ((notification_code & sc_mask) == SC_KEYMENU && point.x() == 0) {
     int modifiers = ui::EF_NONE;
-    if (base::win::IsShiftPressed())
+    if (ui::win::IsShiftPressed())
       modifiers |= ui::EF_SHIFT_DOWN;
-    if (base::win::IsCtrlPressed())
+    if (ui::win::IsCtrlPressed())
       modifiers |= ui::EF_CONTROL_DOWN;
     // Retrieve the status of shift and control keys to prevent consuming
     // shift+alt keys, which are used by Windows to change input languages.
@@ -2265,14 +2288,14 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
                                                      WPARAM w_param,
                                                      LPARAM l_param,
                                                      bool track_mouse) {
-  if (!touch_ids_.empty())
-    return 0;
-
   // We handle touch events on Windows Aura. Windows generates synthesized
   // mouse messages in response to touch which we should ignore. However touch
   // messages are only received for the client area. We need to ignore the
   // synthesized mouse messages for all points in the client area and places
   // which return HTNOWHERE.
+  // TODO(ananta)
+  // Windows does not reliably set the touch flag on mouse messages. Look into
+  // a better way of identifying mouse messages originating from touch.
   if (ui::IsMouseEventFromTouch(message)) {
     LPARAM l_param_ht = l_param;
     // For mouse events (except wheel events), location is in window coordinates
@@ -2330,8 +2353,8 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
         // doing this undesirable thing, but that means we need to roll the
         // sys-command handling ourselves.
         // Combine |w_param| with common key state message flags.
-        w_param |= base::win::IsCtrlPressed() ? MK_CONTROL : 0;
-        w_param |= base::win::IsShiftPressed() ? MK_SHIFT : 0;
+        w_param |= ui::win::IsCtrlPressed() ? MK_CONTROL : 0;
+        w_param |= ui::win::IsShiftPressed() ? MK_SHIFT : 0;
       }
     }
   } else if (message == WM_NCRBUTTONDOWN &&
@@ -2383,7 +2406,7 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   }
 
   if (!handled && message == WM_NCLBUTTONDOWN && w_param != HTSYSMENU &&
-      delegate_->IsUsingCustomFrame()) {
+      w_param != HTCAPTION && delegate_->IsUsingCustomFrame()) {
     // TODO(msw): Eliminate undesired painting, or re-evaluate this workaround.
     // DefWindowProc for WM_NCLBUTTONDOWN does weird non-client painting, so we
     // need to call it inside a ScopedRedrawLock. This may cause other negative
@@ -2391,6 +2414,12 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     DefWindowProcWithRedrawLock(message, w_param, l_param);
     handled = true;
   }
+
+  // We need special processing for mouse input on the caption.
+  // Please refer to the HandleMouseInputForCaption() function for more
+  // information.
+  if (!handled)
+    handled = HandleMouseInputForCaption(message, w_param, l_param);
 
   if (ref.get())
     SetMsgHandled(handled);
@@ -2465,5 +2494,88 @@ void HWNDMessageHandler::GenerateTouchEvent(ui::EventType event_type,
 
   touch_events->push_back(event);
 }
+
+bool HWNDMessageHandler::HandleMouseInputForCaption(unsigned int message,
+                                                    WPARAM w_param,
+                                                    LPARAM l_param) {
+  // If we are receive a WM_NCLBUTTONDOWN messsage for the caption, the
+  // following things happen.
+  // 1. This message is defproced which will post a WM_SYSCOMMAND message with
+  //    SC_MOVE and a constant 0x0002 which is documented on msdn as
+  //    SC_DRAGMOVE.
+  // 2. The WM_SYSCOMMAND message is defproced in our handler which works
+  //    correctly in all cases except the case when we click on the caption
+  //    and hold. The defproc appears to try and detect whether a mouse move
+  //    is going to happen presumably via the DragEnter or a similar
+  //    implementation which in its modal loop appears to only peek for
+  //    mouse input briefly.
+  // 3. Our workhorse message pump relies on the tickler posted message to get
+  //    control during modal loops which does not happen in the above case for
+  //    a while leading to the problem where activity on the page pauses
+  //    briefly or at times stops for a while.
+  // To fix this we don't defproc the WM_NCLBUTTONDOWN message and instead wait
+  // for the subsequent WM_NCMOUSEMOVE/WM_MOUSEMOVE message. Once we receive
+  // these messages and the mouse actually moved, we defproc the
+  // WM_NCLBUTTONDOWN message.
+  bool handled = false;
+  switch (message) {
+    case WM_NCLBUTTONDOWN: {
+      if (w_param == HTCAPTION) {
+        left_button_down_on_caption_ = true;
+        // Cache the location where the click occurred. We use this in the
+        // WM_NCMOUSEMOVE message to determine if the mouse actually moved.F
+        caption_left_button_click_pos_.set_x(CR_GET_X_LPARAM(l_param));
+        caption_left_button_click_pos_.set_y(CR_GET_Y_LPARAM(l_param));
+        handled = true;
+      }
+      break;
+    }
+
+    // WM_NCMOUSEMOVE is received for normal drags which originate on the
+    // caption and stay there.
+    // WM_MOUSEMOVE can be received for drags which originate on the caption
+    // and move towards the client area.
+    case WM_MOUSEMOVE:
+    case WM_NCMOUSEMOVE: {
+      if (!left_button_down_on_caption_)
+        break;
+
+      bool should_handle_pending_ncl_button_down = true;
+      // Check if the mouse actually moved.
+      if (message == WM_NCMOUSEMOVE) {
+        if (caption_left_button_click_pos_.x() == CR_GET_X_LPARAM(l_param) &&
+            caption_left_button_click_pos_.y() == CR_GET_Y_LPARAM(l_param)) {
+          should_handle_pending_ncl_button_down = false;
+        }
+      }
+      if (should_handle_pending_ncl_button_down) {
+        l_param = MAKELPARAM(caption_left_button_click_pos_.x(),
+                             caption_left_button_click_pos_.y());
+        // TODO(msw): Eliminate undesired painting, or re-evaluate this
+        // workaround.
+        // DefWindowProc for WM_NCLBUTTONDOWN does weird non-client painting,
+        // so we need to call it inside a ScopedRedrawLock. This may cause
+        // other negative side-effects
+        // (ex/ stifling non-client mouse releases).
+        if (delegate_->IsUsingCustomFrame()) {
+          DefWindowProcWithRedrawLock(WM_NCLBUTTONDOWN, HTCAPTION, l_param);
+        } else {
+          DefWindowProc(hwnd(), WM_NCLBUTTONDOWN, HTCAPTION, l_param);
+        }
+        left_button_down_on_caption_ = false;
+      }
+      break;
+    }
+
+    case WM_NCMOUSELEAVE:
+      break;
+
+    default:
+      left_button_down_on_caption_ = false;
+      break;
+  }
+  return handled;
+}
+
 
 }  // namespace views

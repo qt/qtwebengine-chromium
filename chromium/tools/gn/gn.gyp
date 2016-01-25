@@ -96,6 +96,8 @@
         'label_pattern.cc',
         'label_pattern.h',
         'label_ptr.h',
+        'lib_file.cc',
+        'lib_file.h',
         'loader.cc',
         'loader.h',
         'location.cc',
@@ -249,7 +251,6 @@
         'string_utils_unittest.cc',
         'substitution_pattern_unittest.cc',
         'substitution_writer_unittest.cc',
-        'target_generator_unittest.cc',
         'target_unittest.cc',
         'template_unittest.cc',
         'test_with_scope.cc',
@@ -266,16 +267,6 @@
         '../../testing/gtest.gyp:gtest',
       ],
     },
-    {
-      'target_name': 'generate_test_gn_data',
-      'type': 'executable',
-      'sources': [
-        'generate_test_gn_data.cc',
-      ],
-      'dependencies': [
-        '../../base/base.gyp:base',
-      ],
-    }
   ],
   'conditions': [
     ['test_isolation_mode != "noop"', {

@@ -218,8 +218,9 @@ WebInspector.InspectorFrontendHostStub.prototype = {
 
     /**
      * @override
+     * @param {string=} fileSystemPath
      */
-    addFileSystem: function()
+    addFileSystem: function(fileSystemPath)
     {
     },
 
@@ -404,6 +405,15 @@ WebInspector.InspectorFrontendHostStub.prototype = {
      * @param {string} action
      */
     performActionOnRemotePage: function(pageId, action)
+    {
+    },
+
+    /**
+     * @override
+     * @param {string} browserId
+     * @param {string} url
+     */
+    openRemotePage: function(browserId, url)
     {
     },
 

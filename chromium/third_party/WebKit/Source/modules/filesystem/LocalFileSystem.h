@@ -50,6 +50,7 @@ class WebFileSystem;
 class LocalFileSystem final : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<LocalFrame>, public WillBeHeapSupplement<WorkerClients> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
     WTF_MAKE_NONCOPYABLE(LocalFileSystem);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(LocalFileSystem);
 public:
     static PassOwnPtrWillBeRawPtr<LocalFileSystem> create(PassOwnPtr<FileSystemClient>);
     virtual ~LocalFileSystem();

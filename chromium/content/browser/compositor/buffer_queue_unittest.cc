@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/compositor/buffer_queue.h"
+
+#include <stddef.h>
+#include <stdint.h>
 #include <set>
+#include <utility>
 
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_web_graphics_context_3d.h"
-#include "content/browser/compositor/buffer_queue.h"
 #include "content/browser/compositor/gpu_surfaceless_browser_compositor_output_surface.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -27,13 +31,14 @@ class StubGpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
   StubGpuMemoryBufferImpl() {}
 
   // Overridden from gfx::GpuMemoryBuffer:
-  bool Map(void** data) override { return false; }
+  bool Map() override { return false; }
+  void* memory(size_t plane) override { return nullptr; }
   void Unmap() override {}
-  bool IsMapped() const override { return false; }
+  gfx::Size GetSize() const override { return gfx::Size(); }
   gfx::BufferFormat GetFormat() const override {
     return gfx::BufferFormat::BGRX_8888;
   }
-  void GetStride(int* stride) const override {}
+  int stride(size_t plane) const override { return 0; }
   gfx::GpuMemoryBufferId GetId() const override {
     return gfx::GpuMemoryBufferId(0);
   }
@@ -47,14 +52,22 @@ class StubGpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
 
 class StubBrowserGpuMemoryBufferManager : public BrowserGpuMemoryBufferManager {
  public:
-  StubBrowserGpuMemoryBufferManager() : BrowserGpuMemoryBufferManager(1, 1) {}
+  StubBrowserGpuMemoryBufferManager()
+      : BrowserGpuMemoryBufferManager(1, 1), allocate_succeeds_(true) {}
+
+  void set_allocate_succeeds(bool value) { allocate_succeeds_ = value; }
 
   scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBufferForScanout(
       const gfx::Size& size,
       gfx::BufferFormat format,
-      int32 surface_id) override {
-    return make_scoped_ptr<gfx::GpuMemoryBuffer>(new StubGpuMemoryBufferImpl);
+      int32_t surface_id) override {
+    if (allocate_succeeds_)
+      return make_scoped_ptr<gfx::GpuMemoryBuffer>(new StubGpuMemoryBufferImpl);
+    return nullptr;
   }
+
+ private:
+  bool allocate_succeeds_;
 };
 
 class MockBufferQueue : public BufferQueue {
@@ -83,7 +96,7 @@ class BufferQueueTest : public ::testing::Test {
 
   void InitWithContext(scoped_ptr<cc::TestWebGraphicsContext3D> context) {
     scoped_refptr<cc::TestContextProvider> context_provider =
-        cc::TestContextProvider::Create(context.Pass());
+        cc::TestContextProvider::Create(std::move(context));
     context_provider->BindToCurrentThread();
     gpu_memory_buffer_manager_.reset(new StubBrowserGpuMemoryBufferManager);
     mock_output_surface_ =
@@ -93,31 +106,33 @@ class BufferQueueTest : public ::testing::Test {
     output_surface_->Initialize();
   }
 
-  unsigned current_surface() { return output_surface_->current_surface_.image; }
-  const std::vector<BufferQueue::AllocatedSurface>& available_surfaces() {
+  unsigned current_surface() {
+    return output_surface_->current_surface_
+               ? output_surface_->current_surface_->image
+               : 0;
+  }
+  const std::vector<scoped_ptr<BufferQueue::AllocatedSurface>>&
+  available_surfaces() {
     return output_surface_->available_surfaces_;
   }
-  const std::deque<BufferQueue::AllocatedSurface>& in_flight_surfaces() {
+  std::deque<scoped_ptr<BufferQueue::AllocatedSurface>>& in_flight_surfaces() {
     return output_surface_->in_flight_surfaces_;
   }
 
-  const BufferQueue::AllocatedSurface& displayed_frame() {
-    return output_surface_->displayed_surface_;
+  const BufferQueue::AllocatedSurface* displayed_frame() {
+    return output_surface_->displayed_surface_.get();
   }
-  const BufferQueue::AllocatedSurface& current_frame() {
-    return output_surface_->current_surface_;
+  const BufferQueue::AllocatedSurface* current_frame() {
+    return output_surface_->current_surface_.get();
   }
-  const BufferQueue::AllocatedSurface& last_frame() {
-    return output_surface_->in_flight_surfaces_.back();
-  }
-  const BufferQueue::AllocatedSurface& next_frame() {
-    return output_surface_->available_surfaces_.back();
+  const BufferQueue::AllocatedSurface* next_frame() {
+    return output_surface_->available_surfaces_.back().get();
   }
   const gfx::Size size() { return output_surface_->size_; }
 
   int CountBuffers() {
     int n = available_surfaces().size() + in_flight_surfaces().size() +
-            (displayed_frame().texture ? 1 : 0);
+            (displayed_frame() ? 1 : 0);
     if (current_surface())
       n++;
     return n;
@@ -127,14 +142,14 @@ class BufferQueueTest : public ::testing::Test {
   void CheckUnique() {
     std::set<unsigned> buffers;
     EXPECT_TRUE(InsertUnique(&buffers, current_surface()));
-    EXPECT_TRUE(InsertUnique(&buffers, displayed_frame().image));
-    for (size_t i = 0; i < available_surfaces().size(); i++)
-      EXPECT_TRUE(InsertUnique(&buffers, available_surfaces()[i].image));
-    for (std::deque<BufferQueue::AllocatedSurface>::const_iterator it =
-             in_flight_surfaces().begin();
-         it != in_flight_surfaces().end();
-         ++it)
-      EXPECT_TRUE(InsertUnique(&buffers, it->image));
+    if (displayed_frame())
+      EXPECT_TRUE(InsertUnique(&buffers, displayed_frame()->image));
+    for (auto& surface : available_surfaces())
+      EXPECT_TRUE(InsertUnique(&buffers, surface->image));
+    for (auto& surface : in_flight_surfaces()) {
+      if (surface)
+        EXPECT_TRUE(InsertUnique(&buffers, surface->image));
+    }
   }
 
   void SwapBuffers() {
@@ -163,7 +178,7 @@ class BufferQueueTest : public ::testing::Test {
     return true;
   }
 
-  scoped_ptr<BrowserGpuMemoryBufferManager> gpu_memory_buffer_manager_;
+  scoped_ptr<StubBrowserGpuMemoryBufferManager> gpu_memory_buffer_manager_;
   scoped_ptr<BufferQueue> output_surface_;
   MockBufferQueue* mock_output_surface_;
   bool doublebuffering_;
@@ -222,7 +237,7 @@ scoped_ptr<BufferQueue> CreateOutputSurfaceWithMock(
       new BufferQueue(context_provider, target, GL_RGBA, nullptr,
                       gpu_memory_buffer_manager, 1));
   buffer_queue->Initialize();
-  return buffer_queue.Pass();
+  return buffer_queue;
 }
 
 TEST(BufferQueueStandaloneTest, FboInitialization) {
@@ -313,7 +328,7 @@ TEST_F(BufferQueueTest, PartialSwapReuse) {
   SendDamagedFrame(small_damage);
   SendDamagedFrame(large_damage);
   // Verify that the damage has propagated.
-  EXPECT_EQ(next_frame().damage, large_damage);
+  EXPECT_EQ(next_frame()->damage, large_damage);
 }
 
 TEST_F(BufferQueueTest, PartialSwapFullFrame) {
@@ -325,7 +340,7 @@ TEST_F(BufferQueueTest, PartialSwapFullFrame) {
   SendDamagedFrame(small_damage);
   SendFullFrame();
   SendFullFrame();
-  EXPECT_EQ(next_frame().damage, screen_rect);
+  EXPECT_EQ(next_frame()->damage, screen_rect);
 }
 
 TEST_F(BufferQueueTest, PartialSwapOverlapping) {
@@ -339,7 +354,7 @@ TEST_F(BufferQueueTest, PartialSwapOverlapping) {
   SendFullFrame();
   SendDamagedFrame(small_damage);
   SendDamagedFrame(overlapping_damage);
-  EXPECT_EQ(next_frame().damage, overlapping_damage);
+  EXPECT_EQ(next_frame()->damage, overlapping_damage);
 }
 
 TEST_F(BufferQueueTest, MultipleBindCalls) {
@@ -358,27 +373,27 @@ TEST_F(BufferQueueTest, CheckDoubleBuffering) {
   output_surface_->BindFramebuffer();
   EXPECT_EQ(1, CountBuffers());
   EXPECT_NE(0U, current_surface());
-  EXPECT_FALSE(displayed_frame().texture);
+  EXPECT_FALSE(displayed_frame());
   SwapBuffers();
   EXPECT_EQ(1U, in_flight_surfaces().size());
   output_surface_->PageFlipComplete();
   EXPECT_EQ(0U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   output_surface_->BindFramebuffer();
   EXPECT_EQ(2, CountBuffers());
   CheckUnique();
   EXPECT_NE(0U, current_surface());
   EXPECT_EQ(0U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   SwapBuffers();
   CheckUnique();
   EXPECT_EQ(1U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   output_surface_->PageFlipComplete();
   CheckUnique();
   EXPECT_EQ(0U, in_flight_surfaces().size());
   EXPECT_EQ(1U, available_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   output_surface_->BindFramebuffer();
   EXPECT_EQ(2, CountBuffers());
   CheckUnique();
@@ -390,7 +405,7 @@ TEST_F(BufferQueueTest, CheckTripleBuffering) {
 
   // This bit is the same sequence tested in the doublebuffering case.
   output_surface_->BindFramebuffer();
-  EXPECT_FALSE(displayed_frame().texture);
+  EXPECT_FALSE(displayed_frame());
   SwapBuffers();
   output_surface_->PageFlipComplete();
   output_surface_->BindFramebuffer();
@@ -399,19 +414,19 @@ TEST_F(BufferQueueTest, CheckTripleBuffering) {
   EXPECT_EQ(2, CountBuffers());
   CheckUnique();
   EXPECT_EQ(1U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   output_surface_->BindFramebuffer();
   EXPECT_EQ(3, CountBuffers());
   CheckUnique();
   EXPECT_NE(0U, current_surface());
   EXPECT_EQ(1U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   output_surface_->PageFlipComplete();
   EXPECT_EQ(3, CountBuffers());
   CheckUnique();
   EXPECT_NE(0U, current_surface());
   EXPECT_EQ(0U, in_flight_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
+  EXPECT_TRUE(displayed_frame()->texture);
   EXPECT_EQ(1U, available_surfaces().size());
 }
 
@@ -424,9 +439,9 @@ TEST_F(BufferQueueTest, CheckCorrectBufferOrdering) {
 
   EXPECT_EQ(kSwapCount, in_flight_surfaces().size());
   for (size_t i = 0; i < kSwapCount; ++i) {
-    unsigned int next_texture_id = in_flight_surfaces().front().texture;
+    unsigned int next_texture_id = in_flight_surfaces().front()->texture;
     output_surface_->PageFlipComplete();
-    EXPECT_EQ(displayed_frame().texture, next_texture_id);
+    EXPECT_EQ(displayed_frame()->texture, next_texture_id);
   }
 }
 
@@ -442,7 +457,7 @@ TEST_F(BufferQueueTest, ReshapeWithInFlightSurfaces) {
 
   for (size_t i = 0; i < kSwapCount; ++i) {
     output_surface_->PageFlipComplete();
-    EXPECT_EQ(0u, displayed_frame().texture);
+    EXPECT_FALSE(displayed_frame());
   }
 
   // The dummy surfacess left should be discarded.
@@ -467,16 +482,16 @@ TEST_F(BufferQueueTest, SwapAfterReshape) {
 
   for (size_t i = 0; i < kSwapCount; ++i) {
     output_surface_->PageFlipComplete();
-    EXPECT_EQ(0u, displayed_frame().texture);
+    EXPECT_FALSE(displayed_frame());
   }
 
   CheckUnique();
 
   for (size_t i = 0; i < kSwapCount; ++i) {
-    unsigned int next_texture_id = in_flight_surfaces().front().texture;
+    unsigned int next_texture_id = in_flight_surfaces().front()->texture;
     output_surface_->PageFlipComplete();
-    EXPECT_EQ(displayed_frame().texture, next_texture_id);
-    EXPECT_NE(0u, displayed_frame().texture);
+    EXPECT_EQ(displayed_frame()->texture, next_texture_id);
+    EXPECT_TRUE(displayed_frame());
   }
 }
 
@@ -502,37 +517,37 @@ TEST_F(BufferQueueMockedContextTest, RecreateBuffers) {
   // being drawn to.
   ASSERT_EQ(1U, in_flight_surfaces().size());
   ASSERT_EQ(1U, available_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
-  EXPECT_TRUE(current_frame().texture);
+  EXPECT_TRUE(displayed_frame());
+  EXPECT_TRUE(current_frame());
 
-  auto current = current_frame();
-  auto displayed = displayed_frame();
-  auto in_flight = in_flight_surfaces().front();
-  auto available = available_surfaces().front();
+  auto* current = current_frame();
+  auto* displayed = displayed_frame();
+  auto* in_flight = in_flight_surfaces().front().get();
+  auto* available = available_surfaces().front().get();
 
   // Expect all 4 images to be destroyed, 3 of the existing textures to be
   // copied from and 3 new images to be created.
   EXPECT_CALL(*context_, createImageCHROMIUM(_, 0, 0, GL_RGBA)).Times(3);
-  Expectation copy1 =
-      EXPECT_CALL(*mock_output_surface_,
-                  CopyBufferDamage(_, displayed.texture, _, _)).Times(1);
-  Expectation copy2 =
-      EXPECT_CALL(*mock_output_surface_,
-                  CopyBufferDamage(_, current.texture, _, _)).Times(1);
-  Expectation copy3 =
-      EXPECT_CALL(*mock_output_surface_,
-                  CopyBufferDamage(_, in_flight.texture, _, _)).Times(1);
+  Expectation copy1 = EXPECT_CALL(*mock_output_surface_,
+                                  CopyBufferDamage(_, displayed->texture, _, _))
+                          .Times(1);
+  Expectation copy2 = EXPECT_CALL(*mock_output_surface_,
+                                  CopyBufferDamage(_, current->texture, _, _))
+                          .Times(1);
+  Expectation copy3 = EXPECT_CALL(*mock_output_surface_,
+                                  CopyBufferDamage(_, in_flight->texture, _, _))
+                          .Times(1);
 
-  EXPECT_CALL(*context_, destroyImageCHROMIUM(displayed.image))
+  EXPECT_CALL(*context_, destroyImageCHROMIUM(displayed->image))
       .Times(1)
       .After(copy1);
-  EXPECT_CALL(*context_, destroyImageCHROMIUM(current.image))
+  EXPECT_CALL(*context_, destroyImageCHROMIUM(current->image))
       .Times(1)
       .After(copy2);
-  EXPECT_CALL(*context_, destroyImageCHROMIUM(in_flight.image))
+  EXPECT_CALL(*context_, destroyImageCHROMIUM(in_flight->image))
       .Times(1)
       .After(copy3);
-  EXPECT_CALL(*context_, destroyImageCHROMIUM(available.image)).Times(1);
+  EXPECT_CALL(*context_, destroyImageCHROMIUM(available->image)).Times(1);
   // After copying, we expect the framebuffer binding to be updated.
   EXPECT_CALL(*context_, bindFramebuffer(_, _))
       .After(copy1)
@@ -551,8 +566,57 @@ TEST_F(BufferQueueMockedContextTest, RecreateBuffers) {
   // be replaced but still valid.
   EXPECT_EQ(1U, in_flight_surfaces().size());
   EXPECT_EQ(0U, available_surfaces().size());
-  EXPECT_TRUE(displayed_frame().texture);
-  EXPECT_TRUE(current_frame().texture);
+  EXPECT_TRUE(displayed_frame());
+  EXPECT_TRUE(current_frame());
+}
+
+TEST_F(BufferQueueTest, AllocateFails) {
+  output_surface_->Reshape(screen_size, 1.0f);
+
+  // Succeed in the two swaps.
+  output_surface_->BindFramebuffer();
+  EXPECT_TRUE(current_frame());
+  output_surface_->SwapBuffers(screen_rect);
+
+  // Fail the next surface allocation.
+  gpu_memory_buffer_manager_->set_allocate_succeeds(false);
+  output_surface_->BindFramebuffer();
+  EXPECT_FALSE(current_frame());
+  output_surface_->SwapBuffers(screen_rect);
+  EXPECT_FALSE(current_frame());
+
+  // Try another swap. It should copy the buffer damage from the back
+  // surface.
+  gpu_memory_buffer_manager_->set_allocate_succeeds(true);
+  output_surface_->BindFramebuffer();
+  unsigned int source_texture = in_flight_surfaces().front()->texture;
+  unsigned int target_texture = current_frame()->texture;
+  testing::Mock::VerifyAndClearExpectations(mock_output_surface_);
+  EXPECT_CALL(*mock_output_surface_,
+              CopyBufferDamage(target_texture, source_texture, small_damage, _))
+      .Times(1);
+  output_surface_->SwapBuffers(small_damage);
+  testing::Mock::VerifyAndClearExpectations(mock_output_surface_);
+
+  // Destroy the just-created buffer, and try another swap. The copy should
+  // come from the displayed surface (because both in-flight surfaces are
+  // gone now).
+  output_surface_->PageFlipComplete();
+  in_flight_surfaces().back().reset();
+  EXPECT_EQ(2u, in_flight_surfaces().size());
+  for (auto& surface : in_flight_surfaces())
+    EXPECT_FALSE(surface);
+  output_surface_->BindFramebuffer();
+  source_texture = displayed_frame()->texture;
+  EXPECT_TRUE(current_frame());
+  EXPECT_TRUE(displayed_frame());
+  target_texture = current_frame()->texture;
+  testing::Mock::VerifyAndClearExpectations(mock_output_surface_);
+  EXPECT_CALL(*mock_output_surface_,
+              CopyBufferDamage(target_texture, source_texture, small_damage, _))
+      .Times(1);
+  output_surface_->SwapBuffers(small_damage);
+  testing::Mock::VerifyAndClearExpectations(mock_output_surface_);
 }
 
 }  // namespace

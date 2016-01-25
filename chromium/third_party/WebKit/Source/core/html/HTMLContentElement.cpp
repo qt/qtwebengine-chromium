@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/HTMLContentElement.h"
 
 #include "core/HTMLNames.h"
@@ -66,16 +65,14 @@ void HTMLContentElement::parseSelect()
 {
     ASSERT(m_shouldParseSelect);
 
-    CSSParser::parseSelector(CSSParserContext(document(), 0), m_select, m_selectorList);
+    m_selectorList = CSSParser::parseSelector(CSSParserContext(document(), 0), m_select);
     m_shouldParseSelect = false;
     m_isValidSelector = validateSelect();
-    if (!m_isValidSelector) {
-        CSSSelectorList emptyList;
-        m_selectorList.adopt(emptyList);
-    }
+    if (!m_isValidSelector)
+        m_selectorList = CSSSelectorList();
 }
 
-void HTMLContentElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLContentElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == selectAttr) {
         if (ShadowRoot* root = containingShadowRoot())
@@ -83,7 +80,7 @@ void HTMLContentElement::parseAttribute(const QualifiedName& name, const AtomicS
         m_shouldParseSelect = true;
         m_select = value;
     } else {
-        InsertionPoint::parseAttribute(name, value);
+        InsertionPoint::parseAttribute(name, oldValue, value);
     }
 }
 

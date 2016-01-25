@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/android/media_player_manager.h"
@@ -37,7 +38,8 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   MOCK_METHOD1(OnWaitingForDecryptionKey, void(int player_id));
   MOCK_METHOD0(GetFullscreenPlayer, MediaPlayerAndroid*());
   MOCK_METHOD1(GetPlayer, MediaPlayerAndroid*(int player_id));
-  MOCK_METHOD2(RequestPlay, bool(int player_id, base::TimeDelta duration));
+  MOCK_METHOD3(RequestPlay,
+               bool(int player_id, base::TimeDelta duration, bool has_audio));
 
   void OnMediaResourcesRequested(int player_id) {}
 };

@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/events/GenericEventQueue.h"
 
 #include "core/events/Event.h"
@@ -69,7 +67,7 @@ bool GenericEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
     m_pendingEvents.append(event);
 
     if (!m_timer.isActive())
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
 
     return true;
 }

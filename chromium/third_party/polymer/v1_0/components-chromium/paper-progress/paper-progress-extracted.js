@@ -1,6 +1,4 @@
-
-  Polymer({
-
+Polymer({
     is: 'paper-progress',
 
     behaviors: [
@@ -8,7 +6,6 @@
     ],
 
     properties: {
-
       /**
        * The number that represents the current secondary progress.
        */
@@ -94,6 +91,4 @@
     _hideSecondaryProgress: function(secondaryRatio) {
       return secondaryRatio === 0;
     }
-
   });
-

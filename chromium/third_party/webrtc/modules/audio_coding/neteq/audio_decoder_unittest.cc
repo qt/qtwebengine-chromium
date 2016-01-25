@@ -18,22 +18,22 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/codecs/g711/include/audio_decoder_pcm.h"
-#include "webrtc/modules/audio_coding/codecs/g711/include/audio_encoder_pcm.h"
-#include "webrtc/modules/audio_coding/codecs/g722/include/audio_decoder_g722.h"
-#include "webrtc/modules/audio_coding/codecs/g722/include/audio_encoder_g722.h"
-#include "webrtc/modules/audio_coding/codecs/ilbc/interface/audio_decoder_ilbc.h"
-#include "webrtc/modules/audio_coding/codecs/ilbc/interface/audio_encoder_ilbc.h"
-#include "webrtc/modules/audio_coding/codecs/isac/fix/interface/audio_decoder_isacfix.h"
-#include "webrtc/modules/audio_coding/codecs/isac/fix/interface/audio_encoder_isacfix.h"
-#include "webrtc/modules/audio_coding/codecs/isac/main/interface/audio_decoder_isac.h"
-#include "webrtc/modules/audio_coding/codecs/isac/main/interface/audio_encoder_isac.h"
-#include "webrtc/modules/audio_coding/codecs/opus/interface/audio_decoder_opus.h"
-#include "webrtc/modules/audio_coding/codecs/opus/interface/audio_encoder_opus.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/include/audio_decoder_pcm16b.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/include/audio_encoder_pcm16b.h"
+#include "webrtc/modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
+#include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "webrtc/modules/audio_coding/codecs/g722/audio_decoder_g722.h"
+#include "webrtc/modules/audio_coding/codecs/g722/audio_encoder_g722.h"
+#include "webrtc/modules/audio_coding/codecs/ilbc/audio_decoder_ilbc.h"
+#include "webrtc/modules/audio_coding/codecs/ilbc/audio_encoder_ilbc.h"
+#include "webrtc/modules/audio_coding/codecs/isac/fix/include/audio_decoder_isacfix.h"
+#include "webrtc/modules/audio_coding/codecs/isac/fix/include/audio_encoder_isacfix.h"
+#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_decoder_isac.h"
+#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
+#include "webrtc/modules/audio_coding/codecs/opus/audio_decoder_opus.h"
+#include "webrtc/modules/audio_coding/codecs/opus/audio_encoder_opus.h"
+#include "webrtc/modules/audio_coding/codecs/pcm16b/audio_decoder_pcm16b.h"
+#include "webrtc/modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
 #include "webrtc/modules/audio_coding/neteq/tools/resample_input_audio_file.h"
-#include "webrtc/system_wrappers/interface/data_log.h"
+#include "webrtc/system_wrappers/include/data_log.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 namespace webrtc {
@@ -158,7 +158,10 @@ class AudioDecoderTest : public ::testing::Test {
                                                  interleaved_input.get());
 
       encoded_info_ = audio_encoder_->Encode(
-          0, interleaved_input.get(), audio_encoder_->SampleRateHz() / 100,
+          0, rtc::ArrayView<const int16_t>(interleaved_input.get(),
+                                           audio_encoder_->NumChannels() *
+                                               audio_encoder_->SampleRateHz() /
+                                               100),
           data_length_ * 2, output);
     }
     EXPECT_EQ(payload_type_, encoded_info_.payload_type);
@@ -563,18 +566,14 @@ TEST_F(AudioDecoderIsacSwbTest, SetTargetBitrate) {
   TestSetAndGetTargetBitratesWithFixedCodec(audio_encoder_.get(), 32000);
 }
 
-// Fails Android ARM64. https://code.google.com/p/webrtc/issues/detail?id=4198
-#if defined(WEBRTC_ANDROID) && defined(WEBRTC_ARCH_ARM64)
-#define MAYBE_EncodeDecode DISABLED_EncodeDecode
-#else
-#define MAYBE_EncodeDecode EncodeDecode
-#endif
-TEST_F(AudioDecoderIsacFixTest, MAYBE_EncodeDecode) {
+TEST_F(AudioDecoderIsacFixTest, EncodeDecode) {
   int tolerance = 11034;
   double mse = 3.46e6;
   int delay = 54;  // Delay from input to output.
-#ifdef WEBRTC_ANDROID
+#if defined(WEBRTC_ANDROID) && defined(WEBRTC_ARCH_ARM)
   static const int kEncodedBytes = 685;
+#elif defined(WEBRTC_ANDROID) && defined(WEBRTC_ARCH_ARM64)
+  static const int kEncodedBytes = 673;
 #else
   static const int kEncodedBytes = 671;
 #endif
@@ -680,66 +679,73 @@ const bool has_opus = false;
 }  // namespace
 
 TEST(AudioDecoder, CodecSampleRateHz) {
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCMu));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCMa));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCMu_2ch));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCMa_2ch));
-  EXPECT_EQ(has_ilbc ? 8000 : -1, CodecSampleRateHz(kDecoderILBC));
-  EXPECT_EQ(has_isac ? 16000 : -1, CodecSampleRateHz(kDecoderISAC));
-  EXPECT_EQ(has_isac_swb ? 32000 : -1, CodecSampleRateHz(kDecoderISACswb));
-  EXPECT_EQ(has_isac_swb ? 32000 : -1, CodecSampleRateHz(kDecoderISACfb));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCM16B));
-  EXPECT_EQ(16000, CodecSampleRateHz(kDecoderPCM16Bwb));
-  EXPECT_EQ(32000, CodecSampleRateHz(kDecoderPCM16Bswb32kHz));
-  EXPECT_EQ(48000, CodecSampleRateHz(kDecoderPCM16Bswb48kHz));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCM16B_2ch));
-  EXPECT_EQ(16000, CodecSampleRateHz(kDecoderPCM16Bwb_2ch));
-  EXPECT_EQ(32000, CodecSampleRateHz(kDecoderPCM16Bswb32kHz_2ch));
-  EXPECT_EQ(48000, CodecSampleRateHz(kDecoderPCM16Bswb48kHz_2ch));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderPCM16B_5ch));
-  EXPECT_EQ(has_g722 ? 16000 : -1, CodecSampleRateHz(kDecoderG722));
-  EXPECT_EQ(has_g722 ? 16000 : -1, CodecSampleRateHz(kDecoderG722_2ch));
-  EXPECT_EQ(-1, CodecSampleRateHz(kDecoderRED));
-  EXPECT_EQ(-1, CodecSampleRateHz(kDecoderAVT));
-  EXPECT_EQ(8000, CodecSampleRateHz(kDecoderCNGnb));
-  EXPECT_EQ(16000, CodecSampleRateHz(kDecoderCNGwb));
-  EXPECT_EQ(32000, CodecSampleRateHz(kDecoderCNGswb32kHz));
-  EXPECT_EQ(has_opus ? 48000 : -1, CodecSampleRateHz(kDecoderOpus));
-  EXPECT_EQ(has_opus ? 48000 : -1, CodecSampleRateHz(kDecoderOpus_2ch));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCMu));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCMa));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCMu_2ch));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCMa_2ch));
+  EXPECT_EQ(has_ilbc ? 8000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderILBC));
+  EXPECT_EQ(has_isac ? 16000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderISAC));
+  EXPECT_EQ(has_isac_swb ? 32000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderISACswb));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16B));
+  EXPECT_EQ(16000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bwb));
+  EXPECT_EQ(32000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bswb32kHz));
+  EXPECT_EQ(48000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bswb48kHz));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16B_2ch));
+  EXPECT_EQ(16000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bwb_2ch));
+  EXPECT_EQ(32000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bswb32kHz_2ch));
+  EXPECT_EQ(48000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16Bswb48kHz_2ch));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderPCM16B_5ch));
+  EXPECT_EQ(has_g722 ? 16000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderG722));
+  EXPECT_EQ(has_g722 ? 16000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderG722_2ch));
+  EXPECT_EQ(-1, CodecSampleRateHz(NetEqDecoder::kDecoderRED));
+  EXPECT_EQ(-1, CodecSampleRateHz(NetEqDecoder::kDecoderAVT));
+  EXPECT_EQ(8000, CodecSampleRateHz(NetEqDecoder::kDecoderCNGnb));
+  EXPECT_EQ(16000, CodecSampleRateHz(NetEqDecoder::kDecoderCNGwb));
+  EXPECT_EQ(32000, CodecSampleRateHz(NetEqDecoder::kDecoderCNGswb32kHz));
+  EXPECT_EQ(has_opus ? 48000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderOpus));
+  EXPECT_EQ(has_opus ? 48000 : -1,
+            CodecSampleRateHz(NetEqDecoder::kDecoderOpus_2ch));
+  EXPECT_EQ(48000, CodecSampleRateHz(NetEqDecoder::kDecoderOpus));
+  EXPECT_EQ(48000, CodecSampleRateHz(NetEqDecoder::kDecoderOpus_2ch));
   // TODO(tlegrand): Change 32000 to 48000 below once ACM has 48 kHz support.
-  EXPECT_EQ(32000, CodecSampleRateHz(kDecoderCNGswb48kHz));
-  EXPECT_EQ(-1, CodecSampleRateHz(kDecoderArbitrary));
+  EXPECT_EQ(32000, CodecSampleRateHz(NetEqDecoder::kDecoderCNGswb48kHz));
+  EXPECT_EQ(-1, CodecSampleRateHz(NetEqDecoder::kDecoderArbitrary));
 }
 
 TEST(AudioDecoder, CodecSupported) {
-  EXPECT_TRUE(CodecSupported(kDecoderPCMu));
-  EXPECT_TRUE(CodecSupported(kDecoderPCMa));
-  EXPECT_TRUE(CodecSupported(kDecoderPCMu_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderPCMa_2ch));
-  EXPECT_EQ(has_ilbc, CodecSupported(kDecoderILBC));
-  EXPECT_EQ(has_isac, CodecSupported(kDecoderISAC));
-  EXPECT_EQ(has_isac_swb, CodecSupported(kDecoderISACswb));
-  EXPECT_EQ(has_isac_swb, CodecSupported(kDecoderISACfb));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16B));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bwb));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bswb32kHz));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bswb48kHz));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16B_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bwb_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bswb32kHz_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16Bswb48kHz_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderPCM16B_5ch));
-  EXPECT_EQ(has_g722, CodecSupported(kDecoderG722));
-  EXPECT_EQ(has_g722, CodecSupported(kDecoderG722_2ch));
-  EXPECT_TRUE(CodecSupported(kDecoderRED));
-  EXPECT_TRUE(CodecSupported(kDecoderAVT));
-  EXPECT_TRUE(CodecSupported(kDecoderCNGnb));
-  EXPECT_TRUE(CodecSupported(kDecoderCNGwb));
-  EXPECT_TRUE(CodecSupported(kDecoderCNGswb32kHz));
-  EXPECT_TRUE(CodecSupported(kDecoderCNGswb48kHz));
-  EXPECT_TRUE(CodecSupported(kDecoderArbitrary));
-  EXPECT_EQ(has_opus, CodecSupported(kDecoderOpus));
-  EXPECT_EQ(has_opus, CodecSupported(kDecoderOpus_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCMu));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCMa));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCMu_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCMa_2ch));
+  EXPECT_EQ(has_ilbc, CodecSupported(NetEqDecoder::kDecoderILBC));
+  EXPECT_EQ(has_isac, CodecSupported(NetEqDecoder::kDecoderISAC));
+  EXPECT_EQ(has_isac_swb, CodecSupported(NetEqDecoder::kDecoderISACswb));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16B));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bwb));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bswb32kHz));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bswb48kHz));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16B_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bwb_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bswb32kHz_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16Bswb48kHz_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderPCM16B_5ch));
+  EXPECT_EQ(has_g722, CodecSupported(NetEqDecoder::kDecoderG722));
+  EXPECT_EQ(has_g722, CodecSupported(NetEqDecoder::kDecoderG722_2ch));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderRED));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderAVT));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderCNGnb));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderCNGwb));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderCNGswb32kHz));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderCNGswb48kHz));
+  EXPECT_TRUE(CodecSupported(NetEqDecoder::kDecoderArbitrary));
+  EXPECT_EQ(has_opus, CodecSupported(NetEqDecoder::kDecoderOpus));
+  EXPECT_EQ(has_opus, CodecSupported(NetEqDecoder::kDecoderOpus_2ch));
 }
 
 }  // namespace webrtc

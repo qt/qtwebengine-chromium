@@ -112,7 +112,7 @@ public:
 
     String value() const override;
     void setValue(const String&, ExceptionState&, TextFieldEventBehavior = DispatchNoEvent);
-    void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent);
+    void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent) override;
     void setValueForUser(const String&);
     // Checks if the specified string would be a valid value.
     // We should not call this for types with no string value such as CHECKBOX and RADIO.
@@ -136,6 +136,9 @@ public:
 
     String valueWithDefault() const;
 
+    // This function dispatches 'input' event for non-textfield types. Callers
+    // need to handle any DOM structure changes by event handlers, or need to
+    // delay the 'input' event with EventQueueScope.
     void setValueFromRenderer(const String&);
 
     int selectionStartForBinding(ExceptionState&) const;
@@ -150,7 +153,7 @@ public:
     bool layoutObjectIsNeeded(const ComputedStyle&) final;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
     void detach(const AttachContext& = AttachContext()) final;
-    void updateFocusAppearance(bool restorePreviousSelection) final;
+    void updateFocusAppearance(SelectionBehaviorOnFocus) final;
 
     // FIXME: For isActivatedSubmit and setActivatedSubmit, we should use the NVI-idiom here by making
     // it private virtual in all classes and expose a public method in HTMLFormControlElement to call
@@ -302,8 +305,7 @@ private:
 
     void accessKeyAction(bool sendMouseEvents) final;
 
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const final;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) final;
     void finishParsingChildren() final;

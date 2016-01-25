@@ -10,7 +10,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
-namespace gfx {
+namespace gl {
 class GLImage;
 }
 
@@ -25,10 +25,6 @@ class GPU_EXPORT ImageFactory {
   // defined by CHROMIUM_gpu_memory_buffer_image.
   static gfx::BufferFormat DefaultBufferFormatForImageFormat(
       unsigned internalformat);
-
-  // Returns a valid GpuMemoryBuffer usage given a valid usage as defined by
-  // CHROMIUM_gpu_memory_buffer_image.
-  static gfx::BufferUsage ImageUsageToGpuMemoryBufferUsage(unsigned usage);
 
   // Returns true if |internalformat| is compatible with |format|.
   static bool IsImageFormatCompatibleWithGpuMemoryBufferFormat(
@@ -48,7 +44,7 @@ class GPU_EXPORT ImageFactory {
   // Creates a GLImage instance for GPU memory buffer identified by |handle|.
   // |client_id| should be set to the client requesting the creation of instance
   // and can be used by factory implementation to verify access rights.
-  virtual scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+  virtual scoped_refptr<gl::GLImage> CreateImageForGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
       gfx::BufferFormat format,

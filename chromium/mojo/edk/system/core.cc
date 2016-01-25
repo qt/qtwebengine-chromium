@@ -4,14 +4,22 @@
 
 #include "mojo/edk/system/core.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <utility>
 #include <vector>
 
+#include "base/containers/stack_container.h"
 #include "base/logging.h"
+#include "base/rand_util.h"
 #include "base/time/time.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/embedder/platform_support.h"
 #include "mojo/edk/system/async_waiter.h"
+#include "mojo/edk/system/broker.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/data_pipe.h"
 #include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
@@ -20,6 +28,7 @@
 #include "mojo/edk/system/handle_signals_state.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
+#include "mojo/edk/system/wait_set_dispatcher.h"
 #include "mojo/edk/system/waiter.h"
 #include "mojo/public/c/system/macros.h"
 #include "mojo/public/cpp/system/macros.h"
@@ -95,15 +104,6 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
 
   base::AutoLock locker(handle_table_lock_);
   return handle_table_.GetDispatcher(handle);
-}
-
-MojoResult Core::GetAndRemoveDispatcher(MojoHandle handle,
-                                        scoped_refptr<Dispatcher>* dispatcher) {
-  if (handle == MOJO_HANDLE_INVALID)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
-  base::AutoLock locker(handle_table_lock_);
-  return handle_table_.GetAndRemoveDispatcher(handle, dispatcher);
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,
@@ -183,6 +183,79 @@ MojoResult Core::WaitMany(const MojoHandle* handles,
   return rv;
 }
 
+MojoResult Core::CreateWaitSet(MojoHandle* wait_set_handle) {
+  if (!wait_set_handle)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<WaitSetDispatcher> dispatcher = new WaitSetDispatcher();
+  MojoHandle h = AddDispatcher(dispatcher);
+  if (h == MOJO_HANDLE_INVALID) {
+    LOG(ERROR) << "Handle table full";
+    dispatcher->Close();
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  *wait_set_handle = h;
+  return MOJO_RESULT_OK;
+}
+
+MojoResult Core::AddHandle(MojoHandle wait_set_handle,
+                           MojoHandle handle,
+                           MojoHandleSignals signals) {
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return wait_set_dispatcher->AddWaitingDispatcher(dispatcher, signals, handle);
+}
+
+MojoResult Core::RemoveHandle(MojoHandle wait_set_handle,
+                              MojoHandle handle) {
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return wait_set_dispatcher->RemoveWaitingDispatcher(dispatcher);
+}
+
+MojoResult Core::GetReadyHandles(MojoHandle wait_set_handle,
+                                 uint32_t* count,
+                                 MojoHandle* handles,
+                                 MojoResult* results,
+                                 MojoHandleSignalsState* signals_state) {
+  if (!handles || !count || !(*count) || !results)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  DispatcherVector awoken_dispatchers;
+  base::StackVector<uintptr_t, 16> contexts;
+  contexts->assign(*count, MOJO_HANDLE_INVALID);
+
+  MojoResult result = wait_set_dispatcher->GetReadyDispatchers(
+      count, &awoken_dispatchers, results, contexts->data());
+
+  if (result == MOJO_RESULT_OK) {
+    for (size_t i = 0; i < *count; i++) {
+      handles[i] = static_cast<MojoHandle>(contexts[i]);
+      if (signals_state)
+        signals_state[i] = awoken_dispatchers[i]->GetHandleSignalsState();
+    }
+  }
+
+  return result;
+}
+
 MojoResult Core::CreateMessagePipe(
     const MojoCreateMessagePipeOptions* options,
     MojoHandle* message_pipe_handle0,
@@ -213,9 +286,32 @@ MojoResult Core::CreateMessagePipe(
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
   }
 
-  PlatformChannelPair channel_pair;
-  dispatcher0->Init(channel_pair.PassServerHandle());
-  dispatcher1->Init(channel_pair.PassClientHandle());
+  if (validated_options.flags &
+          MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_TRANSFERABLE) {
+    ScopedPlatformHandle server_handle, client_handle;
+#if defined(OS_WIN)
+    internal::g_broker->CreatePlatformChannelPair(&server_handle,
+                                                  &client_handle);
+#else
+    PlatformChannelPair channel_pair;
+    server_handle = channel_pair.PassServerHandle();
+    client_handle = channel_pair.PassClientHandle();
+#endif
+    dispatcher0->Init(std::move(server_handle), nullptr, 0u, nullptr, 0u,
+                      nullptr, nullptr);
+    dispatcher1->Init(std::move(client_handle), nullptr, 0u, nullptr, 0u,
+                      nullptr, nullptr);
+  } else {
+    uint64_t pipe_id = 0;
+    // route_id 0 is used internally in RoutedRawChannel. See kInternalRouteId
+    // in routed_raw_channel.cc.
+    // route_id 1 is used by broker communication. See kBrokerRouteId in
+    // broker_messages.h.
+    while (pipe_id < 2)
+      pipe_id = base::RandUint64();
+    dispatcher0->InitNonTransferable(pipe_id);
+    dispatcher1->InitNonTransferable(pipe_id);
+  }
 
   *message_pipe_handle0 = handle_pair.first;
   *message_pipe_handle1 = handle_pair.second;
@@ -371,9 +467,16 @@ MojoResult Core::CreateDataPipe(
   }
   DCHECK_NE(handle_pair.second, MOJO_HANDLE_INVALID);
 
+  ScopedPlatformHandle server_handle, client_handle;
+#if defined(OS_WIN)
+  internal::g_broker->CreatePlatformChannelPair(&server_handle, &client_handle);
+#else
   PlatformChannelPair channel_pair;
-  producer_dispatcher->Init(channel_pair.PassServerHandle());
-  consumer_dispatcher->Init(channel_pair.PassClientHandle());
+  server_handle = channel_pair.PassServerHandle();
+  client_handle = channel_pair.PassClientHandle();
+#endif
+  producer_dispatcher->Init(std::move(server_handle), nullptr, 0u);
+  consumer_dispatcher->Init(std::move(client_handle), nullptr, 0u);
 
   *data_pipe_producer_handle = handle_pair.first;
   *data_pipe_consumer_handle = handle_pair.second;
@@ -519,7 +622,7 @@ MojoResult Core::MapBuffer(MojoHandle buffer_handle,
   void* address = mapping->GetBase();
   {
     base::AutoLock locker(mapping_table_lock_);
-    result = mapping_table_.AddMapping(mapping.Pass());
+    result = mapping_table_.AddMapping(std::move(mapping));
   }
   if (result != MOJO_RESULT_OK)
     return result;
@@ -555,7 +658,7 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   for (uint32_t i = 0; i < num_handles; i++) {
     scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handles[i]);
     if (!dispatcher) {
-      if (result_index && result_index)
+      if (result_index)
         *result_index = i;
       return MOJO_RESULT_INVALID_ARGUMENT;
     }
@@ -579,10 +682,13 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   }
   uint32_t num_added = i;
 
-  if (rv == MOJO_RESULT_ALREADY_EXISTS)
+  if (rv == MOJO_RESULT_ALREADY_EXISTS) {
     rv = MOJO_RESULT_OK;  // The i-th one is already "triggered".
-  else if (rv == MOJO_RESULT_OK)
-    rv = waiter.Wait(deadline, result_index);
+  } else if (rv == MOJO_RESULT_OK) {
+    uintptr_t uintptr_result = *result_index;
+    rv = waiter.Wait(deadline, &uintptr_result);
+    *result_index = static_cast<uint32_t>(uintptr_result);
+  }
 
   // Make sure no other dispatchers try to wake |waiter| for the current
   // |Wait()|/|WaitMany()| call. (Only after doing this can |waiter| be

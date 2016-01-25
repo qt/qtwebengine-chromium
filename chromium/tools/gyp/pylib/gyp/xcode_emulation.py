@@ -147,6 +147,7 @@ class XcodeSettings(object):
   # Populated lazily by _SdkPath(). Shared by all XcodeSettings, so cached
   # at class-level for efficiency.
   _sdk_path_cache = {}
+  _platform_path_cache = {}
   _sdk_root_cache = {}
 
   # Populated lazily by GetExtraPlistItems(). Shared by all XcodeSettings, so
@@ -222,7 +223,10 @@ class XcodeSettings(object):
     return format == "binary"
 
   def _IsBundle(self):
-    return int(self.spec.get('mac_bundle', 0)) != 0
+    return int(self.spec.get('mac_bundle', 0)) != 0 or self._IsXCTest()
+
+  def _IsXCTest(self):
+    return int(self.spec.get('mac_xctest_bundle', 0)) != 0
 
   def _IsIosAppExtension(self):
     return int(self.spec.get('ios_app_extension', 0)) != 0
@@ -429,7 +433,7 @@ class XcodeSettings(object):
     # Since the CLT has no SDK paths anyway, returning None is the
     # most sensible route and should still do the right thing.
     try:
-      return GetStdout(['xcodebuild', '-version', '-sdk', sdk, infoitem])
+      return GetStdout(['xcrun', '--sdk', sdk, infoitem])
     except:
       pass
 
@@ -437,6 +441,14 @@ class XcodeSettings(object):
     if configname is None:
       configname = self.configname
     return self.GetPerConfigSetting('SDKROOT', configname, default='')
+
+  def _XcodePlatformPath(self, configname=None):
+    sdk_root = self._SdkRoot(configname)
+    if sdk_root not in XcodeSettings._platform_path_cache:
+      platform_path = self._GetSdkVersionInfoItem(sdk_root,
+                                                  '--show-sdk-platform-path')
+      XcodeSettings._platform_path_cache[sdk_root] = platform_path
+    return XcodeSettings._platform_path_cache[sdk_root]
 
   def _SdkPath(self, configname=None):
     sdk_root = self._SdkRoot(configname)
@@ -446,7 +458,7 @@ class XcodeSettings(object):
 
   def _XcodeSdkPath(self, sdk_root):
     if sdk_root not in XcodeSettings._sdk_path_cache:
-      sdk_path = self._GetSdkVersionInfoItem(sdk_root, 'Path')
+      sdk_path = self._GetSdkVersionInfoItem(sdk_root, '--show-sdk-path')
       XcodeSettings._sdk_path_cache[sdk_root] = sdk_path
       if sdk_root:
         XcodeSettings._sdk_root_cache[sdk_path] = sdk_root
@@ -567,6 +579,10 @@ class XcodeSettings(object):
         cflags.append('-msse4.2')
 
     cflags += self._Settings().get('WARNING_CFLAGS', [])
+
+    platform_root = self._XcodePlatformPath(configname)
+    if platform_root and self._IsXCTest():
+      cflags.append('-F' + platform_root + '/Developer/Library/Frameworks/')
 
     if sdk_root:
       framework_root = sdk_root
@@ -831,6 +847,11 @@ class XcodeSettings(object):
     for directory in framework_dirs:
       ldflags.append('-F' + directory.replace('$(SDKROOT)', sdk_root))
 
+    platform_root = self._XcodePlatformPath(configname)
+    if sdk_root and platform_root and self._IsXCTest():
+      ldflags.append('-F' + platform_root + '/Developer/Library/Frameworks/')
+      ldflags.append('-framework XCTest')
+
     is_extension = self._IsIosAppExtension() or self._IsIosWatchKitExtension()
     if sdk_root and is_extension:
       # Adds the link flags for extensions. These flags are common for all
@@ -972,7 +993,8 @@ class XcodeSettings(object):
     """Return a shell command to codesign the iOS output binary so it can
     be deployed to a device.  This should be run as the very last step of the
     build."""
-    if not (self.isIOS and self.spec['type'] == 'executable'):
+    if not (self.isIOS and
+        (self.spec['type'] == 'executable' or self._IsXCTest())):
       return []
 
     settings = self.xcode_settings[configname]
@@ -1081,7 +1103,7 @@ class XcodeSettings(object):
       cache['DTSDKName'] = sdk_root
       if xcode >= '0430':
         cache['DTSDKBuild'] = self._GetSdkVersionInfoItem(
-            sdk_root, 'ProductBuildVersion')
+            sdk_root, '--show-sdk-version')
       else:
         cache['DTSDKBuild'] = cache['BuildMachineOSBuild']
 
@@ -1089,7 +1111,7 @@ class XcodeSettings(object):
         cache['DTPlatformName'] = cache['DTSDKName']
         if configname.endswith("iphoneos"):
           cache['DTPlatformVersion'] = self._GetSdkVersionInfoItem(
-              sdk_root, 'ProductVersion')
+              sdk_root, '--show-sdk-version')
           cache['CFBundleSupportedPlatforms'] = ['iPhoneOS']
         else:
           cache['CFBundleSupportedPlatforms'] = ['iPhoneSimulator']
@@ -1334,7 +1356,9 @@ def IsMacBundle(flavor, spec):
   Bundles are directories with a certain subdirectory structure, instead of
   just a single file. Bundle rules do not produce a binary but also package
   resources into that directory."""
-  is_mac_bundle = (int(spec.get('mac_bundle', 0)) != 0 and flavor == 'mac')
+  is_mac_bundle = int(spec.get('mac_xctest_bundle', 0)) != 0 or \
+      (int(spec.get('mac_bundle', 0)) != 0 and flavor == 'mac')
+
   if is_mac_bundle:
     assert spec['type'] != 'none', (
         'mac_bundle targets cannot have type none (target "%s")' %
@@ -1452,6 +1476,7 @@ def _GetXcodeEnv(xcode_settings, built_products_dir, srcroot, configuration,
 
   # These are filled in on a as-needed basis.
   env = {
+    'BUILT_FRAMEWORKS_DIR' : built_products_dir,
     'BUILT_PRODUCTS_DIR' : built_products_dir,
     'CONFIGURATION' : configuration,
     'PRODUCT_NAME' : xcode_settings.GetProductName(),

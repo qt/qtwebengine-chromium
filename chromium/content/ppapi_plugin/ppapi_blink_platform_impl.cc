@@ -4,13 +4,14 @@
 
 #include "content/ppapi_plugin/ppapi_blink_platform_impl.h"
 
+#include <stdint.h>
+
 #include <map>
 
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
-#include "components/scheduler/ppapi/webthread_impl_for_ppapi.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/child_process_messages.h"
 #include "ppapi/proxy/plugin_globals.h"
@@ -45,9 +46,10 @@ class PpapiBlinkPlatformImpl::SandboxSupport : public WebSandboxSupport {
   bool loadFont(NSFont* srcFont, CGFontRef* out, uint32_t* fontID) override;
 #elif defined(OS_POSIX)
   SandboxSupport();
-  void getFallbackFontForCharacter(WebUChar32 character,
-                                   const char* preferred_locale,
-                                   blink::WebFallbackFont* fallbackFont);
+  void getFallbackFontForCharacter(
+      WebUChar32 character,
+      const char* preferred_locale,
+      blink::WebFallbackFont* fallbackFont) override;
   void getRenderStyleForStrike(const char* family,
                                int sizeAndStyle,
                                blink::WebFontRenderStyle* out) override;
@@ -114,8 +116,7 @@ void PpapiBlinkPlatformImpl::SandboxSupport::getRenderStyleForStrike(
 
 #endif  // !defined(OS_ANDROID) && !defined(OS_WIN)
 
-PpapiBlinkPlatformImpl::PpapiBlinkPlatformImpl()
-    : main_thread_(new scheduler::WebThreadImplForPPAPI()) {
+PpapiBlinkPlatformImpl::PpapiBlinkPlatformImpl() {
 #if !defined(OS_ANDROID) && !defined(OS_WIN)
   sandbox_support_.reset(new PpapiBlinkPlatformImpl::SandboxSupport);
 #endif
@@ -134,8 +135,6 @@ void PpapiBlinkPlatformImpl::Shutdown() {
 }
 
 blink::WebThread* PpapiBlinkPlatformImpl::currentThread() {
-  if (main_thread_->isCurrentThread())
-    return main_thread_.get();
   return BlinkPlatformImpl::currentThread();
 }
 

@@ -41,8 +41,18 @@ PolymerElement.prototype.isAttached;
 PolymerElement.prototype.root;
 
 /**
+ * The root node for the element.
+ * Only exists if running under Shady Dom.
+ * You usually want to use `this.root`.
+ *
+ * @type {?Node|undefined}
+ */
+PolymerElement.prototype.shadyRoot;
+
+/**
  * Returns the first node in this element’s local DOM that matches selector.
  * @param {string} selector
+ * @return {Element} Element found by the selector, or null if not found.
  */
 PolymerElement.prototype.$$ = function(selector) {};
 
@@ -246,10 +256,26 @@ PolymerElement.prototype.shift = function(path) {};
 PolymerElement.prototype.unshift = function(path, var_args) {};
 
 /**
+ * Returns a list of element children distributed to this element's
+ * `<content>`.
+ *
+ * If this element contans more than one `<content>` in its
+ * local DOM, an optional selector may be passed to choose the desired
+ * content.  This method differs from `getContentChildNodes` in that only
+ * elements are returned.
+ *
+ * @param {string=} slctr CSS selector to choose the desired
+ *   `<content>`.  Defaults to `content`.
+ * @return {!Array<!HTMLElement>} List of distributed nodes for the
+ *   `<content>`.
+ */
+PolymerElement.prototype.getContentChildren = function(slctr) {};
+
+/**
  * Fire an event.
  *
  * @param {string} type An event name.
- * @param {Object=} detail
+ * @param {*=} detail
  * @param {{
  *   bubbles: (boolean|undefined),
  *   cancelable: (boolean|undefined),
@@ -290,7 +316,7 @@ PolymerElement.prototype.attributeFollows = function(name, newNode, oldNode) {};
 /**
  * Convenience method to add an event listener on a given element, late bound to
  * a named method on this element.
- * @param {!Element} node Element to add event listener to.
+ * @param {!EventTarget} node Element to add event listener to.
  * @param {string} eventName Name of event to listen for.
  * @param {string} methodName Name of handler method on this to call.
  */
@@ -298,7 +324,7 @@ PolymerElement.prototype.listen = function(node, eventName, methodName) {};
 
 /**
  * Convenience method to remove an event listener from a given element.
- * @param {!Element} node Element to remove event listener from.
+ * @param {!EventTarget} node Element to remove event listener from.
  * @param {string} eventName Name of event to stop listening for.
  * @param {string} methodName Name of handler method on this to remove.
  */
@@ -330,6 +356,14 @@ PolymerElement.prototype.async = function(method, wait) {};
  * @param {...*} var_args
  */
 PolymerElement.prototype.factoryImpl = function(var_args) {};
+
+/**
+ * Apply style scoping to the specified container and all its descendants.
+ * @param {!Element} container Element to scope.
+ * @param {boolean} shouldObserve When true, monitors the container for changes
+ *   and re-applies scoping for any future changes.
+ */
+PolymerElement.prototype.scopeSubtree = function(container, shouldObserve) {};
 
 Polymer.Base;
 
@@ -429,6 +463,13 @@ PolymerElement.prototype.translate3d = function(x, y, z, node) {};
 PolymerElement.prototype.importHref = function(href, onload, onerror) {};
 
 /**
+ * Checks whether an element is in this element's light DOM tree.
+ * @param {?Node} node The element to be checked.
+ * @return {boolean} true if node is in this element's light DOM tree.
+ */
+PolymerElement.prototype.isLightDescendant = function(node) {};
+
+/**
  * Delete an element from an array.
  * @param {!Array|string} array Path to array from which to remove the item (or
  *     the array itself).
@@ -458,6 +499,11 @@ PolymerElement.prototype.resolveUrl = function(url) {};
  *     shortcut for setting `customStyle` and then calling `updateStyles`.
  */
 PolymerElement.prototype.updateStyles = function(properties) {};
+
+/**
+ * @type {!Object<string, string|undefined>}
+ */
+PolymerElement.prototype.customStyle;
 
 /**
  * Logs a message to the console.
@@ -501,8 +547,20 @@ PolymerElement.prototype._logf = function(var_args) {};
  */
 var PolymerDomApi = function() {};
 
+/**
+ * @param {?Node} node
+ * @return {boolean}
+ */
+PolymerDomApi.prototype.deepContains = function(node) {};
+
 /** @param {!Node} node */
 PolymerDomApi.prototype.appendChild = function(node) {};
+
+/**
+ * @param {!Node} oldNode
+ * @param {!Node} newNode
+ */
+PolymerDomApi.prototype.replaceChild = function(oldNode, newNode) {};
 
 /**
  * @param {!Node} node
@@ -512,6 +570,9 @@ PolymerDomApi.prototype.insertBefore = function(node, beforeNode) {};
 
 /** @param {!Node} node */
 PolymerDomApi.prototype.removeChild = function(node) {};
+
+/** @type {!Array<!HTMLElement>} */
+PolymerDomApi.prototype.children;
 
 /** @type {!Array<!Node>} */
 PolymerDomApi.prototype.childNodes;
@@ -575,6 +636,15 @@ PolymerDomApi.prototype.setAttribute = function(attribute, value) {};
 /** @param {string} attribute */
 PolymerDomApi.prototype.removeAttribute = function(attribute) {};
 
+/**
+ * @param {!Function} callback
+ * @return {!{fn: (!Function|undefined), _nodes: !Array<!Node>}}
+ */
+PolymerDomApi.prototype.observeNodes = function(callback) {};
+
+/** @param {!{fn: (!Function|undefined), _nodes: !Array<!Node>}} handle */
+PolymerDomApi.prototype.unobserveNodes = function(handle) {};
+
 /** @type {?DOMTokenList} */
 PolymerDomApi.prototype.classList;
 
@@ -599,6 +669,16 @@ PolymerEventApi.prototype.localTarget;
 
 /** @type {?Array<!Element>|undefined} */
 PolymerEventApi.prototype.path;
+
+
+Polymer.Async;
+
+/**
+ * polymer-onerror experiment relies on this private API, so expose it only
+ * to let the compilation work. Do not use in user code.
+ */
+Polymer.Async._atEndOfMicrotask = function() {};
+
 
 /**
  * Returns a Polymer-friendly API for manipulating DOM of a specified node or
@@ -778,6 +858,57 @@ TemplatizerNode.prototype._templateInstance;
 
 
 /**
+ * @see https://github.com/Polymer/polymer/blob/master/src/lib/template/dom-repeat.html
+ * @extends {PolymerElement}
+ * @constructor
+ */
+var DomRepeatElement = function() {};
+
+
+/**
+ * Forces the element to render its content. Normally rendering is
+ * asynchronous to a provoking change. This is done for efficiency so
+ * that multiple changes trigger only a single render. The render method
+ * should be called if, for example, template rendering is required to
+ * validate application state.
+ */
+DomRepeatElement.prototype.render = function() {};
+
+
+/**
+ * Returns the item associated with a given element stamped by
+ * this `dom-repeat`.
+ *
+ * @param {!HTMLElement} el Element for which to return the item.
+ * @return {*} Item associated with the element.
+ */
+DomRepeatElement.prototype.itemForElement = function(el) {};
+
+
+/**
+ * Returns the `Polymer.Collection` key associated with a given
+ * element stamped by this `dom-repeat`.
+ *
+ * @param {!HTMLElement} el Element for which to return the key.
+ * @return {*} Key associated with the element.
+ */
+DomRepeatElement.prototype.keyForElement = function(el) {};
+
+
+/**
+ * Returns the inst index for a given element stamped by this `dom-repeat`.
+ * If `sort` is provided, the index will reflect the sorted order (rather
+ * than the original array order).
+ *
+ * @param {!HTMLElement} el Element for which to return the index.
+ * @return {*} Row index associated with the element (note this may
+ *   not correspond to the array index if a user `sort` is applied).
+ */
+DomRepeatElement.prototype.indexForElement = function(el) {};
+
+
+
+/**
  * @see https://github.com/Polymer/polymer/blob/master/src/lib/template/array-selector.html
  * @extends {PolymerElement}
  * @constructor
@@ -884,3 +1015,27 @@ var PolymerKeySplice;
  * }}
  */
 var PolymerSpliceChange;
+
+/**
+ * The interface that iconsets should obey. Iconsets are registered by setting
+ * their name in the IronMeta 'iconset' db, and a value of type Polymer.Iconset.
+ *
+ * Used by iron-icon but needs to live here since iron-icon, iron-iconset, etc don't
+ * depend on each other at all and talk only through iron-meta.
+ *
+ * @interface
+ */
+Polymer.Iconset = function() {};
+
+/**
+ * Applies an icon to the given element as a css background image. This
+ * method does not size the element, and it's usually necessary to set
+ * the element's height and width so that the background image is visible.
+ *
+ * @param {Element} element The element to which the icon is applied.
+ * @param {string} icon The name of the icon to apply.
+ * @param {string=} theme (optional) The name or index of the icon to apply.
+ * @param {number=} scale (optional, defaults to 1) Icon scaling factor.
+ */
+Polymer.Iconset.prototype.applyIcon = function(
+      element, icon, theme, scale) {};

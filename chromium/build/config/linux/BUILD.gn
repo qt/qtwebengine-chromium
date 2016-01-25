@@ -7,6 +7,14 @@ import("//build/config/features.gni")
 import("//build/config/sysroot.gni")
 import("//build/config/ui.gni")
 
+# This is included by reference in the //build/config/compiler config that
+# is applied to all targets. It is here to separate out the logic that is
+# Linux-only. This is not applied to Android, but is applied to ChromeOS.
+config("compiler") {
+  cflags = [ "-pthread" ]
+  ldflags = [ "-pthread" ]
+}
+
 # This is included by reference in the //build/config/compiler:runtime_library
 # config that is applied to all targets. It is here to separate out the logic
 # that is Linux-only. Please see that target for advice on what should go in
@@ -50,6 +58,10 @@ pkg_config("pangoft2") {
 # config (it will get added automatically if you depend on //dbus).
 pkg_config("dbus") {
   packages = [ "dbus-1" ]
+}
+
+pkg_config("libffi") {
+  packages = [ "libffi" ]
 }
 
 config("x11") {
@@ -111,10 +123,10 @@ if (!is_chromeos && use_gconf) {
     pkg_config("atk") {
       packages = [ "atk" ]
       atk_lib_dir = exec_script(pkg_config_script,
-                                [
-                                  "--libdir",
-                                  "atk",
-                                ],
+                                pkg_config_args + [
+                                      "--libdir",
+                                      "atk",
+                                    ],
                                 "string")
       defines = [ "ATK_LIB_DIR=\"$atk_lib_dir\"" ]
     }

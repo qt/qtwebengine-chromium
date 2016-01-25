@@ -54,7 +54,9 @@ New Tokens
     BEVEL_CHROMIUM                                    0x90A6
     MITER_REVERT_CHROMIUM                             0x90A7
 
-    Accepted by the <fillMode> parameter of StencilFillPathCHROMIUM:
+    Accepted by the <fillMode> parameter of StencilFillPathCHROMIUM
+    StencilFillPathInstancedCHROMIUM and
+    StencilThenCoverFillPathInstancedCHROMIUM:
     COUNT_UP_CHROMIUM                                 0x9088
     COUNT_DOWN_CHROMIUM                               0x9089
 
@@ -64,6 +66,31 @@ New Tokens
     CONVEX_HULL_CHROMIUM                              0x908B
     BOUNDING_BOX_CHROMIUM                             0x908D
 
+    Accepted by the <coverMode> parameter of CoverFillPathInstancedCHROMIUM,
+    CoverStrokePathInstanced, StencilThenCoverFillPathInstancedCHROMIUM and
+    StencilThenCoverStrokePathInstancedCHROMIUM:
+    CONVEX_HULL_CHROMIUM                              see above
+    BOUNDING_BOX_CHROMIUM                             see above
+    BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM           0x909C
+
+    Accepted by the <genMode> parameter of ProgramPathFragmentInputGen:
+    EYE_LINEAR_CHROMIUM                               0x2400
+    OBJECT_LINEAR_CHROMIUM                            0x2401
+    CONSTANT_CHROMIUM                                 0x8576
+
+    Accepted by the <transformType> parameter of
+    StencilFillPathInstancedCHROMIUM, StencilStrokePathInstancedCHROMIUM,
+    CoverFillPathInstancedCHROMIUM, CoverStrokePathInstancedCHROMIUM,
+    StencilThenCoverFillPathInstancedCHROMIUM and
+    StencilThenCoverStrokePathInstancedCHROMIUM:
+    TRANSLATE_X_CHROMIUM                              0x908E
+    TRANSLATE_Y_CHROMIUM                              0x908F
+    TRANSLATE_2D_CHROMIUM                             0x9090
+    TRANSLATE_3D_CHROMIUM                             0x9091
+    AFFINE_2D_CHROMIUM                                0x9092
+    AFFINE_3D_CHROMIUM                                0x9094
+    TRANSPOSE_AFFINE_2D_CHROMIUM                      0x9096
+    TRANSPOSE_AFFINE_3D_CHROMIUM                      0x9098
 
 New Procedures and Functions
 
@@ -286,7 +313,7 @@ New Procedures and Functions
             with the stencil function configured based on the path stencil
             function state configured by PathStencilFuncCHROMIUM.  In the case
             of the StencilFillPathCHROMIUM and StencilStrokePathCHROMIUM
-            commands, the effective stencil read
+            commands and their instanced versions, the effective stencil read
             mask for the stencil mask is treated as the value of
             PATH_STENCIL_VALUE_MASK bit-wise ANDed with the bit-invert of the
             effective /mask/ parameter value; otherwise, for the cover commands,
@@ -482,6 +509,750 @@ New Procedures and Functions
     unless either command would generate an error; for any such error
     other than OUT_OF_MEMORY, only that error is generated.
 
+    void StencilFillPathInstancedCHROMIUM(sizei numPaths,
+                                          enum pathNameType,
+                                          const void *paths,
+                                          uint pathBase,
+                                          enum fillMode, uint mask,
+                                          enum transformType,
+                                          const float *transformValues);
+
+    The command stencils a sequence of filled paths.
+
+    The /numPaths/ has to be >= 0. Otherwise INVALID_VALUE error is
+    generated.
+
+    The /numPaths/ has to fit in 32-bit uint. Otherwise
+    INVALID_OPERATION is generated.
+
+    The /pathNameType/ determines the type of elements of the /paths/
+    array and must be one of UNSIGNED_BYTE, BYTE, UNSIGNED_SHORT, SHORT,
+    UNSIGNED_INT or INT. Otherwise INVALID_ENUM error is generated.
+
+    The /pathBase/ is an offset added to the /numPaths/ path names read
+    from the /paths/ array. Each result is 2's complement integer and it
+    is cast to uint path name..
+
+    The /transformType/ must be one of NONE, TRANSLATE_X_CHROMIUM,
+    TRANSLATE_Y_CHROMIUM, TRANSLATE_2D_CHROMIUM, TRANSLATE_3D_CHROMIUM,
+    AFFINE_2D_CHROMIUM, AFFINE_3D_CHROMIUM, TRANSPOSE_AFFINE_2D_CHROMIUM, or
+    TRANSPOSE_AFFINE_3D_CHROMIUM. Otherwise INVALID_ENUM error is generated.
+
+    The /fillMode/ and /mask/ are validated identically to the same-named
+    parameters of StencilFillPathCHROMIUM.
+
+    The /numPaths/ * (size of /pathNameType/ data type) + /numPaths/ *
+    (size of float) * (component count of /transformType/)  must fit to
+    32-bit uint. Otherwise INVALID_OPERATION is generated.
+
+    The StencilFillPathInstancedCHROMIUM command is equivalent to:
+
+        float dm[16];
+        GetFloatv(PATH_MODELVIEW_MATRIX, dm);
+        const float *v = transformValues;
+        for (int i = 0; i<numPaths; i++) {
+          if (!applyPathTransform(dm, transformType, &v)) {
+            return;
+          }
+          uint pathName;
+          if (!getPathName(pathNameType, &paths, pathBase, &pathName)) {
+            return;
+          }
+          if (IsPathCHROMIUM(pathName)) {
+            StencilFillPathCHROMIUM(pathName, fillMode, mask);
+          }
+        }
+        glMatrixLoadfCHROMIUM(PATH_MODELVIEW_CHROMIUM, dm);
+
+    assuming these helper functions for applyPathTransform and
+    getPathName:
+
+        bool applyPathTransform(const float dm[], enum transformType, const float** v)
+        {
+          float m[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+ 
+          switch (transformType) {
+          case NONE:
+            break;
+          case TRANSLATE_X_CHROMIUM:
+            m[12] = (*v)[0];
+            *v += 1;
+            break;
+          case TRANSLATE_Y_CHROMIUM:
+            m[13] = (*v)[0];
+            *v += 1;
+            break;
+          case TRANSLATE_2D_CHROMIUM:
+            m[12] = (*v)[0];
+            m[13] = (*v)[1];
+            *v += 2;
+            break;
+          case TRANSLATE_3D_CHROMIUM:
+            m[12] = (*v)[0];
+            m[13] = (*v)[1];
+            m[14] = (*v)[2];
+            *v += 3;
+            break;
+          case AFFINE_2D_CHROMIUM:
+            m[0] =(*v)[0]; m[4] =(*v)[2]; m[8] =0; m[12]=(*v)[4];
+            m[1] =(*v)[1]; m[5] =(*v)[3]; m[9] =0; m[13]=(*v)[5];
+            m[2] =0   ;    m[6] =0;       m[10]=1; m[14]=0;
+            m[3] =0;       m[7] =0;       m[11]=0; m[15]=1;
+            *v += 6;
+            break;
+          case TRANSPOSE_AFFINE_2D_CHROMIUM:
+            m[0] =(*v)[0]; m[4] =(*v)[1]; m[8] =0; m[12]=(*v)[2];
+            m[1] =(*v)[3]; m[5] =(*v)[4]; m[9] =0; m[13]=(*v)[5];
+            m[2] =0;       m[6] =0;       m[10]=1; m[14]=0;
+            m[3] =0;       m[7] =0;       m[11]=0; m[15]=1;
+            *v += 6;
+            break;
+          case AFFINE_3D_CHROMIUM:
+            m[0] =(*v)[0]; m[4] =(*v)[3]; m[8] =(*v)[6]; m[12]=(*v)[9];
+            m[1] =(*v)[1]; m[5] =(*v)[4]; m[9] =(*v)[7]; m[13]=(*v)[10];
+            m[2] =(*v)[2]; m[6] =(*v)[5]; m[10]=(*v)[8]; m[14]=(*v)[11];
+            m[3] =0;       m[7] =0;       m[11]=1;       m[15]=0;
+            *v += 12;
+            break;
+          case TRANSPOSE_AFFINE_3D_CHROMIUM:
+            m[0] =(*v)[0]; m[4] =(*v)[1]; m[8] =(*v)[2];  m[12]=(*v)[3];
+            m[1] =(*v)[4]; m[5] =(*v)[5]; m[9] =(*v)[6];  m[13]=(*v)[7];
+            m[2] =(*v)[8]; m[6] =(*v)[9]; m[10]=(*v)[10]; m[14]=(*v)[11];
+            m[3] =0;       m[7] =0;       m[11]=1;        m[15]=0;
+            *v += 12;
+            break;
+          default:
+            setError(INVALID_ENUM);
+            return FALSE;
+          }
+          multiplyMatrix(dm, m, m);  // Multiplies dm and m and stores result to m.
+          glMatrixLoadfCHROMIUM(PATH_MODELVIEW_CHROMIUM, m);
+          return TRUE;
+        }
+
+        bool getPathName(enum pathNameType, const void** paths,
+                         uint pathBase, uint* pathName)
+        {
+          switch (pathNameType) {
+          case BYTE:
+            {
+              const byte *p = (const byte*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          case UNSIGNED_BYTE:
+            {
+              const ubyte *p = (const ubyte*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          case SHORT:
+            {
+              const short *p = (const short*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          case UNSIGNED_SHORT:
+            {
+              const ushort *p = (const ushort*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          case INT:
+            {
+              const int *p = (const int*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          case UNSIGNED_INT:
+            {
+              const uint *p = (const uint*)*paths;
+              *pathName = pathBase + p[0];
+              *paths = p+1;
+              break;
+            }
+          default:
+            setError(INVALID_ENUM);
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+
+    void StencilStrokePathInstancedCHROMIUM(sizei numPaths,
+                                            enum pathNameType,
+                                            const void *paths,
+                                            uint pathBase,
+                                            int reference, uint mask,
+                                            enum transformType,
+                                            const float *transformValues);
+
+    The command stencils a sequence of stroked paths.
+
+    The command verifies /numPaths/, /pathNameType/ and
+    /transformType/ similarly to StencilFillPathInstancedCHROMIUM.
+
+    The command is equivalent to:
+
+        float dm[16];
+        GetFloatv(PATH_MODELVIEW_MATRIX, dm);
+        const float *v = transformValues;
+        for (int i = 0; i<numPaths; i++) {
+          if (!applyPathTransform(dm, transformType, &v)) {
+            return;
+          }
+          uint pathName;
+          if (!getPathName(pathNameType, &paths, pathBase, &pathName)) {
+            return;
+          }
+          if (IsPathCHROMIUM(pathName)) {
+            StencilStrokePathCHROMIUM(pathName, reference, mask);
+          }
+        }
+        glMatrixLoadfCHROMIUM(PATH_MODELVIEW_CHROMIUM, dm);
+
+    assume the helper functions for applyPathTransform and
+    getPathName defined above.
+
+    void CoverFillPathInstancedCHROMIUM(sizei numPaths,
+                                        enum pathNameType,
+                                        const void *paths,
+                                        uint pathBase,
+                                        enum coverMode,
+                                        enum transformType,
+                                        const float *transformValues);
+
+    The command covers a sequence of filled paths.
+
+    The command verifies /numPaths/, /pathNameType/ and
+    /transformType/ similarly to StencilFillPathInstancedCHROMIUM.
+
+    The command is equivalent to:
+
+        if (coverMode == BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM) {
+          renderBoundingBox(FALSE,
+                            numPaths,
+                            pathNameType,
+                            paths,
+                            pathBase,
+                            transformType, transformValues);
+        } else if (coverMode == CONVEX_HULL_CHROMIUM || coverMode == BOUNDING_BOX_CHROMIUM) {
+          float dm[16];
+          GetFloatv(PATH_MODELVIEW_MATRIX, dm);
+          const float *v = transformValues;
+          for (int i = 0; i<numPaths; i++) {
+            if (!applyPathTransform(dm, transformType, &v)) {
+              return;
+            }
+            uint pathName;
+            if (!getPathName(pathNameType, &paths, pathBase, &pathName)) {
+              return;
+            }
+            if (IsPathCHROMIUM(pathName)) {
+              CoverFillPathCHROMIUM(pathName, coverMode);
+            }
+          }
+          glMatrixLoadfCHROMIUM(PATH_MODELVIEW_CHROMIUM, dm);
+        } else {
+          setError(INVALID_ENUM);
+        }
+
+
+    assuming these helper functions for applyPathTransform and
+    getPathName defined above as well as:
+
+        void renderBoundingBox(bool shouldRenderStroke,
+                               sizei numPaths,
+                               enum pathNameType,
+                               const uint *paths,
+                               uint pathBase,
+                               enum transformType,
+                               const float *transformValues)
+        {
+          boolean hasBounds = FALSE;
+          float boundsUnion[4], bounds[4];
+
+          const float *v = transformValues;
+          for (int i = 0; i<numPaths; i++) {
+            uint pathName;
+            if (!getPathName(pathNameType, paths, pathBase, &pathName)) {
+              return;
+            }
+            if (IsPathCHROMIUM(pathName)) {
+              GetPathBoundingBox(pathName, shouldRenderStroke, bounds);
+              switch (transformType) {
+              case NONE:
+                break;
+              case TRANSLATE_X_CHROMIUM:
+                bounds[0] += v[0];
+                bounds[2] += v[0];
+                v += 1;
+                break;
+              case TRANSLATE_Y_CHROMIUM:
+                bounds[1] += v[0];
+                bounds[3] += v[0];
+                v += 1;
+                break;
+              case TRANSLATE_2D_CHROMIUM:
+                bounds[0] += v[0];
+                bounds[1] += v[1];
+                bounds[2] += v[0];
+                bounds[3] += v[1];
+                v += 2;
+                break;
+              case TRANSLATE_3D_CHROMIUM: // ignores v[2]
+                bounds[0] += v[0];
+                bounds[1] += v[1];
+                bounds[2] += v[0];
+                bounds[3] += v[1];
+                v += 3;
+                break;
+              case AFFINE_2D_CHROMIUM:
+                bounds[0] = bounds[0]*v[0] + bounds[0]*v[2] + v[4];
+                bounds[1] = bounds[1]*v[1] + bounds[1]*v[3] + v[5];
+                bounds[2] = bounds[2]*v[0] + bounds[2]*v[2] + v[4];
+                bounds[3] = bounds[3]*v[1] + bounds[3]*v[3] + v[5];
+                v += 6;
+                break;
+              case TRANSPOSE_AFFINE_2D_CHROMIUM:
+                bounds[0] = bounds[0]*v[0] + bounds[0]*v[1] + v[2];
+                bounds[1] = bounds[1]*v[3] + bounds[1]*v[4] + v[5];
+                bounds[2] = bounds[2]*v[0] + bounds[2]*v[1] + v[2];
+                bounds[3] = bounds[3]*v[3] + bounds[3]*v[4] + v[5];
+                v += 6;
+                break;
+              case AFFINE_3D_CHROMIUM:  // ignores v[2], v[5], v[6..8], v[11]
+                bounds[0] = bounds[0]*v[0] + bounds[0]*v[3] + v[9];
+                bounds[1] = bounds[1]*v[1] + bounds[1]*v[4] + v[10];
+                bounds[2] = bounds[2]*v[0] + bounds[2]*v[3] + v[9];
+                bounds[3] = bounds[3]*v[1] + bounds[3]*v[4] + v[10];
+                v += 12;
+                break;
+              case TRANSPOSE_AFFINE_3D_CHROMIUM:  // ignores v[2], v[6], v[8..11]
+                bounds[0] = bounds[0]*v[0] + bounds[0]*v[1] + v[3];
+                bounds[1] = bounds[1]*v[4] + bounds[1]*v[5] + v[7];
+                bounds[2] = bounds[2]*v[0] + bounds[2]*v[1] + v[3];
+                bounds[3] = bounds[3]*v[4] + bounds[3]*v[5] + v[7];
+                v += 12;
+                break;
+              default:
+                setError(INVALID_ENUM);
+                return;
+              }
+              if (bounds[0] > bounds[2]) {
+                float t = bounds[2];
+                bounds[2] = bounds[0];
+                bounds[0] = t;
+              }
+              if (bounds[1] > bounds[3]) {
+                float t = bounds[3];
+                bounds[3] = bounds[1];
+                bounds[1] = t;
+              }
+              if (hasBounds) {
+                if (bounds[0] < boundsUnion[0]) {
+                  boundsUnion[0] = bounds[0];
+                }
+                if (bounds[1] < boundsUnion[1]) {
+                  boundsUnion[1] = bounds[1];
+                }
+                if (bounds[2] > boundsUnion[2]) {
+                  boundsUnion[2] = bounds[2];
+                }
+                if (bounds[3] > boundsUnion[3]) {
+                  boundsUnion[3] = bounds[3];
+                }
+              } else {
+                for (int i=0; i<4; i++) {
+                  boundsUnion[i] = bounds[i];
+                }
+                hasBounds = TRUE;
+              }
+            }
+          }
+          if (hasBounds) {
+             Rectf(boundsUnion[0], boundsUnion[1], boundsUnion[2], boundsUnion[3]);
+          }
+        }
+
+    Where helper GetPathBoundingBox returns bounding box for the path with or without
+    stroking, and Rectf renders a rectangle.
+
+    /coverMode/ must be one of CONVEX_HULL_CHROMIUM or BOUNDING_BOX_CHROMIUM or
+    BOUNDING_BOX_OF_BOUNDING_BOXES. Otherwise, INVALID_ENUM error is generated.
+
+    void CoverStrokePathInstancedCHROMIUM(sizei numPaths,
+                                          enum pathNameType,
+                                          const void *paths,
+                                          uint pathBase,
+                                          enum coverMode,
+                                          enum transformType,
+                                          const float *transformValues);
+
+    The command covers a sequence of stroked paths.
+
+    The command verifies /numPaths/, /pathNameType/ and
+    /transformType/ similarly to StencilFillPathInstancedCHROMIUM.
+
+    The command is equivalent to:
+
+        if (coverage == BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM) {
+          renderBoundingBox(TRUE,
+                            numPaths,
+                            pathNameType, paths,
+                            pathBase,
+                            transformType, transformValues);
+        } else if (coverMode == CONVEX_HULL_CHROMIUM || coverMode == BOUNDING_BOX_CHROMIUM) {
+          float dm[16];
+          GetFloatv(PATH_MODELVIEW_MATRIX, dm);
+          const float *v = transformValues;
+          for (int i = 0; i<numPaths; i++) {
+            if (!applyPathTransform(dm, transformType, &v)) {
+              return;
+            }
+            uint pathName;
+            if (!getPathName(pathNameType, &paths, pathBase, &pathName)) {
+              return;
+            }
+            if (IsPathCHROMIUM(pathName)) {
+              CoverStrokePathCHROMIUM(pathName, coverMode);
+            }
+          }
+          glMatrixLoadfCHROMIUM(PATH_MODELVIEW_CHROMIUM, dm);
+        } else {
+          setError(INVALID_ENUM);
+        }
+
+    assuming these helper functions defined above.
+
+    /coverMode/ must be one of CONVEX_HULL_CHROMIUM or BOUNDING_BOX_CHROMIUM or
+    BOUNDING_BOX_OF_BOUNDING_BOXES. Otherwise, INVALID_ENUM error is generated.
+
+
+    void StencilThenCoverFillPathInstancedCHROMIUM(sizei numPaths,
+                                                   enum pathNameType,
+                                                   const void *paths,
+                                                   uint pathBase,
+                                                   enum coverMode,
+                                                   enum fillMode,
+                                                   uint mask,
+                                                   enum transformType,
+                                                   const float *transformValues);
+
+    The command is equivalent to the two commands
+
+        StencilFillPathInstancedCHROMIUM(numPaths
+                                         paths,
+                                         pathBase,
+                                         fillMode,
+                                         mask,
+                                         transformType,
+                                         transformValues);
+        CoverFillPathInstancedCHROMIUM(numPaths,
+                                       paths,
+                                       pathBase,
+                                       coverMode,
+                                       fillMode,
+                                       mask,
+                                       transformType,
+                                       transformValues);
+
+    unless either command would generate an error; for any such error
+    other than OUT_OF_MEMORY, only that error is generated.
+
+
+    void StencilThenCoverStrokePathInstancedCHROMIUM(sizei numPaths,
+                                                     enum pathNameType,
+                                                     const void *paths,
+                                                     uint pathBase,
+                                                     enum coverMode,
+                                                     int reference,
+                                                     uint mask,
+                                                     enum transformType,
+                                                     const float *transformValues);
+
+    The command is equivalent to the two commands
+
+        StencilStrokePathInstancedCHROMIUM(numPaths,
+                                           pathNameType,
+                                           paths,
+                                           pathBase,
+                                           reference,
+                                           mask,
+                                           transformType,
+                                           transformValues);
+        CoverStrokePathInstancedCHROMIUM(numPaths,
+                                         pathNameType,
+                                         paths,
+                                         pathBase,
+                                         coverMode,
+                                         transformType,
+                                         transformValues);
+
+    unless either command would generate an error; for any such error
+    other than OUT_OF_MEMORY, only that error is generated.
+
+    void BindFragmentInputLocationCHROMIUM(uint program, int location,
+                                           const char* name);
+
+    The call specifes that the fragment shader input varying named
+    /name/ in program /program/ should be bound to uniform location
+    /location/ when the program is next linked.  If /name/ was bound
+    previously, its assigned binding is replaced with /location/. The
+    /name/ must be a null terminated string. The error INVALID_VALUE
+    is generated if /location/ is equal or greater than
+
+    MAX_VARYING_VECTORS * 4
+
+    or less than 0. BindFragmentInputLocation has no effect until the
+    program is linked. In particular, it doesn't modify the bindings of active
+    uniforms variables in a program that has already been linked.
+
+    The error INVALID_OPERATION is generated if /program/ is not name for a
+    program object.
+
+    The error INVALID_OPERATION is generated if name starts with the reserved
+    "gl_" prefix.
+
+    When a program is linked, any active uniforms without a binding specified
+    through BindFragmentInputLocation will be automatically be bound to
+    locations by the GL. Such bindings can not be queried.
+
+    BindFragmentInputLocation may be issued before any shader objects are
+    attached to a program object. Hence it is allowed to bind any name (except
+    a name starting with "gl_") to an index, including a name that is never used
+    as a varying in the fragment shader object. Assigned bindings for varying
+    variables that do not exist or are not active are ignored. Using such bindings
+    behaves as if passed location was -1.
+
+    It is possible for an application to bind more than one fragment
+    input name to the same location.  This is referred to as aliasing.
+    This will only work if only one of the aliased fragment inputs is
+    active in the executable program, or if no path through the shader
+    consumes more than one fragment input of a set of fragment inputs
+    aliased to the same location.  If two statically used fragment
+    inputs in a program are bound to the name location, link must
+    fail.
+
+    void ProgramPathFragmentInputGenCHROMIUM(uint program,
+                                             int location,
+                                             enum genMode,
+                                             int components,
+                                             const float *coeffs);
+
+    The command controls how a user-defined (non-built-in) fragment input of
+    a GLSL program object is computed for fragment shading operations that occur
+    as a result of CoverFillPathCHROMIUM or CoverStrokePathCHROMIUM.
+
+    /program/ names a GLSL program object. If /program/ has not been
+    successfully linked, the error INVALID_OPERATION is generated.
+
+    The given fragment input generation state is loaded into the fragment
+    input variable location identified by /location/. This location
+    is a value bound with BindFragmentInputLocation.
+
+    If the value of location is -1, the ProgramPathFragmentInputGenCHROMIUM
+    command will silently ignore the command, and the program's path fragment
+    input generation state will not be changed.
+
+    If any of the following conditions occur, an INVALID_OPERATION error is
+    generated by the ProgramPathFragmentInputGenCHROMIUM, and no state is
+    changed:
+
+        * if the size indicated in the /components/ of the
+          ProgramPathFragmentInputGenCHROMIUM command used does not match the
+          size of the fragment input scalar or vector declared in the
+          shader,
+
+        * if the fragment input declared in the shader is not
+          single-precision floating-point scalar or vector, or
+
+        * if no fragment input variable with a location of /location/
+          exists in the program object named by /program/ and location
+          is not -1, or
+
+        * if the fragment input declared in the shader is a built-in
+          variables (i.e. prefixed by "gl_").
+
+    When covering paths, fragment input variables are interpolated at
+    each shaded fragment based on the corresponding fragment input
+    generation state specified by ProgramPathFragmentInputGenCHROMIUM for
+    each respective fragment input.
+
+    The /genMode/, /components/, and /coeffs/ parameters are used to
+    generate the fragment input variable values. This is described in
+    subsection FRAGMENT INPUT GENERATION FOR PATH COVER COMMANDS.
+
+    When covering paths, if a fragment input variable has not had its
+    path fragment input generation state successfully generated, it as
+    if the values of this variable are always initialized to zero when
+    the fragment shader is executing.
+
+    FRAGMENT INPUT GENERATION FOR PATH COVER COMMANDS
+
+    The /genMode/, /components/, and /coeffs/ parameters of
+    ProgramPathFragmentInputGenCHROMIUM control how fragment inputs are computed
+    for fragment shading operations that occur as a result of
+    CoverFillPathCHROMIUM and CoverStrokePathCHROMIUM and their StencilThenCover
+    and instanced variants.
+
+    /genMode/ must be one of NONE, OBJECT_LINEAR_CHROMIUM, EYE_LINEAR_CHROMIUM
+    or CONSTANT_CHROMIUM; otherwise INVALID_ENUM is generated.
+
+    NONE means that the fragment input is not generated. OBJECT_LINEAR_CHROMIUM
+    means that the specified input is generated from a linear combination of the
+    2D path coordinates (x,y). EYE_LINEAR_CHROMIUM means the specified input is
+    generated from a linear combination of path's 2D coordinates transformed in
+    eye space, with (xe, ye, ze, we) calculated as in section 2.12
+    ("Fixed-Function Vertex Transformation") of OpenGL 3.2 (unabridged)
+    Specification (Special Functions). CONSTANT_CHROMIUM means that the
+    specified input is set to corresponding constant value.
+
+    /components/ must be 0 if /genMode/ is NONE or for other allowed /genMode/
+    values must be one of 1, 2, 3, or 4; otherwise INVALID_VALUE is generated.
+    /components/ determines how many fragment input components, how many
+    coefficients read from the /coeffs/ array, and the linear equations used to
+    generate the s, t, r, and q coordinates of the fragment input specified by
+    /location/.
+
+    In the following equations, coeffs[i] is the /i/th element (base zero) of
+    the /coeffs/ array; x, y, z, and w are determined by the /genMode/.
+
+    When /genMode/ is EYE_LINEAR_CHROMIUM, xcoeffs[i] is the /i/th element (base
+    zero) of a /xcoeffs/ array generated by multiplying each respective vector
+    of four elements of coeffs by the current inverse modelview matrix when
+    ProgramPathFragmentInputGen is called.
+
+        xcoeffs[0..3]   = coeffs[0..3]   * MV^-1
+        xcoeffs[4..7]   = coeffs[4..7]   * MV^-1
+        xcoeffs[8..11]  = coeffs[8..11]  * MV^-1
+        xcoeffs[12..15] = coeffs[12..12] * MV^-1
+
+    [[ NOTATION:
+
+       xxx[0..3] is a vector form from xxx[0], xxx[1], xxx[2], and xxx[3]
+
+       MV^-1 is the inverse of the current PATH_MODELVIEW_CHROMIUM matrix when
+       ProgramPathFragmentInputGenCHROMIUM happens.
+
+    ]]
+
+    If the /components/ is 0, no values from the /coeffs/ array are
+    accessed and the s, t, r, and q coordinates of a covered fragment's
+    fragment input for /location/ are computed:
+
+        s = 0
+        t = 0
+        r = 0
+        q = 0
+
+    If the /components/ is 1 and /genMode/ is OBJECT_LINEAR_CHROMIUM
+    3 values from the /coeffs/ array are
+    accessed and the s, t, r, and q coordinates of a covered fragment's
+    fragment input for /location/ are computed:
+
+        s = coeffs[0] * x + coeffs[1] * y + coeffs[2]
+        t = 0
+        r = 0
+        q = 0
+
+    Alternatively if the /genMode/ is EYE_LINEAR_CHROMIUM, then 4 values are
+    accessed and the fragment input for /location/ are
+    computed:
+
+        s = xcoeffs[0] * xe + xcoeffs[1] * ye + xcoeffs[2] * ze + xcoeffs[3] * we
+        t = 0
+        r = 0
+        q = 0
+
+    Alternatively if the /genMode/ is CONSTANT_CHROMIUM, then:
+
+        s = xcoeffs[0]
+        t = 0
+        r = 0
+        q = 0
+
+    If the /components/ is 2 and /genMode/ is OBJECT_LINEAR_CHROMIUM,
+    6 values from the /coeffs/ array are accessed and the
+    s, t, r, and q coordinates of a covered fragment's fragment input
+    coordinates are computed:
+
+        s = coeffs[0] * x + coeffs[1] * y + coeffs[2]
+        t = coeffs[3] * x + coeffs[4] * y + coeffs[5]
+        r = 0
+        q = 0
+
+    Alternatively if the /genMode/ is EYE_LINEAR_CHROMIUM, then 8 values are
+    accessed and the fragment input coordinates are computed:
+
+        s = xcoeffs[0] * xe + xcoeffs[1] * ye + xcoeffs[2] * ze + xcoeffs[3] * we
+        t = xcoeffs[4] * xe + xcoeffs[5] * ye + xcoeffs[6] * ze + xcoeffs[7] * we
+        r = 0
+        q = 0
+
+    Alternatively if the /genMode/ is CONSTANT_CHROMIUM, then:
+
+        s = xcoeffs[0]
+        t = xcoeffs[1]
+        r = 0
+        q = 0
+
+    If the /components/ is 3 and /genMode/ is OBJECT_LINEAR_CHROMIUM 9 values
+    from the /coeffs/ array are accessed and the s, t, r, and q coordinates of a
+    covered fragment's fragment input coordinates for /location/ are computed:
+
+        s = coeffs[0] * x + coeffs[1] * y + coeffs[2]
+        t = coeffs[3] * x + coeffs[4] * y + coeffs[5]
+        r = coeffs[6] * x + coeffs[7] * y + coeffs[8]
+        q = 0
+
+    Alternatively if the /genMode/ is CONSTANT_CHROMIUM, then:
+
+        s = xcoeffs[0]
+        t = xcoeffs[1]
+        r = xcoeffs[2]
+        q = 0
+
+    Alternatively if the /genMode/ is EYE_LINEAR_CHROMIUM, then 12 values are
+    accessed and the fragment input coodinates for /location/ are computed:
+
+        s = xcoeffs[0] * xe + xcoeffs[1] * ye + xcoeffs[2]  * ze + xcoeffs[3]  * we
+        t = xcoeffs[4] * xe + xcoeffs[5] * ye + xcoeffs[6]  * ze + xcoeffs[7]  * we
+        r = xcoeffs[8] * xe + xcoeffs[9] * ye + xcoeffs[10] * ze + xcoeffs[11] * we
+        q = 0
+
+    If the /components/ is 4 and /genMode/ is OBJECT_LINEAR_CHROMIUM,
+    12 values from the /coeffs/ array are accessed and the
+    s, t, r, and q coordinates of a covered fragment's fragment input
+    coordinates  for /location/ are computed:
+
+        s = coeffs[0] * x + coeffs[1]  * y + coeffs[2]
+        t = coeffs[3] * x + coeffs[4]  * y + coeffs[5]
+        r = coeffs[6] * x + coeffs[7]  * y + coeffs[8]
+        q = coeffs[9] * x + coeffs[10] * y + coeffs[11]
+
+    Alternatively if the /genMode/ is EYE_LINEAR_CHROMIUM, then 16 values are
+    accessed and the fragment input coordinates for /location/ are
+    computed:
+
+        s = xcoeffs[0]  * xe + xcoeffs[1]  * ye + xcoeffs[2]  * ze + xcoeffs[3]  * we
+        t = xcoeffs[4]  * xe + xcoeffs[5]  * ye + xcoeffs[6]  * ze + xcoeffs[7]  * we
+        r = xcoeffs[8]  * xe + xcoeffs[9]  * ye + xcoeffs[10] * ze + xcoeffs[11] * we
+        q = xcoeffs[12] * xe + xcoeffs[13] * ye + xcoeffs[14] * ze + xcoeffs[15] * we
+
+    Alternatively if the /genMode/ is CONSTANT_CHROMIUM, then:
+
+        s = xcoeffs[0]
+        t = xcoeffs[1]
+        r = xcoeffs[2]
+        q = xcoeffs[3]
+
+    The initial mode is NONE and the coefficients are all initially zero.
 
     PATH COVERING RASTERIZATION DETAILS
 

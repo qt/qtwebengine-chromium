@@ -5,6 +5,9 @@
 #ifndef MOJO_EDK_SYSTEM_DATA_PIPE_PRODUCER_DISPATCHER_H_
 #define MOJO_EDK_SYSTEM_DATA_PIPE_PRODUCER_DISPATCHER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
@@ -27,7 +30,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   }
 
   // Must be called before any other methods.
-  void Init(ScopedPlatformHandle message_pipe);
+  void Init(ScopedPlatformHandle message_pipe,
+            char* serialized_write_buffer, size_t serialized_write_buffer_size);
 
   // |Dispatcher| public methods:
   Type GetType() const override;
@@ -61,7 +65,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
   MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                    MojoHandleSignals signals,
-                                   uint32_t context,
+                                   uintptr_t context,
                                    HandleSignalsState* signals_state) override;
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
@@ -84,6 +88,9 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
   bool InTwoPhaseWrite() const;
   bool WriteDataIntoMessages(const void* elements, uint32_t num_bytes);
 
+  // See comment in MessagePipeDispatcher for this method.
+  void SerializeInternal();
+
   MojoCreateDataPipeOptions options_;
 
   // Protected by |lock()|:
@@ -97,8 +104,9 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher final
 
   bool error_;
 
+  bool serialized_;
   ScopedPlatformHandle serialized_platform_handle_;
-
+  std::vector<char> serialized_write_buffer_;
   std::vector<char> two_phase_data_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(DataPipeProducerDispatcher);

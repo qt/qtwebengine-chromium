@@ -5,6 +5,9 @@
 #ifndef MOJO_EDK_SYSTEM_DATA_PIPE_CONSUMER_DISPATCHER_H_
 #define MOJO_EDK_SYSTEM_DATA_PIPE_CONSUMER_DISPATCHER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/system/awakable_list.h"
 #include "mojo/edk/system/dispatcher.h"
@@ -27,7 +30,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   }
 
   // Must be called before any other methods.
-  void Init(ScopedPlatformHandle message_pipe);
+  void Init(ScopedPlatformHandle message_pipe,
+            char* serialized_read_buffer, size_t serialized_read_buffer_size);
 
   // |Dispatcher| public methods:
   Type GetType() const override;
@@ -61,7 +65,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
   HandleSignalsState GetHandleSignalsStateImplNoLock() const override;
   MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                    MojoHandleSignals signals,
-                                   uint32_t context,
+                                   uintptr_t context,
                                    HandleSignalsState* signals_state) override;
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
@@ -101,6 +105,9 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeConsumerDispatcher final
 
   bool in_two_phase_read_;
   uint32_t two_phase_max_bytes_read_;
+  // If we get data from the channel while we're in two-phase read, we can't
+  // resize data_ since it's being used. So instead we store it temporarly.
+  std::vector<char> data_received_during_two_phase_read_;
 
   bool error_;
 

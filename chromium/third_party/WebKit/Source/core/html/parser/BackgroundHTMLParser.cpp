@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
 
 #include "core/HTMLNames.h"
@@ -33,7 +32,7 @@
 #include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebScheduler.h"
+#include "public/platform/WebTaskRunner.h"
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
@@ -81,9 +80,9 @@ static void checkThatXSSInfosAreSafeToSendToAnotherThread(const XSSInfoStream& i
 
 #endif
 
-void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, WebScheduler* scheduler)
+void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, PassOwnPtr<WebTaskRunner> loadingTaskRunner)
 {
-    new BackgroundHTMLParser(reference, config, scheduler);
+    new BackgroundHTMLParser(reference, config, loadingTaskRunner);
     // Caller must free by calling stop().
 }
 
@@ -93,7 +92,7 @@ BackgroundHTMLParser::Configuration::Configuration()
 {
 }
 
-BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, WebScheduler* scheduler)
+BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, PassOwnPtr<WebTaskRunner> loadingTaskRunner)
     : m_weakFactory(reference, this)
     , m_token(adoptPtr(new HTMLToken))
     , m_tokenizer(HTMLTokenizer::create(config->options))
@@ -106,7 +105,8 @@ BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHT
     , m_xssAuditor(config->xssAuditor.release())
     , m_preloadScanner(config->preloadScanner.release())
     , m_decoder(config->decoder.release())
-    , m_scheduler(scheduler)
+    , m_loadingTaskRunner(loadingTaskRunner)
+    , m_parsedChunkQueue(config->parsedChunkQueue.release())
     , m_startingScript(false)
 {
     ASSERT(m_outstandingTokenLimit > 0);
@@ -157,8 +157,8 @@ void BackgroundHTMLParser::updateDocument(const String& decodedData)
         m_lastSeenEncodingData = encodingData;
 
         m_xssAuditor->setEncoding(encodingData.encoding());
-        m_scheduler->loadingTaskRunner()->postTask(
-            FROM_HERE,
+        m_loadingTaskRunner->postTask(
+            BLINK_FROM_HERE,
             threadSafeBind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, AllowCrossThreadAccess(m_parser), encodingData));
     }
 
@@ -177,6 +177,7 @@ void BackgroundHTMLParser::resumeFrom(PassOwnPtr<Checkpoint> checkpoint)
     m_input.rewindTo(checkpoint->inputCheckpoint, checkpoint->unparsedInput);
     m_preloadScanner->rewindTo(checkpoint->preloadScannerCheckpoint);
     m_startingScript = false;
+    m_parsedChunkQueue->clear();
     pumpTokenizer();
 }
 
@@ -291,9 +292,12 @@ void BackgroundHTMLParser::sendTokensToMainThread()
     chunk->startingScript = m_startingScript;
     m_startingScript = false;
 
-    m_scheduler->loadingTaskRunner()->postTask(
-        FROM_HERE,
-        new Task(threadSafeBind(&HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser, AllowCrossThreadAccess(m_parser), chunk.release())));
+    bool isEmpty = m_parsedChunkQueue->enqueue(chunk.release());
+    if (isEmpty) {
+        m_loadingTaskRunner->postTask(
+            BLINK_FROM_HERE,
+            new Task(threadSafeBind(&HTMLDocumentParser::notifyPendingParsedChunks, AllowCrossThreadAccess(m_parser))));
+    }
 
     m_pendingTokens = adoptPtr(new CompactHTMLTokenStream);
 }

@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/speech/SpeechRecognition.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -59,7 +57,7 @@ void SpeechRecognition::start(ExceptionState& exceptionState)
     }
 
     m_finalResults.clear();
-    m_controller->start(this, m_grammars, m_lang, m_serviceURI, m_continuous, m_interimResults, m_maxAlternatives, m_audioTrack);
+    m_controller->start(this, m_grammars, m_lang, m_continuous, m_interimResults, m_maxAlternatives, m_audioTrack);
     m_started = true;
 }
 

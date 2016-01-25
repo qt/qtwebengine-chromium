@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/DOMTimerCoordinator.h"
 
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/DOMTimer.h"
+#include <algorithm>
 
 namespace blink {
 
-DOMTimerCoordinator::DOMTimerCoordinator(WebTaskRunner* timerTaskRunner)
+DOMTimerCoordinator::DOMTimerCoordinator(PassOwnPtr<WebTaskRunner> timerTaskRunner)
     : m_circularSequentialID(0)
     , m_timerNestingLevel(0)
     , m_timerTaskRunner(timerTaskRunner)
@@ -42,20 +42,6 @@ void DOMTimerCoordinator::removeTimeoutByID(int timeoutID)
     m_timers.remove(timeoutID);
 }
 
-void DOMTimerCoordinator::didChangeTimerAlignmentInterval()
-{
-    // Reschedule timers in increasing order of desired run time to maintain their relative order.
-    // TODO(skyostil): Move timer alignment into the scheduler.
-    Vector<DOMTimer*> timers;
-    timers.reserveCapacity(m_timers.size());
-    for (TimeoutMap::iterator iter = m_timers.begin(); iter != m_timers.end(); ++iter)
-        timers.append(iter->value.get());
-    std::sort(timers.begin(), timers.end(), TimerBase::Comparator());
-    double now = monotonicallyIncreasingTime();
-    for (DOMTimer* timer : timers)
-        timer->didChangeAlignmentInterval(now);
-}
-
 DEFINE_TRACE(DOMTimerCoordinator)
 {
 #if ENABLE(OILPAN)
@@ -74,6 +60,11 @@ int DOMTimerCoordinator::nextID()
         if (!m_timers.contains(m_circularSequentialID))
             return m_circularSequentialID;
     }
+}
+
+void DOMTimerCoordinator::setTimerTaskRunner(PassOwnPtr<WebTaskRunner> timerTaskRunner)
+{
+    m_timerTaskRunner = timerTaskRunner;
 }
 
 } // namespace blink

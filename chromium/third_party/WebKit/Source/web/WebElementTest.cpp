@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "public/web/WebElement.h"
 
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -116,7 +115,7 @@ TEST_F(WebElementTest, HasNonEmptyLayoutSize)
     EXPECT_TRUE(testElement().hasNonEmptyLayoutSize());
 
     insertHTML(s_emptyBlock);
-    RefPtrWillBeRawPtr<ShadowRoot> root = document().getElementById("testElement")->createShadowRootInternal(ShadowRootType::OpenByDefault, ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<ShadowRoot> root = document().getElementById("testElement")->createShadowRootInternal(ShadowRootType::V0, ASSERT_NO_EXCEPTION);
     root->setInnerHTML("<div>Hello World</div>", ASSERT_NO_EXCEPTION);
     EXPECT_TRUE(testElement().hasNonEmptyLayoutSize());
 }

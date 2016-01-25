@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/fonts/shaping/HarfBuzzShaper.h"
 
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/GlyphPage.h"
+#include "platform/fonts/shaping/ShapeResultTestInfo.h"
 #include "platform/text/TextRun.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Vector.h"
-#include <gtest/gtest.h>
 #include <unicode/uscript.h>
 
 namespace blink {
@@ -20,32 +20,35 @@ protected:
     void SetUp() override
     {
         fontDescription.setComputedSize(12.0);
-        font = new Font(fontDescription);
-        font->update(nullptr);
+        font = Font(fontDescription);
+        font.update(nullptr);
     }
 
     void TearDown() override
     {
-        delete font;
     }
 
     FontCachePurgePreventer fontCachePurgePreventer;
     FontDescription fontDescription;
-    Font* font;
+    Font font;
     unsigned startIndex = 0;
     unsigned numGlyphs = 0;
     hb_script_t script = HB_SCRIPT_INVALID;
 };
 
+static inline ShapeResultTestInfo* testInfo(RefPtr<ShapeResult>& result)
+{
+    return static_cast<ShapeResultTestInfo*>(result.get());
+}
 
 TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsLatin)
 {
     TextRun latinCommon(reinterpret_cast<const LChar*>("ABC DEF."), 8);
-    HarfBuzzShaper shaper(font, latinCommon);
+    HarfBuzzShaper shaper(&font, latinCommon);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(1u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(1u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(8u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_LATIN, script);
@@ -54,11 +57,11 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsLatin)
 TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsLeadingCommon)
 {
     TextRun leadingCommon(reinterpret_cast<const LChar*>("... test"), 8);
-    HarfBuzzShaper shaper(font, leadingCommon);
+    HarfBuzzShaper shaper(&font, leadingCommon);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(1u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(1u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(8u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_LATIN, script);
@@ -80,11 +83,11 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsUnicodeVariants)
     for (auto& test : testlist) {
         String str(test.string);
         TextRun run(str);
-        HarfBuzzShaper shaper(font, run);
+        HarfBuzzShaper shaper(&font, run);
         RefPtr<ShapeResult> result = shaper.shapeResult();
 
-        EXPECT_EQ(1u, result->numberOfRunsForTesting()) << test.name;
-        ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script)) << test.name;
+        EXPECT_EQ(1u, testInfo(result)->numberOfRunsForTesting()) << test.name;
+        ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script)) << test.name;
         EXPECT_EQ(0u, startIndex) << test.name;
         if (numGlyphs == 2) {
             // If the specified VS is not in the font, it's mapped to .notdef.
@@ -93,9 +96,9 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsUnicodeVariants)
             // OpenType recommends Glyph ID 3 for a space; not a hard requirement though.
             // https://www.microsoft.com/typography/otspec/recom.htm
 #if !OS(MACOSX)
-            EXPECT_EQ(3u, result->glyphForTesting(0, 1)) << test.name;
+            EXPECT_EQ(3u, testInfo(result)->glyphForTesting(0, 1)) << test.name;
 #endif
-            EXPECT_EQ(0.f, result->advanceForTesting(0, 1)) << test.name;
+            EXPECT_EQ(0.f, testInfo(result)->advanceForTesting(0, 1)) << test.name;
         } else {
             EXPECT_EQ(1u, numGlyphs) << test.name;
         }
@@ -107,16 +110,16 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsDevanagariCommon)
 {
     UChar devanagariCommonString[] = { 0x915, 0x94d, 0x930, 0x28, 0x20, 0x29 };
     TextRun devanagariCommonLatin(devanagariCommonString, 6);
-    HarfBuzzShaper shaper(font, devanagariCommonLatin);
+    HarfBuzzShaper shaper(&font, devanagariCommonLatin);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(2u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(2u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_DEVANAGARI, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(1, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(1, startIndex, numGlyphs, script));
     EXPECT_EQ(3u, startIndex);
     EXPECT_EQ(3u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_DEVANAGARI, script);
@@ -126,21 +129,21 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsDevanagariCommonLatinCommon)
 {
     UChar devanagariCommonLatinString[] = { 0x915, 0x94d, 0x930, 0x20, 0x61, 0x62, 0x2E };
     TextRun devanagariCommonLatin(devanagariCommonLatinString, 7);
-    HarfBuzzShaper shaper(font, devanagariCommonLatin);
+    HarfBuzzShaper shaper(&font, devanagariCommonLatin);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(3u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(3u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_DEVANAGARI, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(1, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(1, startIndex, numGlyphs, script));
     EXPECT_EQ(3u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_DEVANAGARI, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(2, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(2, startIndex, numGlyphs, script));
     EXPECT_EQ(4u, startIndex);
     EXPECT_EQ(3u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_LATIN, script);
@@ -150,26 +153,26 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsArabicThaiHanLatin)
 {
     UChar mixedString[] = { 0x628, 0x64A, 0x629, 0xE20, 0x65E5, 0x62 };
     TextRun mixed(mixedString, 6);
-    HarfBuzzShaper shaper(font, mixed);
+    HarfBuzzShaper shaper(&font, mixed);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(4u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(4u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(3u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_ARABIC, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(1, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(1, startIndex, numGlyphs, script));
     EXPECT_EQ(3u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_THAI, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(2, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(2, startIndex, numGlyphs, script));
     EXPECT_EQ(4u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_HAN, script);
 
-    ASSERT_TRUE(result->runInfoForTesting(3, startIndex, numGlyphs, script));
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(3, startIndex, numGlyphs, script));
     EXPECT_EQ(5u, startIndex);
     EXPECT_EQ(1u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_LATIN, script);
@@ -179,11 +182,11 @@ TEST_F(HarfBuzzShaperTest, ResolveCandidateRunsArabic)
 {
     UChar arabicString[] = { 0x628, 0x64A, 0x629 };
     TextRun arabic(arabicString, 3);
-    HarfBuzzShaper shaper(font, arabic);
+    HarfBuzzShaper shaper(&font, arabic);
     RefPtr<ShapeResult> result = shaper.shapeResult();
 
-    ASSERT_EQ(1u, result->numberOfRunsForTesting());
-    ASSERT_TRUE(result->runInfoForTesting(0, startIndex, numGlyphs, script));
+    ASSERT_EQ(1u, testInfo(result)->numberOfRunsForTesting());
+    ASSERT_TRUE(testInfo(result)->runInfoForTesting(0, startIndex, numGlyphs, script));
     EXPECT_EQ(0u, startIndex);
     EXPECT_EQ(3u, numGlyphs);
     EXPECT_EQ(HB_SCRIPT_ARABIC, script);

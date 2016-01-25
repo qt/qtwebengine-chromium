@@ -12,11 +12,14 @@
 #include "webrtc/modules/audio_device/android/audio_device_template.h"
 #include "webrtc/modules/audio_device/android/audio_record_jni.h"
 #include "webrtc/modules/audio_device/android/audio_track_jni.h"
-#include "webrtc/modules/utility/interface/jvm_android.h"
+#include "webrtc/modules/utility/include/jvm_android.h"
 #endif
 
-#include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/base/checks.h"
+#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
+#include "webrtc/voice_engine/channel_proxy.h"
 #include "webrtc/voice_engine/voice_engine_impl.h"
 
 namespace webrtc {
@@ -28,23 +31,6 @@ namespace webrtc {
 static int32_t gVoiceEngineInstanceCounter = 0;
 
 VoiceEngine* GetVoiceEngine(const Config* config, bool owns_config) {
-#if (defined _WIN32)
-  HMODULE hmod = LoadLibrary(TEXT("VoiceEngineTestingDynamic.dll"));
-
-  if (hmod) {
-    typedef VoiceEngine* (*PfnGetVoiceEngine)(void);
-    PfnGetVoiceEngine pfn =
-        (PfnGetVoiceEngine)GetProcAddress(hmod, "GetVoiceEngine");
-    if (pfn) {
-      VoiceEngine* self = pfn();
-      if (owns_config) {
-        delete config;
-      }
-      return (self);
-    }
-  }
-#endif
-
   VoiceEngineImpl* self = new VoiceEngineImpl(config, owns_config);
   if (self != NULL) {
     self->AddRef();  // First reference.  Released in VoiceEngine::Delete.
@@ -75,6 +61,15 @@ int VoiceEngineImpl::Release() {
   }
 
   return new_ref;
+}
+
+rtc::scoped_ptr<voe::ChannelProxy> VoiceEngineImpl::GetChannelProxy(
+    int channel_id) {
+  RTC_DCHECK(channel_id >= 0);
+  CriticalSectionScoped cs(crit_sec());
+  RTC_DCHECK(statistics().Initialized());
+  return rtc::scoped_ptr<voe::ChannelProxy>(
+      new voe::ChannelProxy(channel_manager().GetChannel(channel_id)));
 }
 
 VoiceEngine* VoiceEngine::Create() {
@@ -152,5 +147,13 @@ int VoiceEngine::SetAndroidObjects(void* javaVM, void* context) {
 #endif
 }
 #endif
+
+std::string VoiceEngine::GetVersionString() {
+  std::string version = "VoiceEngine 4.1.0";
+#ifdef WEBRTC_EXTERNAL_TRANSPORT
+  version += " (External transport build)";
+#endif
+  return version;
+}
 
 }  // namespace webrtc

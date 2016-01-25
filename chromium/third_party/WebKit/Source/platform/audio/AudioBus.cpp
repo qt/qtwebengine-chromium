@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioBus.h"
-
 #include "platform/audio/AudioFileReader.h"
 #include "platform/audio/DenormalDisabler.h"
 #include "platform/audio/SincResampler.h"
@@ -39,7 +34,6 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebAudioBus.h"
 #include "wtf/OwnPtr.h"
-
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
@@ -488,8 +482,21 @@ void AudioBus::copyWithGainFrom(const AudioBus &sourceBus, float* lastMixGain, f
 
     // Apply constant gain after de-zippering has converged on target gain.
     if (framesToDezipper < framesToProcess) {
-        for (unsigned channelIndex = 0; channelIndex < numberOfChannels; ++channelIndex)
-            vsmul(sources[channelIndex], 1, &gain, destinations[channelIndex], 1, framesToProcess - framesToDezipper);
+        // Handle gains of 0 and 1 (exactly) specially.
+        if (gain == 1) {
+            for (unsigned channelIndex = 0; channelIndex < numberOfChannels; ++channelIndex) {
+                memcpy(destinations[channelIndex], sources[channelIndex],
+                    (framesToProcess - framesToDezipper) * sizeof(*destinations[channelIndex]));
+            }
+        } else if (gain == 0) {
+            for (unsigned channelIndex = 0; channelIndex < numberOfChannels; ++channelIndex) {
+                memset(destinations[channelIndex], 0,
+                    (framesToProcess - framesToDezipper) * sizeof(*destinations[channelIndex]));
+            }
+        } else {
+            for (unsigned channelIndex = 0; channelIndex < numberOfChannels; ++channelIndex)
+                vsmul(sources[channelIndex], 1, &gain, destinations[channelIndex], 1, framesToProcess - framesToDezipper);
+        }
     }
 
     // Save the target gain as the starting point for next time around.
@@ -676,4 +683,3 @@ PassRefPtr<AudioBus> createBusFromInMemoryAudioFile(const void* data, size_t dat
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

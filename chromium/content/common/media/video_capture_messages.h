@@ -6,7 +6,6 @@
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
 #include "content/public/common/common_param_traits.h"
-#include "gpu/command_buffer/common/mailbox_holder.h"
 #include "ipc/ipc_message_macros.h"
 #include "media/base/video_capture_types.h"
 #include "media/base/video_frame.h"
@@ -42,7 +41,6 @@ IPC_STRUCT_BEGIN(VideoCaptureMsg_BufferReady_Params)
   IPC_STRUCT_MEMBER(media::VideoFrame::StorageType, storage_type)
   IPC_STRUCT_MEMBER(gfx::Size, coded_size)
   IPC_STRUCT_MEMBER(gfx::Rect, visible_rect)
-  IPC_STRUCT_MEMBER(std::vector<gpu::MailboxHolder>, mailbox_holders)
 IPC_STRUCT_END()
 
 // TODO(nick): device_id in these messages is basically just a route_id. We
@@ -119,7 +117,7 @@ IPC_MESSAGE_CONTROL1(VideoCaptureHostMsg_Stop,
 IPC_MESSAGE_CONTROL4(VideoCaptureHostMsg_BufferReady,
                      int /* device_id */,
                      int /* buffer_id */,
-                     uint32 /* syncpoint */,
+                     gpu::SyncToken /* sync_token */,
                      double /* consumer_resource_utilization */)
 
 // Get the formats supported by a device referenced by |capture_session_id|.

@@ -20,7 +20,7 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "build/build_config.h"
 #include "snapshot/cpu_context.h"
 #include "snapshot/exception_snapshot.h"
@@ -68,6 +68,7 @@ class ExceptionSnapshotMac final : public ExceptionSnapshot {
   uint32_t ExceptionInfo() const override;
   uint64_t ExceptionAddress() const override;
   const std::vector<uint64_t>& Codes() const override;
+  virtual std::vector<const MemorySnapshot*> ExtraMemory() const override;
 
  private:
 #if defined(ARCH_CPU_X86_FAMILY)

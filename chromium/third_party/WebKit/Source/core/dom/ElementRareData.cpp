@@ -28,19 +28,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/ElementRareData.h"
-
+#include "core/dom/CompositorProxiedPropertySet.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
 
 struct SameSizeAsElementRareData : NodeRareData {
-    short indices[2];
+    short indices[1];
     LayoutSize sizeForResizing;
     IntSize scrollOffset;
-    void* pointers[12];
-    PersistentWillBeMember<void*> member[1];
+    void* pointers[13];
+    PersistentWillBeMember<void*> persistentMember[2];
 };
 
 CSSStyleDeclaration& ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
@@ -73,6 +72,7 @@ DEFINE_TRACE_AFTER_DISPATCH(ElementRareData)
     visitor->trace(m_generatedAfter);
     visitor->trace(m_generatedFirstLetter);
     visitor->trace(m_backdrop);
+    visitor->trace(m_intersectionObserverData);
     NodeRareData::traceAfterDispatch(visitor);
 }
 

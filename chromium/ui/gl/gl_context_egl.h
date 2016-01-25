@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/gl/gl_context.h"
 
 typedef void* EGLContext;
@@ -33,7 +34,6 @@ class GLContextEGL : public GLContextReal {
   void OnSetSwapInterval(int interval) override;
   std::string GetExtensions() override;
   bool WasAllocatedUsingRobustnessExtension() override;
-  bool GetTotalGpuMemory(size_t* bytes) override;
   void SetUnbindFboOnMakeCurrent() override;
 
  protected:

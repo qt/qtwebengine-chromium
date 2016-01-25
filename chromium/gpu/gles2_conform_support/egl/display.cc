@@ -4,6 +4,9 @@
 
 #include "gpu/gles2_conform_support/egl/display.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 #include "base/at_exit.h"
 #include "base/bind.h"
@@ -21,8 +24,8 @@
 #include "gpu/gles2_conform_support/egl/surface.h"
 
 namespace {
-const int32 kCommandBufferSize = 1024 * 1024;
-const int32 kTransferBufferSize = 512 * 1024;
+const int32_t kCommandBufferSize = 1024 * 1024;
+const int32_t kTransferBufferSize = 512 * 1024;
 }
 
 namespace egl {
@@ -35,7 +38,8 @@ Display::Display(EGLNativeDisplayType display_id)
 #endif
       create_offscreen_(false),
       create_offscreen_width_(0),
-      create_offscreen_height_(0) {
+      create_offscreen_height_(0),
+      next_fence_sync_release_(1) {
 }
 
 Display::~Display() {
@@ -160,7 +164,7 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
   GetConfigAttrib(config, EGL_DEPTH_SIZE, &depth_size);
   GetConfigAttrib(config, EGL_ALPHA_SIZE, &alpha_size);
   GetConfigAttrib(config, EGL_STENCIL_SIZE, &stencil_size);
-  std::vector<int32> attribs;
+  std::vector<int32_t> attribs;
   attribs.push_back(EGL_DEPTH_SIZE);
   attribs.push_back(depth_size);
   attribs.push_back(EGL_ALPHA_SIZE);
@@ -275,6 +279,7 @@ bool Display::MakeCurrent(EGLSurface draw, EGLSurface read, EGLContext ctx) {
     DCHECK(IsValidSurface(read));
     DCHECK(IsValidContext(ctx));
     gles2::SetGLContext(context_.get());
+    gl_context_->MakeCurrent(gl_surface_.get());
   }
   return true;
 }
@@ -291,7 +296,7 @@ int32_t Display::CreateImage(ClientBuffer buffer,
   return -1;
 }
 
-void Display::DestroyImage(int32 id) {
+void Display::DestroyImage(int32_t id) {
   NOTIMPLEMENTED();
 }
 
@@ -303,36 +308,27 @@ int32_t Display::CreateGpuMemoryBufferImage(size_t width,
   return -1;
 }
 
-uint32 Display::InsertSyncPoint() {
+uint32_t Display::InsertSyncPoint() {
   NOTIMPLEMENTED();
   return 0u;
 }
 
-uint32 Display::InsertFutureSyncPoint() {
+uint32_t Display::InsertFutureSyncPoint() {
   NOTIMPLEMENTED();
   return 0u;
 }
 
-void Display::RetireSyncPoint(uint32 sync_point) {
+void Display::RetireSyncPoint(uint32_t sync_point) {
   NOTIMPLEMENTED();
 }
 
-void Display::SignalSyncPoint(uint32 sync_point,
+void Display::SignalSyncPoint(uint32_t sync_point,
                               const base::Closure& callback) {
   NOTIMPLEMENTED();
 }
 
-void Display::SignalQuery(uint32 query, const base::Closure& callback) {
+void Display::SignalQuery(uint32_t query, const base::Closure& callback) {
   NOTIMPLEMENTED();
-}
-
-void Display::SetSurfaceVisible(bool visible) {
-  NOTIMPLEMENTED();
-}
-
-uint32 Display::CreateStreamTexture(uint32 texture_id) {
-  NOTIMPLEMENTED();
-  return 0;
 }
 
 void Display::SetLock(base::Lock*) {
@@ -344,12 +340,45 @@ bool Display::IsGpuChannelLost() {
   return false;
 }
 
+void Display::EnsureWorkVisible() {
+  // This is only relevant for out-of-process command buffers.
+}
+
 gpu::CommandBufferNamespace Display::GetNamespaceID() const {
   return gpu::CommandBufferNamespace::IN_PROCESS;
 }
 
 uint64_t Display::GetCommandBufferID() const {
   return 0;
+}
+
+int32_t Display::GetExtraCommandBufferData() const {
+  return 0;
+}
+
+uint64_t Display::GenerateFenceSyncRelease() {
+  return next_fence_sync_release_++;
+}
+
+bool Display::IsFenceSyncRelease(uint64_t release) {
+  return release > 0 && release < next_fence_sync_release_;
+}
+
+bool Display::IsFenceSyncFlushed(uint64_t release) {
+  return IsFenceSyncRelease(release);
+}
+
+bool Display::IsFenceSyncFlushReceived(uint64_t release) {
+  return IsFenceSyncRelease(release);
+}
+
+void Display::SignalSyncToken(const gpu::SyncToken& sync_token,
+                              const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+bool Display::CanWaitUnverifiedSyncToken(const gpu::SyncToken* sync_token) {
+  return false;
 }
 
 }  // namespace egl

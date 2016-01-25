@@ -42,10 +42,14 @@
 class SkMatrix44;
 class SkImageFilter;
 
+namespace cc {
+class Layer;
+class LayerClient;
+}
+
 namespace blink {
 class WebCompositorAnimationDelegate;
 class WebFilterOperations;
-class WebLayerClient;
 class WebLayerScrollClient;
 struct WebFloatPoint;
 struct WebLayerPositionConstraint;
@@ -104,6 +108,10 @@ public:
     virtual void setDrawsContent(bool) = 0;
     virtual bool drawsContent() const = 0;
 
+    // Set to true if the backside of this layer's contents should be visible
+    // when composited. Defaults to false.
+    virtual void setDoubleSided(bool) = 0;
+
     // Sets whether the layer's transform should be flattened.
     virtual void setShouldFlattenTransform(bool) = 0;
 
@@ -151,6 +159,11 @@ public:
 
     // Pauses all animations with the given id.
     virtual void pauseAnimation(int animationId, double timeOffset) = 0;
+
+    // Aborts all animations with the given id. Different from removeAnimation
+    // in that aborting an animation stops it from affecting both the pending
+    // and active tree.
+    virtual void abortAnimation(int animationId) = 0;
 
     // Returns true if this layer has any active animations - useful for tests.
     virtual bool hasActiveAnimation() = 0;
@@ -234,7 +247,17 @@ public:
     // True if the layer is not part of a tree attached to a WebLayerTreeView.
     virtual bool isOrphan() const = 0;
 
-    virtual void setWebLayerClient(WebLayerClient*) = 0;
+    // Sets the cc-side layer client.
+    virtual void setLayerClient(cc::LayerClient*) = 0;
+
+    // Gets the underlying cc layer.
+    virtual const cc::Layer* ccLayer() const = 0;
+
+    virtual void setElementId(uint64_t) = 0;
+    virtual uint64_t elementId() const = 0;
+
+    virtual void setCompositorMutableProperties(uint32_t) = 0;
+    virtual uint32_t compositorMutableProperties() const = 0;
 };
 
 } // namespace blink

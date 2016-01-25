@@ -28,9 +28,10 @@
 #define TouchEvent_h
 
 #include "core/CoreExport.h"
+#include "core/dom/TouchList.h"
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/MouseRelatedEvent.h"
-#include "core/dom/TouchList.h"
+#include "core/events/TouchEventInit.h"
 
 namespace blink {
 
@@ -47,11 +48,16 @@ public:
     static PassRefPtrWillBeRawPtr<TouchEvent> create(TouchList* touches,
         TouchList* targetTouches, TouchList* changedTouches,
         const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView> view,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable, bool causesScrollingIfUncanceled,
-        double uiCreateTime = 0)
+        PlatformEvent::Modifiers modifiers, bool cancelable, bool causesScrollingIfUncanceled,
+        double platformTimeStamp)
     {
         return adoptRefWillBeNoop(new TouchEvent(touches, targetTouches, changedTouches, type, view,
-            ctrlKey, altKey, shiftKey, metaKey, cancelable, causesScrollingIfUncanceled, uiCreateTime));
+            modifiers, cancelable, causesScrollingIfUncanceled, platformTimeStamp));
+    }
+
+    static PassRefPtrWillBeRawPtr<TouchEvent> create(const AtomicString& type, const TouchEventInit& initializer)
+    {
+        return adoptRefWillBeNoop(new TouchEvent(type, initializer));
     }
 
     void initTouchEvent(ScriptState*, TouchList* touches, TouchList* targetTouches,
@@ -83,10 +89,11 @@ public:
 private:
     TouchEvent();
     TouchEvent(TouchList* touches, TouchList* targetTouches,
-            TouchList* changedTouches, const AtomicString& type,
-            PassRefPtrWillBeRawPtr<AbstractView>,
-            bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable, bool causesScrollingIfUncanceled,
-            double uiCreateTime = 0);
+        TouchList* changedTouches, const AtomicString& type,
+        PassRefPtrWillBeRawPtr<AbstractView>, PlatformEvent::Modifiers,
+        bool cancelable, bool causesScrollingIfUncanceled,
+        double platformTimeStamp);
+    TouchEvent(const AtomicString&, const TouchEventInit&);
 
     RefPtrWillBeMember<TouchList> m_touches;
     RefPtrWillBeMember<TouchList> m_targetTouches;

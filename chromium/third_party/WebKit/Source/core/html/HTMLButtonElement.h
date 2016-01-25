@@ -52,8 +52,7 @@ private:
     bool alwaysCreateUserAgentShadowRoot() const override { return false; }
 
     Node::InsertionNotificationRequest insertedInto(ContainerNode*) override;
-    void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void defaultEventHandler(Event*) override;
 

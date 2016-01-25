@@ -5,40 +5,36 @@
 #ifndef NET_BASE_NETWORK_INTERFACES_H_
 #define NET_BASE_NETWORK_INTERFACES_H_
 
-#include "build/build_config.h"
-
-#if defined(OS_WIN)
-#include <windows.h>
-#include <ws2tcpip.h>
-#elif defined(OS_POSIX)
-#include <sys/types.h>
-#include <sys/socket.h>
-#endif
+#include <stdint.h>
 
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
-#include "base/strings/string16.h"
-#include "base/strings/utf_offset_string_conversions.h"
-#include "net/base/address_family.h"
-#include "net/base/escape.h"
+#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/ip_address_number.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
 
-class GURL;
-
-namespace base {
-class Time;
-}
-
-namespace url {
-struct CanonHostInfo;
-struct Parsed;
-}
-
 namespace net {
+
+// A subset of IP address attributes which are actionable by the
+// application layer. Currently unimplemented for all hosts;
+// IP_ADDRESS_ATTRIBUTE_NONE is always returned.
+enum IPAddressAttributes {
+  IP_ADDRESS_ATTRIBUTE_NONE = 0,
+
+  // A temporary address is dynamic by nature and will not contain MAC
+  // address. Presence of MAC address in IPv6 addresses can be used to
+  // track an endpoint and cause privacy concern. Please refer to
+  // RFC4941.
+  IP_ADDRESS_ATTRIBUTE_TEMPORARY = 1 << 0,
+
+  // A temporary address could become deprecated once the preferred
+  // lifetime is reached. It is still valid but shouldn't be used to
+  // create new connections.
+  IP_ADDRESS_ATTRIBUTE_DEPRECATED = 1 << 1,
+};
 
 // struct that is used by GetNetworkList() to represent a network
 // interface.

@@ -5,10 +5,11 @@
 #ifndef MEDIA_BASE_AUDIO_RENDERER_SINK_H_
 #define MEDIA_BASE_AUDIO_RENDERER_SINK_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -35,8 +36,11 @@ class AudioRendererSink
   class RenderCallback {
    public:
     // Attempts to completely fill all channels of |dest|, returns actual
-    // number of frames filled.
-    virtual int Render(AudioBus* dest, int audio_delay_milliseconds) = 0;
+    // number of frames filled. |frames_skipped| contains the number of frames
+    // the consumer has skipped, if any.
+    virtual int Render(AudioBus* dest,
+                       uint32_t audio_delay_milliseconds,
+                       uint32_t frames_skipped) = 0;
 
     // Signals an error has occurred.
     virtual void OnRenderError() = 0;
@@ -77,6 +81,16 @@ class AudioRendererSink
  protected:
   friend class base::RefCountedThreadSafe<AudioRendererSink>;
   virtual ~AudioRendererSink() {}
+};
+
+// Same as AudioRendererSink except that Initialize() and Start() can be called
+// again after Stop().
+// TODO(sandersd): Fold back into AudioRendererSink once all subclasses support
+// this.
+
+class RestartableAudioRendererSink : public AudioRendererSink {
+ protected:
+  ~RestartableAudioRendererSink() override {}
 };
 
 }  // namespace media

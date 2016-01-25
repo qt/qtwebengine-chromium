@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/pcm16b/include/audio_encoder_pcm16b.h"
+#include "webrtc/modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
 
 #include "webrtc/base/checks.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
+#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
 
 namespace webrtc {
 
@@ -22,7 +22,7 @@ size_t AudioEncoderPcm16B::EncodeCall(const int16_t* audio,
   return WebRtcPcm16b_Encode(audio, input_len, encoded);
 }
 
-int AudioEncoderPcm16B::BytesPerSample() const {
+size_t AudioEncoderPcm16B::BytesPerSample() const {
   return 2;
 }
 

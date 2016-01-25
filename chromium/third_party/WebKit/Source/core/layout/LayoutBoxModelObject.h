@@ -31,6 +31,7 @@
 
 namespace blink {
 
+class LineLayoutBoxModel;
 class PaintLayer;
 class PaintLayerScrollableArea;
 
@@ -65,8 +66,8 @@ class InlineFlowBox;
 
 // This class is the base class for all CSS objects.
 //
-// All CSS objects follow the box model object:
-// http://www.w3.org/TR/CSS21/box.html
+// All CSS objects follow the box model object. See THE BOX MODEL section in
+// LayoutBox for more information.
 //
 // This class actually doesn't have the box model but it exposes some common
 // functions or concepts that sub-classes can extend upon. For example, there
@@ -85,6 +86,9 @@ class InlineFlowBox;
 // can't have a PaintLayer. This is an unfortunate artifact of our
 // design as it limits code sharing and prevents hardware accelerating SVG
 // (the current design require a PaintLayer for compositing).
+//
+//
+// ***** COORDINATE SYSTEMS *****
 //
 // In order to fully understand LayoutBoxModelObject and the inherited classes,
 // we need to introduce the concept of coordinate systems.
@@ -181,9 +185,13 @@ public:
     LayoutUnit computedCSSPaddingAfter() const { return computedCSSPadding(style()->paddingAfter()); }
     LayoutUnit computedCSSPaddingStart() const { return computedCSSPadding(style()->paddingStart()); }
     LayoutUnit computedCSSPaddingEnd() const { return computedCSSPadding(style()->paddingEnd()); }
+    LayoutUnit computedCSSPaddingOver() const { return computedCSSPadding(style()->paddingOver()); }
+    LayoutUnit computedCSSPaddingUnder() const { return computedCSSPadding(style()->paddingUnder()); }
 
-    // These functions are used during layout. Table cells override them to
-    // include the intrinsic padding (see explanations in LayoutTableCell).
+    // These functions are used during layout.
+    // - Table cells override them to include the intrinsic padding (see
+    // explanations in LayoutTableCell).
+    // - Table override them to exclude padding with collapsing borders.
     virtual LayoutUnit paddingTop() const { return computedCSSPaddingTop(); }
     virtual LayoutUnit paddingBottom() const { return computedCSSPaddingBottom(); }
     virtual LayoutUnit paddingLeft() const { return computedCSSPaddingLeft(); }
@@ -192,6 +200,8 @@ public:
     virtual LayoutUnit paddingAfter() const { return computedCSSPaddingAfter(); }
     virtual LayoutUnit paddingStart() const { return computedCSSPaddingStart(); }
     virtual LayoutUnit paddingEnd() const { return computedCSSPaddingEnd(); }
+    LayoutUnit paddingOver() const { return computedCSSPaddingOver(); }
+    LayoutUnit paddingUnder() const { return computedCSSPaddingUnder(); }
 
     virtual int borderTop() const { return style()->borderTopWidth(); }
     virtual int borderBottom() const { return style()->borderBottomWidth(); }
@@ -201,6 +211,8 @@ public:
     virtual int borderAfter() const { return style()->borderAfterWidth(); }
     virtual int borderStart() const { return style()->borderStartWidth(); }
     virtual int borderEnd() const { return style()->borderEndWidth(); }
+    int borderOver() const { return style()->borderOverWidth(); }
+    int borderUnder() const { return style()->borderUnderWidth(); }
 
     int borderWidth() const { return borderLeft() + borderRight(); }
     int borderHeight() const { return borderTop() + borderBottom(); }
@@ -213,6 +225,8 @@ public:
     LayoutUnit borderAndPaddingStart() const { return borderStart() + paddingStart(); }
     LayoutUnit borderAndPaddingBefore() const { return borderBefore() + paddingBefore(); }
     LayoutUnit borderAndPaddingAfter() const { return borderAfter() + paddingAfter(); }
+    LayoutUnit borderAndPaddingOver() const { return borderOver() + paddingOver(); }
+    LayoutUnit borderAndPaddingUnder() const { return borderUnder() + paddingUnder(); }
 
     LayoutUnit borderAndPaddingHeight() const { return borderTop() + borderBottom() + paddingTop() + paddingBottom(); }
     LayoutUnit borderAndPaddingWidth() const { return borderLeft() + borderRight() + paddingLeft() + paddingRight(); }
@@ -234,6 +248,8 @@ public:
     virtual LayoutUnit marginAfter(const ComputedStyle* otherStyle = nullptr) const = 0;
     virtual LayoutUnit marginStart(const ComputedStyle* otherStyle = nullptr) const = 0;
     virtual LayoutUnit marginEnd(const ComputedStyle* otherStyle = nullptr) const = 0;
+    virtual LayoutUnit marginOver() const = 0;
+    virtual LayoutUnit marginUnder() const = 0;
     LayoutUnit marginHeight() const { return marginTop() + marginBottom(); }
     LayoutUnit marginWidth() const { return marginLeft() + marginRight(); }
     LayoutUnit marginLogicalHeight() const { return marginBefore() + marginAfter(); }
@@ -271,7 +287,7 @@ public:
     // Indicate that the contents of this layoutObject need to be repainted. Only has an effect if compositing is being used,
     void setBackingNeedsPaintInvalidationInRect(const LayoutRect&, PaintInvalidationReason) const; // r is in the coordinate space of this layout object
 
-    void invalidateDisplayItemClientOnBacking(const DisplayItemClientWrapper&) const;
+    void invalidateDisplayItemClientOnBacking(const DisplayItemClient&, PaintInvalidationReason) const;
 
     // http://www.w3.org/TR/css3-background/#body-background
     // <html> root element with no background steals background from its first <body> child.
@@ -285,7 +301,19 @@ protected:
 
     bool calculateHasBoxDecorations() const;
 
+    // Returns the continuation associated with |this|.
+    // Returns nullptr if no continuation is associated with |this|.
+    //
+    // See the section about CONTINUATIONS AND ANONYMOUS LAYOUTBLOCKFLOWS in
+    // LayoutInline for more details about them.
+    //
+    // Our implementation uses a HashMap to store them to avoid paying the cost
+    // for each LayoutBoxModelObject (|continuationMap| in the cpp file).
     LayoutBoxModelObject* continuation() const;
+
+    // Set the next link in the continuation chain.
+    //
+    // See continuation above for more details.
     void setContinuation(LayoutBoxModelObject*);
 
     LayoutRect localCaretRectForEmptyElement(LayoutUnit width, LayoutUnit textIndentOffset);
@@ -327,7 +355,7 @@ public:
     virtual void moveChildrenTo(LayoutBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false);
 
     enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
-    IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
+    LayoutSize calculateImageIntrinsicDimensions(StyleImage*, const LayoutSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
 private:
     void createLayer(PaintLayerType);

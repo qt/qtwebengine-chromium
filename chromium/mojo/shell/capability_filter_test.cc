@@ -4,17 +4,20 @@
 
 #include "mojo/shell/capability_filter_test.h"
 
+#include <utility>
+
+#include "base/macros.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
-#include "mojo/application/public/cpp/application_connection.h"
-#include "mojo/application/public/cpp/application_impl.h"
-#include "mojo/application/public/cpp/connect.h"
-#include "mojo/application/public/cpp/interface_factory.h"
-#include "mojo/application/public/cpp/service_provider_impl.h"
 #include "mojo/common/weak_binding_set.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/shell/application_loader.h"
 #include "mojo/shell/package_manager.h"
+#include "mojo/shell/public/cpp/application_connection.h"
+#include "mojo/shell/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/connect.h"
+#include "mojo/shell/public/cpp/interface_factory.h"
+#include "mojo/shell/public/cpp/service_provider_impl.h"
 
 namespace mojo {
 namespace shell {
@@ -49,7 +52,7 @@ class ConnectionValidator : public ApplicationLoader,
  private:
   // Overridden from ApplicationLoader:
   void Load(const GURL& url, InterfaceRequest<Application> request) override {
-    app_.reset(new ApplicationImpl(this, request.Pass()));
+    app_.reset(new ApplicationImpl(this, std::move(request)));
   }
 
   // Overridden from ApplicationDelegate:
@@ -61,7 +64,7 @@ class ConnectionValidator : public ApplicationLoader,
   // Overridden from InterfaceFactory<Validator>:
   void Create(ApplicationConnection* connection,
               InterfaceRequest<Validator> request) override {
-    validator_bindings_.AddBinding(this, request.Pass());
+    validator_bindings_.AddBinding(this, std::move(request));
   }
 
   // Overridden from Validator:
@@ -83,12 +86,12 @@ class ConnectionValidator : public ApplicationLoader,
     if (i != expectations_.end()) {
       expectations_.erase(i);
       if (expectations_.empty())
-        loop_->Quit();
+        loop_->QuitWhenIdle();
     } else {
       // This is a test failure, and will result in PrintUnexpectedExpecations()
       // being called.
       unexpected_.insert(result);
-      loop_->Quit();
+      loop_->QuitWhenIdle();
     }
   }
 
@@ -118,9 +121,7 @@ class ServiceApplication : public ApplicationDelegate,
     app_ = app;
     // ServiceApplications have no capability filter and can thus connect
     // directly to the validator application.
-    URLRequestPtr request(URLRequest::New());
-    request->url = String::From("test:validator");
-    app_->ConnectToService(request.Pass(), &validator_);
+    app_->ConnectToService("test:validator", &validator_);
   }
   bool ConfigureIncomingConnection(ApplicationConnection* connection) override {
     AddService<Safe>(connection);
@@ -131,13 +132,13 @@ class ServiceApplication : public ApplicationDelegate,
   // Overridden from InterfaceFactory<Safe>:
   void Create(ApplicationConnection* connection,
               InterfaceRequest<Safe> request) override {
-    safe_bindings_.AddBinding(this, request.Pass());
+    safe_bindings_.AddBinding(this, std::move(request));
   }
 
   // Overridden from InterfaceFactory<Unsafe>:
   void Create(ApplicationConnection* connection,
               InterfaceRequest<Unsafe> request) override {
-    unsafe_bindings_.AddBinding(this, request.Pass());
+    unsafe_bindings_.AddBinding(this, std::move(request));
   }
 
   template <typename Interface>
@@ -170,16 +171,12 @@ bool TestApplication::ConfigureIncomingConnection(
   // TestApplications receive their Validator via the inbound connection.
   connection->ConnectToService(&validator_);
 
-  URLRequestPtr request(URLRequest::New());
-  request->url = String::From("test:service");
-  connection1_ = app_->ConnectToApplication(request.Pass());
+  connection1_ = app_->ConnectToApplication("test:service");
   connection1_->SetRemoteServiceProviderConnectionErrorHandler(
       base::Bind(&TestApplication::ConnectionClosed,
                   base::Unretained(this), "test:service"));
 
-  URLRequestPtr request2(URLRequest::New());
-  request2->url = String::From("test:service2");
-  connection2_ = app_->ConnectToApplication(request2.Pass());
+  connection2_ = app_->ConnectToApplication("test:service2");
   connection2_->SetRemoteServiceProviderConnectionErrorHandler(
       base::Bind(&TestApplication::ConnectionClosed,
                   base::Unretained(this), "test:service2"));
@@ -198,7 +195,7 @@ TestLoader::~TestLoader() {}
 
 void TestLoader::Load(const GURL& url,
                       InterfaceRequest<Application> request) {
-  app_.reset(new ApplicationImpl(delegate_.get(), request.Pass()));
+  app_.reset(new ApplicationImpl(delegate_.get(), std::move(request)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -308,9 +305,9 @@ void CapabilityFilterTest::RunApplication(const std::string& url,
       new ConnectToApplicationParams);
   params->SetTarget(Identity(GURL(url), std::string(), filter));
   params->set_services(GetProxy(&services));
-  params->set_exposed_services(exposed_services.Pass());
+  params->set_exposed_services(std::move(exposed_services));
   params->set_on_application_end(base::MessageLoop::QuitWhenIdleClosure());
-  application_manager_->ConnectToApplication(params.Pass());
+  application_manager_->ConnectToApplication(std::move(params));
 }
 
 void CapabilityFilterTest::InitValidator(

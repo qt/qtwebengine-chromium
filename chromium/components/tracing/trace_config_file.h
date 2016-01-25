@@ -8,6 +8,7 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/trace_event/trace_config.h"
+#include "build/build_config.h"
 #include "components/tracing/tracing_export.h"
 
 namespace base {
@@ -70,7 +71,7 @@ class TRACING_EXPORT TraceConfigFile {
   bool IsEnabled() const;
   base::trace_event::TraceConfig GetTraceConfig() const;
   int GetStartupDuration() const;
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) || defined(USE_AURA)
   base::FilePath GetResultFile() const;
 #endif
 

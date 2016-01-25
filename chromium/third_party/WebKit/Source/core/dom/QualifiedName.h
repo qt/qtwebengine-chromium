@@ -31,7 +31,7 @@
 namespace blink {
 
 struct QualifiedNameComponents {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     StringImpl* m_prefix;
     StringImpl* m_localName;
     StringImpl* m_namespace;
@@ -40,13 +40,13 @@ struct QualifiedNameComponents {
 // This struct is used to pass data between QualifiedName and the QNameTranslator.
 // For hashing and equality only the QualifiedNameComponents fields are used.
 struct QualifiedNameData {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     QualifiedNameComponents m_components;
     bool m_isStatic;
 };
 
 class CORE_EXPORT QualifiedName {
-    WTF_MAKE_FAST_ALLOCATED(QualifiedName);
+    USING_FAST_MALLOC(QualifiedName);
 public:
     class QualifiedNameImpl : public RefCounted<QualifiedNameImpl> {
     public:

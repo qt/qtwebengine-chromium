@@ -21,7 +21,7 @@ static const double kLossDelayMultiplier = 1.25;
 }  // namespace
 
 TimeLossAlgorithm::TimeLossAlgorithm()
-    : loss_detection_timeout_(QuicTime::Zero()) { }
+    : loss_detection_timeout_(QuicTime::Zero()) {}
 
 LossDetectionType TimeLossAlgorithm::GetLossDetectionType() const {
   return kTime;
@@ -62,6 +62,14 @@ PacketNumberSet TimeLossAlgorithm::DetectLostPackets(
   }
 
   return lost_packets;
+}
+
+void TimeLossAlgorithm::DetectLosses(
+    const QuicUnackedPacketMap& unacked_packets,
+    const QuicTime& time,
+    const RttStats& rtt_stats,
+    SendAlgorithmInterface::CongestionVector* packets_lost) {
+  LOG(DFATAL) << "DetectLoss is unsupported by TimeLossAlgorithm.";
 }
 
 // loss_time_ is updated in DetectLostPackets, which must be called every time

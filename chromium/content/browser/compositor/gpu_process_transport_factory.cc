@@ -5,6 +5,7 @@
 #include "content/browser/compositor/gpu_process_transport_factory.h"
 
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -14,9 +15,11 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "cc/base/histograms.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
+#include "cc/raster/single_thread_task_graph_runner.h"
 #include "cc/raster/task_graph_runner.h"
 #include "cc/surfaces/onscreen_display_client.h"
 #include "cc/surfaces/surface_display_output_surface.h"
@@ -28,6 +31,7 @@
 #include "content/browser/compositor/offscreen_browser_compositor_output_surface.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
+#include "content/browser/compositor/software_output_device_mus.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -52,6 +56,10 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
 
+#if defined(MOJO_RUNNER_CLIENT)
+#include "content/common/mojo/mojo_shell_connection_impl.h"
+#endif
+
 #if defined(OS_WIN)
 #include "content/browser/compositor/software_output_device_win.h"
 #elif defined(USE_OZONE)
@@ -66,6 +74,9 @@
 #elif defined(OS_MACOSX)
 #include "content/browser/compositor/browser_compositor_overlay_candidate_validator_mac.h"
 #include "content/browser/compositor/software_output_device_mac.h"
+#include "ui/base/cocoa/remote_layer_api.h"
+#elif defined(OS_ANDROID)
+#include "content/browser/compositor/browser_compositor_overlay_candidate_validator_android.h"
 #endif
 
 using cc::ContextProvider;
@@ -74,24 +85,6 @@ using gpu::gles2::GLES2Interface;
 static const int kNumRetriesBeforeSoftwareFallback = 4;
 
 namespace content {
-namespace {
-
-class RasterThread : public base::SimpleThread {
- public:
-  RasterThread(cc::TaskGraphRunner* task_graph_runner)
-      : base::SimpleThread("CompositorTileWorker1"),
-        task_graph_runner_(task_graph_runner) {}
-
-  // Overridden from base::SimpleThread:
-  void Run() override { task_graph_runner_->Run(); }
-
- private:
-  cc::TaskGraphRunner* task_graph_runner_;
-
-  DISALLOW_COPY_AND_ASSIGN(RasterThread);
-};
-
-}  // namespace
 
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
@@ -104,7 +97,7 @@ struct GpuProcessTransportFactory::PerCompositorData {
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
     : next_surface_id_namespace_(1u),
-      task_graph_runner_(new cc::TaskGraphRunner),
+      task_graph_runner_(new cc::SingleThreadTaskGraphRunner),
       callback_factory_(this) {
   ui::Layer::InitializeUILayerSettings();
   cc::SetClientNameForMetrics("Browser");
@@ -112,8 +105,8 @@ GpuProcessTransportFactory::GpuProcessTransportFactory()
   if (UseSurfacesEnabled())
     surface_manager_ = make_scoped_ptr(new cc::SurfaceManager);
 
-  raster_thread_.reset(new RasterThread(task_graph_runner_.get()));
-  raster_thread_->Start();
+  task_graph_runner_->Start("CompositorTileWorker1",
+                            base::SimpleThread::Options());
 #if defined(OS_WIN)
   software_backing_.reset(new OutputDeviceBacking);
 #endif
@@ -126,28 +119,36 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
   callback_factory_.InvalidateWeakPtrs();
 
   task_graph_runner_->Shutdown();
-  if (raster_thread_)
-    raster_thread_->Join();
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 GpuProcessTransportFactory::CreateOffscreenCommandBufferContext() {
+#if defined(OS_ANDROID)
+  return CreateContextCommon(scoped_refptr<GpuChannelHost>(nullptr), 0);
+#else
   CauseForGpuLaunch cause =
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(cause));
   return CreateContextCommon(gpu_channel_host, 0);
+#endif  // OS_ANDROID
 }
 
 scoped_ptr<cc::SoftwareOutputDevice>
 GpuProcessTransportFactory::CreateSoftwareOutputDevice(
     ui::Compositor* compositor) {
+#if defined(MOJO_RUNNER_CLIENT)
+  if (IsRunningInMojoShell()) {
+    return scoped_ptr<cc::SoftwareOutputDevice>(
+        new SoftwareOutputDeviceMus(compositor));
+  }
+#endif
+
 #if defined(OS_WIN)
   return scoped_ptr<cc::SoftwareOutputDevice>(
       new SoftwareOutputDeviceWin(software_backing_.get(), compositor));
 #elif defined(USE_OZONE)
-  return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceOzone(
-      compositor));
+  return SoftwareOutputDeviceOzone::Create(compositor);
 #elif defined(USE_X11)
   return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceX11(
       compositor));
@@ -162,6 +163,7 @@ GpuProcessTransportFactory::CreateSoftwareOutputDevice(
 
 scoped_ptr<BrowserCompositorOverlayCandidateValidator>
 CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
+  scoped_ptr<BrowserCompositorOverlayCandidateValidator> validator;
 #if defined(USE_OZONE)
   scoped_ptr<ui::OverlayCandidatesOzone> overlay_candidates =
       ui::OzonePlatform::GetInstance()
@@ -171,18 +173,30 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
   if (overlay_candidates &&
       (command_line->HasSwitch(switches::kEnableHardwareOverlays) ||
        command_line->HasSwitch(switches::kOzoneTestSingleOverlaySupport))) {
-    return scoped_ptr<BrowserCompositorOverlayCandidateValidator>(
-        new BrowserCompositorOverlayCandidateValidatorOzone(
-            widget, overlay_candidates.Pass()));
+    validator.reset(new BrowserCompositorOverlayCandidateValidatorOzone(
+        widget, std::move(overlay_candidates)));
   }
 #elif defined(OS_MACOSX)
-  return make_scoped_ptr(
-      new BrowserCompositorOverlayCandidateValidatorMac(widget));
+  // Overlays are only supported through the remote layer API.
+  if (ui::RemoteLayerAPISupported()) {
+    validator.reset(new BrowserCompositorOverlayCandidateValidatorMac(widget));
+  }
+#elif defined(OS_ANDROID)
+  validator.reset(new BrowserCompositorOverlayCandidateValidatorAndroid());
 #endif
-  return scoped_ptr<BrowserCompositorOverlayCandidateValidator>();
+
+  return validator;
 }
 
 static bool ShouldCreateGpuOutputSurface(ui::Compositor* compositor) {
+#if defined(MOJO_RUNNER_CLIENT)
+  // Chrome running as a mojo app currently can only use software compositing.
+  // TODO(rjkroege): http://crbug.com/548451
+  if (IsRunningInMojoShell()) {
+    return false;
+  }
+#endif
+
 #if defined(OS_CHROMEOS)
   // Software fallback does not happen on Chrome OS.
   return true;
@@ -230,7 +244,14 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     int num_attempts) {
   if (!compositor)
     return;
-  PerCompositorData* data = per_compositor_data_[compositor.get()];
+
+  // The widget might have been released in the meantime.
+  PerCompositorDataMap::iterator it =
+      per_compositor_data_.find(compositor.get());
+  if (it == per_compositor_data_.end())
+    return;
+
+  PerCompositorData* data = it->second;
   DCHECK(data);
 
   if (num_attempts > kNumRetriesBeforeSoftwareFallback) {
@@ -329,7 +350,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 #endif
       surface = make_scoped_ptr(new GpuBrowserCompositorOutputSurface(
           context_provider, shared_worker_context_provider_,
-          compositor->vsync_manager(), validator.Pass()));
+          compositor->vsync_manager(), std::move(validator)));
     }
   }
 
@@ -341,7 +362,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     data->reflector->OnSourceSurfaceReady(data->surface);
 
   if (!UseSurfacesEnabled()) {
-    compositor->SetOutputSurface(surface.Pass());
+    compositor->SetOutputSurface(std::move(surface));
     return;
   }
 
@@ -352,7 +373,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   cc::SurfaceManager* manager = surface_manager_.get();
   scoped_ptr<cc::OnscreenDisplayClient> display_client(
       new cc::OnscreenDisplayClient(
-          surface.Pass(), manager, HostSharedBitmapManager::current(),
+          std::move(surface), manager, HostSharedBitmapManager::current(),
           BrowserGpuMemoryBufferManager::current(),
           compositor->GetRendererSettings(), compositor->task_runner()));
 
@@ -363,8 +384,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   display_client->set_surface_output_surface(output_surface.get());
   output_surface->set_display_client(display_client.get());
   display_client->display()->Resize(compositor->size());
-  data->display_client = display_client.Pass();
-  compositor->SetOutputSurface(output_surface.Pass());
+  data->display_client = std::move(display_client);
+  compositor->SetOutputSurface(std::move(output_surface));
 }
 
 scoped_ptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
@@ -378,7 +399,7 @@ scoped_ptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
   source_data->reflector = reflector.get();
   if (BrowserCompositorOutputSurface* source_surface = source_data->surface)
     reflector->OnSourceSurfaceReady(source_surface);
-  return reflector.Pass();
+  return std::move(reflector);
 }
 
 void GpuProcessTransportFactory::RemoveReflector(ui::Reflector* reflector) {
@@ -410,7 +431,7 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
     // GLHelper created in this case would be lost/leaked if we just reset()
     // on the |gl_helper_| variable directly. So instead we call reset() on a
     // local scoped_ptr.
-    scoped_ptr<GLHelper> helper = gl_helper_.Pass();
+    scoped_ptr<GLHelper> helper = std::move(gl_helper_);
 
     // If there are any observer left at this point, make sure they clean up
     // before we destroy the GLHelper.
@@ -425,7 +446,7 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
 
 bool GpuProcessTransportFactory::DoesCreateTestContexts() { return false; }
 
-uint32 GpuProcessTransportFactory::GetImageTextureTarget(
+uint32_t GpuProcessTransportFactory::GetImageTextureTarget(
     gfx::BufferFormat format,
     gfx::BufferUsage usage) {
   return BrowserGpuMemoryBufferManager::GetImageTextureTarget(format, usage);
@@ -494,11 +515,14 @@ void GpuProcessTransportFactory::RemoveObserver(
 }
 
 #if defined(OS_MACOSX)
-void GpuProcessTransportFactory::OnSurfaceDisplayed(int surface_id) {
+void GpuProcessTransportFactory::OnGpuSwapBuffersCompleted(
+    int surface_id,
+    const std::vector<ui::LatencyInfo>& latency_info,
+    gfx::SwapResult result) {
   BrowserCompositorOutputSurface* surface = output_surface_map_.Lookup(
       surface_id);
   if (surface)
-    surface->OnSurfaceDisplayed();
+    surface->OnGpuSwapBuffersCompleted(latency_info, result);
 }
 
 void GpuProcessTransportFactory::SetCompositorSuspendedForRecycle(
@@ -607,7 +631,7 @@ GpuProcessTransportFactory::CreateContextCommon(
           lose_context_when_out_of_memory,
           WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
           NULL));
-  return context.Pass();
+  return context;
 }
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback() {
@@ -628,7 +652,7 @@ void GpuProcessTransportFactory::OnLostMainThreadSharedContext() {
       shared_main_thread_contexts_;
   shared_main_thread_contexts_  = NULL;
 
-  scoped_ptr<GLHelper> lost_gl_helper = gl_helper_.Pass();
+  scoped_ptr<GLHelper> lost_gl_helper = std::move(gl_helper_);
 
   FOR_EACH_OBSERVER(ImageTransportFactoryObserver,
                     observer_list_,

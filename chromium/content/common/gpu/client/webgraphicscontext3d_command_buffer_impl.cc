@@ -154,6 +154,8 @@ bool WebGraphicsContext3DCommandBufferImpl::MaybeInitializeGL() {
                  weak_ptr_factory_.GetWeakPtr()));
 
   real_gl_->SetErrorMessageCallback(getErrorMessageCallback());
+  real_gl_->TraceBeginCHROMIUM("WebGraphicsContext3D",
+                               "CommandBufferContext");
 
   visible_ = true;
   initialized_ = true;
@@ -176,7 +178,7 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
   attribs_for_gles2.lose_context_when_out_of_memory =
       lose_context_when_out_of_memory_;
   DCHECK(attribs_for_gles2.buffer_preserved);
-  std::vector<int32> attribs;
+  std::vector<int32_t> attribs;
   attribs_for_gles2.Serialize(&attribs);
 
   // Create a proxy to a command buffer in the GPU process.

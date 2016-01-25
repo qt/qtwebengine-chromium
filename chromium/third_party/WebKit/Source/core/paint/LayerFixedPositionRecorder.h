@@ -5,7 +5,7 @@
 #ifndef LayerFixedPositionRecorder_h
 #define LayerFixedPositionRecorder_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -13,7 +13,7 @@ class GraphicsContext;
 class LayoutBoxModelObject;
 
 class LayerFixedPositionRecorder {
-    WTF_MAKE_FAST_ALLOCATED(LayerFixedPositionRecorder);
+    USING_FAST_MALLOC(LayerFixedPositionRecorder);
 public:
     explicit LayerFixedPositionRecorder(GraphicsContext&, const LayoutBoxModelObject&);
     ~LayerFixedPositionRecorder();

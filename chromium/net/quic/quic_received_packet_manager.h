@@ -8,8 +8,11 @@
 #ifndef NET_QUIC_QUIC_RECEIVED_PACKET_MANAGER_H_
 #define NET_QUIC_QUIC_RECEIVED_PACKET_MANAGER_H_
 
+#include <stddef.h>
+
 #include <deque>
 
+#include "base/macros.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
@@ -27,8 +30,8 @@ struct QuicConnectionStats;
 // Records all received packets by a connection and tracks their entropy.
 // Also calculates the correct entropy for the framer when it truncates an ack
 // frame being serialized.
-class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
-    public QuicReceivedEntropyHashCalculatorInterface {
+class NET_EXPORT_PRIVATE QuicReceivedPacketManager
+    : public QuicReceivedEntropyHashCalculatorInterface {
  public:
   class NET_EXPORT_PRIVATE EntropyTracker {
    public:
@@ -102,17 +105,17 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // bytes: the packet size in bytes including Quic Headers.
   // header: the packet header.
   // timestamp: the arrival time of the packet.
-  void RecordPacketReceived(QuicByteCount bytes,
-                            const QuicPacketHeader& header,
-                            QuicTime receipt_time);
+  virtual void RecordPacketReceived(QuicByteCount bytes,
+                                    const QuicPacketHeader& header,
+                                    QuicTime receipt_time);
 
-  void RecordPacketRevived(QuicPacketNumber packet_number);
+  virtual void RecordPacketRevived(QuicPacketNumber packet_number);
 
   // Checks whether |packet_number| is missing and less than largest observed.
-  bool IsMissing(QuicPacketNumber packet_number);
+  virtual bool IsMissing(QuicPacketNumber packet_number);
 
   // Checks if we're still waiting for the packet with |packet_number|.
-  bool IsAwaitingPacket(QuicPacketNumber packet_number);
+  virtual bool IsAwaitingPacket(QuicPacketNumber packet_number);
 
   // Update the |ack_frame| for an outgoing ack.
   void UpdateReceivedPacketInfo(QuicAckFrame* ack_frame,
@@ -125,12 +128,12 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
       QuicPacketNumber packet_number) const override;
 
   // Updates internal state based on |stop_waiting|.
-  void UpdatePacketInformationSentByPeer(
+  virtual void UpdatePacketInformationSentByPeer(
       const QuicStopWaitingFrame& stop_waiting);
 
   // Returns true when there are new missing packets to be reported within 3
   // packets of the largest observed.
-  bool HasNewMissingPackets() const;
+  virtual bool HasNewMissingPackets() const;
 
   // Returns the number of packets being tracked in the EntropyTracker.
   size_t NumTrackedPackets() const;
@@ -138,6 +141,8 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   QuicPacketNumber peer_least_packet_awaiting_ack() {
     return peer_least_packet_awaiting_ack_;
   }
+
+  virtual bool ack_frame_updated() const;
 
  private:
   friend class test::QuicConnectionPeer;
@@ -159,14 +164,16 @@ class NET_EXPORT_PRIVATE QuicReceivedPacketManager :
   // Received packet information used to produce acks.
   QuicAckFrame ack_frame_;
 
+  // True if |ack_frame_| has been updated since UpdateReceivedPacketInfo was
+  // last called.
+  bool ack_frame_updated_;
+
   // The time we received the largest_observed packet number, or zero if
   // no packet numbers have been received since UpdateReceivedPacketInfo.
   // Needed for calculating delta_time_largest_observed.
   QuicTime time_largest_observed_;
 
   QuicConnectionStats* stats_;
-
-  PacketTimeList received_packet_times_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicReceivedPacketManager);
 };

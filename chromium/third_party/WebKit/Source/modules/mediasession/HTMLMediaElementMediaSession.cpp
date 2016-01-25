@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/mediasession/HTMLMediaElementMediaSession.h"
+
+#include "core/dom/ExceptionCode.h"
 
 namespace blink {
 
@@ -14,8 +15,14 @@ MediaSession* HTMLMediaElementMediaSession::session(HTMLMediaElement& mediaEleme
     return nullptr;
 }
 
-void HTMLMediaElementMediaSession::setSession(HTMLMediaElement& mediaElement, MediaSession* session)
+void HTMLMediaElementMediaSession::setSession(HTMLMediaElement& mediaElement, MediaSession* session, ExceptionState& exceptionState)
 {
+    HTMLMediaElement::NetworkState networkState = mediaElement.networkState();
+    if (networkState == HTMLMediaElement::NETWORK_IDLE || networkState == HTMLMediaElement::NETWORK_LOADING) {
+        exceptionState.throwDOMException(InvalidStateError, "networkState must be NETWORK_EMPTY or NETWORK_NO_SOURCE.");
+        return;
+    }
+
     from(mediaElement).m_session = session;
 }
 

@@ -1,7 +1,9 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/device-icons.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/hardware-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/notification-icons.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/social-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-item/paper-icon-item.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-menu/paper-menu.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-menu/paper-submenu.html">
@@ -10,7 +12,7 @@
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/device-icons.html">
 </if>
 
-<dom-module id="cr-settings-menu">
+<dom-module id="settings-menu">
   <link rel="import" type="css" href="settings_menu.css">
   <template>
     <paper-menu name="root-menu">
@@ -27,6 +29,10 @@
           </paper-icon-item>
 </if>
           <paper-icon-item>
+            <iron-icon icon="social:person" item-icon></iron-icon>
+            <span i18n-content="peoplePageTitle"></span>
+          </paper-icon-item>
+          <paper-icon-item>
             <iron-icon icon="home" item-icon></iron-icon>
             <span i18n-content="appearancePageTitle"></span>
           </paper-icon-item>
@@ -38,10 +44,10 @@
             <iron-icon icon="search" item-icon></iron-icon>
             <span i18n-content="searchPageTitle"></span>
           </paper-icon-item>
-<if expr="chromeos">
+<if expr="not chromeos">
           <paper-icon-item>
-            <iron-icon icon="person" item-icon></iron-icon>
-            <span i18n-content="usersPageTitle"></span>
+            <iron-icon icon="open-in-browser" item-icon></iron-icon>
+            <span i18n-content="defaultBrowser"></span>
           </paper-icon-item>
 </if>
         </paper-menu>
@@ -52,6 +58,10 @@
           <span i18n-content="advancedPageTitle"></span>
         </paper-icon-item>
         <paper-menu class="menu-content">
+          <paper-icon-item>
+            <iron-icon icon="communication:location-on" item-icon></iron-icon>
+            <span i18n-content="siteSettingsLocation"></span>
+          </paper-icon-item>
 <if expr="chromeos">
           <paper-icon-item>
             <iron-icon icon="device:access-time" item-icon></iron-icon>
@@ -59,12 +69,30 @@
           </paper-icon-item>
 </if>
           <paper-icon-item>
-            <iron-icon icon="lock" item-icon></iron-icon>
+            <iron-icon icon="hardware:security" item-icon></iron-icon>
             <span i18n-content="privacyPageTitle"></span>
+          </paper-icon-item>
+<if expr="chromeos">
+          <paper-icon-item>
+            <iron-icon icon="device:bluetooth" item-icon></iron-icon>
+            <span i18n-content="bluetoothPageTitle"></span>
+          </paper-icon-item>
+</if>
+          <paper-icon-item>
+            <iron-icon icon="lock" item-icon></iron-icon>
+            <span i18n-content="passwordsAndAutofillPageTitle"></span>
+          </paper-icon-item>
+          <paper-icon-item>
+            <iron-icon icon="language" item-icon></iron-icon>
+            <span i18n-content="languagesPageTitle"></span>
           </paper-icon-item>
           <paper-icon-item>
             <iron-icon icon="file-download" item-icon></iron-icon>
             <span i18n-content="downloadsPageTitle"></span>
+          </paper-icon-item>
+          <paper-icon-item>
+            <iron-icon icon="settings-backup-restore" item-icon></iron-icon>
+            <span i18n-content="resetPageTitle"></span>
           </paper-icon-item>
 <if expr="chromeos">
           <paper-icon-item>
@@ -72,10 +100,6 @@
             <span i18n-content="a11yPageTitle"></span>
           </paper-icon-item>
 </if>
-          <paper-icon-item>
-            <iron-icon icon="notification:sync" item-icon></iron-icon>
-            <span i18n-content="syncPageTitle"></span>
-          </paper-icon-item>
         </paper-menu>
       </paper-submenu>
     </paper-menu>

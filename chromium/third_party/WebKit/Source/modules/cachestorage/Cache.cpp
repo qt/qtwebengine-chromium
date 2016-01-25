@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/cachestorage/Cache.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -21,6 +20,8 @@
 #include "modules/fetch/GlobalFetch.h"
 #include "modules/fetch/Request.h"
 #include "modules/fetch/Response.h"
+#include "platform/HTTPNames.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
 
@@ -158,6 +159,43 @@ private:
     Persistent<ScriptPromiseResolver> m_resolver;
 };
 
+// Used for UMA. Append only.
+enum class ResponseType {
+    BasicType,
+    CORSType,
+    DefaultType,
+    ErrorType,
+    OpaqueType,
+    OpaqueRedirectType,
+    EnumMax,
+};
+
+void RecordResponseTypeForAdd(const Member<Response>& response)
+{
+    ResponseType type = ResponseType::EnumMax;
+    switch (response->response()->type()) {
+    case FetchResponseData::BasicType:
+        type = ResponseType::BasicType;
+        break;
+    case FetchResponseData::CORSType:
+        type = ResponseType::CORSType;
+        break;
+    case FetchResponseData::DefaultType:
+        type = ResponseType::DefaultType;
+        break;
+    case FetchResponseData::ErrorType:
+        type = ResponseType::ErrorType;
+        break;
+    case FetchResponseData::OpaqueType:
+        type = ResponseType::OpaqueType;
+        break;
+    case FetchResponseData::OpaqueRedirectType:
+        type = ResponseType::OpaqueRedirectType;
+        break;
+    }
+    Platform::current()->histogramEnumeration("ServiceWorkerCache.Cache.AddResponseType", static_cast<int>(type), static_cast<int>(ResponseType::EnumMax));
+};
+
 } // namespace
 
 // TODO(nhiroki): Unfortunately, we have to go through V8 to wait for the fetch
@@ -174,6 +212,10 @@ public:
     {
         NonThrowableExceptionState exceptionState;
         HeapVector<Member<Response>> responses = toMemberNativeArray<Response, V8Response>(value.v8Value(), m_requests.size(), scriptState()->isolate(), exceptionState);
+
+        for (const auto& response : responses)
+            RecordResponseTypeForAdd(response);
+
         ScriptPromise putPromise = m_cache->putImpl(scriptState(), m_requests, responses);
         return ScriptValue(scriptState(), putPromise.v8Value());
     }
@@ -455,7 +497,7 @@ ScriptPromise Cache::addAllImpl(ScriptState* scriptState, const HeapVector<Membe
     for (size_t i = 0; i < requests.size(); ++i) {
         if (!requests[i]->url().protocolIsInHTTPFamily())
             return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Add/AddAll does not support schemes other than \"http\" or \"https\""));
-        if (requests[i]->method() != "GET")
+        if (requests[i]->method() != HTTPNames::GET)
             return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Add/AddAll only supports the GET request method."));
         requestInfos[i].setRequest(requests[i]);
 
@@ -491,23 +533,16 @@ ScriptPromise Cache::putImpl(ScriptState* scriptState, const HeapVector<Member<R
             barrierCallback->onError("Request scheme '" + url.protocol() + "' is unsupported");
             return promise;
         }
-        if (requests[i]->method() != "GET") {
+        if (requests[i]->method() != HTTPNames::GET) {
             barrierCallback->onError("Request method '" + requests[i]->method() + "' is unsupported");
             return promise;
         }
-        if (requests[i]->hasBody() && requests[i]->bodyUsed()) {
-            barrierCallback->onError("Request body is already used");
-            return promise;
-        }
-        if (responses[i]->hasBody() && responses[i]->bodyUsed()) {
+        ASSERT(!requests[i]->hasBody());
+
+        if (responses[i]->isBodyLocked() || responses[i]->bodyUsed()) {
             barrierCallback->onError("Response body is already used");
             return promise;
         }
-
-        if (requests[i]->hasBody())
-            requests[i]->setBodyPassed();
-        if (responses[i]->hasBody())
-            responses[i]->setBodyPassed();
 
         BodyStreamBuffer* buffer = responses[i]->internalBodyBuffer();
         if (buffer) {

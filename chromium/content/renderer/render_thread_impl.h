@@ -5,11 +5,15 @@
 #ifndef CONTENT_RENDERER_RENDER_THREAD_IMPL_H_
 #define CONTENT_RENDERER_RENDER_THREAD_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/cancelable_callback.h"
+#include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/user_metrics_action.h"
@@ -72,6 +76,7 @@ class GpuVideoAcceleratorFactories;
 
 namespace scheduler {
 class RendererScheduler;
+class WebThreadBase;
 }
 
 namespace v8 {
@@ -108,12 +113,17 @@ class RasterWorkerPool;
 class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
+class RendererGpuVideoAcceleratorFactories;
 class ResourceDispatchThrottler;
-class ResourceSchedulingFilter;
 class V8SamplingProfiler;
 class VideoCaptureImplManager;
 class WebGraphicsContext3DCommandBufferImpl;
 class WebRTCIdentityService;
+
+#if defined(OS_ANDROID)
+class StreamTextureFactory;
+class SynchronousCompositorFilter;
+#endif
 
 #if defined(COMPILER_MSVC)
 // See explanation for other RenderViewHostImpl which is the same issue.
@@ -159,8 +169,8 @@ class CONTENT_EXPORT RenderThreadImpl
   std::string GetLocale() override;
   IPC::SyncMessageFilter* GetSyncMessageFilter() override;
   scoped_refptr<base::SingleThreadTaskRunner> GetIOMessageLoopProxy() override;
-  void AddRoute(int32 routing_id, IPC::Listener* listener) override;
-  void RemoveRoute(int32 routing_id) override;
+  void AddRoute(int32_t routing_id, IPC::Listener* listener) override;
+  void RemoveRoute(int32_t routing_id) override;
   int GenerateRoutingID() override;
   void AddFilter(IPC::MessageFilter* filter) override;
   void RemoveFilter(IPC::MessageFilter* filter) override;
@@ -175,11 +185,11 @@ class CONTENT_EXPORT RenderThreadImpl
       size_t buffer_size) override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
   void RegisterExtension(v8::Extension* extension) override;
-  void ScheduleIdleHandler(int64 initial_delay_ms) override;
+  void ScheduleIdleHandler(int64_t initial_delay_ms) override;
   void IdleHandler() override;
-  int64 GetIdleNotificationDelayInMs() const override;
+  int64_t GetIdleNotificationDelayInMs() const override;
   void SetIdleNotificationDelayInMs(
-      int64 idle_notification_delay_in_ms) override;
+      int64_t idle_notification_delay_in_ms) override;
   void UpdateHistograms(int sequence_number) override;
   int PostTaskToAllWebWorkers(const base::Closure& closure) override;
   bool ResolveProxy(const GURL& url, std::string* proxy_list) override;
@@ -193,7 +203,8 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsLcdTextEnabled() override;
   bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
-  bool IsPersistentGpuMemoryBufferEnabled() override;
+  bool IsPartialRasterEnabled() override;
+  bool IsGpuMemoryBufferCompositorResourcesEnabled() override;
   bool IsElasticOverscrollEnabled() override;
   std::vector<unsigned> GetImageTextureTargets() override;
   scoped_refptr<base::SingleThreadTaskRunner>
@@ -279,6 +290,12 @@ class CONTENT_EXPORT RenderThreadImpl
   RendererDemuxerAndroid* renderer_demuxer() {
     return renderer_demuxer_.get();
   }
+
+  SynchronousCompositorFilter* sync_compositor_message_filter() {
+    return sync_compositor_message_filter_.get();
+  }
+
+  scoped_refptr<StreamTextureFactory> GetStreamTexureFactory();
 #endif
 
   // Creates the embedder implementation of WebMediaStreamCenter.
@@ -333,7 +350,7 @@ class CONTENT_EXPORT RenderThreadImpl
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
+  media::GpuVideoAcceleratorFactories* GetGpuFactories();
 
   scoped_refptr<cc_blink::ContextProviderWebContext>
   SharedMainThreadContextProvider();
@@ -382,7 +399,15 @@ class CONTENT_EXPORT RenderThreadImpl
     std::string ConvertToCustomHistogramName(const char* histogram_name) const;
 
    private:
+    FRIEND_TEST_ALL_PREFIXES(RenderThreadImplUnittest,
+                             IdentifyAlexaTop10NonGoogleSite);
     friend class RenderThreadImplUnittest;
+
+    // Converts a host name to a suffix for histograms
+    std::string HostToCustomHistogramSuffix(const std::string& host);
+
+    // Helper function to identify a certain set of top pages
+    bool IsAlexaTop10NonGoogleSite(const std::string& host);
 
     // Used for updating the information on which is the common host which all
     // RenderView's share (if any). If there is no common host, this function is
@@ -417,8 +442,8 @@ class CONTENT_EXPORT RenderThreadImpl
   void WidgetHidden();
   void WidgetRestored();
 
-  void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
-  void RemoveEmbeddedWorkerRoute(int32 routing_id);
+  void AddEmbeddedWorkerRoute(int32_t routing_id, IPC::Listener* listener);
+  void RemoveEmbeddedWorkerRoute(int32_t routing_id);
 
   void RegisterPendingRenderFrameConnect(
       int routing_id,
@@ -443,11 +468,13 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<base::SingleThreadTaskRunner> GetIOThreadTaskRunner() override;
   scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t size) override;
   CreateCommandBufferResult CreateViewCommandBuffer(
-      int32 surface_id,
+      int32_t surface_id,
       const GPUCreateCommandBufferConfig& init_params,
-      int32 route_id) override;
+      int32_t route_id) override;
 
   void Init();
+
+  void InitializeCompositorThread();
 
   void OnCreateNewFrame(FrameMsg_NewFrame_Params params);
   void OnCreateNewFrameProxy(int routing_id,
@@ -543,7 +570,7 @@ class CONTENT_EXPORT RenderThreadImpl
   int hidden_widget_count_;
 
   // The current value of the idle notification timer delay.
-  int64 idle_notification_delay_in_ms_;
+  int64_t idle_notification_delay_in_ms_;
 
   // The number of idle handler calls that skip sending idle notifications.
   int idle_notifications_to_skip_;
@@ -573,7 +600,10 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<base::Thread> file_thread_;
 
   // May be null if overridden by ContentRendererClient.
-  scoped_ptr<base::Thread> compositor_thread_;
+  scoped_ptr<scheduler::WebThreadBase> compositor_thread_;
+
+  // Utility class to provide GPU functionalities to media.
+  scoped_ptr<content::RendererGpuVideoAcceleratorFactories> gpu_factories_;
 
   // Thread for running multimedia operations (e.g., video decoding).
   scoped_ptr<base::Thread> media_thread_;
@@ -590,15 +620,18 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
+#if defined(OS_ANDROID)
+  scoped_refptr<SynchronousCompositorFilter> sync_compositor_message_filter_;
+  scoped_refptr<StreamTextureFactory> stream_texture_factory_;
+#endif
+
   scoped_refptr<BluetoothMessageFilter> bluetooth_message_filter_;
 
-  scoped_refptr<cc_blink::ContextProviderWebContext>
-      shared_main_thread_contexts_;
+  scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
 
   base::ObserverList<RenderProcessObserver> observers_;
 
   scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
-  scoped_refptr<ContextProviderCommandBuffer> gpu_va_context_provider_;
 
   scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
   scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;
@@ -616,8 +649,6 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<base::SingleThreadTaskRunner>
       main_thread_compositor_task_runner_;
 
-  scoped_refptr<ResourceSchedulingFilter> resource_scheduling_filter_;
-
   // Compositor settings.
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
@@ -626,7 +657,8 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
-  bool is_persistent_gpu_memory_buffer_enabled_;
+  bool is_gpu_memory_buffer_compositor_resources_enabled_;
+  bool is_partial_raster_enabled_;
   bool is_elastic_overscroll_enabled_;
   std::vector<unsigned> use_image_texture_targets_;
   bool are_image_decode_tasks_enabled_;

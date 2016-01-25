@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/presentation/PresentationRequest.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -63,12 +62,12 @@ ExecutionContext* PresentationRequest::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool PresentationRequest::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool capture)
+bool PresentationRequest::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (eventType == EventTypeNames::connectionavailable)
         UseCounter::count(executionContext(), UseCounter::PresentationRequestConnectionAvailableEventListener);
 
-    return EventTarget::addEventListener(eventType, listener, capture);
+    return EventTarget::addEventListenerInternal(eventType, listener, options);
 }
 
 bool PresentationRequest::hasPendingActivity() const

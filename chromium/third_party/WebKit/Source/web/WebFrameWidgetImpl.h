@@ -57,13 +57,16 @@ class WebLayer;
 class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
+class WebFrameWidgetImpl;
+
+using WebFrameWidgetsSet = WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<WebFrameWidgetImpl>>;
 
 class WebFrameWidgetImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebFrameWidgetImpl>
     , public WebFrameWidget
     , public PageWidgetEventHandler {
 public:
     static WebFrameWidgetImpl* create(WebWidgetClient*, WebLocalFrame*);
-    static HashSet<WebFrameWidgetImpl*>& allInstances();
+    static WebFrameWidgetsSet& allInstances();
 
     // WebWidget functions:
     void close() override;
@@ -71,22 +74,21 @@ public:
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
     void resizeVisualViewport(const WebSize&) override;
-    void resizePinchViewport(const WebSize&) override;
     void willEndLiveResize() override;
     void didEnterFullScreen() override;
     void didExitFullScreen() override;
-    void beginFrame(const WebBeginFrameArgs&) override;
-    void layout() override;
+    void beginFrame(double lastFrameTimeMonotonic) override;
+    void updateAllLifecyclePhases() override;
     void paint(WebCanvas*, const WebRect&) override;
     void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
     void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
     void themeChanged() override;
-    bool handleInputEvent(const WebInputEvent&) override;
+    WebInputEventResult handleInputEvent(const WebInputEvent&) override;
     void setCursorVisibilityState(bool isVisible) override;
     bool hasTouchEventHandlersAt(const WebPoint&) override;
 
     void applyViewportDeltas(
-        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& visualViewportDelta,
         const WebFloatSize& mainFrameDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float pageScaleDelta,
@@ -120,7 +122,7 @@ public:
     // Returns the currently focused Element or null if no element has focus.
     Element* focusedElement() const;
 
-    void scheduleAnimation();
+    void scheduleAnimation() override;
 
     PaintLayerCompositor* compositor() const;
     void setRootGraphicsLayer(GraphicsLayer*);
@@ -168,10 +170,10 @@ private:
     HitTestResult hitTestResultForRootFramePos(const IntPoint& posInRootFrame);
 
     // Returns true if the event was actually processed.
-    bool keyEventDefault(const WebKeyboardEvent&);
+    WebInputEventResult keyEventDefault(const WebKeyboardEvent&);
 
     // Returns true if the view was scrolled.
-    bool scrollViewWithKeyboard(int keyCode, int modifiers);
+    WebInputEventResult scrollViewWithKeyboard(int keyCode, int modifiers);
 
     void initializeLayerTreeView();
 
@@ -186,10 +188,10 @@ private:
     void handleMouseLeave(LocalFrame&, const WebMouseEvent&) override;
     void handleMouseDown(LocalFrame&, const WebMouseEvent&) override;
     void handleMouseUp(LocalFrame&, const WebMouseEvent&) override;
-    bool handleMouseWheel(LocalFrame&, const WebMouseWheelEvent&) override;
-    bool handleGestureEvent(const WebGestureEvent&) override;
-    bool handleKeyEvent(const WebKeyboardEvent&) override;
-    bool handleCharEvent(const WebKeyboardEvent&) override;
+    WebInputEventResult handleMouseWheel(LocalFrame&, const WebMouseWheelEvent&) override;
+    WebInputEventResult handleGestureEvent(const WebGestureEvent&) override;
+    WebInputEventResult handleKeyEvent(const WebKeyboardEvent&) override;
+    WebInputEventResult handleCharEvent(const WebKeyboardEvent&) override;
 
     WebViewImpl* view() const { return m_localRoot->viewImpl(); }
 

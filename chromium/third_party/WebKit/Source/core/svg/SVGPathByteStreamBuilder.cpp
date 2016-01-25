@@ -17,11 +17,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGPathByteStreamBuilder.h"
 
 #include "core/svg/SVGPathByteStream.h"
-#include "core/svg/SVGPathSeg.h"
+#include "core/svg/SVGPathData.h"
 #include "platform/geometry/FloatPoint.h"
 
 namespace blink {
@@ -36,8 +35,7 @@ public:
     }
     ~CoalescingBuffer()
     {
-        for (size_t i = 0; i < m_currentOffset; ++i)
-            m_byteStream.append(m_bytes[i]);
+        m_byteStream.append(m_bytes, m_currentOffset);
     }
 
     template<typename DataType>

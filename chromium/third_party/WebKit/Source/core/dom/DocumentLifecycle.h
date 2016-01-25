@@ -39,7 +39,7 @@
 namespace blink {
 
 class CORE_EXPORT DocumentLifecycle {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(DocumentLifecycle);
 public:
     enum State {
@@ -76,10 +76,6 @@ public:
         InPaint,
         PaintClean,
 
-        // When RuntimeEnabledFeatures::slimmingPaintV2Enabled.
-        InCompositingForSlimmingPaintV2,
-        CompositingForSlimmingPaintV2Clean,
-
         // Once the document starts shutting down, we cannot return
         // to the style/layout/compositing states.
         Stopping,
@@ -100,7 +96,7 @@ public:
     };
 
     class DeprecatedTransition {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
         WTF_MAKE_NONCOPYABLE(DeprecatedTransition);
     public:
         DeprecatedTransition(State from, State to);
@@ -134,6 +130,14 @@ public:
         DocumentLifecycle& m_documentLifecycle;
     };
 
+    class PreventThrottlingScope {
+        STACK_ALLOCATED();
+        WTF_MAKE_NONCOPYABLE(PreventThrottlingScope);
+    public:
+        PreventThrottlingScope(DocumentLifecycle&);
+        ~PreventThrottlingScope();
+    };
+
     DocumentLifecycle();
     ~DocumentLifecycle();
 
@@ -157,6 +161,12 @@ public:
         m_detachCount--;
     }
 
+    bool throttlingAllowed() const;
+
+#if ENABLE(ASSERT)
+    static const char* stateAsDebugString(const State);
+#endif
+
 private:
 #if ENABLE(ASSERT)
     bool canAdvanceTo(State) const;
@@ -175,8 +185,7 @@ inline bool DocumentLifecycle::stateAllowsTreeMutations() const
         && m_state != InPerformLayout
         && m_state != InCompositingUpdate
         && m_state != InUpdatePaintProperties
-        && m_state != InPaint
-        && m_state != InCompositingForSlimmingPaintV2;
+        && m_state != InPaint;
 }
 
 inline bool DocumentLifecycle::stateAllowsLayoutTreeMutations() const
@@ -201,7 +210,6 @@ inline bool DocumentLifecycle::stateAllowsDetach() const
         || m_state == PaintInvalidationClean
         || m_state == UpdatePaintPropertiesClean
         || m_state == PaintClean
-        || m_state == CompositingForSlimmingPaintV2Clean
         || m_state == Stopping;
 }
 
@@ -211,8 +219,7 @@ inline bool DocumentLifecycle::stateAllowsLayoutInvalidation() const
         && m_state != InCompositingUpdate
         && m_state != InPaintInvalidation
         && m_state != InUpdatePaintProperties
-        && m_state != InPaint
-        && m_state != InCompositingForSlimmingPaintV2;
+        && m_state != InPaint;
 }
 
 } // namespace blink

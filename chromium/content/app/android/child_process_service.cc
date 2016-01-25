@@ -11,6 +11,7 @@
 #include "base/android/library_loader/library_loader_hooks.h"
 #include "base/android/memory_pressure_listener_android.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/posix/global_descriptors.h"
 #include "content/child/child_thread_impl.h"
 #include "content/common/android/surface_texture_manager.h"
@@ -120,6 +121,14 @@ class SurfaceTextureManagerImpl : public SurfaceTextureManager,
         ANativeWindow_fromSurface(env, surface.j_surface().obj());
 
     return native_window;
+  }
+
+  // Overridden from GpuSurfaceLookup:
+  gfx::ScopedJavaSurface AcquireJavaSurface(int surface_id) override {
+    JNIEnv* env = base::android::AttachCurrentThread();
+    return gfx::ScopedJavaSurface(
+        content::Java_ChildProcessService_getViewSurface(env, service_.obj(),
+                                                         surface_id));
   }
 
  private:

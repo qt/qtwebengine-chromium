@@ -286,27 +286,45 @@ TreeOutline.prototype = {
             event.consume(true);
     },
 
+    /**
+     * @param {!TreeElement} treeElement
+     * @param {boolean} center
+     */
+    _deferredScrollIntoView: function(treeElement, center)
+    {
+        if (!this._treeElementToScrollIntoView)
+            this.element.window().requestAnimationFrame(deferredScrollIntoView.bind(this));
+        this._treeElementToScrollIntoView = treeElement;
+        this._centerUponScrollIntoView = center;
+        /**
+         * @this {TreeOutline}
+         */
+        function deferredScrollIntoView()
+        {
+            this._treeElementToScrollIntoView.listItemElement.scrollIntoViewIfNeeded(this._centerUponScrollIntoView);
+            delete this._treeElementToScrollIntoView;
+            delete this._centerUponScrollIntoView;
+        }
+    },
+
     __proto__: WebInspector.Object.prototype
 }
 
 /**
  * @constructor
  * @extends {TreeOutline}
- * @param {string=} className
  */
-function TreeOutlineInShadow(className)
+function TreeOutlineInShadow()
 {
     TreeOutline.call(this);
     var innerElement = this.element;
     innerElement.classList.add("tree-outline");
-    if (className)
-        innerElement.classList.add(className);
 
     // Redefine element to the external one.
     this.element = createElement("div");
-    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element);
-    this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/treeoutline.css"));
-    this._shadowRoot.appendChild(innerElement);
+    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element, "ui/treeoutline.css");
+    this._disclosureElement = this._shadowRoot.createChild("div", "tree-outline-disclosure");
+    this._disclosureElement.appendChild(innerElement);
     this._renderSelection = true;
 }
 
@@ -316,7 +334,12 @@ TreeOutlineInShadow.prototype = {
      */
     registerRequiredCSS: function(cssFile)
     {
-        this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement(cssFile));
+        WebInspector.appendStyle(this._shadowRoot, cssFile);
+    },
+
+    hideOverflow: function()
+    {
+        this._disclosureElement.classList.add("tree-outline-disclosure-hide-overflow");
     },
 
     __proto__: TreeOutline.prototype
@@ -605,17 +628,53 @@ TreeElement.prototype = {
         return this._title;
     },
 
+    /**
+     * @param {string|!Node} x
+     */
     set title(x)
     {
+        if (this._title === x)
+            return;
         this._title = x;
-        if (typeof this._title === "string")
-            this._listItemNode.textContent = this._title;
-        else {
-            this._listItemNode.removeChildren();
-            if (this._title)
-                this._listItemNode.appendChild(this._title);
+
+        if (typeof x === "string") {
+            this._titleElement = createElementWithClass("span", "tree-element-title");
+            this._titleElement.textContent = x;
+            this.tooltip = x;
+        } else {
+            this._titleElement = x;
+            this.tooltip = "";
+        }
+
+        this._listItemNode.removeChildren();
+        if (this._iconElement)
+            this._listItemNode.appendChild(this._iconElement);
+
+        this._listItemNode.appendChild(this._titleElement);
+        this._ensureSelection();
+    },
+
+    /**
+     * @param {!WebInspector.InplaceEditor.Config} editingConfig
+     */
+    startEditingTitle: function(editingConfig)
+    {
+        WebInspector.InplaceEditor.startEditing(this._titleElement, editingConfig);
+        this.treeOutline._shadowRoot.getSelection().setBaseAndExtent(this._titleElement, 0, this._titleElement, 1);
+    },
+
+    createIcon()
+    {
+        if (!this._iconElement) {
+            this._iconElement = createElementWithClass("div", "icon");
+            this._listItemNode.insertBefore(this._iconElement, this._listItemNode.firstChild);
             this._ensureSelection();
         }
+    },
+
+    get tooltip()
+    {
+        return this._tooltip || "";
     },
 
     /**
@@ -623,6 +682,9 @@ TreeElement.prototype = {
      */
     set tooltip(x)
     {
+        if (this._tooltip === x)
+            return;
+        this._tooltip = x;
         this._listItemNode.title = x;
     },
 
@@ -693,7 +755,7 @@ TreeElement.prototype = {
         if (!this.treeOutline || !this.treeOutline._renderSelection)
             return;
         if (!this._selectionElement)
-            this._selectionElement = createElementWithClass("div", "selection");
+            this._selectionElement = createElementWithClass("div", "selection fill");
         this._listItemNode.insertBefore(this._selectionElement, this.listItemElement.firstChild);
     },
 
@@ -852,7 +914,10 @@ TreeElement.prototype = {
         }
     },
 
-    reveal: function()
+    /**
+     * @param {boolean=} center
+     */
+    reveal: function(center)
     {
         var currentAncestor = this.parent;
         while (currentAncestor && !currentAncestor.root) {
@@ -861,9 +926,7 @@ TreeElement.prototype = {
             currentAncestor = currentAncestor.parent;
         }
 
-        this.listItemElement.scrollIntoViewIfNeeded();
-
-        this.onreveal();
+        this.treeOutline._deferredScrollIntoView(this, !!center);
     },
 
     /**
@@ -914,8 +977,6 @@ TreeElement.prototype = {
             return false;
         this.treeOutline.selectedTreeElement = this;
         this._listItemNode.classList.add("selected");
-        if (this._selectionElement)
-            this._selectionElement.style.height = this._listItemNode.offsetHeight + "px";
         this.treeOutline.dispatchEventToListeners(TreeOutline.Events.ElementSelected, this);
         return this.onselect(selectedByUser);
     },
@@ -925,7 +986,7 @@ TreeElement.prototype = {
      */
     revealAndSelect: function(omitFocus)
     {
-        this.reveal();
+        this.reveal(true);
         this.select(omitFocus);
     },
 
@@ -1006,10 +1067,6 @@ TreeElement.prototype = {
     ondblclick: function(e)
     {
         return false;
-    },
-
-    onreveal: function()
-    {
     },
 
     /**

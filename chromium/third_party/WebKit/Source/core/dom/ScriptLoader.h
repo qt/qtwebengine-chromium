@@ -35,10 +35,10 @@ namespace blink {
 class Element;
 class ScriptLoaderClient;
 class ScriptSourceCode;
-
+class LocalFrame;
 
 class CORE_EXPORT ScriptLoader : public NoBaseWillBeGarbageCollectedFinalized<ScriptLoader>, private ScriptResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScriptLoader);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ScriptLoader);
 public:
     static PassOwnPtrWillBeRawPtr<ScriptLoader> create(Element* element, bool createdByParser, bool isEvaluated)
     {
@@ -92,6 +92,7 @@ protected:
 private:
     bool ignoresLoadRequest() const;
     bool isScriptForEventSupported() const;
+    void logScriptMimetype(ScriptResource*, LocalFrame*, String);
 
     bool fetchScript(const String& sourceUrl, FetchRequest::DeferOption);
 
@@ -99,6 +100,7 @@ private:
 
     // ResourceClient
     void notifyFinished(Resource*) override;
+    String debugName() const override { return "ScriptLoader"; }
 
     RawPtrWillBeMember<Element> m_element;
     ResourcePtr<ScriptResource> m_resource;

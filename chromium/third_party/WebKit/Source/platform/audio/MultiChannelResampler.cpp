@@ -26,12 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/MultiChannelResampler.h"
-
 #include "platform/audio/AudioBus.h"
 
 namespace blink {
@@ -120,4 +115,3 @@ void MultiChannelResampler::process(AudioSourceProvider* provider, AudioBus* des
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

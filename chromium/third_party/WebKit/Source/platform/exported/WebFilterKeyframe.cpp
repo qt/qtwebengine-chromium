@@ -22,7 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebFilterKeyframe.h"
 
 #include "wtf/PassOwnPtr.h"
@@ -31,7 +30,7 @@ namespace blink {
 
 WebFilterKeyframe::WebFilterKeyframe(double time, PassOwnPtr<WebFilterOperations> value)
     : m_time(time)
-    , m_value(value)
+    , m_value(std::move(value))
 {
 }
 

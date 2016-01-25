@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 
+#include <stdint.h>
+
 #include <limits>
 
 #include "base/logging.h"
@@ -48,13 +50,14 @@ bool TransferBufferManager::Initialize() {
   // so don't register a dump provider.
   if (memory_tracker_) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "gpu::TransferBufferManager",
+        base::ThreadTaskRunnerHandle::Get());
   }
   return true;
 }
 
 bool TransferBufferManager::RegisterTransferBuffer(
-    int32 id,
+    int32_t id,
     scoped_ptr<BufferBacking> buffer_backing) {
   if (id <= 0) {
     DVLOG(0) << "Cannot register transfer buffer with non-positive ID.";
@@ -68,7 +71,7 @@ bool TransferBufferManager::RegisterTransferBuffer(
   }
 
   // Register the shared memory with the ID.
-  scoped_refptr<Buffer> buffer(new gpu::Buffer(buffer_backing.Pass()));
+  scoped_refptr<Buffer> buffer(new gpu::Buffer(std::move(buffer_backing)));
 
   // Check buffer alignment is sane.
   DCHECK(!(reinterpret_cast<uintptr_t>(buffer->memory()) &
@@ -81,7 +84,7 @@ bool TransferBufferManager::RegisterTransferBuffer(
   return true;
 }
 
-void TransferBufferManager::DestroyTransferBuffer(int32 id) {
+void TransferBufferManager::DestroyTransferBuffer(int32_t id) {
   BufferMap::iterator it = registered_buffers_.find(id);
   if (it == registered_buffers_.end()) {
     DVLOG(0) << "Transfer buffer ID was not registered.";
@@ -94,7 +97,7 @@ void TransferBufferManager::DestroyTransferBuffer(int32 id) {
   registered_buffers_.erase(it);
 }
 
-scoped_refptr<Buffer> TransferBufferManager::GetTransferBuffer(int32 id) {
+scoped_refptr<Buffer> TransferBufferManager::GetTransferBuffer(int32_t id) {
   if (id == 0)
     return NULL;
 
@@ -109,7 +112,7 @@ bool TransferBufferManager::OnMemoryDump(
     const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
   for (const auto& buffer_entry : registered_buffers_) {
-    int32 buffer_id = buffer_entry.first;
+    int32_t buffer_id = buffer_entry.first;
     const Buffer* buffer = buffer_entry.second.get();
     std::string dump_name =
         base::StringPrintf("gpu/transfer_memory/client_%d/buffer_%d",
@@ -129,4 +132,3 @@ bool TransferBufferManager::OnMemoryDump(
 }
 
 }  // namespace gpu
-

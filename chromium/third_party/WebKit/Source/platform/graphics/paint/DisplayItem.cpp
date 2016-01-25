@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/DisplayItem.h"
 
 namespace blink {
@@ -24,13 +23,13 @@ static WTF::String paintPhaseAsDebugString(int paintPhase)
     // Must be kept in sync with PaintPhase.
     switch (paintPhase) {
     case 0: return "PaintPhaseBlockBackground";
-    case 1: return "PaintPhaseChildBlockBackground";
+    case 1: return "PaintPhaseSelfBlockBackground";
     case 2: return "PaintPhaseChildBlockBackgrounds";
     case 3: return "PaintPhaseFloat";
     case 4: return "PaintPhaseForeground";
     case 5: return "PaintPhaseOutline";
-    case 6: return "PaintPhaseChildOutlines";
-    case 7: return "PaintPhaseSelfOutline";
+    case 6: return "PaintPhaseSelfOutline";
+    case 7: return "PaintPhaseChildOutlines";
     case 8: return "PaintPhaseSelection";
     case 9: return "PaintPhaseTextClip";
     case 10: return "PaintPhaseMask";
@@ -83,6 +82,7 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(PopupListBoxBackground);
         DEBUG_STRING_CASE(PopupListBoxRow);
         DEBUG_STRING_CASE(PrintedContentBackground);
+        DEBUG_STRING_CASE(PrintedContentDestinationLocations);
         DEBUG_STRING_CASE(PrintedContentLineBoundary);
         DEBUG_STRING_CASE(PrintedContentPDFURLRect);
         DEBUG_STRING_CASE(Resizer);
@@ -104,8 +104,10 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ScrollbarVertical);
         DEBUG_STRING_CASE(SelectionGap);
         DEBUG_STRING_CASE(SelectionTint);
-        DEBUG_STRING_CASE(TableCellBackgroundFromContainers);
-        DEBUG_STRING_CASE(TableCellBackgroundFromSelfPaintingRow);
+        DEBUG_STRING_CASE(TableCellBackgroundFromColumnGroup);
+        DEBUG_STRING_CASE(TableCellBackgroundFromColumn);
+        DEBUG_STRING_CASE(TableCellBackgroundFromSection);
+        DEBUG_STRING_CASE(TableCellBackgroundFromRow);
         DEBUG_STRING_CASE(VideoBitmap);
         DEBUG_STRING_CASE(WebPlugin);
         DEBUG_STRING_CASE(WebFont);
@@ -138,6 +140,7 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ClipLayerOverflowControls);
         DEBUG_STRING_CASE(ClipNodeImage);
         DEBUG_STRING_CASE(ClipPopupListBoxFrame);
+        DEBUG_STRING_CASE(ClipScrollbarsToBoxBounds);
         DEBUG_STRING_CASE(ClipSelectionImage);
         DEBUG_STRING_CASE(PageWidgetDelegateClip);
         DEBUG_STRING_CASE(ClipPrintedPage);
@@ -149,15 +152,6 @@ static String transform3DTypeAsDebugString(DisplayItem::Type type)
 {
     switch (type) {
         DEBUG_STRING_CASE(Transform3DElementTransform);
-        DEFAULT_CASE;
-    }
-}
-
-static String subsequenceTypeAsDebugString(DisplayItem::Type type)
-{
-    switch (type) {
-        DEBUG_STRING_CASE(SubsequenceNegativeZOrder);
-        DEBUG_STRING_CASE(SubsequenceNormalFlowAndPositiveZOrder);
         DEFAULT_CASE;
     }
 }
@@ -189,13 +183,6 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndTransform3DType(type))
         return "End" + transform3DTypeAsDebugString(endTransform3DTypeToTransform3DType(type));
 
-    if (isSubsequenceType(type))
-        return subsequenceTypeAsDebugString(type);
-    if (isEndSubsequenceType(type))
-        return "End" + subsequenceTypeAsDebugString(endSubsequenceTypeToSubsequenceType(type));
-    if (isCachedSubsequenceType(type))
-        return "Cached" + subsequenceTypeAsDebugString(cachedSubsequenceTypeToSubsequenceType(type));
-
     switch (type) {
         DEBUG_STRING_CASE(BeginFilter);
         DEBUG_STRING_CASE(EndFilter);
@@ -209,6 +196,9 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
         DEBUG_STRING_CASE(EndFixedPosition);
         DEBUG_STRING_CASE(BeginFixedPositionContainer);
         DEBUG_STRING_CASE(EndFixedPositionContainer);
+        DEBUG_STRING_CASE(Subsequence);
+        DEBUG_STRING_CASE(EndSubsequence);
+        DEBUG_STRING_CASE(CachedSubsequence);
         DEBUG_STRING_CASE(UninitializedType);
         DEFAULT_CASE;
     }
@@ -225,14 +215,14 @@ WTF::String DisplayItem::asDebugString() const
 
 void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
-    if (!isValid()) {
-        stringBuilder.append("valid: false, originalDebugString: ");
+    if (!hasValidClient()) {
+        stringBuilder.append("validClient: false, originalDebugString: ");
         // This is the original debug string which is in json format.
         stringBuilder.append(clientDebugString());
         return;
     }
 
-    stringBuilder.append(String::format("client: \"%p", client()));
+    stringBuilder.append(String::format("client: \"%p", &client()));
     if (!clientDebugString().isEmpty()) {
         stringBuilder.append(' ');
         stringBuilder.append(clientDebugString());

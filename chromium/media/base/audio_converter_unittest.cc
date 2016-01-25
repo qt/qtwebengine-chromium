@@ -5,8 +5,11 @@
 // MSVC++ requires this to be set before any other includes to get M_PI.
 #define _USE_MATH_DEFINES
 
+#include <stddef.h>
+
 #include <cmath>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_number_conversions.h"
@@ -111,7 +114,7 @@ class AudioConverterTest
     converter_->Convert(audio_bus_.get());
 
     // Render expected audio data.
-    expected_callback_->Render(expected_audio_bus_.get(), 0);
+    expected_callback_->Render(expected_audio_bus_.get(), 0, 0);
 
     // Zero out unused channels in the expected AudioBus just as AudioConverter
     // would during channel mixing.

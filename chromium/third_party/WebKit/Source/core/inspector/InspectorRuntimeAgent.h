@@ -44,10 +44,13 @@ class InjectedScriptManager;
 class JSONArray;
 class ScriptState;
 class V8Debugger;
+class V8RuntimeAgent;
 
 typedef String ErrorString;
 
-class CORE_EXPORT InspectorRuntimeAgent : public InspectorBaseAgent<InspectorRuntimeAgent, InspectorFrontend::Runtime>, public InspectorBackendDispatcher::RuntimeCommandHandler {
+class CORE_EXPORT InspectorRuntimeAgent
+    : public InspectorBaseAgent<InspectorRuntimeAgent, InspectorFrontend::Runtime>
+    , public InspectorBackendDispatcher::RuntimeCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorRuntimeAgent);
 public:
     class Client {
@@ -61,10 +64,15 @@ public:
     ~InspectorRuntimeAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
+    // InspectorBaseAgent overrides.
+    void init() override;
+    void setFrontend(InspectorFrontend*) override;
+    void clearFrontend() override;
+    void restore() override;
+
     // Part of the protocol.
     void enable(ErrorString*) override;
     void disable(ErrorString*) override;
-    void restore() override;
 
     void evaluate(ErrorString*,
         const String& expression,
@@ -93,23 +101,23 @@ public:
     void isRunRequired(ErrorString*, bool* out_result) override;
     void setCustomObjectFormatterEnabled(ErrorString*, bool) final;
 
-protected:
-    InspectorRuntimeAgent(InjectedScriptManager*, V8Debugger*, Client*);
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
-
     virtual void muteConsole() = 0;
     virtual void unmuteConsole() = 0;
 
+protected:
+    InspectorRuntimeAgent(InjectedScriptManager*, V8Debugger*, Client*);
+    virtual ScriptState* defaultScriptState() = 0;
+
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
-    void addExecutionContextToFrontend(int executionContextId, const String& type, const String& origin, const String& humanReadableName, const String& frameId);
+    void reportExecutionContextCreated(ScriptState*, const String& type, const String& origin, const String& humanReadableName, const String& frameId);
+    void reportExecutionContextDestroyed(ScriptState*);
 
     bool m_enabled;
 
 private:
-    class InjectedScriptCallScope;
 
+    OwnPtr<V8RuntimeAgent> m_v8RuntimeAgent;
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    V8Debugger* m_debugger;
     Client* m_client;
 };
 

@@ -4,7 +4,9 @@
 
 #include "base/metrics/histogram_base.h"
 
-#include <climits>
+#include <limits.h>
+
+#include <utility>
 
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
@@ -71,12 +73,14 @@ void HistogramBase::CheckName(const StringPiece& name) const {
   DCHECK_EQ(histogram_name(), name);
 }
 
-void HistogramBase::SetFlags(int32 flags) {
-  flags_ |= flags;
+void HistogramBase::SetFlags(int32_t flags) {
+  HistogramBase::Count old_flags = subtle::NoBarrier_Load(&flags_);
+  subtle::NoBarrier_Store(&flags_, old_flags | flags);
 }
 
-void HistogramBase::ClearFlags(int32 flags) {
-  flags_ &= ~flags;
+void HistogramBase::ClearFlags(int32_t flags) {
+  HistogramBase::Count old_flags = subtle::NoBarrier_Load(&flags_);
+  subtle::NoBarrier_Store(&flags_, old_flags & ~flags);
 }
 
 void HistogramBase::AddTime(const TimeDelta& time) {
@@ -100,7 +104,7 @@ int HistogramBase::FindCorruption(const HistogramSamples& samples) const {
 
 void HistogramBase::WriteJSON(std::string* output) const {
   Count count;
-  int64 sum;
+  int64_t sum;
   scoped_ptr<ListValue> buckets(new ListValue());
   GetCountAndBucketData(&count, &sum, buckets.get());
   scoped_ptr<DictionaryValue> parameters(new DictionaryValue());
@@ -112,14 +116,14 @@ void HistogramBase::WriteJSON(std::string* output) const {
   root.SetInteger("count", count);
   root.SetDouble("sum", static_cast<double>(sum));
   root.SetInteger("flags", flags());
-  root.Set("params", parameters.Pass());
-  root.Set("buckets", buckets.Pass());
+  root.Set("params", std::move(parameters));
+  root.Set("buckets", std::move(buckets));
   root.SetInteger("pid", GetCurrentProcId());
   serializer.Serialize(root);
 }
 
 void HistogramBase::FindAndRunCallback(HistogramBase::Sample sample) const {
-  if ((flags_ & kCallbackExists) == 0)
+  if ((flags() & kCallbackExists) == 0)
     return;
 
   StatisticsRecorder::OnSampleCallback cb =

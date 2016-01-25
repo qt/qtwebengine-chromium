@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/LineBoxListPainter.h"
 
 #include "core/layout/LayoutBoxModelObject.h"
@@ -14,7 +13,7 @@
 #include "core/paint/InlinePainter.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
@@ -30,7 +29,7 @@ static void addPDFURLRectsForInlineChildrenRecursively(const LayoutObject& layou
 
 void LineBoxListPainter::paint(const LayoutBoxModelObject& layoutObject, const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
-    ASSERT(paintInfo.phase != PaintPhaseOutline && paintInfo.phase != PaintPhaseSelfOutline && paintInfo.phase != PaintPhaseChildOutlines);
+    ASSERT(!shouldPaintSelfOutline(paintInfo.phase) && !shouldPaintDescendantOutlines(paintInfo.phase));
 
     // Only paint during the foreground/selection phases.
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseTextClip && paintInfo.phase != PaintPhaseMask)
@@ -47,7 +46,7 @@ void LineBoxListPainter::paint(const LayoutBoxModelObject& layoutObject, const P
     if (!m_lineBoxList.firstLineBox())
         return;
 
-    if (!m_lineBoxList.anyLineIntersectsRect(LineLayoutBoxModel(const_cast<LayoutBoxModelObject*>(&layoutObject)), LayoutRect(paintInfo.rect), paintOffset))
+    if (!m_lineBoxList.anyLineIntersectsRect(LineLayoutBoxModel(const_cast<LayoutBoxModelObject*>(&layoutObject)), paintInfo.cullRect(), paintOffset))
         return;
 
     PaintInfo info(paintInfo);
@@ -56,31 +55,31 @@ void LineBoxListPainter::paint(const LayoutBoxModelObject& layoutObject, const P
     // them. Note that boxes can easily overlap, so we can't make any assumptions
     // based off positions of our first line box or our last line box.
     for (InlineFlowBox* curr = m_lineBoxList.firstLineBox(); curr; curr = curr->nextLineBox()) {
-        if (m_lineBoxList.lineIntersectsDirtyRect(LineLayoutBoxModel(const_cast<LayoutBoxModelObject*>(&layoutObject)), curr, info, paintOffset)) {
+        if (m_lineBoxList.lineIntersectsDirtyRect(LineLayoutBoxModel(const_cast<LayoutBoxModelObject*>(&layoutObject)), curr, info.cullRect(), paintOffset)) {
             RootInlineBox& root = curr->root();
             curr->paint(info, paintOffset, root.lineTop(), root.lineBottom());
         }
     }
 }
 
-static void invalidateLineBoxPaintOffsetsInternal(DisplayItemList* displayItemList, InlineFlowBox* inlineBox)
+static void invalidateLineBoxPaintOffsetsInternal(PaintController& paintController, InlineFlowBox* inlineBox)
 {
-    displayItemList->invalidatePaintOffset(*inlineBox);
+    paintController.invalidatePaintOffset(*inlineBox);
     for (InlineBox* child = inlineBox->firstChild(); child; child = child->nextOnLine()) {
         if (!child->lineLayoutItem().isText() && child->boxModelObject().hasSelfPaintingLayer())
             continue;
         if (child->isInlineFlowBox())
-            invalidateLineBoxPaintOffsetsInternal(displayItemList, toInlineFlowBox(child));
+            invalidateLineBoxPaintOffsetsInternal(paintController, toInlineFlowBox(child));
         else
-            displayItemList->invalidatePaintOffset(*child);
+            paintController.invalidatePaintOffset(*child);
     }
 }
 
 void LineBoxListPainter::invalidateLineBoxPaintOffsets(const PaintInfo& paintInfo) const
 {
-    DisplayItemList* displayItemList = paintInfo.context->displayItemList();
+    PaintController& paintController = paintInfo.context.paintController();
     for (InlineFlowBox* curr = m_lineBoxList.firstLineBox(); curr; curr = curr->nextLineBox())
-        invalidateLineBoxPaintOffsetsInternal(displayItemList, curr);
+        invalidateLineBoxPaintOffsetsInternal(paintController, curr);
 }
 
 } // namespace blink

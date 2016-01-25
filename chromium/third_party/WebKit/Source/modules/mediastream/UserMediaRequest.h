@@ -39,13 +39,12 @@
 #include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebMediaConstraints.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
 class Dictionary;
 class Document;
-class ExceptionState;
+class MediaErrorState;
 class MediaStreamConstraints;
 class MediaStreamDescriptor;
 class UserMediaController;
@@ -53,7 +52,7 @@ class UserMediaController;
 class MODULES_EXPORT UserMediaRequest final : public GarbageCollectedFinalized<UserMediaRequest>, public ContextLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(UserMediaRequest);
 public:
-    static UserMediaRequest* create(ExecutionContext*, UserMediaController*, const MediaStreamConstraints& options, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, ExceptionState&);
+    static UserMediaRequest* create(ExecutionContext*, UserMediaController*, const MediaStreamConstraints& options, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, MediaErrorState&);
     virtual ~UserMediaRequest();
 
     NavigatorUserMediaSuccessCallback* successCallback() const { return m_successCallback.get(); }
@@ -62,7 +61,7 @@ public:
 
     void start();
 
-    void succeed(PassRefPtr<MediaStreamDescriptor>);
+    void succeed(MediaStreamDescriptor*);
     void failPermissionDenied(const String& message);
     void failConstraint(const String& constraintName, const String& message);
     void failUASpecific(const String& name, const String& message, const String& constraintName);

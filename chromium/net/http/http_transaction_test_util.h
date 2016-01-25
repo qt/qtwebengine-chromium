@@ -17,6 +17,7 @@
 #include "base/strings/string16.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/net_error_details.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
@@ -32,6 +33,7 @@ namespace net {
 
 class HttpRequestHeaders;
 class IOBuffer;
+class SSLPrivateKey;
 class X509Certificate;
 struct HttpRequestInfo;
 
@@ -182,6 +184,7 @@ class MockNetworkTransaction
   int RestartIgnoringLastError(const CompletionCallback& callback) override;
 
   int RestartWithCertificate(X509Certificate* client_cert,
+                             SSLPrivateKey* client_private_key,
                              const CompletionCallback& callback) override;
 
   int RestartWithAuth(const AuthCredentials& credentials,
@@ -192,6 +195,7 @@ class MockNetworkTransaction
   int Read(IOBuffer* buf,
            int buf_len,
            const CompletionCallback& callback) override;
+  void PopulateNetErrorDetails(NetErrorDetails* details) const override;
 
   void StopCaching() override;
 
@@ -265,6 +269,8 @@ class MockNetworkTransaction
   // connection. Requires Start() be passed a BoundNetLog with a real NetLog to
   // be initialized.
   unsigned int socket_log_id_;
+
+  bool done_reading_called_;
 
   base::WeakPtrFactory<MockNetworkTransaction> weak_factory_;
 

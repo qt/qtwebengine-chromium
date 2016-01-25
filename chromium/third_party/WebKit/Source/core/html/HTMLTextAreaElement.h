@@ -43,7 +43,7 @@ public:
     bool shouldWrapText() const { return m_wrap != NoWrap; }
 
     String value() const override;
-    void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent);
+    void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent) override;
     String defaultValue() const;
     void setDefaultValue(const String&);
     int textLength() const { return value().length(); }
@@ -116,7 +116,7 @@ private:
     bool isTextFormControl() const override { return true; }
 
     void childrenChanged(const ChildrenChange&) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
@@ -125,7 +125,7 @@ private:
     bool hasCustomFocusLogic() const override;
     bool shouldShowFocusRingOnMouseFocus() const override;
     bool isKeyboardFocusable() const override;
-    void updateFocusAppearance(bool restorePreviousSelection) override;
+    void updateFocusAppearance(SelectionBehaviorOnFocus) override;
 
     void accessKeyAction(bool sendMouseEvents) override;
 

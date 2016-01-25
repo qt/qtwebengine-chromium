@@ -9,15 +9,15 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkPaint.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/compositor/callback_layer_animation_observer.h"
 #include "ui/compositor/layer.h"
-#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animation_sequence.h"
-#include "ui/compositor/paint_recorder.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/transform_util.h"
+#include "ui/views/animation/ink_drop_animation_observer.h"
+#include "ui/views/animation/ink_drop_painted_layer_delegates.h"
 #include "ui/views/view.h"
 
 namespace {
@@ -122,116 +122,6 @@ gfx::Transform CalculateRectTransform(const gfx::Point& drawn_center_point,
 
 namespace views {
 
-// Base ui::LayerDelegate stub that can be extended to paint shapes of a
-// specific color.
-class BasePaintedLayerDelegate : public ui::LayerDelegate {
- public:
-  ~BasePaintedLayerDelegate() override;
-
-  SkColor color() const { return color_; }
-
-  // ui::LayerDelegate:
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
-  base::Closure PrepareForLayerBoundsChange() override;
-
- protected:
-  explicit BasePaintedLayerDelegate(SkColor color);
-
- private:
-  // The color to paint.
-  SkColor color_;
-
-  DISALLOW_COPY_AND_ASSIGN(BasePaintedLayerDelegate);
-};
-
-BasePaintedLayerDelegate::BasePaintedLayerDelegate(SkColor color)
-    : color_(color) {}
-
-BasePaintedLayerDelegate::~BasePaintedLayerDelegate() {}
-
-void BasePaintedLayerDelegate::OnDelegatedFrameDamage(
-    const gfx::Rect& damage_rect_in_dip) {}
-
-void BasePaintedLayerDelegate::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {}
-
-base::Closure BasePaintedLayerDelegate::PrepareForLayerBoundsChange() {
-  return base::Closure();
-}
-
-// A BasePaintedLayerDelegate that paints a circle of a specified color and
-// radius.
-class CircleLayerDelegate : public BasePaintedLayerDelegate {
- public:
-  CircleLayerDelegate(SkColor color, int radius);
-  ~CircleLayerDelegate() override;
-
-  int radius() const { return radius_; }
-
-  // ui::LayerDelegate:
-  void OnPaintLayer(const ui::PaintContext& context) override;
-
- private:
-  // The radius of the circle.
-  int radius_;
-
-  DISALLOW_COPY_AND_ASSIGN(CircleLayerDelegate);
-};
-
-CircleLayerDelegate::CircleLayerDelegate(SkColor color, int radius)
-    : BasePaintedLayerDelegate(color), radius_(radius) {}
-
-CircleLayerDelegate::~CircleLayerDelegate() {}
-
-void CircleLayerDelegate::OnPaintLayer(const ui::PaintContext& context) {
-  SkPaint paint;
-  paint.setColor(color());
-  paint.setFlags(SkPaint::kAntiAlias_Flag);
-  paint.setStyle(SkPaint::kFill_Style);
-
-  ui::PaintRecorder recorder(context, gfx::Size(radius_, radius_));
-  gfx::Canvas* canvas = recorder.canvas();
-
-  gfx::Point center_point = gfx::Point(radius_, radius_);
-  canvas->DrawCircle(center_point, radius_, paint);
-}
-
-// A BasePaintedLayerDelegate that paints a rectangle of a specified color and
-// size.
-class RectangleLayerDelegate : public BasePaintedLayerDelegate {
- public:
-  RectangleLayerDelegate(SkColor color, gfx::Size size);
-  ~RectangleLayerDelegate() override;
-
-  const gfx::Size& size() const { return size_; }
-
-  // ui::LayerDelegate:
-  void OnPaintLayer(const ui::PaintContext& context) override;
-
- private:
-  // The size of the rectangle.
-  gfx::Size size_;
-
-  DISALLOW_COPY_AND_ASSIGN(RectangleLayerDelegate);
-};
-
-RectangleLayerDelegate::RectangleLayerDelegate(SkColor color, gfx::Size size)
-    : BasePaintedLayerDelegate(color), size_(size) {}
-
-RectangleLayerDelegate::~RectangleLayerDelegate() {}
-
-void RectangleLayerDelegate::OnPaintLayer(const ui::PaintContext& context) {
-  SkPaint paint;
-  paint.setColor(color());
-  paint.setFlags(SkPaint::kAntiAlias_Flag);
-  paint.setStyle(SkPaint::kFill_Style);
-
-  ui::PaintRecorder recorder(context, size_);
-  gfx::Canvas* canvas = recorder.canvas();
-  canvas->DrawRect(gfx::Rect(size_), paint);
-}
-
 InkDropAnimation::InkDropAnimation(const gfx::Size& large_size,
                                    int large_corner_radius,
                                    const gfx::Size& small_size,
@@ -247,81 +137,137 @@ InkDropAnimation::InkDropAnimation(const gfx::Size& large_size,
           new RectangleLayerDelegate(kInkDropColor, large_size_)),
       root_layer_(new ui::Layer(ui::LAYER_NOT_DRAWN)),
       ink_drop_state_(InkDropState::HIDDEN) {
+  root_layer_->set_name("InkDropAnimation:ROOT_LAYER");
+
   for (int i = 0; i < PAINTED_SHAPE_COUNT; ++i)
     AddPaintLayer(static_cast<PaintedShape>(i));
 
   root_layer_->SetMasksToBounds(false);
   root_layer_->SetBounds(gfx::Rect(large_size_));
 
-  ResetTransformsToMinSize();
-
-  SetOpacity(kHiddenOpacity);
+  SetStateToHidden();
 }
 
-InkDropAnimation::~InkDropAnimation() {}
+InkDropAnimation::~InkDropAnimation() {
+  // Explicitly aborting all the animations ensures all callbacks are invoked
+  // while this instance still exists.
+  AbortAllAnimations();
+}
+
+void InkDropAnimation::AddObserver(InkDropAnimationObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void InkDropAnimation::RemoveObserver(InkDropAnimationObserver* observer) {
+  observers_.RemoveObserver(observer);
+}
 
 void InkDropAnimation::AnimateToState(InkDropState ink_drop_state) {
-  if (ink_drop_state_ == ink_drop_state)
-    return;
+  // |animation_observer| will be deleted when AnimationEndedCallback() returns
+  // true.
+  ui::CallbackLayerAnimationObserver* animation_observer =
+      new ui::CallbackLayerAnimationObserver(
+          base::Bind(&InkDropAnimation::AnimationStartedCallback,
+                     base::Unretained(this), ink_drop_state),
+          base::Bind(&InkDropAnimation::AnimationEndedCallback,
+                     base::Unretained(this), ink_drop_state));
+  AnimateToStateInternal(ink_drop_state, animation_observer);
+  animation_observer->SetActive();
+}
+
+void InkDropAnimation::SetCenterPoint(const gfx::Point& center_point) {
+  gfx::Transform transform;
+  transform.Translate(center_point.x(), center_point.y());
+  root_layer_->SetTransform(transform);
+}
+
+std::string InkDropAnimation::ToLayerName(PaintedShape painted_shape) {
+  switch (painted_shape) {
+    case TOP_LEFT_CIRCLE:
+      return "TOP_LEFT_CIRCLE";
+    case TOP_RIGHT_CIRCLE:
+      return "TOP_RIGHT_CIRCLE";
+    case BOTTOM_RIGHT_CIRCLE:
+      return "BOTTOM_RIGHT_CIRCLE";
+    case BOTTOM_LEFT_CIRCLE:
+      return "BOTTOM_LEFT_CIRCLE";
+    case HORIZONTAL_RECT:
+      return "HORIZONTAL_RECT";
+    case VERTICAL_RECT:
+      return "VERTICAL_RECT";
+    case PAINTED_SHAPE_COUNT:
+      NOTREACHED() << "The PAINTED_SHAPE_COUNT value should never be used.";
+      return "PAINTED_SHAPE_COUNT";
+  }
+  return "UNKNOWN";
+}
+
+void InkDropAnimation::AnimateToStateInternal(
+    InkDropState ink_drop_state,
+    ui::LayerAnimationObserver* animation_observer) {
+  ink_drop_state_ = ink_drop_state;
 
   if (ink_drop_state_ == InkDropState::HIDDEN) {
-    ResetTransformsToMinSize();
-    SetOpacity(kVisibleOpacity);
+    // Animating to the HIDDEN state doesn't actually use any
+    // LayerAnimationSequences so we need to explicitly abort any running ones
+    // so that observers receive an InkDropAnimationEnded() event for the
+    // running animation prior to receiving an InkDropAnimationStarted() event
+    // for the HIDDEN 'animation'.
+    AbortAllAnimations();
+    root_layer_->SetVisible(false);
+    SetStateToHidden();
+    return;
   }
 
   InkDropTransforms transforms;
-
-  // Must set the |ink_drop_state_| before handling the state change because
-  // some state changes make recursive calls to AnimateToState() and the last
-  // call should 'win'.
-  ink_drop_state_ = ink_drop_state;
+  root_layer_->SetVisible(true);
 
   switch (ink_drop_state_) {
     case InkDropState::HIDDEN:
-      GetCurrentTansforms(&transforms);
-      AnimateToTransforms(transforms, kHiddenOpacity,
-                          GetAnimationDuration(InkDropState::HIDDEN),
-                          ui::LayerAnimator::ENQUEUE_NEW_ANIMATION);
+      // This case is handled above in a short circuit return.
       break;
     case InkDropState::ACTION_PENDING:
       CalculateCircleTransforms(large_size_, &transforms);
       AnimateToTransforms(transforms, kVisibleOpacity,
                           GetAnimationDuration(InkDropState::ACTION_PENDING),
-                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+                          animation_observer);
       break;
     case InkDropState::QUICK_ACTION:
       CalculateCircleTransforms(large_size_, &transforms);
       AnimateToTransforms(transforms, kHiddenOpacity,
                           GetAnimationDuration(InkDropState::QUICK_ACTION),
-                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-      AnimateToState(InkDropState::HIDDEN);
+                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+                          animation_observer);
       break;
     case InkDropState::SLOW_ACTION_PENDING:
       CalculateRectTransforms(small_size_, small_corner_radius_, &transforms);
       AnimateToTransforms(
           transforms, kVisibleOpacity,
           GetAnimationDuration(InkDropState::SLOW_ACTION_PENDING),
-          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+          animation_observer);
       break;
     case InkDropState::SLOW_ACTION:
       CalculateRectTransforms(large_size_, large_corner_radius_, &transforms);
       AnimateToTransforms(transforms, kHiddenOpacity,
                           GetAnimationDuration(InkDropState::SLOW_ACTION),
-                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-      AnimateToState(InkDropState::HIDDEN);
+                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+                          animation_observer);
       break;
     case InkDropState::ACTIVATED:
       CalculateRectTransforms(small_size_, small_corner_radius_, &transforms);
       AnimateToTransforms(transforms, kVisibleOpacity,
                           GetAnimationDuration(InkDropState::ACTIVATED),
-                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+                          animation_observer);
       break;
     case InkDropState::DEACTIVATED:
       CalculateRectTransforms(large_size_, large_corner_radius_, &transforms);
       AnimateToTransforms(transforms, kHiddenOpacity,
                           GetAnimationDuration(InkDropState::DEACTIVATED),
-                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-      AnimateToState(InkDropState::HIDDEN);
+                          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET,
+                          animation_observer);
       break;
   }
 }
@@ -330,7 +276,8 @@ void InkDropAnimation::AnimateToTransforms(
     const InkDropTransforms transforms,
     float opacity,
     base::TimeDelta duration,
-    ui::LayerAnimator::PreemptionStrategy preemption_strategy) {
+    ui::LayerAnimator::PreemptionStrategy preemption_strategy,
+    ui::LayerAnimationObserver* animation_observer) {
   ui::LayerAnimator* root_animator = root_layer_->GetAnimator();
   ui::ScopedLayerAnimationSettings root_animation(root_animator);
   root_animation.SetPreemptionStrategy(preemption_strategy);
@@ -338,6 +285,10 @@ void InkDropAnimation::AnimateToTransforms(
       ui::LayerAnimationElement::CreateOpacityElement(opacity, duration);
   ui::LayerAnimationSequence* root_sequence =
       new ui::LayerAnimationSequence(root_element);
+
+  if (animation_observer)
+    root_sequence->AddObserver(animation_observer);
+
   root_animator->StartAnimation(root_sequence);
 
   for (int i = 0; i < PAINTED_SHAPE_COUNT; ++i) {
@@ -349,15 +300,20 @@ void InkDropAnimation::AnimateToTransforms(
                                                           duration);
     ui::LayerAnimationSequence* sequence =
         new ui::LayerAnimationSequence(element);
+
+    if (animation_observer)
+      sequence->AddObserver(animation_observer);
+
     animator->StartAnimation(sequence);
   }
 }
 
-void InkDropAnimation::ResetTransformsToMinSize() {
+void InkDropAnimation::SetStateToHidden() {
   InkDropTransforms transforms;
   // Using a size of 0x0 creates visual anomalies.
   CalculateCircleTransforms(gfx::Size(1, 1), &transforms);
   SetTransforms(transforms);
+  SetOpacity(kHiddenOpacity);
 }
 
 void InkDropAnimation::SetTransforms(const InkDropTransforms transforms) {
@@ -397,19 +353,19 @@ void InkDropAnimation::CalculateRectTransforms(
   const float circle_target_y_offset = size.height() / 2.0f - corner_radius;
 
   (*transforms_out)[TOP_LEFT_CIRCLE] = CalculateCircleTransform(
-      painted_layers_[TOP_LEFT_CIRCLE]->bounds().CenterPoint(), circle_scale,
+      ToRoundedPoint(circle_layer_delegate_->GetCenterPoint()), circle_scale,
       -circle_target_x_offset, -circle_target_y_offset);
 
   (*transforms_out)[TOP_RIGHT_CIRCLE] = CalculateCircleTransform(
-      painted_layers_[TOP_RIGHT_CIRCLE]->bounds().CenterPoint(), circle_scale,
+      ToRoundedPoint(circle_layer_delegate_->GetCenterPoint()), circle_scale,
       circle_target_x_offset, -circle_target_y_offset);
 
   (*transforms_out)[BOTTOM_RIGHT_CIRCLE] = CalculateCircleTransform(
-      painted_layers_[BOTTOM_RIGHT_CIRCLE]->bounds().CenterPoint(),
-      circle_scale, circle_target_x_offset, circle_target_y_offset);
+      ToRoundedPoint(circle_layer_delegate_->GetCenterPoint()), circle_scale,
+      circle_target_x_offset, circle_target_y_offset);
 
   (*transforms_out)[BOTTOM_LEFT_CIRCLE] = CalculateCircleTransform(
-      painted_layers_[BOTTOM_LEFT_CIRCLE]->bounds().CenterPoint(), circle_scale,
+      ToRoundedPoint(circle_layer_delegate_->GetCenterPoint()), circle_scale,
       -circle_target_x_offset, circle_target_y_offset);
 
   const float rect_delegate_width =
@@ -418,13 +374,13 @@ void InkDropAnimation::CalculateRectTransforms(
       static_cast<float>(rect_layer_delegate_->size().height());
 
   (*transforms_out)[HORIZONTAL_RECT] = CalculateRectTransform(
-      painted_layers_[HORIZONTAL_RECT]->bounds().CenterPoint(),
+      ToRoundedPoint(rect_layer_delegate_->GetCenterPoint()),
       std::max(kMinimumRectScale, size.width() / rect_delegate_width),
       std::max(kMinimumRectScale,
                (size.height() - 2.0f * corner_radius) / rect_delegate_height));
 
   (*transforms_out)[VERTICAL_RECT] = CalculateRectTransform(
-      painted_layers_[VERTICAL_RECT]->bounds().CenterPoint(),
+      ToRoundedPoint(rect_layer_delegate_->GetCenterPoint()),
       std::max(kMinimumRectScale,
                (size.width() - 2.0f * corner_radius) / rect_delegate_width),
       std::max(kMinimumRectScale, size.height() / rect_delegate_height));
@@ -434,12 +390,6 @@ void InkDropAnimation::GetCurrentTansforms(
     InkDropTransforms* transforms_out) const {
   for (int i = 0; i < PAINTED_SHAPE_COUNT; ++i)
     (*transforms_out)[i] = painted_layers_[i]->GetTargetTransform();
-}
-
-void InkDropAnimation::SetCenterPoint(const gfx::Point& center_point) {
-  gfx::Transform transform;
-  transform.Translate(center_point.x(), center_point.y());
-  root_layer_->SetTransform(transform);
 }
 
 void InkDropAnimation::AddPaintLayer(PaintedShape painted_shape) {
@@ -469,8 +419,34 @@ void InkDropAnimation::AddPaintLayer(PaintedShape painted_shape) {
   layer->SetVisible(true);
   layer->SetOpacity(1.0);
   layer->SetMasksToBounds(false);
+  layer->set_name("PAINTED_SHAPE_COUNT:" + ToLayerName(painted_shape));
 
   painted_layers_[painted_shape].reset(layer);
+}
+
+void InkDropAnimation::AbortAllAnimations() {
+  root_layer_->GetAnimator()->AbortAllAnimations();
+  for (int i = 0; i < PAINTED_SHAPE_COUNT; ++i)
+    painted_layers_[i]->GetAnimator()->AbortAllAnimations();
+}
+
+void InkDropAnimation::AnimationStartedCallback(
+    InkDropState ink_drop_state,
+    const ui::CallbackLayerAnimationObserver& observer) {
+  FOR_EACH_OBSERVER(InkDropAnimationObserver, observers_,
+                    InkDropAnimationStarted(ink_drop_state));
+}
+
+bool InkDropAnimation::AnimationEndedCallback(
+    InkDropState ink_drop_state,
+    const ui::CallbackLayerAnimationObserver& observer) {
+  FOR_EACH_OBSERVER(
+      InkDropAnimationObserver, observers_,
+      InkDropAnimationEnded(ink_drop_state,
+                            observer.aborted_count()
+                                ? InkDropAnimationObserver::PRE_EMPTED
+                                : InkDropAnimationObserver::SUCCESS));
+  return true;
 }
 
 }  // namespace views

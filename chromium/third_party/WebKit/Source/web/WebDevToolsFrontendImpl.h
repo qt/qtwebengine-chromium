@@ -51,8 +51,6 @@ public:
 
     void didClearWindowObject(WebLocalFrameImpl*);
 
-    void sendMessageToBackend(const WTF::String&) override;
-
     void sendMessageToEmbedder(const WTF::String&) override;
 
     bool isUnderTest() override;
@@ -62,9 +60,7 @@ public:
     void setInjectedScriptForOrigin(const String& origin, const String& source) override;
 
 private:
-    // TODO(Oilpan): Make the lifetime of m_webFrame clear to remove this GC_PLUGIN_IGNORE.
-    GC_PLUGIN_IGNORE("http://crbug.com/509911")
-    WebLocalFrameImpl* m_webFrame;
+    RefPtrWillBePersistent<WebLocalFrameImpl> m_webFrame;
     WebDevToolsFrontendClient* m_client;
     RefPtrWillBePersistent<DevToolsHost> m_devtoolsHost;
     typedef HashMap<String, String> InjectedScriptForOriginMap;

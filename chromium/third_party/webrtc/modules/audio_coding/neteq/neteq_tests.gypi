@@ -39,6 +39,21 @@
           'defines': [
           ],
         }, # neteq_rtpplay
+        {
+          'target_name': 'neteq_unittest_proto',
+          'type': 'static_library',
+          'sources': [
+            'neteq_unittest.proto',
+          ],
+          'variables': {
+            'proto_in_dir': '.',
+            # Workaround to protect against gyp's pathname relativization when
+            # this file is included by modules.gyp.
+            'proto_out_protected': 'webrtc/audio_coding/neteq',
+            'proto_out_dir': '<(proto_out_protected)',
+          },
+          'includes': ['../../../build/protoc.gypi',],
+        },
       ],
     }],
   ],
@@ -56,6 +71,7 @@
         'isac',
         'neteq_test_tools',  # Test helpers
         'pcm16b',
+        'webrtc_opus',
       ],
       'defines': [
         'CODEC_ILBC',
@@ -72,9 +88,10 @@
         'CODEC_CNGCODEC32',
         'CODEC_ATEVENT_DECODE',
         'CODEC_RED',
+        'CODEC_OPUS',
       ],
       'include_dirs': [
-        'interface',
+        'include',
         'test',
         '<(webrtc_root)',
       ],
@@ -290,7 +307,7 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          'interface',
+          'include',
           'test',
           '<(webrtc_root)',
         ],
@@ -298,7 +315,7 @@
       'defines': [
       ],
       'include_dirs': [
-        'interface',
+        'include',
         'test',
         '<(webrtc_root)',
       ],

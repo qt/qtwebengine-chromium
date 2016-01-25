@@ -9,7 +9,9 @@
  */
 
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
+
 #include "webrtc/base/checks.h"
+#include "webrtc/base/trace_event.h"
 
 namespace webrtc {
 
@@ -21,13 +23,14 @@ int AudioEncoder::RtpTimestampRateHz() const {
   return SampleRateHz();
 }
 
-AudioEncoder::EncodedInfo AudioEncoder::Encode(uint32_t rtp_timestamp,
-                                               const int16_t* audio,
-                                               size_t num_samples_per_channel,
-                                               size_t max_encoded_bytes,
-                                               uint8_t* encoded) {
-  RTC_CHECK_EQ(num_samples_per_channel,
-               static_cast<size_t>(SampleRateHz() / 100));
+AudioEncoder::EncodedInfo AudioEncoder::Encode(
+    uint32_t rtp_timestamp,
+    rtc::ArrayView<const int16_t> audio,
+    size_t max_encoded_bytes,
+    uint8_t* encoded) {
+  TRACE_EVENT0("webrtc", "AudioEncoder::Encode");
+  RTC_CHECK_EQ(audio.size(),
+               static_cast<size_t>(NumChannels() * SampleRateHz() / 100));
   EncodedInfo info =
       EncodeInternal(rtp_timestamp, audio, max_encoded_bytes, encoded);
   RTC_CHECK_LE(info.encoded_bytes, max_encoded_bytes);

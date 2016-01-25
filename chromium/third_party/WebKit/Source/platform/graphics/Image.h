@@ -35,6 +35,7 @@
 #include "platform/graphics/ImageOrientation.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "wtf/Assertions.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -61,6 +62,7 @@ class PLATFORM_EXPORT Image : public RefCounted<Image> {
     friend class CrossfadeGeneratedImage;
     friend class GradientGeneratedImage;
     friend class GraphicsContext;
+    WTF_MAKE_NONCOPYABLE(Image);
 
 public:
     virtual ~Image();
@@ -70,9 +72,18 @@ public:
 
     virtual bool isSVGImage() const { return false; }
     virtual bool isBitmapImage() const { return false; }
-    virtual bool currentFrameKnownToBeOpaque() = 0;
+
+    // To increase accuracy of currentFrameKnownToBeOpaque() it may,
+    // for applicable image types, be told to pre-cache metadata for
+    // the current frame. Since this may initiate a deferred image
+    // decoding, PreCacheMetadata requires a InspectorPaintImageEvent
+    // during call.
+    enum MetadataMode { UseCurrentMetadata, PreCacheMetadata };
+    virtual bool currentFrameKnownToBeOpaque(MetadataMode = UseCurrentMetadata) = 0;
+
     virtual bool currentFrameIsComplete() { return false; }
     virtual bool currentFrameIsLazyDecoded() { return false; }
+    virtual bool isTextureBacked();
 
     // Derived classes should override this if they can assure that the current
     // image frame contains only resources from its own security origin.
@@ -81,7 +92,6 @@ public:
     static Image* nullImage();
     bool isNull() const { return size().isEmpty(); }
 
-    virtual void setContainerSize(const IntSize&) { }
     virtual bool usesContainerSize() const { return false; }
     virtual bool hasRelativeWidth() const { return false; }
     virtual bool hasRelativeHeight() const { return false; }
@@ -132,14 +142,12 @@ public:
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    bool deprecatedBitmapForCurrentFrame(SkBitmap*) WARN_UNUSED_RETURN;
-
     virtual PassRefPtr<SkImage> imageForCurrentFrame() = 0;
     virtual PassRefPtr<Image> imageForDefaultFrame();
 
-    virtual void drawPattern(GraphicsContext*, const FloatRect&,
+    virtual void drawPattern(GraphicsContext&, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, SkXfermode::Mode,
-        const FloatRect&, const IntSize& repeatSpacing = IntSize());
+        const FloatRect&, const FloatSize& repeatSpacing = FloatSize());
 
     enum ImageClampingMode {
         ClampImageToSourceRect,
@@ -151,9 +159,9 @@ public:
 protected:
     Image(ImageObserver* = 0);
 
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
-        SkXfermode::Mode, const IntSize& repeatSpacing);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode);
+    void drawTiled(GraphicsContext&, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
+        SkXfermode::Mode, const FloatSize& repeatSpacing);
+    void drawTiled(GraphicsContext&, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode);
 
 private:
     RefPtr<SharedBuffer> m_encodedImageData;

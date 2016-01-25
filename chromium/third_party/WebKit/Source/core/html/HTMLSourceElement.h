@@ -33,7 +33,7 @@
 namespace blink {
 
 template<typename T> class EventSender;
-typedef EventSender<HTMLSourceElement> SourceEventSender;
+using SourceEventSender = EventSender<HTMLSourceElement>;
 
 class HTMLSourceElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
@@ -64,7 +64,7 @@ private:
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void removedFrom(ContainerNode*) override;
     bool isURLAttribute(const Attribute&) const override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
 
     void notifyMediaQueryChanged();
     void createMediaQueryList(const AtomicString& media);

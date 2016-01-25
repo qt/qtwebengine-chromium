@@ -1,7 +1,7 @@
-diff --git a/nss/lib/freebl/blapi.h b/nss/lib/freebl/blapi.h
+diff --git a/lib/freebl/blapi.h b/lib/freebl/blapi.h
 index 8324714..682be76 100644
---- a/nss/lib/freebl/blapi.h
-+++ b/nss/lib/freebl/blapi.h
+--- a/lib/freebl/blapi.h
++++ b/lib/freebl/blapi.h
 @@ -986,6 +986,38 @@ Camellia_Decrypt(CamelliaContext *cx, unsigned char *output,
  		 unsigned int *outputLen, unsigned int maxOutputLen,
  		 const unsigned char *input, unsigned int inputLen);
@@ -41,10 +41,10 @@ index 8324714..682be76 100644
  
  /******************************************/
  /*
-diff --git a/nss/lib/freebl/blapit.h b/nss/lib/freebl/blapit.h
+diff --git a/lib/freebl/blapit.h b/lib/freebl/blapit.h
 index 8e172d4..5726dc7 100644
---- a/nss/lib/freebl/blapit.h
-+++ b/nss/lib/freebl/blapit.h
+--- a/lib/freebl/blapit.h
++++ b/lib/freebl/blapit.h
 @@ -222,6 +222,7 @@ struct SHA256ContextStr     ;
  struct SHA512ContextStr     ;
  struct AESKeyWrapContextStr ;
@@ -61,11 +61,11 @@ index 8e172d4..5726dc7 100644
  
  /***************************************************************************
  ** RSA Public and Private Key structures
-diff --git a/nss/lib/freebl/chacha20/chacha20.c b/nss/lib/freebl/chacha20/chacha20.c
+diff --git a/lib/freebl/chacha20/chacha20.c b/lib/freebl/chacha20/chacha20.c
 new file mode 100644
 index 0000000..ca0b1ff
 --- /dev/null
-+++ b/nss/lib/freebl/chacha20/chacha20.c
++++ b/lib/freebl/chacha20/chacha20.c
 @@ -0,0 +1,108 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -175,11 +175,11 @@ index 0000000..ca0b1ff
 +	}
 +    }
 +}
-diff --git a/nss/lib/freebl/chacha20/chacha20.h b/nss/lib/freebl/chacha20/chacha20.h
+diff --git a/lib/freebl/chacha20/chacha20.h b/lib/freebl/chacha20/chacha20.h
 new file mode 100644
 index 0000000..6336ba7
 --- /dev/null
-+++ b/nss/lib/freebl/chacha20/chacha20.h
++++ b/lib/freebl/chacha20/chacha20.h
 @@ -0,0 +1,22 @@
 +/*
 + * chacha20.h - header file for ChaCha20 implementation.
@@ -203,11 +203,11 @@ index 0000000..6336ba7
 +			uint64_t counter);
 +
 +#endif  /* FREEBL_CHACHA20_H_ */
-diff --git a/nss/lib/freebl/chacha20/chacha20_vec.c b/nss/lib/freebl/chacha20/chacha20_vec.c
+diff --git a/lib/freebl/chacha20/chacha20_vec.c b/lib/freebl/chacha20/chacha20_vec.c
 new file mode 100644
 index 0000000..c3573b3
 --- /dev/null
-+++ b/nss/lib/freebl/chacha20/chacha20_vec.c
++++ b/lib/freebl/chacha20/chacha20_vec.c
 @@ -0,0 +1,281 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -490,11 +490,11 @@ index 0000000..c3573b3
 +	}
 +    }
 +}
-diff --git a/nss/lib/freebl/chacha20poly1305.c b/nss/lib/freebl/chacha20poly1305.c
+diff --git a/lib/freebl/chacha20poly1305.c b/lib/freebl/chacha20poly1305.c
 new file mode 100644
 index 0000000..6fa5c4b
 --- /dev/null
-+++ b/nss/lib/freebl/chacha20poly1305.c
++++ b/lib/freebl/chacha20poly1305.c
 @@ -0,0 +1,169 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -665,11 +665,11 @@ index 0000000..6fa5c4b
 +
 +    return SECSuccess;
 +}
-diff --git a/nss/lib/freebl/chacha20poly1305.h b/nss/lib/freebl/chacha20poly1305.h
+diff --git a/lib/freebl/chacha20poly1305.h b/lib/freebl/chacha20poly1305.h
 new file mode 100644
 index 0000000..c77632a
 --- /dev/null
-+++ b/nss/lib/freebl/chacha20poly1305.h
++++ b/lib/freebl/chacha20poly1305.h
 @@ -0,0 +1,15 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -686,11 +686,11 @@ index 0000000..c77632a
 +};
 +
 +#endif /* _CHACHA20_POLY1305_H_ */
-diff --git a/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c b/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
+diff --git a/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c b/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
 new file mode 100644
 index 0000000..38cbf35
 --- /dev/null
-+++ b/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
++++ b/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
 @@ -0,0 +1,623 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1315,11 +1315,11 @@ index 0000000..38cbf35
 +	U64TO8_LE(mac + 0, ((h0      ) | (h1 << 44)));
 +	U64TO8_LE(mac + 8, ((h1 >> 20) | (h2 << 24)));
 +}
-diff --git a/nss/lib/freebl/poly1305/poly1305.c b/nss/lib/freebl/poly1305/poly1305.c
+diff --git a/lib/freebl/poly1305/poly1305.c b/lib/freebl/poly1305/poly1305.c
 new file mode 100644
 index 0000000..d86048a
 --- /dev/null
-+++ b/nss/lib/freebl/poly1305/poly1305.c
++++ b/lib/freebl/poly1305/poly1305.c
 @@ -0,0 +1,254 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1575,11 +1575,11 @@ index 0000000..d86048a
 +	U32TO8_LE(&mac[ 8], (uint32_t)f2); f3 += (f2 >> 32);
 +	U32TO8_LE(&mac[12], (uint32_t)f3);
 +}
-diff --git a/nss/lib/freebl/poly1305/poly1305.h b/nss/lib/freebl/poly1305/poly1305.h
+diff --git a/lib/freebl/poly1305/poly1305.h b/lib/freebl/poly1305/poly1305.h
 new file mode 100644
 index 0000000..4beb172
 --- /dev/null
-+++ b/nss/lib/freebl/poly1305/poly1305.h
++++ b/lib/freebl/poly1305/poly1305.h
 @@ -0,0 +1,31 @@
 +/*
 + * poly1305.h - header file for Poly1305 implementation.
@@ -1612,10 +1612,10 @@ index 0000000..4beb172
 +			   unsigned char mac[16]);
 +
 +#endif  /* FREEBL_POLY1305_H_ */
-diff --git a/nss/lib/pk11wrap/pk11mech.c b/nss/lib/pk11wrap/pk11mech.c
-index b7a7296..edc7a9b 100644
---- a/nss/lib/pk11wrap/pk11mech.c
-+++ b/nss/lib/pk11wrap/pk11mech.c
+diff --git a/lib/pk11wrap/pk11mech.c b/lib/pk11wrap/pk11mech.c
+index 29e86e6..0ebb075 100644
+--- a/lib/pk11wrap/pk11mech.c
++++ b/lib/pk11wrap/pk11mech.c
 @@ -152,6 +152,8 @@ PK11_GetKeyMechanism(CK_KEY_TYPE type)
  	return CKM_SEED_CBC;
      case CKK_CAMELLIA:
@@ -1634,7 +1634,7 @@ index b7a7296..edc7a9b 100644
      case CKM_AES_ECB:
      case CKM_AES_CBC:
      case CKM_AES_CCM:
-@@ -429,6 +433,8 @@ PK11_GetKeyGenWithSize(CK_MECHANISM_TYPE type, int size)
+@@ -431,6 +435,8 @@ PK11_GetKeyGenWithSize(CK_MECHANISM_TYPE type, int size)
      case CKM_CAMELLIA_CBC_PAD:
      case CKM_CAMELLIA_KEY_GEN:
  	return CKM_CAMELLIA_KEY_GEN;
@@ -1643,10 +1643,10 @@ index b7a7296..edc7a9b 100644
      case CKM_AES_ECB:
      case CKM_AES_CBC:
      case CKM_AES_CCM:
-diff --git a/nss/lib/softoken/pkcs11.c b/nss/lib/softoken/pkcs11.c
-index bd7c4bd..716922f 100644
---- a/nss/lib/softoken/pkcs11.c
-+++ b/nss/lib/softoken/pkcs11.c
+diff --git a/lib/softoken/pkcs11.c b/lib/softoken/pkcs11.c
+index 97d6d3f..75c9e8e 100644
+--- a/lib/softoken/pkcs11.c
++++ b/lib/softoken/pkcs11.c
 @@ -370,6 +370,9 @@ static const struct mechanismList mechanisms[] = {
       {CKM_SEED_MAC,		{16, 16, CKF_SN_VR},		PR_TRUE},
       {CKM_SEED_MAC_GENERAL,	{16, 16, CKF_SN_VR},		PR_TRUE},
@@ -1657,11 +1657,11 @@ index bd7c4bd..716922f 100644
       /* ------------------------- Hashing Operations ----------------------- */
       {CKM_MD2,			{0,   0, CKF_DIGEST},		PR_FALSE},
       {CKM_MD2_HMAC,		{1, 128, CKF_SN_VR},		PR_TRUE},
-diff --git a/nss/lib/softoken/pkcs11c.c b/nss/lib/softoken/pkcs11c.c
-index fc050f3..955d4c9 100644
---- a/nss/lib/softoken/pkcs11c.c
-+++ b/nss/lib/softoken/pkcs11c.c
-@@ -663,6 +663,97 @@ sftk_RSADecryptOAEP(SFTKOAEPDecryptInfo *info, unsigned char *output,
+diff --git a/lib/softoken/pkcs11c.c b/lib/softoken/pkcs11c.c
+index 8755f24..992fba4 100644
+--- a/lib/softoken/pkcs11c.c
++++ b/lib/softoken/pkcs11c.c
+@@ -664,6 +664,97 @@ sftk_RSADecryptOAEP(SFTKOAEPDecryptInfo *info, unsigned char *output,
      return rv;
  }
  
@@ -1759,7 +1759,7 @@ index fc050f3..955d4c9 100644
  /** NSC_CryptInit initializes an encryption/Decryption operation.
   *
   * Always called by NSC_EncryptInit, NSC_DecryptInit, NSC_WrapKey,NSC_UnwrapKey.
-@@ -1056,6 +1147,35 @@ finish_des:
+@@ -1057,6 +1148,35 @@ finish_des:
  	context->destroy = (SFTKDestroy) AES_DestroyContext;
  	break;
  
@@ -1795,7 +1795,7 @@ index fc050f3..955d4c9 100644
      case CKM_NETSCAPE_AES_KEY_WRAP_PAD:
      	context->doPad = PR_TRUE;
  	/* fall thru */
-@@ -3609,6 +3729,10 @@ nsc_SetupBulkKeyGen(CK_MECHANISM_TYPE mechanism, CK_KEY_TYPE *key_type,
+@@ -3654,6 +3774,10 @@ nsc_SetupBulkKeyGen(CK_MECHANISM_TYPE mechanism, CK_KEY_TYPE *key_type,
  	*key_type = CKK_AES;
  	if (*key_length == 0) crv = CKR_TEMPLATE_INCOMPLETE;
  	break;
@@ -1806,7 +1806,7 @@ index fc050f3..955d4c9 100644
      default:
  	PORT_Assert(0);
  	crv = CKR_MECHANISM_INVALID;
-@@ -3854,6 +3978,7 @@ CK_RV NSC_GenerateKey(CK_SESSION_HANDLE hSession,
+@@ -3900,6 +4024,7 @@ CK_RV NSC_GenerateKey(CK_SESSION_HANDLE hSession,
      case CKM_SEED_KEY_GEN:
      case CKM_CAMELLIA_KEY_GEN:
      case CKM_AES_KEY_GEN:
@@ -1814,10 +1814,10 @@ index fc050f3..955d4c9 100644
  #if NSS_SOFTOKEN_DOES_RC5
      case CKM_RC5_KEY_GEN:
  #endif
-diff --git a/nss/lib/softoken/pkcs11i.h b/nss/lib/softoken/pkcs11i.h
-index 9a00273..175bb78 100644
---- a/nss/lib/softoken/pkcs11i.h
-+++ b/nss/lib/softoken/pkcs11i.h
+diff --git a/lib/softoken/pkcs11i.h b/lib/softoken/pkcs11i.h
+index 1023a00..4e8601b 100644
+--- a/lib/softoken/pkcs11i.h
++++ b/lib/softoken/pkcs11i.h
 @@ -14,6 +14,7 @@
  #include "pkcs11t.h"
  
@@ -1851,10 +1851,10 @@ index 9a00273..175bb78 100644
  /*
   * Template based on SECItems, suitable for passing as arrays
   */
-diff --git a/nss/lib/util/pkcs11n.h b/nss/lib/util/pkcs11n.h
-index a1a0ebb..d48cef6 100644
---- a/nss/lib/util/pkcs11n.h
-+++ b/nss/lib/util/pkcs11n.h
+diff --git a/lib/util/pkcs11n.h b/lib/util/pkcs11n.h
+index 5e13784..86a396f 100644
+--- a/lib/util/pkcs11n.h
++++ b/lib/util/pkcs11n.h
 @@ -51,6 +51,8 @@
  #define CKK_NSS_JPAKE_ROUND1       (CKK_NSS + 2)
  #define CKK_NSS_JPAKE_ROUND2       (CKK_NSS + 3)
@@ -1864,17 +1864,17 @@ index a1a0ebb..d48cef6 100644
  /*
   * NSS-defined certificate types
   *
-@@ -214,6 +216,9 @@
- #define CKM_NSS_TLS_KEY_AND_MAC_DERIVE_SHA256   (CKM_NSS + 23)
- #define CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256 (CKM_NSS + 24)
+@@ -218,6 +220,9 @@
+ #define CKM_NSS_TLS_EXTENDED_MASTER_KEY_DERIVE    (CKM_NSS + 25)
+ #define CKM_NSS_TLS_EXTENDED_MASTER_KEY_DERIVE_DH (CKM_NSS + 26)
  
-+#define CKM_NSS_CHACHA20_KEY_GEN                (CKM_NSS + 25)
-+#define CKM_NSS_CHACHA20_POLY1305               (CKM_NSS + 26)
++#define CKM_NSS_CHACHA20_KEY_GEN                (CKM_NSS + 27)
++#define CKM_NSS_CHACHA20_POLY1305               (CKM_NSS + 28)
 +
  /*
   * HISTORICAL:
   * Do not attempt to use these. They are only used by NETSCAPE's internal
-@@ -281,6 +286,14 @@ typedef struct CK_NSS_MAC_CONSTANT_TIME_PARAMS {
+@@ -285,6 +290,14 @@ typedef struct CK_NSS_MAC_CONSTANT_TIME_PARAMS {
      CK_ULONG ulHeaderLen;       /* in */
  } CK_NSS_MAC_CONSTANT_TIME_PARAMS;
  

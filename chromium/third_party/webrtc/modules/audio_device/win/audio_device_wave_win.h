@@ -11,9 +11,9 @@
 #ifndef WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_WAVE_WIN_H
 #define WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_WAVE_WIN_H
 
+#include "webrtc/base/platform_thread.h"
 #include "webrtc/modules/audio_device/audio_device_generic.h"
 #include "webrtc/modules/audio_device/win/audio_mixer_manager_win.h"
-#include "webrtc/system_wrappers/interface/thread_wrapper.h"
 
 #pragma comment( lib, "winmm.lib" )
 
@@ -222,7 +222,8 @@ private:
     HANDLE                                  _hShutdownSetVolumeEvent;
     HANDLE                                  _hSetCaptureVolumeEvent;
 
-    rtc::scoped_ptr<ThreadWrapper>          _ptrThread;
+    // TODO(pbos): Remove scoped_ptr usage and use PlatformThread directly
+    rtc::scoped_ptr<rtc::PlatformThread>    _ptrThread;
 
     CriticalSectionWrapper&                 _critSectCb;
 

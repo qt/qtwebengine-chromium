@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/AssociatedURLLoader.h"
 
 #include "core/fetch/CrossOriginAccessControl.h"
@@ -183,7 +182,7 @@ void AssociatedURLLoader::ClientAdapter::willFollowRedirect(ResourceRequest& new
 
     WrappedResourceRequest wrappedNewRequest(newRequest);
     WrappedResourceResponse wrappedRedirectResponse(redirectResponse);
-    m_client->willSendRequest(m_loader, wrappedNewRequest, wrappedRedirectResponse);
+    m_client->willFollowRedirect(m_loader, wrappedNewRequest, wrappedRedirectResponse);
 }
 
 void AssociatedURLLoader::ClientAdapter::didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
@@ -278,7 +277,7 @@ void AssociatedURLLoader::ClientAdapter::enableErrorNotifications()
     // If an error has already been received, start a timer to report it to the client
     // after AssociatedURLLoader::loadAsynchronously has returned to the caller.
     if (m_didFail)
-        m_errorTimer.startOneShot(0, FROM_HERE);
+        m_errorTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void AssociatedURLLoader::ClientAdapter::notifyError(Timer<ClientAdapter>* timer)
@@ -381,6 +380,11 @@ void AssociatedURLLoader::setDefersLoading(bool defersLoading)
 {
     if (m_loader)
         m_loader->setDefersLoading(defersLoading);
+}
+
+void AssociatedURLLoader::setLoadingTaskRunner(blink::WebTaskRunner*)
+{
+    // TODO(alexclarke): Maybe support this one day if it proves worthwhile.
 }
 
 } // namespace blink

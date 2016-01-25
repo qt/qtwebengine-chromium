@@ -29,6 +29,14 @@ MOCK_METHOD4(
     BindFragDataLocationIndexed,
     void(GLuint program, GLuint colorNumber, GLuint index, const char* name));
 MOCK_METHOD2(BindFramebufferEXT, void(GLenum target, GLuint framebuffer));
+MOCK_METHOD7(BindImageTextureEXT,
+             void(GLuint index,
+                  GLuint texture,
+                  GLint level,
+                  GLboolean layered,
+                  GLint layer,
+                  GLenum access,
+                  GLint format));
 MOCK_METHOD2(BindRenderbufferEXT, void(GLenum target, GLuint renderbuffer));
 MOCK_METHOD2(BindSampler, void(GLuint unit, GLuint sampler));
 MOCK_METHOD2(BindTexture, void(GLenum target, GLuint texture));
@@ -169,7 +177,24 @@ MOCK_METHOD9(CopyTexSubImage3D,
                   GLint y,
                   GLsizei width,
                   GLsizei height));
+MOCK_METHOD1(CoverageModulationNV, void(GLenum components));
+MOCK_METHOD7(CoverFillPathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLenum coverMode,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD2(CoverFillPathNV, void(GLuint path, GLenum coverMode));
+MOCK_METHOD7(CoverStrokePathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLenum coverMode,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD2(CoverStrokePathNV, void(GLuint name, GLenum coverMode));
 MOCK_METHOD0(CreateProgram, GLuint());
 MOCK_METHOD1(CreateShader, GLuint(GLenum type));
@@ -324,6 +349,7 @@ MOCK_METHOD3(GetBufferParameteriv,
 MOCK_METHOD0(GetError, GLenum());
 MOCK_METHOD3(GetFenceivNV, void(GLuint fence, GLenum pname, GLint* params));
 MOCK_METHOD2(GetFloatv, void(GLenum pname, GLfloat* params));
+MOCK_METHOD2(GetFragDataIndex, GLint(GLuint program, const char* name));
 MOCK_METHOD2(GetFragDataLocation, GLint(GLuint program, const char* name));
 MOCK_METHOD4(
     GetFramebufferAttachmentParameterivEXT,
@@ -348,9 +374,28 @@ MOCK_METHOD5(GetProgramBinary,
 MOCK_METHOD4(
     GetProgramInfoLog,
     void(GLuint program, GLsizei bufsize, GLsizei* length, char* infolog));
+MOCK_METHOD4(
+    GetProgramInterfaceiv,
+    void(GLuint program, GLenum programInterface, GLenum pname, GLint* params));
 MOCK_METHOD3(GetProgramiv, void(GLuint program, GLenum pname, GLint* params));
+MOCK_METHOD8(GetProgramResourceiv,
+             void(GLuint program,
+                  GLenum programInterface,
+                  GLuint index,
+                  GLsizei propCount,
+                  const GLenum* props,
+                  GLsizei bufSize,
+                  GLsizei* length,
+                  GLint* params));
 MOCK_METHOD3(GetProgramResourceLocation,
              GLint(GLuint program, GLenum programInterface, const char* name));
+MOCK_METHOD6(GetProgramResourceName,
+             void(GLuint program,
+                  GLenum programInterface,
+                  GLuint index,
+                  GLsizei bufSize,
+                  GLsizei* length,
+                  GLchar* name));
 MOCK_METHOD3(GetQueryiv, void(GLenum target, GLenum pname, GLint* params));
 MOCK_METHOD3(GetQueryObjecti64v,
              void(GLuint id, GLenum pname, GLint64* params));
@@ -461,6 +506,7 @@ MOCK_METHOD4(MapBufferRange,
                    GLbitfield access));
 MOCK_METHOD2(MatrixLoadfEXT, void(GLenum matrixMode, const GLfloat* m));
 MOCK_METHOD1(MatrixLoadIdentityEXT, void(GLenum matrixMode));
+MOCK_METHOD1(MemoryBarrierEXT, void(GLbitfield barriers));
 MOCK_METHOD6(PathCommandsNV,
              void(GLuint path,
                   GLsizei numCommands,
@@ -483,6 +529,12 @@ MOCK_METHOD4(ProgramBinary,
                   GLsizei length));
 MOCK_METHOD3(ProgramParameteri,
              void(GLuint program, GLenum pname, GLint value));
+MOCK_METHOD5(ProgramPathFragmentInputGenNV,
+             void(GLuint program,
+                  GLint location,
+                  GLenum genMode,
+                  GLint components,
+                  const GLfloat* coeffs));
 MOCK_METHOD2(PushGroupMarkerEXT, void(GLsizei length, const char* marker));
 MOCK_METHOD2(QueryCounter, void(GLuint id, GLenum target));
 MOCK_METHOD1(ReadBuffer, void(GLenum src));
@@ -546,6 +598,15 @@ MOCK_METHOD4(ShaderSource,
                   GLsizei count,
                   const char* const* str,
                   const GLint* length));
+MOCK_METHOD8(StencilFillPathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLenum fillMode,
+                  GLuint mask,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD3(StencilFillPathNV,
              void(GLuint path, GLenum fillMode, GLuint mask));
 MOCK_METHOD3(StencilFunc, void(GLenum func, GLint ref, GLuint mask));
@@ -556,10 +617,39 @@ MOCK_METHOD2(StencilMaskSeparate, void(GLenum face, GLuint mask));
 MOCK_METHOD3(StencilOp, void(GLenum fail, GLenum zfail, GLenum zpass));
 MOCK_METHOD4(StencilOpSeparate,
              void(GLenum face, GLenum fail, GLenum zfail, GLenum zpass));
+MOCK_METHOD8(StencilStrokePathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLint ref,
+                  GLuint mask,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD3(StencilStrokePathNV,
              void(GLuint path, GLint reference, GLuint mask));
+MOCK_METHOD9(StencilThenCoverFillPathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLenum fillMode,
+                  GLuint mask,
+                  GLenum coverMode,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD4(StencilThenCoverFillPathNV,
              void(GLuint path, GLenum fillMode, GLuint mask, GLenum coverMode));
+MOCK_METHOD9(StencilThenCoverStrokePathInstancedNV,
+             void(GLsizei numPaths,
+                  GLenum pathNameType,
+                  const void* paths,
+                  GLuint pathBase,
+                  GLint ref,
+                  GLuint mask,
+                  GLenum coverMode,
+                  GLenum transformType,
+                  const GLfloat* transformValues));
 MOCK_METHOD4(StencilThenCoverStrokePathNV,
              void(GLuint path, GLint reference, GLuint mask, GLenum coverMode));
 MOCK_METHOD1(TestFenceAPPLE, GLboolean(GLuint fence));

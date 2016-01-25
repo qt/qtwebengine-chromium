@@ -46,7 +46,7 @@ class ScriptStreamer;
 // from purging its data buffer. This class holds a dummy client open for its
 // lifetime in order to guarantee that the data buffer will not be purged.
 class CORE_EXPORT PendingScript final : public ResourceOwner<ScriptResource> {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     enum Type {
         ParsingBlocking,
@@ -73,8 +73,9 @@ public:
 
     void setScriptResource(ScriptResource*);
 
-    virtual void notifyFinished(Resource*);
-    virtual void notifyAppendData(ScriptResource*);
+    void notifyFinished(Resource*) override;
+    String debugName() const override { return "PendingScript"; }
+    void notifyAppendData(ScriptResource*) override;
 
     DECLARE_TRACE();
 

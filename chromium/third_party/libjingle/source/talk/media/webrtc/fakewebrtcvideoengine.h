@@ -41,7 +41,7 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/thread_annotations.h"
-#include "webrtc/modules/video_coding/codecs/interface/video_error_codes.h"
+#include "webrtc/modules/video_coding/include/video_error_codes.h"
 #include "webrtc/video_decoder.h"
 #include "webrtc/video_encoder.h"
 
@@ -64,29 +64,27 @@ class FakeWebRtcVideoDecoder : public webrtc::VideoDecoder {
       : num_frames_received_(0) {
   }
 
-  virtual int32 InitDecode(const webrtc::VideoCodec*, int32) {
+  virtual int32_t InitDecode(const webrtc::VideoCodec*, int32_t) {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 Decode(
-      const webrtc::EncodedImage&, bool, const webrtc::RTPFragmentationHeader*,
-      const webrtc::CodecSpecificInfo*, int64_t) {
+  virtual int32_t Decode(const webrtc::EncodedImage&,
+                         bool,
+                         const webrtc::RTPFragmentationHeader*,
+                         const webrtc::CodecSpecificInfo*,
+                         int64_t) {
     num_frames_received_++;
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 RegisterDecodeCompleteCallback(
+  virtual int32_t RegisterDecodeCompleteCallback(
       webrtc::DecodedImageCallback*) {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 Release() {
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
+  virtual int32_t Release() { return WEBRTC_VIDEO_CODEC_OK; }
 
-  virtual int32 Reset() {
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
+  virtual int32_t Reset() { return WEBRTC_VIDEO_CODEC_OK; }
 
   int GetNumFramesReceived() const {
     return num_frames_received_;
@@ -144,9 +142,9 @@ class FakeWebRtcVideoEncoder : public webrtc::VideoEncoder {
  public:
   FakeWebRtcVideoEncoder() : num_frames_encoded_(0) {}
 
-  virtual int32 InitEncode(const webrtc::VideoCodec* codecSettings,
-                           int32 numberOfCores,
-                           size_t maxPayloadSize) {
+  virtual int32_t InitEncode(const webrtc::VideoCodec* codecSettings,
+                             int32_t numberOfCores,
+                             size_t maxPayloadSize) {
     rtc::CritScope lock(&crit_);
     codec_settings_ = *codecSettings;
     return WEBRTC_VIDEO_CODEC_OK;
@@ -157,30 +155,26 @@ class FakeWebRtcVideoEncoder : public webrtc::VideoEncoder {
     return codec_settings_;
   }
 
-  virtual int32 Encode(const webrtc::VideoFrame& inputImage,
-                       const webrtc::CodecSpecificInfo* codecSpecificInfo,
-                       const std::vector<webrtc::VideoFrameType>* frame_types) {
+  virtual int32_t Encode(const webrtc::VideoFrame& inputImage,
+                         const webrtc::CodecSpecificInfo* codecSpecificInfo,
+                         const std::vector<webrtc::FrameType>* frame_types) {
     rtc::CritScope lock(&crit_);
     ++num_frames_encoded_;
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 RegisterEncodeCompleteCallback(
+  virtual int32_t RegisterEncodeCompleteCallback(
       webrtc::EncodedImageCallback* callback) {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 Release() {
+  virtual int32_t Release() { return WEBRTC_VIDEO_CODEC_OK; }
+
+  virtual int32_t SetChannelParameters(uint32_t packetLoss, int64_t rtt) {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 
-  virtual int32 SetChannelParameters(uint32 packetLoss,
-                                     int64_t rtt) {
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
-
-  virtual int32 SetRates(uint32 newBitRate,
-                         uint32 frameRate) {
+  virtual int32_t SetRates(uint32_t newBitRate, uint32_t frameRate) {
     return WEBRTC_VIDEO_CODEC_OK;
   }
 

@@ -51,33 +51,13 @@ _exact_matches = {
     "WebKit Linux 32": {"port_name": "linux-x86", "specifiers": ['Linux32', 'Release']},
     "WebKit Linux (dbg)": {"port_name": "linux-precise", "specifiers": ['Precise', 'Debug']},
     "WebKit Mac10.6": {"port_name": "mac-snowleopard", "specifiers": ['SnowLeopard', 'Release']},
-    "WebKit Mac10.6 (dbg)": {"port_name": "mac-snowleopard", "specifiers": ['SnowLeopard', 'Debug']},
     "WebKit Mac10.7": {"port_name": "mac-lion", "specifiers": ['Lion', 'Release']},
     "WebKit Mac10.7 (dbg)": {"port_name": "mac-lion", "specifiers": ['Lion', 'Debug']},
     "WebKit Mac10.8": {"port_name": "mac-mountainlion", "specifiers": ['MountainLion', 'Release']},
     "WebKit Mac10.9 (retina)": {"port_name": "mac-retina", "specifiers": ['Retina', 'Release']},
     "WebKit Mac10.9": {"port_name": "mac-mavericks", "specifiers": ['Mavericks', 'Release']},
-    "WebKit Mac10.10": {"port_name": "mac-yosemite", "specifiers": ['Yosemite', 'Release']},
+    "WebKit Mac10.10": {"port_name": "mac-mac10.10", "specifiers": ['Mac10.10', 'Release']},
     "WebKit Android (Nexus4)": {"port_name": "android", "specifiers": ['Android', 'Release']},
-}
-
-
-# Mapping from port name to the deps builder of the same os:
-_deps_builders = {
-    "linux-x86": "WebKit Linux (deps)",
-    "linux-precise": "WebKit Linux (deps)",
-    "linux-trusty": "WebKit Linux (deps)",
-    "win-xp": "WebKit XP (deps)",
-    "win-win7": "WebKit XP (deps)",
-    "win-win10": "WebKit XP (deps)",
-    "mac-snowleopard": "WebKit Mac10.6 (deps)",
-    # The following port names are mapped to 10.6 bot since we don't have bots
-    # for these ports.
-    "mac-lion": "WebKit Mac10.6 (deps)",
-    "mac-mountainlion": "WebKit Mac10.6 (deps)",
-    "mac-mavericks": "WebKit Mac10.6 (deps)",
-    "mac-retina": "WebKit Mac10.6 (deps)",
-    "mac-yosemite": "WebKit Mac10.6 (deps)",
 }
 
 
@@ -122,7 +102,3 @@ def builder_name_for_port_name(target_port_name):
 
 def builder_path_for_port_name(port_name):
     builder_path_from_name(builder_name_for_port_name(port_name))
-
-
-def deps_builder_name_for_port_name(target_port_name):
-    return _deps_builders.get(target_port_name, None)

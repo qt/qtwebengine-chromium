@@ -10,12 +10,12 @@
 
 #include "webrtc/voice_engine/utility.h"
 
+#include "webrtc/base/logging.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/common_types.h"
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/utility/interface/audio_frame_operations.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/utility/include/audio_frame_operations.h"
 #include "webrtc/voice_engine/voice_engine_defines.h"
 
 namespace webrtc {
@@ -34,12 +34,12 @@ void RemixAndResample(const AudioFrame& src_frame,
 
 void RemixAndResample(const int16_t* src_data,
                       size_t samples_per_channel,
-                      int num_channels,
+                      size_t num_channels,
                       int sample_rate_hz,
                       PushResampler<int16_t>* resampler,
                       AudioFrame* dst_frame) {
   const int16_t* audio_ptr = src_data;
-  int audio_ptr_num_channels = num_channels;
+  size_t audio_ptr_num_channels = num_channels;
   int16_t mono_audio[AudioFrame::kMaxDataSizeSamples];
 
   // Downmix before resampling.
@@ -52,8 +52,10 @@ void RemixAndResample(const int16_t* src_data,
 
   if (resampler->InitializeIfNeeded(sample_rate_hz, dst_frame->sample_rate_hz_,
                                     audio_ptr_num_channels) == -1) {
-    LOG_FERR3(LS_ERROR, InitializeIfNeeded, sample_rate_hz,
-              dst_frame->sample_rate_hz_, audio_ptr_num_channels);
+    LOG(LS_ERROR) << "InitializeIfNeeded failed: sample_rate_hz = "
+                  << sample_rate_hz << ", dst_frame->sample_rate_hz_ = "
+                  << dst_frame->sample_rate_hz_
+                  << ", audio_ptr_num_channels = " << audio_ptr_num_channels;
     assert(false);
   }
 
@@ -61,11 +63,12 @@ void RemixAndResample(const int16_t* src_data,
   int out_length = resampler->Resample(audio_ptr, src_length, dst_frame->data_,
                                        AudioFrame::kMaxDataSizeSamples);
   if (out_length == -1) {
-    LOG_FERR3(LS_ERROR, Resample, audio_ptr, src_length, dst_frame->data_);
+    LOG(LS_ERROR) << "Resample failed: audio_ptr = " << audio_ptr
+                  << ", src_length = " << src_length
+                  << ", dst_frame->data_ = " << dst_frame->data_;
     assert(false);
   }
-  dst_frame->samples_per_channel_ =
-      static_cast<size_t>(out_length / audio_ptr_num_channels);
+  dst_frame->samples_per_channel_ = out_length / audio_ptr_num_channels;
 
   // Upmix after resampling.
   if (num_channels == 1 && dst_frame->num_channels_ == 2) {
@@ -77,9 +80,9 @@ void RemixAndResample(const int16_t* src_data,
 }
 
 void MixWithSat(int16_t target[],
-                int target_channel,
+                size_t target_channel,
                 const int16_t source[],
-                int source_channel,
+                size_t source_channel,
                 size_t source_len) {
   assert(target_channel == 1 || target_channel == 2);
   assert(source_channel == 1 || source_channel == 2);

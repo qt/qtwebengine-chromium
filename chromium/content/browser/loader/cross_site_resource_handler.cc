@@ -5,6 +5,7 @@
 #include "content/browser/loader/cross_site_resource_handler.h"
 
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -76,9 +77,9 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
       CHECK(SiteIsolationPolicy::AreCrossProcessFramesPossible());
     }
     rfh->OnCrossSiteResponse(
-        params.global_request_id, cross_site_transferring_request.Pass(),
-        params.transfer_url_chain, params.referrer,
-        params.page_transition, params.should_replace_current_entry);
+        params.global_request_id, std::move(cross_site_transferring_request),
+        params.transfer_url_chain, params.referrer, params.page_transition,
+        params.should_replace_current_entry);
   } else if (leak_requests_for_testing_ && cross_site_transferring_request) {
     // Some unit tests expect requests to be leaked in this case, so they can
     // pass them along manually.
@@ -87,42 +88,23 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
 }
 
 // Returns whether a transfer is needed by doing a check on the UI thread.
-bool CheckNavigationPolicyOnUI(GURL real_url,
-                               int process_id,
-                               int render_frame_id) {
+CrossSiteResourceHandler::NavigationDecision
+CheckNavigationPolicyOnUI(GURL real_url, int process_id, int render_frame_id) {
   CHECK(SiteIsolationPolicy::AreCrossProcessFramesPossible());
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(process_id, render_frame_id);
+
+  // Without a valid RFH against which to check, we must cancel the request,
+  // to prevent the resource at |url| from being delivered to a potentially
+  // unsuitable renderer process.
   if (!rfh)
-    return false;
+    return CrossSiteResourceHandler::NavigationDecision::CANCEL_REQUEST;
 
-  // A transfer is not needed if the current SiteInstance doesn't yet have a
-  // site.  This is the case for tests that use NavigateToURL.
-  if (!rfh->GetSiteInstance()->HasSite())
-    return false;
-
-  // For now, GuestViews never transfer on cross-site navigations.
-  WebContentsImpl* web_contents =
-      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(rfh));
-  if (web_contents->GetBrowserPluginGuest())
-    return false;
-
-  GURL effective_url = SiteInstanceImpl::GetEffectiveURL(
-      rfh->GetSiteInstance()->GetBrowserContext(), real_url);
-
-  // TODO(nasko, nick): These following --site-per-process checks are
-  // overly simplistic. Update them to match all the cases
-  // considered by RenderFrameHostManager::DetermineSiteInstanceForURL.
-  if (SiteInstance::IsSameWebSite(rfh->GetSiteInstance()->GetBrowserContext(),
-                                  rfh->GetSiteInstance()->GetSiteURL(),
-                                  real_url)) {
-    return false;  // The same site, no transition needed.
-  }
-
-  // The sites differ. If either one requires a dedicated process,
-  // then a transfer is needed.
-  return rfh->GetSiteInstance()->RequiresDedicatedProcess() ||
-         SiteIsolationPolicy::DoesSiteRequireDedicatedProcess(effective_url);
+  RenderFrameHostManager* manager = rfh->frame_tree_node()->render_manager();
+  if (manager->IsRendererTransferNeededForNavigation(rfh, real_url))
+    return CrossSiteResourceHandler::NavigationDecision::TRANSFER_REQUIRED;
+  else
+    return CrossSiteResourceHandler::NavigationDecision::USE_EXISTING_RENDERER;
 }
 
 }  // namespace
@@ -130,13 +112,12 @@ bool CheckNavigationPolicyOnUI(GURL real_url,
 CrossSiteResourceHandler::CrossSiteResourceHandler(
     scoped_ptr<ResourceHandler> next_handler,
     net::URLRequest* request)
-    : LayeredResourceHandler(request, next_handler.Pass()),
+    : LayeredResourceHandler(request, std::move(next_handler)),
       has_started_response_(false),
       in_cross_site_transition_(false),
       completed_during_transition_(false),
       did_defer_(false),
-      weak_ptr_factory_(this) {
-}
+      weak_ptr_factory_(this) {}
 
 CrossSiteResourceHandler::~CrossSiteResourceHandler() {
   // Cleanup back-pointer stored on the request info.
@@ -236,11 +217,18 @@ bool CrossSiteResourceHandler::OnNormalResponseStarted(
   return next_handler_->OnResponseStarted(response, defer);
 }
 
-void CrossSiteResourceHandler::ResumeOrTransfer(bool is_transfer) {
-  if (is_transfer) {
-    StartCrossSiteTransition(response_.get());
-  } else {
-    ResumeResponse();
+void CrossSiteResourceHandler::ResumeOrTransfer(NavigationDecision decision) {
+  switch (decision) {
+    case NavigationDecision::CANCEL_REQUEST:
+      // TODO(nick): What kind of cleanup do we need here?
+      controller()->Cancel();
+      break;
+    case NavigationDecision::USE_EXISTING_RENDERER:
+      ResumeResponse();
+      break;
+    case NavigationDecision::TRANSFER_REQUIRED:
+      StartCrossSiteTransition(response_.get());
+      break;
   }
 }
 

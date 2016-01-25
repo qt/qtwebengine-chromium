@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/MediaValues.h"
 
 #include "core/css/CSSHelper.h"
@@ -32,18 +31,18 @@ PassRefPtrWillBeRawPtr<MediaValues> MediaValues::createDynamicIfFrameExists(Loca
     return MediaValuesCached::create();
 }
 
-int MediaValues::calculateViewportWidth(LocalFrame* frame) const
+double MediaValues::calculateViewportWidth(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->document());
     int viewportWidth = frame->view()->layoutSize(IncludeScrollbars).width();
-    return adjustForAbsoluteZoom(viewportWidth, frame->document()->layoutView());
+    return adjustDoubleForAbsoluteZoom(viewportWidth, *frame->document()->layoutView());
 }
 
-int MediaValues::calculateViewportHeight(LocalFrame* frame) const
+double MediaValues::calculateViewportHeight(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->document());
     int viewportHeight = frame->view()->layoutSize(IncludeScrollbars).height();
-    return adjustForAbsoluteZoom(viewportHeight, frame->document()->layoutView());
+    return adjustDoubleForAbsoluteZoom(viewportHeight, *frame->document()->layoutView());
 }
 
 int MediaValues::calculateDeviceWidth(LocalFrame* frame) const
@@ -153,13 +152,13 @@ int MediaValues::calculateAvailableHoverTypes(LocalFrame* frame) const
     return frame->settings()->availableHoverTypes();
 }
 
-bool MediaValues::computeLengthImpl(double value, CSSPrimitiveValue::UnitType type, unsigned defaultFontSize, unsigned viewportWidth, unsigned viewportHeight, double& result)
+bool MediaValues::computeLengthImpl(double value, CSSPrimitiveValue::UnitType type, unsigned defaultFontSize, double viewportWidth, double viewportHeight, double& result)
 {
-    // The logic in this function is duplicated from CSSPrimitiveValue::computeLengthDouble
-    // because MediaValues::computeLength needs nearly identical logic, but we haven't found a way to make
-    // CSSPrimitiveValue::computeLengthDouble more generic (to solve both cases) without hurting performance.
+    // The logic in this function is duplicated from CSSToLengthConversionData::zoomedComputedPixels()
+    // because MediaValues::computeLength() needs nearly identical logic, but we haven't found a way to make
+    // CSSToLengthConversionData::zoomedComputedPixels() more generic (to solve both cases) without hurting performance.
 
-    // FIXME - Unite the logic here with CSSPrimitiveValue in a performant way.
+    // FIXME - Unite the logic here with CSSToLengthConversionData in a performant way.
     double factor = 0;
     switch (type) {
     case CSSPrimitiveValue::UnitType::Ems:
@@ -167,6 +166,7 @@ bool MediaValues::computeLengthImpl(double value, CSSPrimitiveValue::UnitType ty
         factor = defaultFontSize;
         break;
     case CSSPrimitiveValue::UnitType::Pixels:
+    case CSSPrimitiveValue::UnitType::UserUnits:
         factor = 1;
         break;
     case CSSPrimitiveValue::UnitType::Exs:

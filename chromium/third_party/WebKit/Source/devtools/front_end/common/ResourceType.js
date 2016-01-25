@@ -76,6 +76,54 @@ WebInspector.ResourceType.prototype = {
     },
 
     /**
+     * @return {boolean}
+     */
+    isScript: function()
+    {
+        return this._name === "script" || this._name === "sm-script";
+    },
+
+    /**
+     * @return {boolean}
+     */
+    hasScripts: function()
+    {
+        return this.isScript() || this.isDocument();
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isStyleSheet: function()
+    {
+        return this._name === "stylesheet" || this._name === "sm-stylesheet";
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isDocument: function()
+    {
+        return this._name === "document";
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isDocumentOrScriptOrStyleSheet: function()
+    {
+        return this.isDocument() || this.isScript() || this.isStyleSheet();
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isFromSourceMap: function()
+    {
+        return this._name.startsWith("sm-");
+    },
+
+    /**
      * @override
      * @return {string}
      */
@@ -89,11 +137,11 @@ WebInspector.ResourceType.prototype = {
      */
     canonicalMimeType: function()
     {
-        if (this === WebInspector.resourceTypes.Document)
+        if (this.isDocument())
             return "text/html";
-        if (this === WebInspector.resourceTypes.Script)
+        if (this.isScript())
             return "text/javascript";
-        if (this === WebInspector.resourceTypes.Stylesheet)
+        if (this.isStyleSheet())
             return "text/css";
         return "";
     }
@@ -119,6 +167,7 @@ WebInspector.resourceCategories = {
     Font: new WebInspector.ResourceCategory("Fonts", "Font"),
     Document: new WebInspector.ResourceCategory("Documents", "Doc"),
     WebSocket: new WebInspector.ResourceCategory("WebSockets", "WS"),
+    Manifest: new WebInspector.ResourceCategory("Manifest", "Manifest"),
     Other: new WebInspector.ResourceCategory("Other", "Other")
 }
 
@@ -138,12 +187,35 @@ WebInspector.resourceTypes = {
     Document: new WebInspector.ResourceType("document", "Document", WebInspector.resourceCategories.Document, true),
     TextTrack: new WebInspector.ResourceType("texttrack", "TextTrack", WebInspector.resourceCategories.Other, true),
     WebSocket: new WebInspector.ResourceType("websocket", "WebSocket", WebInspector.resourceCategories.WebSocket, false),
-    Other: new WebInspector.ResourceType("other", "Other", WebInspector.resourceCategories.Other, false)
+    Other: new WebInspector.ResourceType("other", "Other", WebInspector.resourceCategories.Other, false),
+    SourceMapScript: new WebInspector.ResourceType("sm-script", "Script", WebInspector.resourceCategories.Script, false),
+    SourceMapStyleSheet: new WebInspector.ResourceType("sm-stylesheet", "Stylesheet", WebInspector.resourceCategories.Stylesheet, false),
+    Manifest: new WebInspector.ResourceType("manifest", "Manifest", WebInspector.resourceCategories.Manifest, false),
 }
 
-WebInspector.ResourceType.mimeTypesForExtensions = {
+/**
+ * @param {string} url
+ * @return {string}
+ */
+WebInspector.ResourceType.mimeFromURL = function(url)
+{
+    var name = WebInspector.TextUtils.fileName(url);
+    if (WebInspector.ResourceType.mimeTypeByName[name]) {
+        return WebInspector.ResourceType.mimeTypeByName[name];
+    }
+    var ext = WebInspector.TextUtils.extension(url).toLowerCase();
+    return WebInspector.ResourceType.mimeTypeByExtension[ext];
+}
+
+WebInspector.ResourceType.mimeTypeByName = {
+    // CoffeeScript
+    "Cakefile": "text/x-coffeescript"
+}
+
+WebInspector.ResourceType.mimeTypeByExtension = {
     // Web extensions
     "js": "text/javascript",
+    "jsx": "text/javascript",
     "css": "text/css",
     "html": "text/html",
     "htm": "text/html",
@@ -171,6 +243,7 @@ WebInspector.ResourceType.mimeTypesForExtensions = {
 
     // TypeScript
     "ts": "text/typescript",
+    "tsx": "text/typescript",
 
     // JSON
     "json": "application/json",
@@ -208,5 +281,26 @@ WebInspector.ResourceType.mimeTypesForExtensions = {
     // ClojureScript
     "cljs": "text/x-clojure",
     "cljc": "text/x-clojure",
-    "cljx": "text/x-clojure"
+    "cljx": "text/x-clojure",
+
+    // Stylus
+    "styl": "text/x-styl",
+
+    // Image
+    "jpeg": "image/jpeg",
+    "jpg": "image/jpeg",
+    "svg": "image/svg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "png": "image/png",
+    "ico": "image/ico",
+    "tiff": "image/tiff",
+    "tif": "image/tif",
+    "bmp": "image/bmp",
+
+    // Font
+    "ttf": "font/opentype",
+    "otf": "font/opentype",
+    "ttc": "font/opentype",
+    "woff": "application/font-woff"
 }

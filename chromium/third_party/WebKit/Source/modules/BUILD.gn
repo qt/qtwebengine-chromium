@@ -19,18 +19,18 @@ source_set("modules") {
   sources += bindings_modules_v8_files
   sources += rebase_path(bindings_modules_generated_aggregate_files, ".", "//")
   sources += rebase_path(bindings_modules_generated_union_type_files, ".", "//")
-  sources += rebase_path(bindings_modules_generated_partial_aggregate_files, ".", "//")
-  sources += rebase_path([ bindings_modules_generated_init_partial_interfaces_file ], ".", "//")
+  sources +=
+      rebase_path(bindings_modules_generated_partial_aggregate_files, ".", "//")
+  sources +=
+      rebase_path([ bindings_modules_generated_init_partial_interfaces_file ],
+                  ".",
+                  "//")
 
   if (!is_win) {
-    sources -= [
-      "webdatabase/sqlite/SQLiteFileSystemWin.cpp",
-    ]
+    sources -= [ "webdatabase/sqlite/SQLiteFileSystemWin.cpp" ]
   }
   if (!is_posix) {
-    sources -= [
-      "webdatabase/sqlite/SQLiteFileSystemPosix.cpp",
-    ]
+    sources -= [ "webdatabase/sqlite/SQLiteFileSystemPosix.cpp" ]
   }
 
   configs += [
@@ -49,9 +49,7 @@ source_set("modules") {
   ]
 
   if (is_win) {
-    cflags = [
-      "/wd4334",  # Result of 32-bit shift implicitly converted to 64 bits.
-    ]
+    cflags = [ "/wd4334" ]  # Result of 32-bit shift implicitly converted to 64 bits.
     # TODO(GYP)
     # Shard this taret into parts to work around linker limitations.
     # on link time code generation builds.
@@ -100,8 +98,8 @@ action("module_names") {
 # GYP version: WebKit/Source/modules/modules_generated.gyp:make_modules_generated
 group("make_modules_generated") {
   public_deps = [
-    "//third_party/WebKit/Source/core:core_event_interfaces",
-    "//third_party/WebKit/Source/bindings/modules:bindings_modules_generated",
     ":module_names",
+    "//third_party/WebKit/Source/bindings/modules:bindings_modules_generated",
+    "//third_party/WebKit/Source/core:core_event_interfaces",
   ]
 }

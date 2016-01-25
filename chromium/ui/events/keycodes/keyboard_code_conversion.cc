@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/macros.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/dom/dom_key.h"
@@ -18,13 +19,6 @@ namespace {
 bool IsRightSideDomCode(DomCode code) {
   return (code == DomCode::SHIFT_RIGHT) || (code == DomCode::CONTROL_RIGHT) ||
          (code == DomCode::ALT_RIGHT) || (code == DomCode::OS_RIGHT);
-}
-
-bool IsModifierDomCode(DomCode code) {
-  return (code == DomCode::CONTROL_LEFT) || (code == DomCode::CONTROL_RIGHT) ||
-         (code == DomCode::SHIFT_LEFT) || (code == DomCode::SHIFT_RIGHT) ||
-         (code == DomCode::ALT_LEFT) || (code == DomCode::ALT_RIGHT) ||
-         (code == DomCode::OS_LEFT) || (code == DomCode::OS_RIGHT);
 }
 
 }  // anonymous namespace
@@ -43,31 +37,18 @@ bool DomCodeToUsLayoutDomKey(DomCode dom_code,
                              int flags,
                              DomKey* out_dom_key,
                              KeyboardCode* out_key_code) {
-  if ((flags & EF_CONTROL_DOWN) == EF_CONTROL_DOWN) {
-    if (DomCodeToControlCharacter(dom_code, flags, out_dom_key, out_key_code)) {
-      return true;
-    }
-    if (!IsModifierDomCode(dom_code)) {
-      *out_dom_key = DomKey::UNIDENTIFIED;
-      *out_key_code = LocatedToNonLocatedKeyboardCode(
-          DomCodeToUsLayoutKeyboardCode(dom_code));
-      return true;
-    }
-  } else {
-    for (const auto& it : kPrintableCodeMap) {
-      if (it.dom_code == dom_code) {
-        int state = ((flags & EF_SHIFT_DOWN) == EF_SHIFT_DOWN);
-        base::char16 ch = it.character[state];
-        if ((flags & EF_CAPS_LOCK_DOWN) == EF_CAPS_LOCK_DOWN) {
-          ch |= 0x20;
-          if ((ch >= 'a') && (ch <= 'z'))
-            ch = it.character[state ^ 1];
-        }
-        *out_dom_key = DomKey::FromCharacter(ch);
-        *out_key_code = LocatedToNonLocatedKeyboardCode(
-            DomCodeToUsLayoutKeyboardCode(dom_code));
-        return true;
+  for (const auto& it : kPrintableCodeMap) {
+    if (it.dom_code == dom_code) {
+      int state = ((flags & EF_SHIFT_DOWN) == EF_SHIFT_DOWN);
+      base::char16 ch = it.character[state];
+      if ((flags & EF_CAPS_LOCK_ON) == EF_CAPS_LOCK_ON) {
+        ch |= 0x20;
+        if ((ch >= 'a') && (ch <= 'z'))
+          ch = it.character[state ^ 1];
       }
+      *out_dom_key = DomKey::FromCharacter(ch);
+      *out_key_code = DomCodeToUsLayoutNonLocatedKeyboardCode(dom_code);
+      return true;
     }
   }
   for (const auto& it : kNonPrintableCodeMap) {
@@ -76,12 +57,6 @@ bool DomCodeToUsLayoutDomKey(DomCode dom_code,
       *out_key_code = NonPrintableDomKeyToKeyboardCode(it.dom_key);
       return true;
     }
-  }
-  if ((flags & EF_CONTROL_DOWN) == EF_CONTROL_DOWN) {
-    *out_dom_key = DomKey::UNIDENTIFIED;
-    *out_key_code = LocatedToNonLocatedKeyboardCode(
-        DomCodeToUsLayoutKeyboardCode(dom_code));
-    return true;
   }
   return false;
 }
@@ -94,19 +69,19 @@ bool DomCodeToControlCharacter(DomCode dom_code,
     return false;
 
   int code = static_cast<int>(dom_code);
-  const int kKeyA = static_cast<int>(DomCode::KEY_A);
+  const int kKeyA = static_cast<int>(DomCode::US_A);
   // Control-A - Control-Z map to 0x01 - 0x1A.
-  if (code >= kKeyA && code <= static_cast<int>(DomCode::KEY_Z)) {
+  if (code >= kKeyA && code <= static_cast<int>(DomCode::US_Z)) {
     *dom_key = DomKey::FromCharacter(code - kKeyA + 1);
     *key_code = static_cast<KeyboardCode>(code - kKeyA + VKEY_A);
     switch (dom_code) {
-      case DomCode::KEY_H:
+      case DomCode::US_H:
         *key_code = VKEY_BACK;
         break;
-      case DomCode::KEY_I:
+      case DomCode::US_I:
         *key_code = VKEY_TAB;
         break;
-      case DomCode::KEY_M:
+      case DomCode::US_M:
         *key_code = VKEY_RETURN;
         break;
       default:
@@ -224,6 +199,14 @@ KeyboardCode NonLocatedToLocatedKeyboardCode(KeyboardCode key_code,
       return IsRightSideDomCode(dom_code) ? VKEY_RMENU : VKEY_LMENU;
     case VKEY_LWIN:
       return IsRightSideDomCode(dom_code) ? VKEY_RWIN : VKEY_LWIN;
+    default:
+      return NonLocatedToLocatedKeypadKeyboardCode(key_code, dom_code);
+  }
+}
+
+KeyboardCode NonLocatedToLocatedKeypadKeyboardCode(KeyboardCode key_code,
+                                                   DomCode dom_code) {
+  switch (key_code) {
     case VKEY_0:
       return (dom_code == DomCode::NUMPAD0) ? VKEY_NUMPAD0 : VKEY_0;
     case VKEY_1:
@@ -274,6 +257,11 @@ KeyboardCode DomCodeToUsLayoutKeyboardCode(DomCode dom_code) {
     return found->key_code;
 
   return VKEY_UNKNOWN;
+}
+
+KeyboardCode DomCodeToUsLayoutNonLocatedKeyboardCode(DomCode dom_code) {
+  return LocatedToNonLocatedKeyboardCode(
+      DomCodeToUsLayoutKeyboardCode(dom_code));
 }
 
 }  // namespace ui

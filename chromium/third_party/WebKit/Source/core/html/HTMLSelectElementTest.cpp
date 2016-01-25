@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/HTMLSelectElement.h"
 
 #include "core/frame/FrameView.h"
@@ -10,7 +9,7 @@
 #include "core/html/forms/FormController.h"
 #include "core/loader/EmptyClients.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -122,6 +121,19 @@ TEST_F(HTMLSelectElementTest, PopupIsVisible)
     EXPECT_TRUE(select->popupIsVisible());
     document().detach();
     EXPECT_FALSE(select->popupIsVisible());
+}
+
+TEST_F(HTMLSelectElementTest, ActiveSelectionEndAfterOptionRemoval)
+{
+    document().documentElement()->setInnerHTML("<select><optgroup><option selected>o1</option></optgroup></select>", ASSERT_NO_EXCEPTION);
+    document().view()->updateAllLifecyclePhases();
+    HTMLSelectElement* select = toHTMLSelectElement(document().body()->firstChild());
+    RefPtrWillBeRawPtr<HTMLOptionElement> option = toHTMLOptionElement(select->firstChild()->firstChild());
+    EXPECT_EQ(1, select->activeSelectionEndListIndex());
+    select->firstChild()->removeChild(option, ASSERT_NO_EXCEPTION);
+    EXPECT_EQ(-1, select->activeSelectionEndListIndex());
+    select->appendChild(option, ASSERT_NO_EXCEPTION);
+    EXPECT_EQ(1, select->activeSelectionEndListIndex());
 }
 
 } // namespace blink

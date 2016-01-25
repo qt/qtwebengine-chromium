@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
 
 #include "core/dom/ExecutionContext.h"
@@ -217,7 +216,7 @@ public:
         {
             if (!m_readerContext->m_blobDataHandleForDrain)
                 return nullptr;
-            if (blobSizePolicy == DisallowBlobWithInvalidSize && m_readerContext->m_blobDataHandleForDrain->size() == kuint64max)
+            if (blobSizePolicy == DisallowBlobWithInvalidSize && m_readerContext->m_blobDataHandleForDrain->size() == UINT64_MAX)
                 return nullptr;
             RefPtr<BlobDataHandle> blobDataHandle = m_readerContext->m_blobDataHandleForDrain;
             m_readerContext->setDrained();

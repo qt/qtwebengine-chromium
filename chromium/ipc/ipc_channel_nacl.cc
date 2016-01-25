@@ -13,6 +13,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
@@ -286,7 +287,8 @@ bool ChannelNacl::ProcessOutgoingMessages() {
     output_queue_.pop_front();
 
     int fds[MessageAttachmentSet::kMaxDescriptorsPerMessage];
-    const size_t num_fds = msg->attachment_set()->size();
+    const size_t num_fds =
+        msg->attachment_set()->num_non_brokerable_attachments();
     DCHECK(num_fds <= MessageAttachmentSet::kMaxDescriptorsPerMessage);
     msg->attachment_set()->PeekDescriptors(fds);
 
@@ -308,7 +310,7 @@ bool ChannelNacl::ProcessOutgoingMessages() {
                   << msg->size();
       return false;
     } else {
-      msg->attachment_set()->CommitAll();
+      msg->attachment_set()->CommitAllDescriptors();
     }
 
     // Message sent OK!

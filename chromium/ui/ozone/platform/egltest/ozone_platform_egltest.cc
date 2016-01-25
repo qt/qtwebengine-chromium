@@ -4,10 +4,13 @@
 
 #include "ui/ozone/platform/egltest/ozone_platform_egltest.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/threading/thread_checker.h"
 #include "library_loaders/libeglplatform_shim.h"
@@ -27,7 +30,7 @@
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
-#include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_platform.h"  // nogncheck
 #include "ui/ozone/public/ozone_switches.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
@@ -66,7 +69,7 @@ void ScaleTouchEvent(TouchEvent* event, const gfx::SizeF& size) {
                      size.height() / touchscreen_size.height());
       double ratio = std::sqrt(size.GetArea() / touchscreen_size.GetArea());
 
-      event->set_location(location);
+      event->set_location_f(location);
       event->set_radius_x(event->pointer_details().radius_x() * ratio);
       event->set_radius_y(event->pointer_details().radius_y() * ratio);
       return;
@@ -177,7 +180,7 @@ void EgltestWindow::SetCursor(PlatformCursor cursor) {
 }
 
 void EgltestWindow::MoveCursorTo(const gfx::Point& location) {
-  event_factory_->WarpCursorTo(window_id_, location);
+  event_factory_->WarpCursorTo(window_id_, gfx::PointF(location));
 }
 
 void EgltestWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
@@ -226,9 +229,8 @@ class SurfaceOzoneEgltest : public SurfaceOzoneEGL {
 
   bool OnSwapBuffers() override { return true; }
 
-  bool OnSwapBuffersAsync(const SwapCompletionCallback& callback) override {
+  void OnSwapBuffersAsync(const SwapCompletionCallback& callback) override {
     callback.Run(gfx::SwapResult::SWAP_ACK);
-    return true;
   }
 
   bool ResizeNativeWindow(const gfx::Size& viewport_size) override {
@@ -261,7 +263,7 @@ class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
   intptr_t GetNativeDisplay() override;
   scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) override;
-  const int32* GetEGLSurfaceProperties(const int32* desired_list) override;
+  const int32_t* GetEGLSurfaceProperties(const int32_t* desired_list) override;
   bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
@@ -299,10 +301,10 @@ bool SurfaceFactoryEgltest::LoadEGLGLES2Bindings(
                                     egl_soname, gles_soname);
 }
 
-const int32* SurfaceFactoryEgltest::GetEGLSurfaceProperties(
-    const int32* desired_list) {
+const int32_t* SurfaceFactoryEgltest::GetEGLSurfaceProperties(
+    const int32_t* desired_list) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  static const int32 broken_props[] = {
+  static const int32_t broken_props[] = {
       EGL_RENDERABLE_TYPE,
       EGL_OPENGL_ES2_BIT,
       EGL_SURFACE_TYPE,

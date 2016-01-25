@@ -7,6 +7,7 @@
   },
   'targets': [
     {
+      # GN version: //ios/web:ios_web_unittests
       'target_name': 'ios_web_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -19,7 +20,7 @@
         '../../ui/base/ui_base.gyp:ui_base_test_support',
         '../testing/ios_testing.gyp:ocmock_support',
         'ios_web.gyp:ios_web',
-        'ios_web.gyp:test_support_ios_web',
+        'ios_web.gyp:ios_web_test_support',
       ],
       'sources': [
         'active_state_manager_impl_unittest.mm',
@@ -46,7 +47,6 @@
         'net/request_tracker_impl_unittest.mm',
         'net/web_http_protocol_handler_delegate_unittest.mm',
         'public/referrer_util_unittest.cc',
-        'public/test/http_server_unittest.mm',
         'string_util_unittest.cc',
         'test/crw_fake_web_controller_observer_unittest.mm',
         'test/run_all_unittests.cc',
@@ -54,6 +54,7 @@
         'url_scheme_util_unittest.mm',
         'url_util_unittest.cc',
         'weak_nsobject_counter_unittest.mm',
+        'web_state/crw_pass_kit_downloader_unittest.mm',
         'web_state/crw_web_view_scroll_view_proxy_unittest.mm',
         'web_state/js/common_js_unittest.mm',
         'web_state/js/core_js_unittest.mm',
@@ -61,6 +62,7 @@
         'web_state/js/crw_js_early_script_manager_unittest.mm',
         'web_state/js/crw_js_injection_manager_unittest.mm',
         'web_state/js/crw_js_invoke_parameter_queue_unittest.mm',
+        'web_state/js/crw_js_post_request_loader_unittest.mm',
         'web_state/js/crw_js_window_id_manager_unittest.mm',
         'web_state/js/page_script_util_unittest.mm',
         'web_state/ui/crw_static_file_web_view_unittest.mm',
@@ -70,7 +72,6 @@
         'web_state/ui/crw_web_controller_unittest.mm',
         'web_state/ui/crw_wk_script_message_router_unittest.mm',
         'web_state/ui/crw_wk_simple_web_view_controller_unittest.mm',
-        'web_state/ui/crw_wk_web_view_crash_detector_unittest.mm',
         'web_state/ui/web_view_js_utils_unittest.mm',
         'web_state/ui/wk_back_forward_list_item_holder_unittest.mm',
         'web_state/ui/wk_web_view_configuration_provider_unittest.mm',

@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_INTERFACE_AUDIO_DECODER_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_INTERFACE_AUDIO_DECODER_H_
+#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_AUDIO_DECODER_H_
+#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_AUDIO_DECODER_H_
 
 #include <stdlib.h>  // NULL
 
 #include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/audio_coding/codecs/cng/include/webrtc_cng.h"
+#include "webrtc/modules/audio_coding/codecs/cng/webrtc_cng.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -41,21 +41,21 @@ class AudioDecoder {
   // is set to kComfortNoise, otherwise it is kSpeech. The desired output
   // sample rate is provided in |sample_rate_hz|, which must be valid for the
   // codec at hand.
-  virtual int Decode(const uint8_t* encoded,
-                     size_t encoded_len,
-                     int sample_rate_hz,
-                     size_t max_decoded_bytes,
-                     int16_t* decoded,
-                     SpeechType* speech_type);
+  int Decode(const uint8_t* encoded,
+             size_t encoded_len,
+             int sample_rate_hz,
+             size_t max_decoded_bytes,
+             int16_t* decoded,
+             SpeechType* speech_type);
 
   // Same as Decode(), but interfaces to the decoders redundant decode function.
   // The default implementation simply calls the regular Decode() method.
-  virtual int DecodeRedundant(const uint8_t* encoded,
-                              size_t encoded_len,
-                              int sample_rate_hz,
-                              size_t max_decoded_bytes,
-                              int16_t* decoded,
-                              SpeechType* speech_type);
+  int DecodeRedundant(const uint8_t* encoded,
+                      size_t encoded_len,
+                      int sample_rate_hz,
+                      size_t max_decoded_bytes,
+                      int16_t* decoded,
+                      SpeechType* speech_type);
 
   // Indicates if the decoder implements the DecodePlc method.
   virtual bool HasDecodePlc() const;
@@ -107,7 +107,7 @@ class AudioDecoder {
                              size_t encoded_len,
                              int sample_rate_hz,
                              int16_t* decoded,
-                             SpeechType* speech_type);
+                             SpeechType* speech_type) = 0;
 
   virtual int DecodeRedundantInternal(const uint8_t* encoded,
                                       size_t encoded_len,
@@ -120,4 +120,4 @@ class AudioDecoder {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_INTERFACE_AUDIO_DECODER_H_
+#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_AUDIO_DECODER_H_

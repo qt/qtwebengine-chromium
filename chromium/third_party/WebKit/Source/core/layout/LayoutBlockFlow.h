@@ -54,6 +54,8 @@ class LayoutMultiColumnSpannerPlaceholder;
 class LayoutRubyRun;
 template <class Run> class BidiRunList;
 
+enum IndentTextOrNot { DoNotIndentText, IndentText };
+
 // LayoutBlockFlow is the class that implements a block container in CSS 2.1.
 // http://www.w3.org/TR/CSS21/visuren.html#block-boxes
 //
@@ -73,6 +75,15 @@ template <class Run> class BidiRunList;
 // perform inline layout. See LayoutBlockFlowLine.cpp for these parts.
 //
 // TODO(jchaffraix): We need some float and line box expert to expand on this.
+//
+// LayoutBlockFlow enforces the following invariant:
+//
+// All in-flow children (ie excluding floating and out-of-flow positioned) are
+// either all blocks or all inline boxes.
+//
+// This is suggested by CSS to correctly the layout mixed inlines and blocks
+// lines (http://www.w3.org/TR/CSS21/visuren.html#anonymous-block-level). See
+// LayoutBlock::addChild about how the invariant is enforced.
 class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 public:
     explicit LayoutBlockFlow(ContainerNode*);
@@ -84,31 +95,31 @@ public:
 
     void layoutBlock(bool relayoutChildren) override;
 
-    void computeOverflow(LayoutUnit oldClientAfterEdge) override;
+    void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false) override;
 
     void deleteLineBoxTree() final;
 
-    LayoutUnit availableLogicalWidthForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
+    LayoutUnit availableLogicalWidthForLine(LayoutUnit position, IndentTextOrNot indentText, LayoutUnit logicalHeight = 0) const
     {
-        return max<LayoutUnit>(0, logicalRightOffsetForLine(position, shouldIndentText, logicalHeight) - logicalLeftOffsetForLine(position, shouldIndentText, logicalHeight));
+        return max<LayoutUnit>(0, logicalRightOffsetForLine(position, indentText, logicalHeight) - logicalLeftOffsetForLine(position, indentText, logicalHeight));
     }
-    LayoutUnit logicalRightOffsetForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
+    LayoutUnit logicalRightOffsetForLine(LayoutUnit position, IndentTextOrNot indentText, LayoutUnit logicalHeight = 0) const
     {
-        return logicalRightOffsetForLine(position, logicalRightOffsetForContent(), shouldIndentText, logicalHeight);
+        return logicalRightOffsetForLine(position, logicalRightOffsetForContent(), indentText, logicalHeight);
     }
-    LayoutUnit logicalLeftOffsetForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
+    LayoutUnit logicalLeftOffsetForLine(LayoutUnit position, IndentTextOrNot indentText, LayoutUnit logicalHeight = 0) const
     {
-        return logicalLeftOffsetForLine(position, logicalLeftOffsetForContent(), shouldIndentText, logicalHeight);
+        return logicalLeftOffsetForLine(position, logicalLeftOffsetForContent(), indentText, logicalHeight);
     }
-    LayoutUnit startOffsetForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
+    LayoutUnit startOffsetForLine(LayoutUnit position, IndentTextOrNot indentText, LayoutUnit logicalHeight = 0) const
     {
-        return style()->isLeftToRightDirection() ? logicalLeftOffsetForLine(position, shouldIndentText, logicalHeight)
-            : logicalWidth() - logicalRightOffsetForLine(position, shouldIndentText, logicalHeight);
+        return style()->isLeftToRightDirection() ? logicalLeftOffsetForLine(position, indentText, logicalHeight)
+            : logicalWidth() - logicalRightOffsetForLine(position, indentText, logicalHeight);
     }
-    LayoutUnit endOffsetForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
+    LayoutUnit endOffsetForLine(LayoutUnit position, IndentTextOrNot indentText, LayoutUnit logicalHeight = 0) const
     {
-        return !style()->isLeftToRightDirection() ? logicalLeftOffsetForLine(position, shouldIndentText, logicalHeight)
-            : logicalWidth() - logicalRightOffsetForLine(position, shouldIndentText, logicalHeight);
+        return !style()->isLeftToRightDirection() ? logicalLeftOffsetForLine(position, indentText, logicalHeight)
+            : logicalWidth() - logicalRightOffsetForLine(position, indentText, logicalHeight);
     }
 
     // FIXME-BLOCKFLOW: Move this into LayoutBlockFlow once there are no calls
@@ -124,6 +135,7 @@ public:
 
     RootInlineBox* createAndAppendRootInlineBox();
 
+    void removeFloatingObjectsFromDescendants();
     void markAllDescendantsWithFloatsForLayout(LayoutBox* floatToRemove = nullptr, bool inLayout = true);
     void markSiblingsWithFloatsForLayout(LayoutBox* floatToRemove = nullptr);
 
@@ -143,9 +155,6 @@ public:
     LayoutUnit logicalLeftForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.x() : floatingObject.y(); }
     LayoutUnit logicalRightForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.maxX() : floatingObject.maxY(); }
     LayoutUnit logicalWidthForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.width() : floatingObject.height(); }
-
-    int pixelSnappedLogicalTopForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.frameRect().pixelSnappedY() : floatingObject.frameRect().pixelSnappedX(); }
-    int pixelSnappedLogicalBottomForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.frameRect().pixelSnappedMaxY() : floatingObject.frameRect().pixelSnappedMaxX(); }
 
     void setLogicalTopForFloat(FloatingObject& floatingObject, LayoutUnit logicalTop)
     {
@@ -176,10 +185,10 @@ public:
             floatingObject.setHeight(logicalWidth);
     }
 
-    LayoutUnit startAlignedOffsetForLine(LayoutUnit position, bool shouldIndentText);
+    LayoutUnit startAlignedOffsetForLine(LayoutUnit position, IndentTextOrNot);
 
     void setStaticInlinePositionForChild(LayoutBox&, LayoutUnit inlinePosition);
-    void updateStaticInlinePositionForChild(LayoutBox&, LayoutUnit logicalTop);
+    void updateStaticInlinePositionForChild(LayoutBox&, LayoutUnit logicalTop, IndentTextOrNot = DoNotIndentText);
 
     static bool shouldSkipCreatingRunsForObject(LayoutObject* obj)
     {
@@ -217,8 +226,21 @@ public:
     LayoutRect blockSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit lastLogicalTop, LayoutUnit lastLogicalLeft, LayoutUnit lastLogicalRight, LayoutUnit logicalBottom, const PaintInfo*) const;
 
-    LayoutUnit paginationStrut() const { return m_rareData ? m_rareData->m_paginationStrut : LayoutUnit(); }
-    void setPaginationStrut(LayoutUnit);
+    bool allowsPaginationStrut() const;
+    // Pagination strut caused by the first line or child block inside this block-level object.
+    //
+    // When the first piece of content (first child block or line) inside an object wants to insert
+    // a soft page or column break, rather than setting a pagination strut on itself it normally
+    // propagates the strut to its containing block (|this|), as long as our implementation can
+    // handle it. The idea is that we want to push the entire object to the next page or column
+    // along with the child content that caused the break, instead of leaving unusable space at the
+    // beginning of the object at the end of one column or page and just push the first line or
+    // block to the next column or page. That would waste space in the container for no good
+    // reason, and it would also be a spec violation, since there is no break opportunity defined
+    // between the content logical top of an object and its first child or line (only *between*
+    // blocks or lines).
+    LayoutUnit paginationStrutPropagatedFromChild() const { return m_rareData ? m_rareData->m_paginationStrutPropagatedFromChild : LayoutUnit(); }
+    void setPaginationStrutPropagatedFromChild(LayoutUnit);
 
     void positionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child);
 
@@ -273,6 +295,8 @@ public:
         return containsFloats() ? m_floatingObjects->set().last().get() : nullptr;
     }
 
+    void invalidateDisplayItemClientsOfFirstLine();
+
 protected:
     void rebuildFloatsFromIntruding();
     void layoutInlineChildren(bool relayoutChildren, LayoutUnit& paintInvalidationLogicalTop, LayoutUnit& paintInvalidationLogicalBottom, LayoutUnit afterEdge);
@@ -287,11 +311,11 @@ protected:
 
     void addOverflowFromFloats();
 
-    LayoutUnit logicalRightOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
+    LayoutUnit logicalRightOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, IndentTextOrNot applyTextIndent, LayoutUnit logicalHeight = 0) const
     {
         return adjustLogicalRightOffsetForLine(logicalRightFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
     }
-    LayoutUnit logicalLeftOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
+    LayoutUnit logicalLeftOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, IndentTextOrNot applyTextIndent, LayoutUnit logicalHeight = 0) const
     {
         return adjustLogicalLeftOffsetForLine(logicalLeftFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
     }
@@ -302,6 +326,8 @@ protected:
     void setLogicalLeftForChild(LayoutBox& child, LayoutUnit logicalLeft);
     void setLogicalTopForChild(LayoutBox& child, LayoutUnit logicalTop);
     void determineLogicalLeftPositionForChild(LayoutBox& child);
+
+    PaintInvalidationReason invalidatePaintIfNeeded(PaintInvalidationState&, const LayoutBoxModelObject& paintInvalidationContainer) override;
 
 private:
     bool layoutBlockFlow(bool relayoutChildren, LayoutUnit& pageLogicalHeight, SubtreeLayoutScope&);
@@ -331,7 +357,7 @@ private:
 
     void invalidatePaintForOverhangingFloats(bool paintAllDescendants) final;
     void invalidatePaintForOverflow() final;
-    void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase = false) const final;
+    void paintFloats(const PaintInfo&, const LayoutPoint&) const final;
     void paintSelection(const PaintInfo&, const LayoutPoint&) const final;
     virtual void clipOutFloatingObjects(const LayoutBlock*, ClipScope&, const LayoutPoint&, const LayoutSize&) const;
     void clearFloats(EClear);
@@ -339,11 +365,11 @@ private:
     LayoutUnit logicalRightFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit logicalHeight) const;
     LayoutUnit logicalLeftFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit logicalHeight) const;
 
-    LayoutUnit logicalRightOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit* heightRemaining) const;
-    LayoutUnit logicalLeftOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit* heightRemaining) const;
+    LayoutUnit logicalRightOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit* heightRemaining) const;
+    LayoutUnit logicalLeftOffsetForPositioningFloat(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit* heightRemaining) const;
 
-    LayoutUnit adjustLogicalRightOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
-    LayoutUnit adjustLogicalLeftOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
+    LayoutUnit adjustLogicalRightOffsetForLine(LayoutUnit offsetFromFloats, IndentTextOrNot applyTextIndent) const;
+    LayoutUnit adjustLogicalLeftOffsetForLine(LayoutUnit offsetFromFloats, IndentTextOrNot applyTextIndent) const;
 
     virtual RootInlineBox* createRootInlineBox(); // Subclassed by SVG
 
@@ -373,7 +399,7 @@ private:
 
 public:
     struct FloatWithRect {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         FloatWithRect(LayoutBox* f)
             : object(f)
             , rect(f->frameRect())
@@ -387,8 +413,18 @@ public:
         bool everHadLayout;
     };
 
+    // MarginValues holds the margins in the block direction
+    // used during collapsing margins computation.
+    // CSS mandates to keep track of both positive and negative margins:
+    // "When two or more margins collapse, the resulting margin width is the
+    // maximum of the collapsing margins' widths. In the case of negative
+    // margins, the maximum of the absolute values of the negative adjoining
+    // margins is deducted from the maximum of the positive adjoining margins.
+    // If there are no positive margins, the maximum of the absolute values of
+    // the adjoining margins is deducted from zero."
+    // https://drafts.csswg.org/css2/box.html#collapsing-margins
     class MarginValues {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         MarginValues(LayoutUnit beforePos, LayoutUnit beforeNeg, LayoutUnit afterPos, LayoutUnit afterNeg)
             : m_positiveMarginBefore(beforePos)
@@ -417,11 +453,10 @@ public:
 
     // Allocated only when some of these fields have non-default values
     struct LayoutBlockFlowRareData {
-        WTF_MAKE_NONCOPYABLE(LayoutBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED(LayoutBlockFlowRareData);
+        WTF_MAKE_NONCOPYABLE(LayoutBlockFlowRareData); USING_FAST_MALLOC(LayoutBlockFlowRareData);
     public:
         LayoutBlockFlowRareData(const LayoutBlockFlow* block)
             : m_margins(positiveMarginBeforeDefault(block), negativeMarginBeforeDefault(block), positiveMarginAfterDefault(block), negativeMarginAfterDefault(block))
-            , m_paginationStrut(0)
             , m_multiColumnFlowThread(nullptr)
             , m_lineBreakToAvoidWidow(-1)
             , m_didBreakAtLineToAvoidWidow(false)
@@ -448,7 +483,7 @@ public:
         }
 
         MarginValues m_margins;
-        LayoutUnit m_paginationStrut;
+        LayoutUnit m_paginationStrutPropagatedFromChild;
 
         LayoutMultiColumnFlowThread* m_multiColumnFlowThread;
 
@@ -498,6 +533,10 @@ private:
     LayoutUnit collapsedMarginBefore() const final { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
     LayoutUnit collapsedMarginAfter() const final { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
 
+    // Floats' margins do not collapse with page or column boundaries, and we therefore need to
+    // treat them specially in some cases.
+    LayoutUnit marginBeforeIfFloating() const { return isFloating() ? marginBefore() : LayoutUnit(); }
+
     LayoutUnit collapseMargins(LayoutBox& child, MarginInfo&, bool childIsSelfCollapsing, bool childDiscardMarginBefore, bool childDiscardMarginAfter);
     LayoutUnit clearFloatsIfNeeded(LayoutBox& child, MarginInfo&, LayoutUnit oldTopPosMargin, LayoutUnit oldTopNegMargin, LayoutUnit yPos, bool childIsSelfCollapsing, bool childDiscardMargin);
     LayoutUnit estimateLogicalTopPosition(LayoutBox& child, const MarginInfo&, LayoutUnit& estimateWithoutPagination);
@@ -512,7 +551,7 @@ private:
     // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
     void adjustLinePositionForPagination(RootInlineBox&, LayoutUnit& deltaOffset);
     // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
-    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset);
+    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset) const;
 
     // Used to store state between styleWillChange and styleDidChange
     static bool s_canPropagateFloatIntoSibling;
@@ -545,7 +584,7 @@ private:
         LayoutUnit& availableLogicalWidth, BidiRun* firstRun, BidiRun* trailingSpaceRun, GlyphOverflowAndFallbackFontsMap& textBoxDataMap, VerticalPositionCache&, WordMeasurements&);
     void computeBlockDirectionPositionsForLine(RootInlineBox*, BidiRun*, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&);
     void appendFloatingObjectToLastLine(FloatingObject&);
-    void appendFloatsToLastLine(LineLayoutState&, const InlineIterator& cleanLineStart);
+    void appendFloatsToLastLine(LineLayoutState&, const InlineIterator& cleanLineStart, const InlineBidiResolver&, const BidiStatus& cleanLineBidiStatus);
     // Helper function for layoutInlineChildren()
     RootInlineBox* createLineBoxesFromBidiRuns(unsigned bidiLevel, BidiRunList<BidiRun>&, const InlineIterator& end, LineInfo&, VerticalPositionCache&, BidiRun* trailingSpaceRun, WordMeasurements&);
     void layoutRunsAndFloats(LineLayoutState&);

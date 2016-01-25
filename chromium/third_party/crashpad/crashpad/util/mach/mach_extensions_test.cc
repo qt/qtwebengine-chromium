@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 #include "test/mac/mach_errors.h"
 #include "util/mac/mac_util.h"
+#include "util/misc/random_string.h"
 
 namespace crashpad {
 namespace test {
@@ -33,7 +34,7 @@ TEST(MachExtensions, NewMachPort_Receive) {
   ASSERT_NE(kMachPortNull, port);
 
   mach_port_type_t type;
-  kern_return_t kr = mach_port_type(mach_task_self(), port, &type);
+  kern_return_t kr = mach_port_type(mach_task_self(), port.get(), &type);
   ASSERT_EQ(KERN_SUCCESS, kr) << MachErrorMessage(kr, "mach_port_get_type");
 
   EXPECT_EQ(MACH_PORT_TYPE_RECEIVE, type);
@@ -44,7 +45,7 @@ TEST(MachExtensions, NewMachPort_PortSet) {
   ASSERT_NE(kMachPortNull, port);
 
   mach_port_type_t type;
-  kern_return_t kr = mach_port_type(mach_task_self(), port, &type);
+  kern_return_t kr = mach_port_type(mach_task_self(), port.get(), &type);
   ASSERT_EQ(KERN_SUCCESS, kr) << MachErrorMessage(kr, "mach_port_get_type");
 
   EXPECT_EQ(MACH_PORT_TYPE_PORT_SET, type);
@@ -55,7 +56,7 @@ TEST(MachExtensions, NewMachPort_DeadName) {
   ASSERT_NE(kMachPortNull, port);
 
   mach_port_type_t type;
-  kern_return_t kr = mach_port_type(mach_task_self(), port, &type);
+  kern_return_t kr = mach_port_type(mach_task_self(), port.get(), &type);
   ASSERT_EQ(KERN_SUCCESS, kr) << MachErrorMessage(kr, "mach_port_get_type");
 
   EXPECT_EQ(MACH_PORT_TYPE_DEAD_NAME, type);
@@ -131,10 +132,46 @@ TEST(MachExtensions, ExcMaskValid) {
   EXPECT_TRUE(ExcMaskValid() & ~ExcMaskAll());
 }
 
+TEST(MachExtensions, BootstrapCheckInAndLookUp) {
+  // This should always exist.
+  base::mac::ScopedMachSendRight
+      report_crash(BootstrapLookUp("com.apple.ReportCrash"));
+  EXPECT_NE(report_crash, kMachPortNull);
+
+  std::string service_name = "org.chromium.crashpad.test.bootstrap_check_in.";
+  service_name.append(RandomString());
+
+  {
+    // The new service hasn’t checked in yet, so this should fail.
+    base::mac::ScopedMachSendRight send(BootstrapLookUp(service_name));
+    EXPECT_EQ(kMachPortNull, send);
+
+    // Check it in.
+    base::mac::ScopedMachReceiveRight receive(BootstrapCheckIn(service_name));
+    EXPECT_NE(receive, kMachPortNull);
+
+    // Now it should be possible to look up the new service.
+    send = BootstrapLookUp(service_name);
+    EXPECT_NE(send, kMachPortNull);
+
+    // It shouldn’t be possible to check the service in while it’s active.
+    base::mac::ScopedMachReceiveRight receive_2(BootstrapCheckIn(service_name));
+    EXPECT_EQ(kMachPortNull, receive_2);
+  }
+
+  // The new service should be gone now.
+  base::mac::ScopedMachSendRight send(BootstrapLookUp(service_name));
+  EXPECT_EQ(kMachPortNull, send);
+
+  // It should be possible to check it in again.
+  base::mac::ScopedMachReceiveRight receive(BootstrapCheckIn(service_name));
+  EXPECT_NE(receive, kMachPortNull);
+}
+
 TEST(MachExtensions, SystemCrashReporterHandler) {
   base::mac::ScopedMachSendRight
       system_crash_reporter_handler(SystemCrashReporterHandler());
-  EXPECT_TRUE(system_crash_reporter_handler);
+  EXPECT_TRUE(system_crash_reporter_handler.is_valid());
 }
 
 }  // namespace

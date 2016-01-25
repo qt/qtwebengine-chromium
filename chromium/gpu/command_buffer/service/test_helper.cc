@@ -4,6 +4,9 @@
 
 #include "gpu/command_buffer/service/test_helper.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <string>
 
@@ -12,6 +15,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/error_state_mock.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mocks.h"
@@ -338,6 +342,16 @@ void TestHelper::SetupContextGroupInitExpectations(
         .WillOnce(SetArgumentPointee<1>(kMaxSamples))
         .RetiresOnSaturation();
   }
+
+  if (gl_info.IsAtLeastGL(3, 3) ||
+      (gl_info.IsAtLeastGL(3, 2) &&
+       strstr(extensions, "GL_ARB_blend_func_extended")) ||
+      (gl_info.is_es && strstr(extensions, "GL_EXT_blend_func_extended"))) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_DUAL_SOURCE_DRAW_BUFFERS_EXT, _))
+        .WillOnce(SetArgumentPointee<1>(8))
+        .RetiresOnSaturation();
+  }
+
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_VERTEX_ATTRIBS, _))
       .WillOnce(SetArgumentPointee<1>(kNumVertexAttribs))
       .RetiresOnSaturation();
@@ -407,7 +421,7 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
   InSequence sequence;
 
   EXPECT_CALL(*gl, GetString(GL_VERSION))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_version)))
+      .WillOnce(Return(reinterpret_cast<const uint8_t*>(gl_version)))
       .RetiresOnSaturation();
 
   // Persistent storage is needed for the split extension string.
@@ -424,24 +438,25 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         .RetiresOnSaturation();
     for (size_t ii = 0; ii < split_extensions_.size(); ++ii) {
       EXPECT_CALL(*gl, GetStringi(GL_EXTENSIONS, ii))
-          .WillOnce(Return(reinterpret_cast<const uint8*>(
-              split_extensions_[ii].c_str())))
+          .WillOnce(Return(
+              reinterpret_cast<const uint8_t*>(split_extensions_[ii].c_str())))
           .RetiresOnSaturation();
     }
   } else {
     EXPECT_CALL(*gl, GetString(GL_EXTENSIONS))
-        .WillOnce(Return(reinterpret_cast<const uint8*>(extensions)))
+        .WillOnce(Return(reinterpret_cast<const uint8_t*>(extensions)))
         .RetiresOnSaturation();
   }
 
   EXPECT_CALL(*gl, GetString(GL_VERSION))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_version)))
+      .WillOnce(Return(reinterpret_cast<const uint8_t*>(gl_version)))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl, GetString(GL_RENDERER))
-      .WillOnce(Return(reinterpret_cast<const uint8*>(gl_renderer)))
+      .WillOnce(Return(reinterpret_cast<const uint8_t*>(gl_renderer)))
       .RetiresOnSaturation();
 
-  if (strstr(extensions, "GL_ARB_texture_float") ||
+  if ((strstr(extensions, "GL_ARB_texture_float") ||
+       gl_info.is_desktop_core_profile) ||
       (gl_info.is_es3 && strstr(extensions, "GL_EXT_color_buffer_float"))) {
     static const GLuint tx_ids[] = {101, 102};
     static const GLuint fb_ids[] = {103, 104};
@@ -513,7 +528,8 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
 
   if (strstr(extensions, "GL_EXT_draw_buffers") ||
       strstr(extensions, "GL_ARB_draw_buffers") ||
-      (gl_info.is_es3 && strstr(extensions, "GL_NV_draw_buffers"))) {
+      (gl_info.is_es3 && strstr(extensions, "GL_NV_draw_buffers")) ||
+      gl_info.is_desktop_core_profile) {
     EXPECT_CALL(*gl, GetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, _))
         .WillOnce(SetArgumentPointee<1>(8))
         .RetiresOnSaturation();
@@ -522,7 +538,8 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         .RetiresOnSaturation();
   }
 
-  if (gl_info.is_es3 || strstr(extensions, "GL_EXT_texture_rg") ||
+  if (gl_info.is_es3 || gl_info.is_desktop_core_profile ||
+      strstr(extensions, "GL_EXT_texture_rg") ||
       (strstr(extensions, "GL_ARB_texture_rg"))) {
     static const GLuint tx_ids[] = {101, 102};
     static const GLuint fb_ids[] = {103, 104};
@@ -678,8 +695,15 @@ void TestHelper::SetupExpectationsForClearingUniforms(
 
 void TestHelper::SetupProgramSuccessExpectations(
     ::gfx::MockGLInterface* gl,
-    AttribInfo* attribs, size_t num_attribs,
-    UniformInfo* uniforms, size_t num_uniforms,
+    const FeatureInfo* feature_info,
+    AttribInfo* attribs,
+    size_t num_attribs,
+    UniformInfo* uniforms,
+    size_t num_uniforms,
+    VaryingInfo* varyings,
+    size_t num_varyings,
+    ProgramOutputInfo* program_outputs,
+    size_t num_program_outputs,
     GLuint service_id) {
   EXPECT_CALL(*gl,
       GetProgramiv(service_id, GL_LINK_STATUS, _))
@@ -715,7 +739,7 @@ void TestHelper::SetupProgramSuccessExpectations(
             SetArrayArgument<6>(info.name,
                                 info.name + strlen(info.name) + 1)))
         .RetiresOnSaturation();
-    if (!ProgramManager::IsInvalidPrefix(info.name, strlen(info.name))) {
+    if (!ProgramManager::HasBuiltInPrefix(info.name)) {
       EXPECT_CALL(*gl, GetAttribLocation(service_id, StrEq(info.name)))
           .WillOnce(Return(info.location))
           .RetiresOnSaturation();
@@ -726,63 +750,142 @@ void TestHelper::SetupProgramSuccessExpectations(
       .WillOnce(SetArgumentPointee<2>(num_uniforms))
       .RetiresOnSaturation();
 
-  size_t max_uniform_len = 0;
-  for (size_t ii = 0; ii < num_uniforms; ++ii) {
-    size_t len = strlen(uniforms[ii].name) + 1;
-    max_uniform_len = std::max(max_uniform_len, len);
-  }
-  EXPECT_CALL(*gl,
-      GetProgramiv(service_id, GL_ACTIVE_UNIFORM_MAX_LENGTH, _))
-      .WillOnce(SetArgumentPointee<2>(max_uniform_len))
-      .RetiresOnSaturation();
-  for (size_t ii = 0; ii < num_uniforms; ++ii) {
-    const UniformInfo& info = uniforms[ii];
-    EXPECT_CALL(*gl,
-        GetActiveUniform(service_id, ii,
-                         max_uniform_len, _, _, _, _))
-        .WillOnce(DoAll(
-            SetArgumentPointee<3>(strlen(info.name)),
-            SetArgumentPointee<4>(info.size),
-            SetArgumentPointee<5>(info.type),
-            SetArrayArgument<6>(info.name,
-                                info.name + strlen(info.name) + 1)))
+  if (num_uniforms > 0) {
+    size_t max_uniform_len = 0;
+    for (size_t ii = 0; ii < num_uniforms; ++ii) {
+      size_t len = strlen(uniforms[ii].name) + 1;
+      max_uniform_len = std::max(max_uniform_len, len);
+    }
+    EXPECT_CALL(*gl, GetProgramiv(service_id, GL_ACTIVE_UNIFORM_MAX_LENGTH, _))
+        .WillOnce(SetArgumentPointee<2>(max_uniform_len))
         .RetiresOnSaturation();
-  }
-
-  for (int pass = 0; pass < 2; ++pass) {
     for (size_t ii = 0; ii < num_uniforms; ++ii) {
       const UniformInfo& info = uniforms[ii];
-      if (pass == 0 && info.real_location != -1) {
+      EXPECT_CALL(*gl,
+                  GetActiveUniform(service_id, ii, max_uniform_len, _, _, _, _))
+          .WillOnce(DoAll(SetArgumentPointee<3>(strlen(info.name)),
+                          SetArgumentPointee<4>(info.size),
+                          SetArgumentPointee<5>(info.type),
+                          SetArrayArgument<6>(
+                              info.name, info.name + strlen(info.name) + 1)))
+          .RetiresOnSaturation();
+
+      if (info.real_location != -1) {
         EXPECT_CALL(*gl, GetUniformLocation(service_id, StrEq(info.name)))
             .WillOnce(Return(info.real_location))
             .RetiresOnSaturation();
       }
-      if ((pass == 0 && info.desired_location >= 0) ||
-          (pass == 1 && info.desired_location < 0)) {
-        if (info.size > 1) {
-          std::string base_name = info.name;
-          size_t array_pos = base_name.rfind("[0]");
-          if (base_name.size() > 3 && array_pos == base_name.size() - 3) {
-            base_name = base_name.substr(0, base_name.size() - 3);
-          }
-          for (GLsizei jj = 1; jj < info.size; ++jj) {
-            std::string element_name(
-                std::string(base_name) + "[" + base::IntToString(jj) + "]");
-            EXPECT_CALL(*gl, GetUniformLocation(
-                service_id, StrEq(element_name)))
-                .WillOnce(Return(info.real_location + jj * 2))
-                .RetiresOnSaturation();
-          }
+      if (info.size > 1) {
+        std::string base_name = info.name;
+        size_t array_pos = base_name.rfind("[0]");
+        if (base_name.size() > 3 && array_pos == base_name.size() - 3) {
+          base_name = base_name.substr(0, base_name.size() - 3);
         }
+        for (GLsizei jj = 1; jj < info.size; ++jj) {
+          std::string element_name(std::string(base_name) + "[" +
+                                   base::IntToString(jj) + "]");
+          EXPECT_CALL(*gl, GetUniformLocation(service_id, StrEq(element_name)))
+              .WillOnce(Return(info.real_location + jj * 2))
+              .RetiresOnSaturation();
+        }
+      }
+    }
+  }
+
+  if (feature_info->feature_flags().chromium_path_rendering) {
+    EXPECT_CALL(*gl, GetProgramInterfaceiv(service_id, GL_FRAGMENT_INPUT_NV,
+                                           GL_ACTIVE_RESOURCES, _))
+        .WillOnce(SetArgumentPointee<3>(int(num_varyings)))
+        .RetiresOnSaturation();
+    size_t max_varying_len = 0;
+    for (size_t ii = 0; ii < num_varyings; ++ii) {
+      size_t len = strlen(varyings[ii].name) + 1;
+      max_varying_len = std::max(max_varying_len, len);
+    }
+    EXPECT_CALL(*gl, GetProgramInterfaceiv(service_id, GL_FRAGMENT_INPUT_NV,
+                                           GL_MAX_NAME_LENGTH, _))
+        .WillOnce(SetArgumentPointee<3>(int(max_varying_len)))
+        .RetiresOnSaturation();
+    for (size_t ii = 0; ii < num_varyings; ++ii) {
+      VaryingInfo& info = varyings[ii];
+      EXPECT_CALL(*gl, GetProgramResourceName(service_id, GL_FRAGMENT_INPUT_NV,
+                                              ii, max_varying_len, _, _))
+          .WillOnce(DoAll(SetArgumentPointee<4>(strlen(info.name)),
+                          SetArrayArgument<5>(
+                              info.name, info.name + strlen(info.name) + 1)))
+          .RetiresOnSaturation();
+      if (ProgramManager::HasBuiltInPrefix(info.name))
+        continue;
+
+        static const GLenum kPropsArray[] = {GL_LOCATION, GL_TYPE,
+                                             GL_ARRAY_SIZE};
+        static const size_t kPropsSize = arraysize(kPropsArray);
+        EXPECT_CALL(
+            *gl, GetProgramResourceiv(
+                     service_id, GL_FRAGMENT_INPUT_NV, ii, kPropsSize,
+                     _ /*testing::ElementsAreArray(kPropsArray, kPropsSize)*/,
+                     kPropsSize, _, _))
+            .WillOnce(testing::Invoke([info](GLuint, GLenum, GLuint, GLsizei,
+                                             const GLenum*, GLsizei,
+                                             GLsizei* length, GLint* params) {
+              *length = kPropsSize;
+              params[0] = info.real_location;
+              params[1] = info.type;
+              params[2] = info.size;
+            }))
+            .RetiresOnSaturation();
+      }
+  }
+  if (feature_info->gl_version_info().IsES3Capable() &&
+      !feature_info->disable_shader_translator()) {
+    for (size_t ii = 0; ii < num_program_outputs; ++ii) {
+      ProgramOutputInfo& info = program_outputs[ii];
+      if (ProgramManager::HasBuiltInPrefix(info.name))
+        continue;
+
+      EXPECT_CALL(*gl, GetFragDataLocation(service_id, StrEq(info.name)))
+          .WillOnce(Return(info.color_name))
+          .RetiresOnSaturation();
+      if (feature_info->feature_flags().ext_blend_func_extended) {
+        EXPECT_CALL(*gl, GetFragDataIndex(service_id, StrEq(info.name)))
+            .WillOnce(Return(info.index))
+            .RetiresOnSaturation();
+      } else {
+        // Test case must not use indices, or the context of the testcase has to
+        // support the dual source blending.
+        DCHECK(info.index == 0);
       }
     }
   }
 }
 
-void TestHelper::SetupShader(
+void TestHelper::SetupShaderExpectations(::gfx::MockGLInterface* gl,
+                                         const FeatureInfo* feature_info,
+                                         AttribInfo* attribs,
+                                         size_t num_attribs,
+                                         UniformInfo* uniforms,
+                                         size_t num_uniforms,
+                                         GLuint service_id) {
+  InSequence s;
+
+  EXPECT_CALL(*gl, LinkProgram(service_id)).Times(1).RetiresOnSaturation();
+
+  SetupProgramSuccessExpectations(gl, feature_info, attribs, num_attribs,
+                                  uniforms, num_uniforms, nullptr, 0, nullptr,
+                                  0, service_id);
+}
+
+void TestHelper::SetupShaderExpectationsWithVaryings(
     ::gfx::MockGLInterface* gl,
-    AttribInfo* attribs, size_t num_attribs,
-    UniformInfo* uniforms, size_t num_uniforms,
+    const FeatureInfo* feature_info,
+    AttribInfo* attribs,
+    size_t num_attribs,
+    UniformInfo* uniforms,
+    size_t num_uniforms,
+    VaryingInfo* varyings,
+    size_t num_varyings,
+    ProgramOutputInfo* program_outputs,
+    size_t num_program_outputs,
     GLuint service_id) {
   InSequence s;
 
@@ -792,7 +895,8 @@ void TestHelper::SetupShader(
       .RetiresOnSaturation();
 
   SetupProgramSuccessExpectations(
-      gl, attribs, num_attribs, uniforms, num_uniforms, service_id);
+      gl, feature_info, attribs, num_attribs, uniforms, num_uniforms, varyings,
+      num_varyings, program_outputs, num_program_outputs, service_id);
 }
 
 void TestHelper::DoBufferData(
@@ -822,12 +926,10 @@ void TestHelper::SetTexParameteriWithExpectations(
     TextureManager* manager, TextureRef* texture_ref,
     GLenum pname, GLint value, GLenum error) {
   if (error == GL_NO_ERROR) {
-    if (pname != GL_TEXTURE_POOL_CHROMIUM) {
-      EXPECT_CALL(*gl, TexParameteri(texture_ref->texture()->target(),
-                                     pname, value))
-          .Times(1)
-          .RetiresOnSaturation();
-    }
+    EXPECT_CALL(*gl, TexParameteri(texture_ref->texture()->target(),
+                                   pname, value))
+        .Times(1)
+        .RetiresOnSaturation();
   } else if (error == GL_INVALID_ENUM) {
     EXPECT_CALL(*error_state, SetGLErrorInvalidEnum(_, _, _, value, _))
         .Times(1)
@@ -842,15 +944,18 @@ void TestHelper::SetTexParameteriWithExpectations(
 
 // static
 void TestHelper::SetShaderStates(
-      ::gfx::MockGLInterface* gl, Shader* shader,
-      bool expected_valid,
-      const std::string* const expected_log_info,
-      const std::string* const expected_translated_source,
-      const int* const expected_shader_version,
-      const AttributeMap* const expected_attrib_map,
-      const UniformMap* const expected_uniform_map,
-      const VaryingMap* const expected_varying_map,
-      const NameMap* const expected_name_map) {
+    ::gfx::MockGLInterface* gl,
+    Shader* shader,
+    bool expected_valid,
+    const std::string* const expected_log_info,
+    const std::string* const expected_translated_source,
+    const int* const expected_shader_version,
+    const AttributeMap* const expected_attrib_map,
+    const UniformMap* const expected_uniform_map,
+    const VaryingMap* const expected_varying_map,
+    const InterfaceBlockMap* const expected_interface_block_map,
+    const OutputVariableList* const expected_output_variable_list,
+    const NameMap* const expected_name_map) {
   const std::string empty_log_info;
   const std::string* log_info = (expected_log_info && !expected_valid) ?
       expected_log_info : &empty_log_info;
@@ -870,6 +975,15 @@ void TestHelper::SetShaderStates(
   const VaryingMap empty_varying_map;
   const VaryingMap* varying_map = (expected_varying_map && expected_valid) ?
       expected_varying_map : &empty_varying_map;
+  const InterfaceBlockMap empty_interface_block_map;
+  const InterfaceBlockMap* interface_block_map =
+      (expected_interface_block_map && expected_valid) ?
+      expected_interface_block_map : &empty_interface_block_map;
+  const OutputVariableList empty_output_variable_list;
+  const OutputVariableList* output_variable_list =
+      (expected_output_variable_list && expected_valid)
+          ? expected_output_variable_list
+          : &empty_output_variable_list;
   const NameMap empty_name_map;
   const NameMap* name_map = (expected_name_map && expected_valid) ?
       expected_name_map : &empty_name_map;
@@ -877,12 +991,14 @@ void TestHelper::SetShaderStates(
   MockShaderTranslator* mock_translator = new MockShaderTranslator;
   scoped_refptr<ShaderTranslatorInterface> translator(mock_translator);
   EXPECT_CALL(*mock_translator, Translate(_,
-                                          NotNull(),  // log_info
-                                          NotNull(),  // translated_source
-                                          NotNull(),  // shader_version
-                                          NotNull(),  // attrib_map
-                                          NotNull(),  // uniform_map
-                                          NotNull(),  // varying_map
+                                          NotNull(),   // log_info
+                                          NotNull(),   // translated_source
+                                          NotNull(),   // shader_version
+                                          NotNull(),   // attrib_map
+                                          NotNull(),   // uniform_map
+                                          NotNull(),   // varying_map
+                                          NotNull(),   // interface_block_map
+                                          NotNull(),   // output_variable_list
                                           NotNull()))  // name_map
       .WillOnce(DoAll(SetArgumentPointee<1>(*log_info),
                       SetArgumentPointee<2>(*translated_source),
@@ -890,8 +1006,9 @@ void TestHelper::SetShaderStates(
                       SetArgumentPointee<4>(*attrib_map),
                       SetArgumentPointee<5>(*uniform_map),
                       SetArgumentPointee<6>(*varying_map),
-                      SetArgumentPointee<7>(*name_map),
-                      Return(expected_valid)))
+                      SetArgumentPointee<7>(*interface_block_map),
+                      SetArgumentPointee<8>(*output_variable_list),
+                      SetArgumentPointee<9>(*name_map), Return(expected_valid)))
       .RetiresOnSaturation();
   if (expected_valid) {
     EXPECT_CALL(*gl, ShaderSource(shader->service_id(), 1, _, NULL))
@@ -913,7 +1030,8 @@ void TestHelper::SetShaderStates(
 // static
 void TestHelper::SetShaderStates(
       ::gfx::MockGLInterface* gl, Shader* shader, bool valid) {
-  SetShaderStates(gl, shader, valid, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  SetShaderStates(gl, shader, valid, nullptr, nullptr, nullptr, nullptr,
+                  nullptr, nullptr, nullptr, nullptr, nullptr);
 }
 
 // static
@@ -937,6 +1055,16 @@ sh::Varying TestHelper::ConstructVarying(
     GLenum type, GLint array_size, GLenum precision,
     bool static_use, const std::string& name) {
   return ConstructShaderVariable<sh::Varying>(
+      type, array_size, precision, static_use, name);
+}
+
+sh::OutputVariable TestHelper::ConstructOutputVariable(
+    GLenum type,
+    GLint array_size,
+    GLenum precision,
+    bool static_use,
+    const std::string& name) {
+  return ConstructShaderVariable<sh::OutputVariable>(
       type, array_size, precision, static_use, name);
 }
 

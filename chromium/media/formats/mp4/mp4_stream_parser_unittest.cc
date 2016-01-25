@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <string>
 
@@ -19,6 +22,7 @@
 #include "media/base/video_decoder_config.h"
 #include "media/formats/mp4/es_descriptor.h"
 #include "media/formats/mp4/mp4_stream_parser.h"
+#include "media/media_features.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -62,13 +66,15 @@ class MP4StreamParserTest : public testing::Test {
   VideoDecoderConfig video_decoder_config_;
   DecodeTimestamp lower_bound_;
 
-  bool AppendData(const uint8* data, size_t length) {
+  bool AppendData(const uint8_t* data, size_t length) {
     return parser_->Parse(data, length);
   }
 
-  bool AppendDataInPieces(const uint8* data, size_t length, size_t piece_size) {
-    const uint8* start = data;
-    const uint8* end = data + length;
+  bool AppendDataInPieces(const uint8_t* data,
+                          size_t length,
+                          size_t piece_size) {
+    const uint8_t* start = data;
+    const uint8_t* end = data + length;
     while (start < end) {
       size_t append_size = std::min(piece_size,
                                     static_cast<size_t>(end - start));
@@ -140,7 +146,7 @@ class MP4StreamParserTest : public testing::Test {
     return true;
   }
 
-  void KeyNeededF(EmeInitDataType type, const std::vector<uint8>& init_data) {
+  void KeyNeededF(EmeInitDataType type, const std::vector<uint8_t>& init_data) {
     DVLOG(1) << "KeyNeededF: " << init_data.size();
     EXPECT_EQ(EmeInitDataType::CENC, type);
     EXPECT_FALSE(init_data.empty());
@@ -294,7 +300,7 @@ TEST_F(MP4StreamParserTest, VideoSamplesStartWithAUDs) {
   ParseMP4File("bear-1280x720-av_with-aud-nalus_frag.mp4", 512);
 }
 
-#if defined(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
 TEST_F(MP4StreamParserTest, HEVC_in_MP4_container) {
   InitializeParserAndExpectLiveness(DemuxerStream::LIVENESS_RECORDED);
   scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile("bear-hevc-frag.mp4");
@@ -335,6 +341,28 @@ TEST_F(MP4StreamParserTest, NaturalSizeWithPASP) {
   EXPECT_TRUE(AppendDataInPieces(buffer->data(), buffer->data_size(), 512));
   EXPECT_EQ(gfx::Size(639, 360), video_decoder_config_.natural_size());
 }
+
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
+TEST_F(MP4StreamParserTest, DemuxingAC3) {
+  std::set<int> audio_object_types;
+  audio_object_types.insert(kAC3);
+  parser_.reset(new MP4StreamParser(audio_object_types, false));
+  InitializeParserAndExpectLiveness(DemuxerStream::LIVENESS_RECORDED);
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-ac3-only-frag.mp4");
+  EXPECT_TRUE(AppendDataInPieces(buffer->data(), buffer->data_size(), 512));
+}
+
+TEST_F(MP4StreamParserTest, DemuxingEAC3) {
+  std::set<int> audio_object_types;
+  audio_object_types.insert(kEAC3);
+  parser_.reset(new MP4StreamParser(audio_object_types, false));
+  InitializeParserAndExpectLiveness(DemuxerStream::LIVENESS_RECORDED);
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-eac3-only-frag.mp4");
+  EXPECT_TRUE(AppendDataInPieces(buffer->data(), buffer->data_size(), 512));
+}
+#endif
 
 }  // namespace mp4
 }  // namespace media

@@ -5,52 +5,49 @@
 #ifndef Presentation_h
 #define Presentation_h
 
-#include "bindings/core/v8/ScriptPromise.h"
-#include "core/events/EventTarget.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
-#include "modules/presentation/PresentationConnection.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
-
-namespace WTF {
-class String;
-} // namespace WTF
 
 namespace blink {
 
 class LocalFrame;
-class PresentationController;
+class PresentationReceiver;
 class PresentationRequest;
-class ScriptState;
-class WebPresentationConnectionClient;
-enum class WebPresentationConnectionState;
 
 // Implements the main entry point of the Presentation API corresponding to the Presentation.idl
 // See https://w3c.github.io/presentation-api/#navigatorpresentation for details.
+//
+// TODO(Oilpan): switch to GarbageCollected<Presentation> once object is unconditionally on the Oilpan heap.
 class Presentation final
-    : public RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>
+    : public GarbageCollectedFinalized<Presentation>
+    , public ScriptWrappable
     , public DOMWindowProperty {
-    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Presentation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Presentation);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static Presentation* create(LocalFrame*);
+#if !ENABLE(OILPAN)
     ~Presentation() override = default;
-
-    // EventTarget implementation.
-    const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override;
+#endif
 
     DECLARE_VIRTUAL_TRACE();
 
     PresentationRequest* defaultRequest() const;
     void setDefaultRequest(PresentationRequest*);
 
+    PresentationReceiver* receiver();
+
 private:
     explicit Presentation(LocalFrame*);
 
     // Default PresentationRequest used by the embedder.
     Member<PresentationRequest> m_defaultRequest;
+
+    // PresentationReceiver instance. It will always be nullptr if the Blink
+    // instance is not running as a presentation receiver.
+    Member<PresentationReceiver> m_receiver;
 };
 
 } // namespace blink

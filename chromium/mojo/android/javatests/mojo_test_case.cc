@@ -30,10 +30,7 @@ struct TestEnvironment {
 namespace mojo {
 namespace android {
 
-static void InitApplicationContext(JNIEnv* env,
-                                   const JavaParamRef<jobject>& jcaller,
-                                   const JavaParamRef<jobject>& context) {
-  base::android::InitApplicationContext(env, context);
+static void Init(JNIEnv* env, const JavaParamRef<jobject>& jcaller) {
   base::InitAndroidTestMessageLoop();
 }
 
@@ -54,8 +51,7 @@ static void RunLoop(JNIEnv* env,
   base::RunLoop run_loop;
   if (timeout_ms) {
     base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::MessageLoop::QuitClosure(),
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
         base::TimeDelta::FromMilliseconds(timeout_ms));
     run_loop.Run();
   } else {

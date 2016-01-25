@@ -29,8 +29,6 @@ namespace blink {
 
 class LayoutListItem;
 
-String listMarkerText(EListStyleType, int value);
-
 // Used to layout the list item's marker.
 // The LayoutListMarker always has to be a child of a LayoutListItem.
 class LayoutListMarker final : public LayoutBox {
@@ -39,6 +37,17 @@ public:
     ~LayoutListMarker() override;
 
     const String& text() const { return m_text; }
+
+    // A reduced set of list style categories allowing for more concise expression
+    // of list style specific logic.
+    enum class ListStyleCategory {
+        None,
+        Symbol,
+        Language
+    };
+
+    // Returns the list's style as one of a reduced high level categorical set of styles.
+    ListStyleCategory listStyleCategory() const;
 
     bool isInside() const;
 
@@ -49,8 +58,7 @@ public:
     bool isImage() const override;
     const StyleImage* image() const { return m_image.get(); }
     const LayoutListItem* listItem() const { return m_listItem; }
-
-    static UChar listMarkerSuffix(EListStyleType, int value);
+    LayoutSize imageBulletSize() const;
 
     void listItemStyleDidChange();
 
@@ -83,6 +91,7 @@ private:
     LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override;
     bool canBeSelectionLeaf() const override { return true; }
 
+    LayoutUnit getWidthOfTextWithSuffix() const;
     void updateMargins();
     void updateContent();
 

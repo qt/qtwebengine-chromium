@@ -4,12 +4,15 @@
 
 #include "content/browser/media/media_internals.h"
 
+#include <stddef.h>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
@@ -157,7 +160,7 @@ TEST_F(MediaInternalsVideoCaptureDeviceTest,
   const media::VideoCaptureFormat capture_format(kFrameSize, kFrameRate,
                                                  kPixelFormat, kPixelStorage);
   const std::string expected_string = base::StringPrintf(
-      "(%s)@%.3ffps, pixel format: %s storage: %s.",
+      "(%s)@%.3ffps, pixel format: %s, storage: %s",
       kFrameSize.ToString().c_str(), kFrameRate,
       media::VideoPixelFormatToString(kPixelFormat).c_str(),
       media::VideoCaptureFormat::PixelStorageToString(kPixelStorage).c_str());

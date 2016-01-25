@@ -20,8 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGAElement.h"
 
 #include "core/SVGNames.h"
@@ -91,9 +89,11 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
         bool wasLink = isLink();
         setIsLink(!hrefString().isNull());
 
-        if (wasLink != isLink())
-            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::LinkColorChange));
-
+        if (wasLink || isLink()) {
+            pseudoStateChanged(CSSSelector::PseudoLink);
+            pseudoStateChanged(CSSSelector::PseudoVisited);
+            pseudoStateChanged(CSSSelector::PseudoAnyLink);
+        }
         return;
     }
 

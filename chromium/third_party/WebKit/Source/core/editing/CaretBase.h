@@ -34,6 +34,7 @@
 
 namespace blink {
 
+class CullRect;
 class LocalFrame;
 class GraphicsContext;
 class LayoutBlock;
@@ -41,7 +42,7 @@ class LayoutView;
 
 class CORE_EXPORT CaretBase {
     WTF_MAKE_NONCOPYABLE(CaretBase);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CaretBase);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(CaretBase);
 protected:
     enum CaretVisibility { Visible, Hidden };
     explicit CaretBase(CaretVisibility = Hidden);
@@ -56,7 +57,7 @@ protected:
     IntRect absoluteBoundsForLocalRect(Node*, const LayoutRect&) const;
     bool shouldRepaintCaret(Node&) const;
     bool shouldRepaintCaret(const LayoutView*) const;
-    void paintCaret(Node*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
+    void paintCaret(Node*, GraphicsContext&, const LayoutPoint&) const;
 
     const LayoutRect& localCaretRectWithoutUpdate() const { return m_caretLocalRect; }
 

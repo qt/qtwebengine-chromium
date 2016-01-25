@@ -3,9 +3,14 @@
 // found in the LICENSE file.
 
 #include <EGL/egl.h>
+#include <stdint.h>
 
 #include "base/command_line.h"
+#include "base/environment.h"
+#include "base/strings/string_split.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_util.h"
 #include "gpu/gles2_conform_support/egl/display.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
@@ -107,9 +112,26 @@ EGLAPI EGLBoolean EGLAPIENTRY eglInitialize(EGLDisplay dpy,
   // eglInitialize can be called multiple times, prevent InitializeOneOff from
   // being called multiple times.
   if (gfx::GetGLImplementation() == gfx::kGLImplementationNone) {
-    int argc = 1;
-    const char* const argv[] = {"dummy"};
-    base::CommandLine::Init(argc, argv);
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    std::vector<std::string> args;
+    std::string env_args;
+    if (env->GetVar("CHROME_COMMAND_BUFFER_GLES2_ARGS", &env_args)) {
+      args = base::SplitString(env_args, " ", base::TRIM_WHITESPACE,
+                               base::SPLIT_WANT_NONEMPTY);
+    }
+    if (args.empty()) {
+      args.push_back("dummy");
+    }
+    scoped_ptr<const char* []> argv(new const char*[args.size()]);
+    for (size_t i = 0; i < args.size(); ++i) {
+      argv[i] = args[i].c_str();
+    }
+    base::CommandLine::Init(static_cast<int>(args.size()), argv.get());
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    if (!command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
+      gpu::ApplyGpuDriverBugWorkarounds(command_line);
+    }
+
     gfx::GLSurface::InitializeOneOff();
   }
 

@@ -32,6 +32,7 @@
 #define HeapPage_h
 
 #include "platform/PlatformExport.h"
+#include "platform/heap/BlinkGC.h"
 #include "platform/heap/GCInfo.h"
 #include "platform/heap/ThreadState.h"
 #include "platform/heap/Visitor.h"
@@ -115,7 +116,7 @@ const uint8_t reuseForbiddenZapValue = 0x2c;
 #define CHECK_MEMORY_INACCESSIBLE(address, size) do { } while (false)
 #endif
 
-#if !ENABLE(ASSERT) && !ENABLE(GC_PROFILING) && CPU(64BIT)
+#if !ENABLE(ASSERT) && CPU(64BIT)
 #define USE_4BYTE_HEADER_PADDING 1
 #else
 #define USE_4BYTE_HEADER_PADDING 0
@@ -128,10 +129,6 @@ class OrphanedPagePool;
 class PageMemory;
 class PageMemoryRegion;
 class WebProcessMemoryDump;
-
-#if ENABLE(GC_PROFILING)
-class TracedValue;
-#endif
 
 // HeapObjectHeader is 4 byte (32 bit) that has the following layout:
 //
@@ -176,9 +173,6 @@ public:
 #if ENABLE(ASSERT)
         m_magic = magic;
 #endif
-#if ENABLE(GC_PROFILING)
-        m_age = 0;
-#endif
         // sizeof(HeapObjectHeader) must be equal to or smaller than
         // allocationGranurarity, because HeapObjectHeader is used as a header
         // for an freed entry.  Given that the smallest entry size is
@@ -191,7 +185,7 @@ public:
         ASSERT(gcInfoIndex < GCInfoTable::maxIndex);
         ASSERT(size < nonLargeObjectPageSizeMax);
         ASSERT(!(size & allocationMask));
-        m_encoded = (gcInfoIndex << headerGCInfoIndexShift) | size | (gcInfoIndex ? 0 : headerFreedBitMask);
+        m_encoded = static_cast<uint32_t>((gcInfoIndex << headerGCInfoIndexShift) | size | (gcInfoIndex == gcInfoIndexForFreeListHeader ? headerFreedBitMask : 0));
     }
 
     NO_SANITIZE_ADDRESS
@@ -205,7 +199,11 @@ public:
     NO_SANITIZE_ADDRESS
     size_t gcInfoIndex() const { return (m_encoded & headerGCInfoIndexMask) >> headerGCInfoIndexShift; }
     NO_SANITIZE_ADDRESS
-    void setSize(size_t size) { m_encoded = size | (m_encoded & ~headerSizeMask); }
+    void setSize(size_t size)
+    {
+        ASSERT(size < nonLargeObjectPageSizeMax);
+        m_encoded = static_cast<uint32_t>(size) | (m_encoded & ~headerSizeMask);
+    }
     bool isMarked() const;
     void mark();
     void unmark();
@@ -230,39 +228,21 @@ public:
     static const uint16_t magic = 0xfff1;
     static const uint16_t zappedMagic = 0x4321;
 
-#if ENABLE(GC_PROFILING)
-    NO_SANITIZE_ADDRESS
-    size_t encodedSize() const { return m_encoded; }
-
-    NO_SANITIZE_ADDRESS
-    size_t age() const { return m_age; }
-
-    NO_SANITIZE_ADDRESS
-    void incrementAge()
-    {
-        if (m_age < maxHeapObjectAge)
-            m_age++;
-    }
-#endif
-
 private:
     uint32_t m_encoded;
 #if ENABLE(ASSERT)
     uint16_t m_magic;
 #endif
-#if ENABLE(GC_PROFILING)
-    uint8_t m_age;
-#endif
 
     // In 64 bit architectures, we intentionally add 4 byte padding immediately
-    // after the HeapHeaderObject. This is because:
+    // after the HeapObjectHeader. This is because:
     //
-    // | HeapHeaderObject (4 byte) | padding (4 byte) | object payload (8 * n byte) |
+    // | HeapObjectHeader (4 byte) | padding (4 byte) | object payload (8 * n byte) |
     // ^8 byte aligned                                ^8 byte aligned
     //
     // is better than:
     //
-    // | HeapHeaderObject (4 byte) | object payload (8 * n byte) | padding (4 byte) |
+    // | HeapObjectHeader (4 byte) | object payload (8 * n byte) | padding (4 byte) |
     // ^4 byte aligned             ^8 byte aligned               ^4 byte aligned
     //
     // since the former layout aligns both header and payload to 8 byte.
@@ -393,9 +373,10 @@ public:
     virtual void sweep() = 0;
     virtual void makeConsistentForGC() = 0;
     virtual void makeConsistentForMutator() = 0;
+    virtual void invalidateObjectStartBitmap() = 0;
 
 #if defined(ADDRESS_SANITIZER)
-    virtual void poisonObjects(ThreadState::ObjectsToPoison, ThreadState::Poisoning) = 0;
+    virtual void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) = 0;
 #endif
     // Check if the given address points to an object in this
     // heap page. If so, find the start of that object and mark it
@@ -409,14 +390,7 @@ public:
     virtual void markOrphaned();
 
     virtual void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) = 0;
-#if ENABLE(GC_PROFILING)
-    virtual const GCInfo* findGCInfo(Address) = 0;
-    virtual void snapshot(TracedValue*, ThreadState::SnapshotInfo*) = 0;
-    virtual void incrementMarkedObjectsAge() = 0;
-    virtual void countMarkedObjects(ClassAgeCountsMap&) = 0;
-    virtual void countObjectsToSweep(ClassAgeCountsMap&) = 0;
-#endif
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
     virtual bool contains(Address) = 0;
 #endif
     virtual size_t size() = 0;
@@ -484,21 +458,15 @@ public:
     void sweep() override;
     void makeConsistentForGC() override;
     void makeConsistentForMutator() override;
+    void invalidateObjectStartBitmap() override { m_objectStartBitMapComputed = false; }
 #if defined(ADDRESS_SANITIZER)
-    void poisonObjects(ThreadState::ObjectsToPoison, ThreadState::Poisoning) override;
+    void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) override;
 #endif
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
     void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
-#if ENABLE(GC_PROFILING)
-    const GCInfo* findGCInfo(Address) override;
-    void snapshot(TracedValue*, ThreadState::SnapshotInfo*) override;
-    void incrementMarkedObjectsAge() override;
-    void countMarkedObjects(ClassAgeCountsMap&) override;
-    void countObjectsToSweep(ClassAgeCountsMap&) override;
-#endif
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
     // Returns true for the whole blinkPageSize page that the page is on, even
     // for the header, and the unmapped guard page at the start. That ensures
     // the result can be used to populate the negative page cache.
@@ -515,12 +483,10 @@ public:
 
 
     NormalPageHeap* heapForNormalPage();
-    void clearObjectStartBitMap();
 
 private:
     HeapObjectHeader* findHeaderFromAddress(Address);
     void populateObjectStartBitMap();
-    bool isObjectStartBitMapComputed() { return m_objectStartBitMapComputed; }
 
     bool m_objectStartBitMapComputed;
     uint8_t m_objectStartBitMap[reservedForObjectBitMap];
@@ -549,21 +515,15 @@ public:
     void sweep() override;
     void makeConsistentForGC() override;
     void makeConsistentForMutator() override;
+    void invalidateObjectStartBitmap() override { }
 #if defined(ADDRESS_SANITIZER)
-    void poisonObjects(ThreadState::ObjectsToPoison, ThreadState::Poisoning) override;
+    void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) override;
 #endif
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
     void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
-#if ENABLE(GC_PROFILING)
-    const GCInfo* findGCInfo(Address) override;
-    void snapshot(TracedValue*, ThreadState::SnapshotInfo*) override;
-    void incrementMarkedObjectsAge() override;
-    void countMarkedObjects(ClassAgeCountsMap&) override;
-    void countObjectsToSweep(ClassAgeCountsMap&) override;
-#endif
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
     // Returns true for any address that is on one of the pages that this
     // large object uses. That ensures that we can use a negative result to
     // populate the negative page cache.
@@ -664,17 +624,6 @@ public:
     // Returns true if the freelist snapshot is captured.
     bool takeSnapshot(const String& dumpBaseName);
 
-#if ENABLE(GC_PROFILING)
-    struct PerBucketFreeListStats {
-        size_t entryCount;
-        size_t freeSize;
-
-        PerBucketFreeListStats() : entryCount(0), freeSize(0) { }
-    };
-
-    void getFreeSizeStats(PerBucketFreeListStats bucketStats[], size_t& totalSize) const;
-#endif
-
 #if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER)
     static void zapFreedMemory(Address, size_t);
     static void checkFreedMemoryIsZapped(Address, size_t);
@@ -703,19 +652,10 @@ public:
     void cleanupPages();
 
     void takeSnapshot(const String& dumpBaseName, ThreadState::GCSnapshotInfo&);
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
     BasePage* findPageFromAddress(Address);
 #endif
     virtual void takeFreelistSnapshot(const String& dumpBaseName) { }
-#if ENABLE(GC_PROFILING)
-    void snapshot(TracedValue*, ThreadState::SnapshotInfo*);
-    virtual void snapshotFreeList(TracedValue&) { }
-
-    void countMarkedObjects(ClassAgeCountsMap&) const;
-    void countObjectsToSweep(ClassAgeCountsMap&) const;
-    void incrementMarkedObjectsAge();
-#endif
-
     virtual void clearFreeLists() { }
     void makeConsistentForGC();
     void makeConsistentForMutator();
@@ -726,7 +666,7 @@ public:
     void prepareHeapForTermination();
     void prepareForSweep();
 #if defined(ADDRESS_SANITIZER)
-    void poisonHeap(ThreadState::ObjectsToPoison, ThreadState::Poisoning);
+    void poisonHeap(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning);
 #endif
     Address lazySweep(size_t, size_t gcInfoIndex);
     void sweepUnsweptPage();
@@ -767,9 +707,6 @@ public:
     bool pagesToBeSweptContains(Address);
 #endif
     void takeFreelistSnapshot(const String& dumpBaseName) override;
-#if ENABLE(GC_PROFILING)
-    void snapshotFreeList(TracedValue&) override;
-#endif
 
     Address allocateObject(size_t allocationSize, size_t gcInfoIndex);
 
@@ -781,16 +718,25 @@ public:
     bool shrinkObject(HeapObjectHeader*, size_t);
     void decreasePromptlyFreedSize(size_t size) { m_promptlyFreedSize -= size; }
 
+    bool isObjectAllocatedAtAllocationPoint(HeapObjectHeader* header)
+    {
+        return header->payloadEnd() == m_currentAllocationPoint;
+    }
+
 private:
     void allocatePage();
-    Address lazySweepPages(size_t, size_t gcInfoIndex) override;
     Address outOfLineAllocate(size_t allocationSize, size_t gcInfoIndex);
+    Address allocateFromFreeList(size_t, size_t gcInfoIndex);
+
+    Address lazySweepPages(size_t, size_t gcInfoIndex) override;
+
     Address currentAllocationPoint() const { return m_currentAllocationPoint; }
-    size_t remainingAllocationSize() const { return m_remainingAllocationSize; }
     bool hasCurrentAllocationArea() const { return currentAllocationPoint() && remainingAllocationSize(); }
     void setAllocationPoint(Address, size_t);
+
+    size_t remainingAllocationSize() const { return m_remainingAllocationSize; }
+    void setRemainingAllocationSize(size_t);
     void updateRemainingAllocationSize();
-    Address allocateFromFreeList(size_t, size_t gcInfoIndex);
 
     FreeList m_freeList;
     Address m_currentAllocationPoint;
@@ -799,12 +745,6 @@ private:
 
     // The size of promptly freed objects in the heap.
     size_t m_promptlyFreedSize;
-
-#if ENABLE(GC_PROFILING)
-    size_t m_cumulativeAllocationSize;
-    size_t m_allocationCount;
-    size_t m_inlineAllocationCount;
-#endif
 };
 
 class LargeObjectHeap final : public BaseHeap {
@@ -922,15 +862,7 @@ void HeapObjectHeader::markDead()
 
 inline Address NormalPageHeap::allocateObject(size_t allocationSize, size_t gcInfoIndex)
 {
-#if ENABLE(GC_PROFILING)
-    m_cumulativeAllocationSize += allocationSize;
-    ++m_allocationCount;
-#endif
-
     if (LIKELY(allocationSize <= m_remainingAllocationSize)) {
-#if ENABLE(GC_PROFILING)
-        ++m_inlineAllocationCount;
-#endif
         Address headerAddress = m_currentAllocationPoint;
         m_currentAllocationPoint += allocationSize;
         m_remainingAllocationSize -= allocationSize;

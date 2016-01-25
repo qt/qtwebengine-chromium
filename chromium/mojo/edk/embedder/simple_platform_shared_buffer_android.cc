@@ -4,11 +4,12 @@
 
 #include "mojo/edk/embedder/simple_platform_shared_buffer.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/mman.h>   // For |PROT_...|.
 #include <sys/types.h>  // For |off_t|.
-
 #include <limits>
+#include <utility>
 
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
@@ -52,7 +53,7 @@ bool SimplePlatformSharedBuffer::InitFromPlatformHandle(
     return false;
   }
 
-  int size = ashmem_get_size_region(platform_handle.get().fd);
+  int size = ashmem_get_size_region(platform_handle.get().handle);
 
   if (size < 0) {
     DPLOG(ERROR) << "ashmem_get_size_region()";
@@ -64,7 +65,7 @@ bool SimplePlatformSharedBuffer::InitFromPlatformHandle(
     return false;
   }
 
-  handle_ = platform_handle.Pass();
+  handle_ = std::move(platform_handle);
   return true;
 }
 

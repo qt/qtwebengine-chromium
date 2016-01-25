@@ -134,10 +134,12 @@
     flex: 1 1 0;
     overflow: hidden;
     padding: 8px;
+    text-overflow: ellipsis;
 }
 
 .service-workers-versions-table-row-content {
     flex: 2 2 0;
+    overflow: hidden;
     padding: 8px;
     text-overflow: ellipsis;
 }
@@ -171,7 +173,7 @@
 }
 
 .service-workers-versions-table-running-status-inspect {
-    color: #00e;
+    color: hsl(240, 85%, 37%);
     cursor: pointer;
     text-decoration: underline;
 }
@@ -252,7 +254,7 @@
 }
 
 .service-worker-client-focus {
-   color: #00e;
+   color: hsl(240, 85%, 37%);
    cursor: pointer;
    padding-left: 4px;
    text-decoration: underline;

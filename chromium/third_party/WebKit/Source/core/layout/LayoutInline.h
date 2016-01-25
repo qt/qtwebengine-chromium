@@ -55,6 +55,59 @@ namespace blink {
 //
 // LayoutInlines are expected to be laid out by their containing
 // LayoutBlockFlow. See LayoutBlockFlow::layoutInlineChildren.
+//
+//
+// ***** CONTINUATIONS AND ANONYMOUS LAYOUTBLOCKFLOWS *****
+// LayoutInline enforces the following invariant:
+// "All in-flow children of an inline box are inline."
+// When a non-inline child is inserted, LayoutInline::addChild splits the inline
+// and potentially enclosing inlines too. It then wraps layout objects into
+// anonymous block-flow containers. This creates complexity in the code as:
+// - a DOM node can have several associated LayoutObjects (we don't currently
+//   expose this information to the DOM code though).
+// - more importantly, nodes that are parent/child in the DOM have no natural
+//   relationship anymore (see example below).
+// In order to do a correct tree walk over this synthetic tree, a single linked
+// list is stored called *continuation*. See splitFlow() about how it is
+// populated during LayoutInline split.
+//
+// Continuations can only be a LayoutInline or an anonymous LayoutBlockFlow.
+// That's why continuations are handled by LayoutBoxModelObject (common class
+// between the 2). See LayoutBoxModelObject::continuation and setContinuation.
+//
+// Let's take the following example:
+//   <!DOCTYPE html>
+//   <b>Bold inline.<div>Bold block.</div>More bold inlines.</b>
+//
+// The generated layout tree is:
+//   LayoutBlockFlow {HTML}
+//    LayoutBlockFlow {BODY}
+//      LayoutBlockFlow (anonymous)
+//        LayoutInline {B}
+//          LayoutText {#text}
+//            text run: "Bold inline."
+//      LayoutBlockFlow (anonymous)
+//        LayoutBlockFlow {DIV}
+//          LayoutText {#text}
+//            text run: "Bold block."
+//      LayoutBlockFlow (anonymous)
+//        LayoutInline {B}
+//          LayoutText {#text}
+//            text run: "More bold inlines."
+//
+// The insertion of the <div> inside the <b> forces the latter to be split
+// into 2 LayoutInlines and the insertion of anonymous LayoutBlockFlows. The 2
+// LayoutInlines are done so that we can apply the correct (bold) style to both
+// sides of the <div>. The continuation chain starts with the first
+// LayoutInline {B}, continues to the middle anonymous LayoutBlockFlow and
+// finishes with the last LayoutInline {B}.
+//
+// Note that the middle anonymous LayoutBlockFlow duplicates the content.
+// TODO(jchaffraix): Find out why we made the decision to always insert the
+//                   anonymous LayoutBlockFlows.
+//
+// This section was inspired by an older article by Dave Hyatt:
+// https://www.webkit.org/blog/115/webcore-rendering-ii-blocks-and-inlines/
 class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 public:
     explicit LayoutInline(Element*);
@@ -81,6 +134,8 @@ public:
     LayoutUnit marginAfter(const ComputedStyle* otherStyle = nullptr) const final;
     LayoutUnit marginStart(const ComputedStyle* otherStyle = nullptr) const final;
     LayoutUnit marginEnd(const ComputedStyle* otherStyle = nullptr) const final;
+    LayoutUnit marginOver() const final;
+    LayoutUnit marginUnder() const final;
 
     void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const final;
     void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
@@ -135,7 +190,7 @@ protected:
 
     void computeSelfHitTestRects(Vector<LayoutRect>& rects, const LayoutPoint& layerOffset) const override;
 
-    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
+    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason) const override;
 
 private:
     LayoutObjectChildList* virtualChildren() final { return children(); }
@@ -173,7 +228,7 @@ private:
 
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) final;
 
-    PaintLayerType layerTypeRequired() const override { return isInFlowPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations() || style()->hasCompositorProxy() ? NormalPaintLayer : NoPaintLayer; }
+    PaintLayerType layerTypeRequired() const override;
 
     LayoutUnit offsetLeft() const final;
     LayoutUnit offsetTop() const final;
@@ -182,13 +237,13 @@ private:
 
     LayoutRect absoluteClippedOverflowRect() const override;
     LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
-    void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const final;
+    void mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, const PaintInvalidationState*) const final;
 
     // This method differs from clippedOverflowRectForPaintInvalidation in that it includes
     // the rects for culled inline boxes, which aren't necessary for paint invalidation.
     LayoutRect clippedOverflowRect(const LayoutBoxModelObject*, const PaintInvalidationState* = nullptr) const;
 
-    void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = nullptr) const override;
+    void mapLocalToAncestor(const LayoutBoxModelObject* ancestor, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = nullptr) const override;
 
     PositionWithAffinity positionForPoint(const LayoutPoint&) final;
 

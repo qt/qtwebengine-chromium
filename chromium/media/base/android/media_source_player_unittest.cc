@@ -2,18 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <string>
+#include "media/base/android/media_source_player.h"
 
-#include "base/basictypes.h"
+#include <stdint.h>
+#include <string>
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "media/base/android/audio_decoder_job.h"
-#include "media/base/android/media_codec_bridge.h"
+#include "media/base/android/media_codec_util.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
-#include "media/base/android/media_source_player.h"
 #include "media/base/android/media_url_interceptor.h"
+#include "media/base/android/sdk_media_codec_bridge.h"
 #include "media/base/android/video_decoder_job.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
@@ -23,15 +28,6 @@
 #include "ui/gl/android/surface_texture.h"
 
 namespace media {
-
-// Helper macro to skip the test if MediaCodecBridge isn't available.
-#define SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE()        \
-  do {                                                            \
-    if (!MediaCodecBridge::IsAvailable()) {                       \
-      VLOG(0) << "Could not run test - not supported on device."; \
-      return;                                                     \
-    }                                                             \
-  } while (0)
 
 const base::TimeDelta kDefaultDuration =
     base::TimeDelta::FromMilliseconds(10000);
@@ -68,7 +64,7 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   void OnPlaybackComplete(int player_id) override {
     playback_completed_ = true;
     if (message_loop_->is_running())
-      message_loop_->Quit();
+      message_loop_->QuitWhenIdle();
   }
   void OnMediaInterrupted(int player_id) override {}
   void OnBufferingUpdate(int player_id, int percentage) override {}
@@ -81,7 +77,9 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   MediaPlayerAndroid* GetPlayer(int player_id) override { return NULL; }
   void OnDecorderResourcesReleased(int player_id) {}
 
-  bool RequestPlay(int player_id, base::TimeDelta duration) override {
+  bool RequestPlay(int player_id,
+                   base::TimeDelta duration,
+                   bool has_audio) override {
     return allow_play_;
   }
 
@@ -131,7 +129,7 @@ class MockDemuxerAndroid : public DemuxerAndroid {
   void RequestDemuxerData(DemuxerStream::Type type) override {
     num_data_requests_++;
     if (message_loop_->is_running())
-      message_loop_->Quit();
+      message_loop_->QuitWhenIdle();
   }
   void RequestDemuxerSeek(const base::TimeDelta& time_to_seek,
                           bool is_browser_seek) override {
@@ -255,9 +253,8 @@ class MediaSourcePlayerTest : public testing::Test {
       configs.audio_sampling_rate = use_low_sample_rate ? 11025 : 44100;
       scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile(
           "vorbis-extradata");
-      configs.audio_extra_data = std::vector<uint8>(
-          buffer->data(),
-          buffer->data() + buffer->data_size());
+      configs.audio_extra_data = std::vector<uint8_t>(
+          buffer->data(), buffer->data() + buffer->data_size());
       return configs;
     }
 
@@ -265,10 +262,9 @@ class MediaSourcePlayerTest : public testing::Test {
     EXPECT_EQ(audio_codec, kCodecAAC);
 
     configs.audio_sampling_rate = 48000;
-    uint8 aac_extra_data[] = { 0x13, 0x10 };
-    configs.audio_extra_data = std::vector<uint8>(
-        aac_extra_data,
-        aac_extra_data + 2);
+    uint8_t aac_extra_data[] = {0x13, 0x10};
+    configs.audio_extra_data =
+        std::vector<uint8_t>(aac_extra_data, aac_extra_data + 2);
     return configs;
   }
 
@@ -383,13 +379,13 @@ class MediaSourcePlayerTest : public testing::Test {
       buffer = ReadTestDataFile(
           use_large_size_video ? "vp8-I-frame-640x240" : "vp8-I-frame-320x240");
     }
-    unit.data = std::vector<uint8>(
-        buffer->data(), buffer->data() + buffer->data_size());
+    unit.data = std::vector<uint8_t>(buffer->data(),
+                                     buffer->data() + buffer->data_size());
 
     if (is_audio) {
       // Vorbis needs 4 extra bytes padding on Android to decode properly. Check
       // NuMediaExtractor.cpp in Android source code.
-      uint8 padding[4] = { 0xff , 0xff , 0xff , 0xff };
+      uint8_t padding[4] = {0xff, 0xff, 0xff, 0xff};
       unit.data.insert(unit.data.end(), padding, padding + 4);
     }
 
@@ -717,7 +713,7 @@ class MediaSourcePlayerTest : public testing::Test {
 
     surface_texture_a_is_next_ = !surface_texture_a_is_next_;
     gfx::ScopedJavaSurface surface = gfx::ScopedJavaSurface(surface_texture);
-    player_.SetVideoSurface(surface.Pass());
+    player_.SetVideoSurface(std::move(surface));
   }
 
   // Wait for one or both of the jobs to complete decoding. Media codec bridges
@@ -880,7 +876,7 @@ TEST_F(MediaSourcePlayerTest, StartAudioDecoderWithInvalidConfig) {
   DemuxerConfigs configs = CreateAudioDemuxerConfigs(kCodecVorbis, false);
   // Replace with invalid |audio_extra_data|
   configs.audio_extra_data.clear();
-  uint8 invalid_codec_data[] = { 0x00, 0xff, 0xff, 0xff, 0xff };
+  uint8_t invalid_codec_data[] = {0x00, 0xff, 0xff, 0xff, 0xff};
   configs.audio_extra_data.insert(configs.audio_extra_data.begin(),
                                  invalid_codec_data, invalid_codec_data + 4);
   Start(configs);
@@ -924,7 +920,7 @@ TEST_F(MediaSourcePlayerTest, StartVideoCodecWithInvalidSurface) {
 
   // Release the surface texture.
   surface_texture = NULL;
-  player_.SetVideoSurface(surface.Pass());
+  player_.SetVideoSurface(std::move(surface));
 
   // Player should not seek the demuxer on setting initial surface.
   EXPECT_EQ(0, demuxer_->num_seek_requests());
@@ -987,7 +983,7 @@ TEST_F(MediaSourcePlayerTest, ChangeMultipleSurfaceWhileDecoding) {
   // While the decoder is decoding, change multiple surfaces. Pass an empty
   // surface first.
   gfx::ScopedJavaSurface empty_surface;
-  player_.SetVideoSurface(empty_surface.Pass());
+  player_.SetVideoSurface(std::move(empty_surface));
   // Next, pass a new non-empty surface.
   CreateNextTextureAndSetVideoSurface();
 
@@ -1027,7 +1023,7 @@ TEST_F(MediaSourcePlayerTest, SetEmptySurfaceAndStarveWhileDecoding) {
 
   // While the decoder is decoding, pass an empty surface.
   gfx::ScopedJavaSurface empty_surface;
-  player_.SetVideoSurface(empty_surface.Pass());
+  player_.SetVideoSurface(std::move(empty_surface));
   // Let the player starve. However, it should not issue any new data request in
   // this case.
   TriggerPlayerStarvation();

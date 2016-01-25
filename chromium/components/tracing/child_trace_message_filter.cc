@@ -34,6 +34,10 @@ void ChildTraceMessageFilter::OnFilterAdded(IPC::Sender* sender) {
       this);
 }
 
+void ChildTraceMessageFilter::SetSenderForTesting(IPC::Sender* sender) {
+  sender_ = sender;
+}
+
 void ChildTraceMessageFilter::OnFilterRemoved() {
   ChildMemoryDumpManagerDelegateImpl::GetInstance()->SetChildTraceMessageFilter(
       nullptr);
@@ -46,8 +50,8 @@ bool ChildTraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(TracingMsg_BeginTracing, OnBeginTracing)
     IPC_MESSAGE_HANDLER(TracingMsg_EndTracing, OnEndTracing)
     IPC_MESSAGE_HANDLER(TracingMsg_CancelTracing, OnCancelTracing)
-    IPC_MESSAGE_HANDLER(TracingMsg_EnableMonitoring, OnEnableMonitoring)
-    IPC_MESSAGE_HANDLER(TracingMsg_DisableMonitoring, OnDisableMonitoring)
+    IPC_MESSAGE_HANDLER(TracingMsg_StartMonitoring, OnStartMonitoring)
+    IPC_MESSAGE_HANDLER(TracingMsg_StopMonitoring, OnStopMonitoring)
     IPC_MESSAGE_HANDLER(TracingMsg_CaptureMonitoringSnapshot,
                         OnCaptureMonitoringSnapshot)
     IPC_MESSAGE_HANDLER(TracingMsg_GetTraceLogStatus, OnGetTraceLogStatus)
@@ -68,13 +72,13 @@ ChildTraceMessageFilter::~ChildTraceMessageFilter() {}
 
 void ChildTraceMessageFilter::OnBeginTracing(
     const std::string& trace_config_str,
-    base::TraceTicks browser_time,
-    uint64 tracing_process_id) {
+    base::TimeTicks browser_time,
+    uint64_t tracing_process_id) {
 #if defined(__native_client__)
   // NaCl and system times are offset by a bit, so subtract some time from
   // the captured timestamps. The value might be off by a bit due to messaging
   // latency.
-  base::TimeDelta time_offset = base::TraceTicks::Now() - browser_time;
+  base::TimeDelta time_offset = base::TimeTicks::Now() - browser_time;
   TraceLog::GetInstance()->SetTimeOffset(time_offset);
 #endif
   ChildMemoryDumpManagerDelegateImpl::GetInstance()->set_tracing_process_id(
@@ -103,15 +107,14 @@ void ChildTraceMessageFilter::OnCancelTracing() {
       base::Bind(&ChildTraceMessageFilter::OnTraceDataCollected, this));
 }
 
-void ChildTraceMessageFilter::OnEnableMonitoring(
-    const std::string& trace_config_str,
-    base::TraceTicks browser_time) {
+void ChildTraceMessageFilter::OnStartMonitoring(
+    const std::string& trace_config_str, base::TimeTicks browser_time) {
   TraceLog::GetInstance()->SetEnabled(
       base::trace_event::TraceConfig(trace_config_str),
       base::trace_event::TraceLog::MONITORING_MODE);
 }
 
-void ChildTraceMessageFilter::OnDisableMonitoring() {
+void ChildTraceMessageFilter::OnStopMonitoring() {
   TraceLog::GetInstance()->SetDisabled();
 }
 
@@ -197,7 +200,7 @@ void ChildTraceMessageFilter::OnProcessMemoryDumpRequest(
       base::Bind(&ChildTraceMessageFilter::OnProcessMemoryDumpDone, this));
 }
 
-void ChildTraceMessageFilter::OnProcessMemoryDumpDone(uint64 dump_guid,
+void ChildTraceMessageFilter::OnProcessMemoryDumpDone(uint64_t dump_guid,
                                                       bool success) {
   sender_->Send(
       new TracingHostMsg_ProcessMemoryDumpResponse(dump_guid, success));
@@ -226,7 +229,7 @@ void ChildTraceMessageFilter::SendGlobalMemoryDumpRequest(
 
 // Sent by the Browser's MemoryDumpManager in response of a dump request
 // initiated by this child process.
-void ChildTraceMessageFilter::OnGlobalMemoryDumpResponse(uint64 dump_guid,
+void ChildTraceMessageFilter::OnGlobalMemoryDumpResponse(uint64_t dump_guid,
                                                          bool success) {
   DCHECK_NE(0U, pending_memory_dump_guid_);
   pending_memory_dump_guid_ = 0;
@@ -239,10 +242,18 @@ void ChildTraceMessageFilter::OnHistogramChanged(
     const std::string& histogram_name,
     base::Histogram::Sample reference_lower_value,
     base::Histogram::Sample reference_upper_value,
+    bool repeat,
     base::Histogram::Sample actual_value) {
   if (actual_value < reference_lower_value ||
-      actual_value > reference_upper_value)
-    return;
+      actual_value > reference_upper_value) {
+    if (!repeat) {
+      ipc_task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &ChildTraceMessageFilter::SendAbortBackgroundTracingMessage,
+              this));
+    }
+  }
 
   ipc_task_runner_->PostTask(
       FROM_HERE, base::Bind(&ChildTraceMessageFilter::SendTriggerMessage, this,
@@ -264,15 +275,21 @@ void ChildTraceMessageFilter::SendTriggerMessage(
     sender_->Send(new TracingHostMsg_TriggerBackgroundTrace(histogram_name));
 }
 
+void ChildTraceMessageFilter::SendAbortBackgroundTracingMessage() {
+  if (sender_)
+    sender_->Send(new TracingHostMsg_AbortBackgroundTrace());
+}
+
 void ChildTraceMessageFilter::OnSetUMACallback(
     const std::string& histogram_name,
     int histogram_lower_value,
-    int histogram_upper_value) {
+    int histogram_upper_value,
+    bool repeat) {
   histogram_last_changed_ = base::Time();
   base::StatisticsRecorder::SetCallback(
-      histogram_name,
-      base::Bind(&ChildTraceMessageFilter::OnHistogramChanged, this,
-                 histogram_name, histogram_lower_value, histogram_upper_value));
+      histogram_name, base::Bind(&ChildTraceMessageFilter::OnHistogramChanged,
+                                 this, histogram_name, histogram_lower_value,
+                                 histogram_upper_value, repeat));
 
   base::HistogramBase* existing_histogram =
       base::StatisticsRecorder::FindHistogram(histogram_name);
@@ -293,11 +310,18 @@ void ChildTraceMessageFilter::OnSetUMACallback(
     base::HistogramBase::Sample max;
     base::HistogramBase::Count count;
     sample_iterator->Get(&min, &max, &count);
-    if (min >= histogram_lower_value && max <= histogram_upper_value &&
-        count > 0) {
+
+    if (min >= histogram_lower_value && max <= histogram_upper_value) {
       ipc_task_runner_->PostTask(
           FROM_HERE, base::Bind(&ChildTraceMessageFilter::SendTriggerMessage,
                                 this, histogram_name));
+      break;
+    } else if (!repeat) {
+      ipc_task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(
+              &ChildTraceMessageFilter::SendAbortBackgroundTracingMessage,
+              this));
       break;
     }
 

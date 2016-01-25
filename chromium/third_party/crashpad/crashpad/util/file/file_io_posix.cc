@@ -28,7 +28,9 @@ namespace {
 struct ReadTraits {
   using VoidBufferType = void*;
   using CharBufferType = char*;
-  static ssize_t Operate(int fd, CharBufferType buffer, size_t size) {
+  static crashpad::FileOperationResult Operate(int fd,
+                                               CharBufferType buffer,
+                                               size_t size) {
     return read(fd, buffer, size);
   }
 };
@@ -36,21 +38,23 @@ struct ReadTraits {
 struct WriteTraits {
   using VoidBufferType = const void*;
   using CharBufferType = const char*;
-  static ssize_t Operate(int fd, CharBufferType buffer, size_t size) {
+  static crashpad::FileOperationResult Operate(int fd,
+                                               CharBufferType buffer,
+                                               size_t size) {
     return write(fd, buffer, size);
   }
 };
 
 template <typename Traits>
-ssize_t ReadOrWrite(int fd,
-                    typename Traits::VoidBufferType buffer,
-                    size_t size) {
+crashpad::FileOperationResult
+ReadOrWrite(int fd, typename Traits::VoidBufferType buffer, size_t size) {
   typename Traits::CharBufferType buffer_c =
       reinterpret_cast<typename Traits::CharBufferType>(buffer);
 
-  ssize_t total_bytes = 0;
+  crashpad::FileOperationResult total_bytes = 0;
   while (size > 0) {
-    ssize_t bytes = HANDLE_EINTR(Traits::Operate(fd, buffer_c, size));
+    crashpad::FileOperationResult bytes =
+        HANDLE_EINTR(Traits::Operate(fd, buffer_c, size));
     if (bytes < 0) {
       return bytes;
     } else if (bytes == 0) {
@@ -71,37 +75,65 @@ namespace crashpad {
 
 namespace {
 
-FileHandle LoggingOpenFileForOutput(int rdwr_or_wronly,
-                                    const base::FilePath& path,
-                                    FileWriteMode mode,
-                                    FilePermissions permissions) {
-  int flags = rdwr_or_wronly | O_CREAT;
-  // kReuseOrCreate does not need any additional flags.
-  if (mode == FileWriteMode::kTruncateOrCreate)
-    flags |= O_TRUNC;
-  else if (mode == FileWriteMode::kCreateOrFail)
-    flags |= O_EXCL;
+FileHandle OpenFileForOutput(int rdwr_or_wronly,
+                             const base::FilePath& path,
+                             FileWriteMode mode,
+                             FilePermissions permissions) {
+  DCHECK(rdwr_or_wronly & (O_RDWR | O_WRONLY));
+  DCHECK_EQ(rdwr_or_wronly & ~(O_RDWR | O_WRONLY), 0);
 
-  int fd = HANDLE_EINTR(
+  int flags = rdwr_or_wronly;
+
+  switch (mode) {
+    case FileWriteMode::kReuseOrFail:
+      break;
+    case FileWriteMode::kReuseOrCreate:
+      flags |= O_CREAT;
+      break;
+    case FileWriteMode::kTruncateOrCreate:
+      flags |= O_CREAT | O_TRUNC;
+      break;
+    case FileWriteMode::kCreateOrFail:
+      flags |= O_CREAT | O_EXCL;
+      break;
+  }
+
+  return HANDLE_EINTR(
       open(path.value().c_str(),
            flags,
            permissions == FilePermissions::kWorldReadable ? 0644 : 0600));
-  PLOG_IF(ERROR, fd < 0) << "open " << path.value();
-  return fd;
 }
 
 }  // namespace
 
-ssize_t ReadFile(FileHandle file, void* buffer, size_t size) {
+FileOperationResult ReadFile(FileHandle file, void* buffer, size_t size) {
   return ReadOrWrite<ReadTraits>(file, buffer, size);
 }
 
-ssize_t WriteFile(FileHandle file, const void* buffer, size_t size) {
+FileOperationResult WriteFile(FileHandle file,
+                              const void* buffer,
+                              size_t size) {
   return ReadOrWrite<WriteTraits>(file, buffer, size);
 }
 
+FileHandle OpenFileForRead(const base::FilePath& path) {
+  return HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
+}
+
+FileHandle OpenFileForWrite(const base::FilePath& path,
+                            FileWriteMode mode,
+                            FilePermissions permissions) {
+  return OpenFileForOutput(O_WRONLY, path, mode, permissions);
+}
+
+FileHandle OpenFileForReadAndWrite(const base::FilePath& path,
+                                   FileWriteMode mode,
+                                   FilePermissions permissions) {
+  return OpenFileForOutput(O_RDWR, path, mode, permissions);
+}
+
 FileHandle LoggingOpenFileForRead(const base::FilePath& path) {
-  int fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
+  FileHandle fd = OpenFileForRead(path);
   PLOG_IF(ERROR, fd < 0) << "open " << path.value();
   return fd;
 }
@@ -109,13 +141,17 @@ FileHandle LoggingOpenFileForRead(const base::FilePath& path) {
 FileHandle LoggingOpenFileForWrite(const base::FilePath& path,
                                    FileWriteMode mode,
                                    FilePermissions permissions) {
-  return LoggingOpenFileForOutput(O_WRONLY, path, mode, permissions);
+  FileHandle fd = OpenFileForWrite(path, mode, permissions);
+  PLOG_IF(ERROR, fd < 0) << "open " << path.value();
+  return fd;
 }
 
 FileHandle LoggingOpenFileForReadAndWrite(const base::FilePath& path,
                                           FileWriteMode mode,
                                           FilePermissions permissions) {
-  return LoggingOpenFileForOutput(O_RDWR, path, mode, permissions);
+  FileHandle fd = OpenFileForReadAndWrite(path, mode, permissions);
+  PLOG_IF(ERROR, fd < 0) << "open " << path.value();
+  return fd;
 }
 
 bool LoggingLockFile(FileHandle file, FileLocking locking) {

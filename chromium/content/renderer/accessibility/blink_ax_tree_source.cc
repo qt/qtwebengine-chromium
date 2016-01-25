@@ -4,6 +4,8 @@
 
 #include "content/renderer/accessibility/blink_ax_tree_source.h"
 
+#include <stddef.h>
+
 #include <set>
 
 #include "base/strings/string_number_conversions.h"
@@ -23,7 +25,6 @@
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebDocumentType.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -37,7 +38,6 @@ using base::ASCIIToUTF16;
 using base::UTF16ToUTF8;
 using blink::WebAXObject;
 using blink::WebDocument;
-using blink::WebDocumentType;
 using blink::WebElement;
 using blink::WebFrame;
 using blink::WebLocalFrame;
@@ -101,14 +101,14 @@ std::string GetEquivalentAriaRoleString(const ui::AXRole role) {
 void AddIntListAttributeFromWebObjects(ui::AXIntListAttribute attr,
                                        WebVector<WebAXObject> objects,
                                        AXContentNodeData* dst) {
-  std::vector<int32> ids;
+  std::vector<int32_t> ids;
   for(size_t i = 0; i < objects.size(); i++)
     ids.push_back(objects[i].axID());
   if (ids.size() > 0)
     dst->AddIntListAttribute(attr, ids);
 }
 
-}  // Anonymous namespace
+}  // namespace
 
 BlinkAXTreeSource::BlinkAXTreeSource(RenderFrameImpl* render_frame)
     : render_frame_(render_frame),
@@ -132,17 +132,62 @@ bool BlinkAXTreeSource::IsInTree(blink::WebAXObject node) const {
   return false;
 }
 
+AXContentTreeData BlinkAXTreeSource::GetTreeData() const {
+  AXContentTreeData tree_data;
+
+  blink::WebDocument document = BlinkAXTreeSource::GetMainDocument();
+  const blink::WebAXObject& root = GetRoot();
+
+  tree_data.title = document.title().utf8();
+  tree_data.url = document.url().string().utf8();
+  tree_data.mimetype = document.isXHTMLDocument() ? "text/xhtml" : "text/html";
+  tree_data.loaded = root.isLoaded();
+  tree_data.loading_progress = root.estimatedLoadingProgress();
+  tree_data.doctype = "html";
+
+  WebAXObject anchor_object, focus_object;
+  int anchor_offset, focus_offset;
+  root.selection(anchor_object, anchor_offset, focus_object, focus_offset);
+  if (!anchor_object.isNull() && !focus_object.isNull() &&
+      anchor_offset >= 0 && focus_offset >= 0) {
+    int32_t anchor_id = anchor_object.axID();
+    int32_t focus_id = focus_object.axID();
+    tree_data.sel_anchor_object_id = anchor_id;
+    tree_data.sel_anchor_offset = anchor_offset;
+    tree_data.sel_focus_object_id = focus_id;
+    tree_data.sel_focus_offset = focus_offset;
+  }
+
+  // Get the tree ID for this frame and possibly the parent frame.
+  WebLocalFrame* web_frame = document.frame();
+  if (web_frame) {
+    RenderFrame* render_frame = RenderFrame::FromWebFrame(web_frame);
+    tree_data.routing_id = render_frame->GetRoutingID();
+
+    // Get the tree ID for the parent frame, if it's remote.
+    // (If it's local, it's already part of this same tree.)
+    blink::WebFrame* parent_web_frame = web_frame->parent();
+    if (parent_web_frame && parent_web_frame->isWebRemoteFrame()) {
+      RenderFrameProxy* parent_render_frame_proxy =
+          RenderFrameProxy::FromWebFrame(parent_web_frame);
+      tree_data.parent_routing_id = parent_render_frame_proxy->routing_id();
+    }
+  }
+
+  return tree_data;
+}
+
 blink::WebAXObject BlinkAXTreeSource::GetRoot() const {
   if (!root_.isNull())
     return root_;
   return GetMainDocument().accessibilityObject();
 }
 
-blink::WebAXObject BlinkAXTreeSource::GetFromId(int32 id) const {
+blink::WebAXObject BlinkAXTreeSource::GetFromId(int32_t id) const {
   return GetMainDocument().accessibilityObjectFromID(id);
 }
 
-int32 BlinkAXTreeSource::GetId(blink::WebAXObject node) const {
+int32_t BlinkAXTreeSource::GetId(blink::WebAXObject node) const {
   return node.axID();
 }
 
@@ -215,17 +260,38 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   dst->state = AXStateFromBlink(src);
   dst->location = src.boundingBoxRect();
   dst->id = src.axID();
-  std::string name = UTF16ToUTF8(base::StringPiece16(src.deprecatedTitle()));
+
+  blink::WebAXNameFrom nameFrom;
+  blink::WebVector<blink::WebAXObject> nameObjects;
+  blink::WebString web_name = src.name(nameFrom, nameObjects);
+  if (!web_name.isEmpty()) {
+    dst->AddStringAttribute(ui::AX_ATTR_NAME, web_name.utf8());
+    dst->AddIntAttribute(ui::AX_ATTR_NAME_FROM, AXNameFromFromBlink(nameFrom));
+    AddIntListAttributeFromWebObjects(
+        ui::AX_ATTR_LABELLEDBY_IDS, nameObjects, dst);
+  }
+
+  blink::WebAXDescriptionFrom descriptionFrom;
+  blink::WebVector<blink::WebAXObject> descriptionObjects;
+  blink::WebString web_description = src.description(
+      nameFrom, descriptionFrom, descriptionObjects);
+  if (!web_description.isEmpty()) {
+    dst->AddStringAttribute(ui::AX_ATTR_DESCRIPTION, web_description.utf8());
+    dst->AddIntAttribute(ui::AX_ATTR_DESCRIPTION_FROM,
+        AXDescriptionFromFromBlink(descriptionFrom));
+    AddIntListAttributeFromWebObjects(
+        ui::AX_ATTR_DESCRIBEDBY_IDS, descriptionObjects, dst);
+  }
+
+  blink::WebString web_placeholder = src.placeholder(nameFrom, descriptionFrom);
+  if (!web_placeholder.isEmpty())
+    dst->AddStringAttribute(ui::AX_ATTR_PLACEHOLDER, web_placeholder.utf8());
 
   std::string value;
   if (src.valueDescription().length()) {
-    dst->AddStringAttribute(ui::AX_ATTR_VALUE,
-                            UTF16ToUTF8(base::StringPiece16(
-                                src.valueDescription())));
+    dst->AddStringAttribute(ui::AX_ATTR_VALUE, src.valueDescription().utf8());
   } else {
-    dst->AddStringAttribute(
-        ui::AX_ATTR_VALUE,
-        UTF16ToUTF8(base::StringPiece16(src.stringValue())));
+    dst->AddStringAttribute(ui::AX_ATTR_VALUE, src.stringValue().utf8());
   }
 
   if (dst->role == ui::AX_ROLE_COLOR_WELL)
@@ -249,8 +315,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   }
   if (src.invalidState() == blink::WebAXInvalidStateOther) {
     dst->AddStringAttribute(
-        ui::AX_ATTR_ARIA_INVALID_VALUE,
-        UTF16ToUTF8(base::StringPiece16(src.ariaInvalidValue())));
+        ui::AX_ATTR_ARIA_INVALID_VALUE, src.ariaInvalidValue().utf8());
   }
 
   if (src.textDirection()) {
@@ -267,7 +332,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   if (dst->role == ui::AX_ROLE_INLINE_TEXT_BOX) {
     WebVector<int> src_character_offsets;
     src.characterOffsets(src_character_offsets);
-    std::vector<int32> character_offsets;
+    std::vector<int32_t> character_offsets;
     character_offsets.reserve(src_character_offsets.size());
     for (size_t i = 0; i < src_character_offsets.size(); ++i)
       character_offsets.push_back(src_character_offsets[i]);
@@ -276,8 +341,8 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     WebVector<int> src_word_starts;
     WebVector<int> src_word_ends;
     src.wordBoundaries(src_word_starts, src_word_ends);
-    std::vector<int32> word_starts;
-    std::vector<int32> word_ends;
+    std::vector<int32_t> word_starts;
+    std::vector<int32_t> word_ends;
     word_starts.reserve(src_word_starts.size());
     word_ends.reserve(src_word_starts.size());
     for (size_t i = 0; i < src_word_starts.size(); ++i) {
@@ -289,52 +354,30 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   }
 
   if (src.accessKey().length()) {
-    dst->AddStringAttribute(ui::AX_ATTR_ACCESS_KEY,
-    UTF16ToUTF8(base::StringPiece16(src.accessKey())));
+    dst->AddStringAttribute(ui::AX_ATTR_ACCESS_KEY, src.accessKey().utf8());
   }
 
-  if (src.actionVerb().length())
-    dst->AddStringAttribute(
-        ui::AX_ATTR_ACTION,
-        UTF16ToUTF8(base::StringPiece16(src.actionVerb())));
+  if (src.actionVerb().length()) {
+    dst->AddStringAttribute(ui::AX_ATTR_ACTION, src.actionVerb().utf8());
+  }
   if (src.ariaAutoComplete().length())
     dst->AddStringAttribute(
         ui::AX_ATTR_AUTO_COMPLETE,
-        UTF16ToUTF8(base::StringPiece16(src.ariaAutoComplete())));
+        src.ariaAutoComplete().utf8());
   if (src.isAriaReadOnly())
     dst->AddBoolAttribute(ui::AX_ATTR_ARIA_READONLY, true);
   if (src.isButtonStateMixed())
-    dst->AddBoolAttribute(ui::AX_ATTR_BUTTON_MIXED, true);
+    dst->AddBoolAttribute(ui::AX_ATTR_STATE_MIXED, true);
   if (src.canSetValueAttribute())
     dst->AddBoolAttribute(ui::AX_ATTR_CAN_SET_VALUE, true);
-  if (src.deprecatedAccessibilityDescription().length()) {
-    dst->AddStringAttribute(
-        ui::AX_ATTR_DESCRIPTION,
-        UTF16ToUTF8(base::StringPiece16(
-            src.deprecatedAccessibilityDescription())));
-  }
   if (src.hasComputedStyle()) {
     dst->AddStringAttribute(
-        ui::AX_ATTR_DISPLAY,
-        UTF16ToUTF8(base::StringPiece16(src.computedStyleDisplay())));
-  }
-  if (src.deprecatedHelpText().length())
-    dst->AddStringAttribute(
-        ui::AX_ATTR_HELP,
-        UTF16ToUTF8(base::StringPiece16((src.deprecatedHelpText()))));
-  if (src.deprecatedPlaceholder().length()) {
-    dst->AddStringAttribute(
-        ui::AX_ATTR_PLACEHOLDER,
-        UTF16ToUTF8(base::StringPiece16(src.deprecatedPlaceholder())));
+        ui::AX_ATTR_DISPLAY, src.computedStyleDisplay().utf8());
   }
   if (src.keyboardShortcut().length()) {
     dst->AddStringAttribute(
         ui::AX_ATTR_SHORTCUT,
-        UTF16ToUTF8(base::StringPiece16(src.keyboardShortcut())));
-  }
-  if (!src.deprecatedTitleUIElement().isDetached()) {
-    dst->AddIntAttribute(ui::AX_ATTR_TITLE_UI_ELEMENT,
-                         src.deprecatedTitleUIElement().axID());
+        src.keyboardShortcut().utf8());
   }
   if (!src.ariaActiveDescendant().isDetached()) {
     dst->AddIntAttribute(ui::AX_ATTR_ACTIVEDESCENDANT_ID,
@@ -342,7 +385,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   }
 
   if (!src.url().isEmpty())
-    dst->AddStringAttribute(ui::AX_ATTR_URL, src.url().spec());
+    dst->AddStringAttribute(ui::AX_ATTR_URL, src.url().string().utf8());
 
   if (dst->role == ui::AX_ROLE_HEADING)
     dst->AddIntAttribute(ui::AX_ATTR_HIERARCHICAL_LEVEL, src.headingLevel());
@@ -380,13 +423,11 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     // a WebElement method that returns the original lower cased tagName.
     dst->AddStringAttribute(
         ui::AX_ATTR_HTML_TAG,
-        base::ToLowerASCII(UTF16ToUTF8(
-            base::StringPiece16(element.tagName()))));
+        base::ToLowerASCII(element.tagName().utf8()));
     for (unsigned i = 0; i < element.attributeCount(); ++i) {
-      std::string name = base::ToLowerASCII(UTF16ToUTF8(
-          base::StringPiece16(element.attributeLocalName(i))));
-      std::string value =
-          UTF16ToUTF8(base::StringPiece16(element.attributeValue(i)));
+      std::string name = base::ToLowerASCII(
+          element.attributeLocalName(i).utf8());
+      std::string value = element.attributeValue(i).utf8();
       dst->html_attributes.push_back(std::make_pair(name, value));
     }
 
@@ -397,7 +438,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
       WebVector<int> src_line_breaks;
       src.lineBreaks(src_line_breaks);
       if (src_line_breaks.size() > 0) {
-        std::vector<int32> line_breaks;
+        std::vector<int32_t> line_breaks;
         line_breaks.reserve(src_line_breaks.size());
         for (size_t i = 0; i < src_line_breaks.size(); ++i)
           line_breaks.push_back(src_line_breaks[i]);
@@ -409,7 +450,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     if (element.hasAttribute("role")) {
       dst->AddStringAttribute(
           ui::AX_ATTR_ROLE,
-          UTF16ToUTF8(base::StringPiece16(element.getAttribute("role"))));
+          element.getAttribute("role").utf8());
     } else {
       std::string role = GetEquivalentAriaRoleString(dst->role);
       if (!role.empty())
@@ -449,21 +490,21 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     if (!src.liveRegionStatus().isEmpty()) {
       dst->AddStringAttribute(
           ui::AX_ATTR_LIVE_STATUS,
-          UTF16ToUTF8(base::StringPiece16(src.liveRegionStatus())));
+          src.liveRegionStatus().utf8());
     }
     dst->AddStringAttribute(
         ui::AX_ATTR_LIVE_RELEVANT,
-        UTF16ToUTF8(base::StringPiece16(src.liveRegionRelevant())));
+        src.liveRegionRelevant().utf8());
     dst->AddBoolAttribute(ui::AX_ATTR_CONTAINER_LIVE_ATOMIC,
                           src.containerLiveRegionAtomic());
     dst->AddBoolAttribute(ui::AX_ATTR_CONTAINER_LIVE_BUSY,
                           src.containerLiveRegionBusy());
     dst->AddStringAttribute(
         ui::AX_ATTR_CONTAINER_LIVE_STATUS,
-        UTF16ToUTF8(base::StringPiece16(src.containerLiveRegionStatus())));
+        src.containerLiveRegionStatus().utf8());
     dst->AddStringAttribute(
         ui::AX_ATTR_CONTAINER_LIVE_RELEVANT,
-        UTF16ToUTF8(base::StringPiece16(src.containerLiveRegionRelevant())));
+        src.containerLiveRegionRelevant().utf8());
   }
 
   if (dst->role == ui::AX_ROLE_PROGRESS_INDICATOR ||
@@ -478,70 +519,16 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
                            src.minValueForRange());
   }
 
-  if (dst->role == ui::AX_ROLE_WEB_AREA) {
+  if (dst->role == ui::AX_ROLE_WEB_AREA)
     dst->AddStringAttribute(ui::AX_ATTR_HTML_TAG, "#document");
-    const WebDocument& document = src.document();
-    if (name.empty())
-      name = UTF16ToUTF8(base::StringPiece16(document.title()));
-    dst->AddStringAttribute(
-        ui::AX_ATTR_DOC_TITLE,
-        UTF16ToUTF8(base::StringPiece16(document.title())));
-    dst->AddStringAttribute(ui::AX_ATTR_DOC_URL, document.url().spec());
-    dst->AddStringAttribute(
-        ui::AX_ATTR_DOC_MIMETYPE,
-        document.isXHTMLDocument() ? "text/xhtml" : "text/html");
-    dst->AddBoolAttribute(ui::AX_ATTR_DOC_LOADED, src.isLoaded());
-    dst->AddFloatAttribute(ui::AX_ATTR_DOC_LOADING_PROGRESS,
-                           src.estimatedLoadingProgress());
-
-    const WebDocumentType& doctype = document.doctype();
-    if (!doctype.isNull()) {
-      dst->AddStringAttribute(
-          ui::AX_ATTR_DOC_DOCTYPE,
-          UTF16ToUTF8(base::StringPiece16(doctype.name())));
-    }
-
-    WebAXObject anchor_object, focus_object;
-    int anchor_offset, focus_offset;
-    src.selection(anchor_object, anchor_offset, focus_object, focus_offset);
-    if (!anchor_object.isNull() && !focus_object.isNull() &&
-        anchor_offset >= 0 && focus_offset >= 0) {
-      int32 anchor_id = anchor_object.axID();
-      int32 focus_id = focus_object.axID();
-      dst->AddIntAttribute(ui::AX_ATTR_ANCHOR_OBJECT_ID, anchor_id);
-      dst->AddIntAttribute(ui::AX_ATTR_ANCHOR_OFFSET, anchor_offset);
-      dst->AddIntAttribute(ui::AX_ATTR_FOCUS_OBJECT_ID, focus_id);
-      dst->AddIntAttribute(ui::AX_ATTR_FOCUS_OFFSET, focus_offset);
-    }
-
-    // Get the tree ID for this frame and possibly the parent frame.
-    WebLocalFrame* web_frame = document.frame();
-    if (web_frame) {
-      RenderFrame* render_frame = RenderFrame::FromWebFrame(web_frame);
-      dst->AddContentIntAttribute(
-          AX_CONTENT_ATTR_ROUTING_ID,
-          render_frame->GetRoutingID());
-
-      // Get the tree ID for the parent frame, if it's remote.
-      // (If it's local, it's already part of this same tree.)
-      blink::WebFrame* parent_web_frame = web_frame->parent();
-      if (parent_web_frame && parent_web_frame->isWebRemoteFrame()) {
-        RenderFrameProxy* parent_render_frame_proxy =
-            RenderFrameProxy::FromWebFrame(parent_web_frame);
-        dst->AddContentIntAttribute(
-            AX_CONTENT_ATTR_PARENT_ROUTING_ID,
-            parent_render_frame_proxy->routing_id());
-      }
-    }
-  }
 
   if (dst->role == ui::AX_ROLE_TABLE) {
     int column_count = src.columnCount();
     int row_count = src.rowCount();
     if (column_count > 0 && row_count > 0) {
-      std::set<int32> unique_cell_id_set;
-      std::vector<int32> cell_ids;
-      std::vector<int32> unique_cell_ids;
+      std::set<int32_t> unique_cell_id_set;
+      std::vector<int32_t> cell_ids;
+      std::vector<int32_t> unique_cell_ids;
       dst->AddIntAttribute(ui::AX_ATTR_TABLE_COLUMN_COUNT, column_count);
       dst->AddIntAttribute(ui::AX_ATTR_TABLE_ROW_COUNT, row_count);
       WebAXObject header = src.headerContainerObject();
@@ -596,8 +583,6 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
                          AXSortDirectionFromBlink(src.sortDirection()));
   }
 
-  dst->AddStringAttribute(ui::AX_ATTR_NAME, name);
-
   // Add the ids of *indirect* children - those who are children of this node,
   // but whose parent is *not* this node. One example is a table
   // cell, which is a child of both a row and a column. Because the cell's
@@ -606,7 +591,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   int child_count = src.childCount();
   for (int i = 0; i < child_count; ++i) {
     WebAXObject child = src.childAt(i);
-    std::vector<int32> indirect_child_ids;
+    std::vector<int32_t> indirect_child_ids;
     if (!is_iframe && !child.isDetached() && !IsParentUnignoredOf(src, child))
       indirect_child_ids.push_back(child.axID());
     if (indirect_child_ids.size() > 0) {
@@ -619,26 +604,9 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   if (src.ariaControls(controls))
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_CONTROLS_IDS, controls, dst);
 
-  WebVector<WebAXObject> describedby;
-  if (src.deprecatedAriaDescribedby(describedby)) {
-    AddIntListAttributeFromWebObjects(
-        ui::AX_ATTR_DESCRIBEDBY_IDS, describedby, dst);
-  }
-
   WebVector<WebAXObject> flowTo;
   if (src.ariaFlowTo(flowTo))
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_FLOWTO_IDS, flowTo, dst);
-
-  WebVector<WebAXObject> labelledby;
-  if (src.deprecatedAriaLabelledby(labelledby)) {
-    AddIntListAttributeFromWebObjects(
-        ui::AX_ATTR_LABELLEDBY_IDS, labelledby, dst);
-  }
-
-  WebVector<WebAXObject> owns;
-  if (src.ariaOwns(owns))
-    AddIntListAttributeFromWebObjects(ui::AX_ATTR_OWNS_IDS, owns, dst);
-
 
   if (src.isScrollableContainer()) {
     const gfx::Point& scrollOffset = src.scrollOffset();

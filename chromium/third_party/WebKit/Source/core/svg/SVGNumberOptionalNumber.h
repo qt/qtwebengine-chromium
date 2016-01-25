@@ -31,7 +31,8 @@
 #ifndef SVGNumberOptionalNumber_h
 #define SVGNumberOptionalNumber_h
 
-#include "core/svg/SVGAnimatedNumber.h"
+#include "core/svg/SVGNumber.h"
+#include "core/svg/SVGParsingError.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
@@ -51,7 +52,7 @@ public:
     PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
     String valueAsString() const override;
-    void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
 
     void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
     void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
@@ -59,8 +60,8 @@ public:
 
     static AnimatedPropertyType classType() { return AnimatedNumberOptionalNumber; }
 
-    PassRefPtrWillBeRawPtr<SVGNumber> firstNumber() { return m_firstNumber; }
-    PassRefPtrWillBeRawPtr<SVGNumber> secondNumber() { return m_secondNumber; }
+    PassRefPtrWillBeRawPtr<SVGNumber> firstNumber() const { return m_firstNumber; }
+    PassRefPtrWillBeRawPtr<SVGNumber> secondNumber() const { return m_secondNumber; }
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -71,12 +72,7 @@ protected:
     RefPtrWillBeMember<SVGNumber> m_secondNumber;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGNumberOptionalNumber> toSVGNumberOptionalNumber(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGNumberOptionalNumber::classType());
-    return static_pointer_cast<SVGNumberOptionalNumber>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGNumberOptionalNumber);
 
 } // namespace blink
 

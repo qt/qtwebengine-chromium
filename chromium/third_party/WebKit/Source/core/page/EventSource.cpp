@@ -30,7 +30,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/page/EventSource.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -50,6 +49,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/page/EventSourceInit.h"
+#include "platform/HTTPNames.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
@@ -112,7 +112,7 @@ void EventSource::scheduleInitialConnect()
     ASSERT(m_state == CONNECTING);
     ASSERT(!m_requestInFlight);
 
-    m_connectTimer.startOneShot(0, FROM_HERE);
+    m_connectTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void EventSource::connect()
@@ -123,15 +123,15 @@ void EventSource::connect()
 
     ExecutionContext& executionContext = *this->executionContext();
     ResourceRequest request(m_url);
-    request.setHTTPMethod("GET");
-    request.setHTTPHeaderField("Accept", "text/event-stream");
-    request.setHTTPHeaderField("Cache-Control", "no-cache");
+    request.setHTTPMethod(HTTPNames::GET);
+    request.setHTTPHeaderField(HTTPNames::Accept, "text/event-stream");
+    request.setHTTPHeaderField(HTTPNames::Cache_Control, "no-cache");
     request.setRequestContext(WebURLRequest::RequestContextEventSource);
     if (!m_lastEventId.isEmpty()) {
         // HTTP headers are Latin-1 byte strings, but the Last-Event-ID header is encoded as UTF-8.
         // TODO(davidben): This should be captured in the type of setHTTPHeaderField's arguments.
         CString lastEventIdUtf8 = m_lastEventId.utf8();
-        request.setHTTPHeaderField("Last-Event-ID", AtomicString(reinterpret_cast<const LChar*>(lastEventIdUtf8.data()), lastEventIdUtf8.length()));
+        request.setHTTPHeaderField(HTTPNames::Last_Event_ID, AtomicString(reinterpret_cast<const LChar*>(lastEventIdUtf8.data()), lastEventIdUtf8.length()));
     }
 
     SecurityOrigin* origin = executionContext.securityOrigin();
@@ -171,7 +171,7 @@ void EventSource::networkRequestEnded()
 void EventSource::scheduleReconnect()
 {
     m_state = CONNECTING;
-    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0, FROM_HERE);
+    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0, BLINK_FROM_HERE);
     dispatchEvent(Event::create(EventTypeNames::error));
 }
 

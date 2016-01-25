@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/build_config.h"
 #include "ui/base/ui_base_switches.h"
 
 namespace switches {
@@ -19,6 +20,14 @@ const char kDisableRemoteCoreAnimation[] = "disable-remote-core-animation";
 const char kShowMacOverlayBorders[] = "show-mac-overlay-borders";
 #endif
 
+#if defined(OS_WIN)
+// Disables merging the key event (WM_KEY*) with the char event (WM_CHAR).
+const char kDisableMergeKeyCharEvents[]     = "disable-merge-key-char-events";
+
+// Enables merging the key event (WM_KEY*) with the char event (WM_CHAR).
+const char kEnableMergeKeyCharEvents[]     = "enable-merge-key-char-events";
+#endif
+
 // Disables use of DWM composition for top level windows.
 const char kDisableDwmComposition[] = "disable-dwm-composition";
 
@@ -30,9 +39,6 @@ const char kDisableTouchAdjustment[] = "disable-touch-adjustment";
 
 // Disables touch event based drag and drop.
 const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
-
-// Disables controls that support touch base text editing.
-const char kDisableTouchEditing[] = "disable-touch-editing";
 
 // Disables additional visual feedback to touch input.
 const char kDisableTouchFeedback[] = "disable-touch-feedback";
@@ -46,9 +52,6 @@ const char kEnableLinkDisambiguationPopup[] =
 
 // Enables touch event based drag and drop.
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
-
-// Enables controls that support touch base text editing.
-const char kEnableTouchEditing[] = "enable-touch-editing";
 
 // The language file that we want to try to open. Of the form
 // language[-country] where language is the 2 letter code from ISO-639.

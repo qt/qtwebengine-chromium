@@ -13,7 +13,7 @@ enum RequestContext {
     "prefetch", "script", "serviceworker", "sharedworker",
     "subresource", "style", "track", "video", "worker", "xmlhttprequest", "xslt"
 };
-enum RequestMode { "same-origin", "no-cors", "cors" };
+enum RequestMode { "navigate", "same-origin", "no-cors", "cors" };
 enum RequestCredentials { "omit", "same-origin", "include" };
 enum RequestRedirect { "follow", "error", "manual" };
 
@@ -24,7 +24,6 @@ enum RequestRedirect { "follow", "error", "manual" };
     RaisesException=Constructor,
     ActiveDOMObject,
     GarbageCollected,
-    TypeChecking=Interface,
 ] interface Request {
     readonly attribute ByteString method;
     readonly attribute USVString url;

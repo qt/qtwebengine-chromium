@@ -30,6 +30,7 @@
 
 #include "platform/geometry/IntPoint.h"
 #include "third_party/skia/include/core/SkSize.h"
+#include "wtf/Allocator.h"
 #include "wtf/MathExtras.h"
 #include <iosfwd>
 
@@ -47,10 +48,11 @@ class IntSize;
 class LayoutSize;
 
 class PLATFORM_EXPORT FloatSize {
+    DISALLOW_NEW();
 public:
     FloatSize() : m_width(0), m_height(0) { }
     FloatSize(float width, float height) : m_width(width), m_height(height) { }
-    FloatSize(const IntSize& size) : m_width(size.width()), m_height(size.height()) { }
+    explicit FloatSize(const IntSize& size) : m_width(size.width()), m_height(size.height()) { }
     FloatSize(const SkSize& size) : m_width(size.width()), m_height(size.height()) { }
     explicit FloatSize(const LayoutSize&);
 

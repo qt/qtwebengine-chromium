@@ -29,7 +29,7 @@
         ],
       },
       'conditions': [
-        ['OS == "win"', {
+        ['OS == "win" or OS == "mac"', {
           'dependencies': [
             '../crypto/crypto.gyp:crypto',
           ],
@@ -52,8 +52,9 @@
         '..'
       ],
       'sources': [
+        'attachment_broker_mac_unittest.cc',
+        'attachment_broker_privileged_mac_unittest.cc',
         'attachment_broker_privileged_win_unittest.cc',
-        'attachment_broker_unprivileged_win_unittest.cc',
         'ipc_channel_posix_unittest.cc',
         'ipc_channel_proxy_unittest.cc',
         'ipc_channel_reader_unittest.cc',
@@ -154,6 +155,8 @@
         'ipc_test_channel_listener.h',
         'ipc_test_sink.cc',
         'ipc_test_sink.h',
+        'test_util_mac.cc',
+        'test_util_mac.h',
       ],
     },
   ],
@@ -211,9 +214,29 @@
             'test_suite_name': 'ipc_perftests',
           },
           'includes': [ '../build/apk_test.gypi' ],
+        }
+      ],
+      'conditions': [
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'ipc_tests_apk_run',
+              'type': 'none',
+              'dependencies': [
+                'ipc_tests_apk',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'ipc_tests_apk.isolate',
+              ],
+            },
+          ],
         }],
+      ],
     }],
-    ['test_isolation_mode != "noop"', {
+    ['test_isolation_mode != "noop" and OS != "android"', {
       'targets': [
         {
           'target_name': 'ipc_tests_run',

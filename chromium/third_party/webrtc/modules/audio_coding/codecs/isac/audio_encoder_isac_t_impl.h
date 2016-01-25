@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_AUDIO_ENCODER_ISAC_T_IMPL_H_
 
-#include "webrtc/modules/audio_coding/codecs/isac/main/interface/audio_encoder_isac.h"
+#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
 
 #include "webrtc/base/checks.h"
 
@@ -50,7 +50,6 @@ bool AudioEncoderIsacT<T>::Config::IsOk() const {
       return (frame_size_ms == 30 || frame_size_ms == 60) &&
              (bit_rate == 0 || (bit_rate >= 10000 && bit_rate <= 32000));
     case 32000:
-    case 48000:
       if (max_bit_rate > 160000)
         return false;
       if (max_payload_size_bytes > 600)
@@ -89,7 +88,7 @@ int AudioEncoderIsacT<T>::SampleRateHz() const {
 }
 
 template <typename T>
-int AudioEncoderIsacT<T>::NumChannels() const {
+size_t AudioEncoderIsacT<T>::NumChannels() const {
   return 1;
 }
 
@@ -116,7 +115,7 @@ int AudioEncoderIsacT<T>::GetTargetBitrate() const {
 template <typename T>
 AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeInternal(
     uint32_t rtp_timestamp,
-    const int16_t* audio,
+    rtc::ArrayView<const int16_t> audio,
     size_t max_encoded_bytes,
     uint8_t* encoded) {
   if (!packet_in_progress_) {
@@ -128,7 +127,7 @@ AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeInternal(
     IsacBandwidthInfo bwinfo = bwinfo_->Get();
     T::SetBandwidthInfo(isac_state_, &bwinfo);
   }
-  int r = T::Encode(isac_state_, audio, encoded);
+  int r = T::Encode(isac_state_, audio.data(), encoded);
   RTC_CHECK_GE(r, 0) << "Encode failed (error code "
                      << T::GetErrorCode(isac_state_) << ")";
 
@@ -177,15 +176,11 @@ void AudioEncoderIsacT<T>::RecreateEncoderInstance(const Config& config) {
   if (config.max_bit_rate != -1)
     RTC_CHECK_EQ(0, T::SetMaxRate(isac_state_, config.max_bit_rate));
 
-  // When config.sample_rate_hz is set to 48000 Hz (iSAC-fb), the decoder is
-  // still set to 32000 Hz, since there is no full-band mode in the decoder.
-  const int decoder_sample_rate_hz = std::min(config.sample_rate_hz, 32000);
-
   // Set the decoder sample rate even though we just use the encoder. This
   // doesn't appear to be necessary to produce a valid encoding, but without it
   // we get an encoding that isn't bit-for-bit identical with what a combined
   // encoder+decoder object produces.
-  RTC_CHECK_EQ(0, T::SetDecSampRate(isac_state_, decoder_sample_rate_hz));
+  RTC_CHECK_EQ(0, T::SetDecSampRate(isac_state_, config.sample_rate_hz));
 
   config_ = config;
 }

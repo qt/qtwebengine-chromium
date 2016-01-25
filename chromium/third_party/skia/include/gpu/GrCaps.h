@@ -62,8 +62,6 @@ public:
     bool pathRenderingSupport() const { return fPathRenderingSupport; }
     bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
     bool dualSourceBlendingSupport() const { return fDualSourceBlendingSupport; }
-    bool mixedSamplesSupport() const { return fMixedSamplesSupport; }
-    bool programmableSampleLocationsSupport() const { return fProgrammableSampleLocationsSupport; }
 
     /**
     * Get the precision info for a variable of type kFloat_GrSLType, kVec2f_GrSLType, etc in a
@@ -72,7 +70,7 @@ public:
     * called.
     */
     const PrecisionInfo& getFloatShaderPrecisionInfo(GrShaderType shaderType,
-        GrSLPrecision precision) const {
+                                                     GrSLPrecision precision) const {
         return fFloatPrecisions[shaderType][precision];
     };
 
@@ -93,13 +91,12 @@ protected:
     bool fPathRenderingSupport : 1;
     bool fDstReadInShaderSupport : 1;
     bool fDualSourceBlendingSupport : 1;
-    bool fMixedSamplesSupport : 1;
-    bool fProgrammableSampleLocationsSupport : 1;
 
     bool fShaderPrecisionVaries;
     PrecisionInfo fFloatPrecisions[kGrShaderTypeCount][kGrSLPrecisionCount];
 
 private:
+    virtual void onApplyOptionsOverrides(const GrContextOptions&) {};
     typedef SkRefCnt INHERITED;
 };
 
@@ -121,14 +118,11 @@ public:
     bool twoSidedStencilSupport() const { return fTwoSidedStencilSupport; }
     bool stencilWrapOpsSupport() const { return  fStencilWrapOpsSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
-#if GR_FORCE_GPU_TRACE_DEBUGGING
-    bool gpuTracingSupport() const { return true; }
-#else
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
-#endif
     bool compressedTexSubImageSupport() const { return fCompressedTexSubImageSupport; }
     bool oversizedStencilSupport() const { return fOversizedStencilSupport; }
     bool textureBarrierSupport() const { return fTextureBarrierSupport; }
+    bool mixedSamplesSupport() const { return fMixedSamplesSupport; }
 
     bool useDrawInsteadOfClear() const { return fUseDrawInsteadOfClear; }
     bool useDrawInsteadOfPartialRenderTargetWrite() const {
@@ -189,23 +183,19 @@ public:
 
     int maxRenderTargetSize() const { return fMaxRenderTargetSize; }
     int maxTextureSize() const { return fMaxTextureSize; }
-    /** 0 unless GPU has problems with small textures */
-    int minTextureSize() const { return fMinTextureSize; }
+    /** This is the maximum tile size to use by GPU devices for rendering sw-backed images/bitmaps.
+        It is usually the max texture size, unless we're overriding it for testing. */
+    int maxTileSize() const { SkASSERT(fMaxTileSize <= fMaxTextureSize); return fMaxTileSize; }
 
     // Will be 0 if MSAA is not supported
     int maxSampleCount() const { return fMaxSampleCount; }
 
-    bool isConfigRenderable(GrPixelConfig config, bool withMSAA) const {
-        SkASSERT(kGrPixelConfigCnt > config);
-        return fConfigRenderSupport[config][withMSAA];
-    }
+    virtual bool isConfigTexturable(GrPixelConfig config) const = 0;
+    virtual bool isConfigRenderable(GrPixelConfig config, bool withMSAA) const = 0;
 
-    bool isConfigTexturable(GrPixelConfig config) const {
-        SkASSERT(kGrPixelConfigCnt > config);
-        return fConfigTextureSupport[config];
-    }
+    bool suppressPrints() const { return fSuppressPrints; }
 
-    bool suppressPrints() const { return fSupressPrints; }
+    bool immediateFlush() const { return fImmediateFlush; }
 
     bool drawPathMasksToCompressedTexturesSupport() const {
         return fDrawPathMasksToCompressedTextureSupport;
@@ -245,6 +235,7 @@ protected:
     bool fCompressedTexSubImageSupport               : 1;
     bool fOversizedStencilSupport                    : 1;
     bool fTextureBarrierSupport                      : 1;
+    bool fMixedSamplesSupport                        : 1;
     bool fSupportsInstancedDraws                     : 1;
     bool fFullClearIsFree                            : 1;
     bool fMustClearUploadedBufferData                : 1;
@@ -265,15 +256,14 @@ protected:
 
     int fMaxRenderTargetSize;
     int fMaxTextureSize;
-    int fMinTextureSize;
+    int fMaxTileSize;
     int fMaxSampleCount;
 
-    // The first entry for each config is without msaa and the second is with.
-    bool fConfigRenderSupport[kGrPixelConfigCnt][2];
-    bool fConfigTextureSupport[kGrPixelConfigCnt];
-
 private:
-    bool fSupressPrints : 1;
+    virtual void onApplyOptionsOverrides(const GrContextOptions&) {};
+
+    bool fSuppressPrints : 1;
+    bool fImmediateFlush: 1;
     bool fDrawPathMasksToCompressedTextureSupport : 1;
 
     typedef SkRefCnt INHERITED;

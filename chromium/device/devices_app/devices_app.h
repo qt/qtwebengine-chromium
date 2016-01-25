@@ -5,16 +5,14 @@
 #ifndef DEVICE_DEVICES_DEVICES_APP_H_
 #define DEVICE_DEVICES_DEVICES_APP_H_
 
+#include <stddef.h>
+
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "mojo/application/public/cpp/application_delegate.h"
-#include "mojo/application/public/cpp/interface_factory.h"
-
-namespace base {
-class SequencedTaskRunner;
-}
+#include "mojo/shell/public/cpp/application_delegate.h"
+#include "mojo/shell/public/cpp/interface_factory.h"
 
 namespace mojo {
 class ApplicationImpl;
@@ -29,8 +27,7 @@ class DeviceManager;
 class DevicesApp : public mojo::ApplicationDelegate,
                    public mojo::InterfaceFactory<usb::DeviceManager> {
  public:
-  explicit DevicesApp(
-      scoped_refptr<base::SequencedTaskRunner> service_task_runner);
+  DevicesApp();
   ~DevicesApp() override;
 
  private:
@@ -56,7 +53,6 @@ class DevicesApp : public mojo::ApplicationDelegate,
 
   mojo::ApplicationImpl* app_impl_;
   scoped_ptr<USBServiceInitializer> service_initializer_;
-  scoped_refptr<base::SequencedTaskRunner> service_task_runner_;
   size_t active_device_manager_count_;
 
   // Callback used to shut down the app after a period of inactivity.

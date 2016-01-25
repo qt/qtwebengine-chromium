@@ -31,6 +31,7 @@
 #ifndef ImageQualityController_h
 #define ImageQualityController_h
 
+#include "base/gtest_prod_util.h"
 #include "core/CoreExport.h"
 #include "core/layout/LayoutObject.h"
 #include "platform/geometry/IntSize.h"
@@ -46,25 +47,25 @@ typedef HashMap<const void*, LayoutSize> LayerSizeMap;
 typedef HashMap<const LayoutObject*, LayerSizeMap> ObjectLayerSizeMap;
 
 class CORE_EXPORT ImageQualityController final {
-    WTF_MAKE_NONCOPYABLE(ImageQualityController); WTF_MAKE_FAST_ALLOCATED(ImageQualityController);
+    WTF_MAKE_NONCOPYABLE(ImageQualityController); USING_FAST_MALLOC(ImageQualityController);
 public:
     ~ImageQualityController();
 
     static ImageQualityController* imageQualityController();
 
-    static void remove(LayoutObject*);
+    static void remove(LayoutObject&);
 
-    InterpolationQuality chooseInterpolationQuality(GraphicsContext*, const LayoutObject*, Image*, const void* layer, const LayoutSize&);
+    InterpolationQuality chooseInterpolationQuality(const LayoutObject&, Image*, const void* layer, const LayoutSize&);
 
 private:
     ImageQualityController();
 
-    static bool has(const LayoutObject*);
-    void set(const LayoutObject*, LayerSizeMap* innerMap, const void* layer, const LayoutSize&);
+    static bool has(const LayoutObject&);
+    void set(const LayoutObject&, LayerSizeMap* innerMap, const void* layer, const LayoutSize&);
 
-    bool shouldPaintAtLowQuality(GraphicsContext*, const LayoutObject*, Image*, const void* layer, const LayoutSize&);
-    void removeLayer(const LayoutObject*, LayerSizeMap* innerMap, const void* layer);
-    void objectDestroyed(const LayoutObject*);
+    bool shouldPaintAtLowQuality(const LayoutObject&, Image*, const void* layer, const LayoutSize&);
+    void removeLayer(const LayoutObject&, LayerSizeMap* innerMap, const void* layer);
+    void objectDestroyed(const LayoutObject&);
     bool isEmpty() { return m_objectLayerSizeMap.isEmpty(); }
 
     void highQualityRepaintTimerFired(Timer<ImageQualityController>*);
@@ -79,12 +80,12 @@ private:
     bool m_liveResizeOptimizationIsActive;
 
     // For calling set().
-    friend class LayoutPartTest_DestroyUpdatesImageQualityController_Test;
+    FRIEND_TEST_ALL_PREFIXES(LayoutPartTest, DestroyUpdatesImageQualityController);
 
     // For calling setTimer(),
-    friend class ImageQualityControllerTest_LowQualityFilterForLiveResize_Test;
-    friend class ImageQualityControllerTest_LowQualityFilterForResizingImage_Test;
-    friend class ImageQualityControllerTest_DontKickTheAnimationTimerWhenPaintingAtTheSameSize_Test;
+    FRIEND_TEST_ALL_PREFIXES(ImageQualityControllerTest, LowQualityFilterForLiveResize);
+    FRIEND_TEST_ALL_PREFIXES(ImageQualityControllerTest, LowQualityFilterForResizingImage);
+    FRIEND_TEST_ALL_PREFIXES(ImageQualityControllerTest, DontKickTheAnimationTimerWhenPaintingAtTheSameSize);
 };
 
 } // namespace blink

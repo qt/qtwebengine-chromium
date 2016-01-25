@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 
 #include "core/dom/Document.h"
@@ -12,7 +11,7 @@
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -102,6 +101,39 @@ TEST_F(ContentSecurityPolicyTest, IsFrameAncestorsEnforced)
 
     csp->didReceiveHeader("frame-ancestors 'self'", ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceHTTP);
     EXPECT_TRUE(csp->isFrameAncestorsEnforced());
+}
+
+TEST_F(ContentSecurityPolicyTest, MultipleReferrerDirectives)
+{
+    csp->didReceiveHeader("referrer unsafe-url; referrer origin;", ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceHTTP);
+    csp->bindToExecutionContext(document.get());
+    EXPECT_EQ(ReferrerPolicyOrigin, document->referrerPolicy());
+}
+
+TEST_F(ContentSecurityPolicyTest, MultipleReferrerPolicies)
+{
+    csp->didReceiveHeader("referrer unsafe-url;", ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceHTTP);
+    csp->bindToExecutionContext(document.get());
+    EXPECT_EQ(ReferrerPolicyAlways, document->referrerPolicy());
+    document->processReferrerPolicy("origin");
+    EXPECT_EQ(ReferrerPolicyOrigin, document->referrerPolicy());
+}
+
+TEST_F(ContentSecurityPolicyTest, UnknownReferrerDirective)
+{
+    csp->didReceiveHeader("referrer unsafe-url; referrer blahblahblah", ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceHTTP);
+    csp->bindToExecutionContext(document.get());
+    EXPECT_EQ(ReferrerPolicyAlways, document->referrerPolicy());
+    document->processReferrerPolicy("origin");
+    document->processReferrerPolicy("blahblahblah");
+    EXPECT_EQ(ReferrerPolicyOrigin, document->referrerPolicy());
+}
+
+TEST_F(ContentSecurityPolicyTest, EmptyReferrerDirective)
+{
+    csp->didReceiveHeader("referrer;", ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceHTTP);
+    csp->bindToExecutionContext(document.get());
+    EXPECT_EQ(ReferrerPolicyNever, document->referrerPolicy());
 }
 
 } // namespace

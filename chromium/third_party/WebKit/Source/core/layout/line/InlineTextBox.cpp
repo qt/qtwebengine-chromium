@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/line/InlineTextBox.h"
 
 #include "core/layout/HitTestResult.h"
@@ -200,7 +199,12 @@ bool InlineTextBox::hasWrappedSelectionNewline() const
         && (state == SelectionStart || state == SelectionInside)
         // Checking last leaf child can be slow, so we make sure to do this only
         // after the other simple conditionals.
-        && (root().lastLeafChild() == this);
+        && (root().lastLeafChild() == this)
+        // It's possible to have mixed LTR/RTL on a single line, and we only
+        // want to paint a newline when we're the last leaf child and we make
+        // sure there isn't a differently-directioned box following us.
+        && ((!isLeftToRightDirection() && root().firstSelectedBox() == this)
+            || (isLeftToRightDirection() && root().lastSelectedBox() == this));
 }
 
 float InlineTextBox::newlineSpaceWidth() const
@@ -441,14 +445,19 @@ void InlineTextBox::selectionStartEnd(int& sPos, int& ePos) const
     ePos = std::min(endPos - m_start, (int)m_len);
 }
 
-void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font, bool grammar) const
+void InlineTextBox::paintDocumentMarker(GraphicsContext& pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font, bool grammar) const
 {
     InlineTextBoxPainter(*this).paintDocumentMarker(pt, boxOrigin, marker, style, font, grammar);
 }
 
-void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
+void InlineTextBox::paintTextMatchMarkerForeground(const PaintInfo& paintInfo, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
 {
-    InlineTextBoxPainter(*this).paintTextMatchMarker(pt, boxOrigin, marker, style, font);
+    InlineTextBoxPainter(*this).paintTextMatchMarkerForeground(paintInfo, boxOrigin, marker, style, font);
+}
+
+void InlineTextBox::paintTextMatchMarkerBackground(const PaintInfo& paintInfo, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
+{
+    InlineTextBoxPainter(*this).paintTextMatchMarkerBackground(paintInfo, boxOrigin, marker, style, font);
 }
 
 int InlineTextBox::caretMinOffset() const
@@ -529,20 +538,23 @@ bool InlineTextBox::containsCaretOffset(int offset) const
 
 void InlineTextBox::characterWidths(Vector<float>& widths) const
 {
+    if (!m_len)
+        return;
+
     FontCachePurgePreventer fontCachePurgePreventer;
+    ASSERT(lineLayoutItem().text());
 
     const ComputedStyle& styleToUse = lineLayoutItem().styleRef(isFirstLineStyle());
     const Font& font = styleToUse.font();
 
-    TextRun textRun = constructTextRun(styleToUse, font);
-
-    SimpleShaper shaper(&font, textRun);
     float lastWidth = 0;
     widths.resize(m_len);
     for (unsigned i = 0; i < m_len; i++) {
-        shaper.advance(i + 1);
-        widths[i] = shaper.runWidthSoFar() - lastWidth;
-        lastWidth = shaper.runWidthSoFar();
+        StringView substringView = lineLayoutItem().text().createView();
+        substringView.narrow(start(), 1 + i);
+        TextRun textRun = constructTextRun(styleToUse, font, substringView, m_len);
+        widths[i] = font.width(textRun, nullptr, nullptr) - lastWidth;
+        lastWidth = font.width(textRun, nullptr, nullptr);
     }
 }
 
@@ -575,7 +587,6 @@ TextRun InlineTextBox::constructTextRun(const ComputedStyle& style, const Font& 
 
     TextRun run(string, textPos().toFloat(), expansion(), expansionBehavior(), direction(), dirOverride() || style.rtlOrdering() == VisualOrder);
     run.setTabSize(!style.collapseWhiteSpace(), style.tabSize());
-    run.setCodePath(lineLayoutItem().canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
     run.setTextJustify(style.textJustify());
 
     // Propagate the maximum length of the characters buffer to the TextRun, even when we're only processing a substring.

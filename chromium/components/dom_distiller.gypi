@@ -5,6 +5,24 @@
 {
   'targets': [
     {
+      # GN version: //components/dom_distiller/content/common
+      'target_name': 'dom_distiller_content_common',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../content/content.gyp:content_common',
+        '../ipc/ipc.gyp:ipc',
+        '../url/url.gyp:url_lib',
+      ],
+      'sources': [
+        'dom_distiller/content/common/distiller_messages.cc',
+        'dom_distiller/content/common/distiller_messages.h',
+      ],
+    },
+    {
       # GN version: //components/dom_distiller/webui
       'target_name': 'dom_distiller_webui',
       'type': 'static_library',
@@ -178,10 +196,11 @@
     ['OS != "ios"', {
       'targets': [
         {
-          # GN version: //components/dom_distiller/content:content_browser
+          # GN version: //components/dom_distiller/content/browser
           'target_name': 'dom_distiller_content_browser',
           'type': 'static_library',
           'dependencies': [
+            'dom_distiller_content_common',
             'dom_distiller_core',
             'dom_distiller_mojo_bindings',
             'dom_distiller_protos',
@@ -201,6 +220,8 @@
             '..',
           ],
           'sources': [
+            'dom_distiller/content/browser/distillability_driver.cc',
+            'dom_distiller/content/browser/distillability_driver.h',
             'dom_distiller/content/browser/distillable_page_utils.cc',
             'dom_distiller/content/browser/distillable_page_utils.h',
             'dom_distiller/content/browser/distillable_page_utils_android.cc',
@@ -211,9 +232,9 @@
             'dom_distiller/content/browser/distiller_javascript_utils.h',
             'dom_distiller/content/browser/distiller_page_web_contents.cc',
             'dom_distiller/content/browser/distiller_page_web_contents.h',
+            'dom_distiller/content/browser/distiller_ui_handle.h',
             'dom_distiller/content/browser/dom_distiller_viewer_source.cc',
             'dom_distiller/content/browser/dom_distiller_viewer_source.h',
-            'dom_distiller/content/browser/external_feedback_reporter.h',
             'dom_distiller/content/browser/web_contents_main_frame_observer.cc',
             'dom_distiller/content/browser/web_contents_main_frame_observer.h',
           ],
@@ -227,11 +248,13 @@
           ],
         },
         {
-          # GN version: //components/dom_distiller/content:content_renderer
+          # GN version: //components/dom_distiller/content/renderer
           'target_name': 'dom_distiller_content_renderer',
           'type': 'static_library',
           'dependencies': [
+            'dom_distiller_content_common',
             'dom_distiller_mojo_bindings',
+            'dom_distiller_protos',
             '../base/base.gyp:base',
             '../content/content.gyp:content_browser',
             '../gin/gin.gyp:gin',
@@ -241,7 +264,12 @@
           'include_dirs': [
             '..',
           ],
+          'export_dependent_settings': [
+            'dom_distiller_protos',
+          ],
           'sources': [
+            'dom_distiller/content/renderer/distillability_agent.cc',
+            'dom_distiller/content/renderer/distillability_agent.h',
             'dom_distiller/content/renderer/distiller_js_render_frame_observer.cc',
             'dom_distiller/content/renderer/distiller_js_render_frame_observer.h',
             'dom_distiller/content/renderer/distiller_native_javascript.cc',
@@ -256,6 +284,7 @@
     ['OS=="ios"', {
       'targets': [
         {
+          # GN version: //components/dom_distiller/ios
           'target_name': 'dom_distiller_ios',
           'type': 'static_library',
           'dependencies': [
@@ -314,7 +343,7 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
-          # GN: //components/dom_distiller/content:jni_headers
+          # GN: //components/dom_distiller/android:dom_distiller_content_java
           'target_name': 'dom_distiller_content_jni_headers',
           'type': 'none',
           'sources': [
@@ -326,7 +355,7 @@
           'includes': [ '../build/jni_generator.gypi' ],
         },
         {
-          # GN: //components/dom_distiller/core:jni_headers
+          # GN: //components/dom_distiller/android:jni_headers
           'target_name': 'dom_distiller_core_jni_headers',
           'type': 'none',
           'sources': [

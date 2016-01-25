@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_CHILD_CHILD_SCHEDULER_H_
 #define COMPONENTS_SCHEDULER_CHILD_CHILD_SCHEDULER_H_
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "components/scheduler/base/task_queue.h"
 #include "components/scheduler/child/single_thread_idle_task_runner.h"
@@ -21,8 +22,7 @@ class SCHEDULER_EXPORT ChildScheduler {
   virtual ~ChildScheduler() {}
 
   // Returns the default task runner.
-  // TODO(alexclarke): Change this to return a SingleThreadIdleTaskRunner.
-  virtual scoped_refptr<TaskQueue> DefaultTaskRunner() = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() = 0;
 
   // Returns the idle task runner. Tasks posted to this runner may be reordered
   // relative to other task types and may be starved for an arbitrarily long

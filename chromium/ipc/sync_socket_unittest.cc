@@ -4,14 +4,17 @@
 
 #include "base/sync_socket.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <sstream>
 #include <string>
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "ipc/ipc_test_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -95,9 +98,7 @@ class SyncSocketServerListener : public IPC::Listener {
 
   // When the client responds, it sends back a shutdown message,
   // which causes the message loop to exit.
-  void OnMsgClassShutdown() {
-    base::MessageLoop::current()->Quit();
-  }
+  void OnMsgClassShutdown() { base::MessageLoop::current()->QuitWhenIdle(); }
 
   IPC::Channel* chan_;
 
@@ -153,7 +154,7 @@ class SyncSocketClientListener : public IPC::Listener {
     EXPECT_EQ(0U, socket_->Peek());
     IPC::Message* msg = new MsgClassShutdown();
     EXPECT_TRUE(chan_->Send(msg));
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   base::SyncSocket* socket_;

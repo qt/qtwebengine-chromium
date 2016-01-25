@@ -26,7 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/serializers/StyledMarkupAccumulator.h"
 
 #include "core/css/StylePropertySet.h"
@@ -97,8 +96,8 @@ void StyledMarkupAccumulator::appendText(Text& text)
 void StyledMarkupAccumulator::appendTextWithInlineStyle(Text& text, PassRefPtrWillBeRawPtr<EditingStyle> inlineStyle)
 {
     if (inlineStyle) {
-        // wrappingStyleForSerialization should have removed -webkit-text-decorations-in-effect
-        ASSERT(propertyMissingOrEqualToNone(inlineStyle->style(), CSSPropertyWebkitTextDecorationsInEffect));
+        // wrappingStyleForAnnotatedSerialization should have removed -webkit-text-decorations-in-effect
+        ASSERT(!shouldAnnotate() || propertyMissingOrEqualToNone(inlineStyle->style(), CSSPropertyWebkitTextDecorationsInEffect));
         ASSERT(m_document);
 
         m_result.appendLiteral("<span style=\"");

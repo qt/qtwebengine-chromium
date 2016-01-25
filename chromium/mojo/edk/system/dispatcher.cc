@@ -4,6 +4,9 @@
 
 #include "mojo/edk/system/dispatcher.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
@@ -76,6 +79,7 @@ scoped_refptr<Dispatcher> Dispatcher::TransportDataAccess::Deserialize(
     PlatformHandleVector* platform_handles) {
   switch (static_cast<Dispatcher::Type>(type)) {
     case Type::UNKNOWN:
+    case Type::WAIT_SET:
       DVLOG(2) << "Deserializing invalid handle";
       return nullptr;
     case Type::MESSAGE_PIPE:
@@ -229,7 +233,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsState() const {
 
 MojoResult Dispatcher::AddAwakable(Awakable* awakable,
                                    MojoHandleSignals signals,
-                                   uint32_t context,
+                                   uintptr_t context,
                                    HandleSignalsState* signals_state) {
   base::AutoLock locker(lock_);
   if (is_closed_) {
@@ -251,6 +255,37 @@ void Dispatcher::RemoveAwakable(Awakable* awakable,
   }
 
   RemoveAwakableImplNoLock(awakable, handle_signals_state);
+}
+
+MojoResult Dispatcher::AddWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher,
+    MojoHandleSignals signals,
+    uintptr_t context) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return AddWaitingDispatcherImplNoLock(dispatcher, signals, context);
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcher(
+    const scoped_refptr<Dispatcher>& dispatcher) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return RemoveWaitingDispatcherImplNoLock(dispatcher);
+}
+
+MojoResult Dispatcher::GetReadyDispatchers(uint32_t* count,
+                                           DispatcherVector* dispatchers,
+                                           MojoResult* results,
+                                           uintptr_t* contexts) {
+  base::AutoLock locker(lock_);
+  if (is_closed_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return GetReadyDispatchersImplNoLock(count, dispatchers, results, contexts);
 }
 
 Dispatcher::Dispatcher() : is_closed_(false) {
@@ -381,7 +416,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
 MojoResult Dispatcher::AddAwakableImplNoLock(
     Awakable* /*awakable*/,
     MojoHandleSignals /*signals*/,
-    uint32_t /*context*/,
+    uintptr_t /*context*/,
     HandleSignalsState* signals_state) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
@@ -390,6 +425,35 @@ MojoResult Dispatcher::AddAwakableImplNoLock(
   if (signals_state)
     *signals_state = HandleSignalsState();
   return MOJO_RESULT_FAILED_PRECONDITION;
+}
+
+MojoResult Dispatcher::AddWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& /*dispatcher*/,
+    MojoHandleSignals /*signals*/,
+    uintptr_t /*context*/) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::RemoveWaitingDispatcherImplNoLock(
+    const scoped_refptr<Dispatcher>& /*dispatcher*/) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
+}
+
+MojoResult Dispatcher::GetReadyDispatchersImplNoLock(
+    uint32_t* /*count*/,
+    DispatcherVector* /*dispatchers*/,
+    MojoResult* /*results*/,
+    uintptr_t* /*contexts*/) {
+  lock_.AssertAcquired();
+  DCHECK(!is_closed_);
+  // By default, not supported. Only needed for wait set dispatchers.
+  return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
 void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,
@@ -404,7 +468,6 @@ void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,
 
 void Dispatcher::StartSerializeImplNoLock(size_t* max_size,
                                           size_t* max_platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(!is_closed_);
   *max_size = 0;
   *max_platform_handles = 0;
@@ -414,7 +477,6 @@ bool Dispatcher::EndSerializeAndCloseImplNoLock(
     void* /*destination*/,
     size_t* /*actual_size*/,
     PlatformHandleVector* /*platform_handles*/) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(is_closed_);
   // By default, serializing isn't supported, so just close.
   CloseImplNoLock();
@@ -453,6 +515,7 @@ void Dispatcher::StartSerialize(size_t* max_size,
   DCHECK(max_size);
   DCHECK(max_platform_handles);
   DCHECK(!is_closed_);
+  base::AutoLock locker(lock_);
   StartSerializeImplNoLock(max_size, max_platform_handles);
 }
 
@@ -467,13 +530,7 @@ bool Dispatcher::EndSerializeAndClose(void* destination,
   // shouldn't be in |Core|'s handle table.
   is_closed_ = true;
 
-#if !defined(NDEBUG)
-  // See the comment above |EndSerializeAndCloseImplNoLock()|. In brief: Locking
-  // isn't actually needed, but we need to satisfy assertions (which we don't
-  // want to remove or weaken).
   base::AutoLock locker(lock_);
-#endif
-
   return EndSerializeAndCloseImplNoLock(destination, actual_size,
                                         platform_handles);
 }

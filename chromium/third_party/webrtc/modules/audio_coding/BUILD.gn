@@ -9,37 +9,64 @@
 import("//build/config/arm.gni")
 import("../../build/webrtc.gni")
 
+source_set("rent_a_codec") {
+  sources = [
+    "acm2/acm_codec_database.cc",
+    "acm2/acm_codec_database.h",
+    "acm2/rent_a_codec.cc",
+    "acm2/rent_a_codec.h",
+  ]
+  configs += [ "../..:common_config" ]
+  public_configs = [ "../..:common_inherited_config" ]
+  deps = [
+    "../..:webrtc_common",
+  ]
+
+  defines = []
+  if (rtc_include_opus) {
+    defines += [ "WEBRTC_CODEC_OPUS" ]
+  }
+  if (!build_with_mozilla) {
+    if (current_cpu == "arm") {
+      defines += [ "WEBRTC_CODEC_ISACFX" ]
+    } else {
+      defines += [ "WEBRTC_CODEC_ISAC" ]
+    }
+    defines += [ "WEBRTC_CODEC_G722" ]
+  }
+  if (!build_with_mozilla && !build_with_chromium) {
+    defines += [
+      "WEBRTC_CODEC_ILBC",
+      "WEBRTC_CODEC_RED",
+    ]
+  }
+}
+
 config("audio_coding_config") {
   include_dirs = [
-    "main/interface",
-    "../interface",
+    "include",
+    "../include",
   ]
 }
 
 source_set("audio_coding") {
   sources = [
-    "main/acm2/acm_codec_database.cc",
-    "main/acm2/acm_codec_database.h",
-    "main/acm2/acm_common_defs.h",
-    "main/acm2/acm_receiver.cc",
-    "main/acm2/acm_receiver.h",
-    "main/acm2/acm_resampler.cc",
-    "main/acm2/acm_resampler.h",
-    "main/acm2/audio_coding_module.cc",
-    "main/acm2/audio_coding_module_impl.cc",
-    "main/acm2/audio_coding_module_impl.h",
-    "main/acm2/call_statistics.cc",
-    "main/acm2/call_statistics.h",
-    "main/acm2/codec_manager.cc",
-    "main/acm2/codec_manager.h",
-    "main/acm2/codec_owner.cc",
-    "main/acm2/codec_owner.h",
-    "main/acm2/initial_delay_manager.cc",
-    "main/acm2/initial_delay_manager.h",
-    "main/acm2/nack.cc",
-    "main/acm2/nack.h",
-    "main/interface/audio_coding_module.h",
-    "main/interface/audio_coding_module_typedefs.h",
+    "acm2/acm_common_defs.h",
+    "acm2/acm_receiver.cc",
+    "acm2/acm_receiver.h",
+    "acm2/acm_resampler.cc",
+    "acm2/acm_resampler.h",
+    "acm2/audio_coding_module.cc",
+    "acm2/audio_coding_module_impl.cc",
+    "acm2/audio_coding_module_impl.h",
+    "acm2/call_statistics.cc",
+    "acm2/call_statistics.h",
+    "acm2/codec_manager.cc",
+    "acm2/codec_manager.h",
+    "acm2/initial_delay_manager.cc",
+    "acm2/initial_delay_manager.h",
+    "include/audio_coding_module.h",
+    "include/audio_coding_module_typedefs.h",
   ]
 
   defines = []
@@ -69,6 +96,7 @@ source_set("audio_coding") {
     ":g711",
     ":neteq",
     ":pcm16b",
+    ":rent_a_codec",
     "../..:rtc_event_log",
     "../..:webrtc_common",
     "../../common_audio",
@@ -136,11 +164,11 @@ config("cng_config") {
 source_set("cng") {
   sources = [
     "codecs/cng/audio_encoder_cng.cc",
+    "codecs/cng/audio_encoder_cng.h",
     "codecs/cng/cng_helpfuns.c",
     "codecs/cng/cng_helpfuns.h",
-    "codecs/cng/include/audio_encoder_cng.h",
-    "codecs/cng/include/webrtc_cng.h",
     "codecs/cng/webrtc_cng.c",
+    "codecs/cng/webrtc_cng.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -151,8 +179,8 @@ source_set("cng") {
   ]
 
   deps = [
-    "../../common_audio",
     ":audio_encoder_interface",
+    "../../common_audio",
   ]
 }
 
@@ -174,8 +202,8 @@ source_set("red") {
   ]
 
   deps = [
-    "../../common_audio",
     ":audio_encoder_interface",
+    "../../common_audio",
   ]
 }
 
@@ -189,13 +217,13 @@ config("g711_config") {
 source_set("g711") {
   sources = [
     "codecs/g711/audio_decoder_pcm.cc",
+    "codecs/g711/audio_decoder_pcm.h",
     "codecs/g711/audio_encoder_pcm.cc",
+    "codecs/g711/audio_encoder_pcm.h",
     "codecs/g711/g711.c",
     "codecs/g711/g711.h",
     "codecs/g711/g711_interface.c",
-    "codecs/g711/include/audio_decoder_pcm.h",
-    "codecs/g711/include/audio_encoder_pcm.h",
-    "codecs/g711/include/g711_interface.h",
+    "codecs/g711/g711_interface.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -206,6 +234,7 @@ source_set("g711") {
   ]
 
   deps = [
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
   ]
 }
@@ -220,14 +249,14 @@ config("g722_config") {
 source_set("g722") {
   sources = [
     "codecs/g722/audio_decoder_g722.cc",
+    "codecs/g722/audio_decoder_g722.h",
     "codecs/g722/audio_encoder_g722.cc",
+    "codecs/g722/audio_encoder_g722.h",
     "codecs/g722/g722_decode.c",
     "codecs/g722/g722_enc_dec.h",
     "codecs/g722/g722_encode.c",
     "codecs/g722/g722_interface.c",
-    "codecs/g722/include/audio_decoder_g722.h",
-    "codecs/g722/include/audio_encoder_g722.h",
-    "codecs/g722/include/g722_interface.h",
+    "codecs/g722/g722_interface.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -238,6 +267,7 @@ source_set("g722") {
   ]
 
   deps = [
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
   ]
 }
@@ -245,7 +275,7 @@ source_set("g722") {
 config("ilbc_config") {
   include_dirs = [
     "../../..",
-    "codecs/ilbc/interface",
+    "codecs/ilbc/include",
   ]
 }
 
@@ -256,7 +286,9 @@ source_set("ilbc") {
     "codecs/ilbc/abs_quant_loop.c",
     "codecs/ilbc/abs_quant_loop.h",
     "codecs/ilbc/audio_decoder_ilbc.cc",
+    "codecs/ilbc/audio_decoder_ilbc.h",
     "codecs/ilbc/audio_encoder_ilbc.cc",
+    "codecs/ilbc/audio_encoder_ilbc.h",
     "codecs/ilbc/augmented_cb_corr.c",
     "codecs/ilbc/augmented_cb_corr.h",
     "codecs/ilbc/bw_expand.c",
@@ -321,8 +353,7 @@ source_set("ilbc") {
     "codecs/ilbc/hp_output.c",
     "codecs/ilbc/hp_output.h",
     "codecs/ilbc/ilbc.c",
-    "codecs/ilbc/include/audio_decoder_ilbc.h",
-    "codecs/ilbc/include/audio_encoder_ilbc.h",
+    "codecs/ilbc/ilbc.h",
     "codecs/ilbc/index_conv_dec.c",
     "codecs/ilbc/index_conv_dec.h",
     "codecs/ilbc/index_conv_enc.c",
@@ -331,7 +362,6 @@ source_set("ilbc") {
     "codecs/ilbc/init_decode.h",
     "codecs/ilbc/init_encode.c",
     "codecs/ilbc/init_encode.h",
-    "codecs/ilbc/interface/ilbc.h",
     "codecs/ilbc/interpolate.c",
     "codecs/ilbc/interpolate.h",
     "codecs/ilbc/interpolate_samples.c",
@@ -404,8 +434,9 @@ source_set("ilbc") {
   ]
 
   deps = [
-    "../../common_audio",
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
+    "../../common_audio",
   ]
 }
 
@@ -422,15 +453,15 @@ source_set("isac_common") {
 config("isac_config") {
   include_dirs = [
     "../../..",
-    "codecs/isac/main/interface",
+    "codecs/isac/main/include",
   ]
 }
 
 source_set("isac") {
   sources = [
-    "codecs/isac/main/interface/audio_decoder_isac.h",
-    "codecs/isac/main/interface/audio_encoder_isac.h",
-    "codecs/isac/main/interface/isac.h",
+    "codecs/isac/main/include/audio_decoder_isac.h",
+    "codecs/isac/main/include/audio_encoder_isac.h",
+    "codecs/isac/main/include/isac.h",
     "codecs/isac/main/source/arith_routines.c",
     "codecs/isac/main/source/arith_routines.h",
     "codecs/isac/main/source/arith_routines_hist.c",
@@ -506,15 +537,15 @@ source_set("isac") {
 config("isac_fix_config") {
   include_dirs = [
     "../../..",
-    "codecs/isac/fix/interface",
+    "codecs/isac/fix/include",
   ]
 }
 
 source_set("isac_fix") {
   sources = [
-    "codecs/isac/fix/interface/audio_decoder_isacfix.h",
-    "codecs/isac/fix/interface/audio_encoder_isacfix.h",
-    "codecs/isac/fix/interface/isacfix.h",
+    "codecs/isac/fix/include/audio_decoder_isacfix.h",
+    "codecs/isac/fix/include/audio_encoder_isacfix.h",
+    "codecs/isac/fix/include/isacfix.h",
     "codecs/isac/fix/source/arith_routines.c",
     "codecs/isac/fix/source/arith_routines_hist.c",
     "codecs/isac/fix/source/arith_routines_logist.c",
@@ -574,6 +605,7 @@ source_set("isac_fix") {
   ]
 
   deps = [
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
     ":isac_common",
     "../../common_audio",
@@ -666,14 +698,15 @@ config("pcm16b_config") {
 source_set("pcm16b") {
   sources = [
     "codecs/pcm16b/audio_decoder_pcm16b.cc",
+    "codecs/pcm16b/audio_decoder_pcm16b.h",
     "codecs/pcm16b/audio_encoder_pcm16b.cc",
-    "codecs/pcm16b/include/audio_decoder_pcm16b.h",
-    "codecs/pcm16b/include/audio_encoder_pcm16b.h",
-    "codecs/pcm16b/include/pcm16b.h",
+    "codecs/pcm16b/audio_encoder_pcm16b.h",
     "codecs/pcm16b/pcm16b.c",
+    "codecs/pcm16b/pcm16b.h",
   ]
 
   deps = [
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
     ":g711",
   ]
@@ -693,16 +726,18 @@ config("opus_config") {
 source_set("webrtc_opus") {
   sources = [
     "codecs/opus/audio_decoder_opus.cc",
+    "codecs/opus/audio_decoder_opus.h",
     "codecs/opus/audio_encoder_opus.cc",
-    "codecs/opus/interface/audio_decoder_opus.h",
-    "codecs/opus/interface/audio_encoder_opus.h",
-    "codecs/opus/interface/opus_interface.h",
+    "codecs/opus/audio_encoder_opus.h",
     "codecs/opus/opus_inst.h",
     "codecs/opus/opus_interface.c",
+    "codecs/opus/opus_interface.h",
   ]
 
   deps = [
+    ":audio_decoder_interface",
     ":audio_encoder_interface",
+    "../../base:rtc_base_approved",
   ]
 
   if (rtc_build_opus) {
@@ -764,9 +799,11 @@ source_set("neteq") {
     "neteq/dtmf_tone_generator.h",
     "neteq/expand.cc",
     "neteq/expand.h",
-    "neteq/interface/neteq.h",
+    "neteq/include/neteq.h",
     "neteq/merge.cc",
     "neteq/merge.h",
+    "neteq/nack.cc",
+    "neteq/nack.h",
     "neteq/neteq.cc",
     "neteq/neteq_impl.cc",
     "neteq/neteq_impl.h",

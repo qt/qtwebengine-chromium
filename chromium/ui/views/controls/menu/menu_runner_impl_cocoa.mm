@@ -82,7 +82,7 @@ base::scoped_nsobject<NSView> CreateMenuAnchorView(
 // static
 MenuRunnerImplInterface* MenuRunnerImplInterface::Create(
     ui::MenuModel* menu_model,
-    int32 run_types) {
+    int32_t run_types) {
   if ((run_types & kNativeRunTypes) != 0 &&
       (run_types & MenuRunner::IS_NESTED) == 0) {
     return new MenuRunnerImplCocoa(menu_model);
@@ -117,17 +117,17 @@ MenuRunner::RunResult MenuRunnerImplCocoa::RunMenuAt(Widget* parent,
                                                      MenuButton* button,
                                                      const gfx::Rect& bounds,
                                                      MenuAnchorPosition anchor,
-                                                     int32 run_types) {
+                                                     int32_t run_types) {
   DCHECK(run_types & kNativeRunTypes);
   DCHECK(!IsRunning());
+  DCHECK(parent);
   closing_event_time_ = base::TimeDelta();
 
   if (run_types & MenuRunner::CONTEXT_MENU) {
     [NSMenu popUpContextMenu:[menu_controller_ menu]
                    withEvent:[NSApp currentEvent]
-                     forView:nil];
+                     forView:parent->GetNativeView()];
   } else if (run_types & MenuRunner::COMBOBOX) {
-    DCHECK(parent);
     NSMenuItem* checked_item = FirstCheckedItem(menu_controller_);
     base::scoped_nsobject<NSView> anchor_view(
         CreateMenuAnchorView(parent->GetNativeWindow(), bounds, checked_item));

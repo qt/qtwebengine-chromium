@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 
 #include "core/dom/Document.h"
@@ -41,6 +40,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "platform/ParsingUtilities.h"
+#include <algorithm>
 
 namespace blink {
 

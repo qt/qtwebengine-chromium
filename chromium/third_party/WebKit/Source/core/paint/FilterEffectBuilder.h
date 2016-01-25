@@ -34,6 +34,8 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
+class SkPaint;
+
 namespace blink {
 
 class Filter;
@@ -41,7 +43,7 @@ class FilterOperations;
 class Element;
 
 class CORE_EXPORT FilterEffectBuilder final : public RefCountedWillBeGarbageCollectedFinalized<FilterEffectBuilder> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FilterEffectBuilder);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FilterEffectBuilder);
 public:
     static PassRefPtrWillBeRawPtr<FilterEffectBuilder> create()
     {
@@ -51,7 +53,7 @@ public:
     virtual ~FilterEffectBuilder();
     DECLARE_TRACE();
 
-    bool build(Element*, const FilterOperations&, float zoom);
+    bool build(Element*, const FilterOperations&, float zoom, const SkPaint* fillPaint = nullptr, const SkPaint* strokePaint = nullptr);
 
     PassRefPtrWillBeRawPtr<FilterEffect> lastEffect() const
     {

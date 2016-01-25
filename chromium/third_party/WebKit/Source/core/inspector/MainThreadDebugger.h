@@ -33,7 +33,7 @@
 
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorTaskRunner.h"
-#include "core/inspector/ScriptDebuggerBase.h"
+#include "core/inspector/v8/V8DebuggerClient.h"
 #include "platform/heap/Handle.h"
 #include <v8.h>
 
@@ -44,12 +44,13 @@ class Mutex;
 namespace blink {
 
 class LocalFrame;
+class V8Debugger;
 
-class CORE_EXPORT MainThreadDebugger final : public ScriptDebuggerBase {
+class CORE_EXPORT MainThreadDebugger final : public V8DebuggerClient {
     WTF_MAKE_NONCOPYABLE(MainThreadDebugger);
 public:
     class ClientMessageLoop {
-        WTF_MAKE_FAST_ALLOCATED(ClientMessageLoop);
+        USING_FAST_MALLOC(ClientMessageLoop);
     public:
         virtual ~ClientMessageLoop() { }
         virtual void run(LocalFrame*) = 0;
@@ -58,7 +59,7 @@ public:
 
     static PassOwnPtr<MainThreadDebugger> create(PassOwnPtr<ClientMessageLoop> clientMessageLoop, v8::Isolate* isolate)
     {
-        return adoptPtr(new MainThreadDebugger(clientMessageLoop, isolate));
+        return adoptPtr(new MainThreadDebugger(std::move(clientMessageLoop), isolate));
     }
 
     ~MainThreadDebugger() override;
@@ -69,15 +70,20 @@ public:
     static MainThreadDebugger* instance();
     static void interruptMainThreadAndRun(PassOwnPtr<InspectorTaskRunner::Task>);
     InspectorTaskRunner* taskRunner() const { return m_taskRunner.get(); }
+    V8Debugger* debugger() const { return m_debugger.get(); }
 
 private:
     MainThreadDebugger(PassOwnPtr<ClientMessageLoop>, v8::Isolate*);
 
+    // V8DebuggerClient implementation.
+    v8::Local<v8::Object> compileDebuggerScript() override;
     void runMessageLoopOnPause(int contextGroupId) override;
     void quitMessageLoopOnPause() override;
 
     static WTF::Mutex& creationMutex();
 
+    v8::Isolate* m_isolate;
+    OwnPtr<V8Debugger> m_debugger;
     OwnPtr<ClientMessageLoop> m_clientMessageLoop;
     OwnPtr<InspectorTaskRunner> m_taskRunner;
 

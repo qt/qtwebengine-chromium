@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/mediastream/MediaDevices.h"
 
 #include "bindings/core/v8/ScriptPromise.h"
@@ -11,6 +10,7 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/mediastream/MediaErrorState.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/mediastream/MediaStreamConstraints.h"
 #include "modules/mediastream/NavigatorMediaStream.h"
@@ -99,10 +99,17 @@ ScriptPromise MediaDevices::getUserMedia(ScriptState* scriptState, const MediaSt
     if (!userMedia)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError, "No media device controller available; is this a detached window?"));
 
-    UserMediaRequest* request = UserMediaRequest::create(document, userMedia, options, successCallback, errorCallback, exceptionState);
+    MediaErrorState errorState;
+    UserMediaRequest* request = UserMediaRequest::create(document, userMedia, options, successCallback, errorCallback, errorState);
     if (!request) {
-        ASSERT(exceptionState.hadException());
-        return exceptionState.reject(scriptState);
+        ASSERT(errorState.hadException());
+        if (errorState.canGenerateException()) {
+            errorState.raiseException(exceptionState);
+            return exceptionState.reject(scriptState);
+        }
+        ScriptPromise rejectedPromise = resolver->promise();
+        resolver->reject(errorState.createError());
+        return rejectedPromise;
     }
 
     String errorMessage;

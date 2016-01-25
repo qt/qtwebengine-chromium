@@ -4,9 +4,12 @@
 
 #include "cc/playback/display_item_list.h"
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
@@ -14,10 +17,15 @@
 #include "cc/debug/traced_display_item_list.h"
 #include "cc/debug/traced_value.h"
 #include "cc/playback/display_item_list_settings.h"
+#include "cc/playback/display_item_proto_factory.h"
+#include "cc/playback/drawing_display_item.h"
 #include "cc/playback/largest_display_item.h"
+#include "cc/proto/display_item.pb.h"
+#include "cc/proto/gfx_conversions.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/skia_util.h"
 
 namespace cc {
@@ -47,21 +55,36 @@ scoped_refptr<DisplayItemList> DisplayItemList::Create(
       !settings.use_cached_picture || DisplayItemsTracingEnabled()));
 }
 
+scoped_refptr<DisplayItemList> DisplayItemList::CreateFromProto(
+    const proto::DisplayItemList& proto) {
+  gfx::Rect layer_rect = ProtoToRect(proto.layer_rect());
+  scoped_refptr<DisplayItemList> list =
+      DisplayItemList::Create(ProtoToRect(proto.layer_rect()),
+                              DisplayItemListSettings(proto.settings()));
+
+  for (int i = 0; i < proto.items_size(); i++) {
+    const proto::DisplayItem& item_proto = proto.items(i);
+    DisplayItemProtoFactory::AllocateAndConstruct(layer_rect, list.get(),
+                                                  item_proto);
+  }
+
+  list->Finalize();
+
+  return list;
+}
+
 DisplayItemList::DisplayItemList(gfx::Rect layer_rect,
                                  const DisplayItemListSettings& settings,
                                  bool retain_individual_display_items)
-    : items_(LargestDisplayItemSize(), kDefaultNumDisplayItemsToReserve),
-      use_cached_picture_(settings.use_cached_picture),
+    : items_(LargestDisplayItemSize(),
+             LargestDisplayItemSize() * kDefaultNumDisplayItemsToReserve),
+      settings_(settings),
       retain_individual_display_items_(retain_individual_display_items),
       layer_rect_(layer_rect),
       is_suitable_for_gpu_rasterization_(true),
       approximate_op_count_(0),
-      picture_memory_usage_(0),
-      external_memory_usage_(0) {
-#if DCHECK_IS_ON()
-  needs_process_ = false;
-#endif
-  if (use_cached_picture_) {
+      picture_memory_usage_(0) {
+  if (settings_.use_cached_picture) {
     SkRTreeFactory factory;
     recorder_.reset(new SkPictureRecorder());
     canvas_ = skia::SharePtr(recorder_->beginRecording(
@@ -74,16 +97,28 @@ DisplayItemList::DisplayItemList(gfx::Rect layer_rect,
 DisplayItemList::~DisplayItemList() {
 }
 
+void DisplayItemList::ToProtobuf(proto::DisplayItemList* proto) {
+  // The flattened SkPicture approach is going away, and the proto
+  // doesn't currently support serializing that flattened picture.
+  DCHECK(retain_individual_display_items_);
+
+  RectToProto(layer_rect_, proto->mutable_layer_rect());
+  settings_.ToProtobuf(proto->mutable_settings());
+
+  DCHECK_EQ(0, proto->items_size());
+  for (const auto& item : items_)
+    item.ToProtobuf(proto->add_items());
+}
+
 void DisplayItemList::Raster(SkCanvas* canvas,
                              SkPicture::AbortCallback* callback,
                              const gfx::Rect& canvas_target_playback_rect,
                              float contents_scale) const {
-  DCHECK(ProcessAppendedItemsCalled());
-  if (!use_cached_picture_) {
+  if (!settings_.use_cached_picture) {
     canvas->save();
     canvas->scale(contents_scale, contents_scale);
-    for (auto* item : items_)
-      item->Raster(canvas, canvas_target_playback_rect, callback);
+    for (const auto& item : items_)
+      item.Raster(canvas, canvas_target_playback_rect, callback);
     canvas->restore();
   } else {
     DCHECK(picture_);
@@ -105,53 +140,19 @@ void DisplayItemList::Raster(SkCanvas* canvas,
   }
 }
 
-void DisplayItemList::ProcessAppendedItemsOnTheFly() {
-  if (retain_individual_display_items_)
-    return;
-  if (items_.size() >= kDefaultNumDisplayItemsToReserve) {
-    ProcessAppendedItems();
-    // This function exists to keep the |items_| from growing indefinitely if
-    // we're not going to store them anyway. So the items better be deleted
-    // after |items_| grows too large and we process it.
-    DCHECK(items_.empty());
+void DisplayItemList::ProcessAppendedItem(const DisplayItem* item) {
+  if (settings_.use_cached_picture) {
+    DCHECK(canvas_);
+    item->Raster(canvas_.get(), gfx::Rect(), nullptr);
   }
-}
-
-void DisplayItemList::ProcessAppendedItems() {
-#if DCHECK_IS_ON()
-  needs_process_ = false;
-#endif
-  for (const DisplayItem* item : items_) {
-    if (use_cached_picture_) {
-      // When using a cached picture we will calculate gpu suitability on the
-      // entire cached picture instead of the items. This is more permissive
-      // since none of the items might individually trigger a veto even though
-      // they collectively have enough "bad" operations that a corresponding
-      // Picture would get vetoed. See crbug.com/513016.
-      DCHECK(canvas_);
-      approximate_op_count_ += item->approximate_op_count();
-      item->Raster(canvas_.get(), gfx::Rect(), nullptr);
-    } else {
-      is_suitable_for_gpu_rasterization_ &=
-          item->is_suitable_for_gpu_rasterization();
-      approximate_op_count_ += item->approximate_op_count();
-    }
-
-    if (retain_individual_display_items_) {
-      // Warning: this double-counts SkPicture data if use_cached_picture_ is
-      // also true.
-      external_memory_usage_ += item->external_memory_usage();
-    }
+  if (!retain_individual_display_items_) {
+    items_.Clear();
   }
-
-  if (!retain_individual_display_items_)
-    items_.clear();
 }
 
 void DisplayItemList::RasterIntoCanvas(const DisplayItem& item) {
   DCHECK(canvas_);
   DCHECK(!retain_individual_display_items_);
-  approximate_op_count_ += item.approximate_op_count();
 
   item.Raster(canvas_.get(), gfx::Rect(), nullptr);
 }
@@ -160,21 +161,23 @@ bool DisplayItemList::RetainsIndividualDisplayItems() const {
   return retain_individual_display_items_;
 }
 
-void DisplayItemList::RemoveLast() {
-  // We cannot remove the last item if it has been squashed into a picture.
-  // The last item should not have been handled by ProcessAppendedItems, so we
-  // don't need to remove it from approximate_op_count_, etc.
-  DCHECK(retain_individual_display_items_);
-  DCHECK(!use_cached_picture_);
-  items_.RemoveLast();
-}
-
 void DisplayItemList::Finalize() {
-  ProcessAppendedItems();
+  // TODO(wkorman): Uncomment the assert below once we've investigated
+  // and resolved issues. http://crbug.com/557905
+  // TODO(dtrainor): Need to deal with serializing visual_rects_.
+  // http://crbug.com/568757.
+  // DCHECK_EQ(items_.size(), visual_rects_.size());
 
-  if (use_cached_picture_) {
+  // TODO(vmpstr): Build and make use of an RTree from the visual
+  // rects. For now we just clear them out since we won't ever need
+  // them to stick around post-Finalize. http://crbug.com/527245
+  // This clears both the vector and the vector's capacity, since visual_rects_
+  // won't be used anymore.
+  std::vector<gfx::Rect>().swap(visual_rects_);
+
+  if (settings_.use_cached_picture) {
     // Convert to an SkPicture for faster rasterization.
-    DCHECK(use_cached_picture_);
+    DCHECK(settings_.use_cached_picture);
     DCHECK(!picture_);
     picture_ = skia::AdoptRef(recorder_->endRecordingAsPicture());
     DCHECK(picture_);
@@ -188,27 +191,33 @@ void DisplayItemList::Finalize() {
 }
 
 bool DisplayItemList::IsSuitableForGpuRasterization() const {
-  DCHECK(ProcessAppendedItemsCalled());
   return is_suitable_for_gpu_rasterization_;
 }
 
 int DisplayItemList::ApproximateOpCount() const {
-  DCHECK(ProcessAppendedItemsCalled());
   return approximate_op_count_;
 }
 
 size_t DisplayItemList::ApproximateMemoryUsage() const {
-  DCHECK(ProcessAppendedItemsCalled());
   // We double-count in this case. Produce zero to avoid being misleading.
-  if (use_cached_picture_ && retain_individual_display_items_)
+  if (settings_.use_cached_picture && retain_individual_display_items_)
     return 0;
 
-  DCHECK_IMPLIES(use_cached_picture_, picture_);
+  DCHECK(!settings_.use_cached_picture || picture_);
 
   size_t memory_usage = sizeof(*this);
 
+  size_t external_memory_usage = 0;
+  if (retain_individual_display_items_) {
+    // Warning: this double-counts SkPicture data if use_cached_picture is
+    // also true.
+    for (const auto& item : items_) {
+      external_memory_usage += item.ExternalMemoryUsage();
+    }
+  }
+
   // Memory outside this class due to |items_|.
-  memory_usage += items_.GetCapacityInBytes() + external_memory_usage_;
+  memory_usage += items_.GetCapacityInBytes() + external_memory_usage;
 
   // Memory outside this class due to |picture|.
   memory_usage += picture_memory_usage_;
@@ -225,15 +234,19 @@ bool DisplayItemList::ShouldBeAnalyzedForSolidColor() const {
 
 scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 DisplayItemList::AsValue(bool include_items) const {
-  DCHECK(ProcessAppendedItemsCalled());
   scoped_refptr<base::trace_event::TracedValue> state =
       new base::trace_event::TracedValue();
 
   state->BeginDictionary("params");
   if (include_items) {
     state->BeginArray("items");
-    for (const DisplayItem* item : items_) {
-      item->AsValueInto(state.get());
+    size_t item_index = 0;
+    for (const DisplayItem& item : items_) {
+      item.AsValueInto(item_index < visual_rects_.size()
+                           ? visual_rects_[item_index]
+                           : gfx::Rect(),
+                       state.get());
+      item_index++;
     }
     state->EndArray();  // "items".
   }
@@ -259,7 +272,6 @@ DisplayItemList::AsValue(bool include_items) const {
 }
 
 void DisplayItemList::EmitTraceSnapshot() const {
-  DCHECK(ProcessAppendedItemsCalled());
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("cc.debug.display_items") ","
       TRACE_DISABLED_BY_DEFAULT("cc.debug.picture") ","
@@ -270,11 +282,10 @@ void DisplayItemList::EmitTraceSnapshot() const {
 }
 
 void DisplayItemList::GenerateDiscardableImagesMetadata() {
-  DCHECK(ProcessAppendedItemsCalled());
   // This should be only called once, and only after CreateAndCacheSkPicture.
-  DCHECK(picture_);
   DCHECK(image_map_.empty());
-  if (!picture_->willPlayBackBitmaps())
+  DCHECK(!settings_.use_cached_picture || picture_);
+  if (settings_.use_cached_picture && !picture_->willPlayBackBitmaps())
     return;
 
   // The cached picture is translated by -layer_rect_.origin during record,
@@ -282,14 +293,20 @@ void DisplayItemList::GenerateDiscardableImagesMetadata() {
   // images.
   DiscardableImageMap::ScopedMetadataGenerator generator(
       &image_map_, gfx::Size(layer_rect_.right(), layer_rect_.bottom()));
-  generator.canvas()->translate(layer_rect_.x(), layer_rect_.y());
-  generator.canvas()->drawPicture(picture_.get());
+  Raster(generator.canvas(), nullptr,
+         gfx::Rect(layer_rect_.right(), layer_rect_.bottom()), 1.f);
 }
 
 void DisplayItemList::GetDiscardableImagesInRect(
     const gfx::Rect& rect,
-    std::vector<PositionImage>* images) {
-  image_map_.GetDiscardableImagesInRect(rect, images);
+    float raster_scale,
+    std::vector<DrawImage>* images) {
+  image_map_.GetDiscardableImagesInRect(rect, raster_scale, images);
+}
+
+bool DisplayItemList::HasDiscardableImageInRect(
+    const gfx::Rect& layer_rect) const {
+  return image_map_.HasDiscardableImageInRect(layer_rect);
 }
 
 }  // namespace cc

@@ -5,7 +5,9 @@
 #ifndef CONTENT_CHILD_WEB_DISCARDABLE_MEMORY_IMPL_H_
 #define CONTENT_CHILD_WEB_DISCARDABLE_MEMORY_IMPL_H_
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebDiscardableMemory.h"
 
@@ -27,6 +29,9 @@ class WebDiscardableMemoryImpl : public blink::WebDiscardableMemory {
   bool lock() override;
   void unlock() override;
   void* data() override;
+  blink::WebMemoryAllocatorDump* createMemoryAllocatorDump(
+      const blink::WebString& name,
+      blink::WebProcessMemoryDump* wpmd) const override;
 
  private:
   WebDiscardableMemoryImpl(scoped_ptr<base::DiscardableMemory> memory);

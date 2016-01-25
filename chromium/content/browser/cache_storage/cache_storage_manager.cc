@@ -4,8 +4,10 @@
 
 #include "content/browser/cache_storage/cache_storage_manager.h"
 
+#include <stdint.h>
 #include <map>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/files/file_enumerator.h"
@@ -72,7 +74,7 @@ std::vector<CacheStorageUsageInfo> GetAllOriginsUsageOnTaskRunner(
   for (const GURL& origin : origins) {
     base::FilePath path =
         CacheStorageManager::ConstructOriginPath(root_path, origin);
-    int64 size = base::ComputeDirectorySize(path);
+    int64_t size = base::ComputeDirectorySize(path);
     base::File::Info file_info;
     base::Time last_modified;
     if (base::GetFileInfo(path, &file_info))
@@ -123,16 +125,10 @@ scoped_ptr<CacheStorageManager> CacheStorageManager::Create(
   // the dispatcher host per usual.
   manager->SetBlobParametersForCache(old_manager->url_request_context_getter(),
                                      old_manager->blob_storage_context());
-  return manager.Pass();
+  return manager;
 }
 
-CacheStorageManager::~CacheStorageManager() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  for (CacheStorageMap::iterator it = cache_storage_map_.begin();
-       it != cache_storage_map_.end(); ++it) {
-    delete it->second;
-  }
-}
+CacheStorageManager::~CacheStorageManager() = default;
 
 void CacheStorageManager::OpenCache(
     const GURL& origin,
@@ -182,7 +178,7 @@ void CacheStorageManager::MatchCache(
     const CacheStorageCache::ResponseCallback& callback) {
   CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
 
-  cache_storage->MatchCache(cache_name, request.Pass(), callback);
+  cache_storage->MatchCache(cache_name, std::move(request), callback);
 }
 
 void CacheStorageManager::MatchAllCaches(
@@ -191,7 +187,7 @@ void CacheStorageManager::MatchAllCaches(
     const CacheStorageCache::ResponseCallback& callback) {
   CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
 
-  cache_storage->MatchAllCaches(request.Pass(), callback);
+  cache_storage->MatchAllCaches(std::move(request), callback);
 }
 
 void CacheStorageManager::SetBlobParametersForCache(
@@ -235,7 +231,7 @@ void CacheStorageManager::GetOriginUsage(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (IsMemoryBacked()) {
-    int64 usage = 0;
+    int64_t usage = 0;
     if (ContainsKey(cache_storage_map_, origin_url))
       usage = cache_storage_map_[origin_url]->MemoryBackedSize();
     callback.Run(usage);
@@ -294,7 +290,13 @@ void CacheStorageManager::DeleteOriginData(
     const storage::QuotaClient::DeletionCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  CacheStorage* cache_storage = FindOrCreateCacheStorage(origin);
+  CacheStorageMap::iterator it = cache_storage_map_.find(origin);
+  if (it == cache_storage_map_.end()) {
+    callback.Run(storage::kQuotaStatusOk);
+    return;
+  }
+
+  CacheStorage* cache_storage = it->second.release();
   cache_storage_map_.erase(origin);
   cache_storage->CloseAllCaches(
       base::Bind(&CacheStorageManager::DeleteOriginDidClose, origin, callback,
@@ -361,11 +363,11 @@ CacheStorage* CacheStorageManager::FindOrCreateCacheStorage(
         ConstructOriginPath(root_path_, origin), IsMemoryBacked(),
         cache_task_runner_.get(), request_context_getter_, quota_manager_proxy_,
         blob_context_, origin);
-    // The map owns fetch_stores.
-    cache_storage_map_.insert(std::make_pair(origin, cache_storage));
+    cache_storage_map_.insert(
+        std::make_pair(origin, make_scoped_ptr(cache_storage)));
     return cache_storage;
   }
-  return it->second;
+  return it->second.get();
 }
 
 // static

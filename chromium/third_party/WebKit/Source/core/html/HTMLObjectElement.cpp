@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLObjectElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
@@ -95,7 +94,7 @@ void HTMLObjectElement::collectStyleForPresentationAttribute(const QualifiedName
         HTMLPlugInElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
-void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == formAttr) {
         formAttributeChanged();
@@ -123,7 +122,7 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_classId = value;
         reloadPluginOnAttributeChange(name);
     } else {
-        HTMLPlugInElement::parseAttribute(name, value);
+        HTMLPlugInElement::parseAttribute(name, oldValue, value);
     }
 }
 

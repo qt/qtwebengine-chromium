@@ -2,11 +2,10 @@
   <header>
     <h1 i18n-content="settingsTitle"></h1>
   </header>
-  <include src="reset_profile_settings_banner.html">
   <include src="automatic_settings_reset_banner.html">
 <if expr="chromeos">
-  <link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_network_icon.html">
-  <link rel="import" href="chrome://resources/cr_elements/v1_0/network/cr_onc_types.html">
+  <link rel="import" href="chrome://resources/cr_elements/network/cr_network_icon.html">
+  <link rel="import" href="chrome://resources/cr_elements/network/cr_onc_types.html">
   <include src="secondary_user_banner.html">
   <section>
     <div id="network-section-header" class="section-header">
@@ -278,12 +277,6 @@
       </button>
       <div id="default-browser-state" i18n-content="defaultBrowserUnknown">
       </div>
-      <div id="auto-launch-option" class="checkbox" hidden>
-        <label id="auto-launch-label">
-          <input id="auto-launch" type="checkbox">
-          <span i18n-content="autoLaunchText"></span>
-        </label>
-      </div>
     </div>
   </section>
 </if>  <!-- not chromeos -->
@@ -432,18 +425,6 @@
 <if expr="_google_chrome">
       <div id="metrics-reporting-setting"
           class="checkbox controlled-setting-with-label">
-<if expr="chromeos">
-        <label>
-          <input id="metrics-reporting-enabled"
-              pref="cros.metrics.reportingEnabled" type="checkbox">
-          <span>
-            <span i18n-content="enableLogging"></span>
-            <span class="controlled-setting-indicator"
-                pref="cros.metrics.reportingEnabled"></span>
-          </span>
-        </label>
-</if>
-<if expr="not chromeos">
         <label>
           <input id="metrics-reporting-enabled" type="checkbox">
           <span>
@@ -452,12 +433,13 @@
                 class="controlled-setting-indicator"></span>
           </span>
         </label>
+<if expr="not chromeos">
         <span id="metrics-reporting-reset-restart" hidden>
           <!-- Text filled by JavaScript -->
           <span></span><a is="action-link" role="button"
               class="standalone-action-link"></a><span></span>
         </span>
-</if>
+</if>  <!-- not chromeos -->
       </div>
 </if>  <!-- _google_chrome -->
       <div class="checkbox">
@@ -503,12 +485,12 @@
         <label>
           <input id="wake-on-wifi-checkbox" type="checkbox"
               metric="Options_WakeOnWifiSsid"
-              pref="settings.internet.wake_on_wifi_ssid">
+              pref="settings.internet.wake_on_wifi_darkconnect">
           <span>
             <span i18n-content="wakeOnWifiLabel"></span>
             <span id="wake-on-wifi-indicator"
                 class="controlled-setting-indicator"
-                pref="settings.internet.wake_on_wifi_ssid"></span>
+                pref="settings.internet.wake_on_wifi_darkconnect"></span>
           </span>
         </label>
       </div>

@@ -25,7 +25,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/Gradient.h"
 
 #include "platform/geometry/FloatRect.h"
@@ -255,4 +254,11 @@ SkShader* Gradient::shader()
     return m_gradient.get();
 }
 
+void Gradient::applyToPaint(SkPaint& paint)
+{
+    paint.setShader(shader());
+
+    // Legacy behavior: gradients are always dithered.
+    paint.setDither(true);
+}
 } // namespace blink

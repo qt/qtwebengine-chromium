@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/websockets/WebSocketChannel.h"
 
 #include "core/dom/DOMArrayBuffer.h"
@@ -15,18 +14,17 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebSecurityOrigin.h"
-#include "public/platform/WebSocketHandle.h"
-#include "public/platform/WebSocketHandleClient.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/websockets/WebSocketHandle.h"
+#include "public/platform/modules/websockets/WebSocketHandleClient.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 #include <stdint.h>
-
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 
 using testing::_;
 using testing::InSequence;

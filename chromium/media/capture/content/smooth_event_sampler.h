@@ -5,6 +5,7 @@
 #ifndef MEDIA_CAPTURE_SMOOTH_EVENT_SAMPLER_H_
 #define MEDIA_CAPTURE_SMOOTH_EVENT_SAMPLER_H_
 
+#include "base/macros.h"
 #include "base/time/time.h"
 #include "media/base/media_export.h"
 
@@ -13,6 +14,13 @@ namespace media {
 // Filters a sequence of events to achieve a target frequency.
 class MEDIA_EXPORT SmoothEventSampler {
  public:
+  enum {
+    // The maximum amount of time that can elapse before considering unchanged
+    // content as dirty for the purposes of timer-based overdue sampling.  This
+    // is the same value found in cc::FrameRateCounter.
+    OVERDUE_DIRTY_THRESHOLD_MILLIS = 250  // 4 FPS
+  };
+
   SmoothEventSampler(base::TimeDelta min_capture_period,
                      int redundant_capture_goal);
 

@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/FontCache.h"
 
 #include "SkFontMgr.h"
@@ -331,7 +330,8 @@ static bool typefacesHasStretchSuffix(const AtomicString& family,
     return false;
 }
 
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
+PassOwnPtr<FontPlatformData> FontCache::createFontPlatformData(const FontDescription& fontDescription,
+    const FontFaceCreationParams& creationParams, float fontSize)
 {
     ASSERT(creationParams.creationType() == CreateFontByFamily);
 
@@ -352,7 +352,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
             adjustedFontDescription.setWeight(variantWeight);
             tf = createTypeface(adjustedFontDescription, adjustedParams, name);
             if (!tf || !typefacesMatchesFamily(tf.get(), adjustedName))
-                return 0;
+                return nullptr;
 
         } else if (typefacesHasStretchSuffix(creationParams.family(),
             adjustedName, variantStretch)) {
@@ -361,20 +361,20 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
             adjustedFontDescription.setStretch(variantStretch);
             tf = createTypeface(adjustedFontDescription, adjustedParams, name);
             if (!tf || !typefacesMatchesFamily(tf.get(), adjustedName))
-                return 0;
+                return nullptr;
 
         } else {
-            return 0;
+            return nullptr;
         }
     }
 
-    FontPlatformData* result = new FontPlatformData(tf,
+    OwnPtr<FontPlatformData> result = adoptPtr(new FontPlatformData(tf,
         name.data(),
         fontSize,
         (fontDescription.weight() >= FontWeight600 && !tf->isBold()) || fontDescription.isSyntheticBold(),
         ((fontDescription.style() == FontStyleItalic || fontDescription.style() == FontStyleOblique) && !tf->isItalic()) || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
-        s_useSubpixelPositioning);
+        s_useSubpixelPositioning));
 
     struct FamilyMinSize {
         const wchar_t* family;
@@ -423,7 +423,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         }
     }
 
-    return result;
+    return result.release();
 }
 
 } // namespace blink

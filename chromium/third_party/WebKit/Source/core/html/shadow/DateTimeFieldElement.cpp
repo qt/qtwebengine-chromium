@@ -23,14 +23,15 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeFieldElement.h"
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/events/KeyboardEvent.h"
+#include "core/layout/TextRunConstructor.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/text/WTFString.h"
 
@@ -57,6 +58,11 @@ DEFINE_TRACE(DateTimeFieldElement)
 {
     visitor->trace(m_fieldOwner);
     HTMLSpanElement::trace(visitor);
+}
+
+float DateTimeFieldElement::computeTextWidth(const ComputedStyle& style, const String& text)
+{
+    return style.font().width(constructTextRun(style.font(), text, style));
 }
 
 void DateTimeFieldElement::defaultEventHandler(Event* event)
@@ -192,7 +198,7 @@ AtomicString DateTimeFieldElement::localeIdentifier() const
     return m_fieldOwner ? m_fieldOwner->localeIdentifier() : nullAtom;
 }
 
-float DateTimeFieldElement::maximumWidth(const Font&)
+float DateTimeFieldElement::maximumWidth(const ComputedStyle&)
 {
     const float paddingLeftAndRight = 2; // This should match to html.css.
     return paddingLeftAndRight;

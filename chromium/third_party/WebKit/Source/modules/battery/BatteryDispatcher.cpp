@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/battery/BatteryDispatcher.h"
 
 #include "modules/battery/BatteryStatus.h"
@@ -62,12 +61,12 @@ BatteryStatus* BatteryDispatcher::latestData()
 
 void BatteryDispatcher::startListening()
 {
-    Platform::current()->startListening(WebPlatformEventBattery, this);
+    Platform::current()->startListening(WebPlatformEventTypeBattery, this);
 }
 
 void BatteryDispatcher::stopListening()
 {
-    Platform::current()->stopListening(WebPlatformEventBattery);
+    Platform::current()->stopListening(WebPlatformEventTypeBattery);
     m_batteryStatus.clear();
 }
 

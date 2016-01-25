@@ -61,7 +61,7 @@ class ResourceLoader;
 class ThreadedDataReceiver;
 
 class CORE_EXPORT DocumentLoader : public RefCountedWillBeGarbageCollectedFinalized<DocumentLoader>, private RawResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentLoader);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(DocumentLoader);
 public:
     static PassRefPtrWillBeRawPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
     {
@@ -98,7 +98,6 @@ public:
     void stopLoading();
     bool isLoading() const;
     const ResourceResponse& response() const { return m_response; }
-    const ResourceError& mainDocumentError() const { return m_mainDocumentError; }
     bool isClientRedirect() const { return m_isClientRedirect; }
     void setIsClientRedirect(bool isClientRedirect) { m_isClientRedirect = isClientRedirect; }
     bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
@@ -106,7 +105,9 @@ public:
 
     bool isCommittedButEmpty() const { return m_state == Committed; }
 
-    bool shouldContinueForNavigationPolicy(const ResourceRequest&, ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy, NavigationPolicy = NavigationPolicyCurrentTab);
+    void setSentDidFinishLoad() { m_state = SentDidFinishLoad; }
+    bool sentDidFinishLoad() const { return m_state == SentDidFinishLoad; }
+
     NavigationType navigationType() const { return m_navigationType; }
     void setNavigationType(NavigationType navigationType) { m_navigationType = navigationType; }
 
@@ -131,7 +132,7 @@ public:
     ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
 
     struct InitialScrollState {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
         InitialScrollState()
             : wasScrolledByUser(false)
             , didRestoreFromHistory(false)
@@ -179,9 +180,10 @@ private:
     void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) final;
     void updateRequest(Resource*, const ResourceRequest&) final;
     void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) final;
-    void dataReceived(Resource*, const char* data, unsigned length) final;
-    void processData(const char* data, unsigned length);
+    void dataReceived(Resource*, const char* data, size_t length) final;
+    void processData(const char* data, size_t length);
     void notifyFinished(Resource*) final;
+    String debugName() const override { return "DocumentLoader"; }
 
     bool maybeLoadEmpty();
 
@@ -210,8 +212,6 @@ private:
 
     ResourceResponse m_response;
 
-    ResourceError m_mainDocumentError;
-
     bool m_isClientRedirect;
     bool m_replacesCurrentHistoryItem;
 
@@ -234,7 +234,8 @@ private:
         Provisional,
         Committed,
         DataReceived,
-        MainResourceDone
+        MainResourceDone,
+        SentDidFinishLoad
     };
     State m_state;
 

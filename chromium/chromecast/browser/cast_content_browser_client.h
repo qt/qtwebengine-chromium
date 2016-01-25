@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "content/public/browser/content_browser_client.h"
 
 class PrefService;
@@ -61,10 +62,9 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
       PrefService* pref_service,
       net::URLRequestContextGetter* request_context_getter);
 
-  // Provide an AudioManagerFactory instance for WebAudio playback.
+#if !defined(OS_ANDROID)
   virtual scoped_ptr<::media::AudioManagerFactory> CreateAudioManagerFactory();
 
-#if !defined(OS_ANDROID)
   // Creates a CmaMediaPipelineClient which is responsible to create (CMA
   // backend)
   // for media playback and watch media pipeline status, called once per media
@@ -72,10 +72,6 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
   // instance.
   virtual scoped_refptr<media::CmaMediaPipelineClient>
   CreateCmaMediaPipelineClient();
-
-  // Creates and returns a factory used for creating BrowserCdm instances for
-  // playing protected content. This is called once per browser lifetime.
-  virtual scoped_ptr<::media::BrowserCdmFactory> CreateBrowserCdmFactory();
 #endif
 
   // Performs cleanup for process exit (but before AtExitManager cleanup).
@@ -111,8 +107,7 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
   std::string GetApplicationLocale() override;
   content::QuotaPermissionContext* CreateQuotaPermissionContext() override;
   void AllowCertificateError(
-      int render_process_id,
-      int render_view_id,
+      content::WebContents* web_contents,
       int cert_error,
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
@@ -151,11 +146,14 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
       content::FileDescriptorInfo* mappings,
       std::map<int, base::MemoryMappedFile::Region>* regions) override;
 #else
+  scoped_ptr<::media::CdmFactory> CreateCdmFactory() override;
   void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
       content::FileDescriptorInfo* mappings) override;
 #endif  // defined(OS_ANDROID)
+  void GetAdditionalWebUISchemes(
+      std::vector<std::string>* additional_schemes) override;
 #if defined(OS_ANDROID) && defined(VIDEO_HOLE)
   content::ExternalVideoSurfaceContainer*
   OverrideCreateExternalVideoSurfaceContainer(

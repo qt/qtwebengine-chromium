@@ -140,6 +140,11 @@
     background-color: rgb(255, 255, 194);
 }
 
+.-theme-with-dark-background .callstack-info.status {
+    background-color: hsl(46, 98%, 22%);
+    color: #ccc;
+}
+
 .watch-expression-delete-button {
     width: 10px;
     height: 10px;
@@ -174,9 +179,14 @@
     margin-left: 11px;
 }
 
+.watch-expression-object-header .watch-expression-title {
+    margin-left: 1px;
+}
+
 .watch-expression {
     position: relative;
     padding: 1px 0px 1px 6px;
+    flex: none;
 }
 
 .watch-expressions .name {
@@ -208,6 +218,15 @@
     margin-left: 12px;
 }
 
+.watch-expression-header {
+    flex: auto;
+}
+
+.watch-expression-object-header {
+    margin-left: -12px;
+    padding-left: 12px;
+}
+
 .watch-expression-header:hover {
     background-color: #F0F0F0;
     padding-right: 14px;
@@ -217,22 +236,8 @@
     margin-top: 0px;
 }
 
-.scope-chain-sidebar-pane-section-subtitle {
-    float: right;
-    margin-left: 5px;
-    max-width: 55%;
-    text-overflow: ellipsis;
-    overflow: hidden;
-}
-
-.scope-chain-sidebar-pane-section-title {
-    font-weight: normal;
-    word-wrap: break-word;
-    white-space: normal;
-}
-
-.scope-chain-sidebar-pane-section {
-    padding: 2px 4px 2px 4px;
+.scope-chain-sidebar-pane-section-header {
+    flex: auto;
 }
 
 .scope-chain-sidebar-pane-section-subtitle {
@@ -251,4 +256,23 @@
 
 .scope-chain-sidebar-pane-section {
     padding: 2px 4px 2px 4px;
+}
+
+.scope-chain-sidebar-pane-section-subtitle {
+    float: right;
+    margin-left: 5px;
+    max-width: 55%;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.scope-chain-sidebar-pane-section-title {
+    font-weight: normal;
+    word-wrap: break-word;
+    white-space: normal;
+}
+
+.scope-chain-sidebar-pane-section {
+    padding: 2px 4px 2px 4px;
+    overflow: hidden;
 }

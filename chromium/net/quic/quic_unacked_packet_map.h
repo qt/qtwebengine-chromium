@@ -5,8 +5,11 @@
 #ifndef NET_QUIC_QUIC_UNACKED_PACKET_MAP_H_
 #define NET_QUIC_QUIC_UNACKED_PACKET_MAP_H_
 
+#include <stddef.h>
+
 #include <deque>
 
+#include "base/macros.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -19,10 +22,7 @@ class AckNotifierManager;
 // 3) Track sent time of packets to provide RTT measurements from acks.
 class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
  public:
-  // Initialize an instance of UnackedPacketMap.  The AckNotifierManager
-  // provided to the constructor will be notified whenever a packet is removed
-  // from the map.
-  explicit QuicUnackedPacketMap(AckNotifierManager* ack_notifier_manager);
+  QuicUnackedPacketMap();
   ~QuicUnackedPacketMap();
 
   // Adds |serialized_packet| to the map and marks it as sent at |sent_time|.
@@ -31,7 +31,9 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // don't arrive, indicating the need for retransmission.
   // |old_packet_number| is the packet number of the previous transmission,
   // or 0 if there was none.
-  void AddSentPacket(const SerializedPacket& serialized_packet,
+  // Any AckNotifierWrappers in |serialized_packet| are swapped from the
+  // serialized packet into the TransmissionInfo.
+  void AddSentPacket(SerializedPacket* serialized_packet,
                      QuicPacketNumber old_packet_number,
                      TransmissionType transmission_type,
                      QuicTime sent_time,
@@ -42,9 +44,22 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   bool IsUnacked(QuicPacketNumber packet_number) const;
 
   // Sets the nack count to the max of the current nack count and |min_nacks|.
-  void NackPacket(QuicPacketNumber packet_number, QuicPacketCount min_nacks);
+  void NackPacket(QuicPacketNumber packet_number, uint16_t min_nacks);
+
+  // Notifies all the AckListeners attached to the |info| and
+  // clears them to ensure they're not notified again.
+  void NotifyAndClearListeners(std::list<AckListenerWrapper>* ack_listeners,
+                               QuicTime::Delta delta_largest_observed);
+
+  // Notifies all the AckListeners attached to |newest_transmission|.
+  void NotifyAndClearListeners(QuicPacketNumber newest_transmission,
+                               QuicTime::Delta delta_largest_observed);
+
+  // Marks |info| as no longer in flight.
+  void RemoveFromInFlight(TransmissionInfo* info);
 
   // Marks |packet_number| as no longer in flight.
+  // TODO(ianswett): Remove this test-only method.
   void RemoveFromInFlight(QuicPacketNumber packet_number);
 
   // No longer retransmit data for |stream_id|.
@@ -70,25 +85,26 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // Returns the largest packet number that has been acked.
   QuicPacketNumber largest_observed() const { return largest_observed_; }
 
-  // Returns the sum of bytes from all packets in flight.
-  QuicByteCount bytes_in_flight() const {
-    return bytes_in_flight_;
+  bool track_single_retransmission() const {
+    return track_single_retransmission_;
   }
+
+  // Returns the sum of bytes from all packets in flight.
+  QuicByteCount bytes_in_flight() const { return bytes_in_flight_; }
 
   // Returns the smallest packet number of a serialized packet which has not
   // been acked by the peer.  If there are no unacked packets, returns 0.
   QuicPacketNumber GetLeastUnacked() const;
 
-  // Clears all previous transmissions in order to make room in the ack frame
-  // for newly acked packets.
-  void ClearAllPreviousRetransmissions();
-
   typedef std::deque<TransmissionInfo> UnackedPacketMap;
 
   typedef UnackedPacketMap::const_iterator const_iterator;
+  typedef UnackedPacketMap::iterator iterator;
 
   const_iterator begin() const { return unacked_packets_.begin(); }
   const_iterator end() const { return unacked_packets_.end(); }
+  iterator begin() { return unacked_packets_.begin(); }
+  iterator end() { return unacked_packets_.end(); }
 
   // Returns true if there are unacked packets that are in flight.
   bool HasInFlightPackets() const;
@@ -113,6 +129,10 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // Removes any retransmittable frames from this transmission or an associated
   // transmission.  It removes now useless transmissions, and disconnects any
   // other packets from other transmissions.
+  void RemoveRetransmittability(TransmissionInfo* info);
+
+  // Looks up the TransmissionInfo by |packet_number| and calls
+  // RemoveRetransmittability.
   void RemoveRetransmittability(QuicPacketNumber packet_number);
 
   // Removes any other retransmissions and marks all transmissions unackable.
@@ -153,9 +173,6 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   bool IsPacketUseless(QuicPacketNumber packet_number,
                        const TransmissionInfo& info) const;
 
-  // Removes the packet with lowest packet number from the map.
-  void PopLeastUnacked();
-
   QuicPacketNumber largest_sent_packet_;
   QuicPacketNumber largest_observed_;
 
@@ -175,9 +192,8 @@ class NET_EXPORT_PRIVATE QuicUnackedPacketMap {
   // Number of retransmittable crypto handshake packets.
   size_t pending_crypto_packet_count_;
 
-  // Notifier manager for ACK packets.  We notify it every time we abandon a
-  // packet.
-  AckNotifierManager* ack_notifier_manager_;
+  // Latched copy of gfe2_reloadable_flag_quic_track_single_retransmission.
+  const bool track_single_retransmission_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicUnackedPacketMap);
 };

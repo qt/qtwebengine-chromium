@@ -69,6 +69,9 @@ using cricket::CryptoParamsVec;
 using cricket::AudioContentDescription;
 using cricket::VideoContentDescription;
 using cricket::DataContentDescription;
+using cricket::GetFirstAudioContent;
+using cricket::GetFirstVideoContent;
+using cricket::GetFirstDataContent;
 using cricket::GetFirstAudioContentDescription;
 using cricket::GetFirstVideoContentDescription;
 using cricket::GetFirstDataContentDescription;
@@ -176,11 +179,11 @@ static const RtpHeaderExtension kVideoRtpExtensionAnswer[] = {
   RtpHeaderExtension("urn:ietf:params:rtp-hdrext:toffset", 14),
 };
 
-static const uint32 kSimulcastParamsSsrc[] = {10, 11, 20, 21, 30, 31};
-static const uint32 kSimSsrc[] = {10, 20, 30};
-static const uint32 kFec1Ssrc[] = {10, 11};
-static const uint32 kFec2Ssrc[] = {20, 21};
-static const uint32 kFec3Ssrc[] = {30, 31};
+static const uint32_t kSimulcastParamsSsrc[] = {10, 11, 20, 21, 30, 31};
+static const uint32_t kSimSsrc[] = {10, 20, 30};
+static const uint32_t kFec1Ssrc[] = {10, 11};
+static const uint32_t kFec2Ssrc[] = {20, 21};
+static const uint32_t kFec3Ssrc[] = {30, 31};
 
 static const char kMediaStream1[] = "stream_1";
 static const char kMediaStream2[] = "stream_2";
@@ -235,11 +238,9 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     f2_.set_video_codecs(MAKE_VECTOR(kVideoCodecs2));
     f2_.set_data_codecs(MAKE_VECTOR(kDataCodecs2));
     tdf1_.set_certificate(rtc::RTCCertificate::Create(
-        rtc::scoped_ptr<rtc::SSLIdentity>(
-            new rtc::FakeSSLIdentity("id1")).Pass()));
+        rtc::scoped_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id1"))));
     tdf2_.set_certificate(rtc::RTCCertificate::Create(
-        rtc::scoped_ptr<rtc::SSLIdentity>(
-            new rtc::FakeSSLIdentity("id2")).Pass()));
+        rtc::scoped_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id2"))));
   }
 
   // Create a video StreamParamsVec object with:
@@ -607,6 +608,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   ASSERT_CRYPTO(dcd, 1U, CS_AES_CM_128_HMAC_SHA1_80);
   EXPECT_EQ(std::string(cricket::kMediaProtocolSavpf), dcd->protocol());
 }
+
 // Create a RTP data offer, and ensure it matches what we expect.
 TEST_F(MediaSessionDescriptionFactoryTest, TestCreateRtpDataOffer) {
   MediaSessionOptions opts;
@@ -1810,10 +1812,10 @@ TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateMultipleRtxSsrcs) {
   EXPECT_TRUE(streams[0].has_ssrc_group("SIM"));
   // And a FID group for RTX.
   EXPECT_TRUE(streams[0].has_ssrc_group("FID"));
-  std::vector<uint32> primary_ssrcs;
+  std::vector<uint32_t> primary_ssrcs;
   streams[0].GetPrimarySsrcs(&primary_ssrcs);
   EXPECT_EQ(3u, primary_ssrcs.size());
-  std::vector<uint32> fid_ssrcs;
+  std::vector<uint32_t> fid_ssrcs;
   streams[0].GetFidSsrcs(primary_ssrcs, &fid_ssrcs);
   EXPECT_EQ(3u, fid_ssrcs.size());
 }
@@ -2312,4 +2314,31 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestVADEnableOption) {
   ASSERT_TRUE(answer.get() != NULL);
   audio_content = answer->GetContentByName("audio");
   EXPECT_TRUE(VerifyNoCNCodecs(audio_content));
+}
+
+// Test that the content name ("mid" in SDP) is unchanged when creating a
+// new offer.
+TEST_F(MediaSessionDescriptionFactoryTest,
+       TestContentNameNotChangedInSubsequentOffers) {
+  MediaSessionOptions opts;
+  opts.recv_audio = true;
+  opts.recv_video = true;
+  opts.data_channel_type = cricket::DCT_SCTP;
+  // Create offer and modify the default content names.
+  rtc::scoped_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
+  for (ContentInfo& content : offer->contents()) {
+    content.name.append("_modified");
+  }
+
+  rtc::scoped_ptr<SessionDescription> updated_offer(
+      f1_.CreateOffer(opts, offer.get()));
+  const ContentInfo* audio_content = GetFirstAudioContent(updated_offer.get());
+  const ContentInfo* video_content = GetFirstVideoContent(updated_offer.get());
+  const ContentInfo* data_content = GetFirstDataContent(updated_offer.get());
+  ASSERT_TRUE(audio_content != nullptr);
+  ASSERT_TRUE(video_content != nullptr);
+  ASSERT_TRUE(data_content != nullptr);
+  EXPECT_EQ("audio_modified", audio_content->name);
+  EXPECT_EQ("video_modified", video_content->name);
+  EXPECT_EQ("data_modified", data_content->name);
 }

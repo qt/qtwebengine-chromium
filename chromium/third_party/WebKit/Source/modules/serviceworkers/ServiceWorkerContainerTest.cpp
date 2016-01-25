@@ -3,7 +3,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/serviceworkers/ServiceWorkerContainer.h"
 
 #include "bindings/core/v8/Dictionary.h"
@@ -23,10 +22,10 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 #include <v8.h>
 
 namespace blink {
@@ -165,7 +164,7 @@ protected:
 
     void provide(PassOwnPtr<WebServiceWorkerProvider> provider)
     {
-        m_page->document().WillBeHeapSupplementable<Document>::provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(provider));
+        WillBeHeapSupplement<Document>::provideTo(m_page->document(), ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(provider));
     }
 
     void setPageURL(const String& url)
@@ -215,7 +214,7 @@ TEST_F(ServiceWorkerContainerTest, Register_NonSecureOriginIsRejected)
     testRegisterRejected(
         "http://www.example.com/worker.js",
         "http://www.example.com/",
-        ExpectDOMException("NotSupportedError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
+        ExpectDOMException("SecurityError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
 }
 
 TEST_F(ServiceWorkerContainerTest, Register_CrossOriginScriptIsRejected)
@@ -241,7 +240,7 @@ TEST_F(ServiceWorkerContainerTest, GetRegistration_NonSecureOriginIsRejected)
     setPageURL("http://www.example.com/");
     testGetRegistrationRejected(
         "http://www.example.com/",
-        ExpectDOMException("NotSupportedError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
+        ExpectDOMException("SecurityError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
 }
 
 TEST_F(ServiceWorkerContainerTest, GetRegistration_CrossOriginURLIsRejected)

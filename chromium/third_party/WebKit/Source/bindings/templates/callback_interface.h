@@ -2,7 +2,6 @@
 #ifndef {{v8_class}}_h
 #define {{v8_class}}_h
 
-{% filter conditional(conditional_string) %}
 {% for filename in header_includes %}
 #include "{{filename}}"
 {% endfor %}
@@ -32,5 +31,4 @@ private:
 };
 
 }
-{% endfilter %}
 #endif // {{v8_class}}_h

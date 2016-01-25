@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/svg/line/SVGRootInlineBox.h"
 
 #include "core/layout/api/LineLayoutSVGInlineText.h"
@@ -75,7 +74,7 @@ void SVGRootInlineBox::layoutChildBoxes(InlineFlowBox* start, LayoutRect* childR
     for (InlineBox* child = start->firstChild(); child; child = child->nextOnLine()) {
         LayoutRect boxRect;
         if (child->isSVGInlineTextBox()) {
-            ASSERT(child->layoutObject().isSVGInlineText());
+            ASSERT(child->lineLayoutItem().isSVGInlineText());
 
             SVGInlineTextBox* textBox = toSVGInlineTextBox(child);
             boxRect = textBox->calculateBoundaries();
@@ -85,7 +84,7 @@ void SVGRootInlineBox::layoutChildBoxes(InlineFlowBox* start, LayoutRect* childR
             textBox->setLogicalHeight(boxRect.height());
         } else {
             // Skip generated content.
-            if (!child->layoutObject().node())
+            if (!child->lineLayoutItem().node())
                 continue;
 
             SVGInlineFlowBox* flowBox = toSVGInlineFlowBox(child);
@@ -114,7 +113,7 @@ void SVGRootInlineBox::layoutRootBox(const LayoutRect& childRect)
     // Position all children relative to the parent block.
     for (InlineBox* child = firstChild(); child; child = child->nextOnLine()) {
         // Skip generated content.
-        if (!child->layoutObject().node())
+        if (!child->lineLayoutItem().node())
             continue;
         child->move(LayoutSize(-childRect.x(), -childRect.y()));
     }
@@ -229,6 +228,18 @@ void SVGRootInlineBox::reorderValueLists(Vector<SVGTextLayoutAttributes*>& attri
 {
     Vector<InlineBox*> leafBoxesInLogicalOrder;
     collectLeafBoxesInLogicalOrder(leafBoxesInLogicalOrder, reverseInlineBoxRangeAndValueListsIfNeeded, &attributes);
+}
+
+bool SVGRootInlineBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
+{
+    for (InlineBox* leaf = firstLeafChild(); leaf; leaf = leaf->nextLeafChild()) {
+        if (!leaf->isSVGInlineTextBox())
+            continue;
+        if (leaf->nodeAtPoint(result, locationInContainer, accumulatedOffset, lineTop, lineBottom))
+            return true;
+    }
+
+    return false;
 }
 
 } // namespace blink

@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchRequestData.h"
 
 #include "core/dom/ExecutionContext.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "core/loader/ThreadableLoader.h"
+#include "core/streams/ReadableStream.h"
 #include "modules/fetch/BodyStreamBuffer.h"
+#include "modules/fetch/DataConsumerHandleUtil.h"
 #include "modules/fetch/DataConsumerTee.h"
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
 #include "modules/fetch/FetchHeaderList.h"
+#include "platform/HTTPNames.h"
 #include "platform/network/ResourceRequest.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
@@ -66,8 +68,7 @@ FetchRequestData* FetchRequestData::clone(ExecutionContext* executionContext)
     FetchRequestData* request = FetchRequestData::cloneExceptBody();
     if (m_buffer) {
         OwnPtr<FetchDataConsumerHandle> dest1, dest2;
-        // TODO(yhirano): unlock the buffer.
-        DataConsumerTee::create(executionContext, m_buffer->lock(executionContext), &dest1, &dest2);
+        DataConsumerTee::create(executionContext, m_buffer->releaseHandle(executionContext), &dest1, &dest2);
         m_buffer = new BodyStreamBuffer(dest1.release());
         request->m_buffer = new BodyStreamBuffer(dest2.release());
     }
@@ -77,8 +78,11 @@ FetchRequestData* FetchRequestData::clone(ExecutionContext* executionContext)
 FetchRequestData* FetchRequestData::pass(ExecutionContext* executionContext)
 {
     FetchRequestData* request = FetchRequestData::cloneExceptBody();
-    request->m_buffer = m_buffer;
-    m_buffer = nullptr;
+    if (m_buffer) {
+        request->m_buffer = m_buffer;
+        m_buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(createDoneDataConsumerHandle()));
+        m_buffer->stream()->setIsDisturbed();
+    }
     return request;
 }
 
@@ -87,7 +91,7 @@ FetchRequestData::~FetchRequestData()
 }
 
 FetchRequestData::FetchRequestData()
-    : m_method("GET")
+    : m_method(HTTPNames::GET)
     , m_headerList(FetchHeaderList::create())
     , m_unsafeRequestFlag(false)
     , m_context(WebURLRequest::RequestContextUnspecified)

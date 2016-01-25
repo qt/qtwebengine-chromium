@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/page/PageAnimator.h"
 
 #include "core/animation/DocumentAnimations.h"
@@ -36,6 +35,7 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
 {
     RefPtrWillBeRawPtr<PageAnimator> protector(this);
     TemporaryChange<bool> servicing(m_servicingAnimations, true);
+    clock().updateTime(monotonicAnimationStartTime);
 
     WillBeHeapVector<RefPtrWillBeMember<Document>> documents;
     for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
@@ -44,19 +44,22 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
     }
 
     for (auto& document : documents) {
+        DocumentAnimations::updateAnimationTimingForAnimationFrame(*document);
         if (document->view()) {
+            if (document->view()->shouldThrottleRendering())
+                continue;
             document->view()->scrollableArea()->serviceScrollAnimations(monotonicAnimationStartTime);
 
             if (const FrameView::ScrollableAreaSet* animatingScrollableAreas = document->view()->animatingScrollableAreas()) {
                 // Iterate over a copy, since ScrollableAreas may deregister
                 // themselves during the iteration.
-                Vector<ScrollableArea*> animatingScrollableAreasCopy;
+                WillBeHeapVector<RawPtrWillBeMember<ScrollableArea>> animatingScrollableAreasCopy;
                 copyToVector(*animatingScrollableAreas, animatingScrollableAreasCopy);
                 for (ScrollableArea* scrollableArea : animatingScrollableAreasCopy)
                     scrollableArea->serviceScrollAnimations(monotonicAnimationStartTime);
             }
         }
-        DocumentAnimations::updateAnimationTimingForAnimationFrame(*document, monotonicAnimationStartTime);
+        // TODO(skyostil): These functions should not run for documents without views.
         SVGDocumentExtensions::serviceOnAnimationFrame(*document, monotonicAnimationStartTime);
         document->serviceScriptedAnimations(monotonicAnimationStartTime);
     }
@@ -72,25 +75,13 @@ void PageAnimator::scheduleVisualUpdate(LocalFrame* frame)
 {
     if (m_servicingAnimations || m_updatingLayoutAndStyleForPainting)
         return;
-    // FIXME: The frame-specific version of scheduleAnimation() is for
-    // out-of-process iframes. Passing 0 or the top-level frame to this method
-    // causes scheduleAnimation() to be called for the page, which still uses
-    // a page-level WebWidget (the WebViewImpl).
-    if (frame && !frame->isMainFrame() && frame->isLocalRoot()) {
-        m_page->chromeClient().scheduleAnimationForFrame(frame);
-    } else {
-        m_page->chromeClient().scheduleAnimation();
-    }
+    m_page->chromeClient().scheduleAnimation(frame->view());
 }
 
-void PageAnimator::updateLayoutAndStyleForPainting(LocalFrame* rootFrame)
+void PageAnimator::updateAllLifecyclePhases(LocalFrame& rootFrame)
 {
-    RefPtrWillBeRawPtr<FrameView> view = rootFrame->view();
-
+    RefPtrWillBeRawPtr<FrameView> view = rootFrame.view();
     TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
-
-    // setFrameRect may have the side-effect of causing existing page layout to
-    // be invalidated, so layout needs to be called last.
     view->updateAllLifecyclePhases();
 }
 

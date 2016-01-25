@@ -21,6 +21,7 @@
 #ifndef StepRange_h
 #define StepRange_h
 
+#include "core/CoreExport.h"
 #include "platform/Decimal.h"
 #include "wtf/Allocator.h"
 #include "wtf/Forward.h"
@@ -29,8 +30,8 @@ namespace blink {
 
 enum AnyStepHandling { RejectAny, AnyIsDefaultStep };
 
-class StepRange {
-    DISALLOW_ALLOCATION();
+class CORE_EXPORT StepRange {
+    DISALLOW_NEW();
 public:
     enum StepValueShouldBe {
         StepValueShouldBeReal,
@@ -39,7 +40,7 @@ public:
     };
 
     struct StepDescription {
-        WTF_MAKE_FAST_ALLOCATED(StepDescription);
+        USING_FAST_MALLOC(StepDescription);
     public:
         int defaultStep;
         int defaultStepBase;

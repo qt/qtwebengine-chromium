@@ -252,6 +252,9 @@ typedef struct VP10Common {
 
   struct loopfilter lf;
   struct segmentation seg;
+#if !CONFIG_MISC_FIXES
+  struct segmentation_probs segp;
+#endif
 
   int frame_parallel_decode;  // frame-based threading.
 
@@ -279,6 +282,7 @@ typedef struct VP10Common {
   int error_resilient_mode;
 
   int log2_tile_cols, log2_tile_rows;
+  int tile_sz_mag;
   int byte_alignment;
   int skip_loop_filter;
 
@@ -296,6 +300,11 @@ typedef struct VP10Common {
   PARTITION_CONTEXT *above_seg_context;
   ENTROPY_CONTEXT *above_context;
   int above_context_alloc_cols;
+
+  // scratch memory for intraonly/keyframe forward updates from default tables
+  // - this is intentionally not placed in FRAME_CONTEXT since it's reset upon
+  // each keyframe and not used afterwards
+  vpx_prob kf_y_prob[INTRA_MODES][INTRA_MODES][INTRA_MODES - 1];
 } VP10_COMMON;
 
 // TODO(hkuang): Don't need to lock the whole pool after implementing atomic
@@ -368,14 +377,6 @@ static INLINE int frame_is_intra_only(const VP10_COMMON *const cm) {
   return cm->frame_type == KEY_FRAME || cm->intra_only;
 }
 
-static INLINE void set_partition_probs(const VP10_COMMON *const cm,
-                                       MACROBLOCKD *const xd) {
-  xd->partition_probs =
-      frame_is_intra_only(cm) ?
-          &vp10_kf_partition_probs[0] :
-          (const vpx_prob (*)[PARTITION_TYPES - 1])cm->fc->partition_prob;
-}
-
 static INLINE void vp10_init_macroblockd(VP10_COMMON *cm, MACROBLOCKD *xd,
                                         tran_low_t *dqcoeff) {
   int i;
@@ -396,13 +397,6 @@ static INLINE void vp10_init_macroblockd(VP10_COMMON *cm, MACROBLOCKD *xd,
   xd->above_seg_context = cm->above_seg_context;
   xd->mi_stride = cm->mi_stride;
   xd->error_info = &cm->error;
-
-  set_partition_probs(cm, xd);
-}
-
-static INLINE const vpx_prob* get_partition_probs(const MACROBLOCKD *xd,
-                                                  int ctx) {
-  return xd->partition_probs[ctx];
 }
 
 static INLINE void set_skip_context(MACROBLOCKD *xd, int mi_row, int mi_col) {
@@ -450,6 +444,16 @@ static INLINE void set_mi_row_col(MACROBLOCKD *xd, const TileInfo *const tile,
     xd->left_mi = NULL;
     xd->left_mbmi = NULL;
   }
+}
+
+static INLINE const vpx_prob *get_y_mode_probs(const VP10_COMMON *cm,
+                                               const MODE_INFO *mi,
+                                               const MODE_INFO *above_mi,
+                                               const MODE_INFO *left_mi,
+                                               int block) {
+  const PREDICTION_MODE above = vp10_above_block_mode(mi, above_mi, block);
+  const PREDICTION_MODE left = vp10_left_block_mode(mi, left_mi, block);
+  return cm->kf_y_prob[above][left];
 }
 
 static INLINE void update_partition_context(MACROBLOCKD *xd,

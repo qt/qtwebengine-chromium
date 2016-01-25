@@ -4,6 +4,9 @@
 
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/thread_task_runner_handle.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
@@ -245,18 +248,20 @@ EmbeddedSharedWorkerStub::createServiceWorkerNetworkProvider(
   // and ownership is transferred to the DataSource.
   DataSourceExtraData* extra_data = new DataSourceExtraData();
   data_source->setExtraData(extra_data);
-  ServiceWorkerNetworkProvider::AttachToDocumentState(
-      extra_data, provider.Pass());
+  ServiceWorkerNetworkProvider::AttachToDocumentState(extra_data,
+                                                      std::move(provider));
 
   // Blink is responsible for deleting the returned object.
   return new WebServiceWorkerNetworkProviderImpl();
 }
 
 void EmbeddedSharedWorkerStub::sendDevToolsMessage(
+    int session_id,
     int call_id,
     const blink::WebString& message,
     const blink::WebString& state) {
-  worker_devtools_agent_->SendDevToolsMessage(call_id, message, state);
+  worker_devtools_agent_->SendDevToolsMessage(
+      session_id, call_id, message, state);
 }
 
 void EmbeddedSharedWorkerStub::Shutdown() {

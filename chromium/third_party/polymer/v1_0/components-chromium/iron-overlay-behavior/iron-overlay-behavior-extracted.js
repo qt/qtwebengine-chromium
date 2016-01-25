@@ -1,5 +1,3 @@
-
-
 /**
 Use `Polymer.IronOverlayBehavior` to implement an element that can be hidden or shown, and displays
 on top of other content. It includes an optional backdrop, and can be used to implement a variety
@@ -12,7 +10,8 @@ intent. Closing generally implies that the user acknowledged the content on the 
 it will cancel whenever the user taps outside it or presses the escape key. This behavior is
 configurable with the `no-cancel-on-esc-key` and the `no-cancel-on-outside-click` properties.
 `close()` should be called explicitly by the implementer when the user interacts with a control
-in the overlay element.
+in the overlay element. When the dialog is canceled, the overlay fires an 'iron-overlay-canceled'
+event. Call `preventDefault` on this event to prevent the overlay from closing.
 
 ### Positioning
 
@@ -123,7 +122,6 @@ context. You should place this element as a child of `<body>` whenever possible.
     },
 
     listeners: {
-      'tap': '_onClick',
       'iron-resize': '_onIronResize'
     },
 
@@ -145,6 +143,10 @@ context. You should place this element as a child of `<body>` whenever possible.
 
     ready: function() {
       this._ensureSetup();
+    },
+
+    attached: function() {
+      // Call _openedChanged here so that position can be computed correctly.
       if (this._callOpenedWhenReady) {
         this._openedChanged();
       }
@@ -183,6 +185,11 @@ context. You should place this element as a child of `<body>` whenever possible.
      * Cancels the overlay.
      */
     cancel: function() {
+      var cancelEvent = this.fire('iron-overlay-canceled', undefined, {cancelable: true});
+      if (cancelEvent.defaultPrevented) {
+        return;
+      }
+
       this.opened = false;
       this._setCanceled(true);
     },
@@ -371,20 +378,10 @@ context. You should place this element as a child of `<body>` whenever possible.
     },
 
     _onCaptureClick: function(event) {
-      // attempt to close asynchronously and prevent the close of a tap event is immediately heard
-      // on target. This is because in shadow dom due to event retargetting event.target is not
-      // useful.
-      if (!this.noCancelOnOutsideClick && (this._manager.currentOverlay() == this)) {
-        this._cancelJob = this.async(function() {
-          this.cancel();
-        }, 10);
-      }
-    },
-
-    _onClick: function(event) {
-      if (this._cancelJob) {
-        this.cancelAsync(this._cancelJob);
-        this._cancelJob = null;
+      if (!this.noCancelOnOutsideClick &&
+          this._manager.currentOverlay() === this &&
+          Polymer.dom(event).path.indexOf(this) === -1) {
+        this.cancel();
       }
     },
 
@@ -393,6 +390,7 @@ context. You should place this element as a child of `<body>` whenever possible.
       if (!this.noCancelOnEscKey && (event.keyCode === ESC)) {
         this.cancel();
         event.stopPropagation();
+        event.stopImmediatePropagation();
       }
     },
 
@@ -412,6 +410,12 @@ context. You should place this element as a child of `<body>` whenever possible.
  */
 
 /**
+ * Fired when the `iron-overlay` is canceled, but before it is closed.
+ * Cancel the event to prevent the `iron-overlay` from closing.
+ * @event iron-overlay-canceled
+ */
+
+/**
  * Fired after the `iron-overlay` closes.
  * @event iron-overlay-closed
  * @param {{canceled: (boolean|undefined)}} set to the `closingReason` attribute
@@ -420,5 +424,3 @@ context. You should place this element as a child of `<body>` whenever possible.
 
   /** @polymerBehavior */
   Polymer.IronOverlayBehavior = [Polymer.IronFitBehavior, Polymer.IronResizableBehavior, Polymer.IronOverlayBehaviorImpl];
-
-

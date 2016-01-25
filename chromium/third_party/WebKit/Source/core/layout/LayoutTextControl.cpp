@@ -19,7 +19,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutTextControl.h"
 
 #include "core/html/HTMLTextFormControlElement.h"
@@ -49,17 +48,6 @@ HTMLTextFormControlElement* LayoutTextControl::textFormControlElement() const
 HTMLElement* LayoutTextControl::innerEditorElement() const
 {
     return textFormControlElement()->innerEditorElement();
-}
-
-void LayoutTextControl::addChild(LayoutObject* newChild, LayoutObject* beforeChild)
-{
-    // FIXME: This is a terrible hack to get the caret over the placeholder text since it'll
-    // make us paint the placeholder first. (See https://trac.webkit.org/changeset/118733)
-    Node* node = newChild->node();
-    if (node && node->isElementNode() && toElement(node)->shadowPseudoId() == "-webkit-input-placeholder")
-        LayoutBlockFlow::addChild(newChild, firstChild());
-    else
-        LayoutBlockFlow::addChild(newChild, beforeChild);
 }
 
 void LayoutTextControl::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
@@ -122,7 +110,7 @@ void LayoutTextControl::updateFromElement()
 int LayoutTextControl::scrollbarThickness() const
 {
     // FIXME: We should get the size of the scrollbar from the LayoutTheme instead.
-    return ScrollbarTheme::theme()->scrollbarThickness();
+    return ScrollbarTheme::theme().scrollbarThickness();
 }
 
 void LayoutTextControl::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues& computedValues) const

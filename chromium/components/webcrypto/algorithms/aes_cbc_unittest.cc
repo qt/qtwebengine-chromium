@@ -2,7 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stl_util.h"
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/values.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
@@ -20,7 +24,7 @@ blink::WebCryptoAlgorithm CreateAesCbcAlgorithm(
     const std::vector<uint8_t>& iv) {
   return blink::WebCryptoAlgorithm::adoptParamsAndCreate(
       blink::WebCryptoAlgorithmIdAesCbc,
-      new blink::WebCryptoAesCbcParams(vector_as_array(&iv),
+      new blink::WebCryptoAesCbcParams(iv.data(),
                                        static_cast<unsigned int>(iv.size())));
 }
 

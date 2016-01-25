@@ -4,6 +4,8 @@
 
 #include "content/browser/web_contents/web_contents_view_guest.h"
 
+#include <utility>
+
 #include "build/build_config.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
@@ -35,11 +37,12 @@ WebContentsViewGuest::WebContentsViewGuest(
     WebContentsImpl* web_contents,
     BrowserPluginGuest* guest,
     scoped_ptr<WebContentsView> platform_view,
-    RenderViewHostDelegateView* platform_view_delegate_view)
+    RenderViewHostDelegateView** delegate_view)
     : web_contents_(web_contents),
       guest_(guest),
-      platform_view_(platform_view.Pass()),
-      platform_view_delegate_view_(platform_view_delegate_view) {
+      platform_view_(std::move(platform_view)),
+      platform_view_delegate_view_(*delegate_view) {
+  *delegate_view = this;
 }
 
 WebContentsViewGuest::~WebContentsViewGuest() {

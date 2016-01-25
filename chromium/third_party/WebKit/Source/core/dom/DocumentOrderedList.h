@@ -29,7 +29,6 @@
 #define DocumentOrderedList_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/ListHashSet.h"
 
 namespace blink {
@@ -38,12 +37,11 @@ class Node;
 
 class DocumentOrderedList final {
     WTF_MAKE_NONCOPYABLE(DocumentOrderedList);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     DocumentOrderedList() { }
 
     void add(Node*);
-    void parserAdd(Node*);
     void remove(const Node*);
     bool isEmpty() const { return m_nodes.isEmpty(); }
     void clear() { m_nodes.clear(); }

@@ -13,7 +13,7 @@ import sys
 script_dir = os.path.dirname(__file__)
 angle_dir = os.path.normpath(os.path.join(script_dir, os.pardir))
 
-sys.path.append(os.path.join(angle_dir, 'third_party', 'gyp', 'pylib'))
+sys.path.insert(0, os.path.join(angle_dir, 'third_party', 'gyp', 'pylib'))
 import gyp
 
 def appendCommonArgs(args):
@@ -56,6 +56,8 @@ def generateWinRTProjects(generate_args, generation_dir, build_winphone, msvs_ve
     args.append('-Dangle_build_winphone=' + ('1' if build_winphone else '0'))
     args.append('-Dangle_enable_d3d9=0')
     args.append('-Dangle_enable_gl=0')
+    args.append('-Dangle_enable_essl=0')
+    args.append('-Dangle_enable_glsl=0')
     # Add all.gyp as the main gyp file to be generated.
     args.append(os.path.join(script_dir, 'ANGLE.gyp'))
 

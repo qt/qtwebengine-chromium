@@ -120,10 +120,9 @@ OPENSSL_EXPORT int EC_GROUP_cmp(const EC_GROUP *a, const EC_GROUP *b,
  * in |group| that specifies the generator for the group. */
 OPENSSL_EXPORT const EC_POINT *EC_GROUP_get0_generator(const EC_GROUP *group);
 
-/* EC_GROUP_get_order sets |*order| to the order of |group|, if it's not
- * NULL. It returns one on success and zero otherwise. |ctx| is ignored. */
-OPENSSL_EXPORT int EC_GROUP_get_order(const EC_GROUP *group, BIGNUM *order,
-                                      BN_CTX *ctx);
+/* EC_GROUP_get0_order returns a pointer to the internal |BIGNUM| object in
+ * |group| that specifies the order of the group. */
+OPENSSL_EXPORT const BIGNUM *EC_GROUP_get0_order(const EC_GROUP *group);
 
 /* EC_GROUP_get_cofactor sets |*cofactor| to the cofactor of |group| using
  * |ctx|, if it's not NULL. It returns one on success and zero otherwise. */
@@ -144,16 +143,7 @@ OPENSSL_EXPORT int EC_GROUP_get_curve_name(const EC_GROUP *group);
 
 /* EC_GROUP_get_degree returns the number of bits needed to represent an
  * element of the field underlying |group|. */
-OPENSSL_EXPORT int EC_GROUP_get_degree(const EC_GROUP *group);
-
-/* EC_GROUP_precompute_mult precomputes multiplies of the generator in order to
- * speed up operations that involve calculating generator multiples. It returns
- * one on sucess and zero otherwise. If |ctx| is not NULL, it may be used. */
-OPENSSL_EXPORT int EC_GROUP_precompute_mult(EC_GROUP *group, BN_CTX *ctx);
-
-/* EC_GROUP_have_precompute_mult returns one if |group| contains precomputed
- * generator multiples. */
-OPENSSL_EXPORT int EC_GROUP_have_precompute_mult(const EC_GROUP *group);
+OPENSSL_EXPORT unsigned EC_GROUP_get_degree(const EC_GROUP *group);
 
 
 /* Points on elliptic curves. */
@@ -220,8 +210,10 @@ OPENSSL_EXPORT int EC_POINT_get_affine_coordinates_GFp(const EC_GROUP *group,
                                                        BIGNUM *x, BIGNUM *y,
                                                        BN_CTX *ctx);
 
-/* EC_POINT_set_affine_coordinates_GFp sets the value of |p| to be (|x|, |y|). The
- * |ctx| argument may be used if not NULL. */
+/* EC_POINT_set_affine_coordinates_GFp sets the value of |p| to be (|x|, |y|).
+ * The |ctx| argument may be used if not NULL. It returns one on success or
+ * zero on error. Note that, unlike with OpenSSL, it's considered an error if
+ * the point is not on the curve. */
 OPENSSL_EXPORT int EC_POINT_set_affine_coordinates_GFp(const EC_GROUP *group,
                                                        EC_POINT *point,
                                                        const BIGNUM *x,
@@ -276,13 +268,6 @@ OPENSSL_EXPORT int EC_POINT_mul(const EC_GROUP *group, EC_POINT *r,
                                 const BIGNUM *n, const EC_POINT *q,
                                 const BIGNUM *m, BN_CTX *ctx);
 
-/* EC_POINTs_mul sets r = generator*n + sum(p[i]*m[i]). It returns one on
- * success and zero otherwise. If |ctx| is not NULL, it may be used. */
-OPENSSL_EXPORT int EC_POINTs_mul(const EC_GROUP *group, EC_POINT *r,
-                                 const BIGNUM *n, size_t num,
-                                 const EC_POINT *p[], const BIGNUM *m[],
-                                 BN_CTX *ctx);
-
 
 /* Deprecated functions. */
 
@@ -296,6 +281,12 @@ OPENSSL_EXPORT int EC_POINTs_mul(const EC_GROUP *group, EC_POINT *r,
 OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p,
                                                 const BIGNUM *a,
                                                 const BIGNUM *b, BN_CTX *ctx);
+
+/* EC_GROUP_get_order sets |*order| to the order of |group|, if it's not
+ * NULL. It returns one on success and zero otherwise. |ctx| is ignored. Use
+ * |EC_GROUP_get0_order| instead. */
+OPENSSL_EXPORT int EC_GROUP_get_order(const EC_GROUP *group, BIGNUM *order,
+                                      BN_CTX *ctx);
 
 /* EC_GROUP_set_generator sets the generator for |group| to |generator|, which
  * must have the given order and cofactor. This should only be used with
@@ -325,9 +316,7 @@ OPENSSL_EXPORT void EC_GROUP_set_point_conversion_form(
 
 
 /* Old code expects to get EC_KEY from ec.h. */
-#if !defined(OPENSSL_HEADER_EC_KEY_H)
 #include <openssl/ec_key.h>
-#endif
 
 
 #if defined(__cplusplus)

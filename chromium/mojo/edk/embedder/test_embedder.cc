@@ -9,6 +9,7 @@
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_support.h"
+#include "mojo/edk/system/broker.h"
 #include "mojo/edk/system/core.h"
 #include "mojo/edk/system/handle_table.h"
 
@@ -46,6 +47,10 @@ bool Shutdown() {
   CHECK(internal::g_platform_support);
   delete internal::g_platform_support;
   internal::g_platform_support = nullptr;
+
+  CHECK(internal::g_broker);
+  delete internal::g_broker;
+  internal::g_broker = nullptr;
 
   return rv;
 }

@@ -69,10 +69,9 @@ public:
     void releaseResources();
 
     void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
-    bool shouldUseIncreasedPriorities();
 
     // WebURLLoaderClient
-    void willSendRequest(WebURLLoader*, WebURLRequest&, const WebURLResponse& redirectResponse) override;
+    void willFollowRedirect(WebURLLoader*, WebURLRequest&, const WebURLResponse& redirectResponse) override;
     void didSendData(WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
     void didReceiveResponse(WebURLLoader*, const WebURLResponse&) override;
     void didReceiveResponse(WebURLLoader*, const WebURLResponse&, WebDataConsumerHandle*) override;
@@ -91,6 +90,7 @@ public:
     bool loadingMultipartContent() const { return m_loadingMultipartContent; }
 
 private:
+    // Assumes ResourceFetcher and Resource are non-null.
     ResourceLoader(ResourceFetcher*, Resource*, const ResourceLoaderOptions&);
 
     void init(const ResourceRequest&);

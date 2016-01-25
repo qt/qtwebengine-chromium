@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/BoxClipper.h"
 
 #include "core/layout/LayoutBox.h"
@@ -11,7 +10,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
@@ -20,13 +19,16 @@ BoxClipper::BoxClipper(const LayoutBox& box, const PaintInfo& paintInfo, const L
     , m_paintInfo(paintInfo)
     , m_clipType(DisplayItem::UninitializedType)
 {
-    if (m_paintInfo.phase == PaintPhaseBlockBackground || m_paintInfo.phase == PaintPhaseSelfOutline || m_paintInfo.phase == PaintPhaseMask)
+    ASSERT(m_paintInfo.phase != PaintPhaseSelfBlockBackgroundOnly && m_paintInfo.phase != PaintPhaseSelfOutlineOnly);
+
+    if (m_paintInfo.phase == PaintPhaseMask)
         return;
 
     bool isControlClip = m_box.hasControlClip();
-    bool isOverflowClip = m_box.hasOverflowClip() && !m_box.layer()->isSelfPaintingLayer();
+    bool isOverflowOrContainmentClip = (m_box.hasOverflowClip() && !m_box.layer()->isSelfPaintingLayer())
+        || m_box.style()->containsPaint();
 
-    if (!isControlClip && !isOverflowClip)
+    if (!isControlClip && !isOverflowOrContainmentClip)
         return;
 
     LayoutRect clipRect = isControlClip ? m_box.controlClipRect(accumulatedOffset) : m_box.overflowClipRect(accumulatedOffset);
@@ -50,13 +52,12 @@ BoxClipper::BoxClipper(const LayoutBox& box, const PaintInfo& paintInfo, const L
             return;
     }
 
-    ASSERT(m_paintInfo.context->displayItemList());
-    if (!m_paintInfo.context->displayItemList()->displayItemConstructionIsDisabled()) {
+    if (!m_paintInfo.context.paintController().displayItemConstructionIsDisabled()) {
         m_clipType = m_paintInfo.displayItemTypeForClipping();
         Vector<FloatRoundedRect> roundedRects;
         if (hasBorderRadius)
             roundedRects.append(clipRoundedRect);
-        m_paintInfo.context->displayItemList()->createAndAppend<ClipDisplayItem>(m_box, m_clipType, pixelSnappedIntRect(clipRect), roundedRects);
+        m_paintInfo.context.paintController().createAndAppend<ClipDisplayItem>(m_box, m_clipType, pixelSnappedIntRect(clipRect), roundedRects);
     }
 }
 
@@ -65,14 +66,8 @@ BoxClipper::~BoxClipper()
     if (m_clipType == DisplayItem::UninitializedType)
         return;
 
-    ASSERT(m_box.hasControlClip() || (m_box.hasOverflowClip() && !m_box.layer()->isSelfPaintingLayer()));
-    ASSERT(m_paintInfo.context->displayItemList());
-    if (!m_paintInfo.context->displayItemList()->displayItemConstructionIsDisabled()) {
-        if (m_paintInfo.context->displayItemList()->lastDisplayItemIsNoopBegin())
-            m_paintInfo.context->displayItemList()->removeLastDisplayItem();
-        else
-            m_paintInfo.context->displayItemList()->createAndAppend<EndClipDisplayItem>(m_box, DisplayItem::clipTypeToEndClipType(m_clipType));
-    }
+    ASSERT(m_box.hasControlClip() || (m_box.hasOverflowClip() && !m_box.layer()->isSelfPaintingLayer()) || m_box.style()->containsPaint());
+    m_paintInfo.context.paintController().endItem<EndClipDisplayItem>(m_box, DisplayItem::clipTypeToEndClipType(m_clipType));
 }
 
 } // namespace blink

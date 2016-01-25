@@ -4,6 +4,8 @@
 
 #include "chromecast/browser/media/cma_message_filter_host.h"
 
+#include <stdint.h>
+
 #include <utility>
 
 #include "base/lazy_instance.h"
@@ -47,8 +49,8 @@ base::LazyInstance<MediaPipelineCmaMap> g_pipeline_map_cma =
     LAZY_INSTANCE_INITIALIZER;
 
 uint64_t GetPipelineCmaId(int process_id, int media_id) {
-  return (static_cast<uint64>(process_id) << 32) +
-      static_cast<uint64>(media_id);
+  return (static_cast<uint64_t>(process_id) << 32) +
+         static_cast<uint64_t>(media_id);
 }
 
 MediaPipelineHost* GetMediaPipeline(int process_id, int media_id) {
@@ -108,7 +110,7 @@ void SetCdmOnUiThread(
     return;
   }
 
-  ::media::BrowserCdm* cdm = host->GetBrowserCdm(render_frame_id, cdm_id);
+  scoped_refptr<::media::MediaKeys> cdm = host->GetCdm(render_frame_id, cdm_id);
   if (!cdm) {
     LOG(WARNING) << "Could not find BrowserCdm (" << render_frame_id << ","
                  << cdm_id << ")";
@@ -116,13 +118,10 @@ void SetCdmOnUiThread(
   }
 
   BrowserCdmCast* browser_cdm_cast =
-      static_cast<BrowserCdmCastUi*>(cdm)->browser_cdm_cast();
+      static_cast<BrowserCdmCastUi*>(cdm.get())->browser_cdm_cast();
   MediaMessageLoop::GetTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&SetCdmOnCmaThread,
-                 render_process_id,
-                 media_id,
-                 browser_cdm_cast));
+      FROM_HERE, base::Bind(&SetCdmOnCmaThread, render_process_id, media_id,
+                            base::Unretained(browser_cdm_cast)));
 }
 
 }  // namespace
@@ -177,11 +176,12 @@ void CmaMessageFilterHost::DeleteEntries() {
 
   for (MediaPipelineMap::iterator it = media_pipelines_.begin();
        it != media_pipelines_.end(); ) {
+    int media_id = it->first;
     scoped_ptr<MediaPipelineHost> media_pipeline(it->second);
     media_pipelines_.erase(it++);
     task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&DestroyMediaPipeline, process_id_, it->first,
+        base::Bind(&DestroyMediaPipeline, process_id_, media_id,
                    base::Passed(&media_pipeline)));
   }
 }
@@ -352,6 +352,8 @@ void CmaMessageFilterHost::AudioInitialize(
   }
 
   AvPipelineClient client;
+  client.wait_for_key_cb = ::media::BindToCurrentLoop(base::Bind(
+      &CmaMessageFilterHost::OnWaitForKey, weak_this_, media_id, track_id));
   client.eos_cb = ::media::BindToCurrentLoop(base::Bind(
       &CmaMessageFilterHost::OnEos, weak_this_, media_id, track_id));
   client.playback_error_cb = ::media::BindToCurrentLoop(base::Bind(
@@ -382,6 +384,9 @@ void CmaMessageFilterHost::VideoInitialize(
   }
 
   VideoPipelineClient client;
+  client.av_pipeline_client.wait_for_key_cb = ::media::BindToCurrentLoop(
+      base::Bind(&CmaMessageFilterHost::OnWaitForKey, weak_this_,
+                 media_id, track_id));
   client.av_pipeline_client.eos_cb = ::media::BindToCurrentLoop(
       base::Bind(&CmaMessageFilterHost::OnEos, weak_this_,
                  media_id, track_id));
@@ -498,6 +503,11 @@ void CmaMessageFilterHost::OnBufferingNotification(
     int media_id, ::media::BufferingState state) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   Send(new CmaMsg_BufferingNotification(media_id, state));
+}
+
+void CmaMessageFilterHost::OnWaitForKey(int media_id, TrackId track_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  Send(new CmaMsg_WaitForKey(media_id, track_id));
 }
 
 void CmaMessageFilterHost::OnEos(int media_id, TrackId track_id) {

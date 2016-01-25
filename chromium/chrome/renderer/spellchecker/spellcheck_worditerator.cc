@@ -8,10 +8,11 @@
 
 #include <map>
 #include <string>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
@@ -334,7 +335,7 @@ bool SpellcheckWordIterator::Initialize(
     NOTREACHED() << "failed to open iterator (broken rules)";
     return false;
   }
-  iterator_ = iterator.Pass();
+  iterator_ = std::move(iterator);
 
   // Set the character attributes so we can normalize the words extracted by
   // this iterator.

@@ -6,18 +6,19 @@
 
 #include <set>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -26,7 +27,6 @@
 #include "content/browser/net/view_blob_internals_job_factory.h"
 #include "content/browser/net/view_http_cache_job_factory.h"
 #include "content/browser/resource_context_impl.h"
-#include "content/browser/tcmalloc_internals_request_job.h"
 #include "content/browser/webui/shared_resources_data_source.h"
 #include "content/browser/webui/url_data_source_impl.h"
 #include "content/public/browser/browser_context.h"
@@ -39,10 +39,13 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
+#include "net/log/net_log_util.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
+
 #include "url/url_util.h"
 
 namespace content {
@@ -53,7 +56,7 @@ const char kChromeURLContentSecurityPolicyHeaderBase[] =
     "Content-Security-Policy: script-src chrome://resources 'self'";
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
-
+static const char kNetworkErrorKey[] = "netError";
 const int kNoRenderProcessId = -1;
 
 bool SchemeIsInSchemes(const std::string& scheme,
@@ -119,7 +122,7 @@ class URLRequestChromeJob : public net::URLRequestJob {
   // net::URLRequestJob implementation.
   void Start() override;
   void Kill() override;
-  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
+  int ReadRawData(net::IOBuffer* buf, int buf_size) override;
   bool GetMimeType(std::string* mime_type) const override;
   int GetResponseCode() const override;
   void GetResponseInfo(net::HttpResponseInfo* info) override;
@@ -190,8 +193,9 @@ class URLRequestChromeJob : public net::URLRequestJob {
   bool RequiresUnsafeEval() const;
 
   // Do the actual copy from data_ (the data we're serving) into |buf|.
-  // Separate from ReadRawData so we can handle async I/O.
-  void CompleteRead(net::IOBuffer* buf, int buf_size, int* bytes_read);
+  // Separate from ReadRawData so we can handle async I/O. Returns the number of
+  // bytes read.
+  int CompleteRead(net::IOBuffer* buf, int buf_size);
 
   // The actual data we're serving.  NULL until it's been fetched.
   scoped_refptr<base::RefCountedMemory> data_;
@@ -336,22 +340,16 @@ void URLRequestChromeJob::MimeTypeAvailable(const std::string& mime_type) {
 void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
   TRACE_EVENT_ASYNC_END0("browser", "DataManager:Request", this);
   if (bytes) {
-    // The request completed, and we have all the data.
-    // Clear any IO pending status.
-    SetStatus(net::URLRequestStatus());
-
     data_ = bytes;
-    int bytes_read;
     if (pending_buf_.get()) {
       CHECK(pending_buf_->data());
-      CompleteRead(pending_buf_.get(), pending_buf_size_, &bytes_read);
+      int result = CompleteRead(pending_buf_.get(), pending_buf_size_);
       pending_buf_ = NULL;
-      NotifyReadComplete(bytes_read);
+      ReadRawDataComplete(result);
     }
   } else {
     // The request failed.
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
-                                     net::ERR_FAILED));
+    ReadRawDataComplete(net::ERR_FAILED);
   }
 }
 
@@ -359,25 +357,21 @@ base::WeakPtr<URLRequestChromeJob> URLRequestChromeJob::AsWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
-bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
-                                      int* bytes_read) {
+int URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size) {
   if (!data_.get()) {
-    SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
     DCHECK(!pending_buf_.get());
     CHECK(buf->data());
     pending_buf_ = buf;
     pending_buf_size_ = buf_size;
-    return false;  // Tell the caller we're still waiting for data.
+    return net::ERR_IO_PENDING;
   }
 
   // Otherwise, the data is available.
-  CompleteRead(buf, buf_size, bytes_read);
-  return true;
+  return CompleteRead(buf, buf_size);
 }
 
-void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
-                                       int* bytes_read) {
-  int remaining = static_cast<int>(data_->size()) - data_offset_;
+int URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size) {
+  int remaining = data_->size() - data_offset_;
   if (buf_size > remaining)
     buf_size = remaining;
   if (buf_size > 0) {
@@ -389,7 +383,7 @@ void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
     memcpy(buf->data(), data_->front() + data_offset_, buf_size);
     data_offset_ += buf_size;
   }
-  *bytes_read = buf_size;
+  return buf_size;
 }
 
 void URLRequestChromeJob::CheckStoragePartitionMatches(
@@ -463,17 +457,39 @@ void GetMimeTypeOnUI(URLDataSourceImpl* source,
 
 namespace {
 
+bool IsValidNetworkErrorCode(int error_code) {
+  scoped_ptr<base::DictionaryValue> error_codes = net::GetNetConstants();
+  const base::DictionaryValue* net_error_codes_dict = nullptr;
+
+  for (base::DictionaryValue::Iterator itr(*error_codes); !itr.IsAtEnd();
+           itr.Advance()) {
+    if (itr.key() == kNetworkErrorKey) {
+      itr.value().GetAsDictionary(&net_error_codes_dict);
+      break;
+    }
+  }
+
+  if (net_error_codes_dict != nullptr) {
+    for (base::DictionaryValue::Iterator itr(*net_error_codes_dict);
+             !itr.IsAtEnd(); itr.Advance()) {
+      int net_error_code;
+      itr.value().GetAsInteger(&net_error_code);
+      if (error_code == net_error_code)
+        return true;
+    }
+  }
+  return false;
+}
+
 class ChromeProtocolHandler
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
   // |is_incognito| should be set for incognito profiles.
   ChromeProtocolHandler(ResourceContext* resource_context,
                         bool is_incognito,
-                        AppCacheServiceImpl* appcache_service,
                         ChromeBlobStorageContext* blob_storage_context)
       : resource_context_(resource_context),
         is_incognito_(is_incognito),
-        appcache_service_(appcache_service),
         blob_storage_context_(blob_storage_context) {}
   ~ChromeProtocolHandler() override {}
 
@@ -493,18 +509,28 @@ class ChromeProtocolHandler
           request, network_delegate, blob_storage_context_->context());
     }
 
-#if defined(USE_TCMALLOC)
-    // Next check for chrome://tcmalloc/, which uses its own job type.
-    if (request->url().SchemeIs(kChromeUIScheme) &&
-        request->url().host() == kChromeUITcmallocHost) {
-      return new TcmallocInternalsRequestJob(request, network_delegate);
-    }
-#endif
-
     // Next check for chrome://histograms/, which uses its own job type.
     if (request->url().SchemeIs(kChromeUIScheme) &&
         request->url().host() == kChromeUIHistogramHost) {
       return new HistogramInternalsRequestJob(request, network_delegate);
+    }
+
+    // Check for chrome://network-error/, which uses its own job type.
+    if (request->url().SchemeIs(kChromeUIScheme) &&
+        request->url().host() == kChromeUINetworkErrorHost) {
+      // Get the error code passed in via the request URL path.
+      std::basic_string<char> error_code_string =
+          request->url().path().substr(1);
+
+      int error_code;
+      if (base::StringToInt(error_code_string, &error_code)) {
+        // Check for a valid error code.
+        if (IsValidNetworkErrorCode(error_code) &&
+            error_code != net::Error::ERR_IO_PENDING) {
+          return new net::URLRequestErrorJob(request, network_delegate,
+                                             error_code);
+        }
+      }
     }
 
     // Fall back to using a custom handler
@@ -523,7 +549,6 @@ class ChromeProtocolHandler
 
   // True when generated from an incognito profile.
   const bool is_incognito_;
-  AppCacheServiceImpl* appcache_service_;
   ChromeBlobStorageContext* blob_storage_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeProtocolHandler);
@@ -552,11 +577,10 @@ scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
 URLDataManagerBackend::CreateProtocolHandler(
     content::ResourceContext* resource_context,
     bool is_incognito,
-    AppCacheServiceImpl* appcache_service,
     ChromeBlobStorageContext* blob_storage_context) {
   DCHECK(resource_context);
   return make_scoped_ptr(new ChromeProtocolHandler(
-      resource_context, is_incognito, appcache_service, blob_storage_context));
+      resource_context, is_incognito, blob_storage_context));
 }
 
 void URLDataManagerBackend::AddDataSource(

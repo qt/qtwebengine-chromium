@@ -21,9 +21,9 @@ CrtcController::CrtcController(const scoped_refptr<DrmDevice>& drm,
 
 CrtcController::~CrtcController() {
   if (!is_disabled_) {
-    const ScopedVector<HardwareDisplayPlane>& all_planes =
+    const std::vector<scoped_ptr<HardwareDisplayPlane>>& all_planes =
         drm_->plane_manager()->planes();
-    for (auto* plane : all_planes) {
+    for (const auto& plane : all_planes) {
       if (plane->owning_crtc() == crtc_) {
         plane->set_owning_crtc(0);
         plane->set_in_use(false);
@@ -32,7 +32,8 @@ CrtcController::~CrtcController() {
 
     SetCursor(nullptr);
     drm_->DisableCrtc(crtc_);
-    SignalPageFlipRequest();
+    if (page_flip_request_)
+      SignalPageFlipRequest(gfx::SwapResult::SWAP_ACK);
   }
 }
 
@@ -113,14 +114,10 @@ bool CrtcController::SchedulePageFlip(
   return true;
 }
 
-std::vector<uint32_t> CrtcController::GetCompatibleHardwarePlaneIds(
-    const OverlayPlane& plane) const {
-  return drm_->plane_manager()->GetCompatibleHardwarePlaneIds(plane, crtc_);
-}
-
-void CrtcController::PageFlipFailed() {
-  pending_planes_.clear();
-  SignalPageFlipRequest();
+bool CrtcController::IsFormatSupported(uint32_t fourcc_format,
+                                       uint32_t z_order) const {
+  return drm_->plane_manager()->IsFormatSupported(fourcc_format, z_order,
+                                                  crtc_);
 }
 
 void CrtcController::OnPageFlipEvent(unsigned int frame,
@@ -130,10 +127,7 @@ void CrtcController::OnPageFlipEvent(unsigned int frame,
       static_cast<uint64_t>(seconds) * base::Time::kMicrosecondsPerSecond +
       useconds;
 
-  current_planes_.clear();
-  current_planes_.swap(pending_planes_);
-
-  SignalPageFlipRequest();
+  SignalPageFlipRequest(gfx::SwapResult::SWAP_ACK);
 }
 
 bool CrtcController::SetCursor(const scoped_refptr<ScanoutBuffer>& buffer) {
@@ -167,16 +161,15 @@ bool CrtcController::ResetCursor() {
   return status;
 }
 
-void CrtcController::SignalPageFlipRequest() {
-  if (page_flip_request_.get()) {
-    // If another frame is queued up and available immediately, calling Signal()
-    // may result in a call to SchedulePageFlip(), which will override
-    // page_flip_request_ and possibly release the ref. Stash previous request
-    // locally to  avoid deleting the object we are making a call on.
-    scoped_refptr<PageFlipRequest> last_request;
-    last_request.swap(page_flip_request_);
-    last_request->Signal(gfx::SwapResult::SWAP_ACK);
-  }
+void CrtcController::SignalPageFlipRequest(gfx::SwapResult result) {
+  if (result == gfx::SwapResult::SWAP_ACK)
+    current_planes_.swap(pending_planes_);
+
+  pending_planes_.clear();
+
+  scoped_refptr<PageFlipRequest> request;
+  request.swap(page_flip_request_);
+  request->Signal(result);
 }
 
 }  // namespace ui

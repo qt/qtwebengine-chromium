@@ -18,7 +18,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutDetailsMarker.h"
 
 #include "core/HTMLNames.h"
@@ -50,11 +49,8 @@ LayoutDetailsMarker::Orientation LayoutDetailsMarker::orientation() const
         if (style()->isLeftToRightDirection())
             return isOpen() ? Right : Down;
         return isOpen() ? Right : Up;
-    case BottomToTopWritingMode:
-        if (style()->isLeftToRightDirection())
-            return isOpen() ? Up : Right;
-        return isOpen() ? Up : Left;
     }
+    ASSERT_NOT_REACHED();
     return Right;
 }
 

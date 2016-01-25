@@ -6,7 +6,10 @@
 
 #include "media/filters/vp9_parser.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 
 namespace {
@@ -242,12 +245,12 @@ void Vp9Parser::ReadSegmentationMap() {
 void Vp9Parser::ReadSegmentationData() {
   segmentation_.abs_delta = reader_.ReadBool();
 
-  const int kFeatureDataBits[] = {7, 6, 2, 0};
+  const int kFeatureDataBits[] = {8, 6, 2, 0};
   const bool kFeatureDataSigned[] = {true, true, false, false};
 
   for (size_t i = 0; i < Vp9Segmentation::kNumSegments; i++) {
     for (size_t j = 0; j < Vp9Segmentation::SEG_LVL_MAX; j++) {
-      int8_t data = 0;
+      int16_t data = 0;
       segmentation_.feature_enabled[i][j] = reader_.ReadBool();
       if (segmentation_.feature_enabled[i][j]) {
         data = reader_.ReadLiteral(kFeatureDataBits[j]);
@@ -288,8 +291,9 @@ void Vp9Parser::ReadTiles(Vp9FrameHeader* fhdr) {
   while (max_ones-- && reader_.ReadBool())
     fhdr->log2_tile_cols++;
 
-  if (reader_.ReadBool())
-    fhdr->log2_tile_rows = reader_.ReadLiteral(2) - 1;
+  fhdr->log2_tile_rows = reader_.ReadBool() ? 1 : 0;
+  if (fhdr->log2_tile_rows > 0 && reader_.ReadBool())
+    fhdr->log2_tile_rows++;
 }
 
 bool Vp9Parser::ParseUncompressedHeader(const uint8_t* stream,
@@ -613,7 +617,7 @@ static_assert(arraysize(kDcQLookup) == arraysize(kAcQLookup),
 size_t Vp9Parser::GetQIndex(const Vp9QuantizationParams& quant,
                             size_t segid) const {
   if (segmentation_.FeatureEnabled(segid, Vp9Segmentation::SEG_LVL_ALT_Q)) {
-    int8_t feature_data =
+    int16_t feature_data =
         segmentation_.FeatureData(segid, Vp9Segmentation::SEG_LVL_ALT_Q);
     size_t q_index = segmentation_.abs_delta ? feature_data
                                              : quant.base_qindex + feature_data;

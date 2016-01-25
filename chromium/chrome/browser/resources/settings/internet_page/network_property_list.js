@@ -14,9 +14,12 @@
 Polymer({
   is: 'network-property-list',
 
+  behaviors: [CrPolicyNetworkBehavior],
+
   properties: {
     /**
      * The dictionary containing the properties to display.
+     * @type {!Object|undefined}
      */
     propertyDict: {
       type: Object
@@ -80,18 +83,18 @@ Polymer({
   },
 
   /**
-   * @param {!Object|undefined} propertyDict
+   * @param {!Object} propertyDict
    * @param {string} key The property key.
    * @return {boolean} Whether or not the property exists in |propertyDict|.
    * @private
    */
   hasPropertyValue_: function(propertyDict, key) {
-    var value = (propertyDict && this.get(key, propertyDict)) || undefined;
-    return (value !== undefined && value !== '');
+    var value = this.get(key, propertyDict);
+    return value !== undefined && value !== '';
   },
 
   /**
-   * @param {!Object|undefined} propertyDict
+   * @param {!Object} propertyDict
    * @param {!Object} editFieldTypes The editFieldTypes object.
    * @param {string} key The property key.
    * @return {boolean} Whether or not to show the property. Editable properties
@@ -105,7 +108,7 @@ Polymer({
   },
 
   /**
-   * @param {!Object|undefined} propertyDict
+   * @param {!Object} propertyDict
    * @param {!Object} editFieldTypes The editFieldTypes object.
    * @param {string} key The property key.
    * @return {boolean} True if |key| exists in |propertiesDict| and is not
@@ -115,12 +118,15 @@ Polymer({
   showNoEdit_: function(propertyDict, editFieldTypes, key) {
     if (!this.hasPropertyValue_(propertyDict, key))
       return false;
-    var editType = editFieldTypes[key];
-    return !editType;
+    var property = /** @type {!CrOnc.ManagedProperty|undefined} */(
+      this.get(key, propertyDict));
+    if (this.isNetworkPolicyEnforced(property))
+      return true;
+    return !editFieldTypes[key];
   },
 
   /**
-   * @param {!Object|undefined} propertyDict
+   * @param {!Object} propertyDict
    * @param {!Object} editFieldTypes The editFieldTypes object.
    * @param {string} key The property key.
    * @param {string} type The field type.
@@ -129,18 +135,22 @@ Polymer({
    * @private
    */
   showEdit_: function(propertyDict, editFieldTypes, key, type) {
+    if (!this.hasPropertyValue_(propertyDict, key))
+      return false;
+    var property = /** @type {!CrOnc.ManagedProperty|undefined} */(
+        this.get(key, propertyDict));
+    if (this.isNetworkPolicyEnforced(property))
+      return false;
     return editFieldTypes[key] == type;
   },
 
   /**
-   * @param {!Object|undefined} propertyDict
+   * @param {!Object} propertyDict
    * @param {string} key The property key.
    * @return {string} The text to display for the property value.
    * @private
    */
   getPropertyValue_: function(propertyDict, key) {
-    if (!propertyDict)
-      return '';
     var value = this.get(key, propertyDict);
     if (value === undefined)
       return '';

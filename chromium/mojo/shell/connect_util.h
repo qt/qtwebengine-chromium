@@ -5,8 +5,10 @@
 #ifndef MOJO_SHELL_CONNECT_UTIL_H_
 #define MOJO_SHELL_CONNECT_UTIL_H_
 
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
-#include "third_party/mojo/src/mojo/public/cpp/system/handle.h"
+#include <utility>
+
+#include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/system/handle.h"
 
 class GURL;
 
@@ -30,7 +32,7 @@ inline void ConnectToService(ApplicationManager* application_manager,
   ScopedMessagePipeHandle service_handle =
       ConnectToServiceByName(application_manager, application_url,
                              Interface::Name_);
-  ptr->Bind(InterfacePtrInfo<Interface>(service_handle.Pass(), 0u));
+  ptr->Bind(InterfacePtrInfo<Interface>(std::move(service_handle), 0u));
 }
 
 }  // namespace shell

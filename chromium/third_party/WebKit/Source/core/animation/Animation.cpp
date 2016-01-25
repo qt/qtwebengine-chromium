@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/Animation.h"
 
 #include "core/animation/AnimationTimeline.h"
@@ -112,6 +111,15 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
 Animation::~Animation()
 {
     destroyCompositorPlayer();
+}
+
+void Animation::dispose()
+{
+    destroyCompositorPlayer();
+    // If the AnimationTimeline and its Animation objects are
+    // finalized by the same GC, we have to eagerly clear out
+    // this Animation object's compositor player registration.
+    ASSERT(!m_compositorPlayer);
 }
 
 double Animation::effectEnd() const
@@ -251,7 +259,7 @@ bool Animation::preCommit(int compositorGroup, bool startOnCompositor)
     bool shouldCancel = (!playing() && m_compositorState) || changed;
     bool shouldStart = playing() && (!m_compositorState || changed);
 
-    if (shouldCancel && shouldStart && m_compositorState && m_compositorState->pendingAction == Start) {
+    if (startOnCompositor && shouldCancel && shouldStart && m_compositorState && m_compositorState->pendingAction == Start) {
         // Restarting but still waiting for a start time.
         return false;
     }
@@ -750,7 +758,7 @@ void Animation::setCompositorPending(bool effectChanged)
 #endif
 
     if (!m_compositorState || m_compositorState->effectChanged
-        || !playing() || m_compositorState->playbackRate != m_playbackRate
+        || m_compositorState->playbackRate != m_playbackRate
         || m_compositorState->startTime != m_startTime) {
         m_compositorPending = true;
         timeline()->document()->compositorPendingAnimations().add(this);
@@ -929,8 +937,8 @@ void Animation::destroyCompositorPlayer()
     if (m_compositorPlayer) {
         detachCompositorTimeline();
         m_compositorPlayer->setAnimationDelegate(nullptr);
+        m_compositorPlayer.clear();
     }
-    m_compositorPlayer.clear();
 }
 
 void Animation::attachCompositorTimeline()
@@ -994,11 +1002,11 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
         bool wasActive = oldPlayState == Pending || oldPlayState == Running;
         bool isActive = newPlayState == Pending || newPlayState == Running;
         if (!wasActive && isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
         else if (wasActive && !isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations,devtools.timeline", "Animation", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
         else
-            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
     }
 
     // Ordering is important, the ready promise should resolve/reject before
@@ -1055,15 +1063,15 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
     }
     m_animation->endUpdatingState();
 
-    if (oldPlayState != newPlayState && newPlayState == Running)
-        InspectorInstrumentation::didStartAnimation(m_animation->timeline()->document(), m_animation);
+    if (oldPlayState != newPlayState)
+        InspectorInstrumentation::animationPlayStateChanged(m_animation->timeline()->document(), m_animation, oldPlayState, newPlayState);
 }
 
-bool Animation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool Animation::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (eventType == EventTypeNames::finish)
         UseCounter::count(executionContext(), UseCounter::AnimationFinishEvent);
-    return EventTargetWithInlineData::addEventListener(eventType, listener, useCapture);
+    return EventTargetWithInlineData::addEventListenerInternal(eventType, listener, options);
 }
 
 void Animation::pauseForTesting(double pauseTime)

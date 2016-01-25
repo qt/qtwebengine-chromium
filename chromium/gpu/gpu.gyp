@@ -142,6 +142,13 @@
       'sources': [
         'angle_unittest_main.cc',
       ],
+      'conditions': [
+        ['OS=="android"', {
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+      ],
     },
     {
       # GN version: //gpu:gpu_unittests
@@ -244,6 +251,7 @@
         'command_buffer/service/shader_manager_unittest.cc',
         'command_buffer/service/shader_translator_cache_unittest.cc',
         'command_buffer/service/shader_translator_unittest.cc',
+        'command_buffer/service/sync_point_manager_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
         'command_buffer/service/path_manager_unittest.cc',
@@ -352,6 +360,7 @@
         'command_buffer/tests/compressed_texture_test.cc',
         'command_buffer/tests/es3_misc_functions_unittest.cc',
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
+        'command_buffer/tests/gl_chromium_framebuffer_mixed_samples_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_chromium_path_rendering_unittest.cc',
         'command_buffer/tests/gl_clear_framebuffer_unittest.cc',
@@ -359,6 +368,10 @@
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_cube_map_texture_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
+        'command_buffer/tests/gl_ext_blend_func_extended_unittest.cc',
+        'command_buffer/tests/gl_ext_multisample_compatibility_unittest.cc',
+        'command_buffer/tests/gl_ext_srgb_unittest.cc',
+        'command_buffer/tests/gl_fence_sync_unittest.cc',
         'command_buffer/tests/gl_gpu_memory_buffer_unittest.cc',
         'command_buffer/tests/gl_lose_context_chromium_unittest.cc',
         'command_buffer/tests/gl_manager.cc',
@@ -707,6 +720,19 @@
     ['OS == "android"', {
       'targets': [
         {
+          'target_name': 'angle_unittests_apk',
+          'type': 'none',
+          'dependencies':
+          [
+            'angle_unittests',
+          ],
+          'variables':
+          {
+            'test_suite_name': 'angle_unittests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
+        {
           'target_name': 'gl_tests_apk',
           'type': 'none',
           'dependencies': [
@@ -838,6 +864,22 @@
             '../base/base.gyp:test_support_base',
             '../third_party/angle/src/tests/tests.gyp:angle_deqp_gtest_support',
             '../third_party/angle/src/tests/tests.gyp:angle_deqp_libgles3',
+          ],
+          'includes': [
+            '../third_party/angle/build/common_defines.gypi',
+          ],
+          'sources': [
+            'angle_deqp_tests_main.cc',
+          ],
+        },
+        {
+          'target_name': 'angle_deqp_egl_tests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
+            '../third_party/angle/src/tests/tests.gyp:angle_deqp_gtest_support',
+            '../third_party/angle/src/tests/tests.gyp:angle_deqp_libegl',
           ],
           'includes': [
             '../third_party/angle/build/common_defines.gypi',

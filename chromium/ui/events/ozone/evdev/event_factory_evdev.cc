@@ -4,6 +4,8 @@
 
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/task_runner.h"
 #include "base/thread_task_runner_handle.h"
@@ -155,7 +157,7 @@ scoped_ptr<SystemInputInjector> EventFactoryEvdev::CreateSystemInputInjector() {
       new ProxyDeviceEventDispatcher(base::ThreadTaskRunnerHandle::Get(),
                                      weak_ptr_factory_.GetWeakPtr()));
   return make_scoped_ptr(
-      new InputInjectorEvdev(proxy_dispatcher.Pass(), cursor_));
+      new InputInjectorEvdev(std::move(proxy_dispatcher), cursor_));
 }
 
 void EventFactoryEvdev::DispatchKeyEvent(const KeyEventParams& params) {
@@ -169,9 +171,11 @@ void EventFactoryEvdev::DispatchMouseMoveEvent(
     const MouseMoveEventParams& params) {
   TRACE_EVENT1("evdev", "EventFactoryEvdev::DispatchMouseMoveEvent", "device",
                params.device_id);
-  MouseEvent event(ui::ET_MOUSE_MOVED, params.location, params.location,
+  MouseEvent event(ui::ET_MOUSE_MOVED, gfx::Point(), gfx::Point(),
                    params.timestamp, modifiers_.GetModifierFlags(),
                    /* changed_button_flags */ 0);
+  event.set_location_f(params.location);
+  event.set_root_location_f(params.location);
   event.set_source_device_id(params.device_id);
   event.set_pointer_details(params.pointer_details);
   DispatchUiEvent(&event);
@@ -219,9 +223,11 @@ void EventFactoryEvdev::DispatchMouseButtonEvent(
     return;
 
   MouseEvent event(params.down ? ui::ET_MOUSE_PRESSED : ui::ET_MOUSE_RELEASED,
-                   params.location, params.location, params.timestamp,
+                   gfx::Point(), gfx::Point(), params.timestamp,
                    modifiers_.GetModifierFlags() | flag,
                    /* changed_button_flags */ flag);
+  event.set_location_f(params.location);
+  event.set_root_location_f(params.location);
   event.set_source_device_id(params.device_id);
   event.set_pointer_details(params.pointer_details);
   DispatchUiEvent(&event);
@@ -231,9 +237,11 @@ void EventFactoryEvdev::DispatchMouseWheelEvent(
     const MouseWheelEventParams& params) {
   TRACE_EVENT1("evdev", "EventFactoryEvdev::DispatchMouseWheelEvent", "device",
                params.device_id);
-  MouseWheelEvent event(params.delta, params.location, params.location,
+  MouseWheelEvent event(params.delta, gfx::Point(), gfx::Point(),
                         params.timestamp, modifiers_.GetModifierFlags(),
                         0 /* changed_button_flags */);
+  event.set_location_f(params.location);
+  event.set_root_location_f(params.location);
   event.set_source_device_id(params.device_id);
   DispatchUiEvent(&event);
 }
@@ -252,10 +260,12 @@ void EventFactoryEvdev::DispatchPinchEvent(const PinchEventParams& params) {
 void EventFactoryEvdev::DispatchScrollEvent(const ScrollEventParams& params) {
   TRACE_EVENT1("evdev", "EventFactoryEvdev::DispatchScrollEvent", "device",
                params.device_id);
-  ScrollEvent event(params.type, params.location, params.timestamp,
+  ScrollEvent event(params.type, gfx::Point(), params.timestamp,
                     modifiers_.GetModifierFlags(), params.delta.x(),
                     params.delta.y(), params.ordinal_delta.x(),
                     params.ordinal_delta.y(), params.finger_count);
+  event.set_location_f(params.location);
+  event.set_root_location_f(params.location);
   event.set_source_device_id(params.device_id);
   DispatchUiEvent(&event);
 }
@@ -280,10 +290,12 @@ void EventFactoryEvdev::DispatchTouchEvent(const TouchEventParams& params) {
   // params.slot is guaranteed to be < kNumTouchEvdevSlots.
   int touch_id = touch_id_generator_.GetGeneratedID(
       params.device_id * kNumTouchEvdevSlots + params.slot);
-  TouchEvent touch_event(params.type, gfx::PointF(x, y),
+  TouchEvent touch_event(params.type, gfx::Point(),
                          modifiers_.GetModifierFlags(), touch_id,
                          params.timestamp, radius_x, radius_y,
                          /* angle */ 0.f, params.pressure);
+  touch_event.set_location_f(gfx::PointF(x, y));
+  touch_event.set_root_location_f(gfx::PointF(x, y));
   touch_event.set_source_device_id(params.device_id);
   DispatchUiEvent(&touch_event);
 
@@ -390,7 +402,7 @@ void EventFactoryEvdev::StartThread() {
   scoped_ptr<DeviceEventDispatcherEvdev> proxy_dispatcher(
       new ProxyDeviceEventDispatcher(base::ThreadTaskRunnerHandle::Get(),
                                      weak_ptr_factory_.GetWeakPtr()));
-  thread_.Start(proxy_dispatcher.Pass(), cursor_,
+  thread_.Start(std::move(proxy_dispatcher), cursor_,
                 base::Bind(&EventFactoryEvdev::OnThreadStarted,
                            weak_ptr_factory_.GetWeakPtr()));
 }
@@ -398,7 +410,7 @@ void EventFactoryEvdev::StartThread() {
 void EventFactoryEvdev::OnThreadStarted(
     scoped_ptr<InputDeviceFactoryEvdevProxy> input_device_factory) {
   TRACE_EVENT0("evdev", "EventFactoryEvdev::OnThreadStarted");
-  input_device_factory_proxy_ = input_device_factory.Pass();
+  input_device_factory_proxy_ = std::move(input_device_factory);
 
   // Hook up device configuration.
   input_controller_.SetInputDeviceFactory(input_device_factory_proxy_.get());

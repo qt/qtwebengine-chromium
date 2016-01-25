@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
 
 #include "platform/heap/Handle.h"
@@ -19,14 +18,14 @@ void dumpMemoryTotals(blink::WebProcessMemoryDump* memoryDump)
 {
     String dumpName = String::format("blink_gc");
     WebMemoryAllocatorDump* allocatorDump = memoryDump->createMemoryAllocatorDump(dumpName);
-    allocatorDump->AddScalar("size", "bytes", Heap::allocatedSpace());
+    allocatorDump->addScalar("size", "bytes", Heap::allocatedSpace());
 
     dumpName.append("/allocated_objects");
     WebMemoryAllocatorDump* objectsDump = memoryDump->createMemoryAllocatorDump(dumpName);
 
     // Heap::markedObjectSize() can be underestimated if we're still in the
     // process of lazy sweeping.
-    objectsDump->AddScalar("size", "bytes", Heap::allocatedObjectSize() + Heap::markedObjectSize());
+    objectsDump->addScalar("size", "bytes", Heap::allocatedObjectSize() + Heap::markedObjectSize());
 }
 
 } // namespace
@@ -48,7 +47,7 @@ bool BlinkGCMemoryDumpProvider::onMemoryDump(WebMemoryDumpLevelOfDetail levelOfD
         return true;
     }
 
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::TakeSnapshot, Heap::ForcedGC);
+    Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::TakeSnapshot, BlinkGC::ForcedGC);
     dumpMemoryTotals(memoryDump);
 
     // Merge all dumps collected by Heap::collectGarbage.

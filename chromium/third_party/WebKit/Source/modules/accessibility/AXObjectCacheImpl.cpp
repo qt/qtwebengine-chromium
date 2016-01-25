@@ -26,8 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/accessibility/AXObjectCacheImpl.h"
 
 #include "core/HTMLNames.h"
@@ -139,7 +137,7 @@ AXObject* AXObjectCacheImpl::focusedImageMapUIElement(HTMLAreaElement* areaEleme
     if (!axLayoutImage)
         return 0;
 
-    const AXObject::AccessibilityChildrenVector& imageChildren = axLayoutImage->children();
+    const AXObject::AXObjectVector& imageChildren = axLayoutImage->children();
     unsigned count = imageChildren.size();
     for (unsigned k = 0; k < count; ++k) {
         AXObject* child = imageChildren[k];
@@ -231,13 +229,18 @@ AXObject* AXObjectCacheImpl::get(Node* node)
     if (!node)
         return 0;
 
-    AXID layoutID = node->layoutObject() ? m_layoutObjectMapping.get(node->layoutObject()) : 0;
+    // Menu list option and HTML area elements are indexed by DOM node, never by layout object.
+    LayoutObject* layoutObject = node->layoutObject();
+    if (isMenuListOption(node) || isHTMLAreaElement(node))
+        layoutObject = nullptr;
+
+    AXID layoutID = layoutObject ? m_layoutObjectMapping.get(layoutObject) : 0;
     ASSERT(!HashTraits<AXID>::isDeletedValue(layoutID));
 
     AXID nodeID = m_nodeObjectMapping.get(node);
     ASSERT(!HashTraits<AXID>::isDeletedValue(nodeID));
 
-    if (node->layoutObject() && nodeID && !layoutID && !isMenuListOption(node)) {
+    if (layoutObject && nodeID && !layoutID) {
         // This can happen if an AXNodeObject is created for a node that's not
         // laid out, but later something changes and it gets a layoutObject (like if it's
         // reparented).
@@ -338,6 +341,9 @@ AXObject* AXObjectCacheImpl::createFromNode(Node* node)
     if (isMenuListOption(node))
         return AXMenuListOption::create(toHTMLOptionElement(node), *this);
 
+    if (isHTMLAreaElement(node))
+        return AXImageMapLink::create(toHTMLAreaElement(node), *this);
+
     return AXNodeObject::create(node, *this);
 }
 
@@ -392,7 +398,9 @@ AXObject* AXObjectCacheImpl::getOrCreate(Node* node)
     if (AXObject* obj = get(node))
         return obj;
 
-    if (node->layoutObject())
+    // If the node has a layout object, prefer using that as the primary key for the AXObject,
+    // with the exception of an HTMLAreaElement, which is created based on its node.
+    if (node->layoutObject() && !isHTMLAreaElement(node))
         return getOrCreate(node->layoutObject());
 
     if (!node->parentElement())
@@ -479,9 +487,6 @@ AXObject* AXObjectCacheImpl::getOrCreate(AccessibilityRole role)
 
     // will be filled in...
     switch (role) {
-    case ImageMapLinkRole:
-        obj = AXImageMapLink::create(*this);
-        break;
     case ColumnRole:
         obj = AXTableColumn::create(*this);
         break;
@@ -751,7 +756,7 @@ void AXObjectCacheImpl::postNotification(AXObject* object, AXNotification notifi
 
     m_notificationsToPost.append(std::make_pair(object, notification));
     if (!m_notificationPostTimer.isActive())
-        m_notificationPostTimer.startOneShot(0, FROM_HERE);
+        m_notificationPostTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 bool AXObjectCacheImpl::isAriaOwned(const AXObject* child) const
@@ -1067,12 +1072,6 @@ void AXObjectCacheImpl::labelChanged(Element* element)
     textChanged(toHTMLLabelElement(element)->control());
 }
 
-void AXObjectCacheImpl::recomputeIsIgnored(LayoutObject* layoutObject)
-{
-    if (AXObject* obj = get(layoutObject))
-        obj->notifyIfIgnoredValueChanged();
-}
-
 void AXObjectCacheImpl::inlineTextBoxesUpdated(LayoutObject* layoutObject)
 {
     if (!inlineTextBoxAccessibilityEnabled())
@@ -1306,34 +1305,7 @@ String AXObjectCacheImpl::computedNameForNode(Node* node)
     if (!obj)
         return "";
 
-    String title = obj->deprecatedTitle();
-
-    String titleUIText;
-    if (title.isEmpty()) {
-        AXObject* titleUIElement = obj->deprecatedTitleUIElement();
-        if (titleUIElement) {
-            titleUIText = titleUIElement->deprecatedTextUnderElement();
-            if (!titleUIText.isEmpty())
-                return titleUIText;
-        }
-    }
-
-    String description = obj->deprecatedAccessibilityDescription();
-    if (!description.isEmpty())
-        return description;
-
-    if (!title.isEmpty())
-        return title;
-
-    String placeholder;
-    if (isHTMLInputElement(node)) {
-        HTMLInputElement* element = toHTMLInputElement(node);
-        placeholder = element->strippedPlaceholder();
-        if (!placeholder.isEmpty())
-            return placeholder;
-    }
-
-    return String();
+    return obj->computedName();
 }
 
 void AXObjectCacheImpl::onTouchAccessibilityHover(const IntPoint& location)

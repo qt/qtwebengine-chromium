@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/LayoutThemeAndroid.h"
 
 #include "core/CSSValueKeywords.h"
@@ -81,14 +80,6 @@ void LayoutThemeAndroid::adjustInnerSpinButtonStyle(ComputedStyle& style) const
         style.setWidth(Length(size.width(), Fixed));
         style.setMinWidth(Length(size.width(), Fixed));
     }
-}
-
-int LayoutThemeAndroid::menuListArrowPadding() const
-{
-    // We cannot use the scrollbar thickness here, as it's width is 0 on Android.
-    // Instead, use the width of the scrollbar down arrow.
-    IntSize scrollbarSize = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartScrollbarDownArrow);
-    return scrollbarSize.width();
 }
 
 } // namespace blink

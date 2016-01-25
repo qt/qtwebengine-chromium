@@ -25,71 +25,51 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/svg/ReferenceFilterBuilder.h"
 
-#include "core/css/CSSPrimitiveValue.h"
-#include "core/css/CSSPrimitiveValueMappings.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/Element.h"
-#include "core/dom/ElementTraversal.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/layout/LayoutBox.h"
-#include "core/layout/svg/LayoutSVGResourceFilter.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGDocumentExtensions.h"
-#include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
+#include "core/svg/SVGFilterElement.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SourceGraphic.h"
 
 namespace blink {
 
-HashMap<const FilterOperation*, OwnPtr<DocumentResourceReference>>* ReferenceFilterBuilder::documentResourceReferences = nullptr;
+namespace {
+
+using ResourceReferenceMap = WillBePersistentHeapHashMap<RawPtrWillBeWeakMember<const FilterOperation>, OwnPtr<DocumentResourceReference>>;
+
+ResourceReferenceMap& documentResourceReferences()
+{
+    DEFINE_STATIC_LOCAL(ResourceReferenceMap, documentResourceReferences, ());
+    return documentResourceReferences;
+}
+
+} // namespace
 
 DocumentResourceReference* ReferenceFilterBuilder::documentResourceReference(const FilterOperation* filterOperation)
 {
-    if (!documentResourceReferences)
-        return nullptr;
-
-    return documentResourceReferences->get(filterOperation);
+    return documentResourceReferences().get(filterOperation);
 }
 
 void ReferenceFilterBuilder::setDocumentResourceReference(const FilterOperation* filterOperation, PassOwnPtr<DocumentResourceReference> documentResourceReference)
 {
-    if (!documentResourceReferences)
-        documentResourceReferences = new HashMap<const FilterOperation*, OwnPtr<DocumentResourceReference>>;
-    documentResourceReferences->add(filterOperation, documentResourceReference);
+    ASSERT(!documentResourceReferences().contains(filterOperation));
+    documentResourceReferences().add(filterOperation, documentResourceReference);
 }
 
+#if !ENABLE(OILPAN)
 void ReferenceFilterBuilder::clearDocumentResourceReference(const FilterOperation* filterOperation)
 {
-    if (!documentResourceReferences)
-        return;
-
-    documentResourceReferences->remove(filterOperation);
+    documentResourceReferences().remove(filterOperation);
 }
+#endif
 
-// Returns the color-interpolation-filters property of the element.
-static EColorInterpolation colorInterpolationForElement(SVGElement& element, EColorInterpolation parentColorInterpolation)
-{
-    if (const LayoutObject* layoutObject = element.layoutObject())
-        return layoutObject->styleRef().svgStyle().colorInterpolationFilters();
-
-    // No layout has been performed, try to determine the property value
-    // "manually" (used by external SVG files.)
-    if (const StylePropertySet* propertySet = element.presentationAttributeStyle()) {
-        RefPtrWillBeRawPtr<CSSValue> cssValue = propertySet->getPropertyCSSValue(CSSPropertyColorInterpolationFilters);
-        if (cssValue && cssValue->isPrimitiveValue()) {
-            const CSSPrimitiveValue& primitiveValue = *((CSSPrimitiveValue*)cssValue.get());
-            return static_cast<EColorInterpolation>(primitiveValue);
-        }
-    }
-    // 'auto' is the default (per Filter Effects), but since the property is
-    // inherited, propagate the parent's value.
-    return parentColorInterpolation;
-}
-
-PassRefPtrWillBeRawPtr<Filter> ReferenceFilterBuilder::build(float zoom, Element* element, FilterEffect* previousEffect, const ReferenceFilterOperation& filterOperation)
+PassRefPtrWillBeRawPtr<Filter> ReferenceFilterBuilder::build(float zoom, Element* element, FilterEffect* previousEffect, const ReferenceFilterOperation& filterOperation, const SkPaint* fillPaint, const SkPaint* strokePaint)
 {
     TreeScope* treeScope = &element->treeScope();
 
@@ -120,8 +100,10 @@ PassRefPtrWillBeRawPtr<Filter> ReferenceFilterBuilder::build(float zoom, Element
     SVGFilterElement& filterElement = toSVGFilterElement(*filter);
 
     FloatRect referenceBox;
-    if (element->inDocument() && element->layoutObject() && element->layoutObject()->isBoxModelObject())
-        referenceBox = toLayoutBoxModelObject(element->layoutObject())->borderBoundingBox();
+    if (element->inDocument() && element->layoutObject() && element->layoutObject()->enclosingLayer()) {
+        FloatSize size(element->layoutObject()->enclosingLayer()->physicalBoundingBoxIncludingReflectionAndStackingChildren(LayoutPoint()).size());
+        referenceBox = FloatRect(FloatPoint(), size);
+    }
     referenceBox.scale(1.0f / zoom);
     FloatRect filterRegion = SVGLengthContext::resolveRectangle<SVGFilterElement>(&filterElement, filterElement.filterUnits()->currentValue()->enumValue(), referenceBox);
     bool primitiveBoundingBoxMode = filterElement.primitiveUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX;
@@ -129,26 +111,11 @@ PassRefPtrWillBeRawPtr<Filter> ReferenceFilterBuilder::build(float zoom, Element
     RefPtrWillBeRawPtr<Filter> result(Filter::create(referenceBox, filterRegion, zoom, unitScaling));
     if (!previousEffect)
         previousEffect = result->sourceGraphic();
-    RefPtrWillBeRawPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(previousEffect);
 
-    EColorInterpolation filterColorInterpolation = colorInterpolationForElement(filterElement, CI_AUTO);
+    SVGFilterBuilder builder(previousEffect, nullptr, fillPaint, strokePaint);
+    builder.buildGraph(result.get(), filterElement, referenceBox);
 
-    for (SVGElement* element = Traversal<SVGElement>::firstChild(filterElement); element; element = Traversal<SVGElement>::nextSibling(*element)) {
-        if (!element->isFilterEffect())
-            continue;
-
-        SVGFilterPrimitiveStandardAttributes* effectElement = static_cast<SVGFilterPrimitiveStandardAttributes*>(element);
-        RefPtrWillBeRawPtr<FilterEffect> effect = effectElement->build(builder.get(), result.get());
-        if (!effect)
-            continue;
-
-        effectElement->setStandardAttributes(effect.get());
-        effect->setEffectBoundaries(SVGLengthContext::resolveRectangle<SVGFilterPrimitiveStandardAttributes>(effectElement, filterElement.primitiveUnits()->currentValue()->enumValue(), referenceBox));
-        EColorInterpolation colorInterpolation = colorInterpolationForElement(*effectElement, filterColorInterpolation);
-        effect->setOperatingColorSpace(colorInterpolation == CI_LINEARRGB ? ColorSpaceLinearRGB : ColorSpaceDeviceRGB);
-        builder->add(AtomicString(effectElement->result()->currentValue()->value()), effect);
-    }
-    result->setLastEffect(builder->lastEffect());
+    result->setLastEffect(builder.lastEffect());
     return result.release();
 }
 

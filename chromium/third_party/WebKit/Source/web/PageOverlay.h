@@ -41,21 +41,20 @@ namespace blink {
 class GraphicsContext;
 class WebPageOverlay;
 class WebViewImpl;
-class WebGraphicsContext;
 
 // Manages a layer that is overlaid on a WebView's content.
 // Clients can paint by implementing WebPageOverlay.
 //
 // With Slimming Paint, internal clients can extract a GraphicsContext to add
-// to the DisplayItemList owned by the GraphicsLayer
-class PageOverlay : public GraphicsLayerClient {
+// to the PaintController owned by the GraphicsLayer
+class PageOverlay : public GraphicsLayerClient, public DisplayItemClient {
 public:
     class Delegate : public GarbageCollectedFinalized<Delegate> {
     public:
         DEFINE_INLINE_VIRTUAL_TRACE() { }
 
         // Paints page overlay contents.
-        virtual void paintPageOverlay(WebGraphicsContext*, const WebSize& webViewSize) const = 0;
+        virtual void paintPageOverlay(const PageOverlay&, GraphicsContext&, const WebSize& webViewSize) const = 0;
         virtual ~Delegate() { }
     };
 
@@ -66,12 +65,16 @@ public:
     void update();
 
     GraphicsLayer* graphicsLayer() const { return m_layer.get(); }
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-    String debugName() const { return "PageOverlay"; }
+
+    // DisplayItemClient methods.
+    String debugName() const final { return "PageOverlay"; }
+    // TODO(chrishtr): fix this.
+    IntRect visualRect() const override { return IntRect(); }
 
     // GraphicsLayerClient implementation
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const override;
-    String debugName(const GraphicsLayer*) override;
+    IntRect computeInterestRect(const GraphicsLayer*, const IntRect&) const override;
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& interestRect) const override;
+    String debugName(const GraphicsLayer*) const override;
 
 private:
     PageOverlay(WebViewImpl*, PageOverlay::Delegate*);

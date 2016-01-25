@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGViewSpec.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -26,6 +25,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGParserUtilities.h"
+#include "platform/text/ParserUtilities.h"
 
 namespace blink {
 

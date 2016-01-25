@@ -34,7 +34,7 @@
 namespace blink {
 
 class PlatformKeyboardEvent : public PlatformEvent {
-    WTF_MAKE_FAST_ALLOCATED(PlatformKeyboardEvent);
+    USING_FAST_MALLOC(PlatformKeyboardEvent);
 public:
     PlatformKeyboardEvent()
         : PlatformEvent(PlatformEvent::KeyDown)
@@ -88,7 +88,7 @@ public:
     bool isSystemKey() const { return m_isSystemKey; }
 
     PLATFORM_EXPORT static bool currentCapsLockState();
-    PLATFORM_EXPORT static void getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey);
+    PLATFORM_EXPORT static Modifiers getCurrentModifierState();
 
 protected:
     String m_text;

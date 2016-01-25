@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/navigatorconnect/AcceptConnectionObserver.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -141,7 +140,7 @@ void AcceptConnectionObserver::responseWasResolved(const ScriptValue& value)
     ServicePort* port = ServicePort::create(m_collection, webPort);
     m_collection->addPort(port);
     m_resolver->resolve(port);
-    m_callbacks->onSuccess(&webPort);
+    m_callbacks->onSuccess(webPort);
     m_state = Done;
 }
 

@@ -28,15 +28,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/LocaleWin.h"
 
 #include "platform/DateComponents.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/DateMath.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/CString.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

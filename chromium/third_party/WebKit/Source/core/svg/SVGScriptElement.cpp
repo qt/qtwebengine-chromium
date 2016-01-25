@@ -18,8 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGScriptElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
@@ -44,12 +42,12 @@ PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& docu
     return adoptRefWillBeNoop(new SVGScriptElement(document, insertedByParser, false));
 }
 
-void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == HTMLNames::onerrorAttr)
         setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value, eventParameterName()));
     else
-        SVGElement::parseAttribute(name, value);
+        SVGElement::parseAttribute(name, oldValue, value);
 }
 
 void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)

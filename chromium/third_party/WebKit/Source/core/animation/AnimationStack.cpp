@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/AnimationStack.h"
 
 #include "core/animation/CompositorAnimations.h"
-#include "core/animation/InvalidatableStyleInterpolation.h"
+#include "core/animation/InvalidatableInterpolation.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/BitArray.h"
@@ -43,15 +42,18 @@ namespace blink {
 
 namespace {
 
-void copyToActiveInterpolationsMap(const Vector<RefPtr<Interpolation>>& source, ActiveInterpolationsMap& target)
+void copyToActiveInterpolationsMap(const Vector<RefPtr<Interpolation>>& source, AnimationStack::PropertyHandleFilter propertyHandleFilter, ActiveInterpolationsMap& target)
 {
     for (const auto& interpolation : source) {
-        ActiveInterpolationsMap::AddResult entry = target.add(interpolation->property(), ActiveInterpolations(1));
+        PropertyHandle property = interpolation->property();
+        if (propertyHandleFilter && !propertyHandleFilter(property))
+            continue;
+        ActiveInterpolationsMap::AddResult entry = target.add(property, ActiveInterpolations(1));
         ActiveInterpolations& activeInterpolations = entry.storedValue->value;
         if (!entry.isNewEntry
-            && RuntimeEnabledFeatures::stackedCSSPropertyAnimationsEnabled()
-            && interpolation->isInvalidatableStyleInterpolation()
-            && toInvalidatableStyleInterpolation(*interpolation).dependsOnUnderlyingValue()) {
+            && (RuntimeEnabledFeatures::stackedCSSPropertyAnimationsEnabled() || !property.isCSSProperty() || property.isPresentationAttribute())
+            && interpolation->isInvalidatableInterpolation()
+            && toInvalidatableInterpolation(*interpolation).dependsOnUnderlyingValue()) {
             activeInterpolations.append(interpolation.get());
         } else {
             activeInterpolations.at(0) = interpolation.get();
@@ -65,13 +67,13 @@ bool compareEffects(const Member<SampledEffect>& effect1, const Member<SampledEf
     return effect1->sequenceNumber() < effect2->sequenceNumber();
 }
 
-void copyNewAnimationsToActiveInterpolationsMap(const HeapVector<Member<InertEffect>>& newAnimations, ActiveInterpolationsMap& result)
+void copyNewAnimationsToActiveInterpolationsMap(const HeapVector<Member<const InertEffect>>& newAnimations, AnimationStack::PropertyHandleFilter propertyHandleFilter, ActiveInterpolationsMap& result)
 {
     for (const auto& newAnimation : newAnimations) {
-        OwnPtr<Vector<RefPtr<Interpolation>>> sample;
+        Vector<RefPtr<Interpolation>> sample;
         newAnimation->sample(sample);
-        if (sample)
-            copyToActiveInterpolationsMap(*sample, result);
+        if (!sample.isEmpty())
+            copyToActiveInterpolationsMap(sample, propertyHandleFilter, result);
     }
 }
 
@@ -91,10 +93,8 @@ bool AnimationStack::hasActiveAnimationsOnCompositor(CSSPropertyID property) con
     return false;
 }
 
-ActiveInterpolationsMap AnimationStack::activeInterpolations(AnimationStack* animationStack, const HeapVector<Member<InertEffect>>* newAnimations, const HeapHashSet<Member<const Animation>>* suppressedAnimations, KeyframeEffect::Priority priority, double timelineCurrentTime)
+ActiveInterpolationsMap AnimationStack::activeInterpolations(AnimationStack* animationStack, const HeapVector<Member<const InertEffect>>* newAnimations, const HeapHashSet<Member<const Animation>>* suppressedAnimations, KeyframeEffect::Priority priority, PropertyHandleFilter propertyHandleFilter)
 {
-    // We don't exactly know when new animations will start, but timelineCurrentTime is a good estimate.
-
     ActiveInterpolationsMap result;
 
     if (animationStack) {
@@ -105,12 +105,12 @@ ActiveInterpolationsMap AnimationStack::activeInterpolations(AnimationStack* ani
         for (const auto& effect : effects) {
             if (effect->priority() != priority || (suppressedAnimations && effect->effect() && suppressedAnimations->contains(effect->effect()->animation())))
                 continue;
-            copyToActiveInterpolationsMap(effect->interpolations(), result);
+            copyToActiveInterpolationsMap(effect->interpolations(), propertyHandleFilter, result);
         }
     }
 
     if (newAnimations)
-        copyNewAnimationsToActiveInterpolationsMap(*newAnimations, result);
+        copyNewAnimationsToActiveInterpolationsMap(*newAnimations, propertyHandleFilter, result);
 
     return result;
 }

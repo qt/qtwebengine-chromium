@@ -7,6 +7,7 @@
 #ifndef MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_DEVICE_FACTORY_MAC_H_
 #define MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_DEVICE_FACTORY_MAC_H_
 
+#include "base/macros.h"
 #include "media/capture/video/video_capture_device_factory.h"
 
 namespace media {
@@ -15,8 +16,6 @@ namespace media {
 class MEDIA_EXPORT VideoCaptureDeviceFactoryMac
     : public VideoCaptureDeviceFactory {
  public:
-  static bool PlatformSupportsAVFoundation();
-
   explicit VideoCaptureDeviceFactoryMac(
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
   ~VideoCaptureDeviceFactoryMac() override;

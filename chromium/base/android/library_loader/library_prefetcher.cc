@@ -4,9 +4,12 @@
 
 #include "base/android/library_loader/library_prefetcher.h"
 
+#include <stddef.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -151,6 +154,42 @@ bool NativeLibraryPrefetcher::ForkAndPrefetchNativeLibrary() {
     }
     return false;
   }
+}
+
+// static
+int NativeLibraryPrefetcher::PercentageOfResidentCode(
+    const std::vector<AddressRange>& ranges) {
+  size_t total_pages = 0;
+  size_t resident_pages = 0;
+  const uintptr_t page_mask = kPageSize - 1;
+
+  for (const auto& range : ranges) {
+    if (range.first & page_mask || range.second & page_mask)
+      return -1;
+    size_t length = range.second - range.first;
+    size_t pages = length / kPageSize;
+    total_pages += pages;
+    std::vector<unsigned char> is_page_resident(pages);
+    int err = mincore(reinterpret_cast<void*>(range.first), length,
+                      &is_page_resident[0]);
+    DPCHECK(!err);
+    if (err)
+      return -1;
+    resident_pages +=
+        std::count_if(is_page_resident.begin(), is_page_resident.end(),
+                      [](unsigned char x) { return x & 1; });
+  }
+  if (total_pages == 0)
+    return -1;
+  return static_cast<int>((100 * resident_pages) / total_pages);
+}
+
+// static
+int NativeLibraryPrefetcher::PercentageOfResidentNativeLibraryCode() {
+  std::vector<AddressRange> ranges;
+  if (!FindRanges(&ranges))
+    return -1;
+  return PercentageOfResidentCode(ranges);
 }
 
 }  // namespace android

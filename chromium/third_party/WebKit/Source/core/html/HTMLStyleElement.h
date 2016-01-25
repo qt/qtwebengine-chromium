@@ -31,7 +31,7 @@ namespace blink {
 class HTMLStyleElement;
 
 template<typename T> class EventSender;
-typedef EventSender<HTMLStyleElement> StyleEventSender;
+using StyleEventSender = EventSender<HTMLStyleElement>;
 
 class HTMLStyleElement final : public HTMLElement, private StyleElement {
     DEFINE_WRAPPERTYPEINFO();
@@ -39,8 +39,6 @@ class HTMLStyleElement final : public HTMLElement, private StyleElement {
 public:
     static PassRefPtrWillBeRawPtr<HTMLStyleElement> create(Document&, bool createdByParser);
     ~HTMLStyleElement() override;
-
-    ContainerNode* scopingNode();
 
     using StyleElement::sheet;
 
@@ -56,7 +54,7 @@ private:
     HTMLStyleElement(Document&, bool createdByParser);
 
     // overload from HTMLElement
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void didNotifySubtreeInsertionsToDocument() override;
     void removedFrom(ContainerNode*) override;

@@ -31,6 +31,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/dom/shadow/SlotAssignment.h"
 #include "platform/heap/Handle.h"
 #include "wtf/DoublyLinkedList.h"
 #include "wtf/HashMap.h"
@@ -41,15 +42,28 @@ namespace blink {
 
 class CORE_EXPORT ElementShadow final : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
     WTF_MAKE_NONCOPYABLE(ElementShadow);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ElementShadow);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ElementShadow);
 public:
     static PassOwnPtrWillBeRawPtr<ElementShadow> create();
     ~ElementShadow();
 
     Element* host() const;
-    ShadowRoot* youngestShadowRoot() const { return m_shadowRoots.head(); }
+    ShadowRoot& youngestShadowRoot() const { ASSERT(m_shadowRoots.head()); return *m_shadowRoots.head(); }
     ShadowRoot* oldestShadowRoot() const { return m_shadowRoots.tail(); }
     ElementShadow* containingShadow() const;
+
+    ShadowRoot* shadowRootIfV1() const
+    {
+        if (isV1())
+            return &youngestShadowRoot();
+        return nullptr;
+    }
+
+    HTMLSlotElement* assignedSlotFor(const Node& node) const
+    {
+        ASSERT(m_slotAssignment);
+        return m_slotAssignment->assignedSlotFor(node);
+    }
 
     ShadowRoot& addShadowRoot(Element& shadowHost, ShadowRootType);
 
@@ -69,6 +83,9 @@ public:
 
     void didDistributeNode(const Node*, InsertionPoint*);
 
+    bool isV1() const { return youngestShadowRoot().isV1(); };
+    bool isOpenOrV0() const { return youngestShadowRoot().isOpenOrV0(); };
+
     DECLARE_TRACE();
 
 private:
@@ -80,6 +97,9 @@ private:
 
     void distribute();
     void clearDistribution();
+
+    void distributeV0();
+    void distributeV1();
 
     void collectSelectFeatureSetFrom(ShadowRoot&);
     void distributeNodeChildrenTo(InsertionPoint*, ContainerNode*);
@@ -101,12 +121,15 @@ private:
     DoublyLinkedList<ShadowRoot> m_shadowRoots;
     bool m_needsDistributionRecalc;
     bool m_needsSelectFeatureSet;
+
+    // TODO(hayato): ShadowRoot should be an owner of SlotAssigment
+    OwnPtrWillBeMember<SlotAssignment> m_slotAssignment;
 };
 
 inline Element* ElementShadow::host() const
 {
     ASSERT(!m_shadowRoots.isEmpty());
-    return youngestShadowRoot()->host();
+    return youngestShadowRoot().host();
 }
 
 inline ShadowRoot* Node::youngestShadowRoot() const
@@ -119,8 +142,15 @@ inline ShadowRoot* Node::youngestShadowRoot() const
 inline ShadowRoot* Element::youngestShadowRoot() const
 {
     if (ElementShadow* shadow = this->shadow())
-        return shadow->youngestShadowRoot();
+        return &shadow->youngestShadowRoot();
     return 0;
+}
+
+inline ShadowRoot* Element::shadowRootIfV1() const
+{
+    if (ElementShadow* shadow = this->shadow())
+        return shadow->shadowRootIfV1();
+    return nullptr;
 }
 
 inline ElementShadow* ElementShadow::containingShadow() const

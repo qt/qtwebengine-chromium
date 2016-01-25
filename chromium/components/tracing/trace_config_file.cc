@@ -4,6 +4,8 @@
 
 #include "components/tracing/trace_config_file.h"
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/command_line.h"
@@ -13,6 +15,7 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "components/tracing/tracing_switches.h"
 
 namespace tracing {
@@ -69,19 +72,25 @@ TraceConfigFile::TraceConfigFile()
     // default configuration for 5 sec.
     startup_duration_ = 5;
     is_enabled_ = true;
+    DLOG(WARNING) << "Use default trace config.";
     return;
   }
 
-  if (!base::PathExists(trace_config_file))
+  if (!base::PathExists(trace_config_file)) {
+    DLOG(WARNING) << "The trace config file does not exist.";
     return;
+  }
 
   std::string trace_config_file_content;
   if (!base::ReadFileToString(trace_config_file,
                               &trace_config_file_content,
                               kTraceConfigFileSizeLimit)) {
+    DLOG(WARNING) << "Cannot read the trace config file correctly.";
     return;
   }
   is_enabled_ = ParseTraceConfigFileContent(trace_config_file_content);
+  if (!is_enabled_)
+    DLOG(WARNING) << "Cannot parse the trace config file correctly.";
 }
 
 TraceConfigFile::~TraceConfigFile() {
@@ -109,9 +118,9 @@ bool TraceConfigFile::ParseTraceConfigFileContent(const std::string& content) {
   if (startup_duration_ < 0)
       startup_duration_ = 0;
 
-  std::string result_file_str;
+  base::FilePath::StringType result_file_str;
   if (dict->GetString(kResultFileParam, &result_file_str))
-    result_file_ = base::FilePath().AppendASCII(result_file_str);
+    result_file_ = base::FilePath(result_file_str);
 
   return true;
 }
@@ -130,7 +139,7 @@ int TraceConfigFile::GetStartupDuration() const {
   return startup_duration_;
 }
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) || defined(USE_AURA)
 base::FilePath TraceConfigFile::GetResultFile() const {
   DCHECK(IsEnabled());
   return result_file_;

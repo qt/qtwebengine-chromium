@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/push_messaging/PushSubscription.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -10,10 +9,12 @@
 #include "bindings/core/v8/V8ObjectBuilder.h"
 #include "modules/push_messaging/PushError.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/Platform.h"
 #include "public/platform/modules/push_messaging/WebPushProvider.h"
 #include "public/platform/modules/push_messaging/WebPushSubscription.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/text/Base64.h"
 
 namespace blink {
 
@@ -32,7 +33,8 @@ void PushSubscription::dispose(WebPushSubscription* pushSubscription)
 
 PushSubscription::PushSubscription(const WebPushSubscription& subscription, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_endpoint(subscription.endpoint)
-    , m_curve25519dh(DOMArrayBuffer::create(subscription.curve25519dh.data(), subscription.curve25519dh.size()))
+    , m_p256dh(DOMArrayBuffer::create(subscription.p256dh.data(), subscription.p256dh.size()))
+    , m_auth(DOMArrayBuffer::create(subscription.auth.data(), subscription.auth.size()))
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
 }
@@ -48,8 +50,10 @@ KURL PushSubscription::endpoint() const
 
 PassRefPtr<DOMArrayBuffer> PushSubscription::getKey(const AtomicString& name) const
 {
-    if (name == "curve25519dh")
-        return m_curve25519dh;
+    if (name == "p256dh")
+        return m_p256dh;
+    if (name == "auth")
+        return m_auth;
 
     return nullptr;
 }
@@ -71,8 +75,15 @@ ScriptValue PushSubscription::toJSONForBinding(ScriptState* scriptState)
     V8ObjectBuilder result(scriptState);
     result.addString("endpoint", endpoint());
 
-    // TODO(peter): Include |curve25519dh| in the serialized JSON blob if the intended
-    // serialization behavior gets defined in the spec.
+    if (RuntimeEnabledFeatures::pushMessagingDataEnabled()) {
+        ASSERT(m_p256dh);
+
+        V8ObjectBuilder keys(scriptState);
+        keys.add("p256dh", WTF::base64URLEncode(static_cast<const char*>(m_p256dh->data()), m_p256dh->byteLength()));
+        keys.add("auth", WTF::base64URLEncode(static_cast<const char*>(m_auth->data()), m_auth->byteLength()));
+
+        result.add("keys", keys);
+    }
 
     return result.scriptValue();
 }

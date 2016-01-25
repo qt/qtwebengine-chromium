@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/InspectorEmulationAgent.h"
 
 #include "core/frame/FrameHost.h"
@@ -23,20 +22,26 @@ static const char touchEventEmulationEnabled[] = "touchEventEmulationEnabled";
 static const char emulatedMedia[] = "emulatedMedia";
 }
 
-PassOwnPtrWillBeRawPtr<InspectorEmulationAgent> InspectorEmulationAgent::create(WebViewImpl* webViewImpl)
+PassOwnPtrWillBeRawPtr<InspectorEmulationAgent> InspectorEmulationAgent::create(WebLocalFrameImpl* webLocalFrameImpl, Client* client)
 {
-    return adoptPtrWillBeNoop(new InspectorEmulationAgent(webViewImpl));
+    return adoptPtrWillBeNoop(new InspectorEmulationAgent(webLocalFrameImpl, client));
 }
 
-InspectorEmulationAgent::InspectorEmulationAgent(WebViewImpl* webViewImpl)
+InspectorEmulationAgent::InspectorEmulationAgent(WebLocalFrameImpl* webLocalFrameImpl, Client* client)
     : InspectorBaseAgent<InspectorEmulationAgent, InspectorFrontend::Emulation>("Emulation")
-    , m_webViewImpl(webViewImpl)
+    , m_webLocalFrameImpl(webLocalFrameImpl)
+    , m_client(client)
 {
-    m_webViewImpl->devToolsEmulator()->setEmulationAgent(this);
+    webViewImpl()->devToolsEmulator()->setEmulationAgent(this);
 }
 
 InspectorEmulationAgent::~InspectorEmulationAgent()
 {
+}
+
+WebViewImpl* InspectorEmulationAgent::webViewImpl()
+{
+    return m_webLocalFrameImpl->viewImpl();
 }
 
 void InspectorEmulationAgent::restore()
@@ -57,49 +62,57 @@ void InspectorEmulationAgent::disable(ErrorString*)
 
 void InspectorEmulationAgent::discardAgent()
 {
-    m_webViewImpl->devToolsEmulator()->setEmulationAgent(nullptr);
+    webViewImpl()->devToolsEmulator()->setEmulationAgent(nullptr);
 }
 
 void InspectorEmulationAgent::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
-    if (frame == m_webViewImpl->mainFrameImpl()->frame())
+    if (frame == m_webLocalFrameImpl->frame())
         viewportChanged();
 }
 
 void InspectorEmulationAgent::resetScrollAndPageScaleFactor(ErrorString*)
 {
-    m_webViewImpl->resetScrollAndScaleStateImmediately();
+    webViewImpl()->resetScrollAndScaleStateImmediately();
 }
 
 void InspectorEmulationAgent::setPageScaleFactor(ErrorString*, double pageScaleFactor)
 {
-    m_webViewImpl->setPageScaleFactor(static_cast<float>(pageScaleFactor));
+    webViewImpl()->setPageScaleFactor(static_cast<float>(pageScaleFactor));
 }
 
 void InspectorEmulationAgent::setScriptExecutionDisabled(ErrorString*, bool value)
 {
     m_state->setBoolean(EmulationAgentState::scriptExecutionDisabled, value);
-    m_webViewImpl->devToolsEmulator()->setScriptExecutionDisabled(value);
+    webViewImpl()->devToolsEmulator()->setScriptExecutionDisabled(value);
 }
 
 void InspectorEmulationAgent::setTouchEmulationEnabled(ErrorString*, bool enabled, const String* configuration)
 {
     m_state->setBoolean(EmulationAgentState::touchEventEmulationEnabled, enabled);
-    m_webViewImpl->devToolsEmulator()->setTouchEventEmulationEnabled(enabled);
+    webViewImpl()->devToolsEmulator()->setTouchEventEmulationEnabled(enabled);
 }
 
 void InspectorEmulationAgent::setEmulatedMedia(ErrorString*, const String& media)
 {
     m_state->setString(EmulationAgentState::emulatedMedia, media);
-    m_webViewImpl->page()->settings().setMediaTypeOverride(media);
+    webViewImpl()->page()->settings().setMediaTypeOverride(media);
+}
+
+void InspectorEmulationAgent::setCPUThrottlingRate(ErrorString*, double throttlingRate)
+{
+    m_client->setCPUThrottlingRate(throttlingRate);
 }
 
 void InspectorEmulationAgent::viewportChanged()
 {
-    if (!m_webViewImpl->devToolsEmulator()->deviceEmulationEnabled() || !frontend())
+    if (!webViewImpl()->devToolsEmulator()->deviceEmulationEnabled() || !frontend())
         return;
 
-    FrameView* view = m_webViewImpl->mainFrameImpl()->frameView();
+    FrameView* view = m_webLocalFrameImpl->frameView();
+    if (!view)
+        return;
+
     IntSize contentsSize = view->contentsSize();
     FloatPoint scrollOffset;
     scrollOffset = FloatPoint(view->scrollableArea()->visibleContentRectDouble().location());
@@ -109,14 +122,15 @@ void InspectorEmulationAgent::viewportChanged()
         .setScrollY(scrollOffset.y())
         .setContentsWidth(contentsSize.width())
         .setContentsHeight(contentsSize.height())
-        .setPageScaleFactor(m_webViewImpl->page()->pageScaleFactor())
-        .setMinimumPageScaleFactor(m_webViewImpl->minimumPageScaleFactor())
-        .setMaximumPageScaleFactor(m_webViewImpl->maximumPageScaleFactor());
+        .setPageScaleFactor(webViewImpl()->page()->pageScaleFactor())
+        .setMinimumPageScaleFactor(webViewImpl()->minimumPageScaleFactor())
+        .setMaximumPageScaleFactor(webViewImpl()->maximumPageScaleFactor());
     frontend()->viewportChanged(viewport);
 }
 
 DEFINE_TRACE(InspectorEmulationAgent)
 {
+    visitor->trace(m_webLocalFrameImpl);
     InspectorBaseAgent::trace(visitor);
 }
 

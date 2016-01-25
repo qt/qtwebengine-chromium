@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_COMMON_URL_CONSTANTS_H_
 #define CONTENT_PUBLIC_COMMON_URL_CONSTANTS_H_
 
+#include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "url/url_constants.h"
 
@@ -36,10 +37,11 @@ CONTENT_EXPORT extern const char kChromeUIGpuHost[];
 CONTENT_EXPORT extern const char kChromeUIHistogramHost[];
 CONTENT_EXPORT extern const char kChromeUIIndexedDBInternalsHost[];
 CONTENT_EXPORT extern const char kChromeUIMediaInternalsHost[];
+CONTENT_EXPORT extern const char kChromeUINetworkErrorHost[];
+CONTENT_EXPORT extern const char kChromeUINetworkErrorsListingHost[];
 CONTENT_EXPORT extern const char kChromeUINetworkViewCacheHost[];
 CONTENT_EXPORT extern const char kChromeUIResourcesHost[];
 CONTENT_EXPORT extern const char kChromeUIServiceWorkerInternalsHost[];
-CONTENT_EXPORT extern const char kChromeUITcmallocHost[];
 CONTENT_EXPORT extern const char kChromeUITracingHost[];
 CONTENT_EXPORT extern const char kChromeUIWebRTCInternalsHost[];
 
@@ -54,6 +56,8 @@ CONTENT_EXPORT extern const char kChromeUIGpuCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIGpuHangURL[];
 CONTENT_EXPORT extern const char kChromeUIHangURL[];
 CONTENT_EXPORT extern const char kChromeUIKillURL[];
+CONTENT_EXPORT extern const char kChromeUINetworkErrorURL[];
+CONTENT_EXPORT extern const char kChromeUINetworkErrorsListingURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashHangURL[];
 CONTENT_EXPORT extern const char kChromeUIServiceWorkerInternalsURL[];

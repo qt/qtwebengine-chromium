@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import "config.h"
 #import "platform/fonts/FontCache.h"
 
 #import <AppKit/AppKit.h>
@@ -35,15 +34,15 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFaceCreationParams.h"
-#include  "platform/fonts/FontPlatformData.h"
+#include "platform/fonts/FontPlatformData.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/mac/FontFamilyMatcherMac.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebTraceLocation.h"
-#include <wtf/Functional.h>
-#include <wtf/MainThread.h>
-#include <wtf/StdLibExtras.h>
+#include "wtf/Functional.h"
+#include "wtf/MainThread.h"
+#include "wtf/StdLibExtras.h"
 
 // Forward declare Mac SPIs.
 // Request for public API: rdar://13803570
@@ -57,7 +56,7 @@ namespace blink {
 static void invalidateFontCache()
 {
     if (!isMainThread()) {
-        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, bind(&invalidateFontCache));
+        Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, bind(&invalidateFontCache));
         return;
     }
     FontCache::fontCache()->invalidate();
@@ -185,14 +184,15 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     return getFontData(fontDescription, lucidaGrandeStr, false, shouldRetain);
 }
 
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
+PassOwnPtr<FontPlatformData> FontCache::createFontPlatformData(const FontDescription& fontDescription,
+    const FontFaceCreationParams& creationParams, float fontSize)
 {
     NSFontTraitMask traits = fontDescription.style() ? NSFontItalicTrait : 0;
     float size = fontSize;
 
     NSFont* nsFont = MatchNSFontFamily(creationParams.family(), traits, fontDescription.weight(), size);
     if (!nsFont)
-        return 0;
+        return nullptr;
 
     NSFontManager *fontManager = [NSFontManager sharedFontManager];
     NSFontTraitMask actualTraits = 0;
@@ -213,7 +213,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     if (!platformData->typeface()) {
         return nullptr;
     }
-    return platformData.leakPtr();
+    return platformData.release();
 }
 
 } // namespace blink

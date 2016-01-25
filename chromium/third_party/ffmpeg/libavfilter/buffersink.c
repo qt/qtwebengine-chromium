@@ -133,17 +133,19 @@ int attribute_align_arg av_buffersink_get_frame_flags(AVFilterContext *ctx, AVFr
     AVFrame *cur_frame;
 
     /* no picref available, fetch it from the filterchain */
-    if (!av_fifo_size(buf->fifo)) {
-        if (inlink->closed)
-            return AVERROR_EOF;
+    while (!av_fifo_size(buf->fifo)) {
+        if (inlink->status)
+            return inlink->status;
         if (flags & AV_BUFFERSINK_FLAG_NO_REQUEST)
             return AVERROR(EAGAIN);
         if ((ret = ff_request_frame(inlink)) < 0)
             return ret;
+        while (inlink->frame_wanted_out) {
+            ret = ff_filter_graph_run_once(ctx->graph);
+            if (ret < 0)
+                return ret;
+        }
     }
-
-    if (!av_fifo_size(buf->fifo))
-        return AVERROR(EINVAL);
 
     if (flags & AV_BUFFERSINK_FLAG_PEEK) {
         cur_frame = *((AVFrame **)av_fifo_peek2(buf->fifo, 0));
@@ -305,13 +307,13 @@ static int vsink_query_formats(AVFilterContext *ctx)
     CHECK_LIST_SIZE(pixel_fmts)
     if (buf->pixel_fmts_size) {
         for (i = 0; i < NB_ITEMS(buf->pixel_fmts); i++)
-            if ((ret = ff_add_format(&formats, buf->pixel_fmts[i])) < 0) {
-                ff_formats_unref(&formats);
+            if ((ret = ff_add_format(&formats, buf->pixel_fmts[i])) < 0)
                 return ret;
-            }
-        ff_set_common_formats(ctx, formats);
+        if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+            return ret;
     } else {
-        ff_default_query_formats(ctx);
+        if ((ret = ff_default_query_formats(ctx)) < 0)
+            return ret;
     }
 
     return 0;
@@ -349,25 +351,20 @@ static int asink_query_formats(AVFilterContext *ctx)
 
     if (buf->sample_fmts_size) {
         for (i = 0; i < NB_ITEMS(buf->sample_fmts); i++)
-            if ((ret = ff_add_format(&formats, buf->sample_fmts[i])) < 0) {
-                ff_formats_unref(&formats);
+            if ((ret = ff_add_format(&formats, buf->sample_fmts[i])) < 0)
                 return ret;
-            }
-        ff_set_common_formats(ctx, formats);
+        if ((ret = ff_set_common_formats(ctx, formats)) < 0)
+            return ret;
     }
 
     if (buf->channel_layouts_size || buf->channel_counts_size ||
         buf->all_channel_counts) {
         for (i = 0; i < NB_ITEMS(buf->channel_layouts); i++)
-            if ((ret = ff_add_channel_layout(&layouts, buf->channel_layouts[i])) < 0) {
-                ff_channel_layouts_unref(&layouts);
+            if ((ret = ff_add_channel_layout(&layouts, buf->channel_layouts[i])) < 0)
                 return ret;
-            }
         for (i = 0; i < NB_ITEMS(buf->channel_counts); i++)
-            if ((ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(buf->channel_counts[i]))) < 0) {
-                ff_channel_layouts_unref(&layouts);
+            if ((ret = ff_add_channel_layout(&layouts, FF_COUNT2LAYOUT(buf->channel_counts[i]))) < 0)
                 return ret;
-            }
         if (buf->all_channel_counts) {
             if (layouts)
                 av_log(ctx, AV_LOG_WARNING,
@@ -375,17 +372,17 @@ static int asink_query_formats(AVFilterContext *ctx)
             else if (!(layouts = ff_all_channel_counts()))
                 return AVERROR(ENOMEM);
         }
-        ff_set_common_channel_layouts(ctx, layouts);
+        if ((ret = ff_set_common_channel_layouts(ctx, layouts)) < 0)
+            return ret;
     }
 
     if (buf->sample_rates_size) {
         formats = NULL;
         for (i = 0; i < NB_ITEMS(buf->sample_rates); i++)
-            if ((ret = ff_add_format(&formats, buf->sample_rates[i])) < 0) {
-                ff_formats_unref(&formats);
+            if ((ret = ff_add_format(&formats, buf->sample_rates[i])) < 0)
                 return ret;
-            }
-        ff_set_common_samplerates(ctx, formats);
+        if ((ret = ff_set_common_samplerates(ctx, formats)) < 0)
+            return ret;
     }
 
     return 0;

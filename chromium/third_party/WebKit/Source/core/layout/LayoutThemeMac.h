@@ -29,7 +29,7 @@
 #import "wtf/HashMap.h"
 #import "wtf/RetainPtr.h"
 
-OBJC_CLASS LayoutThemeNotificationObserver;
+OBJC_CLASS BlinkLayoutThemeNotificationObserver;
 
 namespace blink {
 
@@ -156,8 +156,8 @@ public:
     static constexpr float menuListBaseArrowHeight = 4.0f;
     static constexpr float menuListBaseArrowWidth = 5.0f;
     static constexpr float menuListBaseSpaceBetweenArrows = 2.0f;
-    static const int menuListArrowPaddingLeft = 6;
-    static const int menuListArrowPaddingRight = 6;
+    static const int menuListArrowPaddingLeft = 4;
+    static const int menuListArrowPaddingRight = 4;
     static const int sliderThumbWidth = 15;
     static const int sliderThumbHeight = 15;
     static const int sliderThumbShadowBlur = 1;
@@ -177,7 +177,7 @@ protected:
 private:
     String fileListNameForWidth(Locale&, const FileList*, const Font&, int width) const override;
     String extraDefaultStyleSheet() override;
-    bool supportsFocusRing(const ComputedStyle&) const override;
+    bool themeDrawsFocusRing(const ComputedStyle&) const override;
 
     ThemePainter& painter() override { return m_painter; }
 
@@ -189,7 +189,7 @@ private:
 
     mutable HashMap<int, RGBA32> m_systemColorCache;
 
-    RetainPtr<LayoutThemeNotificationObserver> m_notificationObserver;
+    RetainPtr<BlinkLayoutThemeNotificationObserver> m_notificationObserver;
 
     ThemePainterMac m_painter;
 };

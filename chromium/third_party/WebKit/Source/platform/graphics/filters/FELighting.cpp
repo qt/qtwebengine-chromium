@@ -25,7 +25,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/filters/FELighting.h"
 
 #include "SkLightingImageFilter.h"
@@ -47,7 +46,7 @@ FELighting::FELighting(Filter* filter, LightingType lightingType, const Color& l
     , m_surfaceScale(surfaceScale)
     , m_diffuseConstant(std::max(diffuseConstant, 0.0f))
     , m_specularConstant(std::max(specularConstant, 0.0f))
-    , m_specularExponent(std::min(std::max(specularExponent, 1.0f), 128.0f))
+    , m_specularExponent(clampTo(specularExponent, 1.0f, 128.0f))
 {
 }
 
@@ -59,14 +58,14 @@ FloatRect FELighting::mapPaintRect(const FloatRect& rect, bool)
     return result;
 }
 
-PassRefPtr<SkImageFilter> FELighting::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FELighting::createImageFilter(SkiaImageFilterBuilder& builder)
 {
     if (!m_lightSource)
         return createTransparentBlack(builder);
 
-    SkImageFilter::CropRect rect = getCropRect(builder ? builder->cropOffset() : FloatSize());
+    SkImageFilter::CropRect rect = getCropRect(builder.cropOffset());
     Color lightColor = adaptColorToOperatingColorSpace(m_lightingColor);
-    RefPtr<SkImageFilter> input(builder ? builder->build(inputEffect(0), operatingColorSpace()) : nullptr);
+    RefPtr<SkImageFilter> input(builder.build(inputEffect(0), operatingColorSpace()));
     switch (m_lightSource->type()) {
     case LS_DISTANT: {
         DistantLightSource* distantLightSource = static_cast<DistantLightSource*>(m_lightSource.get());

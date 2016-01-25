@@ -28,9 +28,9 @@
 #include "webrtc/modules/audio_device/android/ensure_initialized.h"
 #include "webrtc/modules/audio_device/audio_device_impl.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using std::cout;
@@ -383,7 +383,7 @@ class MockAudioTransport : public AudioTransport {
                 int32_t(const void* audioSamples,
                         const size_t nSamples,
                         const size_t nBytesPerSample,
-                        const uint8_t nChannels,
+                        const size_t nChannels,
                         const uint32_t samplesPerSec,
                         const uint32_t totalDelayMS,
                         const int32_t clockDrift,
@@ -393,7 +393,7 @@ class MockAudioTransport : public AudioTransport {
   MOCK_METHOD8(NeedMorePlayData,
                int32_t(const size_t nSamples,
                        const size_t nBytesPerSample,
-                       const uint8_t nChannels,
+                       const size_t nChannels,
                        const uint32_t samplesPerSec,
                        void* audioSamples,
                        size_t& nSamplesOut,
@@ -423,7 +423,7 @@ class MockAudioTransport : public AudioTransport {
   int32_t RealRecordedDataIsAvailable(const void* audioSamples,
                                       const size_t nSamples,
                                       const size_t nBytesPerSample,
-                                      const uint8_t nChannels,
+                                      const size_t nChannels,
                                       const uint32_t samplesPerSec,
                                       const uint32_t totalDelayMS,
                                       const int32_t clockDrift,
@@ -445,7 +445,7 @@ class MockAudioTransport : public AudioTransport {
 
   int32_t RealNeedMorePlayData(const size_t nSamples,
                                const size_t nBytesPerSample,
-                               const uint8_t nChannels,
+                               const size_t nChannels,
                                const uint32_t samplesPerSec,
                                void* audioSamples,
                                size_t& nSamplesOut,
@@ -521,10 +521,10 @@ class AudioDeviceTest : public ::testing::Test {
   int record_sample_rate() const {
     return record_parameters_.sample_rate();
   }
-  int playout_channels() const {
+  size_t playout_channels() const {
     return playout_parameters_.channels();
   }
-  int record_channels() const {
+  size_t record_channels() const {
     return record_parameters_.channels();
   }
   size_t playout_frames_per_10ms_buffer() const {
@@ -824,7 +824,9 @@ TEST_F(AudioDeviceTest, SetSpeakerVolumeActuallySetsVolume) {
 
 // Tests that playout can be initiated, started and stopped. No audio callback
 // is registered in this test.
-TEST_F(AudioDeviceTest, StartStopPlayout) {
+// Flaky on our trybots makes this test unusable.
+// https://code.google.com/p/webrtc/issues/detail?id=5046
+TEST_F(AudioDeviceTest, DISABLED_StartStopPlayout) {
   StartPlayout();
   StopPlayout();
   StartPlayout();
@@ -929,7 +931,7 @@ TEST_F(AudioDeviceTest, StartPlayoutAndRecordingVerifyCallbacks) {
 // not contain any explicit verification that the audio quality is perfect.
 TEST_F(AudioDeviceTest, RunPlayoutWithFileAsSource) {
   // TODO(henrika): extend test when mono output is supported.
-  EXPECT_EQ(1, playout_channels());
+  EXPECT_EQ(1u, playout_channels());
   NiceMock<MockAudioTransport> mock(kPlayout);
   const int num_callbacks = kFilePlayTimeInSec * kNumCallbacksPerSecond;
   std::string file_name = GetFileName(playout_sample_rate());

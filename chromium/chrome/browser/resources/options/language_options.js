@@ -66,6 +66,13 @@ cr.define('options', function() {
    */
   var ENABLE_TRANSLATE = 'translate.enabled';
 
+  /**
+   * The preference is a boolean that activates/deactivates IME menu on shelf.
+   * @type {string}
+   * @const
+   */
+  var ACTIVATE_IME_MENU_PREF = 'settings.language.ime_menu_activated';
+
   /////////////////////////////////////////////////////////////////////////////
   // LanguageOptions class:
 
@@ -200,8 +207,8 @@ cr.define('options', function() {
           this.handleSpellCheckDictionariesPrefChange_.bind(this));
       Preferences.getInstance().addEventListener(ENABLE_TRANSLATE,
           this.handleEnableTranslatePrefChange_.bind(this));
-      this.translateSupportedLanguages_ =
-          loadTimeData.getValue('translateSupportedLanguages');
+      this.translateSupportedLanguages_ = /** @type {Array} */(
+          loadTimeData.getValue('translateSupportedLanguages'));
 
       // Set up add button.
       var onclick = function(e) {
@@ -234,12 +241,6 @@ cr.define('options', function() {
       // Listen to add language dialog ok button.
       $('add-language-overlay-ok-button').addEventListener(
           'click', this.handleAddLanguageOkButtonClick_.bind(this));
-
-      if (!cr.isChromeOS) {
-        // Show experimental features if enabled.
-        if (loadTimeData.getBoolean('enableSpellingAutoCorrect'))
-          $('auto-spell-correction-option').hidden = false;
-      }
 
       if (!(cr.isMac || cr.isChromeOS)) {
         // Handle spell check enable/disable.
@@ -276,6 +277,18 @@ cr.define('options', function() {
       // Public session users cannot change the locale.
       if (cr.isChromeOS && UIAccountTweaks.loggedInAsPublicAccount())
         $('language-options-ui-language-section').hidden = true;
+
+      // IME menu (CrOS only).
+      if (cr.isChromeOS) {
+        // Show the 'activate-ime-menu' checkbox if the flag is tured on.
+        if (loadTimeData.getBoolean('enableLanguageOptionsImeMenu'))
+          $('language-options-ime-menu-template').hidden = false;
+
+        // Listen to check on 'activate-ime-menu' checkbox.
+        var checkboxImeMenu = $('activate-ime-menu');
+        checkboxImeMenu.addEventListener('click',
+            this.handleActivateImeMenuCheckboxClick_.bind(this));
+      }
     },
 
     /**
@@ -289,10 +302,12 @@ cr.define('options', function() {
       // change the visibility in handleLanguageOptionsListChange_() based
       // on the selected language. Note that we only have less than 100
       // input methods, so creating DOM nodes at once here should be ok.
-      this.appendInputMethodElement_(loadTimeData.getValue('inputMethodList'));
-      this.appendComponentExtensionIme_(
-          loadTimeData.getValue('componentExtensionImeList'));
-      this.appendInputMethodElement_(loadTimeData.getValue('extensionImeList'));
+      this.appendInputMethodElement_(/** @type {!Array} */(
+          loadTimeData.getValue('inputMethodList')));
+      this.appendComponentExtensionIme_(/** @type {!Array} */(
+          loadTimeData.getValue('componentExtensionImeList')));
+      this.appendInputMethodElement_(/** @type {!Array} */(
+          loadTimeData.getValue('extensionImeList')));
 
       // Listen to pref change once the input method list is initialized.
       Preferences.getInstance().addEventListener(
@@ -1421,6 +1436,19 @@ cr.define('options', function() {
       }
 
       return main;
+    },
+
+    /**
+     * Handles activate-ime-menu checkbox's click event.
+     * @param {Event} e Click event.
+     * @private
+     */
+    handleActivateImeMenuCheckboxClick_: function(e) {
+      if (cr.isChromeOS) {
+        var checkbox = e.target;
+        Preferences.setBooleanPref(ACTIVATE_IME_MENU_PREF,
+                                   checkbox.checked, true);
+      }
     },
   };
 

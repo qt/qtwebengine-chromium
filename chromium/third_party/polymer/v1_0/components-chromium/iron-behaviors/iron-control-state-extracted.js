@@ -1,6 +1,4 @@
-
-
-  /**
+/**
    * @demo demo/index.html
    * @polymerBehavior
    */
@@ -60,9 +58,8 @@
       // handled). In either case, we can disregard `event.path`.
 
       if (event.target === this) {
-        var focused = event.type === 'focus';
-        this._setFocused(focused);
-      } else if (!this.shadowRoot) {
+        this._setFocused(event.type === 'focus');
+      } else if (!this.shadowRoot && !this.isLightDescendant(event.target)) {
         this.fire(event.type, {sourceEvent: event}, {
           node: this,
           bubbles: event.bubbles,
@@ -91,4 +88,3 @@
     }
 
   };
-

@@ -11,13 +11,21 @@
 #define WEBRTC_TEST_FAKE_TEXTURE_FRAME_H_
 
 #include "webrtc/base/checks.h"
-#include "webrtc/common_video/interface/video_frame_buffer.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/video_frame.h"
 
 namespace webrtc {
 namespace test {
 
-class FakeNativeHandle {};
+class FakeNativeHandle {
+ public:
+  static VideoFrame CreateFrame(FakeNativeHandle* native_handle,
+                                int width,
+                                int height,
+                                uint32_t timestamp,
+                                int64_t render_time_ms,
+                                VideoRotation rotation);
+};
 
 class FakeNativeHandleBuffer : public NativeHandleBuffer {
  public:
@@ -41,16 +49,6 @@ class FakeNativeHandleBuffer : public NativeHandleBuffer {
   }
 };
 
-static VideoFrame CreateFakeNativeHandleFrame(FakeNativeHandle* native_handle,
-                                              int width,
-                                              int height,
-                                              uint32_t timestamp,
-                                              int64_t render_time_ms,
-                                              VideoRotation rotation) {
-  return VideoFrame(new rtc::RefCountedObject<FakeNativeHandleBuffer>(
-                        native_handle, width, height),
-                    timestamp, render_time_ms, rotation);
-}
 }  // namespace test
 }  // namespace webrtc
 #endif  //  WEBRTC_TEST_FAKE_TEXTURE_FRAME_H_

@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if !OS(WIN) && !OS(ANDROID)
-#include "SkFontConfigInterface.h"
-#endif
 #include "SkFontMgr.h"
 #include "SkStream.h"
 #include "SkTypeface.h"
@@ -49,12 +44,15 @@
 #include <unicode/locid.h>
 
 #if !OS(WIN) && !OS(ANDROID)
-static SkStreamAsset* streamForFontconfigInterfaceId(int fontconfigInterfaceId)
+#include "SkFontConfigInterface.h"
+
+static PassRefPtr<SkTypeface> typefaceForFontconfigInterfaceIdAndTtcIndex(int fontconfigInterfaceId, int ttcIndex)
 {
     SkAutoTUnref<SkFontConfigInterface> fci(SkFontConfigInterface::RefGlobal());
     SkFontConfigInterface::FontIdentity fontIdentity;
     fontIdentity.fID = fontconfigInterfaceId;
-    return fci->openStream(fontIdentity);
+    fontIdentity.fTTCIndex = ttcIndex;
+    return adoptRef(fci->createTypeface(fontIdentity));
 }
 #endif
 
@@ -186,16 +184,9 @@ PassRefPtr<SkTypeface> FontCache::createTypeface(const FontDescription& fontDesc
 {
 #if !OS(WIN) && !OS(ANDROID)
     if (creationParams.creationType() == CreateFontByFciIdAndTtcIndex) {
-        SkTypeface* typeface = nullptr;
         if (Platform::current()->sandboxSupport())
-            typeface = SkTypeface::CreateFromStream(streamForFontconfigInterfaceId(creationParams.fontconfigInterfaceId()), creationParams.ttcIndex());
-        else
-            typeface = SkTypeface::CreateFromFile(creationParams.filename().data(), creationParams.ttcIndex());
-
-        if (typeface)
-            return adoptRef(typeface);
-        else
-            return nullptr;
+            return typefaceForFontconfigInterfaceIdAndTtcIndex(creationParams.fontconfigInterfaceId(), creationParams.ttcIndex());
+        return adoptRef(SkTypeface::CreateFromFile(creationParams.filename().data(), creationParams.ttcIndex()));
     }
 #endif
 
@@ -237,21 +228,21 @@ PassRefPtr<SkTypeface> FontCache::createTypeface(const FontDescription& fontDesc
 }
 
 #if !OS(WIN)
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
+PassOwnPtr<FontPlatformData> FontCache::createFontPlatformData(const FontDescription& fontDescription,
+    const FontFaceCreationParams& creationParams, float fontSize)
 {
     CString name;
     RefPtr<SkTypeface> tf(createTypeface(fontDescription, creationParams, name));
     if (!tf)
-        return 0;
+        return nullptr;
 
-    FontPlatformData* result = new FontPlatformData(tf,
+    return adoptPtr(new FontPlatformData(tf,
         name.data(),
         fontSize,
         (fontDescription.weight() >= FontWeight600 && !tf->isBold()) || fontDescription.isSyntheticBold(),
         ((fontDescription.style() == FontStyleItalic || fontDescription.style() == FontStyleOblique) && !tf->isItalic()) || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
-        fontDescription.useSubpixelPositioning());
-    return result;
+        fontDescription.useSubpixelPositioning()));
 }
 #endif // !OS(WIN)
 

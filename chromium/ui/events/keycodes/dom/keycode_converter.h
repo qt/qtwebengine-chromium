@@ -5,10 +5,11 @@
 #ifndef UI_EVENTS_KEYCODES_DOM4_KEYCODE_CONVERTER_H_
 #define UI_EVENTS_KEYCODES_DOM4_KEYCODE_CONVERTER_H_
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "ui/events/keycodes/dom/dom_key.h"
 
 // For reference, the W3C UI Event spec is located at:
@@ -54,7 +55,7 @@ class KeycodeConverter {
   static int DomCodeToNativeKeycode(DomCode code);
 
   // Convert a UI Events |code| string value into a DomCode.
-  static DomCode CodeStringToDomCode(const char* code);
+  static DomCode CodeStringToDomCode(const std::string& code);
 
   // Convert a DomCode into a UI Events |code| string value.
   static const char* DomCodeToCodeString(DomCode dom_code);
@@ -70,7 +71,7 @@ class KeycodeConverter {
   // - a key name from http://www.w3.org/TR/DOM-Level-3-Events-key/, or
   // - a single Unicode character (represented in UTF-8).
   // Returns DomKey::NONE for other inputs, including |nullptr|.
-  static DomKey KeyStringToDomKey(const char* key);
+  static DomKey KeyStringToDomKey(const std::string& key);
 
   // Convert a DomKey into a UI Events |key| string value.
   // For an invalid DomKey, returns an empty string.
@@ -99,7 +100,7 @@ class KeycodeConverter {
   static uint32_t DomCodeToUsbKeycode(DomCode dom_code);
 
   // Convert a DOM3 Event |code| string into a USB keycode value.
-  static uint32_t CodeToUsbKeycode(const char* code);
+  static uint32_t CodeToUsbKeycode(const std::string& code);
 
   // Static methods to support testing.
   static size_t NumKeycodeMapEntriesForTest();

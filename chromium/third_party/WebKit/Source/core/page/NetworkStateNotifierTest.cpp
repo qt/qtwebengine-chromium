@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/page/NetworkStateNotifier.h"
 
 #include "core/dom/Document.h"
@@ -36,8 +35,8 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebConnectionType.h"
 #include "public/platform/WebThread.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Functional.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

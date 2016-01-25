@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/ReplacedPainter.h"
 
 #include "core/layout/LayoutReplaced.h"
 #include "core/layout/api/SelectionState.h"
+#include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
@@ -16,6 +16,11 @@
 #include "wtf/Optional.h"
 
 namespace blink {
+
+static bool shouldApplyViewportClip(const LayoutReplaced& layoutReplaced)
+{
+    return !layoutReplaced.isSVGRoot() || toLayoutSVGRoot(&layoutReplaced)->shouldApplyViewportClip();
+}
 
 void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
@@ -36,9 +41,8 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
     if (paintInfo.phase == PaintPhaseClippingMask && (!m_layoutReplaced.hasLayer() || !m_layoutReplaced.layer()->hasCompositedClippingMask()))
         return;
 
-    if (paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) {
-        if (m_layoutReplaced.styleRef().outlineWidth())
-            ObjectPainter(m_layoutReplaced).paintOutline(paintInfo, adjustedPaintOffset);
+    if (shouldPaintSelfOutline(paintInfo.phase)) {
+        ObjectPainter(m_layoutReplaced).paintOutline(paintInfo, adjustedPaintOffset);
         return;
     }
 
@@ -58,7 +62,7 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
         if (m_layoutReplaced.style()->hasBorderRadius()) {
             if (borderRect.isEmpty()) {
                 completelyClippedOut = true;
-            } else {
+            } else if (shouldApplyViewportClip(m_layoutReplaced)) {
                 // Push a clip if we have a border radius, since we want to round the foreground content that gets painted.
                 FloatRoundedRect roundedInnerRect = m_layoutReplaced.style()->getRoundedInnerBorderFor(borderRect,
                     LayoutRectOutsets(
@@ -68,7 +72,7 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
                         -(m_layoutReplaced.paddingLeft() + m_layoutReplaced.borderLeft())),
                     true, true);
 
-                clipper.emplace(m_layoutReplaced, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayListIfEnabled);
+                clipper.emplace(m_layoutReplaced, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayList);
             }
         }
 
@@ -84,13 +88,13 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
     // The selection tint never gets clipped by border-radius rounding, since we want it to run right up to the edges of
     // surrounding content.
     bool drawSelectionTint = paintInfo.phase == PaintPhaseForeground && m_layoutReplaced.selectionState() != SelectionNone && !paintInfo.isPrinting();
-    if (drawSelectionTint && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint, paintOffset)) {
+    if (drawSelectionTint && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint, adjustedPaintOffset)) {
         LayoutRect selectionPaintingRect = m_layoutReplaced.localSelectionRect();
         selectionPaintingRect.moveBy(adjustedPaintOffset);
         IntRect selectionPaintingIntRect = pixelSnappedIntRect(selectionPaintingRect);
 
-        LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint, selectionPaintingIntRect, paintOffset);
-        paintInfo.context->fillRect(selectionPaintingIntRect, m_layoutReplaced.selectionBackgroundColor());
+        LayoutObjectDrawingRecorder drawingRecorder(paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint, selectionPaintingIntRect, adjustedPaintOffset);
+        paintInfo.context.fillRect(selectionPaintingIntRect, m_layoutReplaced.selectionBackgroundColor());
     }
 }
 

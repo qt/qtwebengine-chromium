@@ -5,12 +5,14 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_IMPL_H_
 #define CC_LAYERS_PICTURE_LAYER_IMPL_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/tiles/picture_layer_tiling.h"
 #include "cc/tiles/picture_layer_tiling_set.h"
@@ -66,7 +68,7 @@ class CC_EXPORT PictureLayerImpl
   void set_gpu_raster_max_texture_size(gfx::Size gpu_raster_max_texture_size) {
     gpu_raster_max_texture_size_ = gpu_raster_max_texture_size;
   }
-  void UpdateRasterSource(scoped_refptr<RasterSource> raster_source,
+  void UpdateRasterSource(scoped_refptr<DisplayListRasterSource> raster_source,
                           Region* new_invalidation,
                           const PictureLayerTilingSet* pending_set);
   bool UpdateTiles(bool resourceless_software_draw);
@@ -93,7 +95,9 @@ class CC_EXPORT PictureLayerImpl
   bool IsOnActiveOrPendingTree() const;
 
   // Used for benchmarking
-  RasterSource* GetRasterSource() const { return raster_source_.get(); }
+  DisplayListRasterSource* GetRasterSource() const {
+    return raster_source_.get();
+  }
 
  protected:
   friend class LayerRasterTileIterator;
@@ -132,7 +136,7 @@ class CC_EXPORT PictureLayerImpl
   PictureLayerImpl* twin_layer_;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
-  scoped_refptr<RasterSource> raster_source_;
+  scoped_refptr<DisplayListRasterSource> raster_source_;
   Region invalidation_;
 
   float ideal_page_scale_;
@@ -146,7 +150,6 @@ class CC_EXPORT PictureLayerImpl
   float raster_contents_scale_;
   float low_res_raster_contents_scale_;
 
-  bool raster_source_scale_is_fixed_;
   bool was_screen_space_transform_animating_;
   bool only_used_low_res_last_append_quads_;
   const bool is_mask_;
@@ -154,13 +157,14 @@ class CC_EXPORT PictureLayerImpl
   bool nearest_neighbor_;
 
   // Any draw properties derived from |transform|, |viewport|, and |clip|
-  // parameters in LayerTreeHostImpl::SetExternalDrawConstraints are not valid
-  // for prioritizing tiles during resourceless software draws. This is because
-  // resourceless software draws can have wildly different transforms/viewports
-  // from regular draws. Save a copy of the required draw properties of the last
-  // frame that has a valid viewport for prioritizing tiles.
+  // parameters in LayerTreeHostImpl::OnDraw are not valid for prioritizing
+  // tiles during resourceless software draws. This is because resourceless
+  // software draws can have wildly different transforms/viewports from regular
+  // draws. Save a copy of the required draw properties of the last frame that
+  // has a valid viewport for prioritizing tiles.
   gfx::Rect visible_rect_for_tile_priority_;
   gfx::Rect viewport_rect_for_tile_priority_in_content_space_;
+  gfx::Transform screen_space_transform_for_tile_priority_;
 
   gfx::Size gpu_raster_max_texture_size_;
 

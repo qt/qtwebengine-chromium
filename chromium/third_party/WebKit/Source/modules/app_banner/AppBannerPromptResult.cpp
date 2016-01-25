@@ -2,18 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/app_banner/AppBannerPromptResult.h"
 
 #include "public/platform/modules/app_banner/WebAppBannerPromptResult.h"
 
 namespace blink {
-
-// static
-AppBannerPromptResult* AppBannerPromptResult::take(PassOwnPtr<WebAppBannerPromptResult> webInstance)
-{
-    return webInstance ? AppBannerPromptResult::create(webInstance->platform, webInstance->outcome) : nullptr;
-}
 
 AppBannerPromptResult::~AppBannerPromptResult()
 {

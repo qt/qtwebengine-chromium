@@ -4,9 +4,12 @@
 
 #include "content/public/browser/desktop_media_id.h"
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -93,8 +96,40 @@ aura::Window* DesktopMediaID::GetAuraWindowById(const DesktopMediaID& id) {
 
 #endif  // defined(USE_AURA)
 
+bool DesktopMediaID::operator<(const DesktopMediaID& other) const {
+#if defined(USE_AURA)
+  return std::tie(type, id, aura_id, web_contents_id) <
+         std::tie(other.type, other.id, other.aura_id, other.web_contents_id);
+#else
+  return std::tie(type, id, web_contents_id) <
+         std::tie(other.type, other.id, web_contents_id);
+#endif
+}
+
+bool DesktopMediaID::operator==(const DesktopMediaID& other) const {
+#if defined(USE_AURA)
+  return type == other.type && id == other.id && aura_id == other.aura_id &&
+         web_contents_id == other.web_contents_id;
+#else
+  return type == other.type && id == other.id &&
+         web_contents_id == other.web_contents_id;
+#endif
+}
+
 // static
+// Input string should in format:
+// for WebContents:
+// web-contents-media-stream://"render_process_id":"render_process_id"
+// for no aura screen and window: screen:"window_id" or window:"window_id"
+// for aura screen and window: screen:"window_id:aura_id" or
+//                         window:"window_id:aura_id".
 DesktopMediaID DesktopMediaID::Parse(const std::string& str) {
+  // For WebContents type.
+  WebContentsMediaCaptureId web_id = WebContentsMediaCaptureId::Parse(str);
+  if (!web_id.is_null())
+    return DesktopMediaID(TYPE_WEB_CONTENTS, 0, web_id);
+
+  // For screen and window types.
   std::vector<std::string> parts = base::SplitString(
       str, ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
@@ -115,14 +150,14 @@ DesktopMediaID DesktopMediaID::Parse(const std::string& str) {
     return DesktopMediaID();
   }
 
-  int64 id;
+  int64_t id;
   if (!base::StringToInt64(parts[1], &id))
     return DesktopMediaID();
 
   DesktopMediaID media_id(type, id);
 
 #if defined(USE_AURA)
-  int64 aura_id;
+  int64_t aura_id;
   if (!base::StringToInt64(parts[2], &aura_id))
     return DesktopMediaID();
   media_id.aura_id = aura_id;
@@ -131,7 +166,7 @@ DesktopMediaID DesktopMediaID::Parse(const std::string& str) {
   return media_id;
 }
 
-std::string DesktopMediaID::ToString() {
+std::string DesktopMediaID::ToString() const {
   std::string prefix;
   switch (type) {
     case TYPE_NONE:
@@ -143,9 +178,13 @@ std::string DesktopMediaID::ToString() {
     case TYPE_WINDOW:
       prefix = kWindowPrefix;
       break;
+    case TYPE_WEB_CONTENTS:
+      return web_contents_id.ToString();
+      break;
   }
   DCHECK(!prefix.empty());
 
+  // Screen and Window types.
   prefix.append(":");
   prefix.append(base::Int64ToString(id));
 

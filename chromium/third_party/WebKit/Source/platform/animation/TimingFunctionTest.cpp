@@ -28,12 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/animation/TimingFunction.h"
 
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/WTFString.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include <sstream>
 #include <string>
 

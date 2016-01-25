@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/BiquadFilterNode.h"
-
 #include "modules/webaudio/AudioBasicProcessorHandler.h"
 
 namespace blink {
@@ -110,8 +107,7 @@ bool BiquadFilterNode::setType(unsigned type)
 
 void BiquadFilterNode::getFrequencyResponse(const DOMFloat32Array* frequencyHz, DOMFloat32Array* magResponse, DOMFloat32Array* phaseResponse)
 {
-    if (!frequencyHz || !magResponse || !phaseResponse)
-        return;
+    ASSERT(frequencyHz && magResponse && phaseResponse);
 
     int n = std::min(frequencyHz->length(), std::min(magResponse->length(), phaseResponse->length()));
     if (n)
@@ -120,4 +116,3 @@ void BiquadFilterNode::getFrequencyResponse(const DOMFloat32Array* frequencyHz, 
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

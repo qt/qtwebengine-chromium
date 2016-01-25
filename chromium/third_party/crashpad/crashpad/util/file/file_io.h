@@ -67,11 +67,14 @@ using ScopedFileHandle = base::ScopedFD;
 //! \brief A value that can never be a valid FileHandle.
 const FileHandle kInvalidFileHandle = -1;
 
+using FileOperationResult = ssize_t;
+
 #elif defined(OS_WIN)
 
 using FileHandle = HANDLE;
 using FileOffset = LONGLONG;
 using ScopedFileHandle = ScopedFileHANDLE;
+using FileOperationResult = LONG_PTR;
 
 const FileHandle kInvalidFileHandle = INVALID_HANDLE_VALUE;
 
@@ -79,6 +82,9 @@ const FileHandle kInvalidFileHandle = INVALID_HANDLE_VALUE;
 
 //! \brief Determines the mode that LoggingOpenFileForWrite() uses.
 enum class FileWriteMode {
+  //! \brief Opens the file if it exists, or fails if it does not.
+  kReuseOrFail,
+
   //! \brief Opens the file if it exists, or creates a new file.
   kReuseOrCreate,
 
@@ -123,7 +129,7 @@ enum class FileLocking : bool {
 //! \sa LoggingReadFile
 //! \sa CheckedReadFile
 //! \sa CheckedReadFileAtEOF
-ssize_t ReadFile(FileHandle file, void* buffer, size_t size);
+FileOperationResult ReadFile(FileHandle file, void* buffer, size_t size);
 
 //! \brief Writes to a file, retrying when interrupted or following a short
 //!     write on POSIX.
@@ -138,7 +144,7 @@ ssize_t ReadFile(FileHandle file, void* buffer, size_t size);
 //! \sa ReadFile
 //! \sa LoggingWriteFile
 //! \sa CheckedWriteFile
-ssize_t WriteFile(FileHandle file, const void* buffer, size_t size);
+FileOperationResult WriteFile(FileHandle file, const void* buffer, size_t size);
 
 //! \brief Wraps ReadFile(), ensuring that exactly \a size bytes are read.
 //!
@@ -199,15 +205,17 @@ void CheckedWriteFile(FileHandle file, const void* buffer, size_t size);
 void CheckedReadFileAtEOF(FileHandle file);
 
 //! \brief Wraps `open()` or `CreateFile()`, opening an existing file for
-//!     reading. Logs an error if the operation fails.
+//!     reading.
 //!
 //! \return The newly opened FileHandle, or an invalid FileHandle on failure.
 //!
 //! \sa ScopedFileHandle
-FileHandle LoggingOpenFileForRead(const base::FilePath& path);
+//! \sa OpenFileForWrite
+//! \sa OpenFileForReadAndWrite
+//! \sa LoggingOpenFileForRead
+FileHandle OpenFileForRead(const base::FilePath& path);
 
-//! \brief Wraps `open()` or `CreateFile()`, creating a file for output. Logs
-//!     an error if the operation fails.
+//! \brief Wraps `open()` or `CreateFile()`, creating a file for output.
 //!
 //! \a mode determines the style (truncate, reuse, etc.) that is used to open
 //! the file. On POSIX, \a permissions determines the value that is passed as
@@ -217,27 +225,61 @@ FileHandle LoggingOpenFileForRead(const base::FilePath& path);
 //!
 //! \return The newly opened FileHandle, or an invalid FileHandle on failure.
 //!
-//! \sa FileWriteMode
-//! \sa FilePermissions
 //! \sa ScopedFileHandle
+//! \sa OpenFileForRead
+//! \sa OpenFileForReadAndWrite
+//! \sa LoggingOpenFileForWrite
+FileHandle OpenFileForWrite(const base::FilePath& path,
+                            FileWriteMode mode,
+                            FilePermissions permissions);
+
+//! \brief Wraps `open()` or `CreateFile()`, creating a file for both input and
+//!     output.
+//!
+//! \a mode determines the style (truncate, reuse, etc.) that is used to open
+//! the file. On POSIX, \a permissions determines the value that is passed as
+//! `mode` to `open()`. On Windows, the file is always opened in binary mode
+//! (that is, no CRLF translation). On Windows, the file is opened for sharing,
+//! see LoggingLockFile() and LoggingUnlockFile() to control concurrent access.
+//!
+//! \return The newly opened FileHandle, or an invalid FileHandle on failure.
+//!
+//! \sa ScopedFileHandle
+//! \sa OpenFileForRead
+//! \sa OpenFileForWrite
+//! \sa LoggingOpenFileForReadAndWrite
+FileHandle OpenFileForReadAndWrite(const base::FilePath& path,
+                                   FileWriteMode mode,
+                                   FilePermissions permissions);
+
+//! \brief Wraps OpenFileForRead(), logging an error if the operation fails.
+//!
+//! \return The newly opened FileHandle, or an invalid FileHandle on failure.
+//!
+//! \sa ScopedFileHandle
+//! \sa LoggingOpenFileForWrite
+//! \sa LoggingOpenFileForReadAndWrite
+FileHandle LoggingOpenFileForRead(const base::FilePath& path);
+
+//! \brief Wraps OpenFileForWrite(), logging an error if the operation fails.
+//!
+//! \return The newly opened FileHandle, or an invalid FileHandle on failure.
+//!
+//! \sa ScopedFileHandle
+//! \sa LoggingOpenFileForRead
+//! \sa LoggingOpenFileForReadAndWrite
 FileHandle LoggingOpenFileForWrite(const base::FilePath& path,
                                    FileWriteMode mode,
                                    FilePermissions permissions);
 
-//! \brief Wraps `open()` or `CreateFile()`, creating a file for both input and
-//!     output. Logs an error if the operation fails.
-//!
-//! \a mode determines the style (truncate, reuse, etc.) that is used to open
-//! the file. On POSIX, \a permissions determines the value that is passed as
-//! `mode` to `open()`. On Windows, the file is always opened in binary mode
-//! (that is, no CRLF translation). On Windows, the file is opened for sharing,
-//! see LoggingLockFile() and LoggingUnlockFile() to control concurrent access.
+//! \brief Wraps OpenFileForReadAndWrite(), logging an error if the operation
+//!     fails.
 //!
 //! \return The newly opened FileHandle, or an invalid FileHandle on failure.
 //!
-//! \sa FileWriteMode
-//! \sa FilePermissions
 //! \sa ScopedFileHandle
+//! \sa LoggingOpenFileForRead
+//! \sa LoggingOpenFileForWrite
 FileHandle LoggingOpenFileForReadAndWrite(const base::FilePath& path,
                                           FileWriteMode mode,
                                           FilePermissions permissions);

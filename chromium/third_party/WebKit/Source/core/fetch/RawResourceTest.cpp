@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/RawResource.h"
 
 #include "core/fetch/ImageResourceClient.h"
@@ -42,8 +41,7 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -60,45 +58,28 @@ TEST(RawResourceTest, DontIgnoreAcceptForCacheReuse)
     ASSERT_FALSE(jpegResource->canReuse(pngRequest));
 }
 
-TEST(RawResourceTest, RevalidationSucceeded)
-{
-    // Create two RawResources and set one to revalidate the other.
-    RawResource* oldResourcePointer = new RawResource(ResourceRequest("data:text/html,"), Resource::Raw);
-    RawResource* newResourcePointer = new RawResource(ResourceRequest("data:text/html,"), Resource::Raw);
-    newResourcePointer->setResourceToRevalidate(oldResourcePointer);
-    ResourcePtr<Resource> oldResource = oldResourcePointer;
-    ResourcePtr<Resource> newResource = newResourcePointer;
-    memoryCache()->add(oldResource.get());
-    memoryCache()->remove(oldResource.get());
-    memoryCache()->add(newResource.get());
-
-    // Simulate a successful revalidation.
-    // The revalidated resource (oldResource) should now be in the cache, newResource
-    // should have been sliently switched to point to the revalidated resource, and
-    // we shouldn't hit any ASSERTs.
-    ResourceResponse response;
-    response.setHTTPStatusCode(304);
-    newResource->responseReceived(response, nullptr);
-    EXPECT_EQ(memoryCache()->resourceForURL(KURL(ParsedURLString, "data:text/html,")), oldResource.get());
-    EXPECT_EQ(oldResource.get(), newResource.get());
-    EXPECT_NE(newResource.get(), newResourcePointer);
-    memoryCache()->remove(newResource.get());
-}
-
-class DummyClient : public RawResourceClient {
+class DummyClient final : public RawResourceClient {
 public:
     DummyClient() : m_called(false) {}
     ~DummyClient() override {}
 
     // ResourceClient implementation.
-    virtual void notifyFinished(Resource* resource)
+    void notifyFinished(Resource* resource) override
     {
         m_called = true;
     }
+    String debugName() const override { return "DummyClient"; }
+
+    void dataReceived(Resource*, const char* data, size_t length) override
+    {
+        m_data.append(data, length);
+    }
 
     bool called() { return m_called; }
+    const Vector<char>& data() { return m_data; }
 private:
     bool m_called;
+    Vector<char> m_data;
 };
 
 // This client adds another client when notified.
@@ -112,13 +93,15 @@ public:
     ~AddingClient() override {}
 
     // ResourceClient implementation.
-    virtual void notifyFinished(Resource* resource)
+    void notifyFinished(Resource* resource) override
     {
         // First schedule an asynchronous task to remove the client.
         // We do not expect the client to be called.
-        m_removeClientTimer.startOneShot(0, FROM_HERE);
+        m_removeClientTimer.startOneShot(0, BLINK_FROM_HERE);
         resource->addClient(m_dummyClient);
     }
+    String debugName() const override { return "AddingClient"; }
+
     void removeClient(Timer<AddingClient>* timer)
     {
         m_resource->removeClient(m_dummyClient);
@@ -128,6 +111,68 @@ private:
     ResourcePtr<Resource> m_resource;
     Timer<AddingClient> m_removeClientTimer;
 };
+
+TEST(RawResourceTest, RevalidationSucceeded)
+{
+    ResourcePtr<Resource> resource = new RawResource(ResourceRequest("data:text/html,"), Resource::Raw);
+    ResourceResponse response;
+    response.setHTTPStatusCode(200);
+    resource->responseReceived(response, nullptr);
+    const char data[5] = "abcd";
+    resource->appendData(data, 4);
+    resource->finish();
+    memoryCache()->add(resource.get());
+
+    // Simulate a successful revalidation.
+    resource->setRevalidatingRequest(ResourceRequest("data:text/html,"));
+
+    OwnPtr<DummyClient> client = adoptPtr(new DummyClient);
+    resource->addClient(client.get());
+
+    ResourceResponse revalidatingResponse;
+    revalidatingResponse.setHTTPStatusCode(304);
+    resource->responseReceived(revalidatingResponse, nullptr);
+    EXPECT_FALSE(resource->isCacheValidator());
+    EXPECT_EQ(200, resource->response().httpStatusCode());
+    EXPECT_EQ(4u, resource->resourceBuffer()->size());
+    EXPECT_EQ(memoryCache()->resourceForURL(KURL(ParsedURLString, "data:text/html,")), resource.get());
+    memoryCache()->remove(resource.get());
+
+    resource->removeClient(client.get());
+    EXPECT_FALSE(resource->hasClients());
+    EXPECT_FALSE(client->called());
+    EXPECT_EQ("abcd", String(client->data().data(), client->data().size()));
+}
+
+TEST(RawResourceTest, RevalidationSucceededForResourceWithoutBody)
+{
+    ResourcePtr<Resource> resource = new RawResource(ResourceRequest("data:text/html,"), Resource::Raw);
+    ResourceResponse response;
+    response.setHTTPStatusCode(200);
+    resource->responseReceived(response, nullptr);
+    resource->finish();
+    memoryCache()->add(resource.get());
+
+    // Simulate a successful revalidation.
+    resource->setRevalidatingRequest(ResourceRequest("data:text/html,"));
+
+    OwnPtr<DummyClient> client = adoptPtr(new DummyClient);
+    resource->addClient(client.get());
+
+    ResourceResponse revalidatingResponse;
+    revalidatingResponse.setHTTPStatusCode(304);
+    resource->responseReceived(revalidatingResponse, nullptr);
+    EXPECT_FALSE(resource->isCacheValidator());
+    EXPECT_EQ(200, resource->response().httpStatusCode());
+    EXPECT_EQ(nullptr, resource->resourceBuffer());
+    EXPECT_EQ(memoryCache()->resourceForURL(KURL(ParsedURLString, "data:text/html,")), resource.get());
+    memoryCache()->remove(resource.get());
+
+    resource->removeClient(client.get());
+    EXPECT_FALSE(resource->hasClients());
+    EXPECT_FALSE(client->called());
+    EXPECT_EQ(0u, client->data().size());
+}
 
 TEST(RawResourceTest, AddClientDuringCallback)
 {
@@ -158,11 +203,12 @@ public:
     ~RemovingClient() override {}
 
     // ResourceClient implementation.
-    virtual void notifyFinished(Resource* resource)
+    void notifyFinished(Resource* resource) override
     {
         resource->removeClient(m_dummyClient);
         resource->removeClient(this);
     }
+    String debugName() const override { return "RemovingClient"; }
 private:
     DummyClient* m_dummyClient;
 };

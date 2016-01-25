@@ -20,6 +20,7 @@
         'trunk/src/cxa_handlers.cpp',
         'trunk/src/cxa_new_delete.cpp',
         'trunk/src/cxa_personality.cpp',
+        'trunk/src/cxa_thread_atexit.cpp',
         'trunk/src/cxa_unexpected.cpp',
         'trunk/src/cxa_vector.cpp',
         'trunk/src/cxa_virtual.cpp',
@@ -32,6 +33,12 @@
         'trunk/include',
         '../libc++/trunk/include'
       ],
+      'variables': {
+        'clang_warning_flags': [
+          # http://llvm.org/PR25978
+          '-Wno-unused-function',
+        ],
+      },
       'cflags': [
         '-fPIC',
         '-fstrict-aliasing',

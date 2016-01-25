@@ -28,12 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioDSPKernelProcessor.h"
-
 #include "platform/audio/AudioDSPKernel.h"
 #include "wtf/MainThread.h"
 
@@ -154,4 +149,3 @@ double AudioDSPKernelProcessor::latencyTime() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

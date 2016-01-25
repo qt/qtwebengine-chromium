@@ -6,6 +6,7 @@
 #define CC_SURFACES_DISPLAY_SCHEDULER_H_
 
 #include "base/cancelable_callback.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
@@ -47,6 +48,11 @@ class CC_SURFACES_EXPORT DisplayScheduler : public BeginFrameObserverBase {
 
   // BeginFrameObserverBase implementation
   bool OnBeginFrameDerivedImpl(const BeginFrameArgs& args) override;
+  void OnBeginFrameSourcePausedChanged(bool paused) override;
+
+  BeginFrameSource* begin_frame_source_for_children() {
+    return begin_frame_source_for_children_.get();
+  }
 
  protected:
   base::TimeTicks DesiredBeginFrameDeadlineTime();
@@ -63,6 +69,9 @@ class CC_SURFACES_EXPORT DisplayScheduler : public BeginFrameObserverBase {
   base::Closure begin_frame_deadline_closure_;
   base::CancelableClosure begin_frame_deadline_task_;
   base::TimeTicks begin_frame_deadline_task_time_;
+
+  // TODO(tansell): Set this to something useful.
+  scoped_ptr<BeginFrameSource> begin_frame_source_for_children_;
 
   bool output_surface_lost_;
   bool root_surface_resources_locked_;

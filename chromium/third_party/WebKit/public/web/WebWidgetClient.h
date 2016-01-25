@@ -37,6 +37,7 @@
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebScreenInfo.h"
+#include "public/web/WebMeaningfulLayout.h"
 #include "public/web/WebTouchAction.h"
 
 namespace blink {
@@ -78,17 +79,10 @@ public:
     // Called when a call to WebWidget::animate is required
     virtual void scheduleAnimation() { }
 
-    // Called when one of the following things were involved during the layout:
-    // * > 200 text characters
-    // * > 1024 image pixels
-    // * a plugin
-    // * a canvas
-    // An approximation for first layout that resulted in pixels on screen.
-    // Not the best heuristic, and we should replace it with something better.
-    virtual void didFirstVisuallyNonEmptyLayout() { }
+    // Called immediately following the first compositor-driven (frame-generating) layout that
+    // happened after an interesting document lifecyle change (see WebMeaningfulLayout for details.)
+    virtual void didMeaningfulLayout(WebMeaningfulLayout) {}
 
-    // The frame's document first layout immediately after the parsing finished.
-    // Another way to put it: first frame produced after DOMContentLoaded was dispatched.
     virtual void didFirstLayoutAfterFinishedParsing() { }
 
     // Called when the widget acquires or loses focus, respectively.
@@ -122,9 +116,6 @@ public:
     // Called to query information about the screen where this widget is
     // displayed.
     virtual WebScreenInfo screenInfo() { return WebScreenInfo(); }
-
-    // Called to get the scale factor of the display.
-    virtual float deviceScaleFactor() { return 1; }
 
     // When this method gets called, WebWidgetClient implementation should
     // reset the input method by cancelling any ongoing composition.
@@ -184,6 +175,15 @@ public:
     // press or gesture tap.
     // Note: This is called even when the mouse down event is prevent default.
     virtual void onMouseDown(const WebNode& mouseDownNode) { }
+
+    // Converts the |rect| from Blink's Viewport coordinates to the
+    // coordinates in the native window used to display the content, in
+    // DIP.  They're identical in tradional world, but will differ when
+    // use-zoom-for-dsf feature is eanbled, and Viewport coordinates
+    // becomes DSF times larger than window coordinates.
+    // TODO(oshima): Update the comment when the migration is completed.
+    virtual void convertViewportToWindow(WebRect* rect) {}
+
 protected:
     ~WebWidgetClient() { }
 };

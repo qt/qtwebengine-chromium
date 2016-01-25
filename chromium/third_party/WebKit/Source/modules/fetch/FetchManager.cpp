@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchManager.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -31,6 +30,7 @@
 #include "modules/fetch/FetchRequestData.h"
 #include "modules/fetch/Response.h"
 #include "modules/fetch/ResponseInit.h"
+#include "platform/HTTPNames.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
@@ -53,12 +53,12 @@ bool IsRedirectStatusCode(int statusCode)
 
 } // namespace
 
-class FetchManager::Loader final : public NoBaseWillBeGarbageCollectedFinalized<FetchManager::Loader>, public ThreadableLoaderClient, public ContextLifecycleObserver {
+class FetchManager::Loader final : public GarbageCollectedFinalized<FetchManager::Loader>, public ThreadableLoaderClient, public ContextLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FetchManager::Loader);
 public:
-    static PassOwnPtrWillBeRawPtr<Loader> create(ExecutionContext* executionContext, FetchManager* fetchManager, ScriptPromiseResolver* resolver, FetchRequestData* request)
+    static Loader* create(ExecutionContext* executionContext, FetchManager* fetchManager, ScriptPromiseResolver* resolver, FetchRequestData* request, bool isIsolatedWorld)
     {
-        return adoptPtrWillBeNoop(new Loader(executionContext, fetchManager, resolver, request));
+        return new Loader(executionContext, fetchManager, resolver, request, isIsolatedWorld);
     }
 
     ~Loader() override;
@@ -142,7 +142,7 @@ public:
         OwnPtr<WebDataConsumerHandle> m_handle;
         Member<CompositeDataConsumerHandle::Updater> m_updater;
         Member<Response> m_response;
-        RawPtrWillBeMember<FetchManager::Loader> m_loader;
+        Member<FetchManager::Loader> m_loader;
         String m_integrityMetadata;
         KURL m_url;
         OwnPtr<WebDataConsumerHandle::Reader> m_reader;
@@ -151,28 +151,30 @@ public:
     };
 
 private:
-    Loader(ExecutionContext*, FetchManager*, ScriptPromiseResolver*, FetchRequestData*);
+    Loader(ExecutionContext*, FetchManager*, ScriptPromiseResolver*, FetchRequestData*, bool isIsolatedWorld);
 
     void performBasicFetch();
     void performNetworkError(const String& message);
     void performHTTPFetch(bool corsFlag, bool corsPreflightFlag);
+    void performDataFetch();
     void failed(const String& message);
     void notifyFinished();
     Document* document() const;
     void loadSucceeded();
 
-    RawPtrWillBeMember<FetchManager> m_fetchManager;
-    PersistentWillBeMember<ScriptPromiseResolver> m_resolver;
-    PersistentWillBeMember<FetchRequestData> m_request;
+    Member<FetchManager> m_fetchManager;
+    Member<ScriptPromiseResolver> m_resolver;
+    Member<FetchRequestData> m_request;
     RefPtr<ThreadableLoader> m_loader;
     bool m_failed;
     bool m_finished;
     int m_responseHttpStatusCode;
-    PersistentWillBeMember<SRIVerifier> m_integrityVerifier;
+    Member<SRIVerifier> m_integrityVerifier;
     bool m_didFinishLoading;
+    bool m_isIsolatedWorld;
 };
 
-FetchManager::Loader::Loader(ExecutionContext* executionContext, FetchManager* fetchManager, ScriptPromiseResolver* resolver, FetchRequestData* request)
+FetchManager::Loader::Loader(ExecutionContext* executionContext, FetchManager* fetchManager, ScriptPromiseResolver* resolver, FetchRequestData* request, bool isIsolatedWorld)
     : ContextLifecycleObserver(executionContext)
     , m_fetchManager(fetchManager)
     , m_resolver(resolver)
@@ -182,6 +184,7 @@ FetchManager::Loader::Loader(ExecutionContext* executionContext, FetchManager* f
     , m_responseHttpStatusCode(0)
     , m_integrityVerifier(nullptr)
     , m_didFinishLoading(false)
+    , m_isIsolatedWorld(isIsolatedWorld)
 {
 }
 
@@ -203,11 +206,45 @@ void FetchManager::Loader::didReceiveResponse(unsigned long, const ResourceRespo
 {
     ASSERT(handle);
 
+    if (response.url().protocolIs("blob") && response.httpStatusCode() == 404) {
+        // "If |blob| is null, return a network error."
+        // https://fetch.spec.whatwg.org/#concept-basic-fetch
+        performNetworkError("Blob not found.");
+        return;
+    }
+
+    if (response.url().protocolIs("blob") && response.httpStatusCode() == 405) {
+        performNetworkError("Only 'GET' method is allowed for blob URLs.");
+        return;
+    }
+
     m_responseHttpStatusCode = response.httpStatusCode();
 
-    // Recompute the tainting if the request was redirected to a different
-    // origin.
-    if (!SecurityOrigin::create(response.url())->isSameSchemeHostPort(m_request->origin().get())) {
+    if (response.url().protocolIsData()) {
+        if (m_request->url() == response.url()) {
+            // A direct request to data.
+            m_request->setResponseTainting(FetchRequestData::BasicTainting);
+        } else {
+            // A redirect to data: scheme occured.
+            // Redirects to data URLs are rejected by the spec because
+            // same-origin data-URL flag is unset, except for no-cors mode.
+            // TODO(hiroshige): currently redirects to data URLs in no-cors
+            // mode is also rejected by Chromium side.
+            switch (m_request->mode()) {
+            case WebURLRequest::FetchRequestModeNoCORS:
+                m_request->setResponseTainting(FetchRequestData::OpaqueTainting);
+                break;
+            case WebURLRequest::FetchRequestModeSameOrigin:
+            case WebURLRequest::FetchRequestModeCORS:
+            case WebURLRequest::FetchRequestModeCORSWithForcedPreflight:
+            case WebURLRequest::FetchRequestModeNavigate:
+                performNetworkError("Fetch API cannot load " + m_request->url().string() + ". Redirects to data: URL are allowed only when mode is \"no-cors\".");
+                return;
+            }
+        }
+    } else if (!SecurityOrigin::create(response.url())->isSameSchemeHostPort(m_request->origin().get())) {
+        // Recompute the tainting if the request was redirected to a different
+        // origin.
         switch (m_request->mode()) {
         case WebURLRequest::FetchRequestModeSameOrigin:
             ASSERT_NOT_REACHED();
@@ -218,6 +255,9 @@ void FetchManager::Loader::didReceiveResponse(unsigned long, const ResourceRespo
         case WebURLRequest::FetchRequestModeCORS:
         case WebURLRequest::FetchRequestModeCORSWithForcedPreflight:
             m_request->setResponseTainting(FetchRequestData::CORSTainting);
+            break;
+        case WebURLRequest::FetchRequestModeNavigate:
+            RELEASE_ASSERT_NOT_REACHED();
             break;
         }
     }
@@ -239,7 +279,7 @@ void FetchManager::Loader::didReceiveResponse(unsigned long, const ResourceRespo
 
     if (IsRedirectStatusCode(m_responseHttpStatusCode)) {
         Vector<String> locations;
-        responseData->headerList()->getAll("location", locations);
+        responseData->headerList()->getAll(HTTPNames::Location, locations);
         if (locations.size() > 1) {
             performNetworkError("Multiple Location header.");
             return;
@@ -271,6 +311,16 @@ void FetchManager::Loader::didReceiveResponse(unsigned long, const ResourceRespo
     }
 
     Response* r = Response::create(m_resolver->executionContext(), taintedResponse);
+    if (response.url().protocolIsData()) {
+        // An "Access-Control-Allow-Origin" header is added for data: URLs
+        // but no headers except for "Content-Type" should exist,
+        // according to the spec:
+        // https://fetch.spec.whatwg.org/#concept-basic-fetch
+        // "... return a response whose header list consist of a single header
+        //  whose name is `Content-Type` and value is the MIME type and
+        //  parameters returned from obtaining a resource"
+        r->headers()->headerList()->remove(HTTPNames::Access_Control_Allow_Origin);
+    }
     r->headers()->setGuard(Headers::ImmutableGuard);
 
     if (m_request->integrity().isEmpty()) {
@@ -372,10 +422,12 @@ void FetchManager::Loader::start()
     // "- |request|'s url's scheme is 'data' and |request|'s same-origin data
     //    URL flag is set"
     // "- |request|'s url's scheme is 'about'"
-    // Note we don't support to call this method with |CORS flag|.
+    // Note we don't support to call this method with |CORS flag|
+    // "- |request|'s mode is |navigate|".
     if ((SecurityOrigin::create(m_request->url())->isSameSchemeHostPortAndSuborigin(m_request->origin().get()))
         || (m_request->url().protocolIsData() && m_request->sameOriginDataURLFlag())
-        || (m_request->url().protocolIsAbout())) {
+        || (m_request->url().protocolIsAbout())
+        || (m_request->mode() == WebURLRequest::FetchRequestModeNavigate)) {
         // "The result of performing a basic fetch using request."
         performBasicFetch();
         return;
@@ -447,6 +499,10 @@ void FetchManager::Loader::performBasicFetch()
     if (SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol())) {
         // "Return the result of performing an HTTP fetch using |request|."
         performHTTPFetch(false, false);
+    } else if (m_request->url().protocolIsData()) {
+        performDataFetch();
+    } else if (m_request->url().protocolIs("blob")) {
+        performHTTPFetch(false, false);
     } else {
         // FIXME: implement other protocols.
         performNetworkError("Fetch API cannot load " + m_request->url().string() + ". URL scheme \"" + m_request->url().protocol() + "\" is not supported.");
@@ -460,7 +516,7 @@ void FetchManager::Loader::performNetworkError(const String& message)
 
 void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFlag)
 {
-    ASSERT(SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol()));
+    ASSERT(SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol()) || (m_request->url().protocolIs("blob") && !corsFlag && !corsPreflightFlag));
     // CORS preflight fetch procedure is implemented inside DocumentThreadableLoader.
 
     // "1. Let |HTTPRequest| be a copy of |request|, except that |HTTPRequest|'s
@@ -475,7 +531,7 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
         request.addHTTPHeaderField(AtomicString(list[i]->first), AtomicString(list[i]->second));
     }
 
-    if (m_request->method() != "GET" && m_request->method() != "HEAD") {
+    if (m_request->method() != HTTPNames::GET && m_request->method() != HTTPNames::HEAD) {
         if (m_request->buffer()) {
             request.setHTTPBody(m_request->buffer()->drainAsFormData());
         }
@@ -507,6 +563,7 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
         // referrer string (i.e. String()).
         request.setHTTPReferrer(SecurityPolicy::generateReferrer(policy, m_request->url(), m_request->referrerString()));
     }
+    request.setSkipServiceWorker(m_isIsolatedWorld);
 
     // "3. Append `Host`, ..."
     // FIXME: Implement this when the spec is fixed.
@@ -545,7 +602,47 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
     case WebURLRequest::FetchRequestModeCORSWithForcedPreflight:
         threadableLoaderOptions.crossOriginRequestPolicy = UseAccessControl;
         break;
+    case WebURLRequest::FetchRequestModeNavigate:
+        // Using DenyCrossOriginRequests here to reduce the security risk.
+        // "navigate" request is only available in ServiceWorker.
+        threadableLoaderOptions.crossOriginRequestPolicy = DenyCrossOriginRequests;
+        break;
     }
+    InspectorInstrumentation::willStartFetch(executionContext(), this);
+    m_loader = ThreadableLoader::create(*executionContext(), this, request, threadableLoaderOptions, resourceLoaderOptions);
+    if (!m_loader)
+        performNetworkError("Can't create ThreadableLoader");
+}
+
+// performDataFetch() is almost the same as performHTTPFetch(), except for:
+// - We set AllowCrossOriginRequests to allow requests to data: URLs in
+//   'same-origin' mode.
+// - We reject non-GET method.
+void FetchManager::Loader::performDataFetch()
+{
+    ASSERT(m_request->url().protocolIsData());
+
+    // Spec: https://fetch.spec.whatwg.org/#concept-basic-fetch
+    // If |request|'s method is `GET` .... Otherwise, return a network error.
+    if (m_request->method() != HTTPNames::GET) {
+        performNetworkError("Only 'GET' method is allowed for data URLs in Fetch API.");
+        return;
+    }
+
+    ResourceRequest request(m_request->url());
+    request.setRequestContext(m_request->context());
+    request.setUseStreamOnResponse(true);
+    request.setHTTPMethod(m_request->method());
+    request.setFetchRedirectMode(WebURLRequest::FetchRedirectModeError);
+
+    ResourceLoaderOptions resourceLoaderOptions;
+    resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
+    resourceLoaderOptions.securityOrigin = m_request->origin().get();
+
+    ThreadableLoaderOptions threadableLoaderOptions;
+    threadableLoaderOptions.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(executionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
+    threadableLoaderOptions.crossOriginRequestPolicy = AllowCrossOriginRequests;
+
     InspectorInstrumentation::willStartFetch(executionContext(), this);
     m_loader = ThreadableLoader::create(*executionContext(), this, request, threadableLoaderOptions, resourceLoaderOptions);
     if (!m_loader)
@@ -597,8 +694,8 @@ ScriptPromise FetchManager::fetch(ScriptState* scriptState, FetchRequestData* re
 
     request->setContext(WebURLRequest::RequestContextFetch);
 
-    OwnPtrWillBeRawPtr<Loader> ownLoader = Loader::create(m_executionContext, this, resolver, request);
-    Loader* loader = m_loaders.add(ownLoader.release()).storedValue->get();
+    Loader* loader = Loader::create(m_executionContext, this, resolver, request, scriptState->world().isIsolatedWorld());
+    m_loaders.add(loader);
     loader->start();
     return promise;
 }
@@ -613,18 +710,14 @@ void FetchManager::stop()
 
 void FetchManager::onLoaderFinished(Loader* loader)
 {
-    // We don't use remove here, because it may cause recursive deletion.
-    OwnPtrWillBeRawPtr<Loader> p = m_loaders.take(loader);
-    ASSERT(p);
-    p->dispose();
+    m_loaders.remove(loader);
+    loader->dispose();
 }
 
 DEFINE_TRACE(FetchManager)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_executionContext);
     visitor->trace(m_loaders);
-#endif
 }
 
 } // namespace blink

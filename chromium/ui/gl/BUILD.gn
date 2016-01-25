@@ -59,6 +59,8 @@ component("gl") {
     "gl_fence_nv.h",
     "gl_gl_api_implementation.cc",
     "gl_gl_api_implementation.h",
+    "gl_helper.cc",
+    "gl_helper.h",
     "gl_image.h",
     "gl_image_memory.cc",
     "gl_image_memory.h",
@@ -85,6 +87,8 @@ component("gl") {
     "gl_surface_mac.cc",
     "gl_surface_osmesa.cc",
     "gl_surface_osmesa.h",
+    "gl_surface_overlay.cc",
+    "gl_surface_overlay.h",
     "gl_surface_stub.cc",
     "gl_surface_stub.h",
     "gl_surface_win.cc",
@@ -127,6 +131,7 @@ component("gl") {
   public_deps = [
     "//base",
     "//third_party/mesa:mesa_headers",
+    "//ui/base/",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -154,8 +159,8 @@ component("gl") {
       "gl_implementation_osmesa.h",
     ]
   }
-  if (is_linux) {
-    deps += [ "//third_party/libevent" ]
+  if (!is_android) {  # TODO(GYP) Enable on Android when osmesa links.
+    deps += [ "//third_party/mesa:osmesa" ]
   }
   if (use_x11) {
     sources += [
@@ -171,6 +176,8 @@ component("gl") {
       "gl_image_glx.cc",
       "gl_image_glx.h",
       "gl_implementation_x11.cc",
+      "gl_surface_egl_x11.cc",
+      "gl_surface_egl_x11.h",
       "gl_surface_glx.cc",
       "gl_surface_glx.h",
       "gl_surface_x11.cc",
@@ -183,6 +190,10 @@ component("gl") {
     ]
 
     deps += [ "//ui/gfx/x" ]
+    data_deps = [
+      "//third_party/angle:libEGL_ANGLE",
+      "//third_party/angle:libGLESv2_ANGLE",
+    ]
   }
   if (is_win) {
     sources += [
@@ -198,6 +209,8 @@ component("gl") {
       "gl_surface_wgl.h",
       "gl_wgl_api_implementation.cc",
       "gl_wgl_api_implementation.h",
+      "vsync_provider_win.cc",
+      "vsync_provider_win.h",
     ]
 
     libs = [ "dwmapi.lib" ]
@@ -281,19 +294,29 @@ source_set("gl_unittest_utils") {
   deps = [
     ":gl",
     "//testing/gmock",
+    "//testing/gtest",
   ]
 }
 
 source_set("test_support") {
+  testonly = true
   sources = [
+    "test/gl_image_test_support.cc",
+    "test/gl_image_test_support.h",
+    "test/gl_image_test_template.h",
     "test/gl_surface_test_support.cc",
     "test/gl_surface_test_support.h",
+    "test/gl_test_helper.cc",
+    "test/gl_test_helper.h",
   ]
 
   configs += [ "//third_party/khronos:khronos_headers" ]
 
-  deps = [
+  public_deps = [
     ":gl",
+  ]
+  deps = [
+    "//testing/gtest",
   ]
 
   if (use_x11) {
@@ -317,6 +340,8 @@ group("gl_unittests_run") {
 test("gl_unittests") {
   sources = [
     "gl_api_unittest.cc",
+    "gl_image_ref_counted_memory_unittest.cc",
+    "gl_image_shared_memory_unittest.cc",
     "gpu_timing_unittest.cc",
     "test/run_all_unittests.cc",
   ]
@@ -332,6 +357,14 @@ test("gl_unittests") {
     sources += [ "glx_api_unittest.cc" ]
   }
 
+  if (use_ozone) {
+    sources += [ "gl_image_ozone_native_pixmap_unittest.cc" ]
+  }
+
+  if (is_mac) {
+    sources += [ "gl_image_io_surface_unittest.cc" ]
+  }
+
   include_dirs = [ "//third_party/khronos" ]
 
   deps = [
@@ -342,7 +375,17 @@ test("gl_unittests") {
     "//base/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
   ]
+
+  data_deps = [
+    "//third_party/mesa:osmesa",
+  ]
+
+  if (use_ozone) {
+    deps += [ "//ui/ozone" ]
+  }
 }
 
 if (is_android) {

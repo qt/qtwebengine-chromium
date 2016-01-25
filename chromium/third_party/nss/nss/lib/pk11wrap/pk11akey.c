@@ -18,7 +18,6 @@
 #include "secasn1.h" 
 #include "secoid.h" 
 #include "secerr.h"
-#include "sslerr.h"
 #include "sechash.h"
 
 #include "secpkcs5.h"  
@@ -74,7 +73,7 @@ PK11_ImportPublicKey(PK11SlotInfo *slot, SECKEYPublicKey *pubKey,
     SECItem *ckaId = NULL;
     SECItem *pubValue = NULL;
     int signedcount = 0;
-    int templateCount = 0;
+    unsigned int templateCount = 0;
     SECStatus rv;
 
     /* if we already have an object in the desired slot, use it */
@@ -393,7 +392,7 @@ pk11_get_Decoded_ECPoint(PLArenaPool *arena, const SECItem *ecParams,
     /* If the point is uncompressed and the lengths match, it
      * must be an unencoded point */
     if ((*((char *)ecPoint->pValue) == EC_POINT_FORM_UNCOMPRESSED) 
-	&& (ecPoint->ulValueLen == keyLen)) {
+	&& (ecPoint->ulValueLen == (unsigned int)keyLen)) {
 	    return pk11_Attr2SecItem(arena, ecPoint, publicKeyValue);
     }
 
@@ -407,7 +406,7 @@ pk11_get_Decoded_ECPoint(PLArenaPool *arena, const SECItem *ecParams,
 
 	/* it coded correctly & we know the key length (and they match)
 	 * then we are done, return the results. */
-        if (keyLen && rv == SECSuccess && publicKeyValue->len == keyLen) {
+        if (keyLen && rv == SECSuccess && publicKeyValue->len == (unsigned int)keyLen) {
 	    return CKR_OK;
 	}
 
@@ -539,7 +538,7 @@ PK11_ExtractPublicKey(PK11SlotInfo *slot,KeyType keyType,CK_OBJECT_HANDLE id)
     PLArenaPool *arena;
     PLArenaPool *tmp_arena;
     SECKEYPublicKey *pubKey;
-    int templateCount = 0;
+    unsigned int templateCount = 0;
     CK_KEY_TYPE pk11KeyType;
     CK_RV crv;
     CK_ATTRIBUTE template[8];
@@ -1506,6 +1505,7 @@ PK11_MakeKEAPubKey(unsigned char *keyData,int length)
 
     pkData.data = keyData;
     pkData.len = length;
+    pkData.type = siBuffer;
 
     arena = PORT_NewArena (DER_DEFAULT_CHUNKSIZE);
     if (arena == NULL)
@@ -2298,7 +2298,7 @@ PK11_ListPublicKeysInSlot(PK11SlotInfo *slot, char *nickname)
     CK_ATTRIBUTE *attrs;
     CK_BBOOL ckTrue = CK_TRUE;
     CK_OBJECT_CLASS keyclass = CKO_PUBLIC_KEY;
-    int tsize = 0;
+    unsigned int tsize = 0;
     int objCount = 0;
     CK_OBJECT_HANDLE *key_ids;
     SECKEYPublicKeyList *keys;
@@ -2344,7 +2344,7 @@ PK11_ListPrivKeysInSlot(PK11SlotInfo *slot, char *nickname, void *wincx)
     CK_ATTRIBUTE *attrs;
     CK_BBOOL ckTrue = CK_TRUE;
     CK_OBJECT_CLASS keyclass = CKO_PRIVATE_KEY;
-    int tsize = 0;
+    unsigned int tsize = 0;
     int objCount = 0;
     CK_OBJECT_HANDLE *key_ids;
     SECKEYPrivateKeyList *keys;

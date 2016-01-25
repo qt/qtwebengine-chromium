@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DelayDSPKernel.h"
-
 #include "platform/audio/AudioUtilities.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
@@ -71,4 +68,3 @@ double DelayDSPKernel::delayTime(float)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

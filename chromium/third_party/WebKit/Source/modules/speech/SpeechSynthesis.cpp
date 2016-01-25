@@ -23,10 +23,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/speech/SpeechSynthesis.h"
 
-#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/speech/SpeechSynthesisEvent.h"
 #include "platform/speech/PlatformSpeechSynthesisVoice.h"
@@ -69,7 +67,7 @@ const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices()
         return m_voiceList;
 
     // If the voiceList is empty, that's the cue to get the voices from the platform again.
-    const HeapVector<Member<PlatformSpeechSynthesisVoice>>& platformVoices = m_platformSpeechSynthesizer->voiceList();
+    const Vector<RefPtr<PlatformSpeechSynthesisVoice>>& platformVoices = m_platformSpeechSynthesizer->voiceList();
     size_t voiceCount = platformVoices.size();
     for (size_t k = 0; k < voiceCount; k++)
         m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k]));
@@ -106,12 +104,9 @@ void SpeechSynthesis::startSpeakingImmediately()
     m_platformSpeechSynthesizer->speak(utterance->platformUtterance());
 }
 
-void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance, ExceptionState& exceptionState)
+void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance)
 {
-    if (!utterance) {
-        exceptionState.throwTypeError("Invalid utterance argument");
-        return;
-    }
+    ASSERT(utterance);
 
     m_utteranceQueue.append(utterance);
 

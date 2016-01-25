@@ -4,14 +4,20 @@
 
 #include "ui/views/controls/textfield/textfield.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/i18n/rtl.h"
+#include "base/macros.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -20,13 +26,13 @@
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/input_method_factory.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/render_text.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -49,10 +55,6 @@
 
 #if defined(USE_X11)
 #include "ui/events/event_utils.h"
-#endif
-
-#if defined(OS_MACOSX) && !defined(USE_AURA)
-#include "ui/events/test/event_generator.h"
 #endif
 
 using base::ASCIIToUTF16;
@@ -145,8 +147,10 @@ void MockInputMethod::DispatchKeyEvent(ui::KeyEvent* key) {
   // Checks whether the key event is from EventGenerator on Windows which will
   // generate key event for WM_CHAR.
   // The MockInputMethod will insert char on WM_KEYDOWN so ignore WM_CHAR here.
-  if (key->is_char() && key->HasNativeEvent())
+  if (key->is_char() && key->HasNativeEvent()) {
+    key->SetHandled();
     return;
+  }
 
   bool handled = !IsTextInputTypeNone() && HasComposition();
   ClearStates();
@@ -172,7 +176,7 @@ void MockInputMethod::DispatchKeyEvent(ui::KeyEvent* key) {
     } else if (key->type() == ui::ET_KEY_PRESSED) {
       base::char16 ch = key->GetCharacter();
       if (ch)
-        client->InsertChar(ch, key->flags());
+        client->InsertChar(*key);
     }
   }
 
@@ -272,8 +276,8 @@ class TestTextfield : public views::Textfield {
   }
 
   // ui::TextInputClient overrides:
-  void InsertChar(base::char16 ch, int flags) override {
-    views::Textfield::InsertChar(ch, flags);
+  void InsertChar(const ui::KeyEvent& e) override {
+    views::Textfield::InsertChar(e);
 #if defined(OS_MACOSX)
     // On Mac, characters are inserted directly rather than attempting to get a
     // unicode character from the ui::KeyEvent (which isn't always possible).
@@ -436,13 +440,10 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
     // don't want parallel tests to steal active status either, so fake it.
 #if defined(OS_MACOSX) && !defined(USE_AURA)
     fake_activation_ = test::WidgetTest::FakeWidgetIsActiveAlways();
-
-    // This is only used on Mac. See comment regarding |event_generator_| below.
+#endif
     event_generator_.reset(
         new ui::test::EventGenerator(GetContext(), widget_->GetNativeWindow()));
-#endif
   }
-
   ui::MenuModel* GetContextMenuModel() {
     test_api_->UpdateContextMenu();
     return test_api_->context_menu_contents();
@@ -467,17 +468,7 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
 
  protected:
   void SendKeyPress(ui::KeyboardCode key_code, int flags) {
-#if defined(OS_MACOSX) && !defined(USE_AURA)
-    // The Mac EventGenerator hooks in before IME. It sends events first to an
-    // NSResponder, which is necessary to interpret keyboard events into
-    // appropriate editing commands.
     event_generator_->PressKey(key_code, flags);
-#else
-    // TODO(shuchen): making EventGenerator support input method and using
-    // EventGenerator here. crbug.com/512315.
-    ui::KeyEvent event(ui::ET_KEY_PRESSED, key_code, flags);
-    input_method_->DispatchKeyEvent(&event);
-#endif
   }
 
   void SendKeyEvent(ui::KeyboardCode key_code,
@@ -493,10 +484,11 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
     if (TestingNativeMac())
       std::swap(control, command);
 
-    int flags = (alt ? ui::EF_ALT_DOWN : 0) | (shift ? ui::EF_SHIFT_DOWN : 0) |
+    int flags = (shift ? ui::EF_SHIFT_DOWN : 0) |
                 (control ? ui::EF_CONTROL_DOWN : 0) |
+                (alt ? ui::EF_ALT_DOWN : 0) |
                 (command ? ui::EF_COMMAND_DOWN : 0) |
-                (caps_lock ? ui::EF_CAPS_LOCK_DOWN : 0);
+                (caps_lock ? ui::EF_CAPS_LOCK_ON : 0);
 
     SendKeyPress(key_code, flags);
   }
@@ -669,11 +661,7 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
  private:
   ui::ClipboardType copied_to_clipboard_;
   scoped_ptr<test::WidgetTest::FakeActivation> fake_activation_;
-
-#if defined(OS_MACOSX) && !defined(USE_AURA)
   scoped_ptr<ui::test::EventGenerator> event_generator_;
-#endif
-
   DISALLOW_COPY_AND_ASSIGN(TextfieldTest);
 };
 
@@ -1218,28 +1206,28 @@ TEST_F(TextfieldTest, DragAndDrop_AcceptDrop) {
   base::string16 string(ASCIIToUTF16("string "));
   data.SetString(string);
   int formats = 0;
-  std::set<OSExchangeData::CustomFormat> custom_formats;
+  std::set<ui::Clipboard::FormatType> format_types;
 
   // Ensure that disabled textfields do not accept drops.
   textfield_->SetEnabled(false);
-  EXPECT_FALSE(textfield_->GetDropFormats(&formats, &custom_formats));
+  EXPECT_FALSE(textfield_->GetDropFormats(&formats, &format_types));
   EXPECT_EQ(0, formats);
-  EXPECT_TRUE(custom_formats.empty());
+  EXPECT_TRUE(format_types.empty());
   EXPECT_FALSE(textfield_->CanDrop(data));
   textfield_->SetEnabled(true);
 
   // Ensure that read-only textfields do not accept drops.
   textfield_->SetReadOnly(true);
-  EXPECT_FALSE(textfield_->GetDropFormats(&formats, &custom_formats));
+  EXPECT_FALSE(textfield_->GetDropFormats(&formats, &format_types));
   EXPECT_EQ(0, formats);
-  EXPECT_TRUE(custom_formats.empty());
+  EXPECT_TRUE(format_types.empty());
   EXPECT_FALSE(textfield_->CanDrop(data));
   textfield_->SetReadOnly(false);
 
   // Ensure that enabled and editable textfields do accept drops.
-  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &custom_formats));
+  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &format_types));
   EXPECT_EQ(ui::OSExchangeData::STRING, formats);
-  EXPECT_TRUE(custom_formats.empty());
+  EXPECT_TRUE(format_types.empty());
   EXPECT_TRUE(textfield_->CanDrop(data));
   gfx::Point drop_point(GetCursorPositionX(6), 0);
   ui::DropTargetEvent drop(data, drop_point, drop_point,
@@ -1252,7 +1240,7 @@ TEST_F(TextfieldTest, DragAndDrop_AcceptDrop) {
   // Ensure that textfields do not accept non-OSExchangeData::STRING types.
   ui::OSExchangeData bad_data;
   bad_data.SetFilename(base::FilePath(FILE_PATH_LITERAL("x")));
-  ui::OSExchangeData::CustomFormat fmt = ui::Clipboard::GetBitmapFormatType();
+  ui::Clipboard::FormatType fmt = ui::Clipboard::GetBitmapFormatType();
   bad_data.SetPickledData(fmt, base::Pickle());
   bad_data.SetFileContents(base::FilePath(L"x"), "x");
   bad_data.SetHtml(base::string16(ASCIIToUTF16("x")), GURL("x.org"));
@@ -1317,7 +1305,7 @@ TEST_F(TextfieldTest, DragAndDrop_ToTheRight) {
   ui::OSExchangeData data;
   int formats = 0;
   int operations = 0;
-  std::set<OSExchangeData::CustomFormat> custom_formats;
+  std::set<ui::Clipboard::FormatType> format_types;
 
   // Start dragging "ello".
   textfield_->SelectRange(gfx::Range(1, 5));
@@ -1335,9 +1323,9 @@ TEST_F(TextfieldTest, DragAndDrop_ToTheRight) {
   textfield_->WriteDragDataForView(NULL, click_a.location(), &data);
   EXPECT_TRUE(data.GetString(&string));
   EXPECT_EQ(textfield_->GetSelectedText(), string);
-  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &custom_formats));
+  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &format_types));
   EXPECT_EQ(ui::OSExchangeData::STRING, formats);
-  EXPECT_TRUE(custom_formats.empty());
+  EXPECT_TRUE(format_types.empty());
 
   // Drop "ello" after "w".
   const gfx::Point kDropPoint(GetCursorPositionX(7), 0);
@@ -1371,7 +1359,7 @@ TEST_F(TextfieldTest, DragAndDrop_ToTheLeft) {
   ui::OSExchangeData data;
   int formats = 0;
   int operations = 0;
-  std::set<OSExchangeData::CustomFormat> custom_formats;
+  std::set<ui::Clipboard::FormatType> format_types;
 
   // Start dragging " worl".
   textfield_->SelectRange(gfx::Range(5, 10));
@@ -1389,9 +1377,9 @@ TEST_F(TextfieldTest, DragAndDrop_ToTheLeft) {
   textfield_->WriteDragDataForView(NULL, click_a.location(), &data);
   EXPECT_TRUE(data.GetString(&string));
   EXPECT_EQ(textfield_->GetSelectedText(), string);
-  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &custom_formats));
+  EXPECT_TRUE(textfield_->GetDropFormats(&formats, &format_types));
   EXPECT_EQ(ui::OSExchangeData::STRING, formats);
-  EXPECT_TRUE(custom_formats.empty());
+  EXPECT_TRUE(format_types.empty());
 
   // Drop " worl" after "h".
   EXPECT_TRUE(textfield_->CanDrop(data));
@@ -1896,7 +1884,7 @@ TEST_F(TextfieldTest, TextCursorDisplayTest) {
 }
 
 TEST_F(TextfieldTest, TextCursorDisplayInRTLTest) {
-  std::string locale = l10n_util::GetApplicationLocale("");
+  std::string locale = base::i18n::GetConfiguredLocale();
   base::i18n::SetICUDefaultLocale("he");
 
   InitTextfield();
@@ -2043,7 +2031,7 @@ TEST_F(TextfieldTest, HitOutsideTextAreaTest) {
 }
 
 TEST_F(TextfieldTest, HitOutsideTextAreaInRTLTest) {
-  std::string locale = l10n_util::GetApplicationLocale("");
+  std::string locale = base::i18n::GetConfiguredLocale();
   base::i18n::SetICUDefaultLocale("he");
 
   InitTextfield();
@@ -2106,7 +2094,7 @@ TEST_F(TextfieldTest, OverflowTest) {
 }
 
 TEST_F(TextfieldTest, OverflowInRTLTest) {
-  std::string locale = l10n_util::GetApplicationLocale("");
+  std::string locale = base::i18n::GetConfiguredLocale();
   base::i18n::SetICUDefaultLocale("he");
 
   InitTextfield();
@@ -2140,11 +2128,11 @@ TEST_F(TextfieldTest, GetCompositionCharacterBoundsTest) {
   InitTextfield();
   ui::CompositionText composition;
   composition.text = UTF8ToUTF16("abc123");
-  const uint32 char_count = static_cast<uint32>(composition.text.length());
+  const uint32_t char_count = static_cast<uint32_t>(composition.text.length());
   ui::TextInputClient* client = textfield_;
 
   // Compare the composition character bounds with surrounding cursor bounds.
-  for (uint32 i = 0; i < char_count; ++i) {
+  for (uint32_t i = 0; i < char_count; ++i) {
     composition.selection = gfx::Range(i);
     client->SetCompositionText(composition);
     gfx::Point cursor_origin = GetCursorBounds().origin();
@@ -2193,7 +2181,7 @@ TEST_F(TextfieldTest, GetCompositionCharacterBounds_ComplexText) {
   // Make sure GetCompositionCharacterBounds never fails for index.
   gfx::Rect rects[kUtf16CharsCount];
   gfx::Rect prev_cursor = GetCursorBounds();
-  for (uint32 i = 0; i < kUtf16CharsCount; ++i)
+  for (uint32_t i = 0; i < kUtf16CharsCount; ++i)
     EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &rects[i]));
 
   // Here we might expect the following results but it actually depends on how
@@ -2429,14 +2417,6 @@ TEST_F(TextfieldTest, DestroyingTextfieldFromOnKeyEvent) {
 }
 
 class TextfieldTouchSelectionTest : public TextfieldTest {
- public:
-  // TextfieldTest:
-  void SetUp() override {
-    TextfieldTest::SetUp();
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableTouchEditing);
-  }
-
  protected:
   // Simulates a complete tap.
   void Tap(const gfx::Point& point) {

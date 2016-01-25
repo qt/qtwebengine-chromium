@@ -47,7 +47,7 @@ WebInspector.Popover = function(popoverHelper)
     this._hideBound = this.hide.bind(this);
 }
 
-WebInspector.Popover._classNamePrefix = "popover custom-popup-vertical-scroll custom-popup-horizontal-scroll";
+WebInspector.Popover._classNamePrefix = "popover";
 
 WebInspector.Popover.prototype = {
     /**
@@ -164,7 +164,7 @@ WebInspector.Popover.prototype = {
     positionElement: function(anchorElement, preferredWidth, preferredHeight, arrowDirection)
     {
         const borderWidth = this._hasNoMargins ? 0 : 8;
-        const scrollerWidth = this._hasFixedHeight ? 0 : 11;
+        const scrollerWidth = this._hasFixedHeight ? 0 : 14;
         const arrowHeight = this._hasNoMargins ? 8 : 15;
         const arrowOffset = 10;
         const borderRadius = 4;
@@ -398,7 +398,7 @@ WebInspector.PopoverHelper.prototype = {
     _mouseHover: function(element)
     {
         delete this._hoverTimer;
-
+        this._hoverElement = element;
         this._hidePopover();
         this._popover = new WebInspector.Popover(this);
         this._showPopover(element, this._popover);

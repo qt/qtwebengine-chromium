@@ -7,9 +7,12 @@
 
 #include "ui/gfx/image/image_unittest_util.h"
 
+#include <stddef.h>
+
 #include <cmath>
 
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -215,11 +218,11 @@ PlatformImage CreatePlatformImage() {
   base::ScopedCFTypeRef<CGColorSpaceRef> color_space(
       CGColorSpaceCreateDeviceRGB());
   UIImage* image =
-      gfx::SkBitmapToUIImageWithColorSpace(bitmap, scale, color_space);
+      skia::SkBitmapToUIImageWithColorSpace(bitmap, scale, color_space);
   base::mac::NSObjectRetain(image);
   return image;
 #elif defined(OS_MACOSX)
-  NSImage* image = gfx::SkBitmapToNSImageWithColorSpace(
+  NSImage* image = skia::SkBitmapToNSImageWithColorSpace(
       bitmap, base::mac::GetGenericRGBColorSpace());
   base::mac::NSObjectRetain(image);
   return image;

@@ -32,7 +32,7 @@
 #include "wtf/text/Unicode.h"
 #include <limits.h>
 
-#if USE(CF)
+#if OS(MACOSX)
 typedef const struct __CFString * CFStringRef;
 #endif
 
@@ -52,7 +52,7 @@ struct SubstringTranslator;
 struct UCharBufferTranslator;
 template<typename> class RetainPtr;
 
-enum TextCaseSensitivity { TextCaseSensitive, TextCaseInsensitive };
+enum TextCaseSensitivity { TextCaseSensitive, TextCaseASCIIInsensitive, TextCaseInsensitive };
 
 enum StripBehavior { StripExtraWhiteSpace, DoNotStripWhiteSpace };
 
@@ -218,20 +218,6 @@ public:
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, LChar*& data);
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, UChar*& data);
 
-    // Reallocate the StringImpl. The originalString must be only owned by the
-    // PassRefPtr.  Just like the input pointer of realloc(), the originalString
-    // can't be used after this function.
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length);
-
-    // If this StringImpl has only one reference, we can truncate the string by
-    // updating its m_length property without actually re-allocating its buffer.
-    void truncateAssumingIsolated(unsigned length)
-    {
-        ASSERT(hasOneRef());
-        ASSERT(length <= m_length);
-        m_length = length;
-    }
-
     unsigned length() const { return m_length; }
     bool is8Bit() const { return m_is8Bit; }
 
@@ -360,6 +346,7 @@ public:
     float toFloat(bool* ok = 0);
 
     PassRefPtr<StringImpl> lower();
+    PassRefPtr<StringImpl> lowerASCII();
     PassRefPtr<StringImpl> upper();
     PassRefPtr<StringImpl> lower(const AtomicString& localeIdentifier);
     PassRefPtr<StringImpl> upper(const AtomicString& localeIdentifier);
@@ -388,26 +375,30 @@ public:
     size_t findIgnoringCase(const LChar*, unsigned index = 0);
     ALWAYS_INLINE size_t findIgnoringCase(const char* s, unsigned index = 0) { return findIgnoringCase(reinterpret_cast<const LChar*>(s), index); }
     size_t findIgnoringCase(StringImpl*, unsigned index = 0);
+    size_t findIgnoringASCIICase(StringImpl*, unsigned index = 0);
 
     size_t findNextLineStart(unsigned index = UINT_MAX);
 
     size_t reverseFind(UChar, unsigned index = UINT_MAX);
     size_t reverseFind(StringImpl*, unsigned index = UINT_MAX);
-    size_t reverseFindIgnoringCase(StringImpl*, unsigned index = UINT_MAX);
 
     size_t count(LChar) const;
 
-    bool startsWith(StringImpl* str, TextCaseSensitivity caseSensitivity = TextCaseSensitive) { return ((caseSensitivity == TextCaseSensitive) ? reverseFind(str, 0) : reverseFindIgnoringCase(str, 0)) == 0; }
     bool startsWith(UChar) const;
-    bool startsWith(const char*, unsigned matchLength, TextCaseSensitivity) const;
-    template<unsigned matchLength>
-    bool startsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return startsWith(prefix, matchLength - 1, caseSensitivity); }
+    bool startsWith(const char*, unsigned prefixLength) const;
+    bool startsWith(const StringImpl*) const;
+    bool startsWithIgnoringCase(const char*, unsigned prefixLength) const;
+    bool startsWithIgnoringCase(const StringImpl*) const;
+    bool startsWithIgnoringASCIICase(const char*, unsigned prefixLength) const;
+    bool startsWithIgnoringASCIICase(const StringImpl*) const;
 
-    bool endsWith(StringImpl*, TextCaseSensitivity = TextCaseSensitive);
     bool endsWith(UChar) const;
-    bool endsWith(const char*, unsigned matchLength, TextCaseSensitivity) const;
-    template<unsigned matchLength>
-    bool endsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return endsWith(prefix, matchLength - 1, caseSensitivity); }
+    bool endsWith(const char*, unsigned suffixLength) const;
+    bool endsWith(const StringImpl*) const;
+    bool endsWithIgnoringCase(const char*, unsigned suffixLength) const;
+    bool endsWithIgnoringCase(const StringImpl*) const;
+    bool endsWithIgnoringASCIICase(const char*, unsigned suffixLength) const;
+    bool endsWithIgnoringASCIICase(const StringImpl*) const;
 
     PassRefPtr<StringImpl> replace(UChar, UChar);
     PassRefPtr<StringImpl> replace(UChar, StringImpl*);
@@ -418,7 +409,7 @@ public:
     PassRefPtr<StringImpl> replace(unsigned index, unsigned len, StringImpl*);
     PassRefPtr<StringImpl> upconvertedString();
 
-#if USE(CF)
+#if OS(MACOSX)
     RetainPtr<CFStringRef> createCFString();
 #endif
 #ifdef __OBJC__
@@ -457,11 +448,11 @@ private:
 
 private:
     unsigned m_refCount;
-    unsigned m_length;
+    const unsigned m_length;
     mutable unsigned m_hash : 24;
     unsigned m_isAtomic : 1;
-    unsigned m_is8Bit : 1;
-    unsigned m_isStatic : 1;
+    const unsigned m_is8Bit : 1;
+    const unsigned m_isStatic : 1;
 };
 
 template <>
@@ -523,20 +514,19 @@ inline bool equalIgnoringASCIICase(const CharacterTypeA* a, const CharacterTypeB
 }
 
 template<typename CharacterTypeA, typename CharacterTypeB>
-bool startsWithIgnoringASCIICase(const CharacterTypeA& reference, const CharacterTypeB& prefix)
+inline bool equalIgnoringASCIICase(const CharacterTypeA& a, const CharacterTypeB& b)
 {
-    unsigned prefixLength = prefix.length();
-    if (prefixLength > reference.length())
+    unsigned length = b.length();
+    if (a.length() != length)
         return false;
-
-    if (reference.is8Bit()) {
-        if (prefix.is8Bit())
-            return equalIgnoringASCIICase(reference.characters8(), prefix.characters8(), prefixLength);
-        return equalIgnoringASCIICase(reference.characters8(), prefix.characters16(), prefixLength);
+    if (a.is8Bit()) {
+        if (b.is8Bit())
+            return equalIgnoringASCIICase(a.characters8(), b.characters8(), length);
+        return equalIgnoringASCIICase(a.characters8(), b.characters16(), length);
     }
-    if (prefix.is8Bit())
-        return equalIgnoringASCIICase(reference.characters16(), prefix.characters8(), prefixLength);
-    return equalIgnoringASCIICase(reference.characters16(), prefix.characters16(), prefixLength);
+    if (b.is8Bit())
+        return equalIgnoringASCIICase(a.characters16(), b.characters8(), length);
+    return equalIgnoringASCIICase(a.characters16(), b.characters16(), length);
 }
 
 template<typename CharacterType>
@@ -786,6 +776,7 @@ using WTF::equal;
 using WTF::equalNonNull;
 using WTF::TextCaseSensitivity;
 using WTF::TextCaseSensitive;
+using WTF::TextCaseASCIIInsensitive;
 using WTF::TextCaseInsensitive;
 
 #endif

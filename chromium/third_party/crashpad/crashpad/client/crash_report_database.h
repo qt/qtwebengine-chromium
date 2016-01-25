@@ -20,8 +20,8 @@
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "util/file/file_io.h"
 #include "util/misc/uuid.h"
@@ -165,13 +165,33 @@ class CrashReportDatabase {
 
   virtual ~CrashReportDatabase() {}
 
-  //! \brief Initializes a database of crash reports.
+  //! \brief Opens a database of crash reports, possibly creating it.
   //!
-  //! \param[in] path A path to the database to be created or opened.
+  //! \param[in] path A path to the database to be created or opened. If the
+  //!     database does not yet exist, it will be created if possible. Note that
+  //!     for databases implemented as directory structures, existence refers
+  //!     solely to the outermost directory.
   //!
   //! \return A database object on success, `nullptr` on failure with an error
   //!     logged.
+  //!
+  //! \sa InitializeWithoutCreating
   static scoped_ptr<CrashReportDatabase> Initialize(const base::FilePath& path);
+
+  //! \brief Opens an existing database of crash reports.
+  //!
+  //! \param[in] path A path to the database to be opened. If the database does
+  //!     not yet exist, it will not be created. Note that for databases
+  //!     implemented as directory structures, existence refers solely to the
+  //!     outermost directory. On such databases, as long as the outermost
+  //!     directory is present, this method will create the inner structure.
+  //!
+  //! \return A database object on success, `nullptr` on failure with an error
+  //!     logged.
+  //!
+  //! \sa Initialize
+  static scoped_ptr<CrashReportDatabase> InitializeWithoutCreating(
+      const base::FilePath& path);
 
   //! \brief Returns the Settings object for this database.
   //!
@@ -299,6 +319,13 @@ class CrashReportDatabase {
   //!
   //! \return The operation status code.
   virtual OperationStatus SkipReportUpload(const UUID& uuid) = 0;
+
+  //! \brief Deletes a crash report file and its associated metadata.
+  //!
+  //! \param[in] uuid The UUID of the report to delete.
+  //!
+  //! \return The operation status code.
+  virtual OperationStatus DeleteReport(const UUID& uuid) = 0;
 
  protected:
   CrashReportDatabase() {}

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebSerializedScriptValue.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -46,7 +45,7 @@ WebSerializedScriptValue WebSerializedScriptValue::fromString(const WebString& s
 WebSerializedScriptValue WebSerializedScriptValue::serialize(v8::Local<v8::Value> value)
 {
     TrackExceptionState exceptionState;
-    WebSerializedScriptValue serializedValue = SerializedScriptValueFactory::instance().create(v8::Isolate::GetCurrent(), value, 0, 0, exceptionState);
+    WebSerializedScriptValue serializedValue = SerializedScriptValueFactory::instance().create(v8::Isolate::GetCurrent(), value, nullptr, nullptr, nullptr, exceptionState);
     if (exceptionState.hadException())
         return createInvalid();
     return serializedValue;

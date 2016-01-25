@@ -8,8 +8,9 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/time/default_tick_clock.h"
 #include "components/scheduler/base/task_queue.h"
-#include "components/scheduler/child/scheduler_task_runner_delegate_impl.h"
+#include "components/scheduler/child/scheduler_tqm_delegate_impl.h"
 #include "components/scheduler/child/web_scheduler_impl.h"
 #include "components/scheduler/child/web_task_runner_impl.h"
 #include "components/scheduler/child/worker_scheduler_impl.h"
@@ -19,10 +20,18 @@ namespace scheduler {
 
 WebThreadImplForWorkerScheduler::WebThreadImplForWorkerScheduler(
     const char* name)
-    : thread_(new base::Thread(name)) {
-  thread_->Start();
-  thread_task_runner_ = thread_->task_runner();
+    : WebThreadImplForWorkerScheduler(name, base::Thread::Options()) {}
 
+WebThreadImplForWorkerScheduler::WebThreadImplForWorkerScheduler(
+    const char* name,
+    base::Thread::Options options)
+    : thread_(new base::Thread(name ? name : std::string())) {
+  bool started = thread_->StartWithOptions(options);
+  CHECK(started);
+  thread_task_runner_ = thread_->task_runner();
+}
+
+void WebThreadImplForWorkerScheduler::Init() {
   base::WaitableEvent completion(false, false);
   thread_task_runner_->PostTask(
       FROM_HERE, base::Bind(&WebThreadImplForWorkerScheduler::InitOnThread,
@@ -31,21 +40,23 @@ WebThreadImplForWorkerScheduler::WebThreadImplForWorkerScheduler(
 }
 
 WebThreadImplForWorkerScheduler::~WebThreadImplForWorkerScheduler() {
-  base::WaitableEvent completion(false, false);
-  // Restore the original task runner so that the thread can tear itself down.
-  thread_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&WebThreadImplForWorkerScheduler::RestoreTaskRunnerOnThread,
-                 base::Unretained(this), &completion));
-  completion.Wait();
+  if (task_runner_delegate_) {
+    base::WaitableEvent completion(false, false);
+    // Restore the original task runner so that the thread can tear itself down.
+    thread_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&WebThreadImplForWorkerScheduler::RestoreTaskRunnerOnThread,
+                   base::Unretained(this), &completion));
+    completion.Wait();
+  }
   thread_->Stop();
 }
 
 void WebThreadImplForWorkerScheduler::InitOnThread(
     base::WaitableEvent* completion) {
-  task_runner_delegate_ =
-      SchedulerTaskRunnerDelegateImpl::Create(thread_->message_loop());
-  worker_scheduler_ = WorkerScheduler::Create(task_runner_delegate_);
+  // TODO(alexclarke): Do we need to unify virtual time for workers and the
+  // main thread?
+  worker_scheduler_ = CreateWorkerScheduler();
   worker_scheduler_->Init();
   task_runner_ = worker_scheduler_->DefaultTaskRunner();
   idle_task_runner_ = worker_scheduler_->IdleTaskRunner();
@@ -69,6 +80,13 @@ void WebThreadImplForWorkerScheduler::WillDestroyCurrentMessageLoop() {
   idle_task_runner_ = nullptr;
   web_scheduler_.reset();
   worker_scheduler_.reset();
+}
+
+scoped_ptr<scheduler::WorkerScheduler>
+WebThreadImplForWorkerScheduler::CreateWorkerScheduler() {
+  task_runner_delegate_ = SchedulerTqmDelegateImpl::Create(
+      thread_->message_loop(), make_scoped_ptr(new base::DefaultTickClock()));
+  return WorkerScheduler::Create(task_runner_delegate_);
 }
 
 blink::PlatformThreadId WebThreadImplForWorkerScheduler::threadId() const {

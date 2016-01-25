@@ -28,14 +28,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/PurgeableVector.h"
 
 #include "public/platform/Platform.h"
 #include "public/platform/WebDiscardableMemory.h"
+#include "public/platform/WebProcessMemoryDump.h"
 #include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 #include <cstring>
 
@@ -77,6 +78,19 @@ void PurgeableVector::reserveCapacity(size_t capacity)
     }
 
     moveDataFromDiscardableToVector();
+}
+
+void PurgeableVector::onMemoryDump(const String& dumpName, WebProcessMemoryDump* memoryDump) const
+{
+    ASSERT(!(m_discardable && m_vector.size()));
+    if (m_discardable) {
+        WebMemoryAllocatorDump* dump = m_discardable->createMemoryAllocatorDump(dumpName, memoryDump);
+        dump->addScalar("discardable_size", "bytes", m_discardableSize);
+    } else if (m_vector.size()) {
+        WebMemoryAllocatorDump* dump = memoryDump->createMemoryAllocatorDump(dumpName);
+        dump->addScalar("size", "bytes", m_vector.size());
+        memoryDump->addSuballocation(dump->guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+    }
 }
 
 void PurgeableVector::moveDataFromDiscardableToVector()

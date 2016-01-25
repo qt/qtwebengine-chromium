@@ -688,6 +688,10 @@ process_common_toolchain() {
         tgt_isa=x86_64
         tgt_os=darwin14
         ;;
+      *darwin15*)
+        tgt_isa=x86_64
+        tgt_os=darwin15
+        ;;
       x86_64*mingw32*)
         tgt_os=win64
         ;;
@@ -794,6 +798,10 @@ process_common_toolchain() {
     *-darwin14-*)
       add_cflags  "-mmacosx-version-min=10.10"
       add_ldflags "-mmacosx-version-min=10.10"
+      ;;
+    *-darwin15-*)
+      add_cflags  "-mmacosx-version-min=10.11"
+      add_ldflags "-mmacosx-version-min=10.11"
       ;;
     *-iphonesimulator-*)
       add_cflags  "-miphoneos-version-min=${IOS_VERSION_MIN}"
@@ -979,8 +987,10 @@ EOF
                 awk '{ print $1 }' | tail -1`
           fi
 
-          add_cflags "--sysroot=${alt_libc}"
-          add_ldflags "--sysroot=${alt_libc}"
+          if [ -d "${alt_libc}" ]; then
+            add_cflags "--sysroot=${alt_libc}"
+            add_ldflags "--sysroot=${alt_libc}"
+          fi
 
           # linker flag that routes around a CPU bug in some
           # Cortex-A8 implementations (NDK Dev Guide)
@@ -1198,33 +1208,43 @@ EOF
       soft_enable runtime_cpu_detect
       # We can't use 'check_cflags' until the compiler is configured and CC is
       # populated.
-      check_gcc_machine_option mmx
-      check_gcc_machine_option sse
-      check_gcc_machine_option sse2
-      check_gcc_machine_option sse3
-      check_gcc_machine_option ssse3
-      check_gcc_machine_option sse4 sse4_1
-      check_gcc_machine_option avx
-      check_gcc_machine_option avx2
-
-      case "${AS}" in
-        auto|"")
-          which nasm >/dev/null 2>&1 && AS=nasm
-          which yasm >/dev/null 2>&1 && AS=yasm
-          if [ "${AS}" = nasm ] ; then
-            # Apple ships version 0.98 of nasm through at least Xcode 6. Revisit
-            # this check if they start shipping a compatible version.
-            apple=`nasm -v | grep "Apple"`
-            [ -n "${apple}" ] \
-              && echo "Unsupported version of nasm: ${apple}" \
-              && AS=""
+      for ext in ${ARCH_EXT_LIST_X86}; do
+        # disable higher order extensions to simplify asm dependencies
+        if [ "$disable_exts" = "yes" ]; then
+          if ! disabled $ext; then
+            RTCD_OPTIONS="${RTCD_OPTIONS}--disable-${ext} "
+            disable_feature $ext
           fi
-          [ "${AS}" = auto ] || [ -z "${AS}" ] \
-            && die "Neither yasm nor nasm have been found." \
-                   "See the prerequisites section in the README for more info."
-          ;;
-      esac
-      log_echo "  using $AS"
+        elif disabled $ext; then
+          disable_exts="yes"
+        else
+          # use the shortened version for the flag: sse4_1 -> sse4
+          check_gcc_machine_option ${ext%_*} $ext
+        fi
+      done
+
+      if enabled external_build; then
+        log_echo "  skipping assembler detection"
+      else
+        case "${AS}" in
+          auto|"")
+            which nasm >/dev/null 2>&1 && AS=nasm
+            which yasm >/dev/null 2>&1 && AS=yasm
+            if [ "${AS}" = nasm ] ; then
+              # Apple ships version 0.98 of nasm through at least Xcode 6. Revisit
+              # this check if they start shipping a compatible version.
+              apple=`nasm -v | grep "Apple"`
+              [ -n "${apple}" ] \
+                && echo "Unsupported version of nasm: ${apple}" \
+                && AS=""
+            fi
+            [ "${AS}" = auto ] || [ -z "${AS}" ] \
+              && die "Neither yasm nor nasm have been found." \
+                     "See the prerequisites section in the README for more info."
+            ;;
+        esac
+        log_echo "  using $AS"
+      fi
       [ "${AS##*/}" = nasm ] && add_asflags -Ox
       AS_SFX=.asm
       case  ${tgt_os} in

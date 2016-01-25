@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-#include "ServiceWorkerContainerClient.h"
+#include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
@@ -19,6 +18,11 @@ PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> ServiceWorkerContainerClien
     return adoptPtrWillBeNoop(new ServiceWorkerContainerClient(provider));
 }
 
+ServiceWorkerContainerClient::ServiceWorkerContainerClient(PassOwnPtr<WebServiceWorkerProvider> provider)
+    : m_provider(provider)
+{
+}
+
 ServiceWorkerContainerClient::~ServiceWorkerContainerClient()
 {
 }
@@ -30,28 +34,21 @@ const char* ServiceWorkerContainerClient::supplementName()
 
 ServiceWorkerContainerClient* ServiceWorkerContainerClient::from(ExecutionContext* context)
 {
-    if (context->isDocument()) {
-        Document* document = toDocument(context);
-        if (!document->frame())
-            return 0;
-
-        ServiceWorkerContainerClient* client = static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<Document>::from(document, supplementName()));
-        if (client)
-            return client;
-
-        // If it's not provided yet, create it lazily.
-        document->WillBeHeapSupplementable<Document>::provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(document->frame()->loader().client()->createServiceWorkerProvider()));
-        return static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<Document>::from(document, supplementName()));
+    if (context->isWorkerGlobalScope()) {
+        WorkerClients* clients = toWorkerGlobalScope(context)->clients();
+        ASSERT(clients);
+        return static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<WorkerClients>::from(clients, supplementName()));
     }
+    Document* document = toDocument(context);
+    if (!document->frame())
+        return nullptr;
 
-    WorkerClients* clients = toWorkerGlobalScope(context)->clients();
-    ASSERT(clients);
-    return static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<WorkerClients>::from(clients, supplementName()));
-}
-
-ServiceWorkerContainerClient::ServiceWorkerContainerClient(PassOwnPtr<WebServiceWorkerProvider> provider)
-    : m_provider(provider)
-{
+    ServiceWorkerContainerClient* client = static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<Document>::from(document, supplementName()));
+    if (!client) {
+        client = new ServiceWorkerContainerClient(document->frame()->loader().client()->createServiceWorkerProvider());
+        WillBeHeapSupplement<Document>::provideTo(*document, supplementName(), adoptPtrWillBeNoop(client));
+    }
+    return client;
 }
 
 void provideServiceWorkerContainerClientToWorker(WorkerClients* clients, PassOwnPtr<WebServiceWorkerProvider> provider)

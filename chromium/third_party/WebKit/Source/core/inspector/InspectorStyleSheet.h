@@ -94,6 +94,7 @@ public:
 
     virtual bool setText(const String&, ExceptionState&) = 0;
     virtual bool getText(String* result) = 0;
+    virtual String sourceMapURL() { return String(); }
 
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForStyle(CSSStyleDeclaration*);
     PassRefPtr<TypeBuilder::CSS::SourceRange> buildSourceRangeObject(const SourceRange&);
@@ -128,7 +129,7 @@ public:
     bool setText(const String&, ExceptionState&) override;
     bool getText(String* result) override;
     RefPtrWillBeRawPtr<CSSStyleRule>  setRuleSelector(const SourceRange&, const String& selector, SourceRange* newRange, String* oldSelector, ExceptionState&);
-    RefPtrWillBeRawPtr<CSSStyleRule>  setStyleText(const SourceRange&, const String& text, SourceRange* newRange, String* oldSelector, ExceptionState&);
+    PassRefPtrWillBeRawPtr<CSSRule>  setStyleText(const SourceRange&, const String& text, SourceRange* newRange, String* oldSelector, ExceptionState&);
     RefPtrWillBeRawPtr<CSSMediaRule>  setMediaRuleText(const SourceRange&, const String& selector, SourceRange* newRange, String* oldSelector, ExceptionState&);
     RefPtrWillBeRawPtr<CSSStyleRule>  addRule(const String& ruleText, const SourceRange& location, SourceRange* addedRange, ExceptionState&);
     bool deleteRule(const SourceRange&, ExceptionState&);
@@ -145,6 +146,7 @@ public:
     bool isInlineStyle() override { return false; }
     const CSSRuleVector& flatRules();
     RefPtrWillBeRawPtr<CSSRuleSourceData> sourceDataForRule(RefPtrWillBeRawPtr<CSSRule>);
+    String sourceMapURL() override;
 
 protected:
     PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyle(RefPtrWillBeRawPtr<CSSStyleDeclaration>) override;
@@ -158,13 +160,12 @@ private:
     CSSStyleRule* insertCSSOMRuleInStyleSheet(CSSRule* insertBefore, const String& ruleText, ExceptionState&);
     CSSStyleRule* insertCSSOMRuleInMediaRule(CSSMediaRule*, CSSRule* insertBefore, const String& ruleText, ExceptionState&);
     CSSStyleRule* insertCSSOMRuleBySourceRange(const SourceRange&, const String& ruleText, ExceptionState&);
-    String sourceMapURL();
     String sourceURL();
     void remapSourceDataToCSSOMIfNecessary();
     void mapSourceDataToCSSOM();
     bool resourceStyleSheetText(String* result);
     bool inlineStyleSheetText(String* result);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector>> selectorsFromSource(CSSRuleSourceData*, const String&);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::Value>> selectorsFromSource(CSSRuleSourceData*, const String&);
     String url();
     bool hasSourceURL();
     bool startsAtZero();

@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/sampler_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
@@ -61,8 +62,6 @@ struct GPU_EXPORT TextureUnit {
 
   scoped_refptr<TextureRef> GetInfoForSamplerType(
       GLenum type) {
-    DCHECK(type == GL_SAMPLER_2D || type == GL_SAMPLER_CUBE ||
-           type == GL_SAMPLER_EXTERNAL_OES || type == GL_SAMPLER_2D_RECT_ARB);
     switch (type) {
       case GL_SAMPLER_2D:
         return bound_texture_2d;
@@ -80,6 +79,26 @@ struct GPU_EXPORT TextureUnit {
 
     NOTREACHED();
     return NULL;
+  }
+
+  scoped_refptr<TextureRef>& GetInfoForTarget(GLenum target) {
+    switch (target) {
+      case GL_TEXTURE_2D:
+        return bound_texture_2d;
+      case GL_TEXTURE_CUBE_MAP:
+        return bound_texture_cube_map;
+      case GL_TEXTURE_EXTERNAL_OES:
+        return bound_texture_external_oes;
+      case GL_TEXTURE_RECTANGLE_ARB:
+        return bound_texture_rectangle_arb;
+      case GL_TEXTURE_3D:
+        return bound_texture_3d;
+      case GL_TEXTURE_2D_ARRAY:
+        return bound_texture_2d_array;
+    }
+
+    NOTREACHED();
+    return bound_texture_2d;
   }
 };
 
@@ -137,6 +156,11 @@ template <>
 GPU_EXPORT void Vec4::SetValues<GLuint>(const GLuint* values);
 
 struct GPU_EXPORT ContextState {
+  enum Dimension {
+    k2D,
+    k3D
+  };
+
   ContextState(FeatureInfo* feature_info,
                ErrorStateClient* error_state_client,
                Logger* logger);
@@ -217,6 +241,10 @@ struct GPU_EXPORT ContextState {
   void RemoveBoundBuffer(Buffer* buffer);
 
   void UnbindTexture(TextureRef* texture);
+  void UnbindSampler(Sampler* sampler);
+
+  PixelStoreParams GetPackParams();
+  PixelStoreParams GetUnpackParams(Dimension dimension);
 
   #include "gpu/command_buffer/service/context_state_autogen.h"
 
@@ -240,6 +268,9 @@ struct GPU_EXPORT ContextState {
 
   // Which textures are bound to texture units through glActiveTexture.
   std::vector<TextureUnit> texture_units;
+
+  // Which samplers are bound to each texture unit;
+  std::vector<scoped_refptr<Sampler>> sampler_units;
 
   // The values for each attrib.
   std::vector<Vec4> attrib_values;
@@ -265,6 +296,15 @@ struct GPU_EXPORT ContextState {
 
  private:
   void EnableDisable(GLenum pname, bool enable) const;
+
+  // If a buffer object is bound to PIXEL_PACK_BUFFER, set all pack parameters
+  // user values; otherwise, set them to 0.
+  void UpdatePackParameters() const;
+  // If a buffer object is bound to PIXEL_UNPACK_BUFFER, set all unpack
+  // parameters user values; otherwise, set them to 0.
+  void UpdateUnpackParameters() const;
+
+  void InitStateManual(const ContextState* prev_state) const;
 
   FeatureInfo* feature_info_;
   scoped_ptr<ErrorState> error_state_;

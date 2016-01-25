@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebNode.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -55,7 +54,6 @@
 #include "public/web/WebDocument.h"
 #include "public/web/WebElement.h"
 #include "public/web/WebElementCollection.h"
-#include "public/web/WebNodeList.h"
 #include "public/web/WebPluginContainer.h"
 #include "web/FrameLoaderClientImpl.h"
 #include "web/WebLocalFrameImpl.h"
@@ -171,11 +169,6 @@ bool WebNode::hasChildNodes() const
     return m_private->hasChildren();
 }
 
-WebNodeList WebNode::childNodes()
-{
-    return WebNodeList(m_private->childNodes());
-}
-
 bool WebNode::isLink() const
 {
     return m_private->isLink();
@@ -217,6 +210,11 @@ bool WebNode::isElementNode() const
 bool WebNode::isDocumentNode() const
 {
     return m_private->isDocumentNode();
+}
+
+bool WebNode::isDocumentTypeNode() const
+{
+    return m_private->nodeType() == Node::DOCUMENT_TYPE_NODE;
 }
 
 void WebNode::dispatchEvent(const WebDOMEvent& event)

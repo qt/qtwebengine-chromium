@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/WebSharedWorkerImpl.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -197,9 +196,9 @@ int64_t WebSharedWorkerImpl::serviceWorkerID(WebDataSource& dataSource)
     return m_networkProvider->serviceWorkerID(dataSource);
 }
 
-void WebSharedWorkerImpl::sendProtocolMessage(int callId, const WebString& message, const WebString& state)
+void WebSharedWorkerImpl::sendProtocolMessage(int sessionId, int callId, const WebString& message, const WebString& state)
 {
-    m_client->sendDevToolsMessage(callId, message, state);
+    m_client->sendDevToolsMessage(sessionId, callId, message, state);
 }
 
 void WebSharedWorkerImpl::resumeStartup()
@@ -224,7 +223,7 @@ void WebSharedWorkerImpl::reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMes
 
 void WebSharedWorkerImpl::postMessageToPageInspector(const String& message)
 {
-    m_mainFrame->frame()->document()->postInspectorTask(FROM_HERE, createCrossThreadTask(&WebSharedWorkerImpl::postMessageToPageInspectorOnMainThread, this, message));
+    m_mainFrame->frame()->document()->postInspectorTask(BLINK_FROM_HERE, createCrossThreadTask(&WebSharedWorkerImpl::postMessageToPageInspectorOnMainThread, this, message));
 }
 
 void WebSharedWorkerImpl::postMessageToPageInspectorOnMainThread(const String& message)
@@ -238,7 +237,7 @@ void WebSharedWorkerImpl::postMessageToPageInspectorOnMainThread(const String& m
 
 void WebSharedWorkerImpl::workerGlobalScopeClosed()
 {
-    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&WebSharedWorkerImpl::workerGlobalScopeClosedOnMainThread, AllowCrossThreadAccess(this)));
+    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&WebSharedWorkerImpl::workerGlobalScopeClosedOnMainThread, AllowCrossThreadAccess(this)));
 }
 
 void WebSharedWorkerImpl::workerGlobalScopeClosedOnMainThread()
@@ -254,7 +253,7 @@ void WebSharedWorkerImpl::workerGlobalScopeStarted(WorkerGlobalScope*)
 
 void WebSharedWorkerImpl::workerThreadTerminated()
 {
-    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&WebSharedWorkerImpl::workerThreadTerminatedOnMainThread, AllowCrossThreadAccess(this)));
+    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&WebSharedWorkerImpl::workerThreadTerminatedOnMainThread, AllowCrossThreadAccess(this)));
 }
 
 void WebSharedWorkerImpl::workerThreadTerminatedOnMainThread()
@@ -268,19 +267,19 @@ void WebSharedWorkerImpl::workerThreadTerminatedOnMainThread()
 
 void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
-    m_mainFrame->frame()->document()->postTask(FROM_HERE, task);
+    m_mainFrame->frame()->document()->postTask(BLINK_FROM_HERE, task);
 }
 
 bool WebSharedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
 {
-    m_workerThread->postTask(FROM_HERE, task);
+    m_workerThread->postTask(BLINK_FROM_HERE, task);
     return true;
 }
 
 void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel)
 {
     workerThread()->postTask(
-        FROM_HERE, createCrossThreadTask(&connectTask, adoptPtr(webChannel)));
+        BLINK_FROM_HERE, createCrossThreadTask(&connectTask, adoptPtr(webChannel)));
 }
 
 void WebSharedWorkerImpl::connectTask(PassOwnPtr<WebMessagePortChannel> channel, ExecutionContext* context)
@@ -337,7 +336,7 @@ void WebSharedWorkerImpl::onScriptLoaderFinished()
     RefPtrWillBeRawPtr<ContentSecurityPolicy> contentSecurityPolicy = m_mainScriptLoader->releaseContentSecurityPolicy();
     OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(
         m_url,
-        m_loadingDocument->userAgent(m_url),
+        m_loadingDocument->userAgent(),
         m_mainScriptLoader->script(),
         nullptr,
         startMode,
@@ -364,18 +363,18 @@ void WebSharedWorkerImpl::pauseWorkerContextOnStart()
     m_pauseWorkerContextOnStart = true;
 }
 
-void WebSharedWorkerImpl::attachDevTools(const WebString& hostId)
+void WebSharedWorkerImpl::attachDevTools(const WebString& hostId, int sessionId)
 {
     WebDevToolsAgent* devtoolsAgent = m_mainFrame->devToolsAgent();
     if (devtoolsAgent)
-        devtoolsAgent->attach(hostId);
+        devtoolsAgent->attach(hostId, sessionId);
 }
 
-void WebSharedWorkerImpl::reattachDevTools(const WebString& hostId, const WebString& savedState)
+void WebSharedWorkerImpl::reattachDevTools(const WebString& hostId, int sessionId, const WebString& savedState)
 {
     WebDevToolsAgent* devtoolsAgent = m_mainFrame->devToolsAgent();
     if (devtoolsAgent)
-        devtoolsAgent->reattach(hostId, savedState);
+        devtoolsAgent->reattach(hostId, sessionId, savedState);
     resumeStartup();
 }
 
@@ -386,13 +385,13 @@ void WebSharedWorkerImpl::detachDevTools()
         devtoolsAgent->detach();
 }
 
-void WebSharedWorkerImpl::dispatchDevToolsMessage(const WebString& message)
+void WebSharedWorkerImpl::dispatchDevToolsMessage(int sessionId, const WebString& message)
 {
     if (m_askedToTerminate)
         return;
     WebDevToolsAgent* devtoolsAgent = m_mainFrame->devToolsAgent();
     if (devtoolsAgent)
-        devtoolsAgent->dispatchOnInspectorBackend(message);
+        devtoolsAgent->dispatchOnInspectorBackend(sessionId, message);
 }
 
 WebSharedWorker* WebSharedWorker::create(WebSharedWorkerClient* client)

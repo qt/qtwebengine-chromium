@@ -14,12 +14,12 @@
 #include "webrtc/common_audio/resampler/include/resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/engine_configurations.h"
-#include "webrtc/modules/media_file/interface/media_file.h"
-#include "webrtc/modules/media_file/interface/media_file_defines.h"
-#include "webrtc/modules/utility/interface/file_player.h"
+#include "webrtc/modules/media_file/media_file.h"
+#include "webrtc/modules/media_file/media_file_defines.h"
+#include "webrtc/modules/utility/include/file_player.h"
 #include "webrtc/modules/utility/source/coder.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {

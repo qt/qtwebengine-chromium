@@ -26,8 +26,9 @@
 #define ResourceClient_h
 
 #include "core/CoreExport.h"
-#include "wtf/FastAllocBase.h"
+#include "platform/network/ResourceLoadPriority.h"
 #include "wtf/Forward.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 class Resource;
@@ -49,6 +50,11 @@ public:
 
     static ResourceClientType expectedType() { return BaseResourceType; }
     virtual ResourceClientType resourceClientType() const { return expectedType(); }
+
+    virtual ResourcePriority computeResourcePriority() const { return ResourcePriority(); }
+
+    // Name for debugging, e.g. shown in memory-infra.
+    virtual String debugName() const = 0;
 
 protected:
     ResourceClient() { }

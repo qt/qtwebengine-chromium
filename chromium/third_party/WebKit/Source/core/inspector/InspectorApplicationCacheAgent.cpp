@@ -23,12 +23,11 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorApplicationCacheAgent.h"
 
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorPageAgent.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
@@ -42,9 +41,9 @@ namespace ApplicationCacheAgentState {
 static const char applicationCacheAgentEnabled[] = "applicationCacheAgentEnabled";
 }
 
-InspectorApplicationCacheAgent::InspectorApplicationCacheAgent(InspectorPageAgent* pageAgent)
+InspectorApplicationCacheAgent::InspectorApplicationCacheAgent(InspectedFrames* inspectedFrames)
     : InspectorBaseAgent<InspectorApplicationCacheAgent, InspectorFrontend::ApplicationCache>("ApplicationCache")
-    , m_pageAgent(pageAgent)
+    , m_inspectedFrames(inspectedFrames)
 {
 }
 
@@ -86,7 +85,7 @@ void InspectorApplicationCacheAgent::updateApplicationCacheStatus(LocalFrame* fr
 
 void InspectorApplicationCacheAgent::networkStateChanged(LocalFrame* frame, bool online)
 {
-    if (frame == m_pageAgent->inspectedFrame())
+    if (frame == m_inspectedFrames->root())
         frontend()->networkStateUpdated(online);
 }
 
@@ -94,20 +93,17 @@ void InspectorApplicationCacheAgent::getFramesWithManifests(ErrorString*, RefPtr
 {
     result = TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest>::create();
 
-    LocalFrame* inspectedFrame = m_pageAgent->inspectedFrame();
-    for (Frame* frame = inspectedFrame; frame; frame = frame->tree().traverseNext(inspectedFrame)) {
-        if (!frame->isLocalFrame())
-            continue;
-        DocumentLoader* documentLoader = toLocalFrame(frame)->loader().documentLoader();
+    for (LocalFrame* frame : *m_inspectedFrames) {
+        DocumentLoader* documentLoader = frame->loader().documentLoader();
         if (!documentLoader)
-            continue;
+            return;
 
         ApplicationCacheHost* host = documentLoader->applicationCacheHost();
         ApplicationCacheHost::CacheInfo info = host->applicationCacheInfo();
         String manifestURL = info.m_manifest.string();
         if (!manifestURL.isEmpty()) {
             RefPtr<TypeBuilder::ApplicationCache::FrameWithManifest> value = TypeBuilder::ApplicationCache::FrameWithManifest::create()
-                .setFrameId(IdentifiersFactory::frameId(toLocalFrame(frame)))
+                .setFrameId(IdentifiersFactory::frameId(frame))
                 .setManifestURL(manifestURL)
                 .setStatus(static_cast<int>(host->status()));
             result->addItem(value);
@@ -117,7 +113,7 @@ void InspectorApplicationCacheAgent::getFramesWithManifests(ErrorString*, RefPtr
 
 DocumentLoader* InspectorApplicationCacheAgent::assertFrameWithDocumentLoader(ErrorString* errorString, String frameId)
 {
-    LocalFrame* frame = IdentifiersFactory::frameById(m_pageAgent->inspectedFrame(), frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, frameId);
     if (!frame) {
         *errorString = "No frame for given id found";
         return nullptr;
@@ -204,9 +200,8 @@ PassRefPtr<TypeBuilder::ApplicationCache::ApplicationCacheResource> InspectorApp
 
 DEFINE_TRACE(InspectorApplicationCacheAgent)
 {
-    visitor->trace(m_pageAgent);
+    visitor->trace(m_inspectedFrames);
     InspectorBaseAgent::trace(visitor);
 }
 
 } // namespace blink
-

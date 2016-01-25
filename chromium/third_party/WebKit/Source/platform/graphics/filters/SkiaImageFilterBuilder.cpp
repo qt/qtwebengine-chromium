@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 
 #include "SkBlurImageFilter.h"
@@ -53,7 +52,7 @@ PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::build(FilterEffect* effect, Co
         return filter;
 
     // Note that we may still need the color transform even if the filter is null
-    RefPtr<SkImageFilter> origFilter = requiresPMColorValidation ? effect->createImageFilter(this) : effect->createImageFilterWithoutValidation(this);
+    RefPtr<SkImageFilter> origFilter = requiresPMColorValidation ? effect->createImageFilter(*this) : effect->createImageFilterWithoutValidation(*this);
     RefPtr<SkImageFilter> filter = transformColorSpace(origFilter.get(), effect->operatingColorSpace(), colorSpace);
     effect->setImageFilter(colorSpace, requiresPMColorValidation, filter.get());
     if (filter.get() != origFilter.get())

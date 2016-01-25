@@ -3,11 +3,3 @@
 // found in the LICENSE file.
 
 #include "components/scheduler/base/task_queue.h"
-
-namespace scheduler {
-
-bool TaskQueue::IsQueueEmpty() const {
-  return GetQueueState() == QueueState::EMPTY;
-}
-
-}  // namespace scheduler

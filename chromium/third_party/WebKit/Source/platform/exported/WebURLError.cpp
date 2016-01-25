@@ -28,12 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebURLError.h"
 
 #include "platform/network/ResourceError.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/text/CString.h"
 
 namespace blink {
 
@@ -62,8 +60,7 @@ WebURLError::operator ResourceError() const
 {
     if (!reason)
         return ResourceError();
-    CString spec = unreachableURL.spec();
-    ResourceError resourceError = ResourceError(domain, reason, String::fromUTF8(spec.data(), spec.length()), localizedDescription);
+    ResourceError resourceError = ResourceError(domain, reason, unreachableURL.string(), localizedDescription);
     resourceError.setIsCancellation(isCancellation);
     resourceError.setStaleCopyInCache(staleCopyInCache);
     resourceError.setWasIgnoredByHandler(wasIgnoredByHandler);

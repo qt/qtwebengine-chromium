@@ -1,5 +1,4 @@
-
-  /** @polymerBehavior Polymer.IronMultiSelectableBehavior */
+/** @polymerBehavior Polymer.IronMultiSelectableBehavior */
   Polymer.IronMultiSelectableBehaviorImpl = {
     properties: {
 
@@ -59,6 +58,11 @@
       this._selection.multi = multi;
     },
 
+    get _shouldUpdateSelection() {
+      return this.selected != null ||
+        (this.selectedValues != null && this.selectedValues.length);
+    },
+
     _updateSelected: function() {
       if (this.multi) {
         this._selectMulti(this.selectedValues);
@@ -103,4 +107,3 @@
     Polymer.IronSelectableBehavior,
     Polymer.IronMultiSelectableBehaviorImpl
   ];
-

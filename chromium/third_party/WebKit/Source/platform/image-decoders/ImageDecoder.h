@@ -50,7 +50,9 @@ typedef Vector<char> ColorProfile;
 namespace blink {
 
 // ImagePlanes can be used to decode color components into provided buffers instead of using an ImageFrame.
-class PLATFORM_EXPORT ImagePlanes {
+class PLATFORM_EXPORT ImagePlanes final {
+    USING_FAST_MALLOC(ImagePlanes);
+    WTF_MAKE_NONCOPYABLE(ImagePlanes);
 public:
     ImagePlanes();
     ImagePlanes(void* planes[3], size_t rowBytes[3]);
@@ -67,7 +69,7 @@ private:
 // (e.g. JPEGImageDecoder). This base manages the ImageFrame cache.
 //
 class PLATFORM_EXPORT ImageDecoder {
-    WTF_MAKE_NONCOPYABLE(ImageDecoder); WTF_MAKE_FAST_ALLOCATED(ImageDecoder);
+    WTF_MAKE_NONCOPYABLE(ImageDecoder); USING_FAST_MALLOC(ImageDecoder);
 public:
     enum SizeType { ActualSize, SizeForMemoryAllocation };
 
@@ -154,6 +156,7 @@ public:
     {
         if (sizeCalculationMayOverflow(width, height))
             return setFailed();
+
         m_size = IntSize(width, height);
         m_sizeAvailable = true;
         return true;
@@ -211,7 +214,9 @@ public:
         return !memcmp(&profileData[12], "mntr", 4) || !memcmp(&profileData[12], "scnr", 4);
     }
 
-    class OutputDeviceProfile {
+    class OutputDeviceProfile final {
+        USING_FAST_MALLOC(OutputDeviceProfile);
+        WTF_MAKE_NONCOPYABLE(OutputDeviceProfile);
     public:
         OutputDeviceProfile()
             : m_outputDeviceProfile(0)
@@ -250,7 +255,7 @@ public:
 
     static qcms_profile* qcmsOutputDeviceProfile()
     {
-        AtomicallyInitializedStaticReference(OutputDeviceProfile, outputDeviceProfile, new OutputDeviceProfile);
+        DEFINE_THREAD_SAFE_STATIC_LOCAL(OutputDeviceProfile, outputDeviceProfile, new OutputDeviceProfile);
 
         return outputDeviceProfile.profile();
     }

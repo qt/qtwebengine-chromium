@@ -2,17 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/fonts/ScriptRunIterator.h"
 
 #include "platform/Logging.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Assertions.h"
 #include "wtf/Threading.h"
 #include "wtf/text/WTFString.h"
-
-#include <gtest/gtest.h>
 #include <string>
-#include <vector>
 
 namespace blink {
 
@@ -38,7 +35,7 @@ public:
 
     static const MockScriptData* instance()
     {
-        AtomicallyInitializedStaticReference(const MockScriptData, mockScriptData, (new MockScriptData()));
+        DEFINE_THREAD_SAFE_STATIC_LOCAL(const MockScriptData, mockScriptData, (new MockScriptData()));
 
         return &mockScriptData;
     }
@@ -239,76 +236,6 @@ public:
         return result;
     }
 
-    static std::string MockCharString(UChar mockch)
-    {
-        ASSERT(mockch >= kMockCharMin && mockch < kMockCharLimit);
-        int code = mockch - kMockCharMin;
-
-        // We use set notation in these cases:
-        // - more than one of special, kLatin, kHan, kGreek
-        // - bracket and not common (since non-set brackets are common)
-        bool isBracket = (code & kCodeBracketBit) != 0;
-        bool isSpecial = (mockch & kCodeSpecialMask) != 0;
-        bool isCommon = (mockch & kCodeSpecialMask) == kCodeSpecialCommon;
-        char c;
-        if (isBracket) {
-            if (code & kCodeSquareBracketBit) {
-                if (code & kCodeBracketCloseBit) {
-                    c = ']';
-                } else {
-                    c = '[';
-                }
-            } else {
-                if (code & kCodeBracketCloseBit) {
-                    c = ')';
-                } else {
-                    c = '(';
-                }
-            }
-        } else if (isSpecial) {
-            c = isCommon ? 'c' : 'i';
-        }
-        std::string result;
-        int listBits = kTable[code & kCodeListIndexMask];
-        while (listBits) {
-            switch (listBits & kListMask) {
-            case 0:
-                break;
-            case kLatin:
-                result += 'l';
-                break;
-            case kHan:
-                result += 'h';
-                break;
-            case kGreek:
-                result += 'g';
-                break;
-            }
-            listBits >>= kListShift;
-        }
-        bool needSet = result.length() + (isSpecial ? 1 : 0) > 1 || (isBracket && (result.length() > 0 || !isCommon));
-        if (needSet) {
-            std::string setResult("<");
-            if (isBracket) {
-                setResult += c;
-            }
-            if (isSpecial) {
-                if (isCommon) {
-                    setResult += "c";
-                } else {
-                    setResult += "i";
-                }
-            }
-            setResult += result;
-            setResult += ">";
-            return setResult;
-        }
-        if (isBracket || isSpecial) {
-            result = c;
-        }
-        return result;
-    }
-
     // We determine properties based on the offset from kMockCharMin:
     // bits 0-3 represent the list of l, h, c scripts (index into table)
     // bit 4-5 means: 0 plain, 1 common, 2 inherited, 3 illegal
@@ -358,13 +285,13 @@ const int MockScriptData::kTable[] = {
 
 class ScriptRunIteratorTest : public testing::Test {
 protected:
-    void CheckRuns(const std::vector<TestRun>& runs)
+    void CheckRuns(const Vector<TestRun>& runs)
     {
         String text(String::make16BitFrom8BitSource(0, 0));
-        std::vector<ExpectedRun> expect;
+        Vector<ExpectedRun> expect;
         for (auto& run : runs) {
             text.append(String::fromUTF8(run.text.c_str()));
-            expect.push_back(ExpectedRun(text.length(), run.code));
+            expect.append(ExpectedRun(text.length(), run.code));
         }
         ScriptRunIterator scriptRunIterator(text.characters16(), text.length());
         VerifyRuns(&scriptRunIterator, expect);
@@ -372,13 +299,13 @@ protected:
 
     // FIXME crbug.com/527329 - CheckMockRuns should be replaced by finding
     // suitable equivalent real codepoint sequences instead.
-    void CheckMockRuns(const std::vector<TestRun>& runs)
+    void CheckMockRuns(const Vector<TestRun>& runs)
     {
         String text(String::make16BitFrom8BitSource(0, 0));
-        std::vector<ExpectedRun> expect;
+        Vector<ExpectedRun> expect;
         for (const TestRun& run : runs) {
             text.append(MockScriptData::ToTestString(run.text));
-            expect.push_back({ text.length(), run.code });
+            expect.append(ExpectedRun(text.length(), run.code));
         }
 
         ScriptRunIterator scriptRunIterator(text.characters16(), text.length(),
@@ -387,7 +314,7 @@ protected:
     }
 
     void VerifyRuns(ScriptRunIterator* scriptRunIterator,
-        const std::vector<ExpectedRun>& expect)
+        const Vector<ExpectedRun>& expect)
     {
         unsigned limit;
         UScriptCode code;
@@ -415,9 +342,10 @@ TEST_F(ScriptRunIteratorTest, Empty)
 }
 
 // Some of our compilers cannot initialize a vector from an array yet.
-#define DECLARE_RUNSVECTOR(...)                     \
+#define DECLARE_RUNSVECTOR(...) \
     static const TestRun runsArray[] = __VA_ARGS__; \
-    std::vector<TestRun> runs(runsArray, runsArray + sizeof(runsArray) / sizeof(*runsArray));
+    Vector<TestRun> runs; \
+    runs.append(runsArray, sizeof(runsArray) / sizeof(*runsArray));
 
 #define CHECK_RUNS(...)              \
     DECLARE_RUNSVECTOR(__VA_ARGS__); \
@@ -515,6 +443,12 @@ TEST_F(ScriptRunIteratorTest, QuoteParenChineseParenLatinQuote)
 {
     CHECK_RUNS({ { "\"(萬國碼) ", USCRIPT_HAN },
         { "Unicode\"", USCRIPT_LATIN } });
+}
+
+// Emojies are resolved to the leading script.
+TEST_F(ScriptRunIteratorTest, EmojiCommon)
+{
+    CHECK_RUNS({ { "百家姓🌱🌲🌳🌴", USCRIPT_HAN } });
 }
 
 // Unmatched close brace gets leading context
@@ -664,6 +598,22 @@ TEST_F(ScriptRunIteratorTest, HanSpaceUdatta)
         { " \xE0\xA5\x91", USCRIPT_DEVANAGARI } });
 }
 
+// Corresponds to one test in RunSegmenter, where orientation of the
+// space character is sidesways in vertical.
+TEST_F(ScriptRunIteratorTest, Hangul)
+{
+    CHECK_RUNS({ { "키스의 고유조건은", USCRIPT_HANGUL } });
+}
+
+// Corresponds to one test in RunSegmenter, which tests that the punctuation
+// characters mixed in are actually sideways in vertical. The ScriptIterator
+// should report one run, but the RunSegmenter should report three, with the
+// middle one rotated sideways.
+TEST_F(ScriptRunIteratorTest, HiraganaMixedPunctuation)
+{
+    CHECK_RUNS({ { "いろはに.…¡ほへと", USCRIPT_HIRAGANA } });
+}
+
 // Make sure Mock code works too.
 TEST_F(ScriptRunIteratorTest, MockHanInheritedGL)
 {
@@ -706,7 +656,14 @@ TEST_F(ScriptRunIteratorTest, OddLatinString)
     CHECK_RUNS({ { "ç̈", USCRIPT_LATIN } });
 }
 
+TEST_F(ScriptRunIteratorTest, CommonMalayalam)
+{
+    CHECK_RUNS({ { "100-ാം", USCRIPT_MALAYALAM } });
+}
+
+
 class ScriptRunIteratorICUDataTest : public testing::Test {
+
 public:
     ScriptRunIteratorICUDataTest()
         : m_maxExtensions(0)

@@ -6,6 +6,8 @@
 
 #include <android/bitmap.h>
 #include <android/native_window_jni.h>
+#include <stdint.h>
+#include <utility>
 
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
@@ -30,7 +32,7 @@
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
 #include "cc/output/output_surface_client.h"
-#include "cc/raster/task_graph_runner.h"
+#include "cc/raster/single_thread_task_graph_runner.h"
 #include "cc/scheduler/begin_frame_source.h"
 #include "cc/surfaces/onscreen_display_client.h"
 #include "cc/surfaces/surface_display_output_surface.h"
@@ -39,6 +41,7 @@
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "content/browser/android/child_process_launcher_android.h"
+#include "content/browser/compositor/browser_compositor_overlay_candidate_validator_android.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -68,7 +71,6 @@ namespace content {
 
 namespace {
 
-const unsigned int kMaxUiSwapBuffers = 1U;
 const unsigned int kMaxDisplaySwapBuffers = 1U;
 
 // Used to override capabilities_.adjust_deadline_for_parent to false
@@ -85,7 +87,9 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface,
         populate_gpu_capabilities_callback_(populate_gpu_capabilities_callback),
         swap_buffers_completion_callback_(
             base::Bind(&OutputSurfaceWithoutParent::OnSwapBuffersCompleted,
-                       base::Unretained(this))) {
+                       base::Unretained(this))),
+        overlay_candidate_validator_(
+            new BrowserCompositorOverlayCandidateValidatorAndroid()) {
     capabilities_.adjust_deadline_for_parent = false;
     capabilities_.max_frames_pending = kMaxDisplaySwapBuffers;
   }
@@ -94,9 +98,13 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface,
 
   void SwapBuffers(cc::CompositorFrame* frame) override {
     GetCommandBufferProxy()->SetLatencyInfo(frame->metadata.latency_info);
-    DCHECK(frame->gl_frame_data->sub_buffer_rect ==
-           gfx::Rect(frame->gl_frame_data->size));
-    context_provider_->ContextSupport()->Swap();
+    if (frame->gl_frame_data->sub_buffer_rect.IsEmpty()) {
+      context_provider_->ContextSupport()->CommitOverlayPlanes();
+    } else {
+      DCHECK(frame->gl_frame_data->sub_buffer_rect ==
+             gfx::Rect(frame->gl_frame_data->size));
+      context_provider_->ContextSupport()->Swap();
+    }
     client_->DidSwapBuffers();
   }
 
@@ -112,6 +120,10 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface,
     compositor_->AddObserver(this);
 
     return true;
+  }
+
+  cc::OverlayCandidateValidator* GetOverlayCandidateValidator() const override {
+    return overlay_candidate_validator_.get();
   }
 
  private:
@@ -131,8 +143,7 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface,
     OutputSurface::OnSwapBuffersComplete();
   }
 
-  void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                               base::TimeDelta interval) override {
+  void OnVSync(base::TimeTicks timebase, base::TimeDelta interval) override {
     CommitVSyncParameters(timebase, interval);
   }
 
@@ -141,6 +152,37 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface,
   base::CancelableCallback<void(const std::vector<ui::LatencyInfo>&,
                                 gfx::SwapResult)>
       swap_buffers_completion_callback_;
+  scoped_ptr<cc::OverlayCandidateValidator> overlay_candidate_validator_;
+};
+
+class ExternalBeginFrameSource : public cc::BeginFrameSourceBase,
+                                 public CompositorImpl::VSyncObserver {
+ public:
+  ExternalBeginFrameSource(CompositorImpl* compositor)
+      : compositor_(compositor) {
+    compositor_->AddObserver(this);
+  }
+
+  ~ExternalBeginFrameSource() override {
+    compositor_->RemoveObserver(this);
+  }
+
+  // cc::BeginFrameSourceBase implementation:
+  void OnNeedsBeginFramesChange(
+      bool needs_begin_frames) override {
+    compositor_->OnNeedsBeginFramesChange(needs_begin_frames);
+  }
+
+  // CompositorImpl::VSyncObserver implementation:
+  void OnVSync(base::TimeTicks frame_time,
+               base::TimeDelta vsync_period) override {
+    CallOnBeginFrame(cc::BeginFrameArgs::Create(
+        BEGINFRAME_FROM_HERE, frame_time, base::TimeTicks::Now(), vsync_period,
+        cc::BeginFrameArgs::NORMAL));
+  }
+
+ private:
+  CompositorImpl* compositor_;
 };
 
 static bool g_initialized = false;
@@ -149,40 +191,24 @@ bool g_use_surface_manager = false;
 base::LazyInstance<cc::SurfaceManager> g_surface_manager =
     LAZY_INSTANCE_INITIALIZER;
 
-
 int g_surface_id_namespace = 0;
 
-class SingleThreadTaskGraphRunner
-    : public cc::TaskGraphRunner,
-      public base::DelegateSimpleThread::Delegate {
+class SingleThreadTaskGraphRunner : public cc::SingleThreadTaskGraphRunner {
  public:
-  SingleThreadTaskGraphRunner()
-      : worker_thread_(
-            this,
-            "CompositorTileWorker1",
-            base::SimpleThread::Options(base::ThreadPriority::BACKGROUND)) {
-    worker_thread_.Start();
+  SingleThreadTaskGraphRunner() {
+    Start("CompositorTileWorker1",
+          base::SimpleThread::Options(base::ThreadPriority::BACKGROUND));
   }
 
   ~SingleThreadTaskGraphRunner() override {
     Shutdown();
-    worker_thread_.Join();
   }
-
- private:
-  // Overridden from base::DelegateSimpleThread::Delegate:
-  void Run() override { cc::TaskGraphRunner::Run(); }
-
-  base::DelegateSimpleThread worker_thread_;
 };
 
 base::LazyInstance<SingleThreadTaskGraphRunner> g_task_graph_runner =
     LAZY_INSTANCE_INITIALIZER;
 
-base::LazyInstance<cc::LayerSettings> g_layer_settings =
-    LAZY_INSTANCE_INITIALIZER;
-
-} // anonymous namespace
+}  // anonymous namespace
 
 // static
 Compositor* Compositor::Create(CompositorClient* client,
@@ -199,12 +225,12 @@ void Compositor::Initialize() {
 
 // static
 const cc::LayerSettings& Compositor::LayerSettings() {
-  return g_layer_settings.Get();
+  return ui::WindowAndroidCompositor::LayerSettings();
 }
 
 // static
 void Compositor::SetLayerSettings(const cc::LayerSettings& settings) {
-  g_layer_settings.Get() = settings;
+  ui::WindowAndroidCompositor::SetLayerSettings(settings);
 }
 
 // static
@@ -226,12 +252,13 @@ scoped_ptr<cc::SurfaceIdAllocator> CompositorImpl::CreateSurfaceIdAllocator() {
   cc::SurfaceManager* manager = GetSurfaceManager();
   DCHECK(manager);
   allocator->RegisterSurfaceIdNamespace(manager);
-  return allocator.Pass();
+  return allocator;
 }
 
 CompositorImpl::CompositorImpl(CompositorClient* client,
                                gfx::NativeWindow root_window)
     : root_layer_(cc::Layer::Create(Compositor::LayerSettings())),
+      resource_manager_(root_window),
       surface_id_allocator_(GetSurfaceManager() ? CreateSurfaceIdAllocator()
                                                 : nullptr),
       has_transparent_background_(false),
@@ -240,15 +267,11 @@ CompositorImpl::CompositorImpl(CompositorClient* client,
       surface_id_(0),
       client_(client),
       root_window_(root_window),
-      did_post_swapbuffers_(false),
-      ignore_schedule_composite_(false),
-      needs_composite_(false),
       needs_animate_(false),
-      will_composite_immediately_(false),
-      composite_on_vsync_trigger_(DO_NOT_COMPOSITE),
       pending_swapbuffers_(0U),
       num_successive_context_creation_failures_(0),
       output_surface_request_pending_(false),
+      needs_begin_frames_(false),
       weak_factory_(this) {
   DCHECK(client);
   DCHECK(root_window);
@@ -261,111 +284,6 @@ CompositorImpl::~CompositorImpl() {
   root_window_->DetachCompositor();
   // Clean-up any surface references.
   SetSurface(NULL);
-}
-
-void CompositorImpl::PostComposite(CompositingTrigger trigger) {
-  DCHECK(host_->visible());
-  DCHECK(needs_composite_);
-  DCHECK(trigger == COMPOSITE_IMMEDIATELY || trigger == COMPOSITE_EVENTUALLY);
-
-  if (will_composite_immediately_ ||
-      (trigger == COMPOSITE_EVENTUALLY && WillComposite())) {
-    // We will already composite soon enough.
-    DCHECK(WillComposite());
-    return;
-  }
-
-  if (DidCompositeThisFrame()) {
-    DCHECK(!WillCompositeThisFrame());
-    if (composite_on_vsync_trigger_ != COMPOSITE_IMMEDIATELY) {
-      composite_on_vsync_trigger_ = trigger;
-      root_window_->RequestVSyncUpdate();
-    }
-    DCHECK(WillComposite());
-    return;
-  }
-
-  base::TimeDelta delay;
-  if (trigger == COMPOSITE_IMMEDIATELY) {
-    will_composite_immediately_ = true;
-    composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
-  } else {
-    DCHECK(!WillComposite());
-    const base::TimeDelta estimated_composite_time = vsync_period_ / 4;
-    const base::TimeTicks now = base::TimeTicks::Now();
-
-    if (!last_vsync_.is_null() && (now - last_vsync_) < vsync_period_) {
-      base::TimeTicks next_composite =
-          last_vsync_ + vsync_period_ - estimated_composite_time;
-      if (next_composite < now) {
-        // It's too late, we will reschedule composite as needed on the next
-        // vsync.
-        composite_on_vsync_trigger_ = COMPOSITE_EVENTUALLY;
-        root_window_->RequestVSyncUpdate();
-        DCHECK(WillComposite());
-        return;
-      }
-
-      delay = next_composite - now;
-    }
-  }
-  TRACE_EVENT2("cc,benchmark", "CompositorImpl::PostComposite",
-               "trigger", trigger,
-               "delay", delay.InMillisecondsF());
-
-  DCHECK(composite_on_vsync_trigger_ == DO_NOT_COMPOSITE);
-  if (current_composite_task_)
-    current_composite_task_->Cancel();
-
-  // Unretained because we cancel the task on shutdown.
-  current_composite_task_.reset(new base::CancelableClosure(
-      base::Bind(&CompositorImpl::Composite, base::Unretained(this), trigger)));
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, current_composite_task_->callback(), delay);
-}
-
-void CompositorImpl::Composite(CompositingTrigger trigger) {
-  if (trigger == COMPOSITE_IMMEDIATELY)
-    will_composite_immediately_ = false;
-
-  DCHECK(host_->visible());
-  DCHECK(trigger == COMPOSITE_IMMEDIATELY || trigger == COMPOSITE_EVENTUALLY);
-  DCHECK(needs_composite_);
-  DCHECK(!DidCompositeThisFrame());
-
-  DCHECK_LE(pending_swapbuffers_, kMaxUiSwapBuffers);
-  // Swap Ack accounting is unreliable if the OutputSurface was lost.
-  // In that case still attempt to composite, which will cause creation of a
-  // new OutputSurface and reset pending_swapbuffers_.
-  if (pending_swapbuffers_ == kMaxUiSwapBuffers &&
-      !host_->output_surface_lost()) {
-    TRACE_EVENT0("compositor", "CompositorImpl_SwapLimit");
-    return;
-  }
-
-  // Reset state before Layout+Composite since that might create more
-  // requests to Composite that we need to respect.
-  needs_composite_ = false;
-
-  // Only allow compositing once per vsync.
-  current_composite_task_->Cancel();
-  DCHECK(DidCompositeThisFrame() && !WillComposite());
-
-  const base::TimeTicks frame_time = base::TimeTicks::Now();
-  if (needs_animate_) {
-    base::AutoReset<bool> auto_reset_ignore_schedule(
-        &ignore_schedule_composite_, true);
-    needs_animate_ = false;
-    root_window_->Animate(frame_time);
-  }
-
-  did_post_swapbuffers_ = false;
-  host_->Composite(frame_time);
-  if (did_post_swapbuffers_)
-    pending_swapbuffers_++;
-
-  // Need to track vsync to avoid compositing more than once per frame.
-  root_window_->RequestVSyncUpdate();
 }
 
 ui::UIResourceProvider& CompositorImpl::GetUIResourceProvider() {
@@ -428,31 +346,23 @@ void CompositorImpl::SetSurface(jobject surface) {
 
 void CompositorImpl::CreateLayerTreeHost() {
   DCHECK(!host_);
-  DCHECK(!WillCompositeThisFrame());
-
-  // Just in case, since we immediately hide the LTH in this function,
-  // and we do not want to end up with a pending Composite task when the
-  // host is hidden.
-  base::AutoReset<bool> auto_reset_ignore_schedule(&ignore_schedule_composite_,
-                                                   true);
 
   cc::LayerTreeSettings settings;
   settings.renderer_settings.refresh_rate = 60.0;
   settings.renderer_settings.allow_antialiasing = false;
   settings.renderer_settings.highp_threshold_min = 2048;
   settings.use_zero_copy = true;
+  settings.use_external_begin_frame_source = true;
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   settings.initial_debug_state.SetRecordRenderingStats(
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
-  settings.initial_debug_state.show_fps_counter =
-      command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
-  // TODO(enne): Update this this compositor to use the scheduler.
-  settings.single_thread_proxy_scheduler = false;
+  if (command_line->HasSwitch(cc::switches::kDisableCompositorPropertyTrees))
+    settings.use_property_trees = false;
+  settings.single_thread_proxy_scheduler = true;
 
-  if (command_line->HasSwitch(
-          switches::kEnableAndroidCompositorAnimationTimelines))
-    settings.use_compositor_animation_timelines = true;
+  settings.use_compositor_animation_timelines = !command_line->HasSwitch(
+      switches::kDisableAndroidCompositorAnimationTimelines);
 
   cc::LayerTreeHost::InitParams params;
   params.client = this;
@@ -461,10 +371,12 @@ void CompositorImpl::CreateLayerTreeHost() {
   params.task_graph_runner = g_task_graph_runner.Pointer();
   params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
   params.settings = &settings;
+  params.external_begin_frame_source.reset(new ExternalBeginFrameSource(this));
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, &params);
-  host_->SetVisible(false);
+  DCHECK(!host_->visible());
   host_->SetRootLayer(root_layer_);
-  host_->SetLayerTreeHostClientReady();
+  if (surface_id_allocator_)
+    host_->set_surface_id_namespace(surface_id_allocator_->id_namespace());
   host_->SetViewportSize(size_);
   host_->set_has_transparent_background(has_transparent_background_);
   host_->SetDeviceScaleFactor(device_scale_factor_);
@@ -477,39 +389,16 @@ void CompositorImpl::SetVisible(bool visible) {
   TRACE_EVENT1("cc", "CompositorImpl::SetVisible", "visible", visible);
   if (!visible) {
     DCHECK(host_->visible());
-    // Look for any layers that were attached to the root for readback
-    // and are waiting for Composite() to happen.
-    bool readback_pending = false;
-    for (size_t i = 0; i < root_layer_->children().size(); ++i) {
-      if (root_layer_->children()[i]->HasCopyRequest()) {
-        readback_pending = true;
-        break;
-      }
-    }
-    if (readback_pending) {
-      base::AutoReset<bool> auto_reset_ignore_schedule(
-          &ignore_schedule_composite_, true);
-      host_->Composite(base::TimeTicks::Now());
-    }
-    if (WillComposite())
-      CancelComposite();
     host_->SetVisible(false);
     if (!host_->output_surface_lost())
       host_->ReleaseOutputSurface();
     pending_swapbuffers_ = 0;
-    needs_composite_ = false;
-    composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
     establish_gpu_channel_timeout_.Stop();
     display_client_.reset();
-    if (current_composite_task_) {
-      current_composite_task_->Cancel();
-      current_composite_task_.reset();
-    }
   } else {
     host_->SetVisible(true);
     if (output_surface_request_pending_)
       RequestNewOutputSurface();
-    SetNeedsComposite();
   }
 }
 
@@ -540,10 +429,7 @@ void CompositorImpl::SetHasTransparentBackground(bool flag) {
 void CompositorImpl::SetNeedsComposite() {
   if (!host_->visible())
     return;
-  DCHECK(!needs_composite_ || WillComposite());
-
-  needs_composite_ = true;
-  PostComposite(COMPOSITE_IMMEDIATELY);
+  host_->SetNeedsAnimate();
 }
 
 static scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -576,10 +462,12 @@ CreateGpuProcessViewContext(
                                                 NULL));
 }
 
-void CompositorImpl::Layout() {
-  base::AutoReset<bool> auto_reset_ignore_schedule(&ignore_schedule_composite_,
-                                                   true);
-  client_->Layout();
+void CompositorImpl::UpdateLayerTreeHost() {
+  client_->UpdateLayerTreeHost();
+  if (needs_animate_) {
+    needs_animate_ = false;
+    root_window_->Animate(base::TimeTicks::Now());
+  }
 }
 
 void CompositorImpl::OnGpuChannelEstablished() {
@@ -596,9 +484,9 @@ void CompositorImpl::RequestNewOutputSurface() {
 
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || \
   defined(SYZYASAN) || defined(CYGPROFILE_INSTRUMENTATION)
-  const int64 kGpuChannelTimeoutInSeconds = 40;
+  const int64_t kGpuChannelTimeoutInSeconds = 40;
 #else
-  const int64 kGpuChannelTimeoutInSeconds = 10;
+  const int64_t kGpuChannelTimeoutInSeconds = 10;
 #endif
 
   BrowserGpuChannelHostFactory* factory =
@@ -665,11 +553,12 @@ void CompositorImpl::CreateOutputSurface() {
 
   cc::SurfaceManager* manager = GetSurfaceManager();
   if (manager) {
-    display_client_.reset(new cc::OnscreenDisplayClient(
-        real_output_surface.Pass(), manager, HostSharedBitmapManager::current(),
-        BrowserGpuMemoryBufferManager::current(),
-        host_->settings().renderer_settings,
-        base::ThreadTaskRunnerHandle::Get()));
+    display_client_.reset(
+        new cc::OnscreenDisplayClient(std::move(real_output_surface), manager,
+                                      HostSharedBitmapManager::current(),
+                                      BrowserGpuMemoryBufferManager::current(),
+                                      host_->settings().renderer_settings,
+                                      base::ThreadTaskRunnerHandle::Get()));
     scoped_ptr<cc::SurfaceDisplayOutputSurface> surface_output_surface(
         new cc::SurfaceDisplayOutputSurface(
             manager, surface_id_allocator_.get(), context_provider, nullptr));
@@ -677,9 +566,9 @@ void CompositorImpl::CreateOutputSurface() {
     display_client_->set_surface_output_surface(surface_output_surface.get());
     surface_output_surface->set_display_client(display_client_.get());
     display_client_->display()->Resize(size_);
-    host_->SetOutputSurface(surface_output_surface.Pass());
+    host_->SetOutputSurface(std::move(surface_output_surface));
   } else {
-    host_->SetOutputSurface(real_output_surface.Pass());
+    host_->SetOutputSurface(std::move(real_output_surface));
   }
 }
 
@@ -709,44 +598,15 @@ bool CompositorImpl::SupportsETC1NonPowerOfTwo() const {
   return gpu_capabilities_.texture_format_etc1_npot;
 }
 
-void CompositorImpl::ScheduleComposite() {
-  if (ignore_schedule_composite_ || !host_->visible())
-    return;
-
-  DCHECK_IMPLIES(needs_composite_, WillComposite());
-  needs_composite_ = true;
-  // We currently expect layer tree invalidations at most once per frame
-  // during normal operation and therefore try to composite immediately
-  // to minimize latency.
-  PostComposite(COMPOSITE_IMMEDIATELY);
-}
-
-void CompositorImpl::ScheduleAnimation() {
-  needs_animate_ = true;
-
-  if (!host_->visible())
-    return;
-
-  if (needs_composite_) {
-    DCHECK(WillComposite());
-    return;
-  }
-
-  TRACE_EVENT0("cc", "CompositorImpl::ScheduleAnimation");
-  needs_composite_ = true;
-  PostComposite(COMPOSITE_EVENTUALLY);
-}
-
 void CompositorImpl::DidPostSwapBuffers() {
   TRACE_EVENT0("compositor", "CompositorImpl::DidPostSwapBuffers");
-  did_post_swapbuffers_ = true;
+  pending_swapbuffers_++;
 }
 
 void CompositorImpl::DidCompleteSwapBuffers() {
   TRACE_EVENT0("compositor", "CompositorImpl::DidCompleteSwapBuffers");
   DCHECK_GT(pending_swapbuffers_, 0U);
-  if (pending_swapbuffers_-- == kMaxUiSwapBuffers && needs_composite_)
-    PostComposite(COMPOSITE_IMMEDIATELY);
+  pending_swapbuffers_--;
   client_->OnSwapBuffersCompleted(pending_swapbuffers_);
 }
 
@@ -755,7 +615,8 @@ void CompositorImpl::DidAbortSwapBuffers() {
   // This really gets called only once from
   // SingleThreadProxy::DidLoseOutputSurfaceOnImplThread() when the
   // context was lost.
-  ScheduleComposite();
+  if (host_->visible())
+    host_->SetNeedsCommit();
   client_->OnSwapBuffersCompleted(0);
 }
 
@@ -769,33 +630,24 @@ void CompositorImpl::AttachLayerForReadback(scoped_refptr<cc::Layer> layer) {
 
 void CompositorImpl::RequestCopyOfOutputOnRootLayer(
     scoped_ptr<cc::CopyOutputRequest> request) {
-  root_layer_->RequestCopyOfOutput(request.Pass());
+  root_layer_->RequestCopyOfOutput(std::move(request));
 }
 
 void CompositorImpl::OnVSync(base::TimeTicks frame_time,
                              base::TimeDelta vsync_period) {
-  vsync_period_ = vsync_period;
-  last_vsync_ = frame_time;
-
-  if (WillCompositeThisFrame()) {
-    // We somehow missed the last vsync interval, so reschedule for deadline.
-    // We cannot schedule immediately, or will get us out-of-phase with new
-    // renderer frames.
-    CancelComposite();
-    composite_on_vsync_trigger_ = COMPOSITE_EVENTUALLY;
-  } else {
-    current_composite_task_.reset();
-  }
-
-  DCHECK(!DidCompositeThisFrame() && !WillCompositeThisFrame());
-  if (composite_on_vsync_trigger_ != DO_NOT_COMPOSITE) {
-    CompositingTrigger trigger = composite_on_vsync_trigger_;
-    composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
-    PostComposite(trigger);
-  }
-
   FOR_EACH_OBSERVER(VSyncObserver, observer_list_,
-                    OnUpdateVSyncParameters(frame_time, vsync_period));
+                    OnVSync(frame_time, vsync_period));
+  if (needs_begin_frames_)
+    root_window_->RequestVSyncUpdate();
+}
+
+void CompositorImpl::OnNeedsBeginFramesChange(bool needs_begin_frames) {
+  if (needs_begin_frames_ == needs_begin_frames)
+    return;
+
+  needs_begin_frames_ = needs_begin_frames;
+  if (needs_begin_frames_)
+    root_window_->RequestVSyncUpdate();
 }
 
 void CompositorImpl::SetNeedsAnimate() {

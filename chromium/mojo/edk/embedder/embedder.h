@@ -5,11 +5,14 @@
 #ifndef MOJO_EDK_EMBEDDER_EMBEDDER_H_
 #define MOJO_EDK_EMBEDDER_EMBEDDER_H_
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process/process_handle.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/system_impl_export.h"
@@ -28,6 +31,26 @@ class ProcessDelegate;
 
 // Allows changing the default max message size. Must be called before Init.
 MOJO_SYSTEM_IMPL_EXPORT void SetMaxMessageSize(size_t bytes);
+
+// Must be called before Init in the parent (unsandboxed) process.
+MOJO_SYSTEM_IMPL_EXPORT void PreInitializeParentProcess();
+
+// Must be called before Init in the child (sandboxed) process.
+MOJO_SYSTEM_IMPL_EXPORT void PreInitializeChildProcess();
+
+// Called in the parent process for each child process that is launched. The
+// returned handle must be sent to the child process which then calls
+// SetParentPipeHandle.
+MOJO_SYSTEM_IMPL_EXPORT ScopedPlatformHandle ChildProcessLaunched(
+    base::ProcessHandle child_process);
+// Like above, except used when the embedder establishes the pipe between the
+// parent and child processes itself.
+MOJO_SYSTEM_IMPL_EXPORT void ChildProcessLaunched(
+    base::ProcessHandle child_process, ScopedPlatformHandle server_pipe);
+
+// Should be called as early as possible in the child process with the handle
+// that the parent received from ChildProcessLaunched.
+MOJO_SYSTEM_IMPL_EXPORT void SetParentPipeHandle(ScopedPlatformHandle pipe);
 
 // Must be called first, or just after setting configuration parameters, to
 // initialize the (global, singleton) system.
@@ -74,14 +97,12 @@ PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
 
 // Initializes a process of the given type; to be called after |Init()|.
 //   - |process_delegate| must be a process delegate of the appropriate type
-//     corresponding to |process_type|; its methods will be called on
-//     |delegate_thread_task_runner|.
-//   - |delegate_thread_task_runner|, |process_delegate|, and
-//     |io_thread_task_runner| should live at least until
-//     |ShutdownIPCSupport()|'s callback has been run or
+//     corresponding to |process_type|; its methods will be called on the same
+//     thread as Shutdown.
+//   - |process_delegate|, and |io_thread_task_runner| should live at least
+//     until |ShutdownIPCSupport()|'s callback has been run or
 //     |ShutdownIPCSupportOnIOThread()| has completed.
 MOJO_SYSTEM_IMPL_EXPORT void InitIPCSupport(
-    scoped_refptr<base::TaskRunner> delegate_thread_task_runner,
     ProcessDelegate* process_delegate,
     scoped_refptr<base::TaskRunner> io_thread_task_runner);
 
@@ -95,11 +116,6 @@ MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupportOnIOThread();
 // signalling shutdown completion via the process delegate's
 // |OnShutdownComplete()|.
 MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupport();
-
-// Like above, but doesn't call |OnShutdownComplete| until all channels are
-// gone.
-// TODO(jam): this should be the default behavior.
-MOJO_SYSTEM_IMPL_EXPORT void ShutdownIPCSupportAndWaitForNoChannels();
 
 // Creates a message pipe from a platform handle. Safe to call from any thread.
 MOJO_SYSTEM_IMPL_EXPORT ScopedMessagePipeHandle

@@ -183,6 +183,14 @@ WebInspector.TimelineOverviewPane.prototype = {
     /**
      * @override
      */
+    willHide: function()
+    {
+        this._popoverHelper.hidePopover();
+    },
+
+    /**
+     * @override
+     */
     onResize: function()
     {
         var width = this.element.offsetWidth;
@@ -272,6 +280,8 @@ WebInspector.TimelineOverviewPane.prototype = {
 
     reset: function()
     {
+        this._windowStartTime = 0;
+        this._windowEndTime = Infinity;
         this._overviewCalculator.reset();
         this._overviewGrid.reset();
         this._overviewGrid.setResizeEnabled(false);

@@ -27,18 +27,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/shadow/MediaControlElements.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/ClientRect.h"
-#include "core/dom/DOMTokenList.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLVideoElement.h"
-#include "core/html/MediaController.h"
 #include "core/html/TimeRanges.h"
 #include "core/html/shadow/MediaControls.h"
 #include "core/input/EventHandler.h"
@@ -132,7 +129,7 @@ void MediaControlPanelElement::startTimer()
     // such that captions are correctly displayed at the bottom of the video
     // at the end of the fadeout transition.
     // FIXME: Racing a transition with a setTimeout like this is wrong.
-    m_transitionTimer.startOneShot(fadeOutDuration, FROM_HERE);
+    m_transitionTimer.startOneShot(fadeOutDuration, BLINK_FROM_HERE);
 }
 
 void MediaControlPanelElement::stopTimer()
@@ -231,8 +228,8 @@ void* MediaControlOverlayEnclosureElement::preDispatchEventHandler(Event* event)
     // (if the other requirements are right) even if JavaScript is doing its own handling of the event.
     // Doing it in preDispatchEventHandler prevents any interference from JavaScript.
     // Note that we can't simply test for click, since JS handling of touch events can prevent their translation to click events.
-    if (event && (event->type() == EventTypeNames::click || event->type() == EventTypeNames::touchstart) && mediaElement().hasRemoteRoutes() && !mediaElement().shouldShowControls())
-        mediaControls().showOverlayCastButton();
+    if (event && (event->type() == EventTypeNames::click || event->type() == EventTypeNames::touchstart))
+        mediaControls().showOverlayCastButtonIfNeeded();
     return MediaControlDivElement::preDispatchEventHandler(event);
 }
 
@@ -296,7 +293,7 @@ void MediaControlPlayButtonElement::defaultEventHandler(Event* event)
 
 void MediaControlPlayButtonElement::updateDisplayType()
 {
-    setDisplayType(mediaElement().togglePlayStateWillPlay() ? MediaPlayButton : MediaPauseButton);
+    setDisplayType(mediaElement().paused() ? MediaPlayButton : MediaPauseButton);
 }
 
 // ----------------------------
@@ -317,8 +314,8 @@ PassRefPtrWillBeRawPtr<MediaControlOverlayPlayButtonElement> MediaControlOverlay
 
 void MediaControlOverlayPlayButtonElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == EventTypeNames::click && mediaElement().togglePlayStateWillPlay()) {
-        mediaElement().togglePlayState();
+    if (event->type() == EventTypeNames::click && mediaElement().paused()) {
+        mediaElement().play();
         updateDisplayType();
         event->setDefaultHandled();
     }
@@ -326,7 +323,7 @@ void MediaControlOverlayPlayButtonElement::defaultEventHandler(Event* event)
 
 void MediaControlOverlayPlayButtonElement::updateDisplayType()
 {
-    setIsWanted(mediaElement().shouldShowControls() && mediaElement().togglePlayStateWillPlay());
+    setIsWanted(mediaElement().shouldShowControls() && mediaElement().paused());
 }
 
 bool MediaControlOverlayPlayButtonElement::keepEventInNode(Event* event)
@@ -411,12 +408,8 @@ void MediaControlTimelineElement::defaultEventHandler(Event* event)
     if (event->type() == EventTypeNames::input) {
         // FIXME: This will need to take the timeline offset into consideration
         // once that concept is supported, see https://crbug.com/312699
-        if (mediaElement().controller()) {
-            if (mediaElement().controller()->seekable()->contain(time))
-                mediaElement().controller()->setCurrentTime(time);
-        } else if (mediaElement().seekable()->contain(time)) {
-            mediaElement().setCurrentTime(time, IGNORE_EXCEPTION);
-        }
+        if (mediaElement().seekable()->contain(time))
+            mediaElement().setCurrentTime(time);
     }
 
     LayoutSlider* slider = toLayoutSlider(layoutObject());

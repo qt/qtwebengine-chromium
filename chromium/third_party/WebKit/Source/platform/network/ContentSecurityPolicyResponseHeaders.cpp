@@ -23,16 +23,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 
+#include "platform/HTTPNames.h"
 #include "platform/network/ResourceResponse.h"
 
 namespace blink {
 
 ContentSecurityPolicyResponseHeaders::ContentSecurityPolicyResponseHeaders(const ResourceResponse& response)
-    : m_contentSecurityPolicy(response.httpHeaderField("Content-Security-Policy"))
-    , m_contentSecurityPolicyReportOnly(response.httpHeaderField("Content-Security-Policy-Report-Only"))
+    : m_contentSecurityPolicy(response.httpHeaderField(HTTPNames::Content_Security_Policy))
+    , m_contentSecurityPolicyReportOnly(response.httpHeaderField(HTTPNames::Content_Security_Policy_Report_Only))
 {
 }
 

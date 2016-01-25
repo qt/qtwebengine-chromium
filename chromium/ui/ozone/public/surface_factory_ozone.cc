@@ -39,8 +39,8 @@ scoped_ptr<SurfaceOzoneCanvas> SurfaceFactoryOzone::CreateCanvasForWidget(
   return nullptr;
 }
 
-const int32* SurfaceFactoryOzone::GetEGLSurfaceProperties(
-    const int32* desired_attributes) {
+const int32_t* SurfaceFactoryOzone::GetEGLSurfaceProperties(
+    const int32_t* desired_attributes) {
   return desired_attributes;
 }
 
@@ -49,7 +49,13 @@ scoped_refptr<ui::NativePixmap> SurfaceFactoryOzone::CreateNativePixmap(
     gfx::Size size,
     gfx::BufferFormat format,
     gfx::BufferUsage usage) {
-  return NULL;
+  return nullptr;
+}
+
+scoped_refptr<ui::NativePixmap>
+SurfaceFactoryOzone::CreateNativePixmapFromHandle(
+    const gfx::NativePixmapHandle& handle) {
+  return nullptr;
 }
 
 }  // namespace ui

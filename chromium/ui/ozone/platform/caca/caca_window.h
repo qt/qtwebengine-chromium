@@ -6,6 +6,7 @@
 #define UI_OZONE_PLATFORM_CACA_CACA_WINDOW_H_
 
 #include <caca.h>
+#include <stdint.h>
 
 #include "base/debug/stack_trace.h"
 #include "base/macros.h"
@@ -62,6 +63,7 @@ class CacaWindow : public PlatformWindow, public PlatformEventDispatcher {
   void MoveCursorTo(const gfx::Point& location) override;
   void ConfineCursorToBounds(const gfx::Rect& bounds) override;
   PlatformImeController* GetPlatformImeController() override;
+  void SetTitle(const base::string16& title) override;
 
   // PlatformEventDispatcher:
   bool CanDispatchEvent(const PlatformEvent& event) override;

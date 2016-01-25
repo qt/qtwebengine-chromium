@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/scroll/ScrollableArea.h"
 
 #include "platform/HostWindow.h"
@@ -51,11 +50,10 @@ namespace blink {
 
 struct SameSizeAsScrollableArea {
     virtual ~SameSizeAsScrollableArea();
-    IntRect scrollbarDamage[2];
 #if ENABLE(ASSERT) && ENABLE(OILPAN)
     VerifyEagerFinalization verifyEager;
 #endif
-    void* pointer;
+    OwnPtrWillBeMember<void*> pointer[2];
     unsigned bitfields : 16;
     IntPoint origin;
 };
@@ -74,7 +72,7 @@ float ScrollableArea::minFractionToStepWhenPaging()
 
 int ScrollableArea::maxOverlapBetweenPages()
 {
-    static int maxOverlapBetweenPages = ScrollbarTheme::theme()->maxOverlapBetweenPages();
+    static int maxOverlapBetweenPages = ScrollbarTheme::theme().maxOverlapBetweenPages();
     return maxOverlapBetweenPages;
 }
 
@@ -82,6 +80,9 @@ ScrollableArea::ScrollableArea()
     : m_inLiveResize(false)
     , m_scrollbarOverlayStyle(ScrollbarOverlayStyleDefault)
     , m_scrollOriginChanged(false)
+    , m_horizontalScrollbarNeedsPaintInvalidation(false)
+    , m_verticalScrollbarNeedsPaintInvalidation(false)
+    , m_scrollCornerNeedsPaintInvalidation(false)
 {
 }
 
@@ -91,29 +92,28 @@ ScrollableArea::~ScrollableArea()
 
 void ScrollableArea::clearScrollAnimators()
 {
-    m_animators.clear();
+#if OS(MACOSX) && ENABLE(OILPAN)
+    if (m_scrollAnimator)
+        m_scrollAnimator->dispose();
+#endif
+    m_scrollAnimator.clear();
+    m_programmaticScrollAnimator.clear();
 }
 
-ScrollAnimator* ScrollableArea::scrollAnimator() const
+ScrollAnimatorBase& ScrollableArea::scrollAnimator() const
 {
-    if (!m_animators)
-        m_animators = adoptPtr(new ScrollableAreaAnimators);
+    if (!m_scrollAnimator)
+        m_scrollAnimator = ScrollAnimatorBase::create(const_cast<ScrollableArea*>(this));
 
-    if (!m_animators->scrollAnimator)
-        m_animators->scrollAnimator = ScrollAnimator::create(const_cast<ScrollableArea*>(this));
-
-    return m_animators->scrollAnimator.get();
+    return *m_scrollAnimator;
 }
 
-ProgrammaticScrollAnimator* ScrollableArea::programmaticScrollAnimator() const
+ProgrammaticScrollAnimator& ScrollableArea::programmaticScrollAnimator() const
 {
-    if (!m_animators)
-        m_animators = adoptPtr(new ScrollableAreaAnimators);
+    if (!m_programmaticScrollAnimator)
+        m_programmaticScrollAnimator = ProgrammaticScrollAnimator::create(const_cast<ScrollableArea*>(this));
 
-    if (!m_animators->programmaticScrollAnimator)
-        m_animators->programmaticScrollAnimator = ProgrammaticScrollAnimator::create(const_cast<ScrollableArea*>(this));
-
-    return m_animators->programmaticScrollAnimator.get();
+    return *m_programmaticScrollAnimator;
 }
 
 void ScrollableArea::setScrollOrigin(const IntPoint& origin)
@@ -129,40 +129,43 @@ GraphicsLayer* ScrollableArea::layerForContainer() const
     return layerForScrolling() ? layerForScrolling()->parent() : 0;
 }
 
+ScrollbarOrientation ScrollableArea::scrollbarOrientationFromDirection(ScrollDirectionPhysical direction) const
+{
+    return (direction == ScrollUp  || direction == ScrollDown) ? VerticalScrollbar : HorizontalScrollbar;
+}
+
+float ScrollableArea::scrollStep(ScrollGranularity granularity, ScrollbarOrientation orientation) const
+{
+    switch (granularity) {
+    case ScrollByLine:
+        return lineStep(orientation);
+    case ScrollByPage:
+        return pageStep(orientation);
+    case ScrollByDocument:
+        return documentStep(orientation);
+    case ScrollByPixel:
+    case ScrollByPrecisePixel:
+        return pixelStep(orientation);
+    default:
+        ASSERT_NOT_REACHED();
+        return 0.0f;
+    }
+}
+
 ScrollResultOneDimensional ScrollableArea::userScroll(ScrollDirectionPhysical direction, ScrollGranularity granularity, float delta)
 {
-    ScrollbarOrientation orientation;
-    if (direction == ScrollUp || direction == ScrollDown)
-        orientation = VerticalScrollbar;
-    else
-        orientation = HorizontalScrollbar;
-
+    ScrollbarOrientation orientation = scrollbarOrientationFromDirection(direction);
     if (!userInputScrollable(orientation))
         return ScrollResultOneDimensional(false, delta);
 
     cancelProgrammaticScrollAnimation();
 
-    float step = 0;
-    switch (granularity) {
-    case ScrollByLine:
-        step = lineStep(orientation);
-        break;
-    case ScrollByPage:
-        step = pageStep(orientation);
-        break;
-    case ScrollByDocument:
-        step = documentStep(orientation);
-        break;
-    case ScrollByPixel:
-    case ScrollByPrecisePixel:
-        step = pixelStep(orientation);
-        break;
-    }
+    float step = scrollStep(granularity, orientation);
 
     if (direction == ScrollUp || direction == ScrollLeft)
         delta = -delta;
 
-    return scrollAnimator()->userScroll(orientation, granularity, step, delta);
+    return scrollAnimator().userScroll(orientation, granularity, step, delta);
 }
 
 void ScrollableArea::setScrollPosition(const DoublePoint& position, ScrollType scrollType, ScrollBehavior behavior)
@@ -189,9 +192,9 @@ void ScrollableArea::setScrollPositionSingleAxis(ScrollbarOrientation orientatio
 {
     DoublePoint newPosition;
     if (orientation == HorizontalScrollbar)
-        newPosition = DoublePoint(position, scrollAnimator()->currentPosition().y());
+        newPosition = DoublePoint(position, scrollAnimator().currentPosition().y());
     else
-        newPosition = DoublePoint(scrollAnimator()->currentPosition().x(), position);
+        newPosition = DoublePoint(scrollAnimator().currentPosition().x(), position);
 
     // TODO(bokan): Note, this doesn't use the derived class versions since this method is currently used
     // exclusively by code that adjusts the position by the scroll origin and the derived class versions
@@ -204,24 +207,27 @@ void ScrollableArea::programmaticScrollHelper(const DoublePoint& position, Scrol
     cancelScrollAnimation();
 
     if (scrollBehavior == ScrollBehaviorSmooth)
-        programmaticScrollAnimator()->animateToOffset(toFloatPoint(position));
+        programmaticScrollAnimator().animateToOffset(toFloatPoint(position));
     else
-        programmaticScrollAnimator()->scrollToOffsetWithoutAnimation(toFloatPoint(position));
+        programmaticScrollAnimator().scrollToOffsetWithoutAnimation(toFloatPoint(position));
 }
 
 void ScrollableArea::userScrollHelper(const DoublePoint& position, ScrollBehavior scrollBehavior)
 {
     cancelProgrammaticScrollAnimation();
 
+    double x = userInputScrollable(HorizontalScrollbar) ? position.x() : scrollAnimator().currentPosition().x();
+    double y = userInputScrollable(VerticalScrollbar) ? position.y() : scrollAnimator().currentPosition().y();
+
     // Smooth user scrolls (keyboard, wheel clicks) are handled via the userScroll method.
     // TODO(bokan): The userScroll method should probably be modified to call this method
-    //              and ScrollAnimator to have a simpler animateToOffset method like the
+    //              and ScrollAnimatorBase to have a simpler animateToOffset method like the
     //              ProgrammaticScrollAnimator.
     ASSERT(scrollBehavior == ScrollBehaviorInstant);
-    scrollAnimator()->scrollToOffsetWithoutAnimation(toFloatPoint(position));
+    scrollAnimator().scrollToOffsetWithoutAnimation(FloatPoint(x, y));
 }
 
-LayoutRect ScrollableArea::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY)
+LayoutRect ScrollableArea::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY, ScrollType)
 {
     // TODO(bokan): This should really be implemented here but ScrollAlignment is in Core which is a dependency violation.
     ASSERT_NOT_REACHED();
@@ -243,30 +249,21 @@ void ScrollableArea::scrollPositionChanged(const DoublePoint& position, ScrollTy
     // Tell the scrollbars to update their thumb postions.
     if (Scrollbar* horizontalScrollbar = this->horizontalScrollbar()) {
         horizontalScrollbar->offsetDidChange();
-        if (horizontalScrollbar->isOverlayScrollbar() && !hasLayerForHorizontalScrollbar()) {
-            if (!verticalScrollbar)
-                horizontalScrollbar->invalidate();
-            else {
-                // If there is both a horizontalScrollbar and a verticalScrollbar,
-                // then we must also invalidate the corner between them.
-                IntRect boundsAndCorner = horizontalScrollbar->boundsRect();
-                boundsAndCorner.setWidth(boundsAndCorner.width() + verticalScrollbar->width());
-                horizontalScrollbar->invalidateRect(boundsAndCorner);
-            }
-        }
+        if (horizontalScrollbar->isOverlayScrollbar() && !hasLayerForHorizontalScrollbar())
+            setScrollbarNeedsPaintInvalidation(HorizontalScrollbar);
     }
     if (verticalScrollbar) {
         verticalScrollbar->offsetDidChange();
         if (verticalScrollbar->isOverlayScrollbar() && !hasLayerForVerticalScrollbar())
-            verticalScrollbar->invalidate();
+            setScrollbarNeedsPaintInvalidation(VerticalScrollbar);
     }
 
     if (scrollPositionDouble() != oldPosition) {
         // FIXME: Pass in DoubleSize. crbug.com/414283.
-        scrollAnimator()->notifyContentAreaScrolled(toFloatSize(scrollPositionDouble() - oldPosition));
+        scrollAnimator().notifyContentAreaScrolled(toFloatSize(scrollPositionDouble() - oldPosition));
     }
 
-    scrollAnimator()->setCurrentPosition(toFloatPoint(position));
+    scrollAnimator().setCurrentPosition(toFloatPoint(position));
 }
 
 bool ScrollableArea::scrollBehaviorFromString(const String& behaviorString, ScrollBehavior& behavior)
@@ -294,7 +291,7 @@ void ScrollableArea::willStartLiveResize()
     if (m_inLiveResize)
         return;
     m_inLiveResize = true;
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->willStartLiveResize();
 }
 
@@ -303,84 +300,84 @@ void ScrollableArea::willEndLiveResize()
     if (!m_inLiveResize)
         return;
     m_inLiveResize = false;
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->willEndLiveResize();
 }
 
 void ScrollableArea::contentAreaWillPaint() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->contentAreaWillPaint();
 }
 
 void ScrollableArea::mouseEnteredContentArea() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->mouseEnteredContentArea();
 }
 
 void ScrollableArea::mouseExitedContentArea() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->mouseEnteredContentArea();
 }
 
 void ScrollableArea::mouseMovedInContentArea() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->mouseMovedInContentArea();
 }
 
-void ScrollableArea::mouseEnteredScrollbar(Scrollbar* scrollbar) const
+void ScrollableArea::mouseEnteredScrollbar(Scrollbar& scrollbar) const
 {
-    scrollAnimator()->mouseEnteredScrollbar(scrollbar);
+    scrollAnimator().mouseEnteredScrollbar(scrollbar);
 }
 
-void ScrollableArea::mouseExitedScrollbar(Scrollbar* scrollbar) const
+void ScrollableArea::mouseExitedScrollbar(Scrollbar& scrollbar) const
 {
-    scrollAnimator()->mouseExitedScrollbar(scrollbar);
+    scrollAnimator().mouseExitedScrollbar(scrollbar);
 }
 
 void ScrollableArea::contentAreaDidShow() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->contentAreaDidShow();
 }
 
 void ScrollableArea::contentAreaDidHide() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->contentAreaDidHide();
 }
 
 void ScrollableArea::finishCurrentScrollAnimations() const
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->finishCurrentScrollAnimations();
 }
 
-void ScrollableArea::didAddScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orientation)
+void ScrollableArea::didAddScrollbar(Scrollbar& scrollbar, ScrollbarOrientation orientation)
 {
     if (orientation == VerticalScrollbar)
-        scrollAnimator()->didAddVerticalScrollbar(scrollbar);
+        scrollAnimator().didAddVerticalScrollbar(scrollbar);
     else
-        scrollAnimator()->didAddHorizontalScrollbar(scrollbar);
+        scrollAnimator().didAddHorizontalScrollbar(scrollbar);
 
     // <rdar://problem/9797253> AppKit resets the scrollbar's style when you attach a scrollbar
     setScrollbarOverlayStyle(scrollbarOverlayStyle());
 }
 
-void ScrollableArea::willRemoveScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orientation)
+void ScrollableArea::willRemoveScrollbar(Scrollbar& scrollbar, ScrollbarOrientation orientation)
 {
     if (orientation == VerticalScrollbar)
-        scrollAnimator()->willRemoveVerticalScrollbar(scrollbar);
+        scrollAnimator().willRemoveVerticalScrollbar(scrollbar);
     else
-        scrollAnimator()->willRemoveHorizontalScrollbar(scrollbar);
+        scrollAnimator().willRemoveHorizontalScrollbar(scrollbar);
 }
 
 void ScrollableArea::contentsResized()
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
         scrollAnimator->contentsResized();
 }
 
@@ -398,47 +395,43 @@ void ScrollableArea::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle
     m_scrollbarOverlayStyle = overlayStyle;
 
     if (Scrollbar* scrollbar = horizontalScrollbar()) {
-        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(scrollbar);
-        scrollbar->invalidate();
+        ScrollbarTheme::theme().updateScrollbarOverlayStyle(*scrollbar);
+        setScrollbarNeedsPaintInvalidation(HorizontalScrollbar);
     }
 
     if (Scrollbar* scrollbar = verticalScrollbar()) {
-        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(scrollbar);
-        scrollbar->invalidate();
+        ScrollbarTheme::theme().updateScrollbarOverlayStyle(*scrollbar);
+        setScrollbarNeedsPaintInvalidation(VerticalScrollbar);
     }
 }
 
-void ScrollableArea::invalidateScrollbar(Scrollbar* scrollbar, const IntRect& rect)
+void ScrollableArea::setScrollbarNeedsPaintInvalidation(ScrollbarOrientation orientation)
 {
-    if (scrollbar == horizontalScrollbar()) {
+    if (orientation == HorizontalScrollbar) {
         if (GraphicsLayer* graphicsLayer = layerForHorizontalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
             graphicsLayer->setContentsNeedsDisplay();
-            return;
         }
-        invalidateScrollbarRect(scrollbar, rect);
-        return;
-    }
-    if (scrollbar == verticalScrollbar()) {
+        m_horizontalScrollbarNeedsPaintInvalidation = true;
+    } else {
         if (GraphicsLayer* graphicsLayer = layerForVerticalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
             graphicsLayer->setContentsNeedsDisplay();
-            return;
         }
-        invalidateScrollbarRect(scrollbar, rect);
-        return;
+        m_verticalScrollbarNeedsPaintInvalidation = true;
     }
-    // Otherwise the scrollbar is just created and has not been set as either
-    // horizontalScrollbar() or verticalScrollbar().
+
+    scrollControlWasSetNeedsPaintInvalidation();
 }
 
-void ScrollableArea::invalidateScrollCorner(const IntRect& rect)
+void ScrollableArea::setScrollCornerNeedsPaintInvalidation()
 {
     if (GraphicsLayer* graphicsLayer = layerForScrollCorner()) {
         graphicsLayer->setNeedsDisplay();
         return;
     }
-    invalidateScrollCornerRect(rect);
+    m_scrollCornerNeedsPaintInvalidation = true;
+    scrollControlWasSetNeedsPaintInvalidation();
 }
 
 bool ScrollableArea::hasLayerForHorizontalScrollbar() const
@@ -460,12 +453,14 @@ void ScrollableArea::layerForScrollingDidChange(WebCompositorAnimationTimeline* 
 {
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
         programmaticScrollAnimator->layerForCompositedScrollingDidChange(timeline);
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->layerForCompositedScrollingDidChange(timeline);
 }
 
 bool ScrollableArea::scheduleAnimation()
 {
     if (HostWindow* window = hostWindow()) {
-        window->scheduleAnimation();
+        window->scheduleAnimation(widget());
         return true;
     }
     return false;
@@ -474,9 +469,9 @@ bool ScrollableArea::scheduleAnimation()
 void ScrollableArea::serviceScrollAnimations(double monotonicTime)
 {
     bool requiresAnimationService = false;
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator()) {
-        scrollAnimator->serviceScrollAnimations();
-        if (scrollAnimator->hasRunningAnimation())
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator()) {
+        scrollAnimator->tickAnimation(monotonicTime);
+        if (scrollAnimator->hasAnimationThatRequiresService())
             requiresAnimationService = true;
     }
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator()) {
@@ -492,24 +487,47 @@ void ScrollableArea::updateCompositorScrollAnimations()
 {
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
         programmaticScrollAnimator->updateCompositorAnimations();
+
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->updateCompositorAnimations();
 }
 
 void ScrollableArea::notifyCompositorAnimationFinished(int groupId)
 {
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
         programmaticScrollAnimator->notifyCompositorAnimationFinished(groupId);
+
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->notifyCompositorAnimationFinished(groupId);
+}
+
+void ScrollableArea::notifyCompositorAnimationAborted(int groupId)
+{
+    if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
+        programmaticScrollAnimator->notifyCompositorAnimationAborted(groupId);
+
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->notifyCompositorAnimationAborted(groupId);
 }
 
 void ScrollableArea::cancelScrollAnimation()
 {
-    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
-        scrollAnimator->cancelAnimations();
+    if (ScrollAnimatorBase* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->cancelAnimation();
 }
 
 void ScrollableArea::cancelProgrammaticScrollAnimation()
 {
     if (ProgrammaticScrollAnimator* programmaticScrollAnimator = existingProgrammaticScrollAnimator())
         programmaticScrollAnimator->cancelAnimation();
+}
+
+bool ScrollableArea::shouldScrollOnMainThread() const
+{
+    if (GraphicsLayer* layer = layerForScrolling()) {
+        return layer->platformLayer()->shouldScrollOnMainThread();
+    }
+    return true;
 }
 
 DoubleRect ScrollableArea::visibleContentRectDouble(IncludeScrollbarsInRect scrollbarInclusion) const
@@ -582,7 +600,12 @@ IntSize ScrollableArea::excludeScrollbars(const IntSize& size) const
 
     return IntSize(std::max(0, size.width() - verticalScrollbarWidth),
         std::max(0, size.height() - horizontalScrollbarHeight));
+}
 
+DEFINE_TRACE(ScrollableArea)
+{
+    visitor->trace(m_scrollAnimator);
+    visitor->trace(m_programmaticScrollAnimator);
 }
 
 } // namespace blink

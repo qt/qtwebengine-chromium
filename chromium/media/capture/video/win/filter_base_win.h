@@ -11,7 +11,9 @@
 // Avoid including strsafe.h via dshow as it will cause build warnings.
 #define NO_DSHOW_STRSAFE
 #include <dshow.h>
+#include <stddef.h>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/win/scoped_comptr.h"
 

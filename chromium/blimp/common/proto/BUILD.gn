@@ -4,13 +4,41 @@
 
 import("//third_party/protobuf/proto_library.gni")
 
-proto_library("proto") {
+group("proto") {
+  public_deps = [
+    ":blimp_proto",
+    "//third_party/protobuf:protobuf_lite",
+  ]
+}
+
+component("blimp_proto") {
+  # Only expose the target to the "proto" group.
+  visibility = [ ":proto" ]
+
+  public_deps = [
+    ":proto_internal",
+  ]
+}
+
+proto_library("proto_internal") {
+  # Only expose the target to the "blimp_proto" target.
+  visibility = [ ":blimp_proto" ]
+
   sources = [
     "blimp_message.proto",
-    "client_control.proto",
-    "common.proto",
     "compositor.proto",
     "input.proto",
-    "server_control.proto",
+    "navigation.proto",
+    "protocol_control.proto",
+    "render_widget.proto",
+    "tab_control.proto",
   ]
+
+  cc_generator_options = "dllexport_decl=BLIMP_PROTO_EXPORT:"
+  cc_include = "blimp/common/proto/blimp_proto_export.h"
+
+  defines = [ "BLIMP_PROTO_IMPLEMENTATION" ]
+
+  # Warn if clang creates exit destructors
+  extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
 }

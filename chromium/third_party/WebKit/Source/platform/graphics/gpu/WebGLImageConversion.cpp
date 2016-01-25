@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/gpu/WebGLImageConversion.h"
 
 #include "platform/CheckedInt.h"
@@ -1429,6 +1428,7 @@ bool HasColor(int format)
 
 template<int Format>
 struct IsInt8Format {
+    STATIC_ONLY(IsInt8Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA8_S
         || Format == WebGLImageConversion::DataFormatRGB8_S
@@ -1438,6 +1438,7 @@ struct IsInt8Format {
 
 template<int Format>
 struct IsInt16Format {
+    STATIC_ONLY(IsInt16Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA16_S
         || Format == WebGLImageConversion::DataFormatRGB16_S
@@ -1447,6 +1448,7 @@ struct IsInt16Format {
 
 template<int Format>
 struct IsInt32Format {
+    STATIC_ONLY(IsInt32Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA32_S
         || Format == WebGLImageConversion::DataFormatRGB32_S
@@ -1456,6 +1458,7 @@ struct IsInt32Format {
 
 template<int Format>
 struct IsUInt8Format {
+    STATIC_ONLY(IsUInt8Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA8
         || Format == WebGLImageConversion::DataFormatRGB8
@@ -1472,6 +1475,7 @@ struct IsUInt8Format {
 
 template<int Format>
 struct IsUInt16Format {
+    STATIC_ONLY(IsUInt16Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA16
         || Format == WebGLImageConversion::DataFormatRGB16
@@ -1481,6 +1485,7 @@ struct IsUInt16Format {
 
 template<int Format>
 struct IsUInt32Format {
+    STATIC_ONLY(IsUInt32Format);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA32
         || Format == WebGLImageConversion::DataFormatRGB32
@@ -1490,6 +1495,7 @@ struct IsUInt32Format {
 
 template<int Format>
 struct IsFloatFormat {
+    STATIC_ONLY(IsFloatFormat);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA32F
         || Format == WebGLImageConversion::DataFormatRGB32F
@@ -1501,6 +1507,7 @@ struct IsFloatFormat {
 
 template<int Format>
 struct IsHalfFloatFormat {
+    STATIC_ONLY(IsHalfFloatFormat);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA16F
         || Format == WebGLImageConversion::DataFormatRGB16F
@@ -1512,6 +1519,7 @@ struct IsHalfFloatFormat {
 
 template<int Format>
 struct Is32bppFormat {
+    STATIC_ONLY(Is32bppFormat);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA2_10_10_10
         || Format == WebGLImageConversion::DataFormatRGB5999
@@ -1520,6 +1528,7 @@ struct Is32bppFormat {
 
 template<int Format>
 struct Is16bppFormat {
+    STATIC_ONLY(Is16bppFormat);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA5551
         || Format == WebGLImageConversion::DataFormatRGBA4444
@@ -1538,61 +1547,73 @@ template<int Format,
     bool Is16bpp = Is16bppFormat<Format>::Value,
     bool Is32bpp = Is32bppFormat<Format>::Value>
 struct DataTypeForFormat {
+    STATIC_ONLY(DataTypeForFormat);
     typedef double Type; // Use a type that's not used in unpack/pack.
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, true, false, false, false, false, false, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef int8_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, true, false, false, false, false, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint8_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, true, false, false, false, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef int16_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, true, false, false, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint16_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, true, false, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef int32_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, false, true, false, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint32_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, false, false, true, false, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef float Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, false, false, false, true, false, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint16_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, false, false, false, false, true, false> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint16_t Type;
 };
 
 template<int Format>
 struct DataTypeForFormat<Format, false, false, false, false, false, false, false, false, false, true> {
+    STATIC_ONLY(DataTypeForFormat);
     typedef uint32_t Type;
 };
 
 template<int Format>
 struct UsesFloatIntermediateFormat {
+    STATIC_ONLY(UsesFloatIntermediateFormat);
     static const bool Value =
         IsFloatFormat<Format>::Value
         || IsHalfFloatFormat<Format>::Value
@@ -1603,6 +1624,7 @@ struct UsesFloatIntermediateFormat {
 
 template<int Format>
 struct IntermediateFormat {
+    STATIC_ONLY(IntermediateFormat);
     static const int Value =
         UsesFloatIntermediateFormat<Format>::Value ? WebGLImageConversion::DataFormatRGBA32F
         : IsInt32Format<Format>::Value ? WebGLImageConversion::DataFormatRGBA32_S
@@ -1684,6 +1706,7 @@ unsigned TexelBytesForFormat(WebGLImageConversion::DataFormat format)
 /* END CODE SHARED WITH MOZILLA FIREFOX */
 
 class FormatConverter {
+    STACK_ALLOCATED();
 public:
     FormatConverter(unsigned width, unsigned height,
         const void* srcStart, void* dstStart, int srcStride, int dstStride)
@@ -1801,6 +1824,7 @@ void FormatConverter::convert(WebGLImageConversion::AlphaOp alphaOp)
 
 template<int Format>
 struct SupportsConversionFromDomElements {
+    STATIC_ONLY(SupportsConversionFromDomElements);
     static const bool Value =
         Format == WebGLImageConversion::DataFormatRGBA8
         || Format == WebGLImageConversion::DataFormatRGB8
@@ -1899,7 +1923,25 @@ void FormatConverter::convert()
     return;
 }
 
+bool frameIsValid(const SkBitmap& frameBitmap)
+{
+    return !frameBitmap.isNull()
+        && !frameBitmap.empty()
+        && frameBitmap.isImmutable()
+        && frameBitmap.colorType() == kN32_SkColorType;
+}
+
 } // anonymous namespace
+
+WebGLImageConversion::PixelStoreParams::PixelStoreParams()
+    : alignment(4)
+    , rowLength(0)
+    , imageHeight(0)
+    , skipPixels(0)
+    , skipRows(0)
+    , skipImages(0)
+{
+}
 
 bool WebGLImageConversion::computeFormatAndTypeParameters(GLenum format, GLenum type, unsigned* componentsPerPixel, unsigned* bytesPerComponent)
 {
@@ -1976,40 +2018,102 @@ bool WebGLImageConversion::computeFormatAndTypeParameters(GLenum format, GLenum 
     return true;
 }
 
-GLenum WebGLImageConversion::computeImageSizeInBytes(GLenum format, GLenum type, GLsizei width, GLsizei height, GLint alignment, unsigned* imageSizeInBytes, unsigned* paddingInBytes)
+GLenum WebGLImageConversion::computeImageSizeInBytes(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const PixelStoreParams& params, unsigned* imageSizeInBytes, unsigned* paddingInBytes, unsigned* skipSizeInBytes)
 {
     ASSERT(imageSizeInBytes);
-    ASSERT(alignment == 1 || alignment == 2 || alignment == 4 || alignment == 8);
-    if (width < 0 || height < 0)
+    ASSERT(params.alignment == 1 || params.alignment == 2 || params.alignment == 4 || params.alignment == 8);
+    ASSERT(params.rowLength >= 0 && params.imageHeight >= 0);
+    ASSERT(params.skipPixels >= 0 && params.skipRows >= 0 && params.skipImages >= 0);
+    if (width < 0 || height < 0 || depth < 0)
         return GL_INVALID_VALUE;
-    unsigned bytesPerComponent, componentsPerPixel;
-    if (!computeFormatAndTypeParameters(format, type, &bytesPerComponent, &componentsPerPixel))
-        return GL_INVALID_ENUM;
-    if (!width || !height) {
+    if (!width || !height || !depth) {
         *imageSizeInBytes = 0;
         if (paddingInBytes)
             *paddingInBytes = 0;
+        if (skipSizeInBytes)
+            *skipSizeInBytes = 0;
         return GL_NO_ERROR;
     }
-    CheckedInt<uint32_t> checkedValue(bytesPerComponent * componentsPerPixel);
-    checkedValue *=  width;
+
+    int rowLength = params.rowLength > 0 ? params.rowLength : width;
+    int imageHeight = params.imageHeight > 0 ? params.imageHeight : height;
+
+    unsigned bytesPerComponent, componentsPerPixel;
+    if (!computeFormatAndTypeParameters(format, type, &bytesPerComponent, &componentsPerPixel))
+        return GL_INVALID_ENUM;
+    unsigned bytesPerGroup = bytesPerComponent * componentsPerPixel;
+    CheckedInt<uint32_t> checkedValue = static_cast<uint32_t>(rowLength);
+    checkedValue *=  bytesPerGroup;
     if (!checkedValue.isValid())
         return GL_INVALID_VALUE;
-    unsigned validRowSize = checkedValue.value();
+
+    unsigned lastRowSize;
+    if (params.rowLength > 0 && params.rowLength != width) {
+        CheckedInt<uint32_t> tmp = width;
+        tmp *= bytesPerGroup;
+        if (!tmp.isValid())
+            return GL_INVALID_VALUE;
+        lastRowSize = tmp.value();
+    } else {
+        lastRowSize = checkedValue.value();
+    }
+
     unsigned padding = 0;
-    unsigned residual = validRowSize % alignment;
+    unsigned residual = checkedValue.value() % params.alignment;
     if (residual) {
-        padding = alignment - residual;
+        padding = params.alignment - residual;
         checkedValue += padding;
     }
-    // Last row needs no padding.
-    checkedValue *= (height - 1);
-    checkedValue += validRowSize;
+    if (!checkedValue.isValid())
+        return GL_INVALID_VALUE;
+    unsigned paddedRowSize = checkedValue.value();
+
+    CheckedInt<uint32_t> rows = imageHeight;
+    rows *= (depth - 1);
+    // Last image is not affected by IMAGE_HEIGHT parameter.
+    rows += height;
+    if (!rows.isValid())
+        return GL_INVALID_VALUE;
+    checkedValue *= (rows.value() - 1);
+    // Last row is not affected by ROW_LENGTH parameter.
+    checkedValue += lastRowSize;
     if (!checkedValue.isValid())
         return GL_INVALID_VALUE;
     *imageSizeInBytes = checkedValue.value();
     if (paddingInBytes)
         *paddingInBytes = padding;
+
+    CheckedInt<uint32_t> skipSize = 0;
+    if (params.skipImages > 0) {
+        CheckedInt<uint32_t> tmp = paddedRowSize;
+        tmp *= imageHeight;
+        tmp *= params.skipImages;
+        if (!tmp.isValid())
+            return GL_INVALID_VALUE;
+        skipSize += tmp.value();
+    }
+    if (params.skipRows > 0) {
+        CheckedInt<uint32_t> tmp = paddedRowSize;
+        tmp *= params.skipRows;
+        if (!tmp.isValid())
+            return GL_INVALID_VALUE;
+        skipSize += tmp.value();
+    }
+    if (params.skipPixels > 0) {
+        CheckedInt<uint32_t> tmp = bytesPerGroup;
+        tmp *= params.skipPixels;
+        if (!tmp.isValid())
+            return GL_INVALID_VALUE;
+        skipSize += tmp.value();
+    }
+    if (!skipSize.isValid())
+        return GL_INVALID_VALUE;
+    if (skipSizeInBytes)
+        *skipSizeInBytes = skipSize.value();
+
+    checkedValue += skipSize.value();
+    if (!checkedValue.isValid())
+        return GL_INVALID_VALUE;
     return GL_NO_ERROR;
 }
 
@@ -2019,18 +2123,6 @@ WebGLImageConversion::ImageExtractor::ImageExtractor(Image* image, ImageHtmlDomS
     m_imageHtmlDomSource = imageHtmlDomSource;
     extractImage(premultiplyAlpha, ignoreGammaAndColorProfile);
 }
-
-namespace {
-
-bool frameIsValid(const SkBitmap& frameBitmap)
-{
-    return !frameBitmap.isNull()
-        && !frameBitmap.empty()
-        && frameBitmap.isImmutable()
-        && frameBitmap.colorType() == kN32_SkColorType;
-}
-
-} // anonymous namespace
 
 void WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, bool ignoreGammaAndColorProfile)
 {
@@ -2206,7 +2298,9 @@ bool WebGLImageConversion::packImageData(
 
     unsigned packedSize;
     // Output data is tightly packed (alignment == 1).
-    if (computeImageSizeInBytes(format, type, width, height, 1, &packedSize, 0) != GL_NO_ERROR)
+    PixelStoreParams params;
+    params.alignment = 1;
+    if (computeImageSizeInBytes(format, type, width, height, 1, params, &packedSize, 0, 0) != GL_NO_ERROR)
         return false;
     data.resize(packedSize);
 
@@ -2233,7 +2327,9 @@ bool WebGLImageConversion::extractImageData(
 
     unsigned packedSize;
     // Output data is tightly packed (alignment == 1).
-    if (computeImageSizeInBytes(format, type, width, height, 1, &packedSize, 0) != GL_NO_ERROR)
+    PixelStoreParams params;
+    params.alignment = 1;
+    if (computeImageSizeInBytes(format, type, width, height, 1, params, &packedSize, 0, 0) != GL_NO_ERROR)
         return false;
     data.resize(packedSize);
 

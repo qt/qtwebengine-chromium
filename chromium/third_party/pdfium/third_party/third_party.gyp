@@ -3,10 +3,21 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'pdf_enable_xfa%': 0,  # Set to 1 by standalone.gypi in standalone builds.
+  },
   'target_defaults': {
     'defines': [
       'OPJ_STATIC',
+      'PNG_PREFIX',
+      'PNGPREFIX_H',
+      'PNG_USE_READ_MACROS',
       '_CRT_SECURE_NO_WARNINGS',
+    ],
+    'include_dirs': [
+      # This is implicit in GN.
+      '<(DEPTH)',
+      '..',
     ],
     'msvs_disabled_warnings': [
       4005, 4018, 4146, 4333, 4345, 4267
@@ -44,14 +55,11 @@
         'freetype/include/freetype/ftmm.h',
         'freetype/include/freetype/ftotval.h',
         'freetype/include/freetype/ftoutln.h',
-        'freetype/include/freetype/internal/freetype/ftobjs.h',
-        'freetype/include/freetype/internal/freetype/ftstream.h',
-        'freetype/include/freetype/internal/freetype/tttypes.h',
+        'freetype/include/freetype/internal/ftobjs.h',
+        'freetype/include/freetype/internal/ftstream.h',
+        'freetype/include/freetype/internal/tttypes.h',
         'freetype/include/freetype/tttables.h',
         'freetype/include/ft2build.h',
-        'freetype/src/cff/cffobjs.h',
-        'freetype/src/cff/cfftypes.h',
-        'freetype/src/cff/cff.c',
         'freetype/src/base/ftbase.c',
         'freetype/src/base/ftbase.h',
         'freetype/src/base/ftbitmap.c',
@@ -60,6 +68,10 @@
         'freetype/src/base/ftlcdfil.c',
         'freetype/src/base/ftmm.c',
         'freetype/src/base/ftsystem.c',
+        'freetype/src/cff/cff.c',
+        'freetype/src/cff/cffobjs.h',
+        'freetype/src/cff/cfftypes.h',
+        'freetype/src/cid/type1cid.c',
         'freetype/src/psaux/psaux.c',
         'freetype/src/pshinter/pshinter.c',
         'freetype/src/psnames/psmodule.c',
@@ -68,7 +80,6 @@
         'freetype/src/smooth/smooth.c',
         'freetype/src/truetype/truetype.c',
         'freetype/src/type1/type1.c',
-        'freetype/src/cid/type1cid.c',
       ],
       'variables': {
         'clang_warning_flags': [
@@ -161,7 +172,7 @@
       },
     },
     {
-      'target_name': 'fx_libjpeg',
+      'target_name': 'libjpeg',
       'type': 'static_library',
       'sources': [
         'libjpeg/cderror.h',
@@ -255,6 +266,28 @@
       ],
     },
     {
+      'target_name': 'fx_lpng',
+      'type': 'static_library',
+      'sources': [
+        'lpng_v163/png.h',
+        'lpng_v163/png.c',
+        'lpng_v163/pngerror.c',
+        'lpng_v163/pngget.c',
+        'lpng_v163/pngmem.c',
+        'lpng_v163/pngpread.c',
+        'lpng_v163/pngread.c',
+        'lpng_v163/pngrio.c',
+        'lpng_v163/pngrtran.c',
+        'lpng_v163/pngrutil.c',
+        'lpng_v163/pngset.c',
+        'lpng_v163/pngtrans.c',
+        'lpng_v163/pngwio.c',
+        'lpng_v163/pngwrite.c',
+        'lpng_v163/pngwtran.c',
+        'lpng_v163/pngwutil.c',
+      ],
+    },
+    {
       'target_name': 'fx_zlib',
       'type': 'static_library',
       'sources': [
@@ -281,14 +314,61 @@
       'sources': [
         'base/logging.h',
         'base/macros.h',
-        'base/nonstd_unique_ptr.h',
         'base/numerics/safe_conversions.h',
         'base/numerics/safe_conversions_impl.h',
         'base/numerics/safe_math.h',
         'base/numerics/safe_math_impl.h',
         'base/stl_util.h',
-        'base/template_util.h',
       ],
     },
+  ],
+  'conditions': [
+    ['pdf_enable_xfa==1', {
+      'targets': [
+        {
+          'target_name': 'fx_tiff',
+          'type': 'static_library',
+          'sources': [
+            'libtiff/tiffiop.h',
+            'libtiff/tiffvers.h',
+            'libtiff/tif_aux.c',
+            'libtiff/tif_close.c',
+            'libtiff/tif_codec.c',
+            'libtiff/tif_color.c',
+            'libtiff/tif_compress.c',
+            'libtiff/tif_dir.c',
+            'libtiff/tif_dirinfo.c',
+            'libtiff/tif_dirread.c',
+            'libtiff/tif_dirwrite.c',
+            'libtiff/tif_dumpmode.c',
+            'libtiff/tif_error.c',
+            'libtiff/tif_extension.c',
+            'libtiff/tif_fax3.c',
+            'libtiff/tif_fax3sm.c',
+            'libtiff/tif_flush.c',
+            'libtiff/tif_getimage.c',
+            'libtiff/tif_jpeg.c',
+            'libtiff/tif_luv.c',
+            'libtiff/tif_lzw.c',
+            'libtiff/tif_next.c',
+            'libtiff/tif_ojpeg.c',
+            'libtiff/tif_open.c',
+            'libtiff/tif_packbits.c',
+            'libtiff/tif_pixarlog.c',
+            'libtiff/tif_predict.c',
+            'libtiff/tif_print.c',
+            'libtiff/tif_read.c',
+            'libtiff/tif_strip.c',
+            'libtiff/tif_swab.c',
+            'libtiff/tif_thunder.c',
+            'libtiff/tif_tile.c',
+            'libtiff/tif_version.c',
+            'libtiff/tif_warning.c',
+            'libtiff/tif_write.c',
+            'libtiff/tif_zip.c',
+          ],
+        },
+      ],
+    }],
   ],
 }

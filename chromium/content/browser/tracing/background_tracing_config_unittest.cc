@@ -192,8 +192,23 @@ TEST_F(BackgroundTracingConfigTest, PreemptiveConfigFromValidString) {
   EXPECT_EQ(config->rules().size(), 1u);
   EXPECT_EQ(RuleToString(config->rules()[0]),
             "{\"histogram_lower_value\":1,\"histogram_name\":\"foo\","
-            "\"histogram_upper_value\":2147483647,\"rule\":\"MONITOR_AND_DUMP_"
-            "WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\"}");
+            "\"histogram_repeat\":true,\"histogram_upper_value\":2147483647,"
+            "\"rule\":\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\"}");
+
+  config = ReadFromJSONString(
+      "{\"mode\":\"PREEMPTIVE_TRACING_MODE\", \"category\": "
+      "\"BENCHMARK\",\"configs\": [{\"rule\": "
+      "\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\", "
+      "\"histogram_name\":\"foo\", \"histogram_value\": 1, "
+      "\"histogram_repeat\":false}]}");
+  EXPECT_TRUE(config);
+  EXPECT_EQ(config->tracing_mode(), BackgroundTracingConfig::PREEMPTIVE);
+  EXPECT_EQ(config->category_preset(), BackgroundTracingConfigImpl::BENCHMARK);
+  EXPECT_EQ(config->rules().size(), 1u);
+  EXPECT_EQ(RuleToString(config->rules()[0]),
+            "{\"histogram_lower_value\":1,\"histogram_name\":\"foo\","
+            "\"histogram_repeat\":false,\"histogram_upper_value\":2147483647,"
+            "\"rule\":\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\"}");
 
   config = ReadFromJSONString(
       "{\"mode\":\"PREEMPTIVE_TRACING_MODE\", \"category\": "
@@ -207,8 +222,23 @@ TEST_F(BackgroundTracingConfigTest, PreemptiveConfigFromValidString) {
   EXPECT_EQ(config->rules().size(), 1u);
   EXPECT_EQ(RuleToString(config->rules()[0]),
             "{\"histogram_lower_value\":1,\"histogram_name\":\"foo\","
-            "\"histogram_upper_value\":2,\"rule\":\"MONITOR_AND_DUMP_WHEN_"
-            "SPECIFIC_HISTOGRAM_AND_VALUE\"}");
+            "\"histogram_repeat\":true,\"histogram_upper_value\":2,\"rule\":"
+            "\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\"}");
+
+  config = ReadFromJSONString(
+      "{\"mode\":\"PREEMPTIVE_TRACING_MODE\", \"category\": "
+      "\"BENCHMARK\",\"configs\": [{\"rule\": "
+      "\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\", "
+      "\"histogram_name\":\"foo\", \"histogram_lower_value\": 1, "
+      "\"histogram_upper_value\": 2, \"histogram_repeat\":false}]}");
+  EXPECT_TRUE(config);
+  EXPECT_EQ(config->tracing_mode(), BackgroundTracingConfig::PREEMPTIVE);
+  EXPECT_EQ(config->category_preset(), BackgroundTracingConfigImpl::BENCHMARK);
+  EXPECT_EQ(config->rules().size(), 1u);
+  EXPECT_EQ(RuleToString(config->rules()[0]),
+            "{\"histogram_lower_value\":1,\"histogram_name\":\"foo\","
+            "\"histogram_repeat\":false,\"histogram_upper_value\":2,\"rule\":"
+            "\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE\"}");
 
   config = ReadFromJSONString(
       "{\"mode\":\"PREEMPTIVE_TRACING_MODE\", \"category\": "
@@ -226,6 +256,17 @@ TEST_F(BackgroundTracingConfigTest, PreemptiveConfigFromValidString) {
   EXPECT_EQ(RuleToString(config->rules()[1]),
             "{\"rule\":\"MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED\","
             "\"trigger_name\":\"foo2\"}");
+
+  config = ReadFromJSONString(
+      "{\"category\":\"BENCHMARK_DEEP\",\"configs\":[{\"rule\":"
+      "\"MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED\",\"trigger_name\":"
+      "\"foo1\"}],\"disable_blink_features\":\"SlowerWeb1,SlowerWeb2\","
+      "\"enable_blink_features\":\"FasterWeb1,FasterWeb2\","
+      "\"mode\":\"PREEMPTIVE_TRACING_MODE\","
+      "\"scenario_name\":\"my_awesome_experiment\"}");
+  EXPECT_EQ(config->enable_blink_features(), "FasterWeb1,FasterWeb2");
+  EXPECT_EQ(config->disable_blink_features(), "SlowerWeb1,SlowerWeb2");
+  EXPECT_EQ(config->scenario_name(), "my_awesome_experiment");
 }
 
 TEST_F(BackgroundTracingConfigTest, ReactiveConfigFromValidString) {
@@ -254,6 +295,20 @@ TEST_F(BackgroundTracingConfigTest, ReactiveConfigFromValidString) {
             "{\"category\":\"BENCHMARK_DEEP\","
             "\"rule\":\"TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL\","
             "\"trigger_name\":\"foo\"}");
+
+  config = ReadFromJSONString(
+      "{\"mode\":\"REACTIVE_TRACING_MODE\",\"configs\": [{\"rule\": "
+      "\"TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL\", "
+      "\"category\": \"BENCHMARK_DEEP\", \"trigger_name\": \"foo\", "
+      "\"trigger_chance\": 0.5}]}");
+  EXPECT_TRUE(config);
+  EXPECT_EQ(config->tracing_mode(), BackgroundTracingConfig::REACTIVE);
+  EXPECT_EQ(config->rules().size(), 1u);
+  EXPECT_EQ(RuleToString(config->rules()[0]),
+            "{\"category\":\"BENCHMARK_DEEP\","
+            "\"rule\":\"TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL\","
+            "\"trigger_chance\":0.5,\"trigger_name\":\"foo\"}");
+
   config = ReadFromJSONString(
       "{\"mode\":\"REACTIVE_TRACING_MODE\",\"configs\": [{\"rule\": "
       "\"TRACE_ON_NAVIGATION_UNTIL_TRIGGER_OR_FULL\", "
@@ -322,6 +377,24 @@ TEST_F(BackgroundTracingConfigTest, ValidPreemptiveConfigToString) {
 
     scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     dict->SetString("rule", "MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED");
+    dict->SetString("trigger_name", "foo");
+    dict->SetDouble("trigger_chance", 0.5);
+    config->AddPreemptiveRule(dict.get());
+
+    EXPECT_EQ(
+        ConfigToString(config.get()),
+        "{\"category\":\"BENCHMARK_DEEP\",\"configs\":[{\"rule\":"
+        "\"MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED\",\"trigger_chance\":0.5,"
+        "\"trigger_name\":\"foo\"}],\"mode\":\"PREEMPTIVE_TRACING_MODE\"}");
+  }
+
+  {
+    config.reset(
+        new BackgroundTracingConfigImpl(BackgroundTracingConfig::PREEMPTIVE));
+    config->set_category_preset(BackgroundTracingConfigImpl::BENCHMARK_DEEP);
+
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+    dict->SetString("rule", "MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED");
     dict->SetString("trigger_name", "foo1");
     config->AddPreemptiveRule(dict.get());
 
@@ -350,9 +423,54 @@ TEST_F(BackgroundTracingConfigTest, ValidPreemptiveConfigToString) {
 
     EXPECT_EQ(ConfigToString(config.get()),
               "{\"category\":\"BENCHMARK\",\"configs\":[{\"histogram_lower_"
-              "value\":1,\"histogram_name\":\"foo\",\"histogram_upper_value\":"
-              "2,\"rule\":\"MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_"
-              "VALUE\"}],\"mode\":\"PREEMPTIVE_TRACING_MODE\"}");
+              "value\":1,\"histogram_name\":\"foo\",\"histogram_repeat\":true,"
+              "\"histogram_upper_value\":2,\"rule\":\"MONITOR_AND_DUMP_WHEN_"
+              "SPECIFIC_HISTOGRAM_AND_VALUE\"}],\"mode\":\"PREEMPTIVE_TRACING_"
+              "MODE\"}");
+  }
+
+  {
+    config.reset(
+        new BackgroundTracingConfigImpl(BackgroundTracingConfig::PREEMPTIVE));
+
+    scoped_ptr<base::DictionaryValue> second_dict(new base::DictionaryValue());
+    second_dict->SetString(
+        "rule", "MONITOR_AND_DUMP_WHEN_SPECIFIC_HISTOGRAM_AND_VALUE");
+    second_dict->SetString("histogram_name", "foo");
+    second_dict->SetInteger("histogram_lower_value", 1);
+    second_dict->SetInteger("histogram_upper_value", 2);
+    second_dict->SetInteger("trigger_delay", 10);
+    config->AddPreemptiveRule(second_dict.get());
+
+    EXPECT_EQ(ConfigToString(config.get()),
+              "{\"category\":\"BENCHMARK\",\"configs\":[{\"histogram_lower_"
+              "value\":1,\"histogram_name\":\"foo\",\"histogram_repeat\":true,"
+              "\"histogram_upper_value\":2,\"rule\":\"MONITOR_AND_DUMP_WHEN_"
+              "SPECIFIC_HISTOGRAM_AND_VALUE\",\"trigger_delay\":10}],\"mode\":"
+              "\"PREEMPTIVE_TRACING_MODE\"}");
+  }
+
+  {
+    config.reset(
+        new BackgroundTracingConfigImpl(BackgroundTracingConfig::PREEMPTIVE));
+    config->set_category_preset(BackgroundTracingConfigImpl::BENCHMARK_DEEP);
+
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+    dict->SetString("rule", "MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED");
+    dict->SetString("trigger_name", "foo1");
+    config->AddPreemptiveRule(dict.get());
+
+    config->scenario_name_ = "my_awesome_experiment";
+    config->enable_blink_features_ = "FasterWeb1,FasterWeb2";
+    config->disable_blink_features_ = "SlowerWeb1,SlowerWeb2";
+
+    EXPECT_EQ(ConfigToString(config.get()),
+              "{\"category\":\"BENCHMARK_DEEP\",\"configs\":[{\"rule\":"
+              "\"MONITOR_AND_DUMP_WHEN_TRIGGER_NAMED\",\"trigger_name\":"
+              "\"foo1\"}],\"disable_blink_features\":\"SlowerWeb1,SlowerWeb2\","
+              "\"enable_blink_features\":\"FasterWeb1,FasterWeb2\","
+              "\"mode\":\"PREEMPTIVE_TRACING_MODE\","
+              "\"scenario_name\":\"my_awesome_experiment\"}");
   }
 }
 

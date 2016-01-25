@@ -6,12 +6,15 @@
 #define UI_GFX_RENDER_TEXT_MAC_H_
 
 #include <ApplicationServices/ApplicationServices.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/macros.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/render_text.h"
 
@@ -62,12 +65,10 @@ class GFX_EXPORT RenderTextMac : public RenderText {
   struct TextRun {
     CTRunRef ct_run;
     SkPoint origin;
-    std::vector<uint16> glyphs;
+    std::vector<uint16_t> glyphs;
     std::vector<SkPoint> glyph_positions;
     SkScalar width;
-    std::string font_name;
-    int font_style;
-    SkScalar text_size;
+    Font font;
     SkColor foreground;
     bool underline;
     bool strike;

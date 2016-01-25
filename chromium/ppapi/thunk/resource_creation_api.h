@@ -5,7 +5,10 @@
 #ifndef PPAPI_THUNK_RESOURCE_CREATION_API_H_
 #define PPAPI_THUNK_RESOURCE_CREATION_API_H_
 
+#include <stdint.h>
+
 #include "base/memory/shared_memory.h"
+#include "build/build_config.h"
 #include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
@@ -25,7 +28,6 @@
 #include "ppapi/shared_impl/ppb_image_data_shared.h"
 
 struct PP_Flash_Menu;
-struct PP_FontDescription_Dev;
 struct PP_BrowserFont_Trusted_Description;
 struct PP_NetAddress_IPv4;
 struct PP_NetAddress_IPv6;

@@ -105,7 +105,7 @@ void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
 }
 
 void SSLPolicy::DidRunInsecureContent(NavigationEntryImpl* entry,
-                                      const std::string& security_origin) {
+                                      const GURL& security_origin) {
   if (!entry)
     return;
 
@@ -113,20 +113,16 @@ void SSLPolicy::DidRunInsecureContent(NavigationEntryImpl* entry,
   if (!site_instance)
       return;
 
-  backend_->HostRanInsecureContent(GURL(security_origin).host(),
+  backend_->HostRanInsecureContent(security_origin.host(),
                                    site_instance->GetProcess()->GetID());
 }
 
 void SSLPolicy::OnRequestStarted(SSLRequestInfo* info) {
-  // TODO(abarth): This mechanism is wrong.  What we should be doing is sending
-  // this information back through WebKit and out some FrameLoaderClient
-  // methods.
-
-  if (net::IsCertStatusError(info->ssl_cert_status())) {
-    backend_->HostRanInsecureContent(info->url().host(), info->child_id());
-  } else if (info->ssl_cert_id() && info->url().SchemeIsCryptographic()) {
-    // If the scheme is https: or wss: *and* the security info for the cert has
-    // been set (i.e. the cert id is not 0), revoke any previous decisions that
+  if (info->ssl_cert_id() && info->url().SchemeIsCryptographic() &&
+      !net::IsCertStatusError(info->ssl_cert_status())) {
+    // If the scheme is https: or wss: *and* the security info for the
+    // cert has been set (i.e. the cert id is not 0) and the cert did
+    // not have any errors, revoke any previous decisions that
     // have occurred. If the cert info has not been set, do nothing since it
     // isn't known if the connection was actually a valid connection or if it
     // had a cert error.
@@ -232,17 +228,11 @@ void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
   CertificateRequestResultType result =
       CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE;
   GetContentClient()->browser()->AllowCertificateError(
-      handler->render_process_id(),
-      handler->render_frame_id(),
-      handler->cert_error(),
-      handler->ssl_info(),
-      handler->request_url(),
-      handler->resource_type(),
-      overridable,
-      strict_enforcement,
+      handler->GetManager()->controller()->GetWebContents(),
+      handler->cert_error(), handler->ssl_info(), handler->request_url(),
+      handler->resource_type(), overridable, strict_enforcement,
       expired_previous_decision,
-      base::Bind(&SSLPolicy::OnAllowCertificate,
-                 base::Unretained(this),
+      base::Bind(&SSLPolicy::OnAllowCertificate, base::Unretained(this),
                  make_scoped_refptr(handler)),
       &result);
   switch (result) {

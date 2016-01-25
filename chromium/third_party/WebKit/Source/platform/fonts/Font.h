@@ -30,10 +30,10 @@
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFallbackList.h"
 #include "platform/fonts/SimpleFontData.h"
-#include "platform/fonts/TextBlob.h"
 #include "platform/text/TabSize.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/TextPath.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/MathExtras.h"
@@ -41,13 +41,13 @@
 
 class SkCanvas;
 class SkPaint;
-class SkTextBlob;
 struct SkPoint;
 
 namespace blink {
 
 class FloatPoint;
 class FloatRect;
+class FontFallbackIterator;
 class FontData;
 class FontMetrics;
 class FontSelector;
@@ -58,6 +58,7 @@ struct TextRunPaintInfo;
 struct GlyphData;
 
 class PLATFORM_EXPORT Font {
+    DISALLOW_NEW();
 public:
     Font();
     Font(const FontDescription&);
@@ -121,14 +122,6 @@ private:
 
     // Returns the total advance.
     float buildGlyphBuffer(const TextRunPaintInfo&, GlyphBuffer&, const GlyphData* emphasisData = nullptr) const;
-    PassTextBlobPtr buildTextBlob(const GlyphBuffer&) const;
-    void paintGlyphs(SkCanvas*, const SkPaint&, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
-        const SkPoint pos[], const FloatRect& textRect, float deviceScaleFactor) const;
-    void paintGlyphsHorizontal(SkCanvas*, const SkPaint&, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
-        const SkScalar xpos[], SkScalar constY, const FloatRect& textRect, float deviceScaleFactor) const;
-    void drawGlyphs(SkCanvas*, const SkPaint&, const SimpleFontData*, const GlyphBuffer&, unsigned from, unsigned numGlyphs,
-        const FloatPoint&, const FloatRect& textRect, float deviceScaleFactor) const;
-    void drawTextBlob(SkCanvas*, const SkPaint&, const SkTextBlob*, const SkPoint& origin) const;
     void drawGlyphBuffer(SkCanvas*, const SkPaint&, const TextRunPaintInfo&, const GlyphBuffer&, const FloatPoint&, float deviceScaleFactor) const;
     float floatWidthForSimpleText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, FloatRect* glyphBounds = 0) const;
     int offsetForPositionForSimpleText(const TextRun&, float position, bool includePartialGlyphs) const;
@@ -146,6 +139,7 @@ private:
 
 public:
     FontSelector* fontSelector() const;
+    PassRefPtr<FontFallbackIterator> createFontFallbackIterator() const;
 
     void willUseFontData(UChar32) const;
 
@@ -162,6 +156,9 @@ private:
     mutable RefPtr<FontFallbackList> m_fontFallbackList;
     mutable unsigned m_canShapeWordByWord : 1;
     mutable unsigned m_shapeWordByWordComputed : 1;
+
+    // For accessing buildGlyphBuffer and retrieving fonts used in rendering a node.
+    friend class InspectorCSSAgent;
 };
 
 inline Font::~Font()

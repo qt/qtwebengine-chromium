@@ -41,7 +41,8 @@ cr.define('options', function() {
       var avatarGrid = $('select-avatar-grid');
       options.ProfilesIconGrid.decorate(avatarGrid);
       var avatarIcons = loadTimeData.getValue('avatarIcons');
-      avatarGrid.dataModel = new ArrayDataModel(avatarIcons);
+      avatarGrid.dataModel = new ArrayDataModel(
+          /** @type {!Array} */(avatarIcons));
 
       supervisedUserList.addEventListener('change', function(event) {
         var supervisedUser = supervisedUserList.selectedItem;
@@ -77,7 +78,8 @@ cr.define('options', function() {
       $('import-existing-supervised-user-link').hidden = false;
 
       options.SupervisedUserListData.requestExistingSupervisedUsers().then(
-          this.receiveExistingSupervisedUsers_, this.onSigninError_.bind(this));
+          this.receiveExistingSupervisedUsers_.bind(this),
+          this.onSigninError_.bind(this));
       options.SupervisedUserListData.addObserver(this);
 
       this.updateImportInProgress_(false);

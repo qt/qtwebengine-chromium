@@ -15,7 +15,6 @@
 
 class GrContext;
 class GrFragmentProcessor;
-class GrProcessorDataManager;
 class SkBitmap;
 
 /**
@@ -107,13 +106,6 @@ public:
     */
     static SkColorFilter* CreateModeFilter(SkColor c, SkXfermode::Mode mode);
 
-    /** Create a colorfilter that multiplies the RGB channels by one color, and
-        then adds a second color, pinning the result for each component to
-        [0..255]. The alpha components of the mul and add arguments
-        are ignored.
-    */
-    static SkColorFilter* CreateLightingFilter(SkColor mul, SkColor add);
-
     /** Construct a colorfilter whose effect is to first apply the inner filter and then apply
      *  the outer filter to the result of the inner's.
      *  The reference counts for outer and inner are incremented.
@@ -132,8 +124,7 @@ public:
      *
      *  A null return indicates that the color filter isn't implemented for the GPU backend.
      */
-    virtual const GrFragmentProcessor* asFragmentProcessor(GrContext*,
-                                                           GrProcessorDataManager*) const {
+    virtual const GrFragmentProcessor* asFragmentProcessor(GrContext*) const {
         return nullptr;
     }
 

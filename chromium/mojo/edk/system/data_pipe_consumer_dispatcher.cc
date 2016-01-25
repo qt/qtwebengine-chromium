@@ -4,7 +4,11 @@
 
 #include "mojo/edk/system/data_pipe_consumer_dispatcher.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/logging.h"
@@ -22,15 +26,22 @@ struct SharedMemoryHeader {
   uint32_t read_buffer_size;
 };
 
-void DataPipeConsumerDispatcher::Init(ScopedPlatformHandle message_pipe) {
+void DataPipeConsumerDispatcher::Init(
+    ScopedPlatformHandle message_pipe,
+    char* serialized_read_buffer, size_t serialized_read_buffer_size) {
   if (message_pipe.is_valid()) {
-    channel_ = RawChannel::Create(message_pipe.Pass());
-    if (!serialized_read_buffer_.empty())
-      channel_->SetInitialReadBufferData(
-          &serialized_read_buffer_[0], serialized_read_buffer_.size());
-    serialized_read_buffer_.clear();
+    channel_ = RawChannel::Create(std::move(message_pipe));
+    channel_->SetSerializedData(
+        serialized_read_buffer, serialized_read_buffer_size, nullptr, 0u,
+        nullptr, nullptr);
     internal::g_io_thread_task_runner->PostTask(
         FROM_HERE, base::Bind(&DataPipeConsumerDispatcher::InitOnIO, this));
+  } else {
+    // The data pipe consumer could have read all the data and the producer
+    // closed its end subsequently (before the consumer was sent). In that case
+    // when we deserialize the consumer we must make sure to set error_ or
+    // otherwise the peer-closed signal will never be satisfied.
+    error_ = true;
   }
 }
 
@@ -69,30 +80,31 @@ DataPipeConsumerDispatcher::Deserialize(
 
   scoped_refptr<DataPipeConsumerDispatcher> rv(Create(options));
 
+  char* serialized_read_buffer = nullptr;
+  size_t serialized_read_buffer_size = 0;
+  scoped_refptr<PlatformSharedBuffer> shared_buffer;
+  scoped_ptr<PlatformSharedBufferMapping> mapping;
   if (shared_memory_size) {
-    scoped_refptr<PlatformSharedBuffer> shared_buffer(
-        internal::g_platform_support->CreateSharedBufferFromHandle(
-            shared_memory_size, shared_memory_handle.Pass()));;
-    scoped_ptr<PlatformSharedBufferMapping> mapping(
-        shared_buffer->Map(0, shared_memory_size));
+    shared_buffer = internal::g_platform_support->CreateSharedBufferFromHandle(
+        shared_memory_size, std::move(shared_memory_handle));
+    mapping = shared_buffer->Map(0, shared_memory_size);
     char* buffer = static_cast<char*>(mapping->GetBase());
     SharedMemoryHeader* header = reinterpret_cast<SharedMemoryHeader*>(buffer);
     buffer += sizeof(SharedMemoryHeader);
     if (header->data_size) {
-      rv->data_.resize(header->data_size);
-      memcpy(&rv->data_[0], buffer, header->data_size);
+      rv->data_.assign(buffer, buffer + header->data_size);
       buffer += header->data_size;
     }
+
     if (header->read_buffer_size) {
-      rv->serialized_read_buffer_.resize(header->read_buffer_size);
-      memcpy(&rv->serialized_read_buffer_[0], buffer, header->read_buffer_size);
+      serialized_read_buffer = buffer;
+      serialized_read_buffer_size = header->read_buffer_size;
       buffer += header->read_buffer_size;
     }
-
   }
 
-  if (platform_handle.is_valid())
-    rv->Init(platform_handle.Pass());
+  rv->Init(std::move(platform_handle), serialized_read_buffer,
+           serialized_read_buffer_size);
   return rv;
 }
 
@@ -108,8 +120,11 @@ DataPipeConsumerDispatcher::DataPipeConsumerDispatcher(
 }
 
 DataPipeConsumerDispatcher::~DataPipeConsumerDispatcher() {
-  // |Close()|/|CloseImplNoLock()| should have taken care of the channel.
-  DCHECK(!channel_);
+  // See comment in ~MessagePipeDispatcher.
+  if (channel_ && internal::g_io_thread_task_runner->RunsTasksOnCurrentThread())
+    channel_->Shutdown();
+  else
+    DCHECK(!channel_);
 }
 
 void DataPipeConsumerDispatcher::CancelAllAwakablesNoLock() {
@@ -130,12 +145,9 @@ DataPipeConsumerDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   SerializeInternal();
 
   scoped_refptr<DataPipeConsumerDispatcher> rv = Create(options_);
-  rv->channel_ = channel_;
-  channel_ = nullptr;
-  rv->options_ = options_;
   data_.swap(rv->data_);
   serialized_read_buffer_.swap(rv->serialized_read_buffer_);
-  rv->serialized_platform_handle_ = serialized_platform_handle_.Pass();
+  rv->serialized_platform_handle_ = std::move(serialized_platform_handle_);
   rv->serialized_ = true;
 
   return scoped_refptr<Dispatcher>(rv.get());
@@ -146,6 +158,8 @@ MojoResult DataPipeConsumerDispatcher::ReadDataImplNoLock(
     uint32_t* num_bytes,
     MojoReadDataFlags flags) {
   lock().AssertAcquired();
+  if (channel_)
+    channel_->EnsureLazyInitialized();
   if (in_two_phase_read_)
     return MOJO_RESULT_BUSY;
 
@@ -202,6 +216,8 @@ MojoResult DataPipeConsumerDispatcher::BeginReadDataImplNoLock(
     uint32_t* buffer_num_bytes,
     MojoReadDataFlags flags) {
   lock().AssertAcquired();
+  if (channel_)
+    channel_->EnsureLazyInitialized();
   if (in_two_phase_read_)
     return MOJO_RESULT_BUSY;
 
@@ -211,17 +227,7 @@ MojoResult DataPipeConsumerDispatcher::BeginReadDataImplNoLock(
       (flags & MOJO_READ_DATA_FLAG_PEEK))
     return MOJO_RESULT_INVALID_ARGUMENT;
 
-  bool all_or_none = flags & MOJO_READ_DATA_FLAG_ALL_OR_NONE;
-  uint32_t min_num_bytes_to_read = 0;
-  if (all_or_none) {
-    min_num_bytes_to_read = *buffer_num_bytes;
-    if (min_num_bytes_to_read % options_.element_num_bytes != 0)
-      return MOJO_RESULT_INVALID_ARGUMENT;
-  }
-
   uint32_t max_num_bytes_to_read = static_cast<uint32_t>(data_.size());
-  if (min_num_bytes_to_read > max_num_bytes_to_read)
-    return error_ ? MOJO_RESULT_FAILED_PRECONDITION : MOJO_RESULT_OUT_OF_RANGE;
   if (max_num_bytes_to_read == 0)
     return error_ ? MOJO_RESULT_FAILED_PRECONDITION : MOJO_RESULT_SHOULD_WAIT;
 
@@ -239,6 +245,7 @@ MojoResult DataPipeConsumerDispatcher::EndReadDataImplNoLock(
   if (!in_two_phase_read_)
     return MOJO_RESULT_FAILED_PRECONDITION;
 
+  HandleSignalsState old_state = GetHandleSignalsStateImplNoLock();
   MojoResult rv;
   if (num_bytes_read > two_phase_max_bytes_read_ ||
       num_bytes_read % options_.element_num_bytes != 0) {
@@ -250,11 +257,18 @@ MojoResult DataPipeConsumerDispatcher::EndReadDataImplNoLock(
 
   in_two_phase_read_ = false;
   two_phase_max_bytes_read_ = 0;
+  if (!data_received_during_two_phase_read_.empty()) {
+    if (data_.empty()) {
+      data_received_during_two_phase_read_.swap(data_);
+    } else {
+      data_.insert(data_.end(), data_received_during_two_phase_read_.begin(),
+                   data_received_during_two_phase_read_.end());
+      data_received_during_two_phase_read_.clear();
+    }
+  }
 
-  // If we're now readable, we *became* readable (since we weren't readable
-  // during the two-phase read), so awake consumer awakables.
   HandleSignalsState new_state = GetHandleSignalsStateImplNoLock();
-  if (new_state.satisfies(MOJO_HANDLE_SIGNAL_READABLE))
+  if (!new_state.equals(old_state))
     awakable_list_.AwakeForStateChange(new_state);
 
   return rv;
@@ -282,9 +296,11 @@ HandleSignalsState DataPipeConsumerDispatcher::GetHandleSignalsStateImplNoLock()
 MojoResult DataPipeConsumerDispatcher::AddAwakableImplNoLock(
     Awakable* awakable,
     MojoHandleSignals signals,
-    uint32_t context,
+    uintptr_t context,
     HandleSignalsState* signals_state) {
   lock().AssertAcquired();
+  if (channel_)
+    channel_->EnsureLazyInitialized();
   HandleSignalsState state = GetHandleSignalsStateImplNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -320,7 +336,7 @@ void DataPipeConsumerDispatcher::StartSerializeImplNoLock(
   }
 
   DataPipe::StartSerialize(serialized_platform_handle_.is_valid(),
-                           !data_.empty(),
+                           !data_.empty() || !serialized_read_buffer_.empty(),
                            max_size, max_platform_handles);
 }
 
@@ -361,12 +377,9 @@ bool DataPipeConsumerDispatcher::EndSerializeAndCloseImplNoLock(
     shared_memory_handle.reset(shared_buffer->PassPlatformHandle().release());
   }
 
-  DataPipe::EndSerialize(
-      options_,
-      serialized_platform_handle_.Pass(),
-      shared_memory_handle.Pass(),
-      shared_memory_size, destination, actual_size,
-      platform_handles);
+  DataPipe::EndSerialize(options_, std::move(serialized_platform_handle_),
+                         std::move(shared_memory_handle), shared_memory_size,
+                         destination, actual_size, platform_handles);
   CloseImplNoLock();
   return true;
 }
@@ -396,8 +409,8 @@ bool DataPipeConsumerDispatcher::IsBusyNoLock() const {
 void DataPipeConsumerDispatcher::OnReadMessage(
     const MessageInTransit::View& message_view,
     ScopedPlatformHandleVectorPtr platform_handles) {
-  scoped_ptr<MessageInTransit> message(new MessageInTransit(message_view));
-
+  const char* bytes_start = static_cast<const char*>(message_view.bytes());
+  const char* bytes_end = bytes_start + message_view.num_bytes();
   if (started_transport_.Try()) {
     // We're not in the middle of being sent.
 
@@ -407,16 +420,20 @@ void DataPipeConsumerDispatcher::OnReadMessage(
       locker.reset(new base::AutoLock(lock()));
     }
 
-    size_t old_size = data_.size();
-    data_.resize(old_size + message->num_bytes());
-    memcpy(&data_[old_size], message->bytes(), message->num_bytes());
-    if (!old_size)
-      awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+    if (in_two_phase_read_) {
+      data_received_during_two_phase_read_.insert(
+          data_received_during_two_phase_read_.end(), bytes_start, bytes_end);
+    } else {
+      bool was_empty = data_.empty();
+      data_.insert(data_.end(), bytes_start, bytes_end);
+      if (was_empty)
+        awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+    }
     started_transport_.Release();
   } else {
-    size_t old_size = data_.size();
-    data_.resize(old_size + message->num_bytes());
-    memcpy(&data_[old_size], message->bytes(), message->num_bytes());
+    // See comment in MessagePipeDispatcher about why we can't and don't need
+    // to lock here.
+    data_.insert(data_.end(), bytes_start, bytes_end);
   }
 }
 
@@ -446,28 +463,40 @@ void DataPipeConsumerDispatcher::OnError(Error error) {
   error_ = true;
   if (started_transport_.Try()) {
     base::AutoLock locker(lock());
-    awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+    // We can get two OnError callbacks before the post task below completes.
+    // Although RawChannel still has a pointer to this object until Shutdown is
+    // called, that is safe since this class always does a PostTask to the IO
+    // thread to self destruct.
+    if (channel_) {
+      awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      channel_->Shutdown();
+      channel_ = nullptr;
+    }
     started_transport_.Release();
-
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&RawChannel::Shutdown, base::Unretained(channel_)));
-    channel_ = nullptr;
   } else {
     // We must be waiting to call ReleaseHandle. It will call Shutdown.
   }
 }
 
 void DataPipeConsumerDispatcher::SerializeInternal() {
-  // need to stop watching handle immediately, even tho not on IO thread, so
-  // that other messages aren't read after this.
+  DCHECK(!in_two_phase_read_);
+  // We need to stop watching handle immediately, even though not on IO thread,
+  // so that other messages aren't read after this.
   if (channel_) {
-    serialized_platform_handle_ =
-        channel_->ReleaseHandle(&serialized_read_buffer_);
+    std::vector<char> serialized_write_buffer;
+    std::vector<int> fds;
+    bool write_error = false;
+    serialized_platform_handle_ = channel_->ReleaseHandle(
+        &serialized_read_buffer_, &serialized_write_buffer, &fds, &fds,
+        &write_error);
+    CHECK(serialized_write_buffer.empty());
+    CHECK(fds.empty());
+    CHECK(!write_error) << "DataPipeConsumerDispatcher doesn't write.";
 
     channel_ = nullptr;
-    serialized_ = true;
   }
+
+  serialized_ = true;
 }
 
 }  // namespace edk

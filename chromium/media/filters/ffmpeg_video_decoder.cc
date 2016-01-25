@@ -4,6 +4,9 @@
 
 #include "media/filters/ffmpeg_video_decoder.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <string>
 
@@ -61,7 +64,7 @@ static int GetVideoBufferImpl(struct AVCodecContext* s,
   return decoder->GetVideoBuffer(s, frame, flags);
 }
 
-static void ReleaseVideoBufferImpl(void* opaque, uint8* data) {
+static void ReleaseVideoBufferImpl(void* opaque, uint8_t* data) {
   scoped_refptr<VideoFrame> video_frame;
   video_frame.swap(reinterpret_cast<VideoFrame**>(&opaque));
 }
@@ -72,10 +75,10 @@ bool FFmpegVideoDecoder::IsCodecSupported(VideoCodec codec) {
   return avcodec_find_decoder(VideoCodecToCodecID(codec)) != nullptr;
 }
 
-FFmpegVideoDecoder::FFmpegVideoDecoder(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
-    : task_runner_(task_runner), state_(kUninitialized),
-      decode_nalus_(false) {}
+FFmpegVideoDecoder::FFmpegVideoDecoder()
+    : state_(kUninitialized), decode_nalus_(false) {
+  thread_checker_.DetachFromThread();
+}
 
 int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
                                        AVFrame* frame,
@@ -165,18 +168,26 @@ std::string FFmpegVideoDecoder::GetDisplayName() const {
 
 void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                     bool low_delay,
+                                    const SetCdmReadyCB& /* set_cdm_ready_cb */,
                                     const InitCB& init_cb,
                                     const OutputCB& output_cb) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(!config.is_encrypted());
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(config.IsValidConfig());
   DCHECK(!output_cb.is_null());
 
-  FFmpegGlue::InitializeFFmpeg();
-
-  config_ = config;
   InitCB bound_init_cb = BindToCurrentLoop(init_cb);
 
-  if (!config.IsValidConfig() || !ConfigureDecoder(low_delay)) {
+  if (config.is_encrypted()) {
+    bound_init_cb.Run(false);
+    return;
+  }
+
+  FFmpegGlue::InitializeFFmpeg();
+  config_ = config;
+
+  // TODO(xhwang): Only set |config_| after we successfully configure the
+  // decoder.
+  if (!ConfigureDecoder(low_delay)) {
     bound_init_cb.Run(false);
     return;
   }
@@ -190,7 +201,7 @@ void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
 void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
                                 const DecodeCB& decode_cb) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(buffer.get());
   DCHECK(!decode_cb.is_null());
   CHECK_NE(state_, kUninitialized);
@@ -250,15 +261,16 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 }
 
 void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
 
   avcodec_flush_buffers(codec_context_.get());
   state_ = kNormal;
-  task_runner_->PostTask(FROM_HERE, closure);
+  // PostTask() to avoid calling |closure| inmediately.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
 }
 
 FFmpegVideoDecoder::~FFmpegVideoDecoder() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(thread_checker_.CalledOnValidThread());
 
   if (state_ != kUninitialized)
     ReleaseFFmpegResources();
@@ -277,7 +289,7 @@ bool FFmpegVideoDecoder::FFmpegDecode(
     packet.data = NULL;
     packet.size = 0;
   } else {
-    packet.data = const_cast<uint8*>(buffer->data());
+    packet.data = const_cast<uint8_t*>(buffer->data());
     packet.size = buffer->data_size();
 
     // Let FFmpeg handle presentation timestamp reordering.
@@ -336,6 +348,9 @@ void FFmpegVideoDecoder::ReleaseFFmpegResources() {
 }
 
 bool FFmpegVideoDecoder::ConfigureDecoder(bool low_delay) {
+  DCHECK(config_.IsValidConfig());
+  DCHECK(!config_.is_encrypted());
+
   // Release existing decoder resources if necessary.
   ReleaseFFmpegResources();
 

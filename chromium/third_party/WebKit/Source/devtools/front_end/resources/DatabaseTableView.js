@@ -84,7 +84,7 @@ WebInspector.DatabaseTableView.prototype = {
             this._emptyWidget.show(this.element);
             return;
         }
-        this._dataGrid.show(this.element);
+        this._dataGrid.asWidget().show(this.element);
         this._dataGrid.autoSizeColumns(5);
 
         this._columnsMap = new Map();

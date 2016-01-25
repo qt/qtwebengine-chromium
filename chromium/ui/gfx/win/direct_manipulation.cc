@@ -4,7 +4,6 @@
 
 #include "ui/gfx/win/direct_manipulation.h"
 
-#include "base/basictypes.h"
 #include "base/win/windows_version.h"
 
 namespace gfx {
@@ -18,7 +17,7 @@ DirectManipulationHelper::CreateInstance() {
   if (base::win::GetVersion() >= base::win::VERSION_WIN10)
     instance.reset(new DirectManipulationHelper);
 
-  return instance.Pass();
+  return instance;
 }
 
 DirectManipulationHelper::DirectManipulationHelper() {}

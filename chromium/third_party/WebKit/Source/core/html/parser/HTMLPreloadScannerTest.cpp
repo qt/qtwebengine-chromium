@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/parser/HTMLPreloadScanner.h"
 
 #include "core/MediaTypeNames.h"
@@ -13,7 +12,7 @@
 #include "core/html/parser/HTMLParserOptions.h"
 #include "core/html/parser/HTMLResourcePreloader.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -52,6 +51,7 @@ public:
             EXPECT_FALSE(m_preloadRequest);
             return;
         }
+        ASSERT(m_preloadRequest.get());
         EXPECT_FALSE(m_preloadRequest->isPreconnect());
         EXPECT_EQ(type, m_preloadRequest->resourceType());
         EXPECT_STREQ(url, m_preloadRequest->resourceURL().ascii().data());
@@ -73,8 +73,7 @@ public:
         if (!host.isNull()) {
             EXPECT_TRUE(m_preloadRequest->isPreconnect());
             EXPECT_STREQ(m_preloadRequest->resourceURL().ascii().data(), host.ascii().data());
-            EXPECT_EQ(m_preloadRequest->isCORS(), crossOrigin != CrossOriginAttributeNotSet);
-            EXPECT_EQ(m_preloadRequest->isAllowCredentials(), crossOrigin == CrossOriginAttributeUseCredentials);
+            EXPECT_EQ(m_preloadRequest->crossOrigin(), crossOrigin);
         }
     }
 
@@ -357,6 +356,23 @@ TEST_F(HTMLPreloadScannerTest, testReferrerPolicy)
         // The scanner's state is not reset between test cases, so all subsequent test cases have a document referrer policy of no-referrer.
         { "http://example.test", "<img referrerpolicy='not-a-valid-policy' src='bla.gif'/>", "bla.gif", "http://example.test/", Resource::Image, 0, ReferrerPolicyNever },
         { "http://example.test", "<img src='bla.gif'/>", "bla.gif", "http://example.test/", Resource::Image, 0, ReferrerPolicyNever }
+    };
+
+    for (const auto& testCase : testCases)
+        test(testCase);
+}
+
+TEST_F(HTMLPreloadScannerTest, testLinkRelPreload)
+{
+    TestCase testCases[] = {
+        {"http://example.test", "<link rel=preload href=bla>", "bla", "http://example.test/", Resource::LinkSubresource, 0},
+        {"http://example.test", "<link rel=preload href=bla as=script>", "bla", "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<link rel=preload href=bla as=style>", "bla", "http://example.test/", Resource::CSSStyleSheet, 0},
+        {"http://example.test", "<link rel=preload href=bla as=image>", "bla", "http://example.test/", Resource::Image, 0},
+        {"http://example.test", "<link rel=preload href=bla as=font>", "bla", "http://example.test/", Resource::Font, 0},
+        {"http://example.test", "<link rel=preload href=bla as=audio>", "bla", "http://example.test/", Resource::Media, 0},
+        {"http://example.test", "<link rel=preload href=bla as=video>", "bla", "http://example.test/", Resource::Media, 0},
+        {"http://example.test", "<link rel=preload href=bla as=track>", "bla", "http://example.test/", Resource::TextTrack, 0},
     };
 
     for (const auto& testCase : testCases)

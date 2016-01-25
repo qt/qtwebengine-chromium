@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/WrapContentsInDummySpanCommand.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -52,7 +51,7 @@ void WrapContentsInDummySpanCommand::executeApply()
 
 void WrapContentsInDummySpanCommand::doApply()
 {
-    m_dummySpan = createStyleSpanElement(document());
+    m_dummySpan = HTMLSpanElement::create(document());
 
     executeApply();
 }

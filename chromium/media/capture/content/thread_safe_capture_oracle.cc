@@ -4,8 +4,11 @@
 
 #include "media/capture/content/thread_safe_capture_oracle.h"
 
-#include "base/basictypes.h"
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
+#include "base/bits.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
@@ -33,15 +36,14 @@ ThreadSafeCaptureOracle::ThreadSafeCaptureOracle(
     scoped_ptr<VideoCaptureDevice::Client> client,
     const VideoCaptureParams& params,
     bool enable_auto_throttling)
-    : client_(client.Pass()),
-      oracle_(base::TimeDelta::FromMicroseconds(static_cast<int64>(
+    : client_(std::move(client)),
+      oracle_(base::TimeDelta::FromMicroseconds(static_cast<int64_t>(
                   1000000.0 / params.requested_format.frame_rate +
                   0.5 /* to round to nearest int */)),
               params.requested_format.frame_size,
               params.resolution_change_policy,
               enable_auto_throttling),
-      params_(params) {
-}
+      params_(params) {}
 
 ThreadSafeCaptureOracle::~ThreadSafeCaptureOracle() {
 }
@@ -63,17 +65,15 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
   const bool should_capture =
       oracle_.ObserveEventAndDecideCapture(event, damage_rect, event_time);
   const gfx::Size visible_size = oracle_.capture_size();
-  // Always round up the coded size to multiple of 16 pixels.
-  // See http://crbug.com/402151.
-  const gfx::Size coded_size((visible_size.width() + 15) & ~15,
-                             (visible_size.height() + 15) & ~15);
+  // TODO(miu): Clients should request exact padding, instead of this
+  // memory-wasting hack to make frames that are compatible with all HW
+  // encoders.  http://crbug.com/555911
+  const gfx::Size coded_size(base::bits::Align(visible_size.width(), 16),
+                             base::bits::Align(visible_size.height(), 16));
 
   scoped_ptr<media::VideoCaptureDevice::Client::Buffer> output_buffer(
       client_->ReserveOutputBuffer(coded_size,
-                                   (params_.requested_format.pixel_storage !=
-                                    media::PIXEL_STORAGE_TEXTURE)
-                                       ? media::PIXEL_FORMAT_I420
-                                       : media::PIXEL_FORMAT_ARGB,
+                                   params_.requested_format.pixel_format,
                                    params_.requested_format.pixel_storage));
   // Get the current buffer pool utilization and attenuate it: The utilization
   // reported to the oracle is in terms of a maximum sustainable amount (not the
@@ -110,18 +110,20 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
                          TRACE_EVENT_SCOPE_THREAD, "trigger", event_name);
     return false;
   }
+
   const int frame_number = oracle_.RecordCapture(attenuated_utilization);
   TRACE_EVENT_ASYNC_BEGIN2("gpu.capture", "Capture", output_buffer.get(),
                            "frame_number", frame_number, "trigger", event_name);
-  // Texture frames wrap a texture mailbox, which we don't have at the moment.
-  // We do not construct those frames.
-  if (params_.requested_format.pixel_storage != media::PIXEL_STORAGE_TEXTURE) {
-    *storage = VideoFrame::WrapExternalData(
-        media::PIXEL_FORMAT_I420, coded_size, gfx::Rect(visible_size),
-        visible_size, static_cast<uint8*>(output_buffer->data()),
-        output_buffer->mapped_size(), base::TimeDelta());
-    DCHECK(*storage);
-  }
+
+  DCHECK_EQ(media::PIXEL_STORAGE_CPU, params_.requested_format.pixel_storage);
+  *storage = VideoFrame::WrapExternalSharedMemory(
+      params_.requested_format.pixel_format, coded_size,
+      gfx::Rect(visible_size), visible_size,
+      static_cast<uint8_t*>(output_buffer->data()),
+      output_buffer->mapped_size(), base::SharedMemory::NULLHandle(), 0u,
+      base::TimeDelta());
+  if (!(*storage))
+    return false;
   *callback =
       base::Bind(&ThreadSafeCaptureOracle::DidCaptureFrame, this, frame_number,
                  base::Passed(&output_buffer), capture_begin_time,
@@ -145,10 +147,12 @@ void ThreadSafeCaptureOracle::Stop() {
   client_.reset();
 }
 
-void ThreadSafeCaptureOracle::ReportError(const std::string& reason) {
+void ThreadSafeCaptureOracle::ReportError(
+    const tracked_objects::Location& from_here,
+    const std::string& reason) {
   base::AutoLock guard(lock_);
   if (client_)
-    client_->OnError(reason);
+    client_->OnError(from_here, reason);
 }
 
 void ThreadSafeCaptureOracle::DidCaptureFrame(
@@ -183,7 +187,7 @@ void ThreadSafeCaptureOracle::DidCaptureFrame(
         base::Bind(&ThreadSafeCaptureOracle::DidConsumeFrame, this,
                    frame_number, frame->metadata()));
 
-    client_->OnIncomingCapturedVideoFrame(buffer.Pass(), frame, timestamp);
+    client_->OnIncomingCapturedVideoFrame(std::move(buffer), frame, timestamp);
   }
 }
 

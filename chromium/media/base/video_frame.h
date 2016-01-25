@@ -5,17 +5,24 @@
 #ifndef MEDIA_BASE_VIDEO_FRAME_H_
 #define MEDIA_BASE_VIDEO_FRAME_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/md5.h"
 #include "base/memory/shared_memory.h"
 #include "base/synchronization/lock.h"
+#include "build/build_config.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/video_frame_metadata.h"
 #include "media/base/video_types.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 #if defined(OS_MACOSX)
 #include <CoreVideo/CVPixelBuffer.h>
@@ -53,7 +60,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     STORAGE_OPAQUE = 1,  // We don't know how VideoFrame's pixels are stored.
     STORAGE_UNOWNED_MEMORY = 2,  // External, non owned data pointers.
     STORAGE_OWNED_MEMORY = 3,  // VideoFrame has allocated its own data buffer.
-    STORAGE_SHMEM = 4,  // Pixels are backed by Shared Memory.
+    STORAGE_SHMEM = 4,         // Pixels are backed by Shared Memory.
 #if defined(OS_LINUX)
     // TODO(mcasas): Consider turning this type into STORAGE_NATIVE or another
     // meaningful name and handle it appropriately in all cases.
@@ -65,32 +72,26 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     // https://groups.google.com/a/google.com/d/topic/chrome-gpu/eIM1RwarUmk/discussion
     STORAGE_HOLE = 6,
 #endif
-
-#if defined(VIDEO_HOLE)
-    STORAGE_LAST = STORAGE_HOLE,
-#elif defined(OS_LINUX)
-    STORAGE_LAST = STORAGE_DMABUFS,
-#else
-    STORAGE_LAST = STORAGE_SHMEM
-#endif
+    STORAGE_GPU_MEMORY_BUFFERS = 7,
+    STORAGE_LAST = STORAGE_GPU_MEMORY_BUFFERS,
   };
 
   // CB to be called on the mailbox backing this frame when the frame is
   // destroyed.
-  typedef base::Callback<void(uint32)> ReleaseMailboxCB;
+  typedef base::Callback<void(const gpu::SyncToken&)> ReleaseMailboxCB;
 
-  // Interface representing client operations on a SyncPoint, i.e. insert one in
+  // Interface representing client operations on a SyncToken, i.e. insert one in
   // the GPU Command Buffer and wait for it.
-  class SyncPointClient {
+  class SyncTokenClient {
    public:
-    SyncPointClient() {}
-    virtual uint32 InsertSyncPoint() = 0;
-    virtual void WaitSyncPoint(uint32 sync_point) = 0;
+    SyncTokenClient() {}
+    virtual void GenerateSyncToken(gpu::SyncToken* sync_token) = 0;
+    virtual void WaitSyncToken(const gpu::SyncToken& sync_token) = 0;
 
    protected:
-    virtual ~SyncPointClient() {}
+    virtual ~SyncTokenClient() {}
 
-    DISALLOW_COPY_AND_ASSIGN(SyncPointClient);
+    DISALLOW_COPY_AND_ASSIGN(SyncTokenClient);
   };
 
   // Call prior to CreateFrame to ensure validity of frame configuration. Called
@@ -124,7 +125,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Wraps a native texture of the given parameters with a VideoFrame.
   // The backing of the VideoFrame is held in the mailbox held by
   // |mailbox_holder|, and |mailbox_holder_release_cb| will be called with
-  // a syncpoint as the argument when the VideoFrame is to be destroyed.
+  // a sync token as the argument when the VideoFrame is to be destroyed.
   static scoped_refptr<VideoFrame> WrapNativeTexture(
       VideoPixelFormat format,
       const gpu::MailboxHolder& mailbox_holder,
@@ -135,7 +136,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       base::TimeDelta timestamp);
 
   // Wraps a set of native textures representing YUV data with a VideoFrame.
-  // |mailbox_holders_release_cb| will be called with a syncpoint as the
+  // |mailbox_holders_release_cb| will be called with a sync token as the
   // argument when the VideoFrame is to be destroyed.
   static scoped_refptr<VideoFrame> WrapYUV420NativeTextures(
       const gpu::MailboxHolder& y_mailbox_holder,
@@ -156,7 +157,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const gfx::Size& coded_size,
       const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
-      uint8* data,
+      uint8_t* data,
       size_t data_size,
       base::TimeDelta timestamp);
 
@@ -166,7 +167,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const gfx::Size& coded_size,
       const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
-      uint8* data,
+      uint8_t* data,
       size_t data_size,
       base::SharedMemoryHandle handle,
       size_t shared_memory_offset,
@@ -179,12 +180,30 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const gfx::Size& coded_size,
       const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
-      int32 y_stride,
-      int32 u_stride,
-      int32 v_stride,
-      uint8* y_data,
-      uint8* u_data,
-      uint8* v_data,
+      int32_t y_stride,
+      int32_t u_stride,
+      int32_t v_stride,
+      uint8_t* y_data,
+      uint8_t* u_data,
+      uint8_t* v_data,
+      base::TimeDelta timestamp);
+
+  // Wraps external YUV data with the given parameters with a VideoFrame.
+  // The returned VideoFrame does not own the GpuMemoryBuffers passed in.
+  static scoped_refptr<VideoFrame> WrapExternalYuvGpuMemoryBuffers(
+      VideoPixelFormat format,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      int32_t y_stride,
+      int32_t u_stride,
+      int32_t v_stride,
+      uint8_t* y_data,
+      uint8_t* u_data,
+      uint8_t* v_data,
+      const gfx::GpuMemoryBufferHandle& y_handle,
+      const gfx::GpuMemoryBufferHandle& u_handle,
+      const gfx::GpuMemoryBufferHandle& v_handle,
       base::TimeDelta timestamp);
 
 #if defined(OS_LINUX)
@@ -232,10 +251,11 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   static scoped_refptr<VideoFrame> CreateEOSFrame();
 
   // Allocates YV12 frame based on |size|, and sets its data to the YUV(y,u,v).
-  static scoped_refptr<VideoFrame> CreateColorFrame(
-      const gfx::Size& size,
-      uint8 y, uint8 u, uint8 v,
-      base::TimeDelta timestamp);
+  static scoped_refptr<VideoFrame> CreateColorFrame(const gfx::Size& size,
+                                                    uint8_t y,
+                                                    uint8_t u,
+                                                    uint8_t v,
+                                                    base::TimeDelta timestamp);
 
   // Allocates YV12 frame based on |size|, and sets its data to the YUV
   // equivalent of RGB(0,0,0).
@@ -315,15 +335,15 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Returns pointer to the buffer for a given plane, if this is an
   // IsMappable() frame type. The memory is owned by VideoFrame object and must
   // not be freed by the caller.
-  const uint8* data(size_t plane) const;
-  uint8* data(size_t plane);
+  const uint8_t* data(size_t plane) const;
+  uint8_t* data(size_t plane);
 
   // Returns pointer to the data in the visible region of the frame, for
   // IsMappable() storage types. The returned pointer is offsetted into the
   // plane buffer specified by visible_rect().origin(). Memory is owned by
   // VideoFrame object and must not be freed by the caller.
-  const uint8* visible_data(size_t plane) const;
-  uint8* visible_data(size_t plane);
+  const uint8_t* visible_data(size_t plane) const;
+  uint8_t* visible_data(size_t plane);
 
   // Returns a mailbox holder for a given texture.
   // Only valid to call if this is a NATIVE_TEXTURE frame. Before using the
@@ -335,6 +355,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Returns the offset into the shared memory where the frame data begins.
   size_t shared_memory_offset() const;
+
+  // Returns the vector of GpuMemoryBuffer handles, if present.
+  const std::vector<gfx::GpuMemoryBufferHandle>& gpu_memory_buffer_handles()
+      const;
 
 #if defined(OS_LINUX)
   // Returns backing DmaBuf file descriptor for given |plane|, if present, or
@@ -384,7 +408,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // older sync point. The final sync point will be used to release this
   // VideoFrame.
   // This method is thread safe. Both blink and compositor threads can call it.
-  void UpdateReleaseSyncPoint(SyncPointClient* client);
+  void UpdateReleaseSyncToken(SyncTokenClient* client);
+
+  // Returns a human-readable string describing |*this|.
+  std::string AsHumanReadableString();
 
  private:
   friend class base::RefCountedThreadSafe<VideoFrame>;
@@ -395,7 +422,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       const gfx::Size& coded_size,
       const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
-      uint8* data,
+      uint8_t* data,
       size_t data_size,
       base::TimeDelta timestamp,
       base::SharedMemoryHandle handle,
@@ -461,12 +488,12 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Array of strides for each plane, typically greater or equal to the width
   // of the surface divided by the horizontal sampling period.  Note that
   // strides can be negative.
-  int32 strides_[kMaxPlanes];
+  int32_t strides_[kMaxPlanes];
 
   // Array of data pointers to each plane.
   // TODO(mcasas): we don't know on ctor if we own |data_| or not. After
-  // refactoring VideoFrame, change to scoped_ptr<uint8, AlignedFreeDeleter>.
-  uint8* data_[kMaxPlanes];
+  // refactoring VideoFrame, change to scoped_ptr<uint8_t, AlignedFreeDeleter>.
+  uint8_t* data_[kMaxPlanes];
 
   // Native texture mailboxes, if this is a IsTexture() frame.
   gpu::MailboxHolder mailbox_holders_[kMaxPlanes];
@@ -476,6 +503,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // a STORAGE_SHMEM one.
   base::SharedMemoryHandle shared_memory_handle_;
   size_t shared_memory_offset_;
+
+  // GpuMemoryBuffer handles attached to the video_frame.
+  std::vector<gfx::GpuMemoryBufferHandle> gpu_memory_buffer_handles_;
 
 #if defined(OS_LINUX)
   // Dmabufs for each plane. If set, this frame has DmaBuf backing in some way.
@@ -491,8 +521,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   base::TimeDelta timestamp_;
 
-  base::Lock release_sync_point_lock_;
-  uint32 release_sync_point_;
+  base::Lock release_sync_token_lock_;
+  gpu::SyncToken release_sync_token_;
 
   VideoFrameMetadata metadata_;
 

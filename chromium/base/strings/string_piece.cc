@@ -5,6 +5,8 @@
 
 #include "base/strings/string_piece.h"
 
+#include <limits.h>
+
 #include <algorithm>
 #include <ostream>
 
@@ -435,7 +437,7 @@ StringPiece16 substr(const StringPiece16& self,
   return substrT(self, pos, n);
 }
 
-#if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
+#if DCHECK_IS_ON()
 void AssertIteratorsInOrder(std::string::const_iterator begin,
                             std::string::const_iterator end) {
   DCHECK(begin <= end) << "StringPiece iterators swapped or invalid.";

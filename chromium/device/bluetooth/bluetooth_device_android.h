@@ -5,15 +5,17 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_DEVICE_ANDROID_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_DEVICE_ANDROID_H_
 
+#include <stdint.h>
+
 #include "base/android/jni_android.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "device/bluetooth/bluetooth_adapter_android.h"
 #include "device/bluetooth/bluetooth_device.h"
 
 namespace device {
 
-class BluetoothAdapterAndroid;
-
-// BluetoothDeviceAndroid along with the Java class
+// BluetoothDeviceAndroid along with its owned Java class
 // org.chromium.device.bluetooth.ChromeBluetoothDevice implement
 // BluetoothDevice.
 class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
@@ -39,26 +41,31 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
   // Returns the associated ChromeBluetoothDevice Java object.
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
+  // Get owning BluetoothAdapter cast to BluetoothAdapterAndroid.
+  BluetoothAdapterAndroid* GetAdapter() {
+    return static_cast<BluetoothAdapterAndroid*>(adapter_);
+  }
+
   // Updates cached copy of advertised UUIDs discovered during a scan.
   // Returns true if new UUIDs differed from cached values.
   bool UpdateAdvertisedUUIDs(
       jobject advertised_uuids);  // Java Type: List<ParcelUuid>
 
   // BluetoothDevice:
-  uint32 GetBluetoothClass() const override;
+  uint32_t GetBluetoothClass() const override;
   std::string GetAddress() const override;
   VendorIDSource GetVendorIDSource() const override;
-  uint16 GetVendorID() const override;
-  uint16 GetProductID() const override;
-  uint16 GetDeviceID() const override;
+  uint16_t GetVendorID() const override;
+  uint16_t GetProductID() const override;
+  uint16_t GetDeviceID() const override;
   bool IsPaired() const override;
   bool IsConnected() const override;
   bool IsGattConnected() const override;
   bool IsConnectable() const override;
   bool IsConnecting() const override;
   UUIDList GetUUIDs() const override;
-  int16 GetInquiryRSSI() const override;
-  int16 GetInquiryTxPower() const override;
+  int16_t GetInquiryRSSI() const override;
+  int16_t GetInquiryTxPower() const override;
   bool ExpectingPinCode() const override;
   bool ExpectingPasskey() const override;
   bool ExpectingConfirmation() const override;
@@ -67,13 +74,14 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
                const base::Closure& callback,
                const ConnectErrorCallback& error_callback) override;
   void SetPinCode(const std::string& pincode) override;
-  void SetPasskey(uint32 passkey) override;
+  void SetPasskey(uint32_t passkey) override;
   void ConfirmPairing() override;
   void RejectPairing() override;
   void CancelPairing() override;
   void Disconnect(const base::Closure& callback,
                   const ErrorCallback& error_callback) override;
-  void Forget(const ErrorCallback& error_callback) override;
+  void Forget(const base::Closure& callback,
+              const ErrorCallback& error_callback) override;
   void ConnectToService(
       const device::BluetoothUUID& uuid,
       const ConnectToServiceCallback& callback,
@@ -85,10 +93,26 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
 
   // Callback indicating when GATT client has connected/disconnected.
   // See android.bluetooth.BluetoothGattCallback.onConnectionStateChange.
-  void OnConnectionStateChange(JNIEnv* env,
-                               jobject jcaller,
-                               int32_t status,
-                               bool connected);
+  void OnConnectionStateChange(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jcaller,
+      int32_t status,
+      bool connected);
+
+  // Callback indicating when all services of the device have been
+  // discovered.
+  void OnGattServicesDiscovered(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& jcaller);
+
+  // Creates Bluetooth GATT service objects and adds them to
+  // BluetoothDevice::gatt_services_ if they are not already there.
+  void CreateGattRemoteService(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& caller,
+      const base::android::JavaParamRef<jstring>& instance_id,
+      const base::android::JavaParamRef<jobject>&
+          bluetooth_gatt_service_wrapper);  // BluetoothGattServiceWrapper
 
  protected:
   BluetoothDeviceAndroid(BluetoothAdapterAndroid* adapter);

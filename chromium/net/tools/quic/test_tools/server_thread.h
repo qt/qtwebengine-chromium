@@ -5,6 +5,7 @@
 #ifndef NET_TOOLS_QUIC_TEST_TOOLS_SERVER_THREAD_H_
 #define NET_TOOLS_QUIC_TEST_TOOLS_SERVER_THREAD_H_
 
+#include "base/macros.h"
 #include "base/threading/simple_thread.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/quic_config.h"
@@ -18,7 +19,6 @@ namespace test {
 class ServerThread : public base::SimpleThread {
  public:
   ServerThread(QuicServer* server,
-               bool is_secure,
                const IPEndPoint& address,
                bool strike_register_no_startup_period);
 

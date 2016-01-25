@@ -39,7 +39,7 @@ enum MarkLineBoxes { MarkLineBoxesDirty, DontMarkLineBoxes };
 
 // InlineBox represents a rectangle that occurs on a line.  It corresponds to
 // some LayoutObject (i.e., it represents a portion of that LayoutObject).
-class InlineBox {
+class InlineBox : public DisplayItemClient {
     WTF_MAKE_NONCOPYABLE(InlineBox);
 public:
     InlineBox(LayoutObject& obj)
@@ -103,7 +103,10 @@ public:
 #endif
 
     virtual const char* boxName() const;
-    virtual String debugName() const;
+
+    // DisplayItemClient methods
+    String debugName() const override;
+    IntRect visualRect() const override;
 
     bool isText() const { return m_bitfields.isText(); }
     void setIsText(bool isText) { m_bitfields.setIsText(isText); }
@@ -194,8 +197,8 @@ public:
 
     const LayoutPoint& topLeft() const { return m_topLeft; }
 
-    LayoutUnit width() const { return isHorizontal() ? logicalWidth() : hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight(); }
-    LayoutUnit height() const { return isHorizontal() ? hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight() : logicalWidth(); }
+    LayoutUnit width() const { return isHorizontal() ? logicalWidth() : logicalHeight(); }
+    LayoutUnit height() const { return isHorizontal() ? logicalHeight() : logicalWidth(); }
     LayoutSize size() const { return LayoutSize(width(), height()); }
     LayoutUnit right() const { return left() + width(); }
     LayoutUnit bottom() const { return top() + height(); }
@@ -269,7 +272,9 @@ public:
 
     bool visibleToHitTestRequest(const HitTestRequest& request) const { return lineLayoutItem().visibleToHitTestRequest(request); }
 
-    EVerticalAlign verticalAlign() const { return lineLayoutItem().isText() ? ComputedStyle::initialVerticalAlign() : lineLayoutItem().style(m_bitfields.firstLine())->verticalAlign(); }
+    // Anonymous inline: https://drafts.csswg.org/css2/visuren.html#anonymous
+    bool isAnonymousInline() const { return lineLayoutItem().isText() && lineLayoutItem().parent() && lineLayoutItem().parent().isBox(); }
+    EVerticalAlign verticalAlign() const { return isAnonymousInline() ? ComputedStyle::initialVerticalAlign() : lineLayoutItem().style(m_bitfields.firstLine())->verticalAlign(); }
 
     // Use with caution! The type is not checked!
     LineLayoutBoxModel boxModelObject() const
@@ -297,7 +302,8 @@ public:
     bool dirOverride() const { return m_bitfields.dirOverride(); }
     void setDirOverride(bool dirOverride) { m_bitfields.setDirOverride(dirOverride); }
 
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    // Invalidate display item clients in the whole sub inline box tree.
+    void invalidateDisplayItemClientsRecursively();
 
 #define ADD_BOOLEAN_BITFIELD(name, Name) \
     private:\
@@ -307,7 +313,7 @@ public:
     void set##Name(bool name) { m_##name = name; }\
 
     class InlineBoxBitfields {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         InlineBoxBitfields(bool firstLine = false, bool constructed = false, bool dirty = false, bool extracted = false, bool isHorizontal = true)
             : m_firstLine(firstLine)
@@ -349,6 +355,13 @@ public:
         ADD_BOOLEAN_BITFIELD(endsWithBreak, EndsWithBreak); // Whether the line ends with a <br>.
         // shared between RootInlineBox and InlineTextBox
         ADD_BOOLEAN_BITFIELD(hasSelectedChildrenOrCanHaveLeadingExpansion, HasSelectedChildrenOrCanHaveLeadingExpansion);
+
+        // This boolean will never be set if there is potential for overflow,
+        // but it will be eagerly cleared in the opposite case. As such, it's
+        // a conservative tracking of the absence of overflow.
+        //
+        // For whether we have overflow, callers should use m_overflow on
+        // InlineFlowBox.
         ADD_BOOLEAN_BITFIELD(knownToHaveNoOverflow, KnownToHaveNoOverflow);
         ADD_BOOLEAN_BITFIELD(hasEllipsisBoxOrHyphen, HasEllipsisBoxOrHyphen);
         // for InlineTextBox

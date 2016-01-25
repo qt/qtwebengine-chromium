@@ -4,10 +4,9 @@
  * found in the LICENSE file.
  */
 
-#include "config.h"
 #include "wtf/text/StringBuffer.h"
 
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace WTF {
 

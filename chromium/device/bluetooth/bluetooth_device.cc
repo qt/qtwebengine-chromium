@@ -19,10 +19,11 @@
 namespace device {
 
 BluetoothDevice::BluetoothDevice(BluetoothAdapter* adapter)
-    : adapter_(adapter), services_data_(new base::DictionaryValue()) {}
+    : adapter_(adapter),
+      gatt_services_discovery_complete_(false),
+      services_data_(new base::DictionaryValue()) {}
 
 BluetoothDevice::~BluetoothDevice() {
-  STLDeleteValues(&gatt_services_);
   DidDisconnectGatt();
 }
 
@@ -96,7 +97,7 @@ base::string16 BluetoothDevice::GetAddressWithLocalizedDeviceTypeName() const {
 
 BluetoothDevice::DeviceType BluetoothDevice::GetDeviceType() const {
   // https://www.bluetooth.org/Technical/AssignedNumbers/baseband.htm
-  uint32 bluetooth_class = GetBluetoothClass();
+  uint32_t bluetooth_class = GetBluetoothClass();
   switch ((bluetooth_class & 0x1f00) >> 8) {
     case 0x01:
       // Computer major device class.
@@ -215,21 +216,25 @@ void BluetoothDevice::CreateGattConnection(
   CreateGattConnectionImpl();
 }
 
+void BluetoothDevice::SetGattServicesDiscoveryComplete(bool complete) {
+  gatt_services_discovery_complete_ = complete;
+}
+
+bool BluetoothDevice::IsGattServicesDiscoveryComplete() const {
+  return gatt_services_discovery_complete_;
+}
+
 std::vector<BluetoothGattService*>
     BluetoothDevice::GetGattServices() const {
   std::vector<BluetoothGattService*> services;
-  for (GattServiceMap::const_iterator iter = gatt_services_.begin();
-       iter != gatt_services_.end(); ++iter)
-    services.push_back(iter->second);
+  for (const auto& iter : gatt_services_)
+    services.push_back(iter.second);
   return services;
 }
 
 BluetoothGattService* BluetoothDevice::GetGattService(
     const std::string& identifier) const {
-  GattServiceMap::const_iterator iter = gatt_services_.find(identifier);
-  if (iter != gatt_services_.end())
-    return iter->second;
-  return NULL;
+  return gatt_services_.get(identifier);
 }
 
 // static

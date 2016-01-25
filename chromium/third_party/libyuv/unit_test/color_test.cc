@@ -27,7 +27,7 @@ namespace libyuv {
 #define ERROR_G 1
 #define ERROR_B 3
 #define ERROR_FULL 6
-#define ERROR_J420 4
+#define ERROR_J420 5
 #else
 #define ERROR_R 1
 #define ERROR_G 1
@@ -37,7 +37,7 @@ namespace libyuv {
 #endif
 
 #define TESTCS(TESTNAME, YUVTOARGB, ARGBTOYUV, HS1, HS, HN, DIFF)              \
-TEST_F(libyuvTest, TESTNAME) {                                                 \
+  TEST_F(LibYUVColorTest, TESTNAME) {                                          \
   const int kPixels = benchmark_width_ * benchmark_height_;                    \
   const int kHalfPixels = ((benchmark_width_ + 1) / 2) *                       \
       ((benchmark_height_ + HS1) / HS);                                        \
@@ -101,7 +101,7 @@ TEST_F(libyuvTest, TESTNAME) {                                                 \
             temp_v, (benchmark_width_ + 1) / 2,                                \
             dst_pixels_c, benchmark_width_ * 4,                                \
             benchmark_width_, benchmark_height_);                              \
-  MaskCpuFlags(-1);                                                            \
+  MaskCpuFlags(benchmark_cpu_info_);                                           \
                                                                                \
   for (int i = 0; i < benchmark_iterations_; ++i) {                            \
     YUVTOARGB(temp_y, benchmark_width_,                                        \
@@ -223,13 +223,13 @@ static void YJToRGB(int y, int* r, int* g, int* b) {
 }
 
 // Pick a method for clamping.
-#define CLAMPMETHOD_IF 1
+//  #define CLAMPMETHOD_IF 1
 //  #define CLAMPMETHOD_TABLE 1
-//  #define CLAMPMETHOD_TERNARY 1
+#define CLAMPMETHOD_TERNARY 1
 //  #define CLAMPMETHOD_MASK 1
 
 // Pick a method for rounding.
-#define ROUND(f) static_cast<int>(f + 0.5)
+#define ROUND(f) static_cast<int>(f + 0.5f)
 //  #define ROUND(f) lrintf(f)
 //  #define ROUND(f) static_cast<int>(round(f))
 //  #define ROUND(f) _mm_cvt_ss2si(_mm_load_ss(&f))
@@ -312,17 +312,15 @@ static int RoundToByte(float f) {
 
 #define RANDOM256(s) ((s & 1) ? ((s >> 1) ^ 0xb8) : (s >> 1))
 
-TEST_F(libyuvTest, TestRoundToByte) {
+TEST_F(LibYUVColorTest, TestRoundToByte) {
   int allb = 0;
+  int count = benchmark_width_ * benchmark_height_;
   for (int i = 0; i < benchmark_iterations_; ++i) {
-    for (int u2 = 0; u2 < 256; ++u2) {
-      for (int v2 = 0; v2 < 256; ++v2) {
-        for (int y2 = 0; y2 < 256; ++y2) {
-          int y = RANDOM256(y2);
-          int b = RoundToByte(y * 810.33 - 257);
-          allb |= b;
-        }
-      }
+    float f = (fastrand() & 255) * 3.14f - 260.f;
+    for (int j = 0; j < count; ++j) {
+      int b = RoundToByte(f);
+      f += 0.91f;
+      allb |= b;
     }
   }
   EXPECT_GE(allb, 0);
@@ -341,7 +339,7 @@ static void YUVJToRGBReference(int y, int u, int v, int* r, int* g, int* b) {
   *b = RoundToByte(y - (u - 128) * -1.77200);
 }
 
-TEST_F(libyuvTest, TestYUV) {
+TEST_F(LibYUVColorTest, TestYUV) {
   int r0, g0, b0, r1, g1, b1;
 
   // cyan (less red)
@@ -387,7 +385,7 @@ TEST_F(libyuvTest, TestYUV) {
   }
 }
 
-TEST_F(libyuvTest, TestGreyYUV) {
+TEST_F(LibYUVColorTest, TestGreyYUV) {
   int r0, g0, b0, r1, g1, b1, r2, g2, b2;
 
   // black
@@ -466,7 +464,7 @@ static void PrintHistogram(int rh[256], int gh[256], int bh[256]) {
   printf("\n");
 }
 
-TEST_F(libyuvTest, TestFullYUV) {
+TEST_F(LibYUVColorTest, TestFullYUV) {
   int rh[256] = { 0, }, gh[256] = { 0, }, bh[256] = { 0, };
   for (int u = 0; u < 256; ++u) {
     for (int v = 0; v < 256; ++v) {
@@ -487,7 +485,7 @@ TEST_F(libyuvTest, TestFullYUV) {
   PrintHistogram(rh, gh, bh);
 }
 
-TEST_F(libyuvTest, TestFullYUVJ) {
+TEST_F(LibYUVColorTest, TestFullYUVJ) {
   int rh[256] = { 0, }, gh[256] = { 0, }, bh[256] = { 0, };
   for (int u = 0; u < 256; ++u) {
     for (int v = 0; v < 256; ++v) {
@@ -508,7 +506,7 @@ TEST_F(libyuvTest, TestFullYUVJ) {
   PrintHistogram(rh, gh, bh);
 }
 
-TEST_F(libyuvTest, TestGreyYUVJ) {
+TEST_F(LibYUVColorTest, TestGreyYUVJ) {
   int r0, g0, b0, r1, g1, b1, r2, g2, b2;
 
   // black

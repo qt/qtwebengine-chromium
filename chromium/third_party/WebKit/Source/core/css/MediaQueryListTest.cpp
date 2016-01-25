@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/MediaQueryList.h"
 
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryListListener.h"
 #include "core/css/MediaQueryMatcher.h"
 #include "core/dom/Document.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 

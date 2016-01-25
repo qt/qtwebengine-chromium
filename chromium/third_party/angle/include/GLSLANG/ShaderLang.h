@@ -48,7 +48,7 @@ typedef unsigned int GLenum;
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 140
+#define ANGLE_SH_VERSION 141
 
 typedef enum {
   SH_GLES2_SPEC = 0x8B40,
@@ -81,14 +81,12 @@ typedef enum {
 } ShShaderSpec;
 
 typedef enum {
+  // ESSL output only supported in some configurations.
   SH_ESSL_OUTPUT               = 0x8B45,
-  // SH_GLSL_OUTPUT is deprecated. This is to not break the build.
-  SH_GLSL_OUTPUT               = 0x8B46,
+
+  // GLSL output only supported in some configurations.
   SH_GLSL_COMPATIBILITY_OUTPUT = 0x8B46,
-  // SH_GLSL_CORE_OUTPUT is deprecated.
-  SH_GLSL_CORE_OUTPUT          = 0x8B47,
-  //Note: GL introduced core profiles in 1.5. However, for compatiblity with Chromium, we treat SH_GLSL_CORE_OUTPUT as GLSL_130_OUTPUT.
-  //TODO: Remove SH_GLSL_CORE_OUTPUT
+  //Note: GL introduced core profiles in 1.5.
   SH_GLSL_130_OUTPUT           = 0x8B47,
   SH_GLSL_140_OUTPUT           = 0x8B80,
   SH_GLSL_150_CORE_OUTPUT      = 0x8B81,
@@ -266,7 +264,9 @@ typedef struct
     // function. This applies to Tegra K1 devices.
     int NV_draw_buffers;
 
-    // Set to 1 if highp precision is supported in the fragment language.
+    // Set to 1 if highp precision is supported in the ESSL 1.00 version of the
+    // fragment language. Does not affect versions of the language where highp
+    // support is mandatory.
     // Default is 0.
     int FragmentPrecisionHigh;
 
@@ -333,8 +333,8 @@ COMPILER_EXPORT const std::string &ShGetBuiltInResourcesString(const ShHandle ha
 // spec: Specifies the language spec the compiler must conform to -
 //       SH_GLES2_SPEC or SH_WEBGL_SPEC.
 // output: Specifies the output code type - SH_ESSL_OUTPUT, SH_GLSL_OUTPUT,
-//         SH_HLSL9_OUTPUT or SH_HLSL11_OUTPUT. Note: HLSL output is only
-//         supported in some configurations.
+//         SH_HLSL9_OUTPUT or SH_HLSL11_OUTPUT. Note: Each output type may only
+//         be supported in some configurations.
 // resources: Specifies the built-in resources.
 COMPILER_EXPORT ShHandle ShConstructCompiler(
     sh::GLenum type,

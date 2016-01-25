@@ -26,9 +26,7 @@
 // FFTFrame implementation using FFmpeg's RDFT algorithm,
 // suitable for use on Windows and Linux.
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
+#include "wtf/build_config.h"
 
 #if USE(WEBAUDIO_FFMPEG)
 
@@ -45,7 +43,8 @@ extern "C" {
 namespace blink {
 
 #if ENABLE(ASSERT)
-const int kMaxFFTPow2Size = 24;
+// Max FFT size for FFMPEG.  WebAudio currently only uses FFTs up to size 15 (2^15 points).
+const int kMaxFFTPow2Size = 16;
 #endif
 
 // Normal constructor: allocates for a given fftSize.
@@ -178,4 +177,3 @@ RDFTContext* FFTFrame::contextForSize(unsigned fftSize, int trans)
 
 #endif // USE(WEBAUDIO_FFMPEG)
 
-#endif // ENABLE(WEB_AUDIO)

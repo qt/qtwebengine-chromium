@@ -36,41 +36,38 @@
 .resources.panel .sidebar li {
     height: 18px;
     white-space: nowrap;
+    padding-top: 1px;
 }
 
 .resources.panel .sidebar li.selected {
     color: white;
-    text-shadow: rgba(0, 0, 0, 0.33) 1px 1px 0;
 }
 
 .resources.panel .sidebar li.selected .selection {
-    background-image: linear-gradient(to bottom, rgb(162, 177, 207), rgb(120, 138, 177));
+    background-color: rgb(160, 160, 160);
     border-top: 1px solid #979797;
     height: 18px;
 }
 
 .resources.panel .sidebar :focus li.selected .selection {
-    background-image: linear-gradient(to bottom, rgb(92, 147, 213), rgb(21, 83, 170));
+    background-color: rgb(56, 121, 217);
     border-top: 1px solid rgb(68, 128, 200);
-}
-
-body.inactive .resources.panel .sidebar li.selected .selection {
-    background-image: linear-gradient(to bottom, rgb(180, 180, 180), rgb(138, 138, 138));
-    border-top: 1px solid rgb(151, 151, 151);
 }
 
 .resources.panel .sidebar .icon {
     width: 16px;
     height: 16px;
-    float: left;
+    position: relative;
+    top: 3px;
+    margin-top: -3px;
+    display: inline-block;
 }
 
 .resources.panel .base-storage-tree-element-title {
     overflow: hidden;
-    position: relative;
     text-overflow: ellipsis;
     padding-left: 2px;
-    top: 1px;
+    display: inline;
 }
 
 .resources-toolbar {
@@ -94,12 +91,6 @@ li.selected .base-storage-tree-element-subtitle {
     margin-top: 1px;
     margin-left: 4px;
     line-height: 1em;
-}
-
-.resources.panel li .status .bubble-repeat-count {
-    height: 13px;
-    margin-top: 1px;
-    padding-top: 0;
 }
 
 .storage-view {
@@ -332,6 +323,10 @@ li.selected .base-storage-tree-element-subtitle {
 
 .service-workers-tree-item .icon {
     content: url(Images/serviceWorker.svg);
+}
+
+.-theme-with-dark-background .service-workers-tree-item .icon {
+    -webkit-filter: invert(70%);
 }
 
 .domstorage-storage-tree-item.local-storage .icon {

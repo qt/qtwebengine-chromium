@@ -20,7 +20,7 @@ class GraphicsContext;
 
 // Convenience wrapper of DrawingRecorder for LayoutObject painters.
 class LayoutObjectDrawingRecorder final {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     static bool useCachedDrawingIfPossible(GraphicsContext& context, const LayoutObject& layoutObject, DisplayItem::Type displayItemType, const LayoutPoint& paintOffset)
     {
@@ -38,7 +38,7 @@ public:
 
     LayoutObjectDrawingRecorder(GraphicsContext& context, const LayoutObject& layoutObject, DisplayItem::Type displayItemType, const FloatRect& clip, const LayoutPoint& paintOffset)
     {
-        updatePaintOffsetIfNeeded(context.displayItemList(), layoutObject, paintOffset);
+        updatePaintOffsetIfNeeded(context.paintController(), layoutObject, paintOffset);
         // We may paint a delayed-invalidation object before it's actually invalidated.
         if (layoutObject.fullPaintInvalidationReason() == PaintInvalidationDelayedFull)
             m_cacheSkipper.emplace(context);
@@ -62,17 +62,17 @@ public:
 #endif
 
 private:
-    static void updatePaintOffsetIfNeeded(DisplayItemList* displayItemList, const LayoutObject& layoutObject, const LayoutPoint& paintOffset)
+    static void updatePaintOffsetIfNeeded(PaintController& paintController, const LayoutObject& layoutObject, const LayoutPoint& paintOffset)
     {
-        if (!RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled())
+        if (!RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() || paintController.skippingCache())
             return;
 
         if (layoutObject.paintOffsetChanged(paintOffset))
-            displayItemList->invalidatePaintOffset(layoutObject);
+            paintController.invalidatePaintOffset(layoutObject);
         else
-            ASSERT(!displayItemList->paintOffsetWasInvalidated(layoutObject.displayItemClient()) || !displayItemList->clientCacheIsValid(layoutObject.displayItemClient()));
+            ASSERT(!paintController.paintOffsetWasInvalidated(layoutObject) || !paintController.clientCacheIsValid(layoutObject));
 
-        layoutObject.setPreviousPaintOffset(paintOffset);
+        layoutObject.mutableForPainting().setPreviousPaintOffset(paintOffset);
     }
 
     Optional<DisplayItemCacheSkipper> m_cacheSkipper;

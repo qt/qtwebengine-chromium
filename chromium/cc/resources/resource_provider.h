@@ -5,15 +5,18 @@
 #ifndef CC_RESOURCES_RESOURCE_PROVIDER_H_
 #define CC_RESOURCES_RESOURCE_PROVIDER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <deque>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
@@ -76,6 +79,7 @@ class CC_EXPORT ResourceProvider
         TEXTURE_HINT_IMMUTABLE | TEXTURE_HINT_FRAMEBUFFER
   };
   enum ResourceType {
+    RESOURCE_TYPE_GPU_MEMORY_BUFFER,
     RESOURCE_TYPE_GL_TEXTURE,
     RESOURCE_TYPE_BITMAP,
   };
@@ -87,6 +91,7 @@ class CC_EXPORT ResourceProvider
       BlockingTaskRunner* blocking_main_thread_task_runner,
       int highp_threshold_min,
       size_t id_allocation_chunk_size,
+      bool use_gpu_memory_buffer_resources,
       const std::vector<unsigned>& use_image_texture_targets);
   ~ResourceProvider() override;
 
@@ -116,30 +121,19 @@ class CC_EXPORT ResourceProvider
 
   ResourceType default_resource_type() const { return default_resource_type_; }
   ResourceType GetResourceType(ResourceId id);
+  GLenum GetResourceTextureTarget(ResourceId id);
 
   // Creates a resource of the default resource type.
   ResourceId CreateResource(const gfx::Size& size,
-                            GLint wrap_mode,
                             TextureHint hint,
                             ResourceFormat format);
 
-  // Creates a resource which is tagged as being managed for GPU memory
-  // accounting purposes.
-  ResourceId CreateManagedResource(const gfx::Size& size,
-                                   GLenum target,
-                                   GLint wrap_mode,
-                                   TextureHint hint,
-                                   ResourceFormat format);
+  // Creates a resource for a particular texture target (the distinction between
+  // texture targets has no effect in software mode).
+  ResourceId CreateGpuMemoryBufferResource(const gfx::Size& size,
+                                           TextureHint hint,
+                                           ResourceFormat format);
 
-  // You can also explicitly create a specific resource type.
-  ResourceId CreateGLTexture(const gfx::Size& size,
-                             GLenum target,
-                             GLenum texture_pool,
-                             GLint wrap_mode,
-                             TextureHint hint,
-                             ResourceFormat format);
-
-  ResourceId CreateBitmap(const gfx::Size& size, GLint wrap_mode);
   // Wraps an IOSurface into a GL resource.
   ResourceId CreateResourceFromIOSurface(const gfx::Size& size,
                                          unsigned io_surface_id);
@@ -174,7 +168,7 @@ class CC_EXPORT ResourceProvider
 
   // Sets whether resources need sync points set on them when returned to this
   // child. Defaults to true.
-  void SetChildNeedsSyncPoints(int child, bool needs_sync_points);
+  void SetChildNeedsSyncTokens(int child, bool needs_sync_tokens);
 
   // Gets the child->parent resource ID map.
   const ResourceIdMap& GetChildToParentMap(int child) const;
@@ -193,7 +187,7 @@ class CC_EXPORT ResourceProvider
   // declaring which resources are in use. Use DeclareUsedResourcesFromChild
   // after calling this method to do that. All calls to ReceiveFromChild should
   // be followed by a DeclareUsedResourcesFromChild.
-  // NOTE: if the sync_point is set on any TransferableResource, this will
+  // NOTE: if the sync_token is set on any TransferableResource, this will
   // wait on it.
   void ReceiveFromChild(
       int child, const TransferableResourceArray& transferable_resources);
@@ -206,7 +200,7 @@ class CC_EXPORT ResourceProvider
 
   // Receives resources from the parent, moving them from mailboxes. Resource
   // IDs passed are in the child namespace.
-  // NOTE: if the sync_point is set on any TransferableResource, this will
+  // NOTE: if the sync_token is set on any TransferableResource, this will
   // wait on it.
   void ReceiveReturnsFromParent(
       const ReturnedResourceArray& transferable_resources);
@@ -223,6 +217,7 @@ class CC_EXPORT ResourceProvider
 
     unsigned texture_id() const { return resource_->gl_id; }
     GLenum target() const { return resource_->target; }
+    const gfx::Size& texture_size() const { return resource_->size; }
 
    protected:
     ResourceProvider* resource_provider_;
@@ -280,7 +275,6 @@ class CC_EXPORT ResourceProvider
       DCHECK(valid());
       return &sk_bitmap_;
     }
-    GLint wrap_mode() const { return wrap_mode_; }
 
     bool valid() const { return !!sk_bitmap_.getPixels(); }
 
@@ -288,7 +282,6 @@ class CC_EXPORT ResourceProvider
     ResourceProvider* resource_provider_;
     ResourceId resource_id_;
     SkBitmap sk_bitmap_;
-    GLint wrap_mode_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedReadLockSoftware);
   };
@@ -322,10 +315,7 @@ class CC_EXPORT ResourceProvider
    private:
     ResourceProvider* resource_provider_;
     ResourceProvider::Resource* resource_;
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
-    gfx::GpuMemoryBuffer* gpu_memory_buffer_;
-    gfx::Size size_;
-    ResourceFormat format_;
+    scoped_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer_;
     base::ThreadChecker thread_checker_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockGpuMemoryBuffer);
@@ -412,8 +402,6 @@ class CC_EXPORT ResourceProvider
   // For tests only!
   void CreateForTesting(ResourceId id);
 
-  GLenum TargetForTesting(ResourceId id);
-
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
   // until this fence has passed.
@@ -422,7 +410,10 @@ class CC_EXPORT ResourceProvider
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  void WaitSyncPointIfNeeded(ResourceId id);
+  // Indicates if this resource may be used for a hardware overlay plane.
+  bool IsOverlayCandidate(ResourceId id);
+
+  void WaitSyncTokenIfNeeded(ResourceId id);
 
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
@@ -445,6 +436,7 @@ class CC_EXPORT ResourceProvider
                    BlockingTaskRunner* blocking_main_thread_task_runner,
                    int highp_threshold_min,
                    size_t id_allocation_chunk_size,
+                   bool use_gpu_memory_buffer_resources,
                    const std::vector<unsigned>& use_image_texture_targets);
   void Initialize();
 
@@ -458,21 +450,18 @@ class CC_EXPORT ResourceProvider
              Origin origin,
              GLenum target,
              GLenum filter,
-             GLenum texture_pool,
-             GLint wrap_mode,
              TextureHint hint,
+             ResourceType type,
              ResourceFormat format);
     Resource(uint8_t* pixels,
              SharedBitmap* bitmap,
              const gfx::Size& size,
              Origin origin,
-             GLenum filter,
-             GLint wrap_mode);
+             GLenum filter);
     Resource(const SharedBitmapId& bitmap_id,
              const gfx::Size& size,
              Origin origin,
-             GLenum filter,
-             GLint wrap_mode);
+             GLenum filter);
 
     int child_id;
     unsigned gl_id;
@@ -495,6 +484,7 @@ class CC_EXPORT ResourceProvider
     bool allocated : 1;
     bool read_lock_fences_enabled : 1;
     bool has_shared_bitmap_id : 1;
+    bool is_overlay_candidate : 1;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
     Origin origin;
@@ -504,8 +494,6 @@ class CC_EXPORT ResourceProvider
     GLenum filter;
     unsigned image_id;
     unsigned bound_image_id;
-    GLenum texture_pool;
-    GLint wrap_mode;
     TextureHint hint;
     ResourceType type;
     ResourceFormat format;
@@ -523,7 +511,7 @@ class CC_EXPORT ResourceProvider
     ResourceIdMap parent_to_child_map;
     ReturnCallback return_callback;
     bool marked_for_deletion;
-    bool needs_sync_points;
+    bool needs_sync_tokens;
   };
   typedef base::hash_map<int, Child> ChildMap;
 
@@ -532,6 +520,11 @@ class CC_EXPORT ResourceProvider
            resource->read_lock_fence->HasPassed();
   }
 
+  ResourceId CreateGLTexture(const gfx::Size& size,
+                             TextureHint hint,
+                             ResourceType type,
+                             ResourceFormat format);
+  ResourceId CreateBitmap(const gfx::Size& size);
   Resource* InsertResource(ResourceId id, const Resource& resource);
   Resource* GetResource(ResourceId id);
   const Resource* LockForRead(ResourceId id);
@@ -556,6 +549,7 @@ class CC_EXPORT ResourceProvider
   void DestroyChildInternal(ChildMap::iterator it, DeleteStyle style);
   void LazyCreate(Resource* resource);
   void LazyAllocate(Resource* resource);
+  void LazyCreateImage(Resource* resource);
 
   void BindImageForSampling(Resource* resource);
   // Binds the given GL resource to a texture target for sampling using the
@@ -579,6 +573,7 @@ class CC_EXPORT ResourceProvider
   ChildMap children_;
 
   ResourceType default_resource_type_;
+  bool use_gpu_memory_buffer_resources_;
   bool use_texture_storage_ext_;
   bool use_texture_format_bgra_;
   bool use_texture_usage_hint_;

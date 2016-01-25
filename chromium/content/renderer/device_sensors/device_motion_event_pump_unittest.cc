@@ -4,8 +4,11 @@
 
 #include "device_motion_event_pump.h"
 
+#include <string.h>
+
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
@@ -193,7 +196,7 @@ TEST_F(DeviceMotionEventPumpTest, PumpThrottlesEventRate) {
   motion_pump()->OnDidStart(handle());
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::MessageLoop::QuitClosure(),
+      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure(),
       base::TimeDelta::FromMilliseconds(100));
   base::MessageLoop::current()->Run();
   motion_pump()->Stop();

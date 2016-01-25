@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/DocumentAnimations.h"
 
 #include "core/animation/AnimationClock.h"
@@ -52,9 +51,8 @@ void updateAnimationTiming(Document& document, TimingUpdateReason reason)
 
 } // namespace
 
-void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& document, double monotonicAnimationStartTime)
+void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& document)
 {
-    document.animationClock().updateTime(monotonicAnimationStartTime);
     updateAnimationTiming(document, TimingUpdateForAnimationFrame);
 }
 

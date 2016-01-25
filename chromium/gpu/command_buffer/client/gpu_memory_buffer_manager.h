@@ -12,6 +12,8 @@
 
 namespace gpu {
 
+struct SyncToken;
+
 class GPU_EXPORT GpuMemoryBufferManager {
  public:
   GpuMemoryBufferManager();
@@ -22,14 +24,20 @@ class GPU_EXPORT GpuMemoryBufferManager {
       gfx::BufferFormat format,
       gfx::BufferUsage usage) = 0;
 
+  // Creates a GpuMemoryBuffer from existing handle.
+  virtual scoped_ptr<gfx::GpuMemoryBuffer> CreateGpuMemoryBufferFromHandle(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      gfx::BufferFormat format) = 0;
+
   // Returns a GpuMemoryBuffer instance given a ClientBuffer. Returns NULL on
   // failure.
   virtual gfx::GpuMemoryBuffer* GpuMemoryBufferFromClientBuffer(
       ClientBuffer buffer) = 0;
 
   // Associates destruction sync point with |buffer|.
-  virtual void SetDestructionSyncPoint(gfx::GpuMemoryBuffer* buffer,
-                                       uint32 sync_point) = 0;
+  virtual void SetDestructionSyncToken(gfx::GpuMemoryBuffer* buffer,
+                                       const gpu::SyncToken& sync_token) = 0;
 
  protected:
   virtual ~GpuMemoryBufferManager();

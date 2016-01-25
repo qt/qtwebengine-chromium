@@ -28,7 +28,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "config.h"
 #include "core/inspector/InspectorInstrumentation.h"
 
 #include "core/events/EventTarget.h"
@@ -49,7 +48,13 @@
 namespace blink {
 
 namespace {
-static HashSet<InstrumentingAgents*>* instrumentingAgentsSet = 0;
+
+WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<InstrumentingAgents>>& instrumentingAgentsSet()
+{
+    DEFINE_STATIC_LOCAL(WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<InstrumentingAgents>>, instrumentingAgentsSet, ());
+    return instrumentingAgentsSet;
+}
+
 }
 
 namespace InspectorInstrumentation {
@@ -109,9 +114,7 @@ void continueWithPolicyIgnoreImpl(LocalFrame* frame, DocumentLoader* loader, uns
 void willDestroyResourceImpl(Resource* cachedResource)
 {
     ASSERT(isMainThread());
-    if (!instrumentingAgentsSet)
-        return;
-    for (InstrumentingAgents* instrumentingAgents: *instrumentingAgentsSet) {
+    for (InstrumentingAgents* instrumentingAgents: instrumentingAgentsSet()) {
         if (InspectorResourceAgent* inspectorResourceAgent = instrumentingAgents->inspectorResourceAgent())
             inspectorResourceAgent->willDestroyResource(cachedResource);
     }
@@ -120,9 +123,7 @@ void willDestroyResourceImpl(Resource* cachedResource)
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents* instrumentingAgents)
 {
     ASSERT(isMainThread());
-    if (!instrumentingAgentsSet)
-        return false;
-    return instrumentingAgentsSet->contains(instrumentingAgents);
+    return instrumentingAgentsSet().contains(instrumentingAgents);
 }
 
 void appendAsyncCallStack(ExecutionContext* executionContext, ScriptCallStack* callStack)
@@ -144,21 +145,14 @@ bool consoleAgentEnabled(ExecutionContext* executionContext)
 void registerInstrumentingAgents(InstrumentingAgents* instrumentingAgents)
 {
     ASSERT(isMainThread());
-    if (!instrumentingAgentsSet)
-        instrumentingAgentsSet = new HashSet<InstrumentingAgents*>();
-    instrumentingAgentsSet->add(instrumentingAgents);
+    instrumentingAgentsSet().add(instrumentingAgents);
 }
 
 void unregisterInstrumentingAgents(InstrumentingAgents* instrumentingAgents)
 {
     ASSERT(isMainThread());
-    if (!instrumentingAgentsSet)
-        return;
-    instrumentingAgentsSet->remove(instrumentingAgents);
-    if (instrumentingAgentsSet->isEmpty()) {
-        delete instrumentingAgentsSet;
-        instrumentingAgentsSet = 0;
-    }
+    ASSERT(instrumentingAgentsSet().contains(instrumentingAgents));
+    instrumentingAgentsSet().remove(instrumentingAgents);
 }
 
 InstrumentingAgents* instrumentingAgentsFor(LocalFrame* frame)
@@ -221,4 +215,3 @@ InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope* work
 }
 
 } // namespace blink
-

@@ -142,15 +142,14 @@ WebInspector.CSSWorkspaceBinding.prototype = {
         if (!range)
             return null;
 
-        var url = style.parentRule.resourceURL();
-        if (!url)
+        var header = style.cssModel().styleSheetHeaderForId(style.styleSheetId);
+        if (!header)
             return null;
 
         var line = forName ? range.startLine : range.endLine;
         // End of range is exclusive, so subtract 1 from the end offset.
         var column = forName ? range.startColumn : range.endColumn - (cssProperty.text && cssProperty.text.endsWith(";") ? 2 : 1);
-        var header = style.cssModel().styleSheetHeaderForId(style.styleSheetId);
-        var rawLocation = new WebInspector.CSSLocation(style.cssModel(), style.styleSheetId, url, header.lineNumberInSource(line), header.columnNumberInSource(line, column));
+        var rawLocation = new WebInspector.CSSLocation(header, header.lineNumberInSource(line), header.columnNumberInSource(line, column));
         return this.rawLocationToUILocation(rawLocation);
     },
 
@@ -180,7 +179,7 @@ WebInspector.CSSWorkspaceBinding.TargetInfo = function(cssModel, workspace, netw
 {
     this._cssModel = cssModel;
     this._stylesSourceMapping = new WebInspector.StylesSourceMapping(cssModel, workspace, networkMapping);
-    this._sassSourceMapping = new WebInspector.SASSSourceMapping(cssModel, workspace, networkMapping, WebInspector.NetworkProject.forTarget(cssModel.target()));
+    this._sassSourceMapping = new WebInspector.SASSSourceMapping(cssModel, networkMapping, WebInspector.NetworkProject.forTarget(cssModel.target()));
 
     /** @type {!Map.<string, !WebInspector.CSSWorkspaceBinding.HeaderInfo>} */
     this._headerInfoById = new Map();
@@ -290,7 +289,7 @@ WebInspector.CSSWorkspaceBinding.HeaderInfo.prototype = {
     _rawLocationToUILocation: function(lineNumber, columnNumber)
     {
         var uiLocation = null;
-        var rawLocation = new WebInspector.CSSLocation(this._header.cssModel(), this._header.id, this._header.resourceURL(), lineNumber, columnNumber);
+        var rawLocation = new WebInspector.CSSLocation(this._header, lineNumber, columnNumber);
         for (var i = this._sourceMappings.length - 1; !uiLocation && i >= 0; --i)
             uiLocation = this._sourceMappings[i].rawLocationToUILocation(rawLocation);
         return uiLocation;
@@ -301,6 +300,8 @@ WebInspector.CSSWorkspaceBinding.HeaderInfo.prototype = {
      */
     _pushSourceMapping: function(sourceMapping)
     {
+        if (this._sourceMappings.indexOf(sourceMapping) !== -1)
+            return;
         this._sourceMappings.push(sourceMapping);
         this._updateLocations();
     }
@@ -381,7 +382,7 @@ WebInspector.CSSWorkspaceBinding.LiveLocation.prototype = {
             var headerInfo = this._binding._headerInfo(this._header);
             return headerInfo._rawLocationToUILocation(cssLocation.lineNumber, cssLocation.columnNumber);
         }
-        var uiSourceCode = this._binding._networkMapping.uiSourceCodeForURL(cssLocation.url, cssLocation.target());
+        var uiSourceCode = this._binding._networkMapping.uiSourceCodeForStyleURL(cssLocation.url, cssLocation.header());
         if (!uiSourceCode)
             return null;
         return uiSourceCode.uiLocation(cssLocation.lineNumber, cssLocation.columnNumber);

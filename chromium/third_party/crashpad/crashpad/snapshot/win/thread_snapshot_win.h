@@ -19,7 +19,8 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
+#include "build/build_config.h"
 #include "snapshot/cpu_context.h"
 #include "snapshot/memory_snapshot.h"
 #include "snapshot/thread_snapshot.h"
@@ -75,6 +76,7 @@ class ThreadSnapshotWin final : public ThreadSnapshot {
   internal::MemorySnapshotWin teb_;
   ProcessReaderWin::Thread thread_;
   InitializationStateDcheck initialized_;
+  PointerVector<internal::MemorySnapshotWin> pointed_to_memory_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadSnapshotWin);
 };

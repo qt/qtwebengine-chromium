@@ -21,6 +21,18 @@
       ],
     },
     {
+      # GN version: //components/signin/core/account_id
+      'target_name': 'signin_core_account_id',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'signin/core/account_id/account_id.cc',
+        'signin/core/account_id/account_id.h',
+      ],
+    },
+    {
       # GN version: //components/signin/core/browser
       'target_name': 'signin_core_browser',
       'type': 'static_library',
@@ -40,8 +52,10 @@
         'google_core_browser',
         'invalidation_public',
         'keyed_service_core',
+        'metrics',
         'os_crypt',
         'signin_core_common',
+        'signin_core_account_id',
         'webdata_common',
       ],
       'include_dirs': [
@@ -89,14 +103,20 @@
         'signin/core/browser/signin_header_helper.h',
         'signin/core/browser/signin_internals_util.cc',
         'signin/core/browser/signin_internals_util.h',
+        'signin/core/browser/signin_investigator.cc',
+        'signin/core/browser/signin_investigator.h',
         'signin/core/browser/signin_manager.cc',
         'signin/core/browser/signin_manager.h',
         'signin/core/browser/signin_manager_base.cc',
         'signin/core/browser/signin_manager_base.h',
-        'signin/core/browser/signin_manager_cookie_helper.cc',
-        'signin/core/browser/signin_manager_cookie_helper.h',
         'signin/core/browser/signin_metrics.cc',
         'signin/core/browser/signin_metrics.h',
+        'signin/core/browser/signin_status_metrics_provider.cc',
+        'signin/core/browser/signin_status_metrics_provider.h',
+        'signin/core/browser/signin_status_metrics_provider_base.cc',
+        'signin/core/browser/signin_status_metrics_provider_base.h',
+        'signin/core/browser/signin_status_metrics_provider_delegate.cc',
+        'signin/core/browser/signin_status_metrics_provider_delegate.h',
         'signin/core/browser/signin_tracker.cc',
         'signin/core/browser/signin_tracker.h',
         'signin/core/browser/webdata/token_service_table.cc',
@@ -117,6 +137,8 @@
         ['chromeos==1', {
           'sources!': [
             'signin/core/browser/signin_manager.cc',
+            'signin/core/browser/signin_status_metrics_provider.cc',
+            'signin/core/browser/signin_status_metrics_provider_delegate.cc',
           ],
         }],
       ],

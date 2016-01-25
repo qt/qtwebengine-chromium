@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/LengthBox.h"
 
 namespace blink {
@@ -48,8 +47,6 @@ const Length& LengthBox::before(WritingMode writingMode) const
     switch (writingMode) {
     case TopToBottomWritingMode:
         return m_top;
-    case BottomToTopWritingMode:
-        return m_bottom;
     case LeftToRightWritingMode:
         return m_left;
     case RightToLeftWritingMode:
@@ -64,8 +61,6 @@ const Length& LengthBox::after(WritingMode writingMode) const
     switch (writingMode) {
     case TopToBottomWritingMode:
         return m_bottom;
-    case BottomToTopWritingMode:
-        return m_top;
     case LeftToRightWritingMode:
         return m_right;
     case RightToLeftWritingMode:
@@ -87,6 +82,16 @@ const Length& LengthBox::end(WritingMode writingMode, TextDirection direction) c
     if (isHorizontalWritingMode(writingMode))
         return isLeftToRightDirection(direction) ? m_right : m_left;
     return isLeftToRightDirection(direction) ? m_bottom : m_top;
+}
+
+const Length& LengthBox::over(WritingMode writingMode) const
+{
+    return isHorizontalWritingMode(writingMode) ? m_top : m_right;
+}
+
+const Length& LengthBox::under(WritingMode writingMode) const
+{
+    return isHorizontalWritingMode(writingMode) ? m_bottom : m_left;
 }
 
 } // namespace blink

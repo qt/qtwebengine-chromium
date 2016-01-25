@@ -22,7 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/AnimationTranslationUtil.h"
 
 #include "platform/graphics/filters/FilterOperations.h"
@@ -33,9 +32,9 @@
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "public/platform/WebFilterOperations.h"
 #include "public/platform/WebTransformOperations.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/RefPtr.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -100,7 +99,7 @@ TEST(AnimationTranslationUtilTest, filtersWork)
     ops.operations().append(BasicColorMatrixFilterOperation::create(0.5, FilterOperation::SATURATE));
     ops.operations().append(BasicColorMatrixFilterOperation::create(0.2, FilterOperation::GRAYSCALE));
     ops.operations().append(BasicColorMatrixFilterOperation::create(0.8, FilterOperation::SEPIA));
-    ops.operations().append(BasicColorMatrixFilterOperation::create(0.1, FilterOperation::OPACITY));
+    ops.operations().append(BasicComponentTransferFilterOperation::create(0.1, FilterOperation::OPACITY));
     toWebFilterOperations(ops, &outOps);
 }
 

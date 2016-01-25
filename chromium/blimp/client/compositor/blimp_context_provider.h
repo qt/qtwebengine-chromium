@@ -5,6 +5,8 @@
 #ifndef BLIMP_CLIENT_COMPOSITOR_BLIMP_CONTEXT_PROVIDER_H_
 #define BLIMP_CLIENT_COMPOSITOR_BLIMP_CONTEXT_PROVIDER_H_
 
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
@@ -15,6 +17,7 @@
 #include "ui/gl/gl_surface.h"
 
 namespace blimp {
+namespace client {
 
 // Helper class to provide a graphics context for the compositor.
 class BlimpContextProvider : public cc::ContextProvider {
@@ -32,14 +35,9 @@ class BlimpContextProvider : public cc::ContextProvider {
   void InvalidateGrContext(uint32_t state) override;
   void SetupLock() override;
   base::Lock* GetLock() override;
-  void VerifyContexts() override;
   void DeleteCachedResources() override;
-  bool DestroyedOnMainThread() override;
   void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) override;
-  void SetMemoryPolicyChangedCallback(
-      const MemoryPolicyChangedCallback& memory_policy_changed_callback)
-      override;
 
  protected:
   explicit BlimpContextProvider(gfx::AcceleratedWidget widget);
@@ -59,12 +57,10 @@ class BlimpContextProvider : public cc::ContextProvider {
 
   LostContextCallback lost_context_callback_;
 
-  base::Lock destroyed_lock_;
-  bool destroyed_;
-
   DISALLOW_COPY_AND_ASSIGN(BlimpContextProvider);
 };
 
+}  // namespace client
 }  // namespace blimp
 
 #endif  // BLIMP_CLIENT_COMPOSITOR_BLIMP_CONTEXT_PROVIDER_H_

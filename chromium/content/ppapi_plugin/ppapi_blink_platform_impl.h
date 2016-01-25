@@ -5,13 +5,12 @@
 #ifndef CONTENT_PPAPI_PLUGIN_PPAPI_BLINK_PLATFORM_IMPL_H_
 #define CONTENT_PPAPI_PLUGIN_PPAPI_BLINK_PLATFORM_IMPL_H_
 
-#include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
-#include "content/child/blink_platform_impl.h"
+#include <stddef.h>
 
-namespace scheduler {
-class WebThreadImplForPPAPI;
-}
+#include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
+#include "content/child/blink_platform_impl.h"
 
 namespace content {
 
@@ -59,7 +58,6 @@ class PpapiBlinkPlatformImpl : public BlinkPlatformImpl {
   class SandboxSupport;
   scoped_ptr<SandboxSupport> sandbox_support_;
 #endif
-  scoped_ptr<scheduler::WebThreadImplForPPAPI> main_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(PpapiBlinkPlatformImpl);
 };

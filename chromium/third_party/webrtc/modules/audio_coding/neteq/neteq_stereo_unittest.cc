@@ -16,19 +16,18 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
-#include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
+#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
+#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
 #include "webrtc/modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_generator.h"
 #include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace webrtc {
 
 struct TestParameters {
   int frame_size;
   int sample_rate;
-  int num_channels;
+  size_t num_channels;
 };
 
 // This is a parameterized test. The test parameters are supplied through a
@@ -91,35 +90,35 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
     NetEqDecoder multi_decoder;
     switch (sample_rate_hz_) {
       case 8000:
-        mono_decoder = kDecoderPCM16B;
+        mono_decoder = NetEqDecoder::kDecoderPCM16B;
         if (num_channels_ == 2) {
-          multi_decoder = kDecoderPCM16B_2ch;
+          multi_decoder = NetEqDecoder::kDecoderPCM16B_2ch;
         } else if (num_channels_ == 5) {
-          multi_decoder = kDecoderPCM16B_5ch;
+          multi_decoder = NetEqDecoder::kDecoderPCM16B_5ch;
         } else {
           FAIL() << "Only 2 and 5 channels supported for 8000 Hz.";
         }
         break;
       case 16000:
-        mono_decoder = kDecoderPCM16Bwb;
+        mono_decoder = NetEqDecoder::kDecoderPCM16Bwb;
         if (num_channels_ == 2) {
-          multi_decoder = kDecoderPCM16Bwb_2ch;
+          multi_decoder = NetEqDecoder::kDecoderPCM16Bwb_2ch;
         } else {
           FAIL() << "More than 2 channels is not supported for 16000 Hz.";
         }
         break;
       case 32000:
-        mono_decoder = kDecoderPCM16Bswb32kHz;
+        mono_decoder = NetEqDecoder::kDecoderPCM16Bswb32kHz;
         if (num_channels_ == 2) {
-          multi_decoder = kDecoderPCM16Bswb32kHz_2ch;
+          multi_decoder = NetEqDecoder::kDecoderPCM16Bswb32kHz_2ch;
         } else {
           FAIL() << "More than 2 channels is not supported for 32000 Hz.";
         }
         break;
       case 48000:
-        mono_decoder = kDecoderPCM16Bswb48kHz;
+        mono_decoder = NetEqDecoder::kDecoderPCM16Bswb48kHz;
         if (num_channels_ == 2) {
-          multi_decoder = kDecoderPCM16Bswb48kHz_2ch;
+          multi_decoder = NetEqDecoder::kDecoderPCM16Bswb48kHz_2ch;
         } else {
           FAIL() << "More than 2 channels is not supported for 48000 Hz.";
         }
@@ -127,11 +126,10 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
       default:
         FAIL() << "We shouldn't get here.";
     }
+    ASSERT_EQ(NetEq::kOK, neteq_mono_->RegisterPayloadType(mono_decoder, "mono",
+                                                           kPayloadTypeMono));
     ASSERT_EQ(NetEq::kOK,
-              neteq_mono_->RegisterPayloadType(mono_decoder,
-                                               kPayloadTypeMono));
-    ASSERT_EQ(NetEq::kOK,
-              neteq_->RegisterPayloadType(multi_decoder,
+              neteq_->RegisterPayloadType(multi_decoder, "multi-channel",
                                           kPayloadTypeMulti));
   }
 
@@ -165,7 +163,7 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
 
   void VerifyOutput(size_t num_samples) {
     for (size_t i = 0; i < num_samples; ++i) {
-      for (int j = 0; j < num_channels_; ++j) {
+      for (size_t j = 0; j < num_channels_; ++j) {
         ASSERT_EQ(output_[i], output_multi_channel_[i * num_channels_ + j]) <<
             "Diff in sample " << i << ", channel " << j << ".";
       }
@@ -196,14 +194,16 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
       while (time_now >= next_arrival_time) {
         // Insert packet in mono instance.
         ASSERT_EQ(NetEq::kOK,
-                  neteq_mono_->InsertPacket(rtp_header_mono_, encoded_,
-                                            payload_size_bytes_,
+                  neteq_mono_->InsertPacket(rtp_header_mono_,
+                                            rtc::ArrayView<const uint8_t>(
+                                                encoded_, payload_size_bytes_),
                                             next_arrival_time));
         // Insert packet in multi-channel instance.
-        ASSERT_EQ(NetEq::kOK,
-                  neteq_->InsertPacket(rtp_header_, encoded_multi_channel_,
-                                       multi_payload_size_bytes_,
-                                       next_arrival_time));
+        ASSERT_EQ(NetEq::kOK, neteq_->InsertPacket(
+                                  rtp_header_, rtc::ArrayView<const uint8_t>(
+                                                   encoded_multi_channel_,
+                                                   multi_payload_size_bytes_),
+                                  next_arrival_time));
         // Get next input packets (mono and multi-channel).
         do {
           next_send_time = GetNewPackets();
@@ -214,12 +214,12 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
       NetEqOutputType output_type;
       // Get audio from mono instance.
       size_t samples_per_channel;
-      int num_channels;
+      size_t num_channels;
       EXPECT_EQ(NetEq::kOK,
                 neteq_mono_->GetAudio(kMaxBlockSize, output_,
                                       &samples_per_channel, &num_channels,
                                       &output_type));
-      EXPECT_EQ(1, num_channels);
+      EXPECT_EQ(1u, num_channels);
       EXPECT_EQ(output_size_samples_, samples_per_channel);
       // Get audio from multi-channel instance.
       ASSERT_EQ(NetEq::kOK,
@@ -239,7 +239,7 @@ class NetEqStereoTest : public ::testing::TestWithParam<TestParameters> {
     }
   }
 
-  const int num_channels_;
+  const size_t num_channels_;
   const int sample_rate_hz_;
   const int samples_per_ms_;
   const int frame_size_ms_;
@@ -275,7 +275,12 @@ class NetEqStereoTestNoJitter : public NetEqStereoTest {
   }
 };
 
-TEST_P(NetEqStereoTestNoJitter, DISABLED_ON_ANDROID(RunTest)) {
+#if defined(WEBRTC_ANDROID)
+#define MAYBE_RunTest DISABLED_RunTest
+#else
+#define MAYBE_RunTest RunTest
+#endif
+TEST_P(NetEqStereoTestNoJitter, MAYBE_RunTest) {
   RunTest(8);
 }
 
@@ -300,7 +305,7 @@ class NetEqStereoTestPositiveDrift : public NetEqStereoTest {
   double drift_factor;
 };
 
-TEST_P(NetEqStereoTestPositiveDrift, DISABLED_ON_ANDROID(RunTest)) {
+TEST_P(NetEqStereoTestPositiveDrift, MAYBE_RunTest) {
   RunTest(100);
 }
 
@@ -313,7 +318,7 @@ class NetEqStereoTestNegativeDrift : public NetEqStereoTestPositiveDrift {
   }
 };
 
-TEST_P(NetEqStereoTestNegativeDrift, DISABLED_ON_ANDROID(RunTest)) {
+TEST_P(NetEqStereoTestNegativeDrift, MAYBE_RunTest) {
   RunTest(100);
 }
 
@@ -341,7 +346,7 @@ class NetEqStereoTestDelays : public NetEqStereoTest {
   int frame_index_;
 };
 
-TEST_P(NetEqStereoTestDelays, DISABLED_ON_ANDROID(RunTest)) {
+TEST_P(NetEqStereoTestDelays, MAYBE_RunTest) {
   RunTest(1000);
 }
 
@@ -360,7 +365,10 @@ class NetEqStereoTestLosses : public NetEqStereoTest {
   int frame_index_;
 };
 
-TEST_P(NetEqStereoTestLosses, DISABLED_ON_ANDROID(RunTest)) {
+// TODO(pbos): Enable on non-Android, this went failing while being accidentally
+// disabled on all platforms and not just Android.
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=5387
+TEST_P(NetEqStereoTestLosses, DISABLED_RunTest) {
   RunTest(100);
 }
 

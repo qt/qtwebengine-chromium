@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/win/FontFallbackWin.h"
 
 #include "platform/fonts/FontCache.h"
@@ -162,6 +161,7 @@ void initializeScriptFontMap(ScriptToFontMap& scriptFontMap, SkFontMgr* fontMana
     static const UChar* syriacFonts[] = {L"Estrangelo Edessa", L"Estrangelo Nisibin", L"Code2000", 0};
     static const UChar* myanmarFonts[] = {L"Myanmar Text", L"Padauk", L"Parabaik", L"Myanmar3", L"Code2000", 0};
     static const UChar* gothicFonts[] = {L"Segoe UI Symbol", 0};
+    static const UChar* oghamFonts[] = {L"Segoe UI Symbol", 0};
     static const UChar* hangulFonts[] = {L"gulim", L"Malgun Gothic", 0};
     static const UChar* devanagariFonts[] = {L"mangal", L"Nirmala UI", 0};
     static const UChar* gujaratiFonts[] = {L"shruti", L"Nirmala UI", 0};
@@ -173,6 +173,7 @@ void initializeScriptFontMap(ScriptToFontMap& scriptFontMap, SkFontMgr* fontMana
     static const UChar* thaiFonts[] = {L"tahoma", L"Leelawadee UI", L"Leelawadee", 0};
     static const UChar* hebrewFonts[] = {L"david", L"Segoe UI", 0};
     static const UChar* arabicFonts[] = {L"tahoma", L"Segoe UI", 0};
+    static const UChar* tifinaghFonts[] = {L"ebrima", 0};
     static const UChar* georgianFonts[] = {L"sylfaen", L"Segoe UI", 0};
     static const UChar* armenianFonts[] = {L"sylfaen", L"Segoe UI", 0};
     static const UChar* canadianAboriginalFonts[] = {L"euphemia", L"Gadugi", 0};
@@ -195,6 +196,7 @@ void initializeScriptFontMap(ScriptToFontMap& scriptFontMap, SkFontMgr* fontMana
         {USCRIPT_SYRIAC, syriacFonts},
         {USCRIPT_MYANMAR, myanmarFonts},
         {USCRIPT_GOTHIC, gothicFonts},
+        {USCRIPT_OGHAM, oghamFonts},
         {USCRIPT_HANGUL, hangulFonts},
         {USCRIPT_DEVANAGARI, devanagariFonts},
         {USCRIPT_GUJARATI, gujaratiFonts},
@@ -206,6 +208,7 @@ void initializeScriptFontMap(ScriptToFontMap& scriptFontMap, SkFontMgr* fontMana
         {USCRIPT_THAI, thaiFonts},
         {USCRIPT_HEBREW, hebrewFonts},
         {USCRIPT_ARABIC, arabicFonts},
+        {USCRIPT_TIFINAGH, tifinaghFonts},
         {USCRIPT_GEORGIAN, georgianFonts},
         {USCRIPT_ARMENIAN, armenianFonts},
         {USCRIPT_CANADIAN_ABORIGINAL, canadianAboriginalFonts},

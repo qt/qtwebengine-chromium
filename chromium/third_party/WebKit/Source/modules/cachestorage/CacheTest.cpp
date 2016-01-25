@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/cachestorage/Cache.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -21,10 +20,10 @@
 #include "modules/fetch/Response.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
 
 #include <algorithm>
-#include <gtest/gtest.h>
 #include <string>
 
 namespace blink {

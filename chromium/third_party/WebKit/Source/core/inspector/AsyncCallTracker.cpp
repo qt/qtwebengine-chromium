@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/AsyncCallTracker.h"
 
 #include "core/dom/ContextLifecycleObserver.h"
@@ -57,7 +56,7 @@ namespace blink {
 
 class AsyncCallTracker::ExecutionContextData final : public NoBaseWillBeGarbageCollectedFinalized<ExecutionContextData>, public ContextLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AsyncCallTracker::ExecutionContextData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(AsyncCallTracker::ExecutionContextData);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(AsyncCallTracker::ExecutionContextData);
 public:
     ExecutionContextData(AsyncCallTracker* tracker, ExecutionContext* executionContext)
         : ContextLifecycleObserver(executionContext)

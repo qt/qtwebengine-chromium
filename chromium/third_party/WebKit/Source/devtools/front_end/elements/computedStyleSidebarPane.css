@@ -79,21 +79,6 @@
     cursor: pointer;
 }
 
-/* FIXME: Patch TreeElement styles to use flex for title layout. */
-
-.tree-outline li {
-    display: flex;
-    align-items: baseline;
-}
-
 .tree-outline li::before {
-    float: none;
-    flex: none;
-    -webkit-mask-position: -3px -97px;
-    background-color: rgb(110, 110, 110);
     margin-left: 4px;
-}
-
-.tree-outline li.parent.expanded::before {
-    -webkit-mask-position: -19px -97px;
 }

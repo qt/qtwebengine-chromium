@@ -190,7 +190,7 @@ SkShader* SkPictureShader::refBitmapShader(const SkMatrix& viewMatrix, const SkM
     // Scale down the tile size if larger than maxTextureSize for GPU Path or it should fail on create texture
     if (maxTextureSize) {
         if (scaledSize.width() > maxTextureSize || scaledSize.height() > maxTextureSize) {
-            SkScalar downScale = maxTextureSize / SkMax32(scaledSize.width(), scaledSize.height());
+            SkScalar downScale = maxTextureSize / SkMaxScalar(scaledSize.width(), scaledSize.height());
             scaledSize.set(SkScalarFloorToScalar(SkScalarMul(scaledSize.width(), downScale)),
                            SkScalarFloorToScalar(SkScalarMul(scaledSize.height(), downScale)));
         }
@@ -290,11 +290,6 @@ void SkPictureShader::PictureShaderContext::shadeSpan(int x, int y, SkPMColor ds
     fBitmapShaderContext->shadeSpan(x, y, dstC, count);
 }
 
-void SkPictureShader::PictureShaderContext::shadeSpan16(int x, int y, uint16_t dstC[], int count) {
-    SkASSERT(fBitmapShaderContext);
-    fBitmapShaderContext->shadeSpan16(x, y, dstC, count);
-}
-
 #ifndef SK_IGNORE_TO_STRING
 void SkPictureShader::toString(SkString* str) const {
     static const char* gTileModeName[SkShader::kTileModeCount] = {
@@ -318,8 +313,7 @@ const GrFragmentProcessor* SkPictureShader::asFragmentProcessor(
                                                     GrContext* context,
                                                     const SkMatrix& viewM,
                                                     const SkMatrix* localMatrix,
-                                                    SkFilterQuality fq,
-                                                    GrProcessorDataManager* procDataManager) const {
+                                                    SkFilterQuality fq) const {
     int maxTextureSize = 0;
     if (context) {
         maxTextureSize = context->caps()->maxTextureSize();
@@ -328,6 +322,6 @@ const GrFragmentProcessor* SkPictureShader::asFragmentProcessor(
     if (!bitmapShader) {
         return nullptr;
     }
-    return bitmapShader->asFragmentProcessor(context, viewM, nullptr, fq, procDataManager);
+    return bitmapShader->asFragmentProcessor(context, viewM, nullptr, fq);
 }
 #endif

@@ -5,11 +5,13 @@
 #ifndef NET_QUIC_QUIC_STREAM_SEQUENCER_H_
 #define NET_QUIC_QUIC_STREAM_SEQUENCER_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <string>
 
-#include "base/basictypes.h"
-#include "net/base/iovec.h"
+#include "base/macros.h"
+#include "net/quic/quic_frame_list.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -18,6 +20,7 @@ namespace test {
 class QuicStreamSequencerPeer;
 }  // namespace test
 
+class QuicClock;
 class QuicSession;
 class ReliableQuicStream;
 
@@ -25,20 +28,7 @@ class ReliableQuicStream;
 // up to the next layer.
 class NET_EXPORT_PRIVATE QuicStreamSequencer {
  public:
-  // A contiguous segment received by a QUIC stream.
-  struct FrameData {
-    FrameData(QuicStreamOffset offset, const std::string& segment);
-
-    const QuicStreamOffset offset;
-    std::string segment;
-  };
-
-  // TODO(alyssar) use something better than strings.
-  // Maybe write new frames into a ring buffer, and keep track of consumed
-  // bytes, and gaps.
-  typedef std::list<FrameData> FrameList;
-
-  explicit QuicStreamSequencer(ReliableQuicStream* quic_stream);
+  QuicStreamSequencer(ReliableQuicStream* quic_stream, const QuicClock* clock);
   virtual ~QuicStreamSequencer();
 
   // If the frame is the next one we need in order to process in-order data,
@@ -54,6 +44,12 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Fills in up to iov_len iovecs with the next readable regions.  Returns the
   // number of iovs used.  Non-destructive of the underlying data.
   int GetReadableRegions(iovec* iov, size_t iov_len) const;
+
+  // Fills in one iovec with the next readable region.  |timestamp| is
+  // data arrived at the sequencer, and is used for measuring head of
+  // line blocking (HOL).  Returns false if there is no readable
+  // region available.
+  bool GetReadableRegion(iovec* iov, QuicTime* timestamp) const;
 
   // Copies the data into the iov_len buffers provided.  Returns the number of
   // bytes read.  Any buffered data no longer in use will be released.
@@ -79,8 +75,16 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Blocks processing of frames until |SetUnblocked| is called.
   void SetBlockedUntilFlush();
 
-  size_t num_bytes_buffered() const { return num_bytes_buffered_; }
-  QuicStreamOffset num_bytes_consumed() const { return num_bytes_consumed_; }
+  // Sets the sequencer to discard all incoming data itself and not call
+  // |stream_->OnDataAvailable()|.  |stream_->OnFinRead()| will be called
+  // automatically when the FIN is consumed (which may be immediately).
+  void StopReading();
+
+  // Number of bytes in the buffer right now.
+  size_t NumBytesBuffered() const;
+
+  // Number of bytes has been consumed.
+  QuicStreamOffset NumBytesConsumed() const;
 
   int num_frames_received() const { return num_frames_received_; }
 
@@ -90,22 +94,14 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
 
   int num_early_frames_received() const { return num_early_frames_received_; }
 
+  bool ignore_read_data() const { return ignore_read_data_; }
+
  private:
   friend class test::QuicStreamSequencerPeer;
 
-  // Finds the place the frame should be inserted.  If an identical frame is
-  // present, stops on the identical frame.
-  FrameList::iterator FindInsertionPoint(const QuicStreamFrame& frame);
-
-  // Returns true if |frame| contains data which overlaps buffered data
-  // (indicating an invalid stream frame has been received).
-  bool FrameOverlapsBufferedData(
-      const QuicStreamFrame& frame,
-      FrameList::const_iterator insertion_point) const;
-
-  // Returns true if the sequencer has received this frame before.
-  bool IsDuplicate(const QuicStreamFrame& frame,
-                   FrameList::const_iterator insertion_point) const;
+  // Deletes and records as consumed any buffered data that is now in-sequence.
+  // (To be called only after StopReading has been called.)
+  void FlushBufferedFrames();
 
   // Wait until we've seen 'offset' bytes, and then terminate the stream.
   void CloseStreamAtOffset(QuicStreamOffset offset);
@@ -114,18 +110,11 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // the stream of FIN, and clear buffers.
   bool MaybeCloseStream();
 
-  // Called whenever bytes are consumed by the stream. Updates
-  // num_bytes_consumed_ and num_bytes_buffered_.
-  void RecordBytesConsumed(size_t bytes_consumed);
-
   // The stream which owns this sequencer.
   ReliableQuicStream* stream_;
 
-  // The last data consumed by the stream.
-  QuicStreamOffset num_bytes_consumed_;
-
-  // Stores buffered frames in offset order.
-  FrameList buffered_frames_;
+  // Stores received data in offset order.
+  scoped_ptr<QuicStreamSequencerBufferInterface> buffered_frames_;
 
   // The offset, if any, we got a stream termination for.  When this many bytes
   // have been processed, the sequencer will be closed.
@@ -134,9 +123,6 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // If true, the sequencer is blocked from passing data to the stream and will
   // buffer all new incoming data until FlushBufferedFrames is called.
   bool blocked_;
-
-  // Tracks how many bytes the sequencer has buffered.
-  size_t num_bytes_buffered_;
 
   // Count of the number of frames received.
   int num_frames_received_;
@@ -147,6 +133,12 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // Count of the number of frames received before all previous frames were
   // received.
   int num_early_frames_received_;
+
+  // Not owned.
+  const QuicClock* clock_;
+
+  // If true, all incoming data will be discarded.
+  bool ignore_read_data_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencer);
 };

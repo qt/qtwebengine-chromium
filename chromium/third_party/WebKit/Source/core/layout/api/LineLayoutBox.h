@@ -27,7 +27,19 @@ public:
         ASSERT(!item || item.isBox());
     }
 
+    explicit LineLayoutBox(std::nullptr_t) : LineLayoutBoxModel(nullptr) { }
+
     LineLayoutBox() { }
+
+    LayoutPoint location() const
+    {
+        return toBox()->location();
+    }
+
+    LayoutSize size() const
+    {
+        return toBox()->size();
+    }
 
     void setLogicalHeight(LayoutUnit size)
     {

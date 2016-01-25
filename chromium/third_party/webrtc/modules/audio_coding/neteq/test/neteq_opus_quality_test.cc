@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/opus/interface/opus_interface.h"
+#include "webrtc/modules/audio_coding/codecs/opus/opus_interface.h"
 #include "webrtc/modules/audio_coding/codecs/opus/opus_inst.h"
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_quality_test.h"
 
@@ -123,7 +123,7 @@ NetEqOpusQualityTest::NetEqOpusQualityTest()
     : NetEqQualityTest(kOpusBlockDurationMs * FLAGS_sub_packets,
                        kOpusSamplingKhz,
                        kOpusSamplingKhz,
-                       kDecoderOpus),
+                       NetEqDecoder::kDecoderOpus),
       opus_encoder_(NULL),
       repacketizer_(NULL),
       sub_block_size_samples_(
@@ -137,7 +137,7 @@ NetEqOpusQualityTest::NetEqOpusQualityTest()
       sub_packets_(FLAGS_sub_packets) {
   // Redefine decoder type if input is stereo.
   if (channels_ > 1) {
-    decoder_type_ = kDecoderOpus_2ch;
+    decoder_type_ = NetEqDecoder::kDecoderOpus_2ch;
   }
   application_ = FLAGS_application;
 }

@@ -36,13 +36,20 @@ PUBLIC_API_OWNERS = (
 AUTHORS_FILE_NAME = 'AUTHORS'
 
 DOCS_PREVIEW_URL = 'https://skia.org/?cl='
+GOLD_TRYBOT_URL = ('https://gold.skia.org/search2?unt=true'
+                   '&query=source_type%3Dgm&master=false&issue=')
 
-# Path to CQ bots feature is described in skbug.com/4364
+# Path to CQ bots feature is described in https://bug.skia.org/4364
 PATH_PREFIX_TO_EXTRA_TRYBOTS = {
     # pylint: disable=line-too-long
     'cmake/': 'client.skia.compile:Build-Mac10.9-Clang-x86_64-Release-CMake-Trybot,Build-Ubuntu-GCC-x86_64-Release-CMake-Trybot',
     # pylint: disable=line-too-long
     'src/opts/': 'client.skia:Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-SKNX_NO_SIMD-Trybot',
+
+    'include/private/SkAtomics.h': ('client.skia:'
+      'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-TSAN-Trybot,'
+      'Test-Ubuntu-GCC-Golo-GPU-GT610-x86_64-Release-TSAN-Trybot'
+    ),
 
     # Below are examples to show what is possible with this feature.
     # 'src/svg/': 'master1:abc;master2:def',
@@ -128,7 +135,7 @@ def _IfDefChecks(input_api, output_api):
     results.append(
         output_api.PresubmitError(
             'The following files have #if or #ifdef before includes:\n%s\n\n'
-            'See skbug.com/3362 for why this should be fixed.' %
+            'See https://bug.skia.org/3362 for why this should be fixed.' %
                 '\n'.join(failing_files)))
   return results
 
@@ -342,6 +349,7 @@ def PostUploadHook(cl, change, output_api):
   """git cl upload will call this hook after the issue is created/modified.
 
   This hook does the following:
+  * Adds a link to the CL's Gold trybot results.
   * Adds a link to preview docs changes if there are any docs changes in the CL.
   * Adds 'NOTRY=true' if the CL contains only docs changes.
   * Adds 'NOTREECHECKS=true' for non master branch changes since they do not
@@ -371,6 +379,15 @@ def PostUploadHook(cl, change, output_api):
   if issue and rietveld_obj:
     original_description = rietveld_obj.get_description(issue)
     new_description = original_description
+
+    # Add GOLD_TRYBOT_URL if it does not exist yet.
+    if not re.search(r'^GOLD_TRYBOT_URL=', new_description, re.M | re.I):
+      new_description += '\nGOLD_TRYBOT_URL= %s%s' % (GOLD_TRYBOT_URL, issue)
+      results.append(
+          output_api.PresubmitNotifyResult(
+              'Added link to Gold trybot runs to the CL\'s description.\n'
+              'Note: Results may take sometime to be populated after trybots '
+              'complete.'))
 
     # If the change includes only doc changes then add NOTRY=true in the
     # CL's description if it does not exist yet.

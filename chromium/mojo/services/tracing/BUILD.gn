@@ -9,10 +9,12 @@ mojo_native_application("tracing") {
     "main.cc",
   ]
 
+  avoid_runner_cycle = true
+
   deps = [
     ":lib",
-    "//mojo/application/public/cpp",
-    "//third_party/mojo/src/mojo/public/cpp/system",
+    "//mojo/public/cpp/system",
+    "//mojo/shell/public/cpp",
   ]
 }
 
@@ -20,14 +22,16 @@ source_set("lib") {
   sources = [
     "trace_data_sink.cc",
     "trace_data_sink.h",
+    "trace_recorder_impl.cc",
+    "trace_recorder_impl.h",
     "tracing_app.cc",
     "tracing_app.h",
   ]
 
   deps = [
     "//base",
-    "//mojo/application/public/cpp",
     "//mojo/common:common_base",
     "//mojo/services/tracing/public/interfaces",
+    "//mojo/shell/public/cpp",
   ]
 }

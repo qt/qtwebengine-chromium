@@ -21,25 +21,36 @@
  *
  */
 
-#include "config.h"
 #include "core/style/StyleFetchedImage.h"
 
 #include "core/css/CSSImageValue.h"
 #include "core/fetch/ImageResource.h"
 #include "core/layout/LayoutObject.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "core/svg/graphics/SVGImageForContainer.h"
 
 namespace blink {
 
-StyleFetchedImage::StyleFetchedImage(ImageResource* image, Document* document)
+StyleFetchedImage::StyleFetchedImage(ImageResource* image, Document* document, const KURL& url)
     : m_image(image)
     , m_document(document)
+    , m_url(url)
 {
     m_isImageResource = true;
     m_image->addClient(this);
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
 }
 
 StyleFetchedImage::~StyleFetchedImage()
+{
+#if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+void StyleFetchedImage::dispose()
 {
     m_image->removeClient(this);
 }
@@ -64,9 +75,9 @@ PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImage::computedCSSValue() const
     return cssValue();
 }
 
-bool StyleFetchedImage::canRender(const LayoutObject& layoutObject, float multiplier) const
+bool StyleFetchedImage::canRender() const
 {
-    return m_image->canRender(layoutObject, multiplier);
+    return m_image->canRender();
 }
 
 bool StyleFetchedImage::isLoaded() const
@@ -81,7 +92,7 @@ bool StyleFetchedImage::errorOccurred() const
 
 LayoutSize StyleFetchedImage::imageSize(const LayoutObject* layoutObject, float multiplier) const
 {
-    return m_image->imageSizeForLayoutObject(layoutObject, multiplier);
+    return m_image->imageSize(LayoutObject::shouldRespectImageOrientation(layoutObject), multiplier);
 }
 
 bool StyleFetchedImage::imageHasRelativeWidth() const
@@ -104,11 +115,6 @@ bool StyleFetchedImage::usesImageContainerSize() const
     return m_image->usesImageContainerSize();
 }
 
-void StyleFetchedImage::setContainerSizeForLayoutObject(const LayoutObject* layoutObject, const IntSize& imageContainerSize, float imageContainerZoomFactor)
-{
-    m_image->setContainerSizeForLayoutObject(layoutObject, imageContainerSize, imageContainerZoomFactor);
-}
-
 void StyleFetchedImage::addClient(LayoutObject* layoutObject)
 {
     m_image->addClient(layoutObject);
@@ -127,14 +133,18 @@ void StyleFetchedImage::notifyFinished(Resource* resource)
     m_document.clear();
 }
 
-PassRefPtr<Image> StyleFetchedImage::image(const LayoutObject* layoutObject, const IntSize&) const
+PassRefPtr<Image> StyleFetchedImage::image(const LayoutObject*, const IntSize& containerSize, float zoom) const
 {
-    return m_image->imageForLayoutObject(layoutObject);
+    if (!m_image->image()->isSVGImage())
+        return m_image->image();
+
+    return SVGImageForContainer::create(toSVGImage(m_image->image()), containerSize, zoom, m_url);
 }
 
 bool StyleFetchedImage::knownToBeOpaque(const LayoutObject* layoutObject) const
 {
-    return m_image->currentFrameKnownToBeOpaque(layoutObject);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *m_image.get()));
+    return m_image->image()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
 }
 
 DEFINE_TRACE(StyleFetchedImage)

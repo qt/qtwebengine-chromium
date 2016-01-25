@@ -29,8 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/mediastream/UserMediaRequest.h"
 
 #include "bindings/core/v8/Dictionary.h"
@@ -43,20 +41,24 @@
 #include "modules/mediastream/MediaConstraintsImpl.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/mediastream/MediaStreamConstraints.h"
+#include "modules/mediastream/MediaTrackConstraintSet.h"
 #include "modules/mediastream/UserMediaController.h"
 #include "platform/mediastream/MediaStreamCenter.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
 
 namespace blink {
 
-static WebMediaConstraints parseOptions(const BooleanOrDictionary& options, ExceptionState& exceptionState)
+static WebMediaConstraints parseOptions(const BooleanOrMediaTrackConstraintSet& options, MediaErrorState& errorState)
 {
     WebMediaConstraints constraints;
 
     Dictionary constraintsDictionary;
-    if (options.isDictionary()) {
-        constraints = MediaConstraintsImpl::create(options.getAsDictionary(), exceptionState);
+    if (options.isNull()) {
+        // Do nothing.
+    } else if (options.isMediaTrackConstraintSet()) {
+        constraints = MediaConstraintsImpl::create(options.getAsMediaTrackConstraintSet(), errorState);
     } else {
+        ASSERT(options.isBoolean());
         if (options.getAsBoolean()) {
             constraints = MediaConstraintsImpl::create();
         }
@@ -65,18 +67,18 @@ static WebMediaConstraints parseOptions(const BooleanOrDictionary& options, Exce
     return constraints;
 }
 
-UserMediaRequest* UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const MediaStreamConstraints& options, NavigatorUserMediaSuccessCallback* successCallback, NavigatorUserMediaErrorCallback* errorCallback, ExceptionState& exceptionState)
+UserMediaRequest* UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const MediaStreamConstraints& options, NavigatorUserMediaSuccessCallback* successCallback, NavigatorUserMediaErrorCallback* errorCallback, MediaErrorState& errorState)
 {
-    WebMediaConstraints audio = parseOptions(options.audio(), exceptionState);
-    if (exceptionState.hadException())
+    WebMediaConstraints audio = parseOptions(options.audio(), errorState);
+    if (errorState.hadException())
         return nullptr;
 
-    WebMediaConstraints video = parseOptions(options.video(), exceptionState);
-    if (exceptionState.hadException())
+    WebMediaConstraints video = parseOptions(options.video(), errorState);
+    if (errorState.hadException())
         return nullptr;
 
     if (audio.isNull() && video.isNull()) {
-        exceptionState.throwDOMException(SyntaxError, "At least one of audio and video must be requested");
+        errorState.throwDOMException(SyntaxError, "At least one of audio and video must be requested");
         return nullptr;
     }
 
@@ -149,7 +151,7 @@ void UserMediaRequest::start()
         m_controller->requestUserMedia(this);
 }
 
-void UserMediaRequest::succeed(PassRefPtr<MediaStreamDescriptor> streamDescriptor)
+void UserMediaRequest::succeed(MediaStreamDescriptor* streamDescriptor)
 {
     if (!executionContext())
         return;

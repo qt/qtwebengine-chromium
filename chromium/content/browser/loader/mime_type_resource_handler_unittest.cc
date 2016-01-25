@@ -4,6 +4,8 @@
 
 #include "content/browser/loader/mime_type_resource_handler.h"
 
+#include <stdint.h>
+
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -90,10 +92,10 @@ class TestResourceDispatcherHost : public ResourceDispatcherHostImpl {
       net::URLRequest* request,
       bool is_content_initiated,
       bool must_download,
-      uint32 id,
+      uint32_t id,
       scoped_ptr<DownloadSaveInfo> save_info,
       const DownloadUrlParameters::OnStartedCallback& started_cb) override {
-    return scoped_ptr<ResourceHandler>(new TestResourceHandler).Pass();
+    return scoped_ptr<ResourceHandler>(new TestResourceHandler);
   }
 
   scoped_ptr<ResourceHandler> MaybeInterceptAsStream(
@@ -104,7 +106,7 @@ class TestResourceDispatcherHost : public ResourceDispatcherHostImpl {
     intercepted_as_stream_count_++;
     if (stream_has_handler_) {
       intercepted_as_stream_ = true;
-      return scoped_ptr<ResourceHandler>(new TestResourceHandler).Pass();
+      return scoped_ptr<ResourceHandler>(new TestResourceHandler);
     } else {
       return scoped_ptr<ResourceHandler>();
     }
@@ -248,17 +250,17 @@ bool MimeTypeResourceHandlerTest::TestStreamIsIntercepted(
       is_main_frame,    // is_main_frame
       false,            // parent_is_main_frame
       allow_download,   // allow_download
-      true);            // is_async
+      true,             // is_async
+      false);           // is_using_lofi
 
   TestResourceDispatcherHost host(stream_has_handler_);
   TestResourceDispatcherHostDelegate host_delegate(must_download);
   host.SetDelegate(&host_delegate);
 
   TestFakePluginService plugin_service(plugin_available_, plugin_stale_);
-  scoped_ptr<ResourceHandler> mime_sniffing_handler(
-      new MimeTypeResourceHandler(
-          scoped_ptr<ResourceHandler>(new TestResourceHandler()).Pass(), &host,
-          &plugin_service, request.get()));
+  scoped_ptr<ResourceHandler> mime_sniffing_handler(new MimeTypeResourceHandler(
+      scoped_ptr<ResourceHandler>(new TestResourceHandler()), &host,
+      &plugin_service, request.get()));
   TestResourceController resource_controller;
   mime_sniffing_handler->SetController(&resource_controller);
 
@@ -314,6 +316,14 @@ TEST_F(MimeTypeResourceHandlerTest, StreamHandling) {
   allow_download = false;
   must_download = false;
   resource_type = RESOURCE_TYPE_SUB_RESOURCE;
+  EXPECT_FALSE(
+      TestStreamIsIntercepted(allow_download, must_download, resource_type));
+
+  // Plugin resource request with download not allowed. Stream shouldn't be
+  // intercepted.
+  allow_download = false;
+  must_download = false;
+  resource_type = RESOURCE_TYPE_PLUGIN_RESOURCE;
   EXPECT_FALSE(
       TestStreamIsIntercepted(allow_download, must_download, resource_type));
 

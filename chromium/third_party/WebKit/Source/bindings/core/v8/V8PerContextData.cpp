@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8PerContextData.h"
 
 #include "bindings/core/v8/ScriptState.h"
@@ -116,11 +115,14 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(const Wrapp
             return v8::Local<v8::Function>();
     }
 
-    v8::Local<v8::Object> prototypeObject = interfaceObject->Get(currentContext, v8AtomicString(m_isolate, "prototype")).ToLocalChecked().As<v8::Object>();
+    v8::Local<v8::Value> prototypeValue;
+    if (!interfaceObject->Get(currentContext, v8AtomicString(m_isolate, "prototype")).ToLocal(&prototypeValue) || !prototypeValue->IsObject())
+        return v8::Local<v8::Function>();
+    v8::Local<v8::Object> prototypeObject = prototypeValue.As<v8::Object>();
     if (prototypeObject->InternalFieldCount() == v8PrototypeInternalFieldcount
         && type->wrapperTypePrototype == WrapperTypeInfo::WrapperTypeObjectPrototype)
         prototypeObject->SetAlignedPointerInInternalField(v8PrototypeTypeIndex, const_cast<WrapperTypeInfo*>(type));
-    type->preparePrototypeAndInterfaceObject(m_isolate, prototypeObject, interfaceObject, interfaceTemplate);
+    type->preparePrototypeAndInterfaceObject(currentContext, prototypeObject, interfaceObject, interfaceTemplate);
     if (type->wrapperTypePrototype == WrapperTypeInfo::WrapperTypeExceptionPrototype) {
         if (!v8CallBoolean(prototypeObject->SetPrototype(currentContext, m_errorPrototype.newLocal(m_isolate))))
             return v8::Local<v8::Function>();

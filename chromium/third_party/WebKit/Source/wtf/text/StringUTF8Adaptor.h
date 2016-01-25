@@ -31,6 +31,7 @@
 #ifndef StringUTF8Adaptor_h
 #define StringUTF8Adaptor_h
 
+#include "base/strings/string_piece.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
@@ -42,12 +43,7 @@ namespace WTF {
 // contain only ASCII characters.
 class StringUTF8Adaptor {
 public:
-    enum ShouldNormalize {
-        DoNotNormalize,
-        Normalize
-    };
-
-    explicit StringUTF8Adaptor(const String& string, ShouldNormalize normalize = DoNotNormalize, UnencodableHandling handling = EntitiesForUnencodables)
+    explicit StringUTF8Adaptor(const String& string)
         : m_data(0)
         , m_length(0)
     {
@@ -61,10 +57,7 @@ public:
             m_data = reinterpret_cast<const char*>(string.characters8());
             m_length = string.length();
         } else {
-            if (normalize == Normalize)
-                m_utf8Buffer = UTF8Encoding().normalizeAndEncode(string, handling);
-            else
-                m_utf8Buffer = string.utf8();
+            m_utf8Buffer = string.utf8();
             m_data = m_utf8Buffer.data();
             m_length = m_utf8Buffer.length();
         }
@@ -72,6 +65,8 @@ public:
 
     const char* data() const { return m_data; }
     size_t length() const { return m_length; }
+
+    base::StringPiece asStringPiece() const { return base::StringPiece(m_data, m_length); }
 
 private:
     CString m_utf8Buffer;

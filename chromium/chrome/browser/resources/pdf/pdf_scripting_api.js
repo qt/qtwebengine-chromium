@@ -56,7 +56,8 @@ function PDFScriptingAPI(window, plugin) {
   this.setPlugin(plugin);
 
   window.addEventListener('message', function(event) {
-    if (event.origin != 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai') {
+    if (event.origin != 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai' &&
+        event.origin != 'chrome://print') {
       console.error('Received message that was not from the extension: ' +
                     event);
       return;
@@ -271,26 +272,13 @@ PDFScriptingAPI.prototype = {
 function PDFCreateOutOfProcessPlugin(src) {
   var client = new PDFScriptingAPI(window);
   var iframe = window.document.createElement('iframe');
+  iframe.setAttribute('src', 'pdf_preview.html?' + src);
   // Prevent the frame from being tab-focusable.
   iframe.setAttribute('tabindex', '-1');
 
-  // TODO(raymes): This below is a hack to tell if the material design PDF UI
-  // has been enabled. Remove this as soon as we remove the material design PDF
-  // flag.
-  var EXTENSION_URL = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/';
-  var PAGE_NAME = 'index.html';
-  var MATERIAL_PAGE_NAME = 'index-material.html';
-  fetch(EXTENSION_URL + PAGE_NAME, {
-    method: 'get'
-  }).then(function() {
-    iframe.setAttribute('src', EXTENSION_URL + PAGE_NAME + '?' + src);
-  }, function() {
-    iframe.setAttribute('src', EXTENSION_URL + MATERIAL_PAGE_NAME + '?' + src);
-  }).then(function() {
-    iframe.onload = function() {
-      client.setPlugin(iframe.contentWindow);
-    };
-  });
+  iframe.onload = function() {
+    client.setPlugin(iframe.contentWindow);
+  };
 
   // Add the functions to the iframe so that they can be called directly.
   iframe.setViewportChangedCallback =

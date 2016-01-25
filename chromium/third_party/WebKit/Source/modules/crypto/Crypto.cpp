@@ -27,7 +27,6 @@
  */
 
 
-#include "config.h"
 #include "modules/crypto/Crypto.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -55,10 +54,7 @@ bool isIntegerArray(DOMArrayBufferView* array)
 
 DOMArrayBufferView* Crypto::getRandomValues(DOMArrayBufferView* array, ExceptionState& exceptionState)
 {
-    if (!array) {
-        exceptionState.throwDOMException(TypeMismatchError, "The provided ArrayBufferView is null.");
-        return nullptr;
-    }
+    ASSERT(array);
     if (!isIntegerArray(array)) {
         exceptionState.throwDOMException(TypeMismatchError, String::format("The provided ArrayBufferView is of type '%s', which is not an integer array type.", array->typeName()));
         return nullptr;

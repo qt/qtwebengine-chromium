@@ -5,7 +5,8 @@
 #ifndef MEDIA_VIDEO_JPEG_DECODE_ACCELERATOR_H_
 #define MEDIA_VIDEO_JPEG_DECODE_ACCELERATOR_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "media/base/bitstream_buffer.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"

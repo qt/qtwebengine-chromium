@@ -49,7 +49,7 @@ class AVFoundationVideoCapturer : public cricket::VideoCapturer {
   bool IsScreencast() const override {
     return false;
   }
-  bool GetPreferredFourccs(std::vector<uint32>* fourccs) override {
+  bool GetPreferredFourccs(std::vector<uint32_t>* fourccs) override {
     fourccs->push_back(cricket::FOURCC_NV12);
     return true;
   }
@@ -71,7 +71,6 @@ class AVFoundationVideoCapturer : public cricket::VideoCapturer {
 
   RTCAVFoundationVideoCapturerInternal* _capturer;
   rtc::Thread* _startThread;  // Set in Start(), unset in Stop().
-  uint64_t _startTime;
 };  // AVFoundationVideoCapturer
 
 }  // namespace webrtc

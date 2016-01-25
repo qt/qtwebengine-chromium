@@ -17,7 +17,7 @@
 
 #include "webrtc/base/bitbuffer.h"
 #include "webrtc/base/checks.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/base/logging.h"
 
 #define RETURN_FALSE_ON_ERROR(x) \
   if (!(x)) {                    \
@@ -47,10 +47,6 @@ int16_t Tl0PicIdxField(const RTPVideoHeaderVP9& hdr, uint8_t def) {
   return (hdr.tl0_pic_idx == kNoTl0PicIdx) ? def : hdr.tl0_pic_idx;
 }
 
-uint8_t GofIdxField(const RTPVideoHeaderVP9& hdr, uint8_t def) {
-  return (hdr.gof_idx == kNoGofIdx) ? def : hdr.gof_idx;
-}
-
 // Picture ID:
 //
 //      +-+-+-+-+-+-+-+-+
@@ -74,19 +70,17 @@ bool PictureIdPresent(const RTPVideoHeaderVP9& hdr) {
 // Flexible mode (F=1):     Non-flexible mode (F=0):
 //
 //      +-+-+-+-+-+-+-+-+   +-+-+-+-+-+-+-+-+
-// L:   |  T  |U|  S  |D|   |GOF_IDX|  S  |D|
+// L:   |  T  |U|  S  |D|   |  T  |U|  S  |D|
 //      +-+-+-+-+-+-+-+-+   +-+-+-+-+-+-+-+-+
 //                          |   TL0PICIDX   |
 //                          +-+-+-+-+-+-+-+-+
 //
 size_t LayerInfoLength(const RTPVideoHeaderVP9& hdr) {
-  if (hdr.flexible_mode) {
-    return (hdr.temporal_idx == kNoTemporalIdx &&
-            hdr.spatial_idx == kNoSpatialIdx) ? 0 : 1;
-  } else {
-    return (hdr.gof_idx == kNoGofIdx &&
-            hdr.spatial_idx == kNoSpatialIdx) ? 0 : 2;
+  if (hdr.temporal_idx == kNoTemporalIdx &&
+      hdr.spatial_idx == kNoSpatialIdx) {
+    return 0;
   }
+  return hdr.flexible_mode ? 1 : 2;
 }
 
 bool LayerInfoPresent(const RTPVideoHeaderVP9& hdr) {
@@ -95,30 +89,24 @@ bool LayerInfoPresent(const RTPVideoHeaderVP9& hdr) {
 
 // Reference indices:
 //
-//      +-+-+-+-+-+-+-+-+  -|           P=1,F=1: At least one reference index
-// P,F: | P_DIFF    |X|N|   .                    has to be specified.
-//      +-+-+-+-+-+-+-+-+   . up to 3 times
-// X:   |EXTENDED P_DIFF|   .               X=1: Extended P_DIFF is used (14
-//      +-+-+-+-+-+-+-+-+  -|                    bits). Else 6 bits are used.
-//                                          N=1: An additional P_DIFF follows
-//                                               current P_DIFF.
+//      +-+-+-+-+-+-+-+-+                P=1,F=1: At least one reference index
+// P,F: | P_DIFF      |N|  up to 3 times          has to be specified.
+//      +-+-+-+-+-+-+-+-+                    N=1: An additional P_DIFF follows
+//                                                current P_DIFF.
+//
 size_t RefIndicesLength(const RTPVideoHeaderVP9& hdr) {
   if (!hdr.inter_pic_predicted || !hdr.flexible_mode)
     return 0;
 
   RTC_DCHECK_GT(hdr.num_ref_pics, 0U);
   RTC_DCHECK_LE(hdr.num_ref_pics, kMaxVp9RefPics);
-  size_t length = 0;
-  for (size_t i = 0; i < hdr.num_ref_pics; ++i) {
-    length += hdr.pid_diff[i] > 0x3F ? 2 : 1;   // P_DIFF > 6 bits => extended
-  }
-  return length;
+  return hdr.num_ref_pics;
 }
 
 // Scalability structure (SS).
 //
 //      +-+-+-+-+-+-+-+-+
-// V:   | N_S |Y|  N_G  |
+// V:   | N_S |Y|G|-|-|-|
 //      +-+-+-+-+-+-+-+-+              -|
 // Y:   |     WIDTH     | (OPTIONAL)    .
 //      +               +               .
@@ -127,9 +115,11 @@ size_t RefIndicesLength(const RTPVideoHeaderVP9& hdr) {
 //      |     HEIGHT    | (OPTIONAL)    .
 //      +               +               .
 //      |               | (OPTIONAL)    .
-//      +-+-+-+-+-+-+-+-+              -|           -|
+//      +-+-+-+-+-+-+-+-+              -|
+// G:   |      N_G      | (OPTIONAL)
+//      +-+-+-+-+-+-+-+-+                           -|
 // N_G: |  T  |U| R |-|-| (OPTIONAL)                 .
-//      +-+-+-+-+-+-+-+-+              -|            . N_G + 1 times
+//      +-+-+-+-+-+-+-+-+              -|            . N_G times
 //      |    P_DIFF     | (OPTIONAL)    . R times    .
 //      +-+-+-+-+-+-+-+-+              -|           -|
 //
@@ -139,11 +129,13 @@ size_t SsDataLength(const RTPVideoHeaderVP9& hdr) {
 
   RTC_DCHECK_GT(hdr.num_spatial_layers, 0U);
   RTC_DCHECK_LE(hdr.num_spatial_layers, kMaxVp9NumberOfSpatialLayers);
-  RTC_DCHECK_GT(hdr.gof.num_frames_in_gof, 0U);
   RTC_DCHECK_LE(hdr.gof.num_frames_in_gof, kMaxVp9FramesInGof);
   size_t length = 1;                           // V
   if (hdr.spatial_layer_resolution_present) {
     length += 4 * hdr.num_spatial_layers;      // Y
+  }
+  if (hdr.gof.num_frames_in_gof > 0) {
+    ++length;                                  // G
   }
   // N_G
   length += hdr.gof.num_frames_in_gof;  // T, U, R
@@ -200,8 +192,8 @@ bool WritePictureId(const RTPVideoHeaderVP9& vp9,
 // L:   |  T  |U|  S  |D|
 //      +-+-+-+-+-+-+-+-+
 //
-bool WriteLayerInfoFlexibleMode(const RTPVideoHeaderVP9& vp9,
-                                rtc::BitBufferWriter* writer) {
+bool WriteLayerInfoCommon(const RTPVideoHeaderVP9& vp9,
+                          rtc::BitBufferWriter* writer) {
   RETURN_FALSE_ON_ERROR(writer->WriteBits(TemporalIdxField(vp9, 0), 3));
   RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.temporal_up_switch ? 1 : 0, 1));
   RETURN_FALSE_ON_ERROR(writer->WriteBits(SpatialIdxField(vp9, 0), 3));
@@ -212,57 +204,45 @@ bool WriteLayerInfoFlexibleMode(const RTPVideoHeaderVP9& vp9,
 // Non-flexible mode (F=0):
 //
 //      +-+-+-+-+-+-+-+-+
-// L:   |GOF_IDX|  S  |D|
+// L:   |  T  |U|  S  |D|
 //      +-+-+-+-+-+-+-+-+
 //      |   TL0PICIDX   |
 //      +-+-+-+-+-+-+-+-+
 //
 bool WriteLayerInfoNonFlexibleMode(const RTPVideoHeaderVP9& vp9,
                                    rtc::BitBufferWriter* writer) {
-  RETURN_FALSE_ON_ERROR(writer->WriteBits(GofIdxField(vp9, 0), 4));
-  RETURN_FALSE_ON_ERROR(writer->WriteBits(SpatialIdxField(vp9, 0), 3));
-  RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.inter_layer_predicted ? 1: 0, 1));
   RETURN_FALSE_ON_ERROR(writer->WriteUInt8(Tl0PicIdxField(vp9, 0)));
   return true;
 }
 
 bool WriteLayerInfo(const RTPVideoHeaderVP9& vp9,
                     rtc::BitBufferWriter* writer) {
-  if (vp9.flexible_mode) {
-    return WriteLayerInfoFlexibleMode(vp9, writer);
-  } else {
-    return WriteLayerInfoNonFlexibleMode(vp9, writer);
-  }
+  if (!WriteLayerInfoCommon(vp9, writer))
+    return false;
+
+  if (vp9.flexible_mode)
+    return true;
+
+  return WriteLayerInfoNonFlexibleMode(vp9, writer);
 }
 
 // Reference indices:
 //
-//      +-+-+-+-+-+-+-+-+  -|           P=1,F=1: At least one reference index
-// P,F: | P_DIFF    |X|N|   .                    has to be specified.
-//      +-+-+-+-+-+-+-+-+   . up to 3 times
-// X:   |EXTENDED P_DIFF|   .               X=1: Extended P_DIFF is used (14
-//      +-+-+-+-+-+-+-+-+  -|                    bits). Else 6 bits are used.
-//                                          N=1: An additional P_DIFF follows
-//                                               current P_DIFF.
+//      +-+-+-+-+-+-+-+-+                P=1,F=1: At least one reference index
+// P,F: | P_DIFF      |N|  up to 3 times          has to be specified.
+//      +-+-+-+-+-+-+-+-+                    N=1: An additional P_DIFF follows
+//                                                current P_DIFF.
+//
 bool WriteRefIndices(const RTPVideoHeaderVP9& vp9,
                      rtc::BitBufferWriter* writer) {
   if (!PictureIdPresent(vp9) ||
       vp9.num_ref_pics == 0 || vp9.num_ref_pics > kMaxVp9RefPics) {
     return false;
   }
-  for (size_t i = 0; i < vp9.num_ref_pics; ++i) {
-    bool x_bit = (vp9.pid_diff[i] > 0x3F);
+  for (uint8_t i = 0; i < vp9.num_ref_pics; ++i) {
     bool n_bit = !(i == vp9.num_ref_pics - 1);
-    if (x_bit) {
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.pid_diff[i] >> 8, 6));
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(x_bit ? 1 : 0, 1));
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(n_bit ? 1 : 0, 1));
-      RETURN_FALSE_ON_ERROR(writer->WriteUInt8(vp9.pid_diff[i]));
-    } else {
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.pid_diff[i], 6));
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(x_bit ? 1 : 0, 1));
-      RETURN_FALSE_ON_ERROR(writer->WriteBits(n_bit ? 1 : 0, 1));
-    }
+    RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.pid_diff[i], 7));
+    RETURN_FALSE_ON_ERROR(writer->WriteBits(n_bit ? 1 : 0, 1));
   }
   return true;
 }
@@ -270,7 +250,7 @@ bool WriteRefIndices(const RTPVideoHeaderVP9& vp9,
 // Scalability structure (SS).
 //
 //      +-+-+-+-+-+-+-+-+
-// V:   | N_S |Y|  N_G  |
+// V:   | N_S |Y|G|-|-|-|
 //      +-+-+-+-+-+-+-+-+              -|
 // Y:   |     WIDTH     | (OPTIONAL)    .
 //      +               +               .
@@ -279,22 +259,25 @@ bool WriteRefIndices(const RTPVideoHeaderVP9& vp9,
 //      |     HEIGHT    | (OPTIONAL)    .
 //      +               +               .
 //      |               | (OPTIONAL)    .
-//      +-+-+-+-+-+-+-+-+              -|           -|
+//      +-+-+-+-+-+-+-+-+              -|
+// G:   |      N_G      | (OPTIONAL)
+//      +-+-+-+-+-+-+-+-+                           -|
 // N_G: |  T  |U| R |-|-| (OPTIONAL)                 .
-//      +-+-+-+-+-+-+-+-+              -|            . N_G + 1 times
+//      +-+-+-+-+-+-+-+-+              -|            . N_G times
 //      |    P_DIFF     | (OPTIONAL)    . R times    .
 //      +-+-+-+-+-+-+-+-+              -|           -|
 //
 bool WriteSsData(const RTPVideoHeaderVP9& vp9, rtc::BitBufferWriter* writer) {
   RTC_DCHECK_GT(vp9.num_spatial_layers, 0U);
   RTC_DCHECK_LE(vp9.num_spatial_layers, kMaxVp9NumberOfSpatialLayers);
-  RTC_DCHECK_GT(vp9.gof.num_frames_in_gof, 0U);
   RTC_DCHECK_LE(vp9.gof.num_frames_in_gof, kMaxVp9FramesInGof);
+  bool g_bit = vp9.gof.num_frames_in_gof > 0;
 
   RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.num_spatial_layers - 1, 3));
   RETURN_FALSE_ON_ERROR(
       writer->WriteBits(vp9.spatial_layer_resolution_present ? 1 : 0, 1));
-  RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.gof.num_frames_in_gof - 1, 4));
+  RETURN_FALSE_ON_ERROR(writer->WriteBits(g_bit ? 1 : 0, 1));  // G
+  RETURN_FALSE_ON_ERROR(writer->WriteBits(kReservedBitValue0, 3));
 
   if (vp9.spatial_layer_resolution_present) {
     for (size_t i = 0; i < vp9.num_spatial_layers; ++i) {
@@ -302,13 +285,16 @@ bool WriteSsData(const RTPVideoHeaderVP9& vp9, rtc::BitBufferWriter* writer) {
       RETURN_FALSE_ON_ERROR(writer->WriteUInt16(vp9.height[i]));
     }
   }
+  if (g_bit) {
+    RETURN_FALSE_ON_ERROR(writer->WriteUInt8(vp9.gof.num_frames_in_gof));
+  }
   for (size_t i = 0; i < vp9.gof.num_frames_in_gof; ++i) {
     RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.gof.temporal_idx[i], 3));
     RETURN_FALSE_ON_ERROR(
         writer->WriteBits(vp9.gof.temporal_up_switch[i] ? 1 : 0, 1));
     RETURN_FALSE_ON_ERROR(writer->WriteBits(vp9.gof.num_ref_pics[i], 2));
     RETURN_FALSE_ON_ERROR(writer->WriteBits(kReservedBitValue0, 2));
-    for (size_t r = 0; r < vp9.gof.num_ref_pics[i]; ++r) {
+    for (uint8_t r = 0; r < vp9.gof.num_ref_pics[i]; ++r) {
       RETURN_FALSE_ON_ERROR(writer->WriteUInt8(vp9.gof.pid_diff[i][r]));
     }
   }
@@ -344,8 +330,7 @@ bool ParsePictureId(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
 // L:   |  T  |U|  S  |D|
 //      +-+-+-+-+-+-+-+-+
 //
-bool ParseLayerInfoFlexibleMode(rtc::BitBuffer* parser,
-                                RTPVideoHeaderVP9* vp9) {
+bool ParseLayerInfoCommon(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
   uint32_t t, u_bit, s, d_bit;
   RETURN_FALSE_ON_ERROR(parser->ReadBits(&t, 3));
   RETURN_FALSE_ON_ERROR(parser->ReadBits(&u_bit, 1));
@@ -361,43 +346,36 @@ bool ParseLayerInfoFlexibleMode(rtc::BitBuffer* parser,
 // Layer indices (non-flexible mode):
 //
 //      +-+-+-+-+-+-+-+-+
-// L:   |GOF_IDX|  S  |D|
+// L:   |  T  |U|  S  |D|
 //      +-+-+-+-+-+-+-+-+
 //      |   TL0PICIDX   |
 //      +-+-+-+-+-+-+-+-+
 //
 bool ParseLayerInfoNonFlexibleMode(rtc::BitBuffer* parser,
                                    RTPVideoHeaderVP9* vp9) {
-  uint32_t gof_idx, s, d_bit;
   uint8_t tl0picidx;
-  RETURN_FALSE_ON_ERROR(parser->ReadBits(&gof_idx, 4));
-  RETURN_FALSE_ON_ERROR(parser->ReadBits(&s, 3));
-  RETURN_FALSE_ON_ERROR(parser->ReadBits(&d_bit, 1));
   RETURN_FALSE_ON_ERROR(parser->ReadUInt8(&tl0picidx));
-  vp9->gof_idx = gof_idx;
-  vp9->spatial_idx = s;
-  vp9->inter_layer_predicted = d_bit ? true : false;
   vp9->tl0_pic_idx = tl0picidx;
   return true;
 }
 
 bool ParseLayerInfo(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
-  if (vp9->flexible_mode) {
-    return ParseLayerInfoFlexibleMode(parser, vp9);
-  } else {
-    return ParseLayerInfoNonFlexibleMode(parser, vp9);
-  }
+  if (!ParseLayerInfoCommon(parser, vp9))
+    return false;
+
+  if (vp9->flexible_mode)
+    return true;
+
+  return ParseLayerInfoNonFlexibleMode(parser, vp9);
 }
 
 // Reference indices:
 //
-//      +-+-+-+-+-+-+-+-+  -|           P=1,F=1: At least one reference index
-// P,F: | P_DIFF    |X|N|   .                    has to be specified.
-//      +-+-+-+-+-+-+-+-+   . up to 3 times
-// X:   |EXTENDED P_DIFF|   .               X=1: Extended P_DIFF is used (14
-//      +-+-+-+-+-+-+-+-+  -|                    bits). Else 6 bits are used.
-//                                          N=1: An additional P_DIFF follows
-//                                               current P_DIFF.
+//      +-+-+-+-+-+-+-+-+                P=1,F=1: At least one reference index
+// P,F: | P_DIFF      |N|  up to 3 times          has to be specified.
+//      +-+-+-+-+-+-+-+-+                    N=1: An additional P_DIFF follows
+//                                                current P_DIFF.
+//
 bool ParseRefIndices(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
   if (vp9->picture_id == kNoPictureId)
     return false;
@@ -408,21 +386,14 @@ bool ParseRefIndices(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
     if (vp9->num_ref_pics == kMaxVp9RefPics)
       return false;
 
-    uint32_t p_diff, x_bit;
-    RETURN_FALSE_ON_ERROR(parser->ReadBits(&p_diff, 6));
-    RETURN_FALSE_ON_ERROR(parser->ReadBits(&x_bit, 1));
+    uint32_t p_diff;
+    RETURN_FALSE_ON_ERROR(parser->ReadBits(&p_diff, 7));
     RETURN_FALSE_ON_ERROR(parser->ReadBits(&n_bit, 1));
-
-    if (x_bit) {
-      // P_DIFF is 14 bits.
-      uint8_t ext_p_diff;
-      RETURN_FALSE_ON_ERROR(parser->ReadUInt8(&ext_p_diff));
-      p_diff = (p_diff << 8) + ext_p_diff;
-    }
 
     vp9->pid_diff[vp9->num_ref_pics] = p_diff;
     uint32_t scaled_pid = vp9->picture_id;
-    while (p_diff > scaled_pid) {
+    if (p_diff > scaled_pid) {
+      // TODO(asapersson): Max should correspond to the picture id of last wrap.
       scaled_pid += vp9->max_picture_id + 1;
     }
     vp9->ref_picture_id[vp9->num_ref_pics++] = scaled_pid - p_diff;
@@ -434,7 +405,7 @@ bool ParseRefIndices(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
 // Scalability structure (SS).
 //
 //      +-+-+-+-+-+-+-+-+
-// V:   | N_S |Y|  N_G  |
+// V:   | N_S |Y|G|-|-|-|
 //      +-+-+-+-+-+-+-+-+              -|
 // Y:   |     WIDTH     | (OPTIONAL)    .
 //      +               +               .
@@ -443,26 +414,34 @@ bool ParseRefIndices(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
 //      |     HEIGHT    | (OPTIONAL)    .
 //      +               +               .
 //      |               | (OPTIONAL)    .
-//      +-+-+-+-+-+-+-+-+              -|           -|
+//      +-+-+-+-+-+-+-+-+              -|
+// G:   |      N_G      | (OPTIONAL)
+//      +-+-+-+-+-+-+-+-+                           -|
 // N_G: |  T  |U| R |-|-| (OPTIONAL)                 .
-//      +-+-+-+-+-+-+-+-+              -|            . N_G + 1 times
+//      +-+-+-+-+-+-+-+-+              -|            . N_G times
 //      |    P_DIFF     | (OPTIONAL)    . R times    .
 //      +-+-+-+-+-+-+-+-+              -|           -|
 //
 bool ParseSsData(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
-  uint32_t n_s, y_bit, n_g;
+  uint32_t n_s, y_bit, g_bit;
   RETURN_FALSE_ON_ERROR(parser->ReadBits(&n_s, 3));
   RETURN_FALSE_ON_ERROR(parser->ReadBits(&y_bit, 1));
-  RETURN_FALSE_ON_ERROR(parser->ReadBits(&n_g, 4));
+  RETURN_FALSE_ON_ERROR(parser->ReadBits(&g_bit, 1));
+  RETURN_FALSE_ON_ERROR(parser->ConsumeBits(3));
   vp9->num_spatial_layers = n_s + 1;
   vp9->spatial_layer_resolution_present = y_bit ? true : false;
-  vp9->gof.num_frames_in_gof = n_g + 1;
+  vp9->gof.num_frames_in_gof = 0;
 
   if (y_bit) {
     for (size_t i = 0; i < vp9->num_spatial_layers; ++i) {
       RETURN_FALSE_ON_ERROR(parser->ReadUInt16(&vp9->width[i]));
       RETURN_FALSE_ON_ERROR(parser->ReadUInt16(&vp9->height[i]));
     }
+  }
+  if (g_bit) {
+    uint8_t n_g;
+    RETURN_FALSE_ON_ERROR(parser->ReadUInt8(&n_g));
+    vp9->gof.num_frames_in_gof = n_g;
   }
   for (size_t i = 0; i < vp9->gof.num_frames_in_gof; ++i) {
     uint32_t t, u_bit, r;
@@ -474,7 +453,7 @@ bool ParseSsData(rtc::BitBuffer* parser, RTPVideoHeaderVP9* vp9) {
     vp9->gof.temporal_up_switch[i] = u_bit ? true : false;
     vp9->gof.num_ref_pics[i] = r;
 
-    for (size_t p = 0; p < vp9->gof.num_ref_pics[i]; ++p) {
+    for (uint8_t p = 0; p < vp9->gof.num_ref_pics[i]; ++p) {
       uint8_t p_diff;
       RETURN_FALSE_ON_ERROR(parser->ReadUInt8(&p_diff));
       vp9->gof.pid_diff[i][p] = p_diff;
@@ -597,9 +576,7 @@ bool RtpPacketizerVp9::NextPacket(uint8_t* buffer,
 //      +-+-+-+-+-+-+-+-+
 // L:   |  T  |U|  S  |D| (CONDITIONALLY RECOMMENDED)
 //      +-+-+-+-+-+-+-+-+                             -|
-// P,F: | P_DIFF    |X|N| (CONDITIONALLY RECOMMENDED)  .
-//      +-+-+-+-+-+-+-+-+                              . up to 3 times
-// X:   |EXTENDED P_DIFF|                              .
+// P,F: | P_DIFF      |N| (CONDITIONALLY RECOMMENDED)  . up to 3 times
 //      +-+-+-+-+-+-+-+-+                             -|
 // V:   | SS            |
 //      | ..            |
@@ -614,7 +591,7 @@ bool RtpPacketizerVp9::NextPacket(uint8_t* buffer,
 //      +-+-+-+-+-+-+-+-+
 // M:   | EXTENDED PID  | (RECOMMENDED)
 //      +-+-+-+-+-+-+-+-+
-// L:   |GOF_IDX|  S  |D| (CONDITIONALLY RECOMMENDED)
+// L:   |  T  |U|  S  |D| (CONDITIONALLY RECOMMENDED)
 //      +-+-+-+-+-+-+-+-+
 //      |   TL0PICIDX   | (CONDITIONALLY REQUIRED)
 //      +-+-+-+-+-+-+-+-+
@@ -748,7 +725,8 @@ bool RtpDepacketizerVp9::Parse(ParsedPayload* parsed_payload,
       parsed_payload->type.Video.height = vp9->height[0];
     }
   }
-  parsed_payload->type.Video.isFirstPacket = b_bit && (vp9->spatial_idx == 0);
+  parsed_payload->type.Video.isFirstPacket =
+      b_bit && (!l_bit || !vp9->inter_layer_predicted);
 
   uint64_t rem_bits = parser.RemainingBitCount();
   assert(rem_bits % 8 == 0);

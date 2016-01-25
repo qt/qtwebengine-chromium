@@ -18,13 +18,17 @@
 #ifndef CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_GUEST_H_
 #define CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_GUEST_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <queue>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
@@ -238,7 +242,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void PointerLockPermissionResponse(bool allow);
 
   // The next two functions are virtual for test purposes.
-  virtual void SwapCompositorFrame(uint32 output_surface_id,
+  virtual void SwapCompositorFrame(uint32_t output_surface_id,
                                    int host_process_id,
                                    int host_routing_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
@@ -247,14 +251,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                                     float scale_factor,
                                     const cc::SurfaceSequence& sequence);
 
-  void SetContentsOpaque(bool opaque);
-
   // Find the given |search_text| in the page. Returns true if the find request
   // is handled by this browser plugin guest.
-  bool Find(int request_id,
-            const base::string16& search_text,
-            const blink::WebFindOptions& options);
-  bool StopFinding(StopFindAction action);
+  bool HandleFindForEmbedder(int request_id,
+                             const base::string16& search_text,
+                             const blink::WebFindOptions& options);
+  bool HandleStopFindingForEmbedder(StopFindAction action);
 
   void ResendEventToEmbedder(const blink::WebInputEvent& event);
 
@@ -385,6 +387,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // Called when WillAttach is complete.
   void OnWillAttachComplete(WebContentsImpl* embedder_web_contents,
                             const BrowserPluginHostMsg_Attach_Params& params);
+
+  // Returns identical message with current browser_plugin_instance_id() if
+  // the input was created with browser_plugin::kInstanceIdNone, else it returns
+  // the input message unmodified. If no current browser_plugin_instance_id()
+  // is set, or anything goes wrong, the input message is returned.
+  IPC::Message* UpdateInstanceIdIfNecessary(IPC::Message* msg) const;
 
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();

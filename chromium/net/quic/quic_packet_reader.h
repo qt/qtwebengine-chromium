@@ -6,6 +6,7 @@
 #ifndef NET_QUIC_QUIC_PACKET_READER_H_
 #define NET_QUIC_QUIC_PACKET_READER_H_
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_export.h"
@@ -28,8 +29,9 @@ class NET_EXPORT_PRIVATE QuicPacketReader {
  public:
   class NET_EXPORT_PRIVATE Visitor {
    public:
-    virtual ~Visitor() {};
-    virtual void OnReadError(int result) = 0;
+    virtual ~Visitor(){};
+    virtual void OnReadError(int result,
+                             const DatagramClientSocket* socket) = 0;
     virtual bool OnPacket(const QuicEncryptedPacket& packet,
                           IPEndPoint local_address,
                           IPEndPoint peer_address) = 0;

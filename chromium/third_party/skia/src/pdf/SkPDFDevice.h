@@ -44,7 +44,7 @@ struct RectWithData;
 
     The drawing context for the PDF backend.
 */
-class SkPDFDevice : public SkBaseDevice {
+class SkPDFDevice final : public SkBaseDevice {
 public:
     /** Create a PDF drawing context.  SkPDFDevice applies a
      *  scale-and-translate transform to move the origin from the
@@ -189,9 +189,7 @@ public:
         return *(fFontGlyphUsage.get());
     }
 
-#ifdef SK_DEBUG
     SkPDFCanon* getCanon() const { return fCanon; }
-#endif  // SK_DEBUG
 
 protected:
     const SkBitmap& onAccessBitmap() override {

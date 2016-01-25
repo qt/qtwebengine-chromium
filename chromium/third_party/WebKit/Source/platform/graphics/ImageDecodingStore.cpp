@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/ImageDecodingStore.h"
 
 #include "platform/TraceEvent.h"
@@ -55,7 +54,7 @@ ImageDecodingStore::~ImageDecodingStore()
 
 ImageDecodingStore& ImageDecodingStore::instance()
 {
-    AtomicallyInitializedStaticReference(ImageDecodingStore, store, ImageDecodingStore::create().leakPtr());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(ImageDecodingStore, store, ImageDecodingStore::create().leakPtr());
     return store;
 }
 
@@ -96,7 +95,7 @@ void ImageDecodingStore::insertDecoder(const ImageFrameGenerator* generator, Pas
     // Prune old cache entries to give space for the new one.
     prune();
 
-    OwnPtr<DecoderCacheEntry> newCacheEntry = DecoderCacheEntry::create(generator, decoder);
+    OwnPtr<DecoderCacheEntry> newCacheEntry = DecoderCacheEntry::create(generator, std::move(decoder));
 
     MutexLocker lock(m_mutex);
     ASSERT(!m_decoderCacheMap.contains(newCacheEntry->cacheKey()));
@@ -220,7 +219,7 @@ void ImageDecodingStore::insertCacheInternal(PassOwnPtr<T> cacheEntry, U* cacheM
     typename U::KeyType key = cacheEntry->cacheKey();
     typename V::AddResult result = identifierMap->add(cacheEntry->generator(), typename V::MappedType());
     result.storedValue->value.add(key);
-    cacheMap->add(key, cacheEntry);
+    cacheMap->add(key, std::move(cacheEntry));
 
     TRACE_COUNTER1(TRACE_DISABLED_BY_DEFAULT("blink.image_decoding"), "ImageDecodingStoreHeapMemoryUsageBytes", m_heapMemoryUsageInBytes);
     TRACE_COUNTER1(TRACE_DISABLED_BY_DEFAULT("blink.image_decoding"), "ImageDecodingStoreNumOfDecoders", m_decoderCacheMap.size());

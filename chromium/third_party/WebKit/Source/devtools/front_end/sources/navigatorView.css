@@ -27,81 +27,81 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-.navigator-domain-tree-item .icon {
-    content: url(Images/domain.png);
+.icon {
+    -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
+    -webkit-mask-size: 352px 168px;
+    width: 32px;
+    height: 24px;
+    margin: -3px -3px -3px -7px;
+}
+
+@media (-webkit-min-device-pixel-ratio: 1.5) {
+.icon {
+    -webkit-mask-image: url(Images/toolbarButtonGlyphs_2x.png);
+}
+} /* media */
+
+.navigator-file-tree-item .icon {
+    -webkit-mask-position: -224px -72px;
+    background: linear-gradient(45deg, hsl(0, 0%, 50%), hsl(0, 0%, 70%));
+}
+
+:focus .navigator-file-tree-item.selected .icon {
+    background: white !important;
+}
+
+:focus .navigator-folder-tree-item.selected .icon {
+    background: white !important;
+}
+
+.tree-outline li {
+    min-height: 20px;
 }
 
 .navigator-folder-tree-item .icon {
-    opacity: 0.7;
-    content: url(Images/frame.png);
+    -webkit-mask-position: -64px -120px;
+    background-color: #555;
 }
 
+.navigator-domain-tree-item .icon  {
+    -webkit-mask-position: -160px -144px;
+}
+
+.navigator-frame-tree-item .icon {
+    -webkit-mask-position: -256px -144px;
+}
+
+.navigator-sm-folder-tree-item .icon,
+.navigator-fs-tree-item .icon,
+.navigator-fs-folder-tree-item .icon {
+    background: linear-gradient(45deg, hsl(28, 75%, 50%), hsl(28, 75%, 70%));
+}
+
+.navigator-nw-folder-tree-item .icon {
+    background: linear-gradient(45deg, hsl(210, 82%, 65%), hsl(210, 82%, 80%));
+}
+
+.navigator-worker-tree-item .icon {
+    -webkit-mask-position: -320px -144px;
+}
+
+.navigator-sm-script-tree-item .icon,
 .navigator-script-tree-item .icon {
-    content: url(Images/resourceJSIcon.png);
+    background: linear-gradient(45deg, hsl(48, 70%, 50%), hsl(48, 70%, 70%));
 }
 
+.navigator-sm-stylesheet-tree-item .icon,
 .navigator-stylesheet-tree-item .icon {
-    content: url(Images/resourceCSSIcon.png);
+    background: linear-gradient(45deg, hsl(256, 50%, 50%), hsl(256, 50%, 70%));
 }
 
-.navigator-document-tree-item .icon {
-    content: url(Images/resourceDocumentIcon.png);
+.navigator-image-tree-item .icon,
+.navigator-font-tree-item .icon {
+    background: linear-gradient(45deg, hsl(109, 33%, 50%), hsl(109, 33%, 70%));
 }
 
-.navigator-other-tree-item .icon {
-    content: url(Images/resourcePlainIcon.png);
-}
-
-.navigator > ol {
-    min-width: 100%;
-    min-height: 100%;
-    display: inline-block;
-    position: relative
-}
-
-.navigator li {
-    height: 18px;
-    line-height: 17px;
-    white-space: nowrap;
-}
-
-.navigator :focus li.selected {
-    color: white;
-}
-
-.navigator li.selected .selection {
-    height: 18px;
-}
-
-.navigator > ol.being-edited li.selected .selection {
-    background-color: rgb(56, 121, 217);
-}
-
-.navigator > ol.being-edited li.selected {
-    overflow: visible;
-}
-
-.navigator .icon {
-    width: 16px;
-    height: 16px;
-    float: left;
-}
-
-.navigator .base-navigator-tree-element-title {
-    display: inline-block;
-    position: relative;
-    padding-left: 2px;
-}
-
-.navigator .base-navigator-tree-element-title.editing {
-    margin: auto;
-}
-
-.navigator-tabbed-pane {
-    flex: auto;
-}
-
-.navigator-tabbed-pane .navigator {
-    padding-left: 0;
-    transform: translateZ(0);
+.navigator-sm-folder-tree-item .tree-element-title,
+.navigator-sm-script-tree-item .tree-element-title,
+.navigator-sm-stylesheet-tree-item .tree-element-title {
+    font-style: italic;
 }

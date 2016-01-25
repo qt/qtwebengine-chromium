@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/image-decoders/FastSharedBufferReader.h"
 
 namespace blink {
@@ -39,6 +38,21 @@ FastSharedBufferReader::FastSharedBufferReader(PassRefPtr<SharedBuffer> data)
     , m_segmentLength(0)
     , m_dataPosition(0)
 {
+}
+
+void FastSharedBufferReader::setData(PassRefPtr<SharedBuffer> data)
+{
+    if (data == m_data)
+        return;
+    m_data = data;
+    clearCache();
+}
+
+void FastSharedBufferReader::clearCache()
+{
+    m_segment = 0;
+    m_segmentLength = 0;
+    m_dataPosition = 0;
 }
 
 const char* FastSharedBufferReader::getConsecutiveData(size_t dataPosition, size_t length, char* buffer) const
@@ -74,7 +88,7 @@ size_t FastSharedBufferReader::getSomeData(const char*& someData, size_t dataPos
     return m_segmentLength;
 }
 
-void FastSharedBufferReader::getSomeDataInternal(unsigned dataPosition) const
+void FastSharedBufferReader::getSomeDataInternal(size_t dataPosition) const
 {
     m_dataPosition = dataPosition;
     m_segmentLength = m_data->getSomeData(m_segment, dataPosition);

@@ -68,8 +68,9 @@ public:
         Finished
     };
 
-    ~Animation();
     static Animation* create(AnimationEffect*, AnimationTimeline*);
+    ~Animation();
+    void dispose();
 
     // Returns whether the animation is finished.
     bool update(TimingUpdateReason);
@@ -174,12 +175,11 @@ public:
         return animation1->sequenceNumber() < animation2->sequenceNumber();
     }
 
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
-
     DECLARE_VIRTUAL_TRACE();
 
 protected:
     bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
 
 private:
     Animation(ExecutionContext*, AnimationTimeline&, AnimationEffect*);
@@ -208,6 +208,7 @@ private:
     // WebCompositorAnimationDelegate implementation.
     void notifyAnimationStarted(double monotonicTime, int group) override;
     void notifyAnimationFinished(double monotonicTime, int group) override { }
+    void notifyAnimationAborted(double monotonicTime, int group) override { }
 
     double startClipInternal() const { return m_startClip; }
     double endClipInternal() const { return m_endClip; }
@@ -231,6 +232,7 @@ private:
 
     Member<AnimationEffect> m_content;
     Member<AnimationTimeline> m_timeline;
+
     // Reflects all pausing, including via pauseForTesting().
     bool m_paused;
     bool m_held;
@@ -255,7 +257,7 @@ private:
     };
 
     class CompositorState {
-        WTF_MAKE_FAST_ALLOCATED(CompositorState);
+        USING_FAST_MALLOC(CompositorState);
         WTF_MAKE_NONCOPYABLE(CompositorState);
     public:
         CompositorState(Animation& animation)

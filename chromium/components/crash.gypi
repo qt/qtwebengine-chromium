@@ -5,6 +5,23 @@
 {
   'targets': [
     {
+      # GN version: //components/crash/core/browser
+      'target_name': 'crash_core_browser',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        'upload_list',
+        '../base/base.gyp:base',
+        '../components/components_strings.gyp:components_strings',
+      ],
+      'sources': [
+        'crash/core/browser/crashes_ui_util.cc',
+        'crash/core/browser/crashes_ui_util.h',
+      ],
+    },
+    {
       # GN version: //components/crash/core/common
       'target_name': 'crash_core_common',
       'type': 'static_library',
@@ -77,32 +94,35 @@
           # crash_component.
           #
           # This is a temporary base target that is depended on by both
-          # crash_component and crash_component_breakpad_mac_to_be_deleted. It
-          # provides everything common to both of those targets. For a short period,
-          # there are two Mac crash component implementations. The new one uses a
-          # Crashpad implementation and is used by Chrome. The old one uses a
-          # Breakpad implementation and is used by content_shell. Consumers should
-          # depend on the desired target. All three targets behave identically on
-          # non-Mac. When content_shell and any other consumers are migrated to the
-          # Crashpad implementation on Mac, crash_component will merge back into
-          # this target, crash_component_non_mac, which will be renamed
-          # crash_component. crash_component_breakpad_mac_to_be_deleted will be
-          # deleted.
+          # crash_component and crash_component_breakpad_to_be_deleted. It
+          # provides everything common to both of those targets. For a short
+          # period, there are two Mac and Windows crash component
+          # implementations. The new one uses a Crashpad implementation and is
+          # used by Chrome. The old one uses a Breakpad implementation and is
+          # used by content_shell. Consumers should depend on the desired
+          # target. All three targets behave identically on non-Mac/-Windows.
+          # When content_shell and any other consumers are migrated to the
+          # Crashpad implementation on Mac/Windows, crash_component will merge
+          # back into this target, crash_component_non_mac_win, which will be
+          # renamed crash_component. crash_component_breakpad_to_be_deleted will
+          # be deleted.
           #
           # While this situation exists:
           #
           # Do not depend on this target directly! Depend on
-          # crash_component_breakpad_mac_to_be_deleted for old Breakpad behavior on
+          # crash_component_breakpad_to_be_deleted for old Breakpad behavior on
           # all platforms, or preferably, depend on crash_component to get Breakpad
-          # everywhere except for Mac, where you will get Crashpad.
-          'target_name': 'crash_component_non_mac',
+          # everywhere except for Mac and Windows, where you will get Crashpad.
+          #
+          # GN version: //components/crash/content/app:app_non_mac
+          'target_name': 'crash_component_non_mac_win',
           'variables': {
             'conditions': [
               ['OS == "ios" or OS == "mac"', {
                 # On IOS there are no files compiled into the library, and we
                 # can't have libraries with zero objects.
-                # For now, the same applies to Mac OS X, until this target merges
-                # with crash_component.
+                # For now, the same applies to Mac OS X, until this target
+                # merges with crash_component.
                 'crash_component_target_type%': 'none',
               }, {
                 'crash_component_target_type%': 'static_library',
@@ -114,8 +134,6 @@
             'crash/content/app/breakpad_linux.cc',
             'crash/content/app/breakpad_linux.h',
             'crash/content/app/breakpad_linux_impl.h',
-            'crash/content/app/breakpad_win.cc',
-            'crash/content/app/breakpad_win.h',
             'crash/content/app/hard_error_handler_win.cc',
             'crash/content/app/hard_error_handler_win.h',
           ],
@@ -140,6 +158,14 @@
                 '../breakpad/src',
               ],
             }],
+            ['clang==1 and target_arch=="ia32"', {
+              'cflags!': [
+                # Clang's -mstackrealign doesn't work well with
+                # linux_syscall_support.h hand written asm syscalls.
+                # See https://crbug.com/556393
+                '-mstackrealign',
+              ],
+            }],
           ],
           'target_conditions': [
             # Need 'target_conditions' to override default filename_rules to include
@@ -159,17 +185,17 @@
           # GN version: //components/crash/content/app
 
           # TODO(mark): https://crbug.com/466890: merge this target with
-          # crash_component_non_mac.
+          # crash_component_non_mac_win.
           #
           # Most of this target is actually in its dependency,
-          # crash_component_non_mac.  See the comment in that target for an
+          # crash_component_non_mac_win.  See the comment in that target for an
           # explanation for the split. The split is temporary and the two targets
           # will be unified again soon.
           'target_name': 'crash_component',
           'variables': {
             'conditions': [
-              ['OS != "mac" ', {
-                # There are no source files on any platform but Mac OS X.
+              ['OS != "mac" and OS != "win"', {
+                # There are no source files except on Mac OS X and Windows.
                 'crash_component_target_type%': 'none',
               }, {
                 'crash_component_target_type%': 'static_library',
@@ -178,17 +204,20 @@
           },
           'type': '<(crash_component_target_type)',
           'sources': [
-            'crash/content/app/crashpad_mac.h',
+            'crash/content/app/crashpad.cc',
+            'crash/content/app/crashpad.h',
             'crash/content/app/crashpad_mac.mm',
+            'crash/content/app/crashpad_win.cc',
           ],
           'dependencies': [
-            'crash_component_non_mac',
+            'crash_component_non_mac_win',
             'crash_component_lib',
             '../base/base.gyp:base',
+            '../third_party/kasko/kasko.gyp:kasko',
           ],
           'defines': ['CRASH_IMPLEMENTATION'],
           'conditions': [
-            ['OS=="mac"', {
+            ['OS=="mac" or OS=="win"', {
               'dependencies': [
                 '../third_party/crashpad/crashpad/client/client.gyp:crashpad_client',
               ],
@@ -198,16 +227,20 @@
         {
           # TODO(mark): https://crbug.com/466890: remove this target.
           #
-          # This is a temporary target provided for Mac Breakpad users that have not
-          # yet migrated to Crashpad (namely content_shell). This target will be
-          # removed shortly and all consumers will be expected to use Crashpad as
-          # the Mac crash-reporting client. See the comment in the
-          # crash_component_non_mac target for more details.
-          'target_name': 'crash_component_breakpad_mac_to_be_deleted',
+          # This is a temporary target provided for Mac and Windows Breakpad
+          # users that have not yet migrated to Crashpad (namely content_shell).
+          # This target will be removed shortly and all consumers will be
+          # expected to use Crashpad as the Mac and Windows crash-reporting
+          # client. See the comment in the crash_component_non_mac_win target
+          # for more details.
+          #
+          # GN version: //components/crash/content/app:app_breakpad_mac_to_be_deleted
+          'target_name': 'crash_component_breakpad_to_be_deleted',
           'variables': {
             'conditions': [
-              ['OS != "mac" ', {
-                # There are no source files on any platform but Mac OS X.
+              ['OS != "mac" and OS != "win"', {
+                # There are no source files on any platform but Mac OS X and
+                # Windows.
                 'crash_component_target_type%': 'none',
               }, {
                 'crash_component_target_type%': 'static_library',
@@ -218,9 +251,11 @@
           'sources': [
             'crash/content/app/breakpad_mac.h',
             'crash/content/app/breakpad_mac.mm',
+            'crash/content/app/breakpad_win.cc',
+            'crash/content/app/breakpad_win.h',
           ],
           'dependencies': [
-            'crash_component_non_mac',
+            'crash_component_non_mac_win',
             'crash_component_lib',
           ],
           'defines': ['CRASH_IMPLEMENTATION'],
@@ -231,6 +266,16 @@
               ],
               'include_dirs': [
                 '..',
+                '../breakpad/src',
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../breakpad/breakpad.gyp:breakpad_handler',
+              ],
+              'include_dirs': [
+                '..',
+                '../breakpad/src',
               ],
             }],
           ],
@@ -309,6 +354,7 @@
               },
             },
             {
+              # GN version: //components/crash/content/tools:crash_service
               'target_name': 'breakpad_crash_service_win64',
               'type': 'static_library',
               'dependencies': [
@@ -363,6 +409,8 @@
                 'crash/content/browser/crash_dump_manager_android.h',
                 'crash/content/browser/crash_handler_host_linux.cc',
                 'crash/content/browser/crash_handler_host_linux.h',
+                'crash/content/browser/crash_micro_dump_manager_android.cc',
+                'crash/content/browser/crash_micro_dump_manager_android.h',
               ],
               'include_dirs': [
                 '../breakpad/src',

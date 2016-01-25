@@ -27,12 +27,18 @@ public:
         return *m_remoteFrame;
     }
 
+    void dispose() override;
+
     // Override to notify remote frame that its viewport size has changed.
     void frameRectsChanged() override;
 
     void invalidateRect(const IntRect&) override;
 
     void setFrameRect(const IntRect&) override;
+
+    void hide() override;
+    void show() override;
+    void setParentVisible(bool) override;
 
     DECLARE_VIRTUAL_TRACE();
 

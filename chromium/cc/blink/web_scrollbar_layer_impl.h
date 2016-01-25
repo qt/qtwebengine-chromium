@@ -5,6 +5,7 @@
 #ifndef CC_BLINK_WEB_SCROLLBAR_LAYER_IMPL_H_
 #define CC_BLINK_WEB_SCROLLBAR_LAYER_IMPL_H_
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebScrollbar.h"
@@ -35,7 +36,6 @@ class WebScrollbarLayerImpl : public blink::WebScrollbarLayer {
   // blink::WebScrollbarLayer implementation.
   blink::WebLayer* layer() override;
   void setScrollLayer(blink::WebLayer* layer) override;
-  void setClipLayer(blink::WebLayer* layer) override;
 
  private:
   scoped_ptr<WebLayerImpl> layer_;

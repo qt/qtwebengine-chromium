@@ -37,15 +37,15 @@ public:
     bool usesOverlayScrollbars() const override;
 
 protected:
-    bool hasButtons(const ScrollbarThemeClient*) override { return false; }
-    bool hasThumb(const ScrollbarThemeClient*) override { return true; }
+    bool hasButtons(const ScrollbarThemeClient&) override { return false; }
+    bool hasThumb(const ScrollbarThemeClient&) override { return true; }
 
-    IntRect backButtonRect(const ScrollbarThemeClient*, ScrollbarPart, bool /*painting*/ = false) override { return IntRect(); }
-    IntRect forwardButtonRect(const ScrollbarThemeClient*, ScrollbarPart, bool /*painting*/ = false) override { return IntRect(); }
-    IntRect trackRect(const ScrollbarThemeClient*, bool painting = false) override;
+    IntRect backButtonRect(const ScrollbarThemeClient&, ScrollbarPart, bool /*painting*/ = false) override { return IntRect(); }
+    IntRect forwardButtonRect(const ScrollbarThemeClient&, ScrollbarPart, bool /*painting*/ = false) override { return IntRect(); }
+    IntRect trackRect(const ScrollbarThemeClient&, bool painting = false) override;
 
-    void paintTrackBackground(GraphicsContext*, const ScrollbarThemeClient*, const IntRect&) override;
-    void paintThumb(GraphicsContext*, const ScrollbarThemeClient*, const IntRect&) override;
+    void paintTrackBackground(GraphicsContext&, const ScrollbarThemeClient&, const IntRect&) override;
+    void paintThumb(GraphicsContext&, const ScrollbarThemeClient&, const IntRect&) override;
 
 private:
     bool isMockTheme() const final { return true; }

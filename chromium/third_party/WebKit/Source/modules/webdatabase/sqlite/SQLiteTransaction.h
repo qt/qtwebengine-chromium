@@ -26,7 +26,7 @@
 #ifndef SQLiteTransaction_h
 #define SQLiteTransaction_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
@@ -34,7 +34,7 @@ namespace blink {
 class SQLiteDatabase;
 
 class SQLiteTransaction {
-    WTF_MAKE_NONCOPYABLE(SQLiteTransaction); WTF_MAKE_FAST_ALLOCATED(SQLiteTransaction);
+    WTF_MAKE_NONCOPYABLE(SQLiteTransaction); USING_FAST_MALLOC(SQLiteTransaction);
 public:
     SQLiteTransaction(SQLiteDatabase& db, bool readOnly = false);
     ~SQLiteTransaction();

@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "sandbox/win/src/wow64.h"
+#include "sandbox/win/src/Wow64.h"
+
+#include <stddef.h>
 
 #include <sstream>
 
+#include "base/bit_cast.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_process_information.h"

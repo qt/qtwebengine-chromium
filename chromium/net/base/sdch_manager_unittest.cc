@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/simple_test_clock.h"
@@ -568,8 +569,8 @@ TEST_F(SdchManagerTest, ExpirationCheckedProperly) {
   // It should be visible if looked up by hash whether expired or not.
   SdchProblemCode problem_code;
   scoped_ptr<SdchManager::DictionarySet> hash_set(
-      sdch_manager()->GetDictionarySetByHash(
-          target_gurl, server_hash, &problem_code).Pass());
+      sdch_manager()->GetDictionarySetByHash(target_gurl, server_hash,
+                                             &problem_code));
   ASSERT_TRUE(hash_set);
   ASSERT_EQ(SDCH_OK, problem_code);
 

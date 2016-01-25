@@ -46,10 +46,6 @@ class CORE_EXPORT HTMLPlugInElement : public HTMLFrameOwnerElement {
 public:
     ~HTMLPlugInElement() override;
     DECLARE_VIRTUAL_TRACE();
-#if ENABLE(OILPAN)
-    void disconnectContentFrame() override;
-    void shouldDisposePlugin();
-#endif
 
     void resetInstance();
     SharedPersistent<v8::Object>* pluginWrapper();

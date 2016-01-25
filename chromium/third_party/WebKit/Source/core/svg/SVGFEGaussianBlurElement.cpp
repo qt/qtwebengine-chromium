@@ -18,8 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGFEGaussianBlurElement.h"
 
 #include "core/SVGNames.h"
@@ -68,9 +66,7 @@ void SVGFEGaussianBlurElement::svgAttributeChanged(const QualifiedName& attrName
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEGaussianBlurElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
-
-    if (!input1)
-        return nullptr;
+    ASSERT(input1);
 
     // "A negative value or a value of zero disables the effect of the given
     // filter primitive (i.e., the result is the filter input image)."

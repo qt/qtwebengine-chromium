@@ -44,8 +44,18 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
  public:
   enum class Type : uint16_t {
     MESSAGE = 0,
-    RAW_CHANNEL_POSIX_EXTRA_PLATFORM_HANDLES = 1,
-    RAW_CHANNEL_QUIT = 2,
+    // Since there's a limit on how many fds can be sent in one sendmsg call, if
+    // a message has more than that the fds are sent in this message type first.
+    RAW_CHANNEL_POSIX_EXTRA_PLATFORM_HANDLES,
+    // When a RawChannel is serialized, there could be pending messages to be
+    // written to the pipe. They are serialized to shared memory. When they're
+    // deserialized on the receiving end, we want to write them to the pipe
+    // without any message headers, because those have already been written.
+    RAW_MESSAGE,
+    // Tells the other side to close its pipe. This is needed because when a
+    // MessagePipeDispatcher is closed, it has to wait to flush any pending
+    // messages or else in-flight message pipes won't be closed.
+    QUIT_MESSAGE,
   };
 
   // Messages (the header and data) must always be aligned to a multiple of this
@@ -97,6 +107,7 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
       return static_cast<const char*>(buffer_) + sizeof(Header);
     }
     Type type() const { return header()->type; }
+    uint64_t route_id() const { return header()->route_id; }
 
    private:
     const Header* header() const { return static_cast<const Header*>(buffer_); }
@@ -165,6 +176,9 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
 
   Type type() const { return header()->type; }
 
+  void set_route_id(uint64_t route_id) { header()->route_id = route_id; }
+  uint64_t route_id() const { return header()->route_id; }
+
   // Gets the dispatchers attached to this message; this may return null if
   // there are none. Note that the caller may mutate the set of dispatchers
   // (e.g., take ownership of all the dispatchers, leaving the vector empty).
@@ -194,9 +208,10 @@ class MOJO_SYSTEM_IMPL_EXPORT MessageInTransit {
     // |SerializeAndCloseDispatchers()| has not been called.
     uint32_t total_size;
     Type type;                         // 2 bytes.
-    Type unusedforalignment;           // 2 bytes.
+    uint16_t unusedforalignment;       // 2 bytes.
     uint32_t num_bytes;
     uint32_t unused;
+    uint64_t route_id;
   };
 
   const Header* header() const {

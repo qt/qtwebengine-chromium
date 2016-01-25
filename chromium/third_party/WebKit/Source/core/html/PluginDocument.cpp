@@ -22,7 +22,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/PluginDocument.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -103,6 +102,7 @@ void PluginDocumentParser::createDocumentStructure()
     m_embedElement->setAttribute(widthAttr, "100%");
     m_embedElement->setAttribute(heightAttr, "100%");
     m_embedElement->setAttribute(nameAttr, "plugin");
+    m_embedElement->setAttribute(idAttr, "plugin");
     m_embedElement->setAttribute(srcAttr, AtomicString(document()->url().string()));
     m_embedElement->setAttribute(typeAttr, document()->loader()->mimeType());
     body->appendChild(m_embedElement);
@@ -114,6 +114,8 @@ void PluginDocumentParser::createDocumentStructure()
     // We need the plugin to load synchronously so we can get the PluginView
     // below so flush the layout tasks now instead of waiting on the timer.
     frame->view()->flushAnyPendingPostLayoutTasks();
+    // Focus the plugin here, as the line above is where the plugin is created.
+    m_embedElement->focus();
 
     if (PluginView* view = pluginView())
         view->didReceiveResponse(document()->loader()->response());
@@ -132,14 +134,7 @@ void PluginDocumentParser::appendBytes(const char* data, size_t length)
 
 void PluginDocumentParser::finish()
 {
-    if (PluginView* view = pluginView()) {
-        const ResourceError& error = document()->loader()->mainDocumentError();
-        if (error.isNull())
-            view->didFinishLoading();
-        else
-            view->didFailLoading(error);
-        m_embedElement = nullptr;
-    }
+    m_embedElement = nullptr;
     RawDataDocumentParser::finish();
 }
 

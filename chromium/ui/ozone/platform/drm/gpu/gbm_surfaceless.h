@@ -7,17 +7,18 @@
 
 #include <vector>
 
+#include "base/macros.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/platform/drm/gpu/overlay_plane.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
 
 namespace gfx {
 class Size;
-}  // namespace gfx
+}
 
 namespace ui {
 
-class DrmDeviceManager;
-class DrmWindow;
+class DrmWindowProxy;
 class GbmSurfaceFactory;
 
 // In surfaceless mode drawing and displaying happens directly through
@@ -26,8 +27,7 @@ class GbmSurfaceFactory;
 // presentation.
 class GbmSurfaceless : public SurfaceOzoneEGL {
  public:
-  GbmSurfaceless(DrmWindow* window,
-                 DrmDeviceManager* drm_device_manager,
+  GbmSurfaceless(scoped_ptr<DrmWindowProxy> window,
                  GbmSurfaceFactory* surface_manager);
   ~GbmSurfaceless() override;
 
@@ -37,14 +37,15 @@ class GbmSurfaceless : public SurfaceOzoneEGL {
   intptr_t GetNativeWindow() override;
   bool ResizeNativeWindow(const gfx::Size& viewport_size) override;
   bool OnSwapBuffers() override;
-  bool OnSwapBuffersAsync(const SwapCompletionCallback& callback) override;
+  void OnSwapBuffersAsync(const SwapCompletionCallback& callback) override;
   scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override;
   bool IsUniversalDisplayLinkDevice() override;
 
  protected:
-  DrmWindow* window_;
-  DrmDeviceManager* drm_device_manager_;
+  scoped_ptr<DrmWindowProxy> window_;
+
   GbmSurfaceFactory* surface_manager_;
+
   std::vector<OverlayPlane> planes_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmSurfaceless);

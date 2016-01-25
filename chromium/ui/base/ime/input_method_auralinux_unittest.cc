@@ -4,6 +4,9 @@
 
 #include "ui/base/ime/input_method_auralinux.h"
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
@@ -222,9 +225,9 @@ class TextInputClientForTesting : public DummyTextInputClient {
     composition_text.clear();
   }
 
-  void InsertChar(base::char16 ch, int flags) override {
+  void InsertChar(const ui::KeyEvent& event) override {
     std::stringstream ss;
-    ss << ch;
+    ss << event.GetCharacter();
     TestResult::GetInstance()->RecordAction(base::ASCIIToUTF16("keypress:") +
                                             base::ASCIIToUTF16(ss.str()));
   }

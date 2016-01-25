@@ -33,6 +33,7 @@
 
 #include "../platform/WebColor.h"
 #include "../platform/WebDisplayMode.h"
+#include "../platform/WebFocusType.h"
 #include "../platform/WebPageVisibilityState.h"
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
@@ -50,9 +51,11 @@ class WebCredentialManagerClient;
 class WebDragData;
 class WebFrame;
 class WebHitTestResult;
+class WebLocalFrame;
 class WebPageImportanceSignals;
 class WebPageOverlay;
 class WebPrerendererClient;
+class WebRemoteFrame;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
@@ -166,6 +169,12 @@ public:
     virtual WebFrame* focusedFrame() = 0;
     virtual void setFocusedFrame(WebFrame*) = 0;
 
+    // Sets the provided frame as focused and fires blur/focus events on any
+    // currently focused elements in old/new focused documents.  Note that this
+    // is different from setFocusedFrame, which does not fire events on focused
+    // elements.
+    virtual void focusDocumentView(WebFrame*) = 0;
+
     // Focus the first (last if reverse is true) focusable node.
     virtual void setInitialFocus(bool reverse) = 0;
 
@@ -184,6 +193,11 @@ public:
     // Advance the focus of the WebView forward to the next element or to the
     // previous element in the tab sequence (if reverse is true).
     virtual void advanceFocus(bool reverse) { }
+
+    // Advance the focus from the frame |from| to the next in sequence
+    // (determined by WebFocusType) focusable element in frame |to|. Used when
+    // focus needs to advance to/from a cross-process frame.
+    virtual void advanceFocusAcrossFrames(WebFocusType, WebRemoteFrame* from, WebLocalFrame* to) { }
 
     // Animate a scale into the specified rect where multiple targets were
     // found from previous tap gesture.
@@ -226,13 +240,6 @@ public:
     // is scaled up, < 1.0 is scaled down.
     virtual float pageScaleFactor() const = 0;
 
-    // TODO: Obsolete, the origin parameter is ambiguous with two viewports. Remove
-    // once Chromium side users are removed.
-    // Scales a page by a factor of scaleFactor and then sets a scroll position to (x, y).
-    // setPageScaleFactor() magnifies and shrinks a page without affecting layout.
-    // On the other hand, zooming affects layout of the page.
-    virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) { setPageScaleFactor(scaleFactor); }
-
     // Scales the page without affecting layout by using the visual viewport.
     virtual void setPageScaleFactor(float) = 0;
 
@@ -241,17 +248,12 @@ public:
     // stays within the frame's bounds.
     virtual void setVisualViewportOffset(const WebFloatPoint&) = 0;
 
-    // TODO(bokan): Renamed to VisualViewport above, remove once chromium
-    // side callers are renamed.
-    virtual void setPinchViewportOffset(const WebFloatPoint&) = 0;
-
     // Gets the visual viewport's current offset within the page's main frame,
     // in partial CSS pixels.
     virtual WebFloatPoint visualViewportOffset() const = 0;
 
-    // TODO(bokan): Renamed to VisualViewport above, remove once chromium
-    // side callers are renamed.
-    virtual WebFloatPoint pinchViewportOffset() const = 0;
+    // Get the visual viewport's size in CSS pixels.
+    virtual WebFloatSize visualViewportSize() const = 0;
 
     // Sets the default minimum, and maximum page scale. These will be overridden
     // by the page or by the overrides below if they are set.
@@ -284,15 +286,18 @@ public:
     // Sets the display mode of the web app.
     virtual void setDisplayMode(WebDisplayMode) = 0;
 
-    // The ratio of the current device's screen DPI to the target device's screen DPI.
-    virtual float deviceScaleFactor() const = 0;
-
     // Sets the ratio as computed by computePageScaleConstraints.
+    // TODO(oshima): Remove this once the device scale factor implementation is fully
+    // migrated to use zooming mechanism.
     virtual void setDeviceScaleFactor(float) = 0;
+
+    // Sets the additional zoom factor used for device scale factor. This is used
+    // to scale the content by the device scale factor, without affecting zoom level.
+    virtual void setZoomFactorForDeviceScaleFactor(float) = 0;
 
     // Set and reset the device color profile.
     virtual void setDeviceColorProfile(const WebVector<char>&) = 0;
-    virtual void resetDeviceColorProfile() = 0;
+    virtual void resetDeviceColorProfileForTesting() = 0;
 
     // Auto-Resize -----------------------------------------------------------
 
@@ -391,6 +396,9 @@ public:
     // Shows a context menu for the currently focused element.
     virtual void showContextMenu() = 0;
 
+    // Notify that context menu has been closed.
+    virtual void didCloseContextMenu() = 0;
+
 
     // SmartClip support ---------------------------------------------------
     virtual void extractSmartClipData(WebRect initRect, WebString& text, WebString& html, WebRect& resultRect) = 0;
@@ -412,8 +420,10 @@ public:
     BLINK_EXPORT static void updateVisitedLinkState(unsigned long long hash);
 
     // Tells all WebView instances to update the visited state for all
-    // their links.
-    BLINK_EXPORT static void resetVisitedLinkState();
+    // their links. Use invalidateVisitedLinkHashes to inform that the visitedlink
+    // table was changed and the salt was changed too. And all cached visitedlink
+    // hashes need to be recalculated.
+    BLINK_EXPORT static void resetVisitedLinkState(bool invalidateVisitedLinkHashes);
 
 
     // Custom colors -------------------------------------------------------

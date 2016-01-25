@@ -16,7 +16,7 @@
 #include <algorithm>
 
 #include "webrtc/call.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 namespace webrtc {
 
@@ -70,14 +70,15 @@ class NetworkPacket {
   int64_t arrival_time_;
 };
 
-FakeNetworkPipe::FakeNetworkPipe(const FakeNetworkPipe::Config& config)
-    : packet_receiver_(NULL),
+FakeNetworkPipe::FakeNetworkPipe(Clock* clock,
+                                 const FakeNetworkPipe::Config& config)
+    : clock_(clock),
+      packet_receiver_(NULL),
       config_(config),
       dropped_packets_(0),
       sent_packets_(0),
       total_packet_delay_(0),
-      next_process_time_(TickTime::MillisecondTimestamp()) {
-}
+      next_process_time_(clock_->TimeInMilliseconds()) {}
 
 FakeNetworkPipe::~FakeNetworkPipe() {
   while (!capacity_link_.empty()) {
@@ -112,7 +113,7 @@ void FakeNetworkPipe::SendPacket(const uint8_t* data, size_t data_length) {
     return;
   }
 
-  int64_t time_now = TickTime::MillisecondTimestamp();
+  int64_t time_now = clock_->TimeInMilliseconds();
 
   // Delay introduced by the link capacity.
   int64_t capacity_delay_ms = 0;
@@ -145,11 +146,12 @@ int FakeNetworkPipe::AverageDelay() {
   if (sent_packets_ == 0)
     return 0;
 
-  return total_packet_delay_ / static_cast<int>(sent_packets_);
+  return static_cast<int>(total_packet_delay_ /
+                          static_cast<int64_t>(sent_packets_));
 }
 
 void FakeNetworkPipe::Process() {
-  int64_t time_now = TickTime::MillisecondTimestamp();
+  int64_t time_now = clock_->TimeInMilliseconds();
   std::queue<NetworkPacket*> packets_to_deliver;
   {
     rtc::CritScope crit(&lock_);
@@ -210,8 +212,8 @@ int64_t FakeNetworkPipe::TimeUntilNextProcess() const {
   const int64_t kDefaultProcessIntervalMs = 30;
   if (capacity_link_.size() == 0 || delay_link_.size() == 0)
     return kDefaultProcessIntervalMs;
-  return std::max<int64_t>(
-      next_process_time_ - TickTime::MillisecondTimestamp(), 0);
+  return std::max<int64_t>(next_process_time_ - clock_->TimeInMilliseconds(),
+                           0);
 }
 
 }  // namespace webrtc

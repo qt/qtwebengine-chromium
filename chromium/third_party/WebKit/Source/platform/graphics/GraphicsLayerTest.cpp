@@ -22,22 +22,25 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/GraphicsLayer.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/transforms/Matrix3DTransformOperation.h"
 #include "platform/transforms/RotateTransformOperation.h"
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebCompositorAnimationPlayer.h"
+#include "public/platform/WebCompositorAnimationPlayerClient.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFloatAnimationCurve.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebLayer.h"
 #include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebUnitTestSupport.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/PassOwnPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -45,16 +48,15 @@ namespace {
 
 class MockGraphicsLayerClient : public GraphicsLayerClient {
 public:
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const override { }
-    String debugName(const GraphicsLayer*) override { return String(); }
+    IntRect computeInterestRect(const GraphicsLayer*, const IntRect&) const { return IntRect(); }
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) const override { }
+    String debugName(const GraphicsLayer*) const override { return String(); }
 };
 
 class GraphicsLayerForTesting : public GraphicsLayer {
 public:
     explicit GraphicsLayerForTesting(GraphicsLayerClient* client)
         : GraphicsLayer(client) { }
-
-    WebLayer* contentsLayer() const override { return GraphicsLayer::contentsLayer(); }
 };
 
 } // anonymous namespace
@@ -85,6 +87,8 @@ public:
         m_layerTreeView.clear();
     }
 
+    WebLayerTreeView* layerTreeView() { return m_layerTreeView.get(); }
+
 protected:
     WebLayer* m_platformLayer;
     OwnPtr<GraphicsLayerForTesting> m_graphicsLayer;
@@ -96,6 +100,21 @@ private:
     MockGraphicsLayerClient m_client;
 };
 
+class AnimationPlayerForTesting : public WebCompositorAnimationPlayerClient {
+public:
+    AnimationPlayerForTesting()
+    {
+        m_compositorPlayer = adoptPtr(Platform::current()->compositorSupport()->createAnimationPlayer());
+    }
+
+    WebCompositorAnimationPlayer* compositorPlayer() const override
+    {
+        return m_compositorPlayer.get();
+    }
+
+    OwnPtr<WebCompositorAnimationPlayer> m_compositorPlayer;
+};
+
 TEST_F(GraphicsLayerTest, updateLayerShouldFlattenTransformWithAnimations)
 {
     ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
@@ -104,25 +123,63 @@ TEST_F(GraphicsLayerTest, updateLayerShouldFlattenTransformWithAnimations)
     curve->add(WebFloatKeyframe(0.0, 0.0));
     OwnPtr<WebCompositorAnimation> floatAnimation(adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, WebCompositorAnimation::TargetPropertyOpacity)));
     int animationId = floatAnimation->id();
-    ASSERT_TRUE(m_platformLayer->addAnimation(floatAnimation.leakPtr()));
 
-    ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+        OwnPtr<WebCompositorAnimationTimeline> compositorTimeline = adoptPtr(Platform::current()->compositorSupport()->createAnimationTimeline());
+        AnimationPlayerForTesting player;
 
-    m_graphicsLayer->setShouldFlattenTransform(false);
+        layerTreeView()->attachCompositorAnimationTimeline(compositorTimeline.get());
+        compositorTimeline->playerAttached(player);
 
-    m_platformLayer = m_graphicsLayer->platformLayer();
-    ASSERT_TRUE(m_platformLayer);
+        player.compositorPlayer()->attachLayer(m_platformLayer);
+        ASSERT_TRUE(player.compositorPlayer()->isLayerAttached());
 
-    ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
-    m_platformLayer->removeAnimation(animationId);
-    ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+        player.compositorPlayer()->addAnimation(floatAnimation.leakPtr());
 
-    m_graphicsLayer->setShouldFlattenTransform(true);
+        ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
 
-    m_platformLayer = m_graphicsLayer->platformLayer();
-    ASSERT_TRUE(m_platformLayer);
+        m_graphicsLayer->setShouldFlattenTransform(false);
 
-    ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+        m_platformLayer = m_graphicsLayer->platformLayer();
+        ASSERT_TRUE(m_platformLayer);
+
+        ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
+        player.compositorPlayer()->removeAnimation(animationId);
+        ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+
+        m_graphicsLayer->setShouldFlattenTransform(true);
+
+        m_platformLayer = m_graphicsLayer->platformLayer();
+        ASSERT_TRUE(m_platformLayer);
+
+        ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+
+        player.compositorPlayer()->detachLayer();
+        ASSERT_FALSE(player.compositorPlayer()->isLayerAttached());
+
+        compositorTimeline->playerDestroyed(player);
+        layerTreeView()->detachCompositorAnimationTimeline(compositorTimeline.get());
+    } else {
+        ASSERT_TRUE(m_platformLayer->addAnimation(floatAnimation.leakPtr()));
+
+        ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
+
+        m_graphicsLayer->setShouldFlattenTransform(false);
+
+        m_platformLayer = m_graphicsLayer->platformLayer();
+        ASSERT_TRUE(m_platformLayer);
+
+        ASSERT_TRUE(m_platformLayer->hasActiveAnimation());
+        m_platformLayer->removeAnimation(animationId);
+        ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+
+        m_graphicsLayer->setShouldFlattenTransform(true);
+
+        m_platformLayer = m_graphicsLayer->platformLayer();
+        ASSERT_TRUE(m_platformLayer);
+
+        ASSERT_FALSE(m_platformLayer->hasActiveAnimation());
+    }
 }
 
 class FakeScrollableArea : public NoBaseWillBeGarbageCollectedFinalized<FakeScrollableArea>, public ScrollableArea {
@@ -142,8 +199,7 @@ public:
     IntSize contentsSize() const override { return IntSize(100, 100); }
     bool scrollbarsCanBeActive() const override { return false; }
     IntRect scrollableAreaBoundingBox() const override { return IntRect(); }
-    void invalidateScrollbarRect(Scrollbar*, const IntRect&) override { }
-    void invalidateScrollCornerRect(const IntRect&) override { }
+    void scrollControlWasSetNeedsPaintInvalidation() override { }
     bool userInputScrollable(ScrollbarOrientation) const override { return true; }
     bool shouldPlaceVerticalScrollbarOnLeft() const override { return false; }
     int pageStep(ScrollbarOrientation) const override { return 0; }

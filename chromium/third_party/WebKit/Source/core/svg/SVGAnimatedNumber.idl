@@ -27,10 +27,7 @@
 // http://www.w3.org/TR/SVG2/types.html#InterfaceSVGAnimatedNumber
 
 [
-    MeasureAs=SVG1DOM,
-    RuntimeEnabled=SVG1DOM,
     SetWrapperReferenceTo(SVGElement contextElement),
-    TypeChecking=Interface,
     WillBeGarbageCollected,
 ] interface SVGAnimatedNumber {
     [RaisesException=Setter] attribute float baseVal;

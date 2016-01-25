@@ -4,7 +4,9 @@
 
 #include "third_party/mojo/src/mojo/edk/system/shared_buffer_dispatcher.h"
 
+#include <algorithm>
 #include <limits>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,8 +23,8 @@ namespace system {
 namespace {
 
 struct SerializedSharedBufferDispatcher {
-  size_t num_bytes;
-  size_t platform_handle_index;
+  uint32_t num_bytes;
+  uint32_t platform_handle_index;
 };
 
 }  // namespace
@@ -77,7 +79,7 @@ MojoResult SharedBufferDispatcher::Create(
   if (!shared_buffer)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
-  *result = CreateInternal(shared_buffer.Pass());
+  *result = CreateInternal(std::move(shared_buffer));
   return MOJO_RESULT_OK;
 }
 
@@ -132,7 +134,7 @@ scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
     return nullptr;
   }
 
-  return CreateInternal(shared_buffer.Pass());
+  return CreateInternal(std::move(shared_buffer));
 }
 
 SharedBufferDispatcher::SharedBufferDispatcher(
@@ -186,7 +188,7 @@ scoped_refptr<Dispatcher>
 SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   mutex().AssertHeld();
   DCHECK(shared_buffer_);
-  return CreateInternal(shared_buffer_.Pass());
+  return CreateInternal(std::move(shared_buffer_));
 }
 
 MojoResult SharedBufferDispatcher::DuplicateBufferHandleImplNoLock(
@@ -260,8 +262,12 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
     return false;
   }
 
-  serialization->num_bytes = shared_buffer_->GetNumBytes();
-  serialization->platform_handle_index = platform_handles->size();
+  DCHECK(shared_buffer_->GetNumBytes() < std::numeric_limits<uint32_t>::max());
+  serialization->num_bytes =
+      static_cast<uint32_t>(shared_buffer_->GetNumBytes());
+  DCHECK(platform_handles->size() < std::numeric_limits<uint32_t>::max());
+  serialization->platform_handle_index =
+      static_cast<uint32_t>(platform_handles->size());
   platform_handles->push_back(platform_handle.release());
   *actual_size = sizeof(SerializedSharedBufferDispatcher);
 

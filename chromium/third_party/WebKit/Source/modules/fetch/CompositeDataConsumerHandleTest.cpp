@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/CompositeDataConsumerHandle.h"
 
 #include "modules/fetch/DataConsumerHandleTestUtil.h"
@@ -13,10 +12,9 @@
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
 #include "public/platform/WebWaitableEvent.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Locker.h"
-
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -62,8 +60,8 @@ public:
         ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
@@ -77,14 +75,14 @@ private:
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
         m_updater->update(DataConsumerHandle::create("handle2", m_context));
         m_updater.clear();
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
     OwnPtr<WebDataConsumerHandle> m_handle;
@@ -101,8 +99,8 @@ public:
         ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
@@ -117,15 +115,15 @@ private:
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
         m_updater->update(DataConsumerHandle::create("handle2", m_context));
         m_updater.clear();
         m_handle = nullptr;
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
     OwnPtr<WebDataConsumerHandle> m_handle;
@@ -142,8 +140,8 @@ public:
         ThreadHolder holder(this);
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
@@ -158,15 +156,15 @@ private:
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
     }
     void update()
     {
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
         m_updater->update(DataConsumerHandle::create("handle2", m_context));
         m_updater.clear();
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
     OwnPtr<WebDataConsumerHandle> m_handle;
@@ -184,8 +182,8 @@ public:
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
         m_updateEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
@@ -200,17 +198,17 @@ private:
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
         m_updateEvent->wait();
     }
 
     void update()
     {
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::reobtainReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::reobtainReader, this)));
         m_updater->update(DataConsumerHandle::create("handle2", m_context));
         m_updater.clear();
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         m_updateEvent->signal();
     }
 
@@ -236,8 +234,8 @@ public:
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
         m_updateEvent = adoptPtr(Platform::current()->createWaitableEvent());
 
-        postTaskToUpdatingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
-        postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+        postTaskToUpdatingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::createHandle, this)));
+        postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
     }
 
 private:
@@ -252,7 +250,7 @@ private:
     void obtainReader()
     {
         m_reader = m_handle->obtainReader(&m_client);
-        postTaskToUpdatingThread(FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
+        postTaskToUpdatingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::update, this)));
         // Stalls this thread while updating handles.
         m_updateEvent->wait();
     }
@@ -262,8 +260,8 @@ private:
         m_updater->update(DataConsumerHandle::create("handle3", m_context));
         m_updateEvent->signal();
         m_updater.clear();
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-        postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+        postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
     }
 
     OwnPtr<WebDataConsumerHandle> m_handle;

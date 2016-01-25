@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/GainNode.h"
-
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/audio/AudioBus.h"
@@ -73,7 +70,13 @@ void GainHandler::process(size_t framesToProcess)
             }
         } else {
             // Apply the gain with de-zippering into the output bus.
-            outputBus->copyWithGainFrom(*inputBus, &m_lastGain, m_gain->value());
+            if (!m_lastGain && m_lastGain == m_gain->value()) {
+                // If the gain is 0 (and we've converged on dezippering), just zero the bus and set
+                // the silence hint.
+                outputBus->zero();
+            } else {
+                outputBus->copyWithGainFrom(*inputBus, &m_lastGain, m_gain->value());
+            }
         }
     }
 }
@@ -136,4 +139,3 @@ DEFINE_TRACE(GainNode)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

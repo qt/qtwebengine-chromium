@@ -4,13 +4,13 @@
 
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 
-#include <X11/extensions/shape.h>
-#include <X11/extensions/XInput2.h>
 #include <X11/Xatom.h>
 #include <X11/Xregion.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/XInput2.h>
+#include <X11/extensions/shape.h>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -25,6 +25,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/base/x/x11_util_internal.h"
 #include "ui/events/devices/x11/device_data_manager_x11.h"
 #include "ui/events/devices/x11/device_list_cache_x11.h"
 #include "ui/events/devices/x11/touch_factory_x11.h"
@@ -40,6 +41,7 @@
 #include "ui/gfx/path_x11.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/corewm/tooltip_aura.h"
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/views_delegate.h"
@@ -254,7 +256,7 @@ void DesktopWindowTreeHostX11::SwapNonClientEventHandler(
   if (x11_non_client_event_filter_)
     compound_event_filter->RemoveHandler(x11_non_client_event_filter_.get());
   compound_event_filter->AddHandler(handler.get());
-  x11_non_client_event_filter_ = handler.Pass();
+  x11_non_client_event_filter_ = std::move(handler);
 }
 
 void DesktopWindowTreeHostX11::CleanUpWindowList(
@@ -305,7 +307,7 @@ void DesktopWindowTreeHostX11::OnNativeWidgetCreated(
 
   // TODO(erg): Unify this code once the other consumer goes away.
   SwapNonClientEventHandler(
-      scoped_ptr<ui::EventHandler>(new X11WindowEventFilter(this)).Pass());
+      scoped_ptr<ui::EventHandler>(new X11WindowEventFilter(this)));
   SetUseNativeFrame(params.type == Widget::InitParams::TYPE_WINDOW &&
                     !params.remove_standard_frame);
 
@@ -1084,10 +1086,11 @@ void DesktopWindowTreeHostX11::OnCursorVisibilityChangedNative(bool show) {
 
 void DesktopWindowTreeHostX11::InitX11Window(
     const Widget::InitParams& params) {
-  unsigned long attribute_mask = CWBackPixmap;
+  unsigned long attribute_mask = CWBackPixmap | CWBitGravity;
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
+  swa.bit_gravity = NorthWestGravity;
 
   ::Atom window_type;
   switch (params.type) {
@@ -1111,33 +1114,27 @@ void DesktopWindowTreeHostX11::InitX11Window(
       window_type = atom_cache_.GetAtom("_NET_WM_WINDOW_TYPE_NORMAL");
       break;
   }
+  // An in-activatable window should not interact with the system wm.
+  if (!activatable_)
+    swa.override_redirect = True;
+
   if (swa.override_redirect)
     attribute_mask |= CWOverrideRedirect;
 
-  // Detect whether we're running inside a compositing manager. If so, try to
-  // use the ARGB visual. Otherwise, just use our parent's visual.
-  Visual* visual = CopyFromParent;
-  int depth = CopyFromParent;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableTransparentVisuals) &&
-      XGetSelectionOwner(xdisplay_, atom_cache_.GetAtom("_NET_WM_CM_S0")) !=
-          None) {
-    Visual* rgba_visual = GetARGBVisual();
-    if (rgba_visual) {
-      visual = rgba_visual;
-      depth = 32;
+  Visual* visual;
+  int depth;
+  ui::ChooseVisualForWindow(&visual, &depth);
+  if (depth == 32) {
+    attribute_mask |= CWColormap;
+    swa.colormap =
+        XCreateColormap(xdisplay_, x_root_window_, visual, AllocNone);
 
-      attribute_mask |= CWColormap;
-      swa.colormap = XCreateColormap(xdisplay_, x_root_window_, visual,
-                                     AllocNone);
+    // x.org will BadMatch if we don't set a border when the depth isn't the
+    // same as the parent depth.
+    attribute_mask |= CWBorderPixel;
+    swa.border_pixel = 0;
 
-      // x.org will BadMatch if we don't set a border when the depth isn't the
-      // same as the parent depth.
-      attribute_mask |= CWBorderPixel;
-      swa.border_pixel = 0;
-
-      use_argb_visual_ = true;
-    }
+    use_argb_visual_ = true;
   }
 
   bounds_in_pixels_ = ToPixelRect(params.bounds);
@@ -1543,8 +1540,9 @@ void DesktopWindowTreeHostX11::ConvertEventToDifferentHost(
             display_dest.device_scale_factor());
   gfx::Vector2d offset = GetLocationOnNativeScreen() -
                          host->GetLocationOnNativeScreen();
-  gfx::Point location_in_pixel_in_host = located_event->location() + offset;
-  located_event->set_location(location_in_pixel_in_host);
+  gfx::PointF location_in_pixel_in_host =
+      located_event->location_f() + gfx::Vector2dF(offset);
+  located_event->set_location_f(location_in_pixel_in_host);
 }
 
 void DesktopWindowTreeHostX11::ResetWindowRegion() {
@@ -1612,33 +1610,6 @@ void DesktopWindowTreeHostX11::SerializeImageRepresentation(
   for (int y = 0; y < height; ++y)
     for (int x = 0; x < width; ++x)
       data->push_back(bitmap.getColor(x, y));
-}
-
-Visual* DesktopWindowTreeHostX11::GetARGBVisual() {
-  XVisualInfo visual_template;
-  visual_template.screen = 0;
-
-  int visuals_len;
-  gfx::XScopedPtr<XVisualInfo[]> visual_list(XGetVisualInfo(
-      xdisplay_, VisualScreenMask, &visual_template, &visuals_len));
-  for (int i = 0; i < visuals_len; ++i) {
-    // Why support only 8888 ARGB? Because it's all that GTK+ supports. In
-    // gdkvisual-x11.cc, they look for this specific visual and use it for all
-    // their alpha channel using needs.
-    //
-    // TODO(erg): While the following does find a valid visual, some GL drivers
-    // don't believe that this has an alpha channel. According to marcheu@,
-    // this should work on open source driver though. (It doesn't work with
-    // NVidia's binaries currently.) http://crbug.com/369209
-    const XVisualInfo& info = visual_list[i];
-    if (info.depth == 32 && info.visual->red_mask == 0xff0000 &&
-        info.visual->green_mask == 0x00ff00 &&
-        info.visual->blue_mask == 0x0000ff) {
-      return info.visual;
-    }
-  }
-
-  return nullptr;
 }
 
 std::list<XID>& DesktopWindowTreeHostX11::open_windows() {
@@ -2067,7 +2038,7 @@ ui::NativeTheme* DesktopWindowTreeHost::GetNativeTheme(aura::Window* window) {
       return native_theme;
   }
 
-  return ui::NativeTheme::instance();
+  return ui::NativeThemeAura::instance();
 }
 
 }  // namespace views

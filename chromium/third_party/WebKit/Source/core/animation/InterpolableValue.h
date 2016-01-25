@@ -15,7 +15,7 @@
 namespace blink {
 
 class CORE_EXPORT InterpolableValue {
-    WTF_MAKE_FAST_ALLOCATED(InterpolableValue);
+    USING_FAST_MALLOC(InterpolableValue);
 public:
     virtual ~InterpolableValue() { }
 
@@ -24,7 +24,10 @@ public:
     virtual bool isList() const { return false; }
     virtual bool isAnimatableValue() const { return false; }
 
+    virtual bool equals(const InterpolableValue&) const = 0;
     virtual PassOwnPtr<InterpolableValue> clone() const = 0;
+    virtual PassOwnPtr<InterpolableValue> cloneAndZero() const = 0;
+    virtual void scale(double scale) = 0;
     virtual void scaleAndAdd(double scale, const InterpolableValue& other) = 0;
 
 private:
@@ -52,11 +55,14 @@ public:
 
     bool isNumber() const final { return true; }
     double value() const { return m_value; }
+    bool equals(const InterpolableValue& other) const final;
     PassOwnPtr<InterpolableValue> clone() const final { return create(m_value); }
+    PassOwnPtr<InterpolableValue> cloneAndZero() const final { return create(0); }
+    void scale(double scale) final;
+    void scaleAndAdd(double scale, const InterpolableValue& other) final;
 
 private:
     void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const final;
-    void scaleAndAdd(double scale, const InterpolableValue& other) final;
     double m_value;
 
     explicit InterpolableNumber(double value)
@@ -75,11 +81,14 @@ public:
 
     bool isBool() const final { return true; }
     bool value() const { return m_value; }
+    bool equals(const InterpolableValue&) const final { ASSERT_NOT_REACHED(); return false; }
     PassOwnPtr<InterpolableValue> clone() const final { return create(m_value); }
+    PassOwnPtr<InterpolableValue> cloneAndZero() const final { ASSERT_NOT_REACHED(); return nullptr; }
+    void scale(double scale) final { ASSERT_NOT_REACHED(); }
+    void scaleAndAdd(double scale, const InterpolableValue& other) final { ASSERT_NOT_REACHED(); }
 
 private:
     void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const final;
-    void scaleAndAdd(double scale, const InterpolableValue& other) final { ASSERT_NOT_REACHED(); }
     bool m_value;
 
     explicit InterpolableBool(bool value)
@@ -120,17 +129,20 @@ public:
         ASSERT(position < m_size);
         return m_values[position].get();
     }
-    InterpolableValue* get(size_t position)
+    OwnPtr<InterpolableValue>& getMutable(size_t position)
     {
         ASSERT(position < m_size);
-        return m_values[position].get();
+        return m_values[position];
     }
     size_t length() const { return m_size; }
+    bool equals(const InterpolableValue& other) const final;
     PassOwnPtr<InterpolableValue> clone() const final { return create(*this); }
+    PassOwnPtr<InterpolableValue> cloneAndZero() const final;
+    void scale(double scale) final;
+    void scaleAndAdd(double scale, const InterpolableValue& other) final;
 
 private:
     void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const final;
-    void scaleAndAdd(double scale, const InterpolableValue& other) final;
     explicit InterpolableList(size_t size)
         : m_size(size)
         , m_values(m_size)
@@ -159,11 +171,14 @@ public:
 
     bool isAnimatableValue() const final { return true; }
     AnimatableValue* value() const { return m_value.get(); }
+    bool equals(const InterpolableValue&) const final { ASSERT_NOT_REACHED(); return false; }
     PassOwnPtr<InterpolableValue> clone() const final { return create(m_value); }
+    PassOwnPtr<InterpolableValue> cloneAndZero() const final { ASSERT_NOT_REACHED(); return nullptr; }
+    void scale(double scale) final { ASSERT_NOT_REACHED(); }
+    void scaleAndAdd(double scale, const InterpolableValue& other) final { ASSERT_NOT_REACHED(); }
 
 private:
     void interpolate(const InterpolableValue &to, const double progress, InterpolableValue& result) const final;
-    void scaleAndAdd(double scale, const InterpolableValue& other) final { ASSERT_NOT_REACHED(); }
     RefPtr<AnimatableValue> m_value;
 
     InterpolableAnimatableValue(PassRefPtr<AnimatableValue> value)

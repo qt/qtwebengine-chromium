@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/custom/CustomElementMicrotaskRunQueue.h"
 
 #include "core/dom/Microtask.h"
@@ -15,10 +14,12 @@ namespace blink {
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CustomElementMicrotaskRunQueue)
 
 CustomElementMicrotaskRunQueue::CustomElementMicrotaskRunQueue()
-    : m_weakFactory(this)
-    , m_syncQueue(CustomElementSyncMicrotaskQueue::create())
+    : m_syncQueue(CustomElementSyncMicrotaskQueue::create())
     , m_asyncQueue(CustomElementAsyncImportMicrotaskQueue::create())
     , m_dispatchIsPending(false)
+#if !ENABLE(OILPAN)
+    , m_weakFactory(this)
+#endif
 {
 }
 
@@ -36,7 +37,7 @@ void CustomElementMicrotaskRunQueue::enqueue(HTMLImportLoader* parentLoader, Pas
     requestDispatchIfNeeded();
 }
 
-void CustomElementMicrotaskRunQueue::dispatchIfAlive(WeakPtr<CustomElementMicrotaskRunQueue> self)
+void CustomElementMicrotaskRunQueue::dispatchIfAlive(WeakPtrWillBeWeakPersistent<CustomElementMicrotaskRunQueue> self)
 {
     if (self.get()) {
         RefPtrWillBeRawPtr<CustomElementMicrotaskRunQueue> protect(self.get());
@@ -48,7 +49,11 @@ void CustomElementMicrotaskRunQueue::requestDispatchIfNeeded()
 {
     if (m_dispatchIsPending || isEmpty())
         return;
+#if ENABLE(OILPAN)
+    Microtask::enqueueMicrotask(WTF::bind(&CustomElementMicrotaskRunQueue::dispatchIfAlive, WeakPersistent<CustomElementMicrotaskRunQueue>(this)));
+#else
     Microtask::enqueueMicrotask(WTF::bind(&CustomElementMicrotaskRunQueue::dispatchIfAlive, m_weakFactory.createWeakPtr()));
+#endif
     m_dispatchIsPending = true;
 }
 

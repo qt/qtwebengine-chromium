@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "content/child/child_message_filter.h"
 #include "content/child/scoped_child_process_reference.h"
 #include "ipc/ipc_listener.h"
@@ -70,7 +71,8 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
       const blink::WebSecurityOrigin& origin) override;
   blink::WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(
       blink::WebDataSource*) override;
-  void sendDevToolsMessage(int call_id,
+  void sendDevToolsMessage(int session_id,
+                           int call_id,
                            const blink::WebString& message,
                            const blink::WebString& state) override;
 

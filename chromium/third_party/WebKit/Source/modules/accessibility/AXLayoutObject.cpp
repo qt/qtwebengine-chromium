@@ -26,7 +26,6 @@
 * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "config.h"
 #include "modules/accessibility/AXLayoutObject.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -42,6 +41,7 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/iterators/CharacterIterator.h"
 #include "core/editing/iterators/TextIterator.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLImageElement.h"
@@ -167,7 +167,7 @@ static inline bool lastChildHasContinuation(LayoutObject* layoutObject)
 static LayoutBoxModelObject* nextContinuation(LayoutObject* layoutObject)
 {
     ASSERT(layoutObject);
-    if (layoutObject->isLayoutInline() && !layoutObject->isReplaced())
+    if (layoutObject->isLayoutInline() && !layoutObject->isAtomicInlineLevel())
         return toLayoutInline(layoutObject)->continuation();
     if (layoutObject->isLayoutBlock())
         return toLayoutBlock(layoutObject)->inlineElementContinuation();
@@ -215,24 +215,11 @@ LayoutRect AXLayoutObject::elementRect() const
     return m_cachedElementRect;
 }
 
-void AXLayoutObject::setLayoutObject(LayoutObject* layoutObject)
-{
-    m_layoutObject = layoutObject;
-    setNode(layoutObject->node());
-}
-
 LayoutBoxModelObject* AXLayoutObject::layoutBoxModelObject() const
 {
     if (!m_layoutObject || !m_layoutObject->isBoxModelObject())
         return 0;
     return toLayoutBoxModelObject(m_layoutObject);
-}
-
-Document* AXLayoutObject::topDocument() const
-{
-    if (!document())
-        return 0;
-    return &document()->topDocument();
 }
 
 bool AXLayoutObject::shouldNotifyActiveDescendant() const
@@ -274,14 +261,8 @@ static bool isImageOrAltText(LayoutBoxModelObject* box, Node* node)
     return false;
 }
 
-AccessibilityRole AXLayoutObject::determineAccessibilityRole()
+AccessibilityRole AXLayoutObject::nativeAccessibilityRoleIgnoringAria() const
 {
-    if (!m_layoutObject)
-        return UnknownRole;
-
-    if ((m_ariaRole = determineAriaRoleAttribute()) != UnknownRole)
-        return m_ariaRole;
-
     Node* node = m_layoutObject->node();
     LayoutBoxModelObject* cssBox = layoutBoxModelObject();
 
@@ -321,7 +302,18 @@ AccessibilityRole AXLayoutObject::determineAccessibilityRole()
     if (m_layoutObject->isHR())
         return SplitterRole;
 
-    AccessibilityRole role = AXNodeObject::determineAccessibilityRoleUtil();
+    return AXNodeObject::nativeAccessibilityRoleIgnoringAria();
+}
+
+AccessibilityRole AXLayoutObject::determineAccessibilityRole()
+{
+    if (!m_layoutObject)
+        return UnknownRole;
+
+    if ((m_ariaRole = determineAriaRoleAttribute()) != UnknownRole)
+        return m_ariaRole;
+
+    AccessibilityRole role = nativeAccessibilityRoleIgnoringAria();
     if (role != UnknownRole)
         return role;
 
@@ -364,7 +356,7 @@ bool AXLayoutObject::isAttachment() const
         return false;
     // Widgets are the replaced elements that we represent to AX as attachments
     bool isLayoutPart = layoutObject->isLayoutPart();
-    ASSERT(!isLayoutPart || (layoutObject->isReplaced() && !isImage()));
+    ASSERT(!isLayoutPart || (layoutObject->isAtomicInlineLevel() && !isImage()));
     return isLayoutPart;
 }
 
@@ -400,6 +392,8 @@ bool AXLayoutObject::isEditable() const
     return AXNodeObject::isEditable();
 }
 
+// Requires layoutObject to be present because it relies on style
+// user-modify. Don't move this logic to AXNodeObject.
 bool AXLayoutObject::isRichlyEditable() const
 {
     if (node() && node()->isContentRichlyEditable())
@@ -541,6 +535,9 @@ bool AXLayoutObject::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReason
     ASSERT(m_initialized);
 #endif
 
+    if (!m_layoutObject)
+        return true;
+
     // Check first if any of the common reasons cause this element to be ignored.
     // Then process other use cases that need to be applied to all the various roles
     // that AXLayoutObjects take on.
@@ -589,7 +586,7 @@ bool AXLayoutObject::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReason
     // find out if this element is inside of a label element.
     // if so, it may be ignored because it's the label for a checkbox or radio button
     AXObject* controlObject = correspondingControlForLabelElement();
-    if (controlObject && !controlObject->deprecatedExposesTitleUIElement() && controlObject->isCheckboxOrRadio()) {
+    if (controlObject && controlObject->isCheckboxOrRadio() && controlObject->nameFromLabelElement()) {
         if (ignoredReasons) {
             HTMLLabelElement* label = labelElementContainer();
             if (label && !label->isSameNode(node())) {
@@ -752,7 +749,7 @@ bool AXLayoutObject::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReason
 
             // check whether laid out image was stretched from one-dimensional file image
             if (image->cachedImage()) {
-                LayoutSize imageSize = image->cachedImage()->imageSizeForLayoutObject(m_layoutObject, image->view()->zoomFactor());
+                LayoutSize imageSize = image->cachedImage()->imageSize(LayoutObject::shouldRespectImageOrientation(m_layoutObject), image->view()->zoomFactor());
                 if (imageSize.height() <= 1 || imageSize.width() <= 1) {
                     if (ignoredReasons)
                         ignoredReasons->append(IgnoredReason(AXProbablyPresentational));
@@ -1085,16 +1082,6 @@ String AXLayoutObject::stringValue() const
 
     LayoutBoxModelObject* cssBox = layoutBoxModelObject();
 
-    if (ariaRoleAttribute() == StaticTextRole) {
-        String staticText = text();
-        if (!staticText.length())
-            staticText = deprecatedTextUnderElement(TextUnderElementAll);
-        return staticText;
-    }
-
-    if (m_layoutObject->isText())
-        return deprecatedTextUnderElement(TextUnderElementAll);
-
     if (cssBox && cssBox->isMenuList()) {
         // LayoutMenuList will go straight to the text() of its selected item.
         // This has to be overridden in the case where the selected item has an ARIA label.
@@ -1108,9 +1095,6 @@ String AXLayoutObject::stringValue() const
         }
         return toLayoutMenuList(m_layoutObject)->text();
     }
-
-    if (m_layoutObject->isListMarker())
-        return toLayoutListMarker(m_layoutObject)->text();
 
     if (isWebArea()) {
         // FIXME: Why would a layoutObject exist when the Document isn't attached to a frame?
@@ -1140,6 +1124,42 @@ String AXLayoutObject::stringValue() const
     // this would require subclassing or making accessibilityAttributeNames do something other than return a
     // single static array.
     return String();
+}
+
+String AXLayoutObject::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
+{
+    if (m_layoutObject) {
+        String textAlternative;
+        bool foundTextAlternative = false;
+
+        if (m_layoutObject->isBR()) {
+            textAlternative = String("\n");
+            foundTextAlternative = true;
+        } else if (m_layoutObject->isText() && (!recursive || !m_layoutObject->isCounter())) {
+            LayoutText* layoutText = toLayoutText(m_layoutObject);
+            String result = layoutText->plainText();
+            if (!result.isEmpty() || layoutText->isAllCollapsibleWhitespace())
+                textAlternative = result;
+            else
+                textAlternative = layoutText->text();
+            foundTextAlternative = true;
+        } else if (m_layoutObject->isListMarker() && !recursive) {
+            textAlternative = toLayoutListMarker(m_layoutObject)->text();
+            foundTextAlternative = true;
+        }
+
+        if (foundTextAlternative) {
+            nameFrom = AXNameFromContents;
+            if (nameSources) {
+                nameSources->append(NameSource(false));
+                nameSources->last().type = nameFrom;
+                nameSources->last().text = textAlternative;
+            }
+            return textAlternative;
+        }
+    }
+
+    return AXNodeObject::textAlternative(recursive, inAriaLabelledByTraversal, visited, nameFrom, relatedObjects, nameSources);
 }
 
 //
@@ -1175,29 +1195,29 @@ AXObject* AXLayoutObject::activeDescendant() const
     return 0;
 }
 
-void AXLayoutObject::ariaFlowToElements(AccessibilityChildrenVector& flowTo) const
+void AXLayoutObject::ariaFlowToElements(AXObjectVector& flowTo) const
 {
     accessibilityChildrenFromAttribute(aria_flowtoAttr, flowTo);
 }
 
-void AXLayoutObject::ariaControlsElements(AccessibilityChildrenVector& controls) const
+void AXLayoutObject::ariaControlsElements(AXObjectVector& controls) const
 {
     accessibilityChildrenFromAttribute(aria_controlsAttr, controls);
 }
 
-void AXLayoutObject::deprecatedAriaDescribedbyElements(AccessibilityChildrenVector& describedby) const
+void AXLayoutObject::ariaOwnsElements(AXObjectVector& owns) const
+{
+    accessibilityChildrenFromAttribute(aria_ownsAttr, owns);
+}
+
+void AXLayoutObject::ariaDescribedbyElements(AXObjectVector& describedby) const
 {
     accessibilityChildrenFromAttribute(aria_describedbyAttr, describedby);
 }
 
-void AXLayoutObject::deprecatedAriaLabelledbyElements(AccessibilityChildrenVector& labelledby) const
+void AXLayoutObject::ariaLabelledbyElements(AXObjectVector& labelledby) const
 {
     accessibilityChildrenFromAttribute(aria_labelledbyAttr, labelledby);
-}
-
-void AXLayoutObject::ariaOwnsElements(AccessibilityChildrenVector& owns) const
-{
-    accessibilityChildrenFromAttribute(aria_ownsAttr, owns);
 }
 
 bool AXLayoutObject::ariaHasPopup() const
@@ -1223,7 +1243,7 @@ bool AXLayoutObject::ariaRoleHasPresentationalChildren() const
 AXObject* AXLayoutObject::ancestorForWhichThisIsAPresentationalChild() const
 {
     // Walk the parent chain looking for a parent that has presentational children
-    AXObject* parent = parentObject();
+    AXObject* parent = parentObjectIfExists();
     while (parent) {
         if (parent->ariaRoleHasPresentationalChildren())
             break;
@@ -1347,75 +1367,6 @@ bool AXLayoutObject::liveRegionBusy() const
 }
 
 //
-// Accessibility Text.
-//
-
-String AXLayoutObject::deprecatedTextUnderElement(TextUnderElementMode mode) const
-{
-    if (!m_layoutObject)
-        return String();
-
-    if (m_layoutObject->isBR())
-        return String("\n");
-
-    if (m_layoutObject->isFileUploadControl())
-        return toLayoutFileUploadControl(m_layoutObject)->buttonValue();
-
-    if (m_layoutObject->isText()) {
-        LayoutText* layoutText = toLayoutText(m_layoutObject);
-        String result = layoutText->plainText();
-        if (!result.isEmpty() || layoutText->isAllCollapsibleWhitespace())
-            return result;
-        return layoutText->text();
-    }
-
-    return AXNodeObject::deprecatedTextUnderElement(mode);
-}
-
-//
-// Accessibility Text - (To be deprecated).
-//
-
-String AXLayoutObject::deprecatedHelpText() const
-{
-    if (!m_layoutObject)
-        return String();
-
-    const AtomicString& ariaHelp = getAttribute(aria_helpAttr);
-    if (!ariaHelp.isEmpty())
-        return ariaHelp;
-
-    String describedBy = ariaDescribedByAttribute();
-    if (!describedBy.isEmpty())
-        return describedBy;
-
-    String description = deprecatedAccessibilityDescription();
-    for (LayoutObject* curr = m_layoutObject; curr; curr = curr->parent()) {
-        if (curr->node() && curr->node()->isHTMLElement()) {
-            const AtomicString& summary = toElement(curr->node())->getAttribute(summaryAttr);
-            if (!summary.isEmpty())
-                return summary;
-
-            // The title attribute should be used as help text unless it is already being used as descriptive text.
-            const AtomicString& title = toElement(curr->node())->getAttribute(titleAttr);
-            if (!title.isEmpty() && description != title)
-                return title;
-        }
-
-        // Only take help text from an ancestor element if its a group or an unknown role. If help was
-        // added to those kinds of elements, it is likely it was meant for a child element.
-        AXObject* axObj = axObjectCache().getOrCreate(curr);
-        if (axObj) {
-            AccessibilityRole role = axObj->roleValue();
-            if (role != GroupRole && role != UnknownRole)
-                break;
-        }
-    }
-
-    return String();
-}
-
-//
 // Position and size.
 //
 
@@ -1476,7 +1427,7 @@ void AXLayoutObject::markCachedElementRectDirty() const
 
     // Marks children recursively, if this element changed.
     m_cachedElementRectDirty = true;
-    for (AXObject* child = firstChild(); child; child = child->nextSibling())
+    for (AXObject* child = rawFirstChild(); child; child = child->rawNextSibling())
         child->markCachedElementRectDirty();
 }
 
@@ -1532,12 +1483,11 @@ AXObject* AXLayoutObject::accessibilityHitTest(const IntPoint& point) const
 
     // Allow the element to perform any hit-testing it might need to do to reach non-layout children.
     result = result->elementAccessibilityHitTest(point);
-
     if (result && result->accessibilityIsIgnored()) {
         // If this element is the label of a control, a hit test should return the control.
         if (result->isAXLayoutObject()) {
             AXObject* controlObject = toAXLayoutObject(result)->correspondingControlForLabelElement();
-            if (controlObject && !controlObject->deprecatedExposesTitleUIElement())
+            if (controlObject && controlObject->nameFromLabelElement())
                 return controlObject;
         }
 
@@ -1561,6 +1511,7 @@ AXObject* AXLayoutObject::elementAccessibilityHitTest(const IntPoint& point) con
 
 AXObject* AXLayoutObject::computeParent() const
 {
+    ASSERT(!isDetached());
     if (!m_layoutObject)
         return 0;
 
@@ -1615,7 +1566,7 @@ AXObject* AXLayoutObject::computeParentIfExists() const
 // Low-level accessibility tree exploration, only for use within the accessibility module.
 //
 
-AXObject* AXLayoutObject::firstChild() const
+AXObject* AXLayoutObject::rawFirstChild() const
 {
     if (!m_layoutObject)
         return 0;
@@ -1628,7 +1579,7 @@ AXObject* AXLayoutObject::firstChild() const
     return axObjectCache().getOrCreate(firstChild);
 }
 
-AXObject* AXLayoutObject::nextSibling() const
+AXObject* AXLayoutObject::rawNextSibling() const
 {
     if (!m_layoutObject)
         return 0;
@@ -1674,6 +1625,7 @@ AXObject* AXLayoutObject::nextSibling() const
 
 void AXLayoutObject::addChildren()
 {
+    ASSERT(!isDetached());
     // If the need to add more children in addition to existing children arises,
     // childrenChanged should have been called, leaving the object with no children.
     ASSERT(!m_haveChildren);
@@ -1686,9 +1638,11 @@ void AXLayoutObject::addChildren()
     HeapVector<Member<AXObject>> ownedChildren;
     computeAriaOwnsChildren(ownedChildren);
 
-    for (AXObject* obj = firstChild(); obj; obj = obj->nextSibling()) {
-        if (!axObjectCache().isAriaOwned(obj))
+    for (AXObject* obj = rawFirstChild(); obj; obj = obj->rawNextSibling()) {
+        if (!axObjectCache().isAriaOwned(obj)) {
+            obj->setParent(this);
             addChild(obj);
+        }
     }
 
     addHiddenChildren();
@@ -1826,19 +1780,16 @@ AXObject::AXRange AXLayoutObject::selection() const
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
-    RefPtrWillBeRawPtr<Range> selectionRange = firstRangeOf(selection);
-    if (!selectionRange)
+    if (selection.isNone())
         return AXRange();
 
-    int anchorOffset = selectionRange->startOffset();
-    ASSERT(anchorOffset >= 0);
-    int focusOffset = selectionRange->endOffset();
-    ASSERT(focusOffset >= 0);
+    Position visibleStart = selection.visibleStart().toParentAnchoredPosition();
+    Position visibleEnd = selection.visibleEnd().toParentAnchoredPosition();
 
-    Node* anchorNode = selectionRange->startContainer();
+    Node* anchorNode = visibleStart.anchorNode();
     ASSERT(anchorNode);
 
-    AXObject* anchorObject = nullptr;
+    AXLayoutObject* anchorObject = nullptr;
     // Find the closest node that has a corresponding AXObject.
     // This is because some nodes may be aria hidden or might not even have
     // a layout object if they are part of the shadow DOM.
@@ -1852,13 +1803,11 @@ AXObject::AXRange AXLayoutObject::selection() const
         else
             anchorNode = anchorNode->parentNode();
     }
-    if (anchorNode != selectionRange->startContainer())
-        anchorOffset = 0;
 
-    Node* focusNode = selectionRange->endContainer();
+    Node* focusNode = visibleEnd.anchorNode();
     ASSERT(focusNode);
 
-    AXObject* focusObject = nullptr;
+    AXLayoutObject* focusObject = nullptr;
     while (focusNode) {
         focusObject = getUnignoredObjectFromNode(*focusNode);
         if (focusObject)
@@ -1869,12 +1818,16 @@ AXObject::AXRange AXLayoutObject::selection() const
         else
             focusNode = focusNode->parentNode();
     }
-    if (focusNode != selectionRange->endContainer())
-        focusOffset = 0;
 
     if (!anchorObject || !focusObject)
         return AXRange();
 
+    int anchorOffset = anchorObject->indexForVisiblePosition(
+        selection.visibleStart());
+    ASSERT(anchorOffset >= 0);
+    int focusOffset = focusObject->indexForVisiblePosition(
+        selection.visibleEnd());
+    ASSERT(focusOffset >= 0);
     return AXRange(
         anchorObject, anchorOffset,
         focusObject, focusOffset);
@@ -1889,7 +1842,7 @@ AXObject::AXRange AXLayoutObject::selectionUnderObject() const
     if (textSelection.isValid())
         return textSelection;
 
-    if (!layoutObject() || !layoutObject()->frame())
+    if (!node() || !layoutObject()->frame())
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
@@ -2159,9 +2112,6 @@ VisiblePosition AXLayoutObject::visiblePositionForIndex(int index) const
     if (m_layoutObject->isTextControl())
         return toLayoutTextControl(m_layoutObject)->textFormControlElement()->visiblePositionForIndex(index);
 
-    if (!allowsTextRanges() && !m_layoutObject->isText())
-        return VisiblePosition();
-
     Node* node = m_layoutObject->node();
     if (!node)
         return VisiblePosition();
@@ -2217,6 +2167,10 @@ void AXLayoutObject::lineBreaks(Vector<int>& lineBreaks) const
         lineBreaks.append(indexForVisiblePosition(visiblePos));
         prevVisiblePos = visiblePos;
         visiblePos = nextLinePosition(visiblePos, 0, HasEditableAXRole);
+
+        // Make sure we always make forward progress.
+        if (visiblePos.deepEquivalent().compareTo(prevVisiblePos.deepEquivalent()) < 0)
+            break;
     }
 }
 
@@ -2244,18 +2198,6 @@ AXObject* AXLayoutObject::treeAncestorDisallowingChild() const
             return treeAncestor;
     }
     return 0;
-}
-
-bool AXLayoutObject::nodeIsTextControl(const Node* node) const
-{
-    if (!node)
-        return false;
-
-    const AXObject* axObjectForNode = axObjectCache().getOrCreate(const_cast<Node*>(node));
-    if (!axObjectForNode)
-        return false;
-
-    return axObjectForNode->isTextControl();
 }
 
 bool AXLayoutObject::isTabItemSelected() const
@@ -2475,10 +2417,9 @@ void AXLayoutObject::addImageMapChildren()
 
     for (HTMLAreaElement& area : Traversal<HTMLAreaElement>::descendantsOf(*map)) {
         // add an <area> element for this child if it has a link
-        if (area.isLink()) {
-            AXImageMapLink* areaObject = toAXImageMapLink(axObjectCache().getOrCreate(ImageMapLinkRole));
-            areaObject->setHTMLAreaElement(&area);
-            areaObject->setHTMLMapElement(map);
+        AXObject* obj = axObjectCache().getOrCreate(&area);
+        if (obj) {
+            AXImageMapLink* areaObject = toAXImageMapLink(obj);
             areaObject->setParent(this);
             ASSERT(areaObject->axObjectID() != 0);
             if (!areaObject->accessibilityIsIgnored())

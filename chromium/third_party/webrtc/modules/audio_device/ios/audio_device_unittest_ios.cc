@@ -26,9 +26,9 @@
 #include "webrtc/modules/audio_device/audio_device_impl.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 #include "webrtc/modules/audio_device/ios/audio_device_ios.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 using std::cout;
@@ -373,7 +373,7 @@ class MockAudioTransport : public AudioTransport {
                 int32_t(const void* audioSamples,
                         const size_t nSamples,
                         const size_t nBytesPerSample,
-                        const uint8_t nChannels,
+                        const size_t nChannels,
                         const uint32_t samplesPerSec,
                         const uint32_t totalDelayMS,
                         const int32_t clockDrift,
@@ -383,7 +383,7 @@ class MockAudioTransport : public AudioTransport {
   MOCK_METHOD8(NeedMorePlayData,
                int32_t(const size_t nSamples,
                        const size_t nBytesPerSample,
-                       const uint8_t nChannels,
+                       const size_t nChannels,
                        const uint32_t samplesPerSec,
                        void* audioSamples,
                        size_t& nSamplesOut,
@@ -413,7 +413,7 @@ class MockAudioTransport : public AudioTransport {
   int32_t RealRecordedDataIsAvailable(const void* audioSamples,
                                       const size_t nSamples,
                                       const size_t nBytesPerSample,
-                                      const uint8_t nChannels,
+                                      const size_t nChannels,
                                       const uint32_t samplesPerSec,
                                       const uint32_t totalDelayMS,
                                       const int32_t clockDrift,
@@ -428,14 +428,16 @@ class MockAudioTransport : public AudioTransport {
       audio_stream_->Write(audioSamples, nSamples);
     }
     if (ReceivedEnoughCallbacks()) {
-      test_is_done_->Set();
+      if (test_is_done_) {
+        test_is_done_->Set();
+      }
     }
     return 0;
   }
 
   int32_t RealNeedMorePlayData(const size_t nSamples,
                                const size_t nBytesPerSample,
-                               const uint8_t nChannels,
+                               const size_t nChannels,
                                const uint32_t samplesPerSec,
                                void* audioSamples,
                                size_t& nSamplesOut,
@@ -450,7 +452,9 @@ class MockAudioTransport : public AudioTransport {
       audio_stream_->Read(audioSamples, nSamples);
     }
     if (ReceivedEnoughCallbacks()) {
-      test_is_done_->Set();
+      if (test_is_done_) {
+        test_is_done_->Set();
+      }
     }
     return 0;
   }
@@ -634,6 +638,62 @@ TEST_F(AudioDeviceTest, StopPlayoutRequiresInitToRestart) {
   EXPECT_EQ(0, audio_device()->StartPlayout());
   EXPECT_EQ(0, audio_device()->StopPlayout());
   EXPECT_FALSE(audio_device()->PlayoutIsInitialized());
+}
+
+// Verify that we can create two ADMs and start playing on the second ADM.
+// Only the first active instance shall activate an audio session and the
+// last active instance shall deactivate the audio session. The test does not
+// explicitly verify correct audio session calls but instead focuses on
+// ensuring that audio starts for both ADMs.
+TEST_F(AudioDeviceTest, StartPlayoutOnTwoInstances) {
+  // Create and initialize a second/extra ADM instance. The default ADM is
+  // created by the test harness.
+  rtc::scoped_refptr<AudioDeviceModule> second_audio_device =
+      CreateAudioDevice(AudioDeviceModule::kPlatformDefaultAudio);
+  EXPECT_NE(second_audio_device.get(), nullptr);
+  EXPECT_EQ(0, second_audio_device->Init());
+
+  // Start playout for the default ADM but don't wait here. Instead use the
+  // upcoming second stream for that. We set the same expectation on number
+  // of callbacks as for the second stream.
+  NiceMock<MockAudioTransport> mock(kPlayout);
+  mock.HandleCallbacks(nullptr, nullptr, 0);
+  EXPECT_CALL(
+      mock, NeedMorePlayData(playout_frames_per_10ms_buffer(), kBytesPerSample,
+                             playout_channels(), playout_sample_rate(),
+                             NotNull(), _, _, _))
+      .Times(AtLeast(kNumCallbacks));
+  EXPECT_EQ(0, audio_device()->RegisterAudioCallback(&mock));
+  StartPlayout();
+
+  // Initialize playout for the second ADM. If all is OK, the second ADM shall
+  // reuse the audio session activated when the first ADM started playing.
+  // This call will also ensure that we avoid a problem related to initializing
+  // two different audio unit instances back to back (see webrtc:5166 for
+  // details).
+  EXPECT_EQ(0, second_audio_device->InitPlayout());
+  EXPECT_TRUE(second_audio_device->PlayoutIsInitialized());
+
+  // Start playout for the second ADM and verify that it starts as intended.
+  // Passing this test ensures that initialization of the second audio unit
+  // has been done successfully and that there is no conflict with the already
+  // playing first ADM.
+  MockAudioTransport mock2(kPlayout);
+  mock2.HandleCallbacks(test_is_done_.get(), nullptr, kNumCallbacks);
+  EXPECT_CALL(
+      mock2, NeedMorePlayData(playout_frames_per_10ms_buffer(), kBytesPerSample,
+                              playout_channels(), playout_sample_rate(),
+                              NotNull(), _, _, _))
+      .Times(AtLeast(kNumCallbacks));
+  EXPECT_EQ(0, second_audio_device->RegisterAudioCallback(&mock2));
+  EXPECT_EQ(0, second_audio_device->StartPlayout());
+  EXPECT_TRUE(second_audio_device->Playing());
+  test_is_done_->Wait(kTestTimeOutInMilliseconds);
+  EXPECT_EQ(0, second_audio_device->StopPlayout());
+  EXPECT_FALSE(second_audio_device->Playing());
+  EXPECT_FALSE(second_audio_device->PlayoutIsInitialized());
+
+  EXPECT_EQ(0, second_audio_device->Terminate());
 }
 
 // Start playout and verify that the native audio layer starts asking for real

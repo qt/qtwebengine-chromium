@@ -4,9 +4,9 @@
 
 #include "cc/layers/picture_image_layer.h"
 
+#include "cc/layers/layer_settings.h"
 #include "cc/playback/display_item.h"
 #include "cc/test/skia_common.h"
-#include "cc/trees/layer_tree_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -35,12 +35,12 @@ TEST(PictureImageLayerTest, PaintContentsToDisplayList) {
 
   skia::RefPtr<const SkImage> image =
       skia::AdoptRef(image_surface->newImageSnapshot());
-  layer->SetImage(image.Pass());
+  layer->SetImage(std::move(image));
   layer->SetBounds(gfx::Size(layer_rect.width(), layer_rect.height()));
 
   scoped_refptr<DisplayItemList> display_list =
       layer->PaintContentsToDisplayList(
-          layer_rect, ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+          ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
   unsigned char actual_pixels[4 * 200 * 200] = {0};
   DrawDisplayList(actual_pixels, layer_rect, display_list);
 

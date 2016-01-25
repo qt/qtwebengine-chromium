@@ -81,7 +81,7 @@ TEST_P(FtpDirectoryListingParserTest, Parse) {
   for (size_t i = 0; i < lines.size() / 9; i++) {
     std::string type(lines[9 * i]);
     std::string name(lines[9 * i + 1]);
-    int64 size;
+    int64_t size;
     base::StringToInt64(lines[9 * i + 2], &size);
 
     SCOPED_TRACE(base::StringPrintf("Filename: %s", name.c_str()));
@@ -156,6 +156,7 @@ const FtpTestParam kTestParams[] = {
     {"dir-listing-ls-30", OK},
     {"dir-listing-ls-31", OK},
     {"dir-listing-ls-32", OK},  // busybox
+    {"dir-listing-ls-33", OK},
 
     {"dir-listing-netware-1", OK},
     {"dir-listing-netware-2", OK},

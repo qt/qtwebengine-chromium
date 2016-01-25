@@ -20,12 +20,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLScriptElement.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
@@ -78,47 +76,24 @@ void HTMLScriptElement::didMoveToNewDocument(Document& oldDocument)
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
-void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
-    if (name == srcAttr)
+    if (name == srcAttr) {
         m_loader->handleSourceAttribute(value);
-    else if (name == asyncAttr)
+        logUpdateAttributeIfIsolatedWorldAndInDocument("script", srcAttr, oldValue, value);
+    } else if (name == asyncAttr) {
         m_loader->handleAsyncAttribute();
-    else
-        HTMLElement::parseAttribute(name, value);
-}
-
-void HTMLScriptElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == srcAttr && inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("script");
-            argv.append(srcAttr.toString());
-            argv.append(oldValue);
-            argv.append(newValue);
-            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
-        }
+    } else {
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
-    HTMLElement::attributeWillChange(name, oldValue, newValue);
 }
 
 Node::InsertionNotificationRequest HTMLScriptElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("script");
-            argv.append(fastGetAttribute(srcAttr));
-            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
-        }
-
-        if (hasSourceAttribute() && !loader()->isScriptTypeSupported(ScriptLoader::DisallowLegacyTypeInTypeAttribute))
-            UseCounter::count(document(), UseCounter::ScriptElementWithInvalidTypeHasSrc);
-    }
+    if (insertionPoint->inDocument() && hasSourceAttribute() && !loader()->isScriptTypeSupported(ScriptLoader::DisallowLegacyTypeInTypeAttribute))
+        UseCounter::count(document(), UseCounter::ScriptElementWithInvalidTypeHasSrc);
     HTMLElement::insertedInto(insertionPoint);
+    logAddElementIfIsolatedWorldAndInDocument("script", srcAttr);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 

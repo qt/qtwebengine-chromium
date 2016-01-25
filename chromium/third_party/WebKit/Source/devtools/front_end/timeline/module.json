@@ -25,7 +25,7 @@
             "actionId": "timeline.toggle-recording",
             "iconClass": "record-toolbar-item",
             "contextTypes": ["WebInspector.TimelinePanel"],
-            "className": "WebInspector.TimelinePanel.RecordActionDelegate",
+            "className": "WebInspector.TimelinePanel.ActionDelegate",
             "bindings": [
                 {
                     "platform": "windows,linux",
@@ -36,6 +36,61 @@
                     "shortcut": "Meta+E"
                 }
             ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "timeline.save-to-file",
+            "contextTypes": ["WebInspector.TimelinePanel"],
+            "className": "WebInspector.TimelinePanel.ActionDelegate",
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+S"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+S"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "timeline.load-from-file",
+            "contextTypes": ["WebInspector.TimelinePanel"],
+            "order": "10",
+            "className": "WebInspector.TimelinePanel.ActionDelegate",
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+O"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+O"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "timeline.jump-to-previous-frame",
+            "contextTypes": ["WebInspector.TimelinePanel"],
+            "className": "WebInspector.TimelinePanel.ActionDelegate",
+            "bindings": [
+                {
+                    "shortcut": "["
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "timeline.jump-to-next-frame",
+            "contextTypes": ["WebInspector.TimelinePanel"],
+            "className": "WebInspector.TimelinePanel.ActionDelegate",
+            "bindings": [
+                {
+                    "shortcut": "]"
+                }
+            ]
         }
     ],
     "dependencies": [
@@ -44,6 +99,7 @@
         "ui_lazy"
     ],
     "scripts": [
+        "LayerTreeModel.js",
         "CountersGraph.js",
         "LayerDetailsView.js",
         "LayerTreeOutline.js",
@@ -52,13 +108,11 @@
         "MemoryCountersGraph.js",
         "TimelineModel.js",
         "TimelineJSProfile.js",
-        "TimelinePresentationModel.js",
         "TimelineFrameModel.js",
         "TimelineEventOverview.js",
         "TimelineFlameChart.js",
         "TimelineTreeView.js",
         "TimelineUIUtils.js",
-        "TimelineView.js",
         "TimelineLayersView.js",
         "TimelinePaintProfilerView.js",
         "TransformController.js",
@@ -67,6 +121,7 @@
     ],
     "resources": [
         "invalidationsTree.css",
+        "timelineFlamechartPopover.css",
         "timelinePanel.css",
         "timelineStatusDialog.css"
     ]

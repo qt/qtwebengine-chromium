@@ -27,7 +27,7 @@
 #define CSSImageSetValue_h
 
 #include "core/css/CSSValueList.h"
-#include "core/fetch/ResourceLoaderOptions.h"
+#include "platform/CrossOriginAttributeValue.h"
 #include "platform/weborigin/Referrer.h"
 #include "wtf/Allocator.h"
 
@@ -46,14 +46,13 @@ public:
     ~CSSImageSetValue();
 
     bool isCachePending(float deviceScaleFactor) const;
-    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor);
-    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor, const ResourceLoaderOptions&);
-    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor);
+    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor) const;
+    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor, CrossOriginAttributeValue = CrossOriginAttributeNotSet);
 
     String customCSSText() const;
 
     struct ImageWithScale {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         String imageURL;
         Referrer referrer;
         float scaleFactor;

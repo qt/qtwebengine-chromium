@@ -4,10 +4,13 @@
 
 #include "content/browser/speech/speech_recognition_manager_impl.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
@@ -200,11 +203,8 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
   if (ask_user) {
     SpeechRecognitionSessionContext& context = session->context;
     context.label = media_stream_manager_->MakeMediaAccessRequest(
-        context.render_process_id,
-        context.render_frame_id,
-        context.request_id,
-        StreamOptions(true, false),
-        GURL(context.context_name),
+        context.render_process_id, context.render_frame_id, context.request_id,
+        StreamControls(true, false), GURL(context.context_name),
         base::Bind(
             &SpeechRecognitionManagerImpl::MediaRequestPermissionCallback,
             weak_factory_.GetWeakPtr(), session_id));
@@ -242,7 +242,7 @@ void SpeechRecognitionManagerImpl::MediaRequestPermissionCallback(
     iter->second->context.devices = devices;
 
     // Save the UI object.
-    iter->second->ui = stream_ui.Pass();
+    iter->second->ui = std::move(stream_ui);
   }
 
   // Clear the label to indicate the request has been done.

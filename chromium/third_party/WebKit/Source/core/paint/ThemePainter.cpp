@@ -19,10 +19,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/paint/ThemePainter.h"
 
 #include "core/InputTypeNames.h"
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLInputElement.h"
@@ -75,7 +75,7 @@ bool ThemePainter::paint(const LayoutObject& o, const PaintInfo& paintInfo, cons
     case SquareButtonPart:
     case ButtonPart:
     case InnerSpinButtonPart:
-        platformTheme()->paint(part, LayoutTheme::controlStatesForLayoutObject(o), const_cast<GraphicsContext*>(paintInfo.context), r, o.styleRef().effectiveZoom(), o.view()->frameView());
+        platformTheme()->paint(part, LayoutTheme::controlStatesForLayoutObject(o), const_cast<GraphicsContext&>(paintInfo.context), r, o.styleRef().effectiveZoom(), o.view()->frameView());
         return false;
     default:
         break;
@@ -246,7 +246,7 @@ void ThemePainter::paintSliderTicks(const LayoutObject& o, const PaintInfo& pain
         return;
 
     HTMLInputElement* input = toHTMLInputElement(node);
-    if (input->type() != InputTypeNames::range)
+    if (input->type() != InputTypeNames::range || !input->userAgentShadowRoot()->hasChildren())
         return;
 
     HTMLDataListElement* dataList = input->dataList();
@@ -313,7 +313,7 @@ void ThemePainter::paintSliderTicks(const LayoutObject& o, const PaintInfo& pain
             tickRect.setX(tickPosition);
         else
             tickRect.setY(tickPosition);
-        paintInfo.context->fillRect(tickRect, o.resolveColor(CSSPropertyColor));
+        paintInfo.context.fillRect(tickRect, o.resolveColor(CSSPropertyColor));
     }
 }
 
@@ -334,19 +334,19 @@ bool ThemePainter::paintUsingFallbackTheme(const LayoutObject& o, const PaintInf
 bool ThemePainter::paintCheckboxUsingFallbackTheme(const LayoutObject& o, const PaintInfo& i, const IntRect&r)
 {
     WebFallbackThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.button.checked = LayoutTheme::isChecked(o);
     extraParams.button.indeterminate = LayoutTheme::isIndeterminate(o);
 
     float zoomLevel = o.styleRef().effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context);
+    GraphicsContextStateSaver stateSaver(i.context);
     IntRect unzoomedRect = r;
     if (zoomLevel != 1) {
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
-        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(zoomLevel, zoomLevel);
-        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+        i.context.translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context.scale(zoomLevel, zoomLevel);
+        i.context.translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
     Platform::current()->fallbackThemeEngine()->paint(canvas, WebFallbackThemeEngine::PartCheckbox, getWebFallbackThemeState(o), WebRect(unzoomedRect), &extraParams);
@@ -356,19 +356,19 @@ bool ThemePainter::paintCheckboxUsingFallbackTheme(const LayoutObject& o, const 
 bool ThemePainter::paintRadioUsingFallbackTheme(const LayoutObject& o, const PaintInfo& i, const IntRect&r)
 {
     WebFallbackThemeEngine::ExtraParams extraParams;
-    WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context.canvas();
     extraParams.button.checked = LayoutTheme::isChecked(o);
     extraParams.button.indeterminate = LayoutTheme::isIndeterminate(o);
 
     float zoomLevel = o.styleRef().effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context);
+    GraphicsContextStateSaver stateSaver(i.context);
     IntRect unzoomedRect = r;
     if (zoomLevel != 1) {
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
-        i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(zoomLevel, zoomLevel);
-        i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
+        i.context.translate(unzoomedRect.x(), unzoomedRect.y());
+        i.context.scale(zoomLevel, zoomLevel);
+        i.context.translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
     Platform::current()->fallbackThemeEngine()->paint(canvas, WebFallbackThemeEngine::PartRadio, getWebFallbackThemeState(o), WebRect(unzoomedRect), &extraParams);

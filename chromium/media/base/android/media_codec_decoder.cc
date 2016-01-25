@@ -541,6 +541,19 @@ void MediaCodecDecoder::OnCodecError() {
 void MediaCodecDecoder::RequestData() {
   DCHECK(media_task_runner_->BelongsToCurrentThread());
 
+  // We request data only in kPrefetching, kPrerolling and kRunning states.
+  // For kPrerolling and kRunning this method is posted from Decoder thread,
+  // and by the time it arrives the player might be doing something else, e.g.
+  // seeking, in which case we should not request more data
+  switch (GetState()) {
+    case kPrefetching:
+    case kPrerolling:
+    case kRunning:
+      break;  // continue
+    default:
+      return;  // skip
+  }
+
   // Ensure one data request at a time.
   if (!is_data_request_in_progress_) {
     is_data_request_in_progress_ = true;
@@ -725,9 +738,7 @@ bool MediaCodecDecoder::EnqueueInputBuffer() {
              << " subsamples size:" << unit->subsamples.size();
 
     status = media_codec_bridge_->QueueSecureInputBuffer(
-        index, &unit->data[0], unit->data.size(),
-        reinterpret_cast<const uint8_t*>(&unit->key_id[0]), unit->key_id.size(),
-        reinterpret_cast<const uint8_t*>(&unit->iv[0]), unit->iv.size(),
+        index, &unit->data[0], unit->data.size(), unit->key_id, unit->iv,
         unit->subsamples.empty() ? nullptr : &unit->subsamples[0],
         unit->subsamples.size(), unit->timestamp);
   }

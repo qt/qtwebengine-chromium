@@ -31,6 +31,7 @@
 #ifndef WebSettings_h
 #define WebSettings_h
 
+#include "../platform/PointerProperties.h"
 #include "../platform/WebCommon.h"
 #include "../platform/WebSize.h"
 #include <unicode/uscript.h>
@@ -62,27 +63,6 @@ public:
         V8CacheOptionsNone,
         V8CacheOptionsParse,
         V8CacheOptionsCode,
-    };
-
-    // Bit field values indicating available pointer types. Identical to
-    // blink::PointerType enums, enforced by compile-time assertions in
-    // AssertMatchingEnums.cpp.
-    // TODO(mustaq): Move this into public/platform, like WebBlendMode.
-    enum PointerType {
-        PointerTypeNone = 1 << 0,
-        PointerTypeCoarse = 1 << 1,
-        PointerTypeFine = 1 << 2
-    };
-
-    // Bit field values indicating available hover types. Identical to
-    // blink::HoverType enums, enforced by compile-time assertions in
-    // AssertMatchingEnums.cpp.
-    enum HoverType {
-        HoverTypeNone = 1 << 0,
-        // Indicates that the primary pointing system can hover, but it requires
-        // a significant action on the user's part. e.g. hover on "long press".
-        HoverTypeOnDemand = 1 << 1,
-        HoverTypeHover = 1 << 2
     };
 
     // Selection strategy defines how the selection granularity changes when the
@@ -139,7 +119,6 @@ public:
     virtual void setAllowUniversalAccessFromFileURLs(bool) = 0;
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
     virtual void setAntialiasedClips2dCanvasEnabled(bool) = 0;
-    virtual void setAsynchronousSpellCheckingEnabled(bool) = 0;
     virtual void setAutoplayExperimentMode(const WebString&) = 0;
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
@@ -148,6 +127,7 @@ public:
     virtual void setNavigateOnDragDrop(bool) = 0;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setDNSPrefetchingEnabled(bool) = 0;
+    virtual void setDataSaverEnabled(bool) = 0;
     virtual void setDOMPasteAllowed(bool) = 0;
     virtual void setDefaultFixedFontSize(int) = 0;
     virtual void setDefaultFontSize(int) = 0;
@@ -171,14 +151,11 @@ public:
     virtual void setReportWheelOverscroll(bool) = 0;
     virtual void setForceZeroLayoutHeight(bool) = 0;
     virtual void setFullscreenSupported(bool) = 0;
-    virtual void setHidePinchScrollbarsNearMinScale(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
     virtual void setImageAnimationPolicy(ImageAnimationPolicy) = 0;
     virtual void setImagesEnabled(bool) = 0;
     virtual void setInlineTextBoxAccessibilityEnabled(bool) = 0;
-    virtual void setInvertViewportScrollOrder(bool) = 0;
-    virtual void setInertVisualViewport(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;
@@ -254,7 +231,6 @@ public:
     virtual void setTextTrackTextSize(const WebString&) = 0;
     virtual void setThreadedScrollingEnabled(bool) = 0;
     virtual void setTouchDragDropEnabled(bool) = 0;
-    virtual void setTouchEditingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setUnsafePluginPastingEnabled(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;

@@ -11,13 +11,20 @@
 #include "media/capture/video/video_capture_device.h"
 
 #import <Foundation/Foundation.h>
+#include <stddef.h>
+#include <stdint.h>
 
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 
 namespace {
 class DeckLinkCaptureDelegate;
 }  // namespace
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -45,14 +52,15 @@ class MEDIA_EXPORT VideoCaptureDeviceDeckLinkMac : public VideoCaptureDevice {
 
   // Copy of VideoCaptureDevice::Client::OnIncomingCapturedData(). Used by
   // |decklink_capture_delegate_| to forward captured frames.
-  void OnIncomingCapturedData(const uint8* data,
+  void OnIncomingCapturedData(const uint8_t* data,
                               size_t length,
                               const VideoCaptureFormat& frame_format,
                               int rotation,  // Clockwise.
                               base::TimeTicks timestamp);
 
   // Forwarder to VideoCaptureDevice::Client::OnError().
-  void SendErrorString(const std::string& reason);
+  void SendErrorString(const tracked_objects::Location& from_here,
+                       const std::string& reason);
 
   // Forwarder to VideoCaptureDevice::Client::OnLog().
   void SendLogString(const std::string& message);

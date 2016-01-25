@@ -15,8 +15,6 @@
       'utility/cloud_print/pwg_encoder.h',
       'utility/font_cache_handler_win.cc',
       'utility/font_cache_handler_win.h',
-      'utility/local_discovery/service_discovery_message_handler.cc',
-      'utility/local_discovery/service_discovery_message_handler.h',
       'utility/printing_handler.cc',
       'utility/printing_handler.h',
       'utility/safe_json_parser_handler.cc',
@@ -44,6 +42,10 @@
       'utility/importer/bookmark_html_reader.h',
       'utility/importer/bookmarks_file_importer.cc',
       'utility/importer/bookmarks_file_importer.h',
+      'utility/importer/edge_database_reader_win.cc',
+      'utility/importer/edge_database_reader_win.h',
+      'utility/importer/edge_importer_win.cc',
+      'utility/importer/edge_importer_win.h',
       'utility/importer/external_process_importer_bridge.cc',
       'utility/importer/external_process_importer_bridge.h',
       'utility/importer/favicon_reencode.cc',
@@ -124,6 +126,7 @@
         '../media/media.gyp:media',
         '../skia/skia.gyp:skia',
         '../third_party/libxml/libxml.gyp:libxml',
+        '<(DEPTH)/chrome/chrome_features.gyp:chrome_common_features',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
         'common',
@@ -144,6 +147,10 @@
                   # Prevent wininet from loading in the renderer.
                   # http://crbug.com/460679
                   'wininet.dll',
+                  'esent.dll',
+                ],
+                'AdditionalDependencies': [
+                  'esent.lib',
                 ],
               },
             },
@@ -206,12 +213,6 @@
             'utility/printing_handler.h',
           ]
         }],
-        ['enable_mdns==0', {
-          'sources!': [
-            'utility/local_discovery/service_discovery_message_handler.cc',
-            'utility/local_discovery/service_discovery_message_handler.h',
-          ]
-        }],
         ['safe_browsing==1', {
           'sources': [ '<@(chrome_utility_safe_browsing_sources)' ],
           'conditions': [
@@ -228,5 +229,39 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },
+  ],
+  'conditions': [
+    ['OS=="mac"', {
+      'targets': [
+        {
+          'target_name': 'crdmg',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../third_party/zlib/zlib.gyp:zlib',
+          ],
+          'sources': [
+            'utility/safe_browsing/mac/convert_big_endian.h',
+            'utility/safe_browsing/mac/dmg_iterator.cc',
+            'utility/safe_browsing/mac/dmg_iterator.h',
+            'utility/safe_browsing/mac/hfs.cc',
+            'utility/safe_browsing/mac/hfs.h',
+            'utility/safe_browsing/mac/read_stream.cc',
+            'utility/safe_browsing/mac/read_stream.h',
+            'utility/safe_browsing/mac/udif.cc',
+            'utility/safe_browsing/mac/udif.h',
+            'utility/safe_browsing/mac/crdmg.cc',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/usr/lib/libbz2.dylib',
+            ],
+          },
+          'xcode_settings': {
+            'MACOSX_DEPLOYMENT_TARGET': '10.10',
+          },
+        },
+      ],
+    }],
   ],
 }

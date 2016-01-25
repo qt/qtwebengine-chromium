@@ -5,11 +5,14 @@
 #ifndef CHROMECAST_BROWSER_METRICS_CAST_METRICS_SERVICE_CLIENT_H_
 #define CHROMECAST_BROWSER_METRICS_CAST_METRICS_SERVICE_CLIENT_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "components/metrics/metrics_service_client.h"
 
 class PrefRegistrySimple;
@@ -53,10 +56,16 @@ class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
   void SetForceClientId(const std::string& client_id);
   void OnApplicationNotIdle();
 
+  // Processes all events from shared file. This should be used to consume all
+  // events in the file before shutdown. This function is safe to call from any
+  // thread.
+  void ProcessExternalEvents(const base::Closure& cb);
+
   void Initialize(CastService* cast_service);
   void Finalize();
 
   // metrics::MetricsServiceClient implementation:
+  ::metrics::MetricsService* GetMetricsService() override;
   void SetMetricsClientId(const std::string& client_id) override;
   void OnRecordingDisabled() override;
   bool IsOffTheRecordSessionActive() override;

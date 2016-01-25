@@ -4,6 +4,10 @@
 
 #include "google_apis/drive/drive_api_url_generator.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -15,13 +19,15 @@ namespace {
 // OS, so use testing base urls.
 const char kBaseUrlForTesting[] = "https://www.example.com";
 const char kBaseDownloadUrlForTesting[] = "https://download.example.com/p/";
+const char kBaseThumbnailUrlForTesting[] = "https://thumbnail.example.com";
 }  // namespace
 
 class DriveApiUrlGeneratorTest : public testing::Test {
  public:
   DriveApiUrlGeneratorTest()
       : url_generator_(GURL(kBaseUrlForTesting),
-                       GURL(kBaseDownloadUrlForTesting)) {}
+                       GURL(kBaseDownloadUrlForTesting),
+                       GURL(kBaseThumbnailUrlForTesting)) {}
 
  protected:
   DriveApiUrlGenerator url_generator_;
@@ -199,7 +205,7 @@ TEST_F(DriveApiUrlGeneratorTest, GetChangesListUrl) {
     bool include_deleted;
     int max_results;
     const std::string page_token;
-    int64 start_change_id;
+    int64_t start_change_id;
     const std::string expected_query;
   };
   const TestPattern kTestPatterns[] = {
@@ -369,13 +375,12 @@ TEST_F(DriveApiUrlGeneratorTest, GeneratePermissionsInsertUrl) {
 
 TEST_F(DriveApiUrlGeneratorTest, GenerateThumbnailUrl) {
   EXPECT_EQ(
-      "https://download.example.com/p/thumb/0ADK06pfg?width=500&height=500",
-      url_generator_.GetThumbnailUrl("0ADK06pfg", 500, 500, false).spec());
+      "https://thumbnail.example.com/d/0ADK06pfg=w500-h480",
+      url_generator_.GetThumbnailUrl("0ADK06pfg", 500, 480, false).spec());
 
   EXPECT_EQ(
-      "https://download.example.com/p/thumb/"
-      "0ADK06pfg?width=360&height=360&crop=true",
-      url_generator_.GetThumbnailUrl("0ADK06pfg", 360, 360, true).spec());
+      "https://thumbnail.example.com/d/0ADK06pfg=w360-h380-c",
+      url_generator_.GetThumbnailUrl("0ADK06pfg", 360, 380, true).spec());
 }
 
 TEST_F(DriveApiUrlGeneratorTest, BatchUploadUrl) {

@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
 
 #include "core/frame/FrameView.h"
@@ -67,7 +66,7 @@ void SVGImageChromeClient::invalidateRect(const IntRect& r)
         m_image->imageObserver()->changedInRect(m_image, r);
 }
 
-void SVGImageChromeClient::scheduleAnimation()
+void SVGImageChromeClient::scheduleAnimation(Widget*)
 {
     // Because a single SVGImage can be shared by multiple pages, we can't key
     // our svg image layout on the page's real animation frame. Therefore, we
@@ -81,7 +80,7 @@ void SVGImageChromeClient::scheduleAnimation()
     // animations. Checking for pending/active animations could be more
     // stringent.
     double fireTime = m_image->hasAnimations() ? animationFrameDelay : 0;
-    m_animationTimer.startOneShot(fireTime, FROM_HERE);
+    m_animationTimer.startOneShot(fireTime, BLINK_FROM_HERE);
 }
 
 void SVGImageChromeClient::animationTimerFired(Timer<SVGImageChromeClient>*)

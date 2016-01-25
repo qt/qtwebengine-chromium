@@ -4,7 +4,10 @@
 
 #include "content/browser/media/webrtc_internals.h"
 
+#include <stddef.h>
+
 #include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "content/browser/media/webrtc_internals_ui_observer.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/public/browser/browser_thread.h"
@@ -37,12 +40,16 @@ static base::ListValue* EnsureLogList(base::DictionaryValue* dict) {
 }  // namespace
 
 WebRTCInternals::WebRTCInternals()
-    : audio_debug_recordings_(false) {
+    : audio_debug_recordings_(false),
+      event_log_recordings_(false),
+      selecting_event_log_(false) {
 // TODO(grunell): Shouldn't all the webrtc_internals* files be excluded from the
 // build if WebRTC is disabled?
 #if defined(ENABLE_WEBRTC)
   audio_debug_recordings_file_path_ =
       GetContentClient()->browser()->GetDefaultDownloadDirectory();
+  event_log_recordings_file_path_ = audio_debug_recordings_file_path_;
+
   if (audio_debug_recordings_file_path_.empty()) {
     // In this case the default path (|audio_debug_recordings_file_path_|) will
     // be empty and the platform default path will be used in the file dialog
@@ -53,6 +60,8 @@ WebRTCInternals::WebRTCInternals()
     audio_debug_recordings_file_path_ =
         audio_debug_recordings_file_path_.Append(
             FILE_PATH_LITERAL("audio_debug"));
+    event_log_recordings_file_path_ =
+        event_log_recordings_file_path_.Append(FILE_PATH_LITERAL("event_log"));
   }
 #endif  // defined(ENABLE_WEBRTC)
 }
@@ -247,6 +256,8 @@ void WebRTCInternals::EnableAudioDebugRecordings(
 #if defined(OS_ANDROID)
   EnableAudioDebugRecordingsOnAllRenderProcessHosts();
 #else
+  selecting_event_log_ = false;
+  DCHECK(select_file_dialog_ == nullptr);
   select_file_dialog_ = ui::SelectFileDialog::Create(this, NULL);
   select_file_dialog_->SelectFile(
       ui::SelectFileDialog::SELECT_SAVEAS_FILE,
@@ -288,6 +299,50 @@ const base::FilePath& WebRTCInternals::GetAudioDebugRecordingsFilePath() const {
   return audio_debug_recordings_file_path_;
 }
 
+void WebRTCInternals::SetEventLogRecordings(
+    bool enable,
+    content::WebContents* web_contents) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+#if defined(ENABLE_WEBRTC)
+  if (enable) {
+#if defined(OS_ANDROID)
+    EnableEventLogRecordingsOnAllRenderProcessHosts();
+#else
+    DCHECK(web_contents);
+    DCHECK(select_file_dialog_ == nullptr);
+    selecting_event_log_ = true;
+    select_file_dialog_ = ui::SelectFileDialog::Create(this, nullptr);
+    select_file_dialog_->SelectFile(
+        ui::SelectFileDialog::SELECT_SAVEAS_FILE, base::string16(),
+        event_log_recordings_file_path_, nullptr, 0, FILE_PATH_LITERAL(""),
+        web_contents->GetTopLevelNativeWindow(), nullptr);
+#endif
+  } else {
+    event_log_recordings_ = false;
+    // Tear down the dialog since the user has unchecked the audio debug
+    // recordings box.
+    select_file_dialog_ = nullptr;
+    DCHECK(select_file_dialog_->HasOneRef());
+
+    for (RenderProcessHost::iterator i(
+             content::RenderProcessHost::AllHostsIterator());
+         !i.IsAtEnd(); i.Advance()) {
+      i.GetCurrentValue()->DisableEventLogRecordings();
+    }
+  }
+#endif
+}
+
+bool WebRTCInternals::IsEventLogRecordingsEnabled() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  return event_log_recordings_;
+}
+
+const base::FilePath& WebRTCInternals::GetEventLogRecordingsFilePath() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  return event_log_recordings_file_path_;
+}
+
 void WebRTCInternals::ResetForTesting() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   observers_.Clear();
@@ -318,15 +373,24 @@ void WebRTCInternals::FileSelected(const base::FilePath& path,
                                    void* /*unused_params */) {
 #if defined(ENABLE_WEBRTC)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  audio_debug_recordings_file_path_ = path;
-  EnableAudioDebugRecordingsOnAllRenderProcessHosts();
+  if (selecting_event_log_) {
+    event_log_recordings_file_path_ = path;
+    EnableEventLogRecordingsOnAllRenderProcessHosts();
+  } else {
+    audio_debug_recordings_file_path_ = path;
+    EnableAudioDebugRecordingsOnAllRenderProcessHosts();
+  }
 #endif
 }
 
 void WebRTCInternals::FileSelectionCanceled(void* params) {
 #if defined(ENABLE_WEBRTC)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  SendUpdate("audioDebugRecordingsFileSelectionCancelled", NULL);
+  if (selecting_event_log_) {
+    SendUpdate("eventLogRecordingsFileSelectionCancelled", nullptr);
+  } else {
+    SendUpdate("audioDebugRecordingsFileSelectionCancelled", nullptr);
+  }
 #endif
 }
 
@@ -393,6 +457,18 @@ void WebRTCInternals::EnableAudioDebugRecordingsOnAllRenderProcessHosts() {
         audio_debug_recordings_file_path_);
   }
 }
+
+void WebRTCInternals::EnableEventLogRecordingsOnAllRenderProcessHosts() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  event_log_recordings_ = true;
+  for (RenderProcessHost::iterator i(
+           content::RenderProcessHost::AllHostsIterator());
+       !i.IsAtEnd(); i.Advance()) {
+    i.GetCurrentValue()->EnableEventLogRecordings(
+        event_log_recordings_file_path_);
+  }
+}
 #endif
 
 void WebRTCInternals::CreateOrReleasePowerSaveBlocker() {
@@ -405,11 +481,9 @@ void WebRTCInternals::CreateOrReleasePowerSaveBlocker() {
   } else if (!peer_connection_data_.empty() && !power_save_blocker_) {
     DVLOG(1) << ("Preventing the application from being suspended while one or "
                  "more PeerConnections are active.");
-    power_save_blocker_ =
-        content::PowerSaveBlocker::Create(
-            PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-            PowerSaveBlocker::kReasonOther,
-            "WebRTC has active PeerConnections").Pass();
+    power_save_blocker_ = content::PowerSaveBlocker::Create(
+        PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+        PowerSaveBlocker::kReasonOther, "WebRTC has active PeerConnections");
   }
 }
 

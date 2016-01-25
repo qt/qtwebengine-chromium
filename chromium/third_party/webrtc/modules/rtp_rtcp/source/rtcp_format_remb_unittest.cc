@@ -21,16 +21,13 @@
 #include "webrtc/test/null_transport.h"
 #include "webrtc/typedefs.h"
 
+namespace webrtc {
 namespace {
-
-using namespace webrtc;
-
 
 class TestTransport : public Transport {
  public:
-  TestTransport(RTCPReceiver* rtcp_receiver) :
-    rtcp_receiver_(rtcp_receiver) {
-  }
+  explicit TestTransport(RTCPReceiver* rtcp_receiver)
+      : rtcp_receiver_(rtcp_receiver) {}
 
   bool SendRtp(const uint8_t* /*data*/,
                size_t /*len*/,
@@ -38,9 +35,8 @@ class TestTransport : public Transport {
     return false;
   }
   bool SendRtcp(const uint8_t* packet, size_t packetLength) override {
-    RTCPUtility::RTCPParserV2 rtcpParser((uint8_t*)packet,
-                                         packetLength,
-                                         true); // Allow non-compound RTCP
+    RTCPUtility::RTCPParserV2 rtcpParser(packet, packetLength,
+                                         true);  // Allow non-compound RTCP
 
     EXPECT_TRUE(rtcpParser.IsValid());
     RTCPHelp::RTCPPacketInformation rtcpPacketInformation;
@@ -53,10 +49,10 @@ class TestTransport : public Transport {
               rtcpPacketInformation.receiverEstimatedMaxBitrate);
     return true;
   }
+
  private:
   RTCPReceiver* rtcp_receiver_;
 };
-
 
 class RtcpFormatRembTest : public ::testing::Test {
  protected:
@@ -134,3 +130,4 @@ TEST_F(RtcpFormatRembTest, TestCompund) {
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state, kRtcpRemb));
 }
 }  // namespace
+}  // namespace webrtc

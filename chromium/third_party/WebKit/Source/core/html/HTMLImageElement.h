@@ -29,6 +29,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasImageSource.h"
+#include "core/imagebitmap/ImageBitmapSource.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/network/ResourceResponse.h"
 #include "wtf/WeakPtr.h"
@@ -39,7 +40,7 @@ class HTMLFormElement;
 class ImageCandidate;
 class ShadowRoot;
 
-class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource {
+class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource, public ImageBitmapSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class ViewportChangeListener;
@@ -98,6 +99,7 @@ public:
 
     // CanvasImageSource implementation
     PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
+    bool isSVGSource() const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     FloatSize defaultDestinationSize() const override;
@@ -115,6 +117,10 @@ public:
 
     void forceReload() const;
 
+    // ImageBitmapSource implementation
+    IntSize bitmapSourceSize() const override;
+    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, ExceptionState&) override;
+
 protected:
     explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
@@ -126,7 +132,7 @@ protected:
 private:
     bool areAuthorShadowsAllowed() const override { return false; }
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
@@ -160,6 +166,7 @@ private:
     WeakPtrWillBeMember<HTMLFormElement> m_form;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
+    RefPtrWillBeMember<HTMLSourceElement> m_source;
     unsigned m_formWasSetByParser : 1;
     unsigned m_elementCreatedByParser : 1;
     // Intrinsic sizing is viewport dependant if the 'w' descriptor was used for the picked resource.

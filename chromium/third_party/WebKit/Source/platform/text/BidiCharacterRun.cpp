@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "platform/text/BidiCharacterRun.h"
 
 #include "wtf/Partitions.h"
@@ -30,21 +29,28 @@
 using namespace WTF;
 
 namespace blink {
-
-DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, bidiRunCounter, ("BidiCharacterRun"));
+namespace {
+#ifndef NDEBUG
+static RefCountedLeakCounter& bidiRunCounter()
+{
+    DEFINE_STATIC_LOCAL(RefCountedLeakCounter, staticBidiRunCounter, ("BidiCharacterRun"));
+    return staticBidiRunCounter;
+}
+#endif
+} // namespace
 
 void* BidiCharacterRun::operator new(size_t sz)
 {
 #ifndef NDEBUG
-    bidiRunCounter.increment();
+    bidiRunCounter().increment();
 #endif
-    return partitionAlloc(Partitions::layoutPartition(), sz);
+    return partitionAlloc(Partitions::layoutPartition(), sz, WTF_HEAP_PROFILER_TYPE_NAME(BidiCharacterRun));
 }
 
 void BidiCharacterRun::operator delete(void* ptr)
 {
 #ifndef NDEBUG
-    bidiRunCounter.decrement();
+    bidiRunCounter().decrement();
 #endif
     partitionFree(ptr);
 }

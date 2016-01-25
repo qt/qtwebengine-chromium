@@ -12,6 +12,13 @@ source_set("audio") {
   sources = [
     "audio_receive_stream.cc",
     "audio_receive_stream.h",
+    "audio_send_stream.cc",
+    "audio_send_stream.h",
+    "audio_sink.h",
+    "audio_state.cc",
+    "audio_state.h",
+    "conversion.h",
+    "scoped_voe_interface.h",
   ]
 
   configs += [ "..:common_config" ]
@@ -25,7 +32,7 @@ source_set("audio") {
 
   deps = [
     "..:webrtc_common",
-    "../voice_engine",
     "../system_wrappers",
+    "../voice_engine",
   ]
 }

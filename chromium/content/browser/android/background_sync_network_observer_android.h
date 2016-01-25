@@ -7,6 +7,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/background_sync/background_sync_network_observer.h"
 #include "content/public/browser/browser_thread.h"
@@ -46,9 +47,10 @@ class BackgroundSyncNetworkObserverAndroid
     // connection type changes. This updates the current connection type seen by
     // this class and calls the |network_changed_callback| provided to the
     // constructor, on the IO thread, with the new connection type.
-    void NotifyConnectionTypeChanged(JNIEnv* env,
-                                     jobject jcaller,
-                                     jint new_connection_type);
+    void NotifyConnectionTypeChanged(
+        JNIEnv* env,
+        const base::android::JavaParamRef<jobject>& jcaller,
+        jint new_connection_type);
 
    private:
     friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;

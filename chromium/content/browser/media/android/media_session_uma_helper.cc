@@ -4,6 +4,8 @@
 
 #include "content/browser/media/android/media_session_uma_helper.h"
 
+#include <utility>
+
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/default_clock.h"
@@ -25,6 +27,10 @@ void MediaSessionUmaHelper::RecordSessionSuspended(
       "Media.Session.Suspended",
       static_cast<HistogramBase::Sample>(source),
       static_cast<HistogramBase::Sample>(MediaSessionSuspendedSource::Count));
+}
+
+void MediaSessionUmaHelper::RecordRequestAudioFocusResult(bool result) const {
+  UMA_HISTOGRAM_BOOLEAN("Media.Session.RequestAudioFocusResult", result);
 }
 
 void MediaSessionUmaHelper::OnSessionActive() {
@@ -54,7 +60,7 @@ void MediaSessionUmaHelper::OnSessionInactive() {
 
 void MediaSessionUmaHelper::SetClockForTest(
     scoped_ptr<base::Clock> testing_clock) {
-  clock_ = testing_clock.Pass();
+  clock_ = std::move(testing_clock);
 }
 
 }  // namespace content

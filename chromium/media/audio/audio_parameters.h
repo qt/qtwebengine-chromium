@@ -8,9 +8,9 @@
 #include <stdint.h>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "media/audio/point.h"
 #include "media/base/audio_bus.h"
 #include "media/base/channel_layout.h"
@@ -19,37 +19,49 @@
 namespace media {
 
 // Use a struct-in-struct approach to ensure that we can calculate the required
-// size as sizeof(AudioInputBufferParameters) + #(bytes in audio buffer) without
-// using packing. Also align AudioInputBufferParameters instead of in
-// AudioInputBuffer to be able to calculate size like so. Use a macro for the
-// alignment value that's the same as AudioBus::kChannelAlignment, since MSVC
-// doesn't accept the latter to be used.
+// size as sizeof(Audio{Input,Output}BufferParameters) + #(bytes in audio
+// buffer) without using packing. Also align Audio{Input,Output}BufferParameters
+// instead of in Audio{Input,Output}Buffer to be able to calculate size like so.
+// Use a macro for the alignment value that's the same as
+// AudioBus::kChannelAlignment, since MSVC doesn't accept the latter to be used.
 #if defined(OS_WIN)
 #pragma warning(push)
 #pragma warning(disable: 4324)  // Disable warning for added padding.
 #endif
 #define PARAMETERS_ALIGNMENT 16
-COMPILE_ASSERT(AudioBus::kChannelAlignment == PARAMETERS_ALIGNMENT,
-               AudioInputBufferParameters_alignment_not_same_as_AudioBus);
+static_assert(AudioBus::kChannelAlignment == PARAMETERS_ALIGNMENT,
+              "Audio buffer parameters struct alignment not same as AudioBus");
 struct MEDIA_EXPORT ALIGNAS(PARAMETERS_ALIGNMENT) AudioInputBufferParameters {
   double volume;
-  uint32 size;
+  uint32_t size;
   uint32_t hardware_delay_bytes;
   uint32_t id;
   bool key_pressed;
+};
+struct MEDIA_EXPORT ALIGNAS(PARAMETERS_ALIGNMENT) AudioOutputBufferParameters {
+  uint32_t frames_skipped;
 };
 #undef PARAMETERS_ALIGNMENT
 #if defined(OS_WIN)
 #pragma warning(pop)
 #endif
 
-COMPILE_ASSERT(
-    sizeof(AudioInputBufferParameters) % AudioBus::kChannelAlignment == 0,
-    AudioInputBufferParameters_not_aligned);
+static_assert(sizeof(AudioInputBufferParameters) %
+                      AudioBus::kChannelAlignment ==
+                  0,
+              "AudioInputBufferParameters not aligned");
+static_assert(sizeof(AudioOutputBufferParameters) %
+                      AudioBus::kChannelAlignment ==
+                  0,
+              "AudioOutputBufferParameters not aligned");
 
 struct MEDIA_EXPORT AudioInputBuffer {
   AudioInputBufferParameters params;
-  int8 audio[1];
+  int8_t audio[1];
+};
+struct MEDIA_EXPORT AudioOutputBuffer {
+  AudioOutputBufferParameters params;
+  int8_t audio[1];
 };
 
 class MEDIA_EXPORT AudioParameters {

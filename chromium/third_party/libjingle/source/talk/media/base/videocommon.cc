@@ -31,13 +31,14 @@
 #include <math.h>
 #include <sstream>
 
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/common.h"
 
 namespace cricket {
 
 struct FourCCAliasEntry {
-  uint32 alias;
-  uint32 canonical;
+  uint32_t alias;
+  uint32_t canonical;
 };
 
 static const FourCCAliasEntry kFourCCAliases[] = {
@@ -57,8 +58,8 @@ static const FourCCAliasEntry kFourCCAliases[] = {
   {FOURCC_CM24, FOURCC_RAW},
 };
 
-uint32 CanonicalFourCC(uint32 fourcc) {
-  for (int i = 0; i < ARRAY_SIZE(kFourCCAliases); ++i) {
+uint32_t CanonicalFourCC(uint32_t fourcc) {
+  for (int i = 0; i < arraysize(kFourCCAliases); ++i) {
     if (kFourCCAliases[i].alias == fourcc) {
       return kFourCCAliases[i].canonical;
     }
@@ -75,7 +76,7 @@ static float kScaleFactors[] = {
   1.f / 16.f  // 1/16 scale.
 };
 
-static const int kNumScaleFactors = ARRAY_SIZE(kScaleFactors);
+static const int kNumScaleFactors = arraysize(kScaleFactors);
 
 // Finds the scale factor that, when applied to width and height, produces
 // fewer than num_pixels.
@@ -106,9 +107,6 @@ void ComputeScaleMaxPixels(int frame_width, int frame_height, int max_pixels,
   ASSERT(scaled_width != NULL);
   ASSERT(scaled_height != NULL);
   ASSERT(max_pixels > 0);
-  // For VP8 the values for max width and height can be found here
-  // webrtc/src/video_engine/vie_defines.h (kViEMaxCodecWidth and
-  // kViEMaxCodecHeight)
   const int kMaxWidth = 4096;
   const int kMaxHeight = 3072;
   int new_frame_width = frame_width;
@@ -223,7 +221,7 @@ void ComputeScaleToSquarePixels(int in_width, int in_height,
 // as a multiply defined symbol error. See Also:
 // http://msdn.microsoft.com/en-us/library/34h23df8.aspx
 #ifndef _MSC_EXTENSIONS
-const int64 VideoFormat::kMinimumInterval;  // Initialized in header.
+const int64_t VideoFormat::kMinimumInterval;  // Initialized in header.
 #endif
 
 std::string VideoFormat::ToString() const {

@@ -12,8 +12,6 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_1_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_1_AUTOGEN_H_
 
-// TODO(gman): ActiveTexture
-
 TEST_P(GLES2DecoderTest1, AttachShaderValidArgs) {
   EXPECT_CALL(*gl_, AttachShader(kServiceProgramId, kServiceShaderId));
   SpecializedSetup<cmds::AttachShader, 0>(true);
@@ -22,7 +20,6 @@ TEST_P(GLES2DecoderTest1, AttachShaderValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): BindAttribLocationBucket
 
 TEST_P(GLES2DecoderTest1, BindBufferValidArgs) {
   EXPECT_CALL(*gl_, BindBuffer(GL_ARRAY_BUFFER, kServiceBufferId));
@@ -308,9 +305,6 @@ TEST_P(GLES2DecoderTest1, BlendFuncSeparateValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): BufferData
-
-// TODO(gman): BufferSubData
 
 TEST_P(GLES2DecoderTest1, CheckFramebufferStatusValidArgs) {
   EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER));
@@ -348,10 +342,6 @@ TEST_P(GLES2DecoderTest1, ClearValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): ClearBufferfi
-// TODO(gman): ClearBufferfvImmediate
-// TODO(gman): ClearBufferivImmediate
-// TODO(gman): ClearBufferuivImmediate
 
 TEST_P(GLES2DecoderTest1, ClearColorValidArgs) {
   EXPECT_CALL(*gl_, ClearColor(1, 2, 3, 4));
@@ -379,7 +369,6 @@ TEST_P(GLES2DecoderTest1, ClearStencilValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): ClientWaitSync
 
 TEST_P(GLES2DecoderTest1, ColorMaskValidArgs) {
   SpecializedSetup<cmds::ColorMask, 0>(true);
@@ -388,18 +377,6 @@ TEST_P(GLES2DecoderTest1, ColorMaskValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): CompileShader
-// TODO(gman): CompressedTexImage2DBucket
-// TODO(gman): CompressedTexImage2D
-
-// TODO(gman): CompressedTexSubImage2DBucket
-// TODO(gman): CompressedTexSubImage2D
-
-// TODO(gman): CompressedTexImage3DBucket
-// TODO(gman): CompressedTexImage3D
-
-// TODO(gman): CompressedTexSubImage3DBucket
-// TODO(gman): CompressedTexSubImage3D
 
 TEST_P(GLES2DecoderTest1, CopyBufferSubDataValidArgs) {
   EXPECT_CALL(*gl_,
@@ -413,7 +390,6 @@ TEST_P(GLES2DecoderTest1, CopyBufferSubDataValidArgs) {
   decoder_->set_unsafe_es3_apis_enabled(false);
   EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
 }
-// TODO(gman): CopyTexImage2D
 
 TEST_P(GLES2DecoderTest1, CopyTexSubImage2DValidArgs) {
   EXPECT_CALL(*gl_, CopyTexSubImage2D(GL_TEXTURE_2D, 2, 3, 4, 5, 6, 7, 8));
@@ -586,10 +562,7 @@ TEST_P(GLES2DecoderTest1, DeleteSamplersImmediateValidArgs) {
   EXPECT_EQ(error::kNoError,
             ExecuteImmediateCmd(cmd, sizeof(client_sampler_id_)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  EXPECT_FALSE(GetSamplerServiceId(client_sampler_id_, NULL));
-  decoder_->set_unsafe_es3_apis_enabled(false);
-  EXPECT_EQ(error::kUnknownCommand,
-            ExecuteImmediateCmd(cmd, sizeof(client_sampler_id_)));
+  EXPECT_TRUE(GetSampler(client_sampler_id_) == NULL);
 }
 
 TEST_P(GLES2DecoderTest1, DeleteSamplersImmediateInvalidArgs) {
@@ -747,9 +720,6 @@ TEST_P(GLES2DecoderTest1, DisableVertexAttribArrayValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
-// TODO(gman): DrawArrays
-
-// TODO(gman): DrawElements
 
 TEST_P(GLES2DecoderTest1, EnableValidArgs) {
   SetupExpectationsForEnableDisable(GL_BLEND, true);
@@ -850,38 +820,6 @@ TEST_P(GLES2DecoderTest1, FramebufferRenderbufferInvalidArgs2_0) {
   cmds::FramebufferRenderbuffer cmd;
   cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER,
            client_renderbuffer_id_);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, FramebufferTexture2DValidArgs) {
-  EXPECT_CALL(*gl_,
-              FramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                      GL_TEXTURE_2D, kServiceTextureId, 0));
-  SpecializedSetup<cmds::FramebufferTexture2D, 0>(true);
-  cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-           client_texture_id_);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, FramebufferTexture2DInvalidArgs0_0) {
-  EXPECT_CALL(*gl_, FramebufferTexture2DEXT(_, _, _, _, _)).Times(0);
-  SpecializedSetup<cmds::FramebufferTexture2D, 0>(false);
-  cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_RENDERBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-           client_texture_id_);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, FramebufferTexture2DInvalidArgs2_0) {
-  EXPECT_CALL(*gl_, FramebufferTexture2DEXT(_, _, _, _, _)).Times(0);
-  SpecializedSetup<cmds::FramebufferTexture2D, 0>(false);
-  cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_PROXY_TEXTURE_CUBE_MAP,
-           client_texture_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
@@ -1014,11 +952,7 @@ TEST_P(GLES2DecoderTest1, GenSamplersImmediateValidArgs) {
   cmd->Init(1, &temp);
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
-  GLuint service_id;
-  EXPECT_TRUE(GetSamplerServiceId(kNewClientId, &service_id));
-  EXPECT_EQ(kNewServiceId, service_id);
-  decoder_->set_unsafe_es3_apis_enabled(false);
-  EXPECT_EQ(error::kUnknownCommand, ExecuteImmediateCmd(*cmd, sizeof(temp)));
+  EXPECT_TRUE(GetSampler(kNewClientId) != NULL);
 }
 
 TEST_P(GLES2DecoderTest1, GenSamplersImmediateInvalidArgs) {
@@ -1085,19 +1019,6 @@ TEST_P(GLES2DecoderTest1, GenTransformFeedbacksImmediateInvalidArgs) {
             ExecuteImmediateCmd(*cmd, sizeof(&client_transformfeedback_id_)));
   decoder_->set_unsafe_es3_apis_enabled(false);
 }
-// TODO(gman): GetActiveAttrib
-
-// TODO(gman): GetActiveUniform
-
-// TODO(gman): GetActiveUniformBlockiv
-
-// TODO(gman): GetActiveUniformBlockName
-
-// TODO(gman): GetActiveUniformsiv
-
-// TODO(gman): GetAttachedShaders
-
-// TODO(gman): GetAttribLocation
 
 TEST_P(GLES2DecoderTest1, GetBooleanvValidArgs) {
   EXPECT_CALL(*gl_, GetError()).WillRepeatedly(Return(GL_NO_ERROR));
@@ -1305,7 +1226,6 @@ TEST_P(GLES2DecoderTest1, GetFloatvInvalidArgs1_1) {
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
 }
-// TODO(gman): GetFragDataLocation
 
 TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivValidArgs) {
   EXPECT_CALL(*gl_, GetError()).WillRepeatedly(Return(GL_NO_ERROR));
@@ -1487,7 +1407,6 @@ TEST_P(GLES2DecoderTest1, GetIntegervInvalidArgs1_1) {
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
 }
-// TODO(gman): GetInternalformativ
 
 TEST_P(GLES2DecoderTest1, GetProgramivValidArgs) {
   SpecializedSetup<cmds::GetProgramiv, 0>(true);

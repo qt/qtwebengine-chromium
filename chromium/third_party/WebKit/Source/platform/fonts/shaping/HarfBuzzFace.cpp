@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/shaping/HarfBuzzFace.h"
 
 #include "hb-ot.h"
@@ -112,10 +111,15 @@ HarfBuzzFace::~HarfBuzzFace()
 }
 
 struct HarfBuzzFontData {
-    HarfBuzzFontData(WTF::HashMap<uint32_t, uint16_t>* glyphCacheForFaceCacheEntry, hb_face_t* face)
+    USING_FAST_MALLOC(HarfBuzzFontData);
+    WTF_MAKE_NONCOPYABLE(HarfBuzzFontData);
+public:
+    HarfBuzzFontData(WTF::HashMap<uint32_t, uint16_t>* glyphCacheForFaceCacheEntry, hb_face_t* face, unsigned rangeFrom, unsigned rangeTo)
         : m_glyphCacheForFaceCacheEntry(glyphCacheForFaceCacheEntry)
         , m_face(face)
         , m_hbOpenTypeFont(nullptr)
+        , m_rangeFrom(rangeFrom)
+        , m_rangeTo(rangeTo)
     { }
 
     ~HarfBuzzFontData()
@@ -129,6 +133,8 @@ struct HarfBuzzFontData {
     WTF::HashMap<uint32_t, uint16_t>* m_glyphCacheForFaceCacheEntry;
     hb_face_t* m_face;
     hb_font_t* m_hbOpenTypeFont;
+    unsigned m_rangeFrom;
+    unsigned m_rangeTo;
 };
 
 static hb_position_t SkiaScalarToHarfBuzzPosition(SkScalar value)
@@ -174,6 +180,10 @@ static void SkiaGetGlyphWidthAndExtents(SkPaint* paint, hb_codepoint_t codepoint
 static hb_bool_t harfBuzzGetGlyph(hb_font_t* hbFont, void* fontData, hb_codepoint_t unicode, hb_codepoint_t variationSelector, hb_codepoint_t* glyph, void* userData)
 {
     HarfBuzzFontData* hbFontData = reinterpret_cast<HarfBuzzFontData*>(fontData);
+
+    RELEASE_ASSERT(hbFontData);
+    if (unicode < hbFontData->m_rangeFrom || unicode > hbFontData->m_rangeTo)
+        return false;
 
     if (variationSelector) {
 #if !HB_VERSION_ATLEAST(0, 9, 28)
@@ -308,16 +318,16 @@ static hb_blob_t* harfBuzzSkiaGetTable(hb_face_t* face, hb_tag_t tag, void* user
         return nullptr;
     }
 
-    char* buffer = reinterpret_cast<char*>(fastMalloc(tableSize));
+    char* buffer = reinterpret_cast<char*>(WTF::Partitions::fastMalloc(tableSize, WTF_HEAP_PROFILER_TYPE_NAME(HarfBuzzFontData)));
     if (!buffer)
         return nullptr;
     size_t actualSize = typeface->getTableData(tag, 0, tableSize, buffer);
     if (tableSize != actualSize) {
-        fastFree(buffer);
+        WTF::Partitions::fastFree(buffer);
         return nullptr;
     }
 
-    return hb_blob_create(const_cast<char*>(buffer), tableSize, HB_MEMORY_MODE_WRITABLE, buffer, fastFree);
+    return hb_blob_create(const_cast<char*>(buffer), tableSize, HB_MEMORY_MODE_WRITABLE, buffer, WTF::Partitions::fastFree);
 }
 #endif
 
@@ -338,9 +348,9 @@ hb_face_t* HarfBuzzFace::createFace()
     return face;
 }
 
-hb_font_t* HarfBuzzFace::createFont() const
+hb_font_t* HarfBuzzFace::createFont(unsigned rangeFrom, unsigned rangeTo) const
 {
-    HarfBuzzFontData* hbFontData = new HarfBuzzFontData(m_glyphCacheForFaceCacheEntry, m_face);
+    HarfBuzzFontData* hbFontData = new HarfBuzzFontData(m_glyphCacheForFaceCacheEntry, m_face, rangeFrom, rangeTo);
     m_platformData->setupPaint(&hbFontData->m_paint);
     hbFontData->m_simpleFontData = FontCache::fontCache()->fontDataFromFontPlatformData(m_platformData);
     ASSERT(hbFontData->m_simpleFontData);

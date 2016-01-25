@@ -29,8 +29,8 @@
 
 #include "platform/transforms/TransformationMatrix.h"
 
+#include "wtf/Allocator.h"
 #include <string.h> // for memcpy
-#include "wtf/FastAllocBase.h"
 
 namespace blink {
 
@@ -41,13 +41,16 @@ class IntPoint;
 class IntRect;
 class TransformationMatrix;
 
+#define IDENTITY_TRANSFORM { 1, 0, 0, 1, 0, 0 }
+
 class PLATFORM_EXPORT AffineTransform {
-    WTF_MAKE_FAST_ALLOCATED(AffineTransform);
+    DISALLOW_NEW();
 public:
     typedef double Transform[6];
 
     AffineTransform();
     AffineTransform(double a, double b, double c, double d, double e, double f);
+    AffineTransform(const Transform transform) { setMatrix(transform); }
 
     void setMatrix(double a, double b, double c, double d, double e, double f);
 
@@ -173,6 +176,11 @@ public:
     bool decompose(DecomposedType&) const;
     void recompose(const DecomposedType&);
 
+    void copyTransformTo(Transform m)
+    {
+        memcpy(m, m_transform, sizeof(Transform));
+    }
+
 private:
     void setMatrix(const Transform m)
     {
@@ -182,6 +190,10 @@ private:
 
     Transform m_transform;
 };
+
+// Redeclared here to avoid ODR issues.
+// See platform/testing/TransformPrinters.h.
+void PrintTo(const AffineTransform&, std::ostream*);
 
 }
 

@@ -50,6 +50,7 @@
             "type": "@WebInspector.ActionDelegate",
             "actionId": "main.toggle-drawer",
             "className": "WebInspector.InspectorView.DrawerToggleActionDelegate",
+            "order": 100,
             "bindings": [
                 {
                     "shortcut": "Esc"
@@ -63,21 +64,6 @@
             "bindings": [
                 {
                     "shortcut": "Alt+R"
-                }
-            ]
-        },
-        {
-            "type": "@WebInspector.ActionDelegate",
-            "actionId": "main.toggle-element-search",
-            "className": "WebInspector.InspectElementModeController.ToggleSearchActionDelegate",
-            "bindings": [
-                {
-                    "platform": "windows,linux",
-                    "shortcut": "Ctrl+Shift+C"
-                },
-                {
-                    "platform": "mac",
-                    "shortcut": "Meta+Shift+C"
                 }
             ]
         },
@@ -143,24 +129,57 @@
         },
         {
             "type": "@WebInspector.ActionDelegate",
-            "actionId": "main.inspect-devices",
-            "title": "Inspect devices\u2026",
-            "className": "WebInspector.Main.InspectDevicesActionDelegate",
-            "experiment": "!inspectDevicesDialog"
+            "actionId": "main.search-in-panel.find",
+            "className": "WebInspector.Main.SearchActionDelegate",
+            "bindings": [
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+F"
+                },
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+F F3"
+                }
+            ]
         },
         {
-            "type": "drawer-view",
-            "name": "rendering",
-            "title": "Rendering",
-            "order": "11",
-            "className": "WebInspector.RenderingOptions.View"
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "main.search-in-panel.cancel",
+            "className": "WebInspector.Main.SearchActionDelegate",
+            "order": 10,
+            "bindings": [
+                {
+                    "shortcut": "Esc"
+                }
+            ]
         },
         {
-            "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.InspectElementModeController.ToggleButtonProvider",
-            "location": "main-toolbar-left",
-            "order": 0,
-            "actionId": "main.toggle-element-search"
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "main.search-in-panel.find-next",
+            "className": "WebInspector.Main.SearchActionDelegate",
+            "bindings": [
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+G"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "main.search-in-panel.find-previous",
+            "className": "WebInspector.Main.SearchActionDelegate",
+            "bindings": [
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+Shift+G"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "main.show-rendering-options",
+            "title": "Rendering settings",
+            "className": "WebInspector.RenderingOptionsView.ShowActionDelegate"
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
@@ -202,17 +221,23 @@
         },
         {
             "type": "setting",
-            "settingName": "networkConditions",
-            "settingType": "object",
-            "defaultValue": { "throughput": -1, "latency": 0 }
-        },
-        {
-            "type": "setting",
             "category": "",
             "title": "Disable JavaScript",
             "settingName": "javaScriptDisabled",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "Appearance",
+            "title": "Theme:",
+            "settingName": "uiTheme",
+            "settingType": "enum",
+            "defaultValue": "default",
+            "options": [
+                ["Default", "default"],
+                ["Dark", "dark"]
+            ]
         },
         {
             "type": "setting",
@@ -266,56 +291,25 @@
             "className": "WebInspector.HandlerRegistry.OpenAnchorLocationSettingUI"
         },
         {
-            "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.RenderingOptions.ButtonProvider",
-            "order": 1,
-            "location": "elements-toolbar",
-            "experiment": "materialDesign"
-        },
-        {
-            "type": "@WebInspector.ToolbarItem.Provider",
-            "separator": "true",
-            "order": 2,
-            "location": "elements-toolbar",
-            "experiment": "materialDesign"
+            "type": "context-menu-item",
+            "location": "mainMenu/navigate",
+            "title": "More tools",
+            "subMenuId": "mainMenu/tools",
+            "order": 80
         },
         {
             "type": "context-menu-item",
-            "location": "mainMenu/navigate",
-            "order": 100,
-            "actionId": "main.inspect-devices",
-            "experiment": "!inspectDevicesDialog"
+            "location": "mainMenu/tools/open",
+            "order": 80,
+            "actionId": "main.show-rendering-options"
         },
         {
-            "type": "setting",
-            "settingName": "showPaintRects",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "settingName": "showDebugBorders",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "settingName": "showFPSCounter",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "settingName": "showScrollBottleneckRects",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.InspectElementModeController.LayoutEditorButtonProvider",
-            "order": 4,
-            "location": "styles-sidebarpane-toolbar",
-            "experiment": "layoutEditor"
+            "type": "drawer-view",
+            "name": "rendering",
+            "title": "Rendering",
+            "persistence": "closeable",
+            "order": 50,
+            "className": "WebInspector.RenderingOptionsView"
         }
     ],
     "dependencies": [
@@ -326,18 +320,22 @@
         "emulation"
     ],
     "scripts": [
-        "HelpScreenUntilReload.js",
         "AdvancedApp.js",
         "FrontendWebSocketAPI.js",
         "RenderingOptions.js",
         "SimpleApp.js",
         "Tests.js",
         "OverlayController.js",
+        "Connections.js",
         "Main.js"
     ],
     "skip_compilation": [
         "Tests.js"
     ],
     "resources": [
+        "errorWarningCounter.css",
+        "remoteDebuggingTerminatedScreen.css",
+        "renderingOptions.css",
+        "targetCrashedScreen.css"
     ]
 }

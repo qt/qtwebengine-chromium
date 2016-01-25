@@ -11,22 +11,12 @@ WebInspector.SecurityPanel = function()
 {
     WebInspector.PanelWithSidebar.call(this, "security");
 
-    var sidebarTree = new TreeOutlineInShadow();
-    sidebarTree.element.classList.add("sidebar-tree");
-    this.panelSidebarElement().appendChild(sidebarTree.element);
-    sidebarTree.registerRequiredCSS("security/sidebar.css");
-    sidebarTree.registerRequiredCSS("security/lockIcon.css");
-    this.setDefaultFocusedElement(sidebarTree.element);
-
-    this._sidebarMainViewElement = new WebInspector.SecurityMainViewSidebarTreeElement(this);
-    sidebarTree.appendChild(this._sidebarMainViewElement);
-
-    // TODO(lgarron): Add a section for the main origin. (https://crbug.com/523586)
-    this._sidebarOriginSection = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("Origins"));
-    this._sidebarOriginSection.listItemElement.classList.add("security-sidebar-origins");
-    sidebarTree.appendChild(this._sidebarOriginSection);
-
     this._mainView = new WebInspector.SecurityMainView(this);
+
+    this._sidebarMainViewElement = new WebInspector.SecurityPanelSidebarTreeElement(WebInspector.UIString("Overview"), this._setVisibleView.bind(this, this._mainView), "security-main-view-sidebar-tree-item", "lock-icon");
+    this._sidebarTree = new WebInspector.SecurityPanelSidebarTree(this._sidebarMainViewElement, this.showOrigin.bind(this));
+    this.panelSidebarElement().appendChild(this._sidebarTree.element);
+    this.setDefaultFocusedElement(this._sidebarTree.element);
 
     /** @type {!Map<!NetworkAgent.LoaderId, !WebInspector.NetworkRequest>} */
     this._lastResponseReceivedForLoaderId = new Map();
@@ -100,11 +90,11 @@ WebInspector.SecurityPanel.prototype = {
         this._updateSecurityState(securityState, explanations, mixedContentStatus, schemeIsCryptographic);
     },
 
-    showMainView: function()
+    selectAndSwitchToMainView: function()
     {
-        this._setVisibleView(this._mainView);
+        // The sidebar element will trigger displaying the main view. Rather than making a redundant call to display the main view, we rely on this.
+        this._sidebarMainViewElement.select();
     },
-
     /**
      * @param {!WebInspector.SecurityPanel.Origin} origin
      */
@@ -121,7 +111,7 @@ WebInspector.SecurityPanel.prototype = {
     {
         WebInspector.Panel.prototype.wasShown.call(this);
         if (!this._visibleView)
-            this._sidebarMainViewElement.select();
+            this.selectAndSwitchToMainView();
     },
 
     /**
@@ -175,7 +165,7 @@ WebInspector.SecurityPanel.prototype = {
             var oldSecurityState = originState.securityState;
             originState.securityState = this._securityStateMin(oldSecurityState, securityState);
             if (oldSecurityState != originState.securityState) {
-                originState.sidebarElement.setSecurityState(securityState);
+                this._sidebarTree.updateOrigin(origin, securityState);
                 if (originState.originView)
                     originState.originView.setSecurityState(securityState);
             }
@@ -192,9 +182,7 @@ WebInspector.SecurityPanel.prototype = {
 
             this._origins.set(origin, originState);
 
-            originState.sidebarElement = new WebInspector.SecurityOriginViewSidebarTreeElement(this, origin);
-            this._sidebarOriginSection.appendChild(originState.sidebarElement);
-            originState.sidebarElement.setSecurityState(securityState);
+            this._sidebarTree.addOrigin(origin, securityState);
 
             // Don't construct the origin view yet (let it happen lazily).
         }
@@ -251,16 +239,7 @@ WebInspector.SecurityPanel.prototype = {
      */
     _securityStateMin: function(stateA, stateB)
     {
-        /** @type {!Array<!SecurityAgent.SecurityState>} */
-        var ordering = [
-            SecurityAgent.SecurityState.Unknown,
-            SecurityAgent.SecurityState.Info,
-            SecurityAgent.SecurityState.Insecure,
-            SecurityAgent.SecurityState.Neutral,
-            SecurityAgent.SecurityState.Warning,
-            SecurityAgent.SecurityState.Secure
-        ];
-        return (ordering.indexOf(stateA) < ordering.indexOf(stateB)) ? stateA : stateB;
+        return WebInspector.SecurityModel.SecurityStateComparator(stateA, stateB) < 0 ? stateA : stateB;
     },
 
     /**
@@ -282,8 +261,8 @@ WebInspector.SecurityPanel.prototype = {
 
     _clearOrigins: function()
     {
-        this._sidebarMainViewElement.select();
-        this._sidebarOriginSection.removeChildren();
+        this.selectAndSwitchToMainView();
+        this._sidebarTree.clearOrigins();
         this._origins.clear();
         this._lastResponseReceivedForLoaderId.clear();
         this._filterRequestCounts.clear();
@@ -297,6 +276,10 @@ WebInspector.SecurityPanel.prototype = {
         var frame = /** type {!PageAgent.Frame}*/ (event.data);
         var request = this._lastResponseReceivedForLoaderId.get(frame.loaderId);
         this._clearOrigins();
+
+        var origin = WebInspector.ParsedURL.splitURLIntoPathComponents(request.url)[0];
+        this._sidebarTree.setMainOrigin(origin);
+
         if (request)
             this._processRequest(request);
     },
@@ -315,34 +298,194 @@ WebInspector.SecurityPanel._instance = function()
 }
 
 /**
- * @constructor
- * @extends {WebInspector.SidebarTreeElement}
- * @param {!WebInspector.SecurityPanel} panel
+ * @param {string} text
+ * @param {!NetworkAgent.CertificateId} certificateId
+ * @return {!Element}
  */
-WebInspector.SecurityMainViewSidebarTreeElement = function(panel)
+WebInspector.SecurityPanel.createCertificateViewerButton = function(text, certificateId)
 {
-    this._panel = panel;
-    WebInspector.SidebarTreeElement.call(this, "security-main-view-sidebar-tree-item", WebInspector.UIString("Overview"));
-    this.iconElement.classList.add("lock-icon");
+    /**
+     * @param {!Event} e
+     */
+    function showCertificateViewer(e)
+    {
+        e.consume();
+        WebInspector.multitargetNetworkManager.showCertificateViewer(/** @type {number} */ (certificateId));
+    }
+
+    return createTextButton(text, showCertificateViewer, "security-certificate-button");
 }
 
-WebInspector.SecurityMainViewSidebarTreeElement.prototype = {
-    onattach: function()
+/**
+ * @constructor
+ * @extends {TreeOutlineInShadow}
+ * @param {!WebInspector.SecurityPanelSidebarTreeElement} mainViewElement
+ * @param {function(!WebInspector.SecurityPanel.Origin)} showOriginInPanel
+ */
+WebInspector.SecurityPanelSidebarTree = function(mainViewElement, showOriginInPanel)
+{
+    this._showOriginInPanel = showOriginInPanel;
+
+    this._mainOrigin = null;
+
+    TreeOutlineInShadow.call(this);
+    this.element.classList.add("sidebar-tree");
+    this.registerRequiredCSS("security/sidebar.css");
+    this.registerRequiredCSS("security/lockIcon.css");
+
+    this.appendChild(mainViewElement);
+
+    /** @type {!Map<!WebInspector.SecurityPanelSidebarTree.OriginGroupName, !WebInspector.SidebarSectionTreeElement>} */
+    this._originGroups = new Map();
+
+    for (var key in WebInspector.SecurityPanelSidebarTree.OriginGroupName) {
+        var originGroupName = WebInspector.SecurityPanelSidebarTree.OriginGroupName[key];
+        var originGroup = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString(originGroupName));
+        originGroup.listItemElement.classList.add("security-sidebar-origins");
+        this._originGroups.set(originGroupName, originGroup);
+        this.appendChild(originGroup);
+    }
+    this._clearOriginGroups();
+
+    // This message will be removed by clearOrigins() during the first new page load after the panel was opened.
+    var mainViewReloadMessage = new WebInspector.SidebarTreeElement("security-main-view-reload-message", WebInspector.UIString("Reload to view details"));
+    mainViewReloadMessage.selectable = false;
+    this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.MainOrigin).appendChild(mainViewReloadMessage);
+
+    /** @type {!Map<!WebInspector.SecurityPanel.Origin, !WebInspector.SecurityPanelSidebarTreeElement>} */
+    this._elementsByOrigin = new Map();
+}
+
+WebInspector.SecurityPanelSidebarTree.prototype = {
+    /**
+     * @param {!WebInspector.SecurityPanel.Origin} origin
+     * @param {!SecurityAgent.SecurityState} securityState
+     */
+    addOrigin: function(origin, securityState)
     {
-        WebInspector.SidebarTreeElement.prototype.onattach.call(this);
+        var originElement = new WebInspector.SecurityPanelSidebarTreeElement(origin, this._showOriginInPanel.bind(this, origin), "security-sidebar-tree-item", "security-property");
+        originElement.listItemElement.title = origin;
+        this._elementsByOrigin.set(origin, originElement);
+        this.updateOrigin(origin, securityState);
     },
 
+    /**
+     * @param {!WebInspector.SecurityPanel.Origin} origin
+     */
+    setMainOrigin: function(origin)
+    {
+        this._mainOrigin = origin;
+    },
+
+    /**
+     * @param {!WebInspector.SecurityPanel.Origin} origin
+     * @param {!SecurityAgent.SecurityState} securityState
+     */
+    updateOrigin: function(origin, securityState)
+    {
+        var originElement = /** @type {!WebInspector.SecurityPanelSidebarTreeElement} */ (this._elementsByOrigin.get(origin));
+        originElement.setSecurityState(securityState);
+
+        var newParent;
+        if (origin === this._mainOrigin) {
+            newParent = this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.MainOrigin);
+        } else {
+            switch (securityState) {
+            case SecurityAgent.SecurityState.Secure:
+                newParent = this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.Secure);
+                break;
+            case SecurityAgent.SecurityState.Unknown:
+                newParent = this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.Unknown);
+                break;
+            default:
+                newParent = this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.NonSecure);
+                break;
+            }
+        }
+
+        var oldParent = originElement.parent;
+        if (oldParent !== newParent) {
+            if (oldParent) {
+                oldParent.removeChild(originElement);
+                if (oldParent.childCount() === 0)
+                    oldParent.hidden = true;
+            }
+            newParent.appendChild(originElement);
+            newParent.hidden = false;
+        }
+
+    },
+
+    _clearOriginGroups: function()
+    {
+        for (var originGroup of this._originGroups.values()) {
+            originGroup.removeChildren();
+            originGroup.hidden = true;
+        }
+        this._originGroups.get(WebInspector.SecurityPanelSidebarTree.OriginGroupName.MainOrigin).hidden = false;
+    },
+
+    clearOrigins: function()
+    {
+        this._clearOriginGroups();
+        this._elementsByOrigin.clear();
+    },
+
+    __proto__: TreeOutlineInShadow.prototype
+}
+
+
+/**
+ * A mapping from Javascript key IDs to names (sidebar section titles).
+ * Note: The names are used as keys into a map, so they must be distinct from each other.
+ * @enum {string}
+ */
+WebInspector.SecurityPanelSidebarTree.OriginGroupName = {
+    MainOrigin: "Main Origin",
+    NonSecure: "Non-Secure Origins",
+    Secure: "Secure Origins",
+    Unknown: "Unknown / Canceled"
+}
+
+
+/**
+ * @constructor
+ * @extends {WebInspector.SidebarTreeElement}
+ * @param {string} text
+ * @param {function()} selectCallback
+ * @param {string} className
+ * @param {string} cssPrefix
+ */
+WebInspector.SecurityPanelSidebarTreeElement = function(text, selectCallback, className, cssPrefix)
+{
+    this._selectCallback = selectCallback;
+    this._cssPrefix = cssPrefix;
+
+    WebInspector.SidebarTreeElement.call(this, className, text);
+    this.iconElement.classList.add(this._cssPrefix);
+
+    this.setSecurityState(SecurityAgent.SecurityState.Unknown);
+}
+
+WebInspector.SecurityPanelSidebarTreeElement.prototype = {
     /**
      * @param {!SecurityAgent.SecurityState} newSecurityState
      */
     setSecurityState: function(newSecurityState)
     {
-        for (var className of Array.prototype.slice.call(this.iconElement.classList)) {
-            if (className.startsWith("lock-icon-"))
-                this.iconElement.classList.remove(className);
-        }
+        if (this._securityState)
+            this.iconElement.classList.remove(this._cssPrefix + "-" + this._securityState)
 
-        this.iconElement.classList.add("lock-icon-" + newSecurityState);
+        this._securityState = newSecurityState;
+        this.iconElement.classList.add(this._cssPrefix + "-" + newSecurityState);
+    },
+
+    /**
+     * @return {!SecurityAgent.SecurityState}
+     */
+    securityState: function()
+    {
+        return this._securityState;
     },
 
     /**
@@ -351,7 +494,7 @@ WebInspector.SecurityMainViewSidebarTreeElement.prototype = {
      */
     onselect: function()
     {
-        this._panel.showMainView();
+        this._selectCallback();
         return true;
     },
 
@@ -359,45 +502,13 @@ WebInspector.SecurityMainViewSidebarTreeElement.prototype = {
 }
 
 /**
- * @constructor
- * @extends {WebInspector.SidebarTreeElement}
- * @param {!WebInspector.SecurityPanel} panel
- * @param {!WebInspector.SecurityPanel.Origin} origin
+ * @param {!WebInspector.SecurityPanelSidebarTreeElement} a
+ * @param {!WebInspector.SecurityPanelSidebarTreeElement} b
+ * @return {number}
  */
-WebInspector.SecurityOriginViewSidebarTreeElement = function(panel, origin)
+WebInspector.SecurityPanelSidebarTreeElement.SecurityStateComparator = function(a, b)
 {
-    this._panel = panel;
-    this._origin = origin;
-    this.small = true;
-    WebInspector.SidebarTreeElement.call(this, "security-sidebar-tree-item", origin);
-    this.iconElement.classList.add("security-property");
-}
-
-WebInspector.SecurityOriginViewSidebarTreeElement.prototype = {
-    /**
-     * @override
-     * @return {boolean}
-     */
-    onselect: function()
-    {
-        this._panel.showOrigin(this._origin);
-        return true;
-    },
-
-    /**
-     * @param {!SecurityAgent.SecurityState} newSecurityState
-     */
-    setSecurityState: function(newSecurityState)
-    {
-        for (var className of Array.prototype.slice.call(this.iconElement.classList)) {
-            if (className.startsWith("security-property-"))
-                this.iconElement.classList.remove(className);
-        }
-
-        this.iconElement.classList.add("security-property-" + newSecurityState);
-    },
-
-    __proto__: WebInspector.SidebarTreeElement.prototype
+    return WebInspector.SecurityModel.SecurityStateComparator(a.securityState(), b.securityState());
 }
 
 /**
@@ -467,23 +578,12 @@ WebInspector.SecurityMainView.prototype = {
         var text = explanationSection.createChild("div", "security-explanation-text");
         text.createChild("div", "security-explanation-title").textContent = explanation.summary;
         text.createChild("div").textContent = explanation.description;
-        if ("certificateId" in explanation) {
-            var certificateAnchor = text.createChild("div", "security-certificate-id link");
-            certificateAnchor.textContent = WebInspector.UIString("View certificate");
-            certificateAnchor.href = "";
-            certificateAnchor.addEventListener("click", showCertificateViewer, false);
+
+        if (explanation.certificateId) {
+            text.appendChild(WebInspector.SecurityPanel.createCertificateViewerButton(WebInspector.UIString("View certificate"), explanation.certificateId));
         }
 
         return text;
-
-        /**
-         * @param {!Event} e
-         */
-        function showCertificateViewer(e)
-        {
-            e.consume();
-            WebInspector.multitargetNetworkManager.showCertificateViewer(/** @type {number} */ (explanation.certificateId));
-        }
     },
 
     /**
@@ -540,6 +640,14 @@ WebInspector.SecurityMainView.prototype = {
                 this._addMixedContentExplanation(this._mixedContentStatus.displayedInsecureContentStyle, WebInspector.UIString("Mixed Content"), WebInspector.UIString("The site includes HTTP resources."), WebInspector.NetworkLogView.MixedContentFilterValues.Displayed, showDisplayedMixedContentInNetworkPanel);
         }
 
+        if (this._mixedContentStatus && (!this._mixedContentStatus.displayedInsecureContent && !this._mixedContentStatus.ranInsecureContent)) {
+                this._addExplanation(/** @type {!SecurityAgent.SecurityStateExplanation} */ ({
+                    "securityState": SecurityAgent.SecurityState.Secure,
+                    "summary": WebInspector.UIString("Secure Resources"),
+                    "description": WebInspector.UIString("All resources on this page are served securely.")
+                }));
+        }
+
         if (this._panel.filterRequestCount(WebInspector.NetworkLogView.MixedContentFilterValues.Blocked) > 0)
             this._addMixedContentExplanation(SecurityAgent.SecurityState.Info, WebInspector.UIString("Blocked mixed content"), WebInspector.UIString("Your page requested insecure resources that were blocked."), WebInspector.NetworkLogView.MixedContentFilterValues.Blocked, showBlockedMixedContentInNetworkPanel);
 
@@ -549,7 +657,12 @@ WebInspector.SecurityMainView.prototype = {
         function showDisplayedMixedContentInNetworkPanel(e)
         {
             e.consume();
-            WebInspector.NetworkPanel.revealAndFilter(WebInspector.NetworkLogView.FilterType.MixedContent, WebInspector.NetworkLogView.MixedContentFilterValues.Displayed);
+            WebInspector.NetworkPanel.revealAndFilter([
+                {
+                    filterType: WebInspector.NetworkLogView.FilterType.MixedContent,
+                    filterValue: WebInspector.NetworkLogView.MixedContentFilterValues.Displayed
+                }
+            ]);
         }
 
         /**
@@ -558,7 +671,12 @@ WebInspector.SecurityMainView.prototype = {
         function showBlockOverriddenMixedContentInNetworkPanel(e)
         {
             e.consume();
-            WebInspector.NetworkPanel.revealAndFilter(WebInspector.NetworkLogView.FilterType.MixedContent, WebInspector.NetworkLogView.MixedContentFilterValues.BlockOverridden);
+            WebInspector.NetworkPanel.revealAndFilter([
+                {
+                    filterType: WebInspector.NetworkLogView.FilterType.MixedContent,
+                    filterValue: WebInspector.NetworkLogView.MixedContentFilterValues.BlockOverridden
+                }
+            ]);
         }
 
          /**
@@ -567,7 +685,12 @@ WebInspector.SecurityMainView.prototype = {
         function showBlockedMixedContentInNetworkPanel(e)
         {
             e.consume();
-            WebInspector.NetworkPanel.revealAndFilter(WebInspector.NetworkLogView.FilterType.MixedContent, WebInspector.NetworkLogView.MixedContentFilterValues.Blocked);
+            WebInspector.NetworkPanel.revealAndFilter([
+                {
+                    filterType: WebInspector.NetworkLogView.FilterType.MixedContent,
+                    filterValue: WebInspector.NetworkLogView.MixedContentFilterValues.Blocked
+                }
+            ]);
         }
     },
 
@@ -625,6 +748,24 @@ WebInspector.SecurityOriginView = function(panel, origin, originState)
     this._originLockIcon.classList.add("security-property-" + originState.securityState);
     // TODO(lgarron): Highlight the origin scheme. https://crbug.com/523589
     originDisplay.createChild("span", "origin").textContent = origin;
+    var originNetworkLink = originDisplay.createChild("div", "link");
+    originNetworkLink.textContent = WebInspector.UIString("View requests in Network Panel");
+    function showOriginRequestsInNetworkPanel()
+    {
+        var parsedURL = new WebInspector.ParsedURL(origin);
+        WebInspector.NetworkPanel.revealAndFilter([
+            {
+                filterType: WebInspector.NetworkLogView.FilterType.Domain,
+                filterValue: parsedURL.host
+            },
+            {
+                filterType: WebInspector.NetworkLogView.FilterType.Scheme,
+                filterValue: parsedURL.scheme
+            }
+        ]);
+    }
+    originNetworkLink.addEventListener("click", showOriginRequestsInNetworkPanel, false);
+
 
     if (originState.securityDetails) {
         var connectionSection = this.element.createChild("div", "origin-view-section");
@@ -657,6 +798,7 @@ WebInspector.SecurityOriginView = function(panel, origin, originState)
             table.addRow("Valid From", validFromString);
             table.addRow("Valid Until", validUntilString);
             table.addRow("Issuer", certificateDetails.issuer);
+            table.addRow("", WebInspector.SecurityPanel.createCertificateViewerButton(WebInspector.UIString("Open full certificate details"), originState.securityDetails.certificateId));
             // TODO(lgarron): Make SCT status available in certificate details and show it here.
         }
 
@@ -668,13 +810,16 @@ WebInspector.SecurityOriginView = function(panel, origin, originState)
         originState.certificateDetailsPromise.then(displayCertificateDetails.bind(this), displayCertificateDetailsUnavailable);
 
         var noteSection = this.element.createChild("div", "origin-view-section");
-        noteSection.createChild("div", "origin-view-section-title").textContent = WebInspector.UIString("Development Note");
         // TODO(lgarron): Fix the issue and then remove this section. See comment in SecurityPanel._processRequest().
-        noteSection.createChild("div").textContent = WebInspector.UIString("At the moment, this view only shows security details from the first connection made to %s", origin);
-    } else {
+        noteSection.createChild("div").textContent = WebInspector.UIString("The security details above are from the first inspected response.");
+    } else if (originState.securityState !== SecurityAgent.SecurityState.Unknown) {
         var notSecureSection = this.element.createChild("div", "origin-view-section");
         notSecureSection.createChild("div", "origin-view-section-title").textContent = WebInspector.UIString("Not Secure");
         notSecureSection.createChild("div").textContent = WebInspector.UIString("Your connection to this origin is not secure.");
+    } else {
+        var noInfoSection = this.element.createChild("div", "origin-view-section");
+        noInfoSection.createChild("div", "origin-view-section-title").textContent = WebInspector.UIString("No Security Information");
+        noInfoSection.createChild("div").textContent = WebInspector.UIString("No security details are available for this origin.");
     }
 }
 
@@ -758,18 +903,18 @@ WebInspector.SecurityDetailsTable.prototype = {
 
     /**
      * @param {string} key
-     * @param {string|!HTMLDivElement} value
+     * @param {string|!Node} value
      */
     addRow: function(key, value)
     {
         var row = this._element.createChild("div", "details-table-row");
-        row.createChild("div").textContent = WebInspector.UIString(key);
+        row.createChild("div").textContent = key;
 
         var valueDiv = row.createChild("div");
-        if (value instanceof HTMLDivElement) {
-            valueDiv.appendChild(value);
-        } else {
+        if (typeof value === "string") {
             valueDiv.textContent = value;
+        } else {
+            valueDiv.appendChild(value);
         }
     }
 }

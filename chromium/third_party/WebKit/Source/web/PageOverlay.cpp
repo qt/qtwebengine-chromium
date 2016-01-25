@@ -26,7 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/PageOverlay.h"
 
 #include "core/frame/FrameHost.h"
@@ -38,7 +37,6 @@
 #include "public/platform/WebLayer.h"
 #include "public/web/WebViewClient.h"
 #include "web/WebDevToolsAgentImpl.h"
-#include "web/WebGraphicsContextImpl.h"
 #include "web/WebViewImpl.h"
 
 namespace blink {
@@ -90,21 +88,25 @@ void PageOverlay::update()
         page->frameHost().visualViewport().containerLayer()->addChild(m_layer.get());
     }
 
-    FloatSize size = page->frameHost().visualViewport().size();
+    FloatSize size(page->frameHost().visualViewport().size());
     if (size != m_layer->size())
         m_layer->setSize(size);
 
     m_layer->setNeedsDisplay();
 }
 
-void PageOverlay::paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip) const
+IntRect PageOverlay::computeInterestRect(const GraphicsLayer* graphicsLayer, const IntRect&) const
 {
-    ASSERT(m_layer);
-    WebGraphicsContextImpl contextWrapper(gc, *this, DisplayItem::PageOverlay);
-    m_delegate->paintPageOverlay(&contextWrapper, expandedIntSize(m_layer->size()));
+    return IntRect(IntPoint(), expandedIntSize(m_layer->size()));
 }
 
-String PageOverlay::debugName(const GraphicsLayer*)
+void PageOverlay::paintContents(const GraphicsLayer* graphicsLayer, GraphicsContext& gc, GraphicsLayerPaintingPhase phase, const IntRect& interestRect) const
+{
+    ASSERT(m_layer);
+    m_delegate->paintPageOverlay(*this, gc, interestRect.size());
+}
+
+String PageOverlay::debugName(const GraphicsLayer*) const
 {
     return "WebViewImpl Page Overlay Content Layer";
 }

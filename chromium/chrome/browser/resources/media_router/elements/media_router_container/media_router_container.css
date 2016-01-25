@@ -2,72 +2,88 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+:root {
+  --container-header-height: 52px;
+}
+
 .active-sink {
   color: rgb(33, 150, 243);
 }
 
-#arrow-drop-icon::shadow #icon {
-  height: 20px;
-  width: 20px;
-}
-
 .cast-mode-icon,
 .sink-icon {
-  -webkit-padding-end: 16px;
-  -webkit-padding-start: 20px;
+  -webkit-padding-end: 12px;
+  -webkit-padding-start: 16px;
   height: 16px;
   width: 16px;
 }
 
 #cast-mode-list {
-  padding-bottom: 8px;
-  padding-top: 8px;
-}
-
-#close-button::shadow #icon {
-  height: 15px;
-  width: 15px;
+  margin-top: var(--container-header-height);
+  padding-bottom: 12px;
+  padding-top: 4px;
 }
 
 #container-header {
-  background-color: rgb(33, 150, 243);
-}
-
-#container-header.cast-mode-list {
-  background-color: rgb(0, 150, 136);
-}
-
-#container-header.filter {
-  background-color: rgb(103, 58, 183);
-}
-
-#device-missing {
-  align-items: center;
-  display: flex;
-  height: 150px;
-  justify-content: center;
-}
-
-#device-missing a {
-  color: rgb(33, 150, 243);
-  text-decoration: none;
-}
-
-#header-text {
-  -webkit-padding-start: 5px;
-  flex-grow: 1;
-  font-size: 1.25em;
-  margin: 0;
-}
-
-#issue-banner {
+  position: fixed;
   width: 100%;
   z-index: 1;
 }
 
+#device-missing {
+  align-items: center;
+  background-color: white;
+  display: flex;
+  height: 120px;
+  justify-content: center;
+  margin-top: var(--container-header-height);
+}
+
+#device-missing a {
+  color: rgba(33, 150, 243, 0.87);
+  text-decoration: none;
+}
+
+#first-run-button {
+  background-color: white;
+}
+
+#first-run-button-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+#first-run-flow {
+  background-color: rgb(33, 150, 243);
+  padding: 24px 16px 4px 16px;
+  position: fixed;
+  z-index: 1;
+}
+
+#first-run-text,
+#first-run-title {
+  color: white;
+  padding-bottom: 24px;
+}
+
+#first-run-text {
+  font-size: 1.0em;
+  line-height: 1.5em;
+}
+
+#first-run-title {
+  font-size: 1.25em;
+}
+
+#issue-banner {
+  margin-top: var(--container-header-height);
+  width: 100%;
+}
+
 #issue-banner.non-blocking {
   bottom: 0;
-  position: fixed;
+  margin-top: 0;
 }
 
 paper-item {
@@ -85,12 +101,11 @@ paper-item:hover {
 
 paper-menu {
   -webkit-user-select: none;
-  color: rgb(0, 0, 0);
-  padding: 0;
-}
-
-.route {
-  color: rgb(150, 150, 150);
+  color: rgba(0, 0, 0, 0.87);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 12px;
+  padding-top: 4px;
 }
 
 #searching-devices-spinner {
@@ -99,10 +114,10 @@ paper-menu {
 }
 
 #share-screen-text {
-  -webkit-padding-start: 20px;
+  -webkit-padding-start: 16px;
   color: rgb(150, 150, 150);
-  padding-bottom: 8px;
-  padding-top: 8px;
+  padding-bottom: 4px;
+  padding-top: 12px;
 }
 
 .sink-content {
@@ -111,16 +126,26 @@ paper-menu {
   font-weight: normal;
 }
 
-#sink-list {
-  max-height: 200px;
-  overflow-x: hidden;
-  overflow-y: auto;
+.sink-domain {
+  -webkit-padding-start: 6px;
+  color: rgb(150, 150, 150);
+}
+
+.sink-subtext {
+  color: rgb(150, 150, 150);
+  padding-top: 8px;
 }
 
 .sink-text {
+  -webkit-padding-end: 26px;
+  flex-direction: row;
   line-height: normal;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 250px;
+}
+
+#route-details {
+  margin-top: var(--container-header-height);
 }

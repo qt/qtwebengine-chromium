@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
@@ -28,7 +31,9 @@ MockMediaConstraintFactory::CreateWebMediaConstraints() const {
   blink::WebVector<blink::WebMediaConstraint> mandatory(mandatory_);
   blink::WebVector<blink::WebMediaConstraint> optional(optional_);
   blink::WebMediaConstraints constraints;
-  constraints.initialize(optional, mandatory);
+  blink::WebMediaTrackConstraintSet basic;
+  blink::WebVector<blink::WebMediaTrackConstraintSet> advanced;
+  constraints.initialize(optional, mandatory, basic, advanced);
   return constraints;
 }
 

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8CustomElementLifecycleCallbacks.h"
 
 #include "bindings/core/v8/CustomElementBinding.h"
@@ -55,9 +54,9 @@ PassRefPtrWillBeRawPtr<V8CustomElementLifecycleCallbacks> V8CustomElementLifecyc
     // A given object can only be used as a Custom Element prototype
     // once; see customElementIsInterfacePrototypeObject
 #define SET_HIDDEN_VALUE(Value, Name) \
-    ASSERT(V8HiddenValue::getHiddenValue(isolate, prototype, V8HiddenValue::customElement##Name(isolate)).IsEmpty()); \
+    ASSERT(V8HiddenValue::getHiddenValue(scriptState, prototype, V8HiddenValue::customElement##Name(isolate)).IsEmpty()); \
     if (!Value.IsEmpty()) \
-        V8HiddenValue::setHiddenValue(isolate, prototype, V8HiddenValue::customElement##Name(isolate), Value.ToLocalChecked());
+        V8HiddenValue::setHiddenValue(scriptState, prototype, V8HiddenValue::customElement##Name(isolate), Value.ToLocalChecked());
 
     CALLBACK_LIST(SET_HIDDEN_VALUE)
 #undef SET_HIDDEN_VALUE
@@ -133,7 +132,7 @@ bool V8CustomElementLifecycleCallbacks::setBinding(CustomElementDefinition* owne
     // The context is responsible for keeping the prototype
     // alive. This in turn keeps callbacks alive through hidden
     // references; see CALLBACK_LIST(SET_HIDDEN_VALUE).
-    perContextData->addCustomElementBinding(owner, binding);
+    perContextData->addCustomElementBinding(owner, std::move(binding));
     return true;
 }
 
@@ -169,7 +168,7 @@ void V8CustomElementLifecycleCallbacks::created(Element* element)
     if (callback.IsEmpty())
         return;
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
     exceptionCatcher.SetVerbose(true);
     ScriptController::callFunction(executionContext(), callback, receiver, 0, 0, isolate);
 }
@@ -211,7 +210,7 @@ void V8CustomElementLifecycleCallbacks::attributeChanged(Element* element, const
         newValue.isNull() ? v8::Local<v8::Value>(v8::Null(isolate)) : v8::Local<v8::Value>(v8String(isolate, newValue))
     };
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
     exceptionCatcher.SetVerbose(true);
     ScriptController::callFunction(executionContext(), callback, receiver, WTF_ARRAY_LENGTH(argv), argv, isolate);
 }
@@ -237,7 +236,7 @@ void V8CustomElementLifecycleCallbacks::call(const ScopedPersistent<v8::Function
     if (receiver.IsEmpty())
         return;
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
     exceptionCatcher.SetVerbose(true);
     ScriptController::callFunction(executionContext(), callback, receiver, 0, 0, isolate);
 }

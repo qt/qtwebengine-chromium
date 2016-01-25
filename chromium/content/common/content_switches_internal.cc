@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
+#include "build/build_config.h"
 #include "content/public/common/content_switches.h"
 
 #if defined(OS_WIN)
@@ -107,6 +108,12 @@ V8CacheOptions GetV8CacheOptions() {
   } else {
     return V8_CACHE_OPTIONS_DEFAULT;
   }
+}
+
+bool IsUseZoomForDSFEnabled() {
+  static bool enabled = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableUseZoomForDSF);
+  return enabled;
 }
 
 } // namespace content

@@ -4,7 +4,12 @@
 
 #include "mojo/edk/system/shared_buffer_dispatcher.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <algorithm>
 #include <limits>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -20,8 +25,8 @@ namespace edk {
 namespace {
 
 struct MOJO_ALIGNAS(8) SerializedSharedBufferDispatcher {
-  size_t num_bytes;
-  size_t platform_handle_index;
+  MOJO_ALIGNAS(4) uint32_t num_bytes;
+  MOJO_ALIGNAS(4) uint32_t platform_handle_index;
 };
 
 }  // namespace
@@ -76,7 +81,7 @@ MojoResult SharedBufferDispatcher::Create(
   if (!shared_buffer)
     return MOJO_RESULT_RESOURCE_EXHAUSTED;
 
-  *result = CreateInternal(shared_buffer.Pass());
+  *result = CreateInternal(std::move(shared_buffer));
   return MOJO_RESULT_OK;
 }
 
@@ -129,7 +134,7 @@ scoped_refptr<SharedBufferDispatcher> SharedBufferDispatcher::Deserialize(
     return nullptr;
   }
 
-  return CreateInternal(shared_buffer.Pass());
+  return CreateInternal(std::move(shared_buffer));
 }
 
 SharedBufferDispatcher::SharedBufferDispatcher(
@@ -183,7 +188,7 @@ scoped_refptr<Dispatcher>
 SharedBufferDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   lock().AssertAcquired();
   DCHECK(shared_buffer_);
-  return CreateInternal(shared_buffer_.Pass());
+  return CreateInternal(std::move(shared_buffer_));
 }
 
 MojoResult SharedBufferDispatcher::DuplicateBufferHandleImplNoLock(
@@ -230,7 +235,6 @@ MojoResult SharedBufferDispatcher::MapBufferImplNoLock(
 void SharedBufferDispatcher::StartSerializeImplNoLock(
     size_t* max_size,
     size_t* max_platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   *max_size = sizeof(SerializedSharedBufferDispatcher);
   *max_platform_handles = 1;
 }
@@ -239,7 +243,6 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
     void* destination,
     size_t* actual_size,
     PlatformHandleVector* platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(shared_buffer_);
 
   SerializedSharedBufferDispatcher* serialization =
@@ -255,8 +258,12 @@ bool SharedBufferDispatcher::EndSerializeAndCloseImplNoLock(
     return false;
   }
 
-  serialization->num_bytes = shared_buffer_->GetNumBytes();
-  serialization->platform_handle_index = platform_handles->size();
+  DCHECK(shared_buffer_->GetNumBytes() < std::numeric_limits<uint32_t>::max());
+  serialization->num_bytes =
+      static_cast<uint32_t>(shared_buffer_->GetNumBytes());
+  DCHECK(platform_handles->size() < std::numeric_limits<uint32_t>::max());
+  serialization->platform_handle_index =
+      static_cast<uint32_t>(platform_handles->size());
   platform_handles->push_back(platform_handle.release());
   *actual_size = sizeof(SerializedSharedBufferDispatcher);
 

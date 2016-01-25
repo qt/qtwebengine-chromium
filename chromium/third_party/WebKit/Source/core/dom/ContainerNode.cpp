@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/ContainerNode.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -41,6 +40,7 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MutationEvent.h"
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTagCollection.h"
@@ -586,6 +586,7 @@ PassRefPtrWillBeRawPtr<Node> ContainerNode::removeChild(PassRefPtrWillBeRawPtr<N
 
     {
         HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+        DocumentOrderedMap::RemoveScope treeRemoveScope;
 
         Node* prev = child->previousSibling();
         Node* next = child->nextSibling();
@@ -603,8 +604,10 @@ void ContainerNode::removeBetween(Node* previousChild, Node* nextChild, Node& ol
 
     ASSERT(oldChild.parentNode() == this);
 
+    AttachContext context;
+    context.clearInvalidation = true;
     if (!oldChild.needsAttach())
-        oldChild.detach();
+        oldChild.detach(context);
 
     if (nextChild)
         nextChild->setPreviousSibling(previousChild);
@@ -636,6 +639,9 @@ void ContainerNode::parserRemoveChild(Node& oldChild)
 
     ChildListMutationScope(*this).willRemoveChild(oldChild);
     oldChild.notifyMutationObserversNodeWillDetach();
+
+    HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+    DocumentOrderedMap::RemoveScope treeRemoveScope;
 
     Node* prev = oldChild.previousSibling();
     Node* next = oldChild.nextSibling();
@@ -684,7 +690,7 @@ void ContainerNode::removeChildren(SubtreeModificationAction action)
 #endif
     {
         HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
-
+        DocumentOrderedMap::RemoveScope treeRemoveScope;
         {
             EventDispatchForbiddenScope assertNoEventDispatch;
             ScriptForbiddenScope forbidScript;
@@ -864,14 +870,28 @@ void ContainerNode::notifyNodeRemoved(Node& root)
 
 void ContainerNode::attach(const AttachContext& context)
 {
-    attachChildren(context);
+    AttachContext childrenContext(context);
+    childrenContext.resolvedStyle = nullptr;
+
+    for (Node* child = firstChild(); child; child = child->nextSibling()) {
+        ASSERT(child->needsAttach() || childAttachedAllowedWhenAttachingChildren(this));
+        if (child->needsAttach())
+            child->attach(childrenContext);
+    }
+
     clearChildNeedsStyleRecalc();
     Node::attach(context);
 }
 
 void ContainerNode::detach(const AttachContext& context)
 {
-    detachChildren(context);
+    AttachContext childrenContext(context);
+    childrenContext.resolvedStyle = nullptr;
+    childrenContext.clearInvalidation = true;
+
+    for (Node* child = firstChild(); child; child = child->nextSibling())
+        child->detach(childrenContext);
+
     setChildNeedsStyleRecalc();
     Node::detach(context);
 }
@@ -903,7 +923,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 
     // FIXME: What is this code really trying to do?
     LayoutObject* o = layoutObject();
-    if (!o->isInline() || o->isReplaced()) {
+    if (!o->isInline() || o->isAtomicInlineLevel()) {
         point = o->localToAbsolute(FloatPoint(), UseTransforms);
         return true;
     }
@@ -928,7 +948,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         }
         ASSERT(o);
 
-        if (!o->isInline() || o->isReplaced()) {
+        if (!o->isInline() || o->isAtomicInlineLevel()) {
             point = o->localToAbsolute(FloatPoint(), UseTransforms);
             return true;
         }
@@ -936,7 +956,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toLayoutText(o)->hasTextBoxes()) {
             // Do nothing - skip unrendered whitespace that is a child or next sibling of the anchor.
             // FIXME: This fails to skip a whitespace sibling when there was also a whitespace child (because p has moved).
-        } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
+        } else if ((o->isText() && !o->isBR()) || o->isAtomicInlineLevel()) {
             point = FloatPoint();
             if (o->isText()) {
                 if (toLayoutText(o)->firstTextBox())
@@ -986,7 +1006,7 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
         return false;
 
     LayoutObject* o = layoutObject();
-    if (!o->isInline() || o->isReplaced()) {
+    if (!o->isInline() || o->isAtomicInlineLevel()) {
         LayoutBox* box = toLayoutBox(o);
         point = o->localToAbsolute(FloatPoint(box->size()), UseTransforms);
         return true;
@@ -1026,7 +1046,7 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
             o = prev;
         }
         ASSERT(o);
-        if (o->isText() || o->isReplaced()) {
+        if (o->isText() || o->isAtomicInlineLevel()) {
             point = FloatPoint();
             if (o->isText()) {
                 LayoutText* text = toLayoutText(o);
@@ -1077,14 +1097,12 @@ void ContainerNode::focusStateChanged()
     if (!layoutObject())
         return;
 
-    if (styleChangeType() < SubtreeStyleChange) {
-        if (computedStyle()->affectedByFocus() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
-            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
-        else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
-            document().styleEngine().pseudoStateChangedForElement(CSSSelector::PseudoFocus, *toElement(this));
-        else if (computedStyle()->affectedByFocus())
-            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
-    }
+    if (computedStyle()->affectedByFocus() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
+    else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
+        toElement(this)->pseudoStateChanged(CSSSelector::PseudoFocus);
+    else if (computedStyle()->affectedByFocus())
+        setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
 
     LayoutTheme::theme().controlStateChanged(*layoutObject(), FocusControlState);
 }
@@ -1117,8 +1135,8 @@ void ContainerNode::setFocus(bool received)
         return;
 
     // If :focus sets display: none, we lose focus but still need to recalc our style.
-    if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus() && styleChangeType() < SubtreeStyleChange)
-        document().styleEngine().pseudoStateChangedForElement(CSSSelector::PseudoFocus, *toElement(this));
+    if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
+        toElement(this)->pseudoStateChanged(CSSSelector::PseudoFocus);
     else
         setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
 }
@@ -1132,14 +1150,12 @@ void ContainerNode::setActive(bool down)
 
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
     if (layoutObject()) {
-        if (styleChangeType() < SubtreeStyleChange) {
-            if (computedStyle()->affectedByActive() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
-                setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
-            else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByActive())
-                document().styleEngine().pseudoStateChangedForElement(CSSSelector::PseudoActive, *toElement(this));
-            else if (computedStyle()->affectedByActive())
-                setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
-        }
+        if (computedStyle()->affectedByActive() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
+        else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByActive())
+            toElement(this)->pseudoStateChanged(CSSSelector::PseudoActive);
+        else if (computedStyle()->affectedByActive())
+            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
 
         LayoutTheme::theme().controlStateChanged(*layoutObject(), PressedControlState);
     }
@@ -1156,21 +1172,19 @@ void ContainerNode::setHovered(bool over)
     if (!layoutObject()) {
         if (over)
             return;
-        if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover() && styleChangeType() < SubtreeStyleChange)
-            document().styleEngine().pseudoStateChangedForElement(CSSSelector::PseudoHover, *toElement(this));
+        if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
+            toElement(this)->pseudoStateChanged(CSSSelector::PseudoHover);
         else
             setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
         return;
     }
 
-    if (styleChangeType() < SubtreeStyleChange) {
-        if (computedStyle()->affectedByHover() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
-            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
-        else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
-            document().styleEngine().pseudoStateChangedForElement(CSSSelector::PseudoHover, *toElement(this));
-        else if (computedStyle()->affectedByHover())
-            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
-    }
+    if (computedStyle()->affectedByHover() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
+    else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
+        toElement(this)->pseudoStateChanged(CSSSelector::PseudoHover);
+    else if (computedStyle()->affectedByHover())
+        setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
 
     LayoutTheme::theme().controlStateChanged(*layoutObject(), HoverControlState);
 }
@@ -1523,6 +1537,9 @@ bool childAttachedAllowedWhenAttachingChildren(ContainerNode* node)
         return true;
 
     if (node->isInsertionPoint())
+        return true;
+
+    if (isHTMLSlotElement(node))
         return true;
 
     if (node->isElementNode() && toElement(node)->shadow())

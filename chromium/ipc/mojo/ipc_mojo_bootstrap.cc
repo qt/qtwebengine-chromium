@@ -5,9 +5,12 @@
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
 
 #include <stdint.h>
+#include <utility>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/process/process_handle.h"
+#include "build/build_config.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
@@ -109,7 +112,7 @@ class MojoClientBootstrap : public MojoBootstrap {
   bool OnMessageReceived(const Message& message) override;
   void OnChannelConnected(int32_t peer_pid) override;
 
-  int32 peer_pid_;
+  int32_t peer_pid_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoClientBootstrap);
 };
@@ -162,8 +165,8 @@ scoped_ptr<MojoBootstrap> MojoBootstrap::Create(ChannelHandle handle,
 
   scoped_ptr<Channel> bootstrap_channel =
       Channel::Create(handle, mode, self.get());
-  self->Init(bootstrap_channel.Pass(), delegate);
-  return self.Pass();
+  self->Init(std::move(bootstrap_channel), delegate);
+  return self;
 }
 
 MojoBootstrap::MojoBootstrap() : delegate_(NULL), state_(STATE_INITIALIZED) {
@@ -173,7 +176,7 @@ MojoBootstrap::~MojoBootstrap() {
 }
 
 void MojoBootstrap::Init(scoped_ptr<Channel> channel, Delegate* delegate) {
-  channel_ = channel.Pass();
+  channel_ = std::move(channel);
   delegate_ = delegate;
 }
 

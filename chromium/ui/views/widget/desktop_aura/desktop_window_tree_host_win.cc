@@ -4,7 +4,6 @@
 
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 
-#include "base/win/metro.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/aura/client/aura_constants.h"
@@ -96,6 +95,9 @@ DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
 
 // static
 aura::Window* DesktopWindowTreeHostWin::GetContentWindowForHWND(HWND hwnd) {
+  // All HWND's we create should have WindowTreeHost instances associated with
+  // them. There are exceptions like the content layer creating HWND's which
+  // are not associated with WindowTreeHost instances.
   aura::WindowTreeHost* host =
       aura::WindowTreeHost::GetForAcceleratedWidget(hwnd);
   return host ? host->window()->GetProperty(kContentWindowForRootWindow) : NULL;
@@ -621,6 +623,10 @@ bool DesktopWindowTreeHostWin::CanActivate() const {
   if (IsModalWindowActive())
     return true;
   return native_widget_delegate_->CanActivate();
+}
+
+bool DesktopWindowTreeHostWin::WantsMouseEventsWhenInactive() const {
+  return false;
 }
 
 bool DesktopWindowTreeHostWin::WidgetSizeIsClientSize() const {

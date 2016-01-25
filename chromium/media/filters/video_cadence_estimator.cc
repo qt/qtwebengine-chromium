@@ -18,6 +18,15 @@ namespace media {
 // require some time to elapse before a cadence switch is accepted.
 const int kMinimumCadenceDurationMs = 100;
 
+// The numbers are used to decide whether the current video is variable FPS or
+// constant FPS. If ratio of the sample deviation and the render length is
+// above |kVariableFPSFactor|, then it is recognized as a variable FPS, and if
+// the ratio is below |kConstantFPSFactor|, then it is recognized as a constant
+// FPS, and if the ratio is in between the two factors, then we do not change
+// previous recognition.
+const double kVariableFPSFactor = 0.55;
+const double kConstantFPSFactor = 0.45;
+
 // Records the number of cadence changes to UMA.
 static void HistogramCadenceChangeCount(int cadence_changes) {
   const int kCadenceChangeMax = 10;
@@ -66,7 +75,8 @@ VideoCadenceEstimator::VideoCadenceEstimator(
     base::TimeDelta minimum_time_until_max_drift)
     : cadence_hysteresis_threshold_(
           base::TimeDelta::FromMilliseconds(kMinimumCadenceDurationMs)),
-      minimum_time_until_max_drift_(minimum_time_until_max_drift) {
+      minimum_time_until_max_drift_(minimum_time_until_max_drift),
+      is_variable_frame_rate_(false) {
   Reset();
 }
 
@@ -83,9 +93,26 @@ void VideoCadenceEstimator::Reset() {
 bool VideoCadenceEstimator::UpdateCadenceEstimate(
     base::TimeDelta render_interval,
     base::TimeDelta frame_duration,
+    base::TimeDelta frame_duration_deviation,
     base::TimeDelta max_acceptable_drift) {
   DCHECK_GT(render_interval, base::TimeDelta());
   DCHECK_GT(frame_duration, base::TimeDelta());
+
+  if (frame_duration_deviation > kVariableFPSFactor * render_interval) {
+    is_variable_frame_rate_ = true;
+  } else if (frame_duration_deviation < kConstantFPSFactor * render_interval) {
+    is_variable_frame_rate_ = false;
+  }
+
+  // Variable FPS detected, turn off Cadence by force.
+  if (is_variable_frame_rate_) {
+    render_intervals_cadence_held_ = 0;
+    if (!cadence_.empty()) {
+      cadence_.clear();
+      return true;
+    }
+    return false;
+  }
 
   base::TimeDelta time_until_max_drift;
 
@@ -153,11 +180,22 @@ VideoCadenceEstimator::Cadence VideoCadenceEstimator::CalculateCadence(
     base::TimeDelta frame_duration,
     base::TimeDelta max_acceptable_drift,
     base::TimeDelta* time_until_max_drift) const {
-  DCHECK_LT(max_acceptable_drift, minimum_time_until_max_drift_);
-
   // The perfect cadence is the number of render intervals per frame.
   const double perfect_cadence =
       frame_duration.InSecondsF() / render_interval.InSecondsF();
+
+  // This case is very simple, just return a single frame cadence, because it
+  // is impossible for us to accumulate drift as large as max_acceptable_drift
+  // within minimum_time_until_max_drift.
+  if (max_acceptable_drift >= minimum_time_until_max_drift_) {
+    int cadence_value = round(perfect_cadence);
+    if (cadence_value == 0)
+      cadence_value = 1;
+    Cadence result = ConstructCadence(cadence_value, 1);
+    const double error = std::fabs(1.0 - perfect_cadence / cadence_value);
+    *time_until_max_drift = max_acceptable_drift / error;
+    return result;
+  }
 
   // We want to construct a cadence pattern to approximate the perfect cadence
   // while ensuring error doesn't accumulate too quickly.

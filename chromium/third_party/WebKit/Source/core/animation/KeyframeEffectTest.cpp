@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/animation/KeyframeEffect.h"
 
 #include "bindings/core/v8/Dictionary.h"
@@ -18,7 +17,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 #include <v8.h>
 
 namespace blink {
@@ -27,16 +26,17 @@ class KeyframeEffectTest : public ::testing::Test {
 protected:
     KeyframeEffectTest()
         : pageHolder(DummyPageHolder::create())
-        , document(pageHolder->document())
-        , element(document.createElement("foo", ASSERT_NO_EXCEPTION))
     {
-        document.animationClock().resetTimeForTesting(document.timeline().zeroTime());
-        document.documentElement()->appendChild(element.get());
-        EXPECT_EQ(0, document.timeline().currentTime());
+        element = document().createElement("foo", ASSERT_NO_EXCEPTION);
+
+        document().animationClock().resetTimeForTesting(document().timeline().zeroTime());
+        document().documentElement()->appendChild(element.get());
+        EXPECT_EQ(0, document().timeline().currentTime());
     }
 
+    Document& document() const { return pageHolder->document(); }
+
     OwnPtr<DummyPageHolder> pageHolder;
-    Document& document;
     RefPtrWillBePersistent<Element> element;
     TrackExceptionState exceptionState;
 };
@@ -274,7 +274,7 @@ TEST_F(KeyframeEffectTest, TimeToEffectChange)
     timing.endDelay = 100;
     timing.fillMode = Timing::FillModeNone;
     KeyframeEffect* animation = KeyframeEffect::create(0, nullptr, timing);
-    Animation* player = document.timeline().play(animation);
+    Animation* player = document().timeline().play(animation);
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -307,7 +307,7 @@ TEST_F(KeyframeEffectTest, TimeToEffectChangeWithPlaybackRate)
     timing.playbackRate = 2;
     timing.fillMode = Timing::FillModeNone;
     KeyframeEffect* animation = KeyframeEffect::create(0, nullptr, timing);
-    Animation* player = document.timeline().play(animation);
+    Animation* player = document().timeline().play(animation);
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -340,7 +340,7 @@ TEST_F(KeyframeEffectTest, TimeToEffectChangeWithNegativePlaybackRate)
     timing.playbackRate = -2;
     timing.fillMode = Timing::FillModeNone;
     KeyframeEffect* animation = KeyframeEffect::create(0, nullptr, timing);
-    Animation* player = document.timeline().play(animation);
+    Animation* player = document().timeline().play(animation);
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -371,7 +371,7 @@ TEST_F(KeyframeEffectTest, ElementDestructorClearsAnimationTarget)
     timing.iterationDuration = 5;
     KeyframeEffect* animation = KeyframeEffect::create(element.get(), nullptr, timing);
     EXPECT_EQ(element.get(), animation->target());
-    document.timeline().play(animation);
+    document().timeline().play(animation);
     pageHolder.clear();
     element.clear();
 }

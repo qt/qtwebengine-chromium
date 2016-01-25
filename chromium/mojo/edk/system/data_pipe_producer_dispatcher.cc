@@ -4,21 +4,35 @@
 
 #include "mojo/edk/system/data_pipe_producer_dispatcher.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/edk/embedder/embedder_internal.h"
+#include "mojo/edk/embedder/platform_shared_buffer.h"
+#include "mojo/edk/embedder/platform_support.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/data_pipe.h"
 
 namespace mojo {
 namespace edk {
 
-void DataPipeProducerDispatcher::Init(ScopedPlatformHandle message_pipe) {
+void DataPipeProducerDispatcher::Init(
+    ScopedPlatformHandle message_pipe,
+    char* serialized_write_buffer, size_t serialized_write_buffer_size) {
   if (message_pipe.is_valid()) {
-    channel_ = RawChannel::Create(message_pipe.Pass());
+    channel_ = RawChannel::Create(std::move(message_pipe));
+    channel_->SetSerializedData(
+        nullptr, 0u, serialized_write_buffer, serialized_write_buffer_size,
+        nullptr, nullptr);
     internal::g_io_thread_task_runner->PostTask(
         FROM_HERE, base::Bind(&DataPipeProducerDispatcher::InitOnIO, this));
+  } else {
+    error_ = true;
   }
 }
 
@@ -46,24 +60,42 @@ DataPipeProducerDispatcher::Deserialize(
     size_t size,
     PlatformHandleVector* platform_handles) {
   MojoCreateDataPipeOptions options;
+  ScopedPlatformHandle shared_memory_handle;
+  size_t shared_memory_size = 0;
   ScopedPlatformHandle platform_handle =
       DataPipe::Deserialize(source, size, platform_handles, &options,
-        nullptr, 0);
+                            &shared_memory_handle, &shared_memory_size);
 
   scoped_refptr<DataPipeProducerDispatcher> rv(Create(options));
-  if (platform_handle.is_valid())
-    rv->Init(platform_handle.Pass());
+
+  char* serialized_write_buffer = nullptr;
+  size_t serialized_write_buffer_size = 0;
+  scoped_refptr<PlatformSharedBuffer> shared_buffer;
+  scoped_ptr<PlatformSharedBufferMapping> mapping;
+  if (shared_memory_size) {
+    shared_buffer = internal::g_platform_support->CreateSharedBufferFromHandle(
+        shared_memory_size, std::move(shared_memory_handle));
+    mapping = shared_buffer->Map(0, shared_memory_size);
+    serialized_write_buffer = static_cast<char*>(mapping->GetBase());
+    serialized_write_buffer_size = shared_memory_size;
+  }
+
+  rv->Init(std::move(platform_handle), serialized_write_buffer,
+           serialized_write_buffer_size);
   return rv;
 }
 
 DataPipeProducerDispatcher::DataPipeProducerDispatcher(
     const MojoCreateDataPipeOptions& options)
-    : options_(options), channel_(nullptr), error_(false) {
+    : options_(options), channel_(nullptr), error_(false), serialized_(false) {
 }
 
 DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {
-  // |Close()|/|CloseImplNoLock()| should have taken care of the channel.
-  DCHECK(!channel_);
+  // See comment in ~MessagePipeDispatcher.
+  if (channel_ && internal::g_io_thread_task_runner->RunsTasksOnCurrentThread())
+    channel_->Shutdown();
+  else
+    DCHECK(!channel_);
 }
 
 void DataPipeProducerDispatcher::CancelAllAwakablesNoLock() {
@@ -81,10 +113,12 @@ scoped_refptr<Dispatcher>
 DataPipeProducerDispatcher::CreateEquivalentDispatcherAndCloseImplNoLock() {
   lock().AssertAcquired();
 
+  SerializeInternal();
+
   scoped_refptr<DataPipeProducerDispatcher> rv = Create(options_);
-  rv->channel_ = channel_;
-  channel_ = nullptr;
-  rv->options_ = options_;
+  serialized_write_buffer_.swap(rv->serialized_write_buffer_);
+  rv->serialized_platform_handle_ = std::move(serialized_platform_handle_);
+  rv->serialized_ = true;
   return scoped_refptr<Dispatcher>(rv.get());
 }
 
@@ -140,19 +174,6 @@ MojoResult DataPipeProducerDispatcher::BeginWriteDataImplNoLock(
     return MOJO_RESULT_BUSY;
   if (error_)
     return MOJO_RESULT_FAILED_PRECONDITION;
-
-  bool all_or_none = flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE;
-  uint32_t min_num_bytes_to_write = 0;
-  if (all_or_none) {
-    min_num_bytes_to_write = *buffer_num_bytes;
-    if (min_num_bytes_to_write % options_.element_num_bytes != 0)
-      return MOJO_RESULT_INVALID_ARGUMENT;
-    if (min_num_bytes_to_write > options_.capacity_num_bytes) {
-      // Don't return "should wait" since you can't wait for a specified amount
-      // of data.
-      return MOJO_RESULT_OUT_OF_RANGE;
-    }
-  }
 
   // See comment in WriteDataImplNoLock about ignoring capacity_num_bytes.
   if (*buffer_num_bytes == 0)
@@ -214,9 +235,11 @@ HandleSignalsState DataPipeProducerDispatcher::GetHandleSignalsStateImplNoLock()
 MojoResult DataPipeProducerDispatcher::AddAwakableImplNoLock(
     Awakable* awakable,
     MojoHandleSignals signals,
-    uint32_t context,
+    uintptr_t context,
     HandleSignalsState* signals_state) {
   lock().AssertAcquired();
+  if (channel_)
+    channel_->EnsureLazyInitialized();
   HandleSignalsState state = GetHandleSignalsStateImplNoLock();
   if (state.satisfies(signals)) {
     if (signals_state)
@@ -245,29 +268,34 @@ void DataPipeProducerDispatcher::RemoveAwakableImplNoLock(
 void DataPipeProducerDispatcher::StartSerializeImplNoLock(
     size_t* max_size,
     size_t* max_platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
+  if (!serialized_)
+    SerializeInternal();
 
-  if (channel_) {
-    std::vector<char> temp;
-    serialized_platform_handle_ = channel_->ReleaseHandle(&temp);
-    channel_ = nullptr;
-    DCHECK(temp.empty());
-  }
   DataPipe::StartSerialize(serialized_platform_handle_.is_valid(),
-                           false, max_size, max_platform_handles);
+                           !serialized_write_buffer_.empty(), max_size,
+                           max_platform_handles);
 }
 
 bool DataPipeProducerDispatcher::EndSerializeAndCloseImplNoLock(
     void* destination,
     size_t* actual_size,
     PlatformHandleVector* platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
+  ScopedPlatformHandle shared_memory_handle;
+  size_t shared_memory_size = serialized_write_buffer_.size();
+  if (shared_memory_size) {
+    scoped_refptr<PlatformSharedBuffer> shared_buffer(
+        internal::g_platform_support->CreateSharedBuffer(
+            shared_memory_size));
+    scoped_ptr<PlatformSharedBufferMapping> mapping(
+        shared_buffer->Map(0, shared_memory_size));
+    memcpy(mapping->GetBase(), &serialized_write_buffer_[0],
+           shared_memory_size);
+    shared_memory_handle.reset(shared_buffer->PassPlatformHandle().release());
+  }
 
-  DataPipe::EndSerialize(
-      options_,
-      serialized_platform_handle_.Pass(),
-      ScopedPlatformHandle(), 0,
-      destination, actual_size, platform_handles);
+  DataPipe::EndSerialize(options_, std::move(serialized_platform_handle_),
+                         std::move(shared_memory_handle), shared_memory_size,
+                         destination, actual_size, platform_handles);
   CloseImplNoLock();
   return true;
 }
@@ -288,16 +316,19 @@ bool DataPipeProducerDispatcher::IsBusyNoLock() const {
 void DataPipeProducerDispatcher::OnReadMessage(
     const MessageInTransit::View& message_view,
     ScopedPlatformHandleVectorPtr platform_handles) {
-  NOTREACHED();
+  CHECK(false) << "DataPipeProducerDispatcher shouldn't get any messages.";
 }
 
 void DataPipeProducerDispatcher::OnError(Error error) {
   switch (error) {
-    case ERROR_READ_SHUTDOWN:
     case ERROR_READ_BROKEN:
     case ERROR_READ_BAD_MESSAGE:
     case ERROR_READ_UNKNOWN:
-      LOG(ERROR) << "DataPipeProducerDispatcher shouldn't read messages";
+      LOG(ERROR) << "DataPipeProducerDispatcher shouldn't get read error.";
+      break;
+    case ERROR_READ_SHUTDOWN:
+      // The other side was cleanly closed, so this isn't actually an error.
+      DVLOG(1) << "DataPipeProducerDispatcher read error (shutdown)";
       break;
     case ERROR_WRITE:
       // Write errors are slightly notable: they probably shouldn't happen under
@@ -309,12 +340,15 @@ void DataPipeProducerDispatcher::OnError(Error error) {
   error_ = true;
   if (started_transport_.Try()) {
     base::AutoLock locker(lock());
-    awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
-
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&RawChannel::Shutdown, base::Unretained(channel_)));
-    channel_ = nullptr;
+    // We can get two OnError callbacks before the post task below completes.
+    // Although RawChannel still has a pointer to this object until Shutdown is
+    // called, that is safe since this class always does a PostTask to the IO
+    // thread to self destruct.
+    if (channel_) {
+      awakable_list_.AwakeForStateChange(GetHandleSignalsStateImplNoLock());
+      channel_->Shutdown();
+      channel_ = nullptr;
+    }
     started_transport_.Release();
   } else {
     // We must be waiting to call ReleaseHandle. It will call Shutdown.
@@ -342,7 +376,7 @@ bool DataPipeProducerDispatcher::WriteDataIntoMessages(
     scoped_ptr<MessageInTransit> message(new MessageInTransit(
         MessageInTransit::Type::MESSAGE, message_num_bytes,
         static_cast<const char*>(elements) + offset));
-    if (!channel_->WriteMessage(message.Pass())) {
+    if (!channel_->WriteMessage(std::move(message))) {
       error_ = true;
       return false;
     }
@@ -351,6 +385,25 @@ bool DataPipeProducerDispatcher::WriteDataIntoMessages(
   }
 
   return true;
+}
+
+void DataPipeProducerDispatcher::SerializeInternal() {
+  // We need to stop watching handle immediately, even though not on IO thread,
+  // so that other messages aren't read after this.
+  if (channel_) {
+    std::vector<char> serialized_read_buffer;
+    std::vector<int> fds;
+    bool write_error = false;
+    serialized_platform_handle_ = channel_->ReleaseHandle(
+        &serialized_read_buffer, &serialized_write_buffer_, &fds, &fds,
+        &write_error);
+    CHECK(serialized_read_buffer.empty());
+    CHECK(fds.empty());
+    if (write_error)
+      serialized_platform_handle_.reset();
+    channel_ = nullptr;
+  }
+  serialized_ = true;
 }
 
 }  // namespace edk

@@ -4,12 +4,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.StylesSidebarPane.BaseToolbarPaneWidget}
+ * @extends {WebInspector.ElementsPanel.BaseToolbarPaneWidget}
  * @param {!WebInspector.ToolbarItem} toolbarItem
  */
 WebInspector.ElementStatePaneWidget = function(toolbarItem)
 {
-    WebInspector.StylesSidebarPane.BaseToolbarPaneWidget.call(this, toolbarItem);
+    WebInspector.ElementsPanel.BaseToolbarPaneWidget.call(this, toolbarItem);
     this.element.className = "styles-element-state-pane";
     this.element.createChild("div").createTextChild(WebInspector.UIString("Force element state"));
     var table = createElementWithClass("table", "source-code");
@@ -80,9 +80,7 @@ WebInspector.ElementStatePaneWidget.prototype = {
      */
     _pseudoStateForced: function(event)
     {
-        var node = /** @type{!WebInspector.DOMNode} */(event.data.node);
-        if (node === WebInspector.context.flavor(WebInspector.DOMNode))
-            this._updateInputs(node);
+        this.update();
     },
 
     /**
@@ -92,24 +90,32 @@ WebInspector.ElementStatePaneWidget.prototype = {
     onNodeChanged: function(newNode)
     {
         this._updateTarget(newNode? newNode.target() : null);
-        if (newNode)
-            this._updateInputs(newNode);
+        this.update();
     },
 
     /**
-     * @param {!WebInspector.DOMNode} node
+     * @override
+     * @return {!Promise.<?>}
      */
-    _updateInputs: function(node)
+    doUpdate: function()
     {
-        var nodePseudoState = WebInspector.CSSStyleModel.fromNode(node).pseudoState(node);
-        var inputs = this._inputs;
-        for (var i = 0; i < inputs.length; ++i) {
-            inputs[i].disabled = !!node.pseudoType();
-            inputs[i].checked = nodePseudoState.indexOf(inputs[i].state) >= 0;
+        var node = WebInspector.context.flavor(WebInspector.DOMNode);
+        if (node) {
+            var nodePseudoState = WebInspector.CSSStyleModel.fromNode(node).pseudoState(node);
+            for (var input of this._inputs) {
+                input.disabled = !!node.pseudoType();
+                input.checked = nodePseudoState.indexOf(input.state) >= 0;
+            }
+        } else {
+            for (var input of this._inputs) {
+                input.disabled = true;
+                input.checked = false;
+            }
         }
+        return Promise.resolve();
     },
 
-    __proto__: WebInspector.StylesSidebarPane.BaseToolbarPaneWidget.prototype
+    __proto__: WebInspector.ElementsPanel.BaseToolbarPaneWidget.prototype
 }
 
 /**
@@ -118,7 +124,7 @@ WebInspector.ElementStatePaneWidget.prototype = {
  */
 WebInspector.ElementStatePaneWidget.ButtonProvider = function()
 {
-    this._button = new WebInspector.ToolbarButton(WebInspector.UIString("Toggle Element State"), "pin-toolbar-item");
+    this._button = new WebInspector.ToolbarToggle(WebInspector.UIString("Toggle Element State"), "pin-toolbar-item");
     this._button.addEventListener("click", this._clicked, this);
     this._view = new WebInspector.ElementStatePaneWidget(this.item());
     WebInspector.context.addFlavorChangeListener(WebInspector.DOMNode, this._nodeChanged, this);
@@ -128,8 +134,7 @@ WebInspector.ElementStatePaneWidget.ButtonProvider = function()
 WebInspector.ElementStatePaneWidget.ButtonProvider.prototype = {
     _clicked: function()
     {
-        var stylesSidebarPane = WebInspector.ElementsPanel.instance().sidebarPanes.styles;
-        stylesSidebarPane.showToolbarPane(!this._view.isShowing() ? this._view : null);
+        WebInspector.ElementsPanel.instance().showToolbarPane(!this._view.isShowing() ? this._view : null);
     },
 
     /**
@@ -146,6 +151,6 @@ WebInspector.ElementStatePaneWidget.ButtonProvider.prototype = {
         var enabled = !!WebInspector.context.flavor(WebInspector.DOMNode);
         this._button.setEnabled(enabled);
         if (!enabled && this._button.toggled())
-            WebInspector.ElementsPanel.instance().sidebarPanes.styles.showToolbarPane(null);
+            WebInspector.ElementsPanel.instance().showToolbarPane(null);
     }
 }

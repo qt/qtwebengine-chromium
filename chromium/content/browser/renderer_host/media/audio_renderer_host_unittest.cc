@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/sync_socket.h"
@@ -31,13 +34,11 @@ namespace {
 const int kRenderProcessId = 1;
 const int kRenderFrameId = 5;
 const int kStreamId = 50;
-const int kBadStreamId = 99;
-const url::Origin kSecurityOrigin(GURL("http://localhost"));
-const url::Origin kDefaultSecurityOrigin;
-const std::string kDefaultDeviceID;
-const std::string kBadDeviceID =
+const char kSecurityOrigin[] = "http://localhost";
+const char kDefaultDeviceId[] = "";
+const char kBadDeviceId[] =
     "badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad1";
-const std::string kInvalidDeviceID = "invalid-device-id";
+const char kInvalidDeviceId[] = "invalid-device-id";
 }  // namespace
 
 namespace content {
@@ -81,8 +82,6 @@ class MockAudioRendererHost : public AudioRendererHost {
   MOCK_METHOD1(OnStreamPlaying, void(int stream_id));
   MOCK_METHOD1(OnStreamPaused, void(int stream_id));
   MOCK_METHOD1(OnStreamError, void(int stream_id));
-  MOCK_METHOD2(OnOutputDeviceSwitched,
-               void(int stream_id, media::OutputDeviceStatus result));
 
  private:
   virtual ~MockAudioRendererHost() {
@@ -106,8 +105,6 @@ class MockAudioRendererHost : public AudioRendererHost {
                           OnNotifyStreamCreated)
       IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamStateChanged,
                           OnNotifyStreamStateChanged)
-      IPC_MESSAGE_HANDLER(AudioMsg_NotifyOutputDeviceSwitched,
-                          OnNotifyOutputDeviceSwitched)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
     EXPECT_TRUE(handled);
@@ -123,8 +120,10 @@ class MockAudioRendererHost : public AudioRendererHost {
   }
 
   void OnNotifyStreamCreated(
-      int stream_id, base::SharedMemoryHandle handle,
-      base::SyncSocket::TransitDescriptor socket_descriptor, uint32 length) {
+      int stream_id,
+      base::SharedMemoryHandle handle,
+      base::SyncSocket::TransitDescriptor socket_descriptor,
+      uint32_t length) {
     // Maps the shared memory.
     shared_memory_.reset(new base::SharedMemory(handle, false));
     CHECK(shared_memory_->Map(length));
@@ -158,24 +157,9 @@ class MockAudioRendererHost : public AudioRendererHost {
     }
   }
 
-  void OnNotifyOutputDeviceSwitched(int stream_id,
-                                    media::OutputDeviceStatus result) {
-    switch (result) {
-      case media::OUTPUT_DEVICE_STATUS_OK:
-      case media::OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND:
-      case media::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED:
-      case media::OUTPUT_DEVICE_STATUS_ERROR_INTERNAL:
-        OnOutputDeviceSwitched(stream_id, result);
-        break;
-      default:
-        FAIL() << "Unknown SwitchOutputDevice result";
-        break;
-    }
-  }
-
   scoped_ptr<base::SharedMemory> shared_memory_;
   scoped_ptr<base::SyncSocket> sync_socket_;
-  uint32 shared_memory_length_;
+  uint32_t shared_memory_length_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAudioRendererHost);
 };
@@ -233,15 +217,27 @@ class AudioRendererHostTest : public testing::Test {
   }
 
  protected:
-  void Create(bool unified_stream) {
-    EXPECT_CALL(
-        *host_.get(),
-        OnDeviceAuthorized(kStreamId, media::OUTPUT_DEVICE_STATUS_OK, _));
-    EXPECT_CALL(*host_.get(), OnStreamCreated(kStreamId, _));
+  void Create() { Create(false, kDefaultDeviceId, url::Origin()); }
 
-    EXPECT_CALL(mirroring_manager_,
-                AddDiverter(kRenderProcessId, kRenderFrameId, NotNull()))
-        .RetiresOnSaturation();
+  void Create(bool unified_stream,
+              const std::string& device_id,
+              const url::Origin& security_origin) {
+    media::OutputDeviceStatus expected_device_status =
+        device_id == kDefaultDeviceId
+            ? media::OUTPUT_DEVICE_STATUS_OK
+            : device_id == kBadDeviceId
+                  ? media::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED
+                  : media::OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND;
+
+    EXPECT_CALL(*host_.get(),
+                OnDeviceAuthorized(kStreamId, expected_device_status, _));
+
+    if (expected_device_status == media::OUTPUT_DEVICE_STATUS_OK) {
+      EXPECT_CALL(*host_.get(), OnStreamCreated(kStreamId, _));
+      EXPECT_CALL(mirroring_manager_,
+                  AddDiverter(kRenderProcessId, kRenderFrameId, NotNull()))
+          .RetiresOnSaturation();
+    }
 
     // Send a create stream message to the audio output stream and wait until
     // we receive the created message.
@@ -256,14 +252,15 @@ class AudioRendererHostTest : public testing::Test {
       session_id = AudioInputDeviceManager::kFakeOpenSessionId;
     }
     host_->OnRequestDeviceAuthorization(kStreamId, kRenderFrameId, session_id,
-                                        kDefaultDeviceID,
-                                        kDefaultSecurityOrigin);
-    host_->OnCreateStream(kStreamId, kRenderFrameId, params);
+                                        device_id, security_origin);
+    if (expected_device_status == media::OUTPUT_DEVICE_STATUS_OK) {
+      host_->OnCreateStream(kStreamId, kRenderFrameId, params);
 
-    // At some point in the future, a corresponding RemoveDiverter() call must
-    // be made.
-    EXPECT_CALL(mirroring_manager_, RemoveDiverter(NotNull()))
-        .RetiresOnSaturation();
+      // At some point in the future, a corresponding RemoveDiverter() call must
+      // be made.
+      EXPECT_CALL(mirroring_manager_, RemoveDiverter(NotNull()))
+          .RetiresOnSaturation();
+    }
     SyncWithAudioThread();
   }
 
@@ -288,17 +285,6 @@ class AudioRendererHostTest : public testing::Test {
 
   void SetVolume(double volume) {
     host_->OnSetVolume(kStreamId, volume);
-    SyncWithAudioThread();
-  }
-
-  void SwitchOutputDevice(int stream_id,
-                          const std::string& device_id,
-                          const url::Origin& security_origin,
-                          media::OutputDeviceStatus expected_result) {
-    EXPECT_CALL(*host_.get(),
-                OnOutputDeviceSwitched(stream_id, expected_result));
-    host_->OnSwitchOutputDevice(stream_id, kRenderFrameId, device_id,
-                                security_origin);
     SyncWithAudioThread();
   }
 
@@ -343,79 +329,51 @@ class AudioRendererHostTest : public testing::Test {
 };
 
 TEST_F(AudioRendererHostTest, CreateAndClose) {
-  Create(false);
+  Create();
   Close();
 }
 
 // Simulate the case where a stream is not properly closed.
 TEST_F(AudioRendererHostTest, CreateAndShutdown) {
-  Create(false);
+  Create();
 }
 
 TEST_F(AudioRendererHostTest, CreatePlayAndClose) {
-  Create(false);
+  Create();
   Play();
   Close();
 }
 
 TEST_F(AudioRendererHostTest, CreatePlayPauseAndClose) {
-  Create(false);
+  Create();
   Play();
   Pause();
   Close();
 }
 
 TEST_F(AudioRendererHostTest, SetVolume) {
-  Create(false);
+  Create();
   SetVolume(0.5);
   Play();
   Pause();
   Close();
 }
 
-TEST_F(AudioRendererHostTest, SwitchOutputDevice) {
-  Create(false);
-  SwitchOutputDevice(kStreamId, kDefaultDeviceID, kDefaultSecurityOrigin,
-                     media::OUTPUT_DEVICE_STATUS_OK);
-  Close();
-}
-
-TEST_F(AudioRendererHostTest, SwitchOutputDeviceNotAuthorized) {
-  Create(false);
-  SwitchOutputDevice(kStreamId, kBadDeviceID, kSecurityOrigin,
-                     media::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED);
-  Close();
-}
-
-TEST_F(AudioRendererHostTest, SwitchOutputDeviceInvalidDeviceId) {
-  Create(false);
-  SwitchOutputDevice(kStreamId, kInvalidDeviceID, kSecurityOrigin,
-                     media::OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND);
-  Close();
-}
-
-TEST_F(AudioRendererHostTest, SwitchOutputDeviceNoStream) {
-  Create(false);
-  SwitchOutputDevice(kBadStreamId, kDefaultDeviceID, kDefaultSecurityOrigin,
-                     media::OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
-  Close();
-}
-
 // Simulate the case where a stream is not properly closed.
 TEST_F(AudioRendererHostTest, CreatePlayAndShutdown) {
-  Create(false);
+  Create();
   Play();
 }
 
 // Simulate the case where a stream is not properly closed.
 TEST_F(AudioRendererHostTest, CreatePlayPauseAndShutdown) {
-  Create(false);
+  Create();
   Play();
   Pause();
 }
 
 TEST_F(AudioRendererHostTest, SimulateError) {
-  Create(false);
+  Create();
   Play();
   SimulateError();
 }
@@ -424,14 +382,24 @@ TEST_F(AudioRendererHostTest, SimulateError) {
 // the audio device is closed but the render process try to close the
 // audio stream again.
 TEST_F(AudioRendererHostTest, SimulateErrorAndClose) {
-  Create(false);
+  Create();
   Play();
   SimulateError();
   Close();
 }
 
 TEST_F(AudioRendererHostTest, CreateUnifiedStreamAndClose) {
-  Create(true);
+  Create(true, kDefaultDeviceId, url::Origin());
+  Close();
+}
+
+TEST_F(AudioRendererHostTest, CreateUnauthorizedDevice) {
+  Create(false, kBadDeviceId, url::Origin(GURL(kSecurityOrigin)));
+  Close();
+}
+
+TEST_F(AudioRendererHostTest, CreateInvalidDevice) {
+  Create(false, kInvalidDeviceId, url::Origin(GURL(kSecurityOrigin)));
   Close();
 }
 

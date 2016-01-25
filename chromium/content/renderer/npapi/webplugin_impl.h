@@ -5,14 +5,18 @@
 #ifndef CONTENT_RENDERER_NPAPI_WEBPLUGIN_IMPL_H_
 #define CONTENT_RENDERER_NPAPI_WEBPLUGIN_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "build/build_config.h"
 #include "content/child/npapi/webplugin.h"
 #include "content/common/content_export.h"
 #include "content/common/webplugin_geometry.h"
@@ -62,7 +66,7 @@ class WebPluginImpl : public WebPlugin,
   // Helper function for sorting post data.
   CONTENT_EXPORT static bool SetPostData(blink::WebURLRequest* request,
                                          const char* buf,
-                                         uint32 length);
+                                         uint32_t length);
 
   blink::WebFrame* webframe() { return webframe_; }
 
@@ -83,17 +87,13 @@ class WebPluginImpl : public WebPlugin,
   void updateFocus(bool focused, blink::WebFocusType focus_type) override;
   void updateVisibility(bool visible) override;
   bool acceptsInputEvents() override;
-  bool handleInputEvent(const blink::WebInputEvent& event,
-                        blink::WebCursorInfo& cursor_info) override;
-  void didReceiveResponse(const blink::WebURLResponse& response) override;
-  void didReceiveData(const char* data, int data_length) override;
-  void didFinishLoading() override;
-  void didFailLoading(const blink::WebURLError& error) override;
-  void didFinishLoadingFrameRequest(const blink::WebURL& url,
-                                    void* notify_data) override;
-  void didFailLoadingFrameRequest(const blink::WebURL& url,
-                                  void* notify_data,
-                                  const blink::WebURLError& error) override;
+  blink::WebInputEventResult handleInputEvent(
+      const blink::WebInputEvent& event,
+      blink::WebCursorInfo& cursor_info) override;
+  void didReceiveResponse(const blink::WebURLResponse& response) override {}
+  void didReceiveData(const char* data, int data_length) override {}
+  void didFinishLoading() override {}
+  void didFailLoading(const blink::WebURLError& error) override {}
   bool isPlaceholder() override;
 
   // WebPlugin implementation:
@@ -111,18 +111,7 @@ class WebPluginImpl : public WebPlugin,
                  const std::string& cookie) override;
   std::string GetCookies(const GURL& url,
                          const GURL& first_party_for_cookies) override;
-  void HandleURLRequest(const char* url,
-                        const char* method,
-                        const char* target,
-                        const char* buf,
-                        unsigned int len,
-                        int notify_id,
-                        bool popups_allowed,
-                        bool notify_redirects) override;
   void CancelDocumentLoad() override;
-  void InitiateHTTPRangeRequest(const char* url,
-                                const char* range_info,
-                                int pending_request_id) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
   bool IsOffTheRecord() override;
@@ -139,9 +128,9 @@ class WebPluginImpl : public WebPlugin,
   WebPluginAcceleratedSurface* GetAcceleratedSurface(
       gfx::GpuPreference gpu_preference) override;
   void AcceleratedPluginEnabledRendering() override;
-  void AcceleratedPluginAllocatedIOSurface(int32 width,
-                                           int32 height,
-                                           uint32 surface_id) override;
+  void AcceleratedPluginAllocatedIOSurface(int32_t width,
+                                           int32_t height,
+                                           uint32_t surface_id) override;
   void AcceleratedPluginSwappedIOSurface() override;
 #endif
 
@@ -174,25 +163,11 @@ class WebPluginImpl : public WebPlugin,
                              const char* target,
                              const char* buf,
                              unsigned int len,
-                             int notify_id,
                              ReferrerValue referrer_flag);
 
   // Returns the next avaiable resource id. Returns 0 if the operation fails.
   // It may fail if the page has already been closed.
   unsigned long GetNextResourceId();
-
-  // Initiates HTTP GET/POST requests.
-  // Returns true on success.
-  bool InitiateHTTPRequest(unsigned long resource_id,
-                           WebPluginResourceClient* client,
-                           const GURL& url,
-                           const char* method,
-                           const char* buf,
-                           int len,
-                           const char* range_info,
-                           ReferrerValue referrer_flag,
-                           bool notify_redirects,
-                           bool check_mixed_scripting);
 
   gfx::Rect GetWindowClipRect(const gfx::Rect& rect);
 
@@ -207,9 +182,9 @@ class WebPluginImpl : public WebPlugin,
   // WebURLLoaderClient implementation.  We implement this interface in the
   // renderer process, and then use the simple WebPluginResourceClient interface
   // to relay the callbacks to the plugin.
-  void willSendRequest(blink::WebURLLoader* loader,
-                       blink::WebURLRequest& request,
-                       const blink::WebURLResponse& response);
+  void willFollowRedirect(blink::WebURLLoader* loader,
+                          blink::WebURLRequest& new_request,
+                          const blink::WebURLResponse& response);
   void didSendData(blink::WebURLLoader* loader,
                    unsigned long long bytes_sent,
                    unsigned long long total_bytes_to_be_sent);
@@ -238,23 +213,9 @@ class WebPluginImpl : public WebPlugin,
   bool HandleHttpMultipartResponse(const blink::WebURLResponse& response,
                                    WebPluginResourceClient* client);
 
-  void HandleURLRequestInternal(const char* url,
-                                const char* method,
-                                const char* target,
-                                const char* buf,
-                                unsigned int len,
-                                int notify_id,
-                                bool popups_allowed,
-                                ReferrerValue referrer_flag,
-                                bool notify_redirects,
-                                bool check_mixed_scripting);
-
   // Tears down the existing plugin instance and creates a new plugin instance
   // to handle the response identified by the loader parameter.
   bool ReinitializePluginForResponse(blink::WebURLLoader* loader);
-
-  // Delayed task for downloading the plugin source URL.
-  void OnDownloadPluginSrcUrl();
 
   struct ClientInfo;
 
@@ -274,9 +235,9 @@ class WebPluginImpl : public WebPlugin,
   gfx::PluginWindowHandle window_;
 #if defined(OS_MACOSX)
   bool next_io_surface_allocated_;
-  int32 next_io_surface_width_;
-  int32 next_io_surface_height_;
-  uint32 next_io_surface_id_;
+  int32_t next_io_surface_width_;
+  int32_t next_io_surface_height_;
+  uint32_t next_io_surface_id_;
   scoped_refptr<cc::IOSurfaceLayer> io_surface_layer_;
   scoped_ptr<blink::WebLayer> web_layer_;
 #endif
@@ -329,9 +290,9 @@ class WebPluginImpl : public WebPlugin,
    public:
     LoaderClient(WebPluginImpl*);
 
-    void willSendRequest(blink::WebURLLoader*,
-                         blink::WebURLRequest&,
-                         const blink::WebURLResponse&) override;
+    void willFollowRedirect(blink::WebURLLoader*,
+                            blink::WebURLRequest&,
+                            const blink::WebURLResponse&) override;
     void didSendData(blink::WebURLLoader*,
                      unsigned long long bytesSent,
                      unsigned long long totalBytesToBeSent) override;
@@ -357,8 +318,6 @@ class WebPluginImpl : public WebPlugin,
   };
 
   LoaderClient loader_client_;
-
-  base::WeakPtrFactory<WebPluginImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginImpl);
 };

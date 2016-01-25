@@ -39,40 +39,42 @@ WebInspector.TimelinePanel = function()
 {
     WebInspector.Panel.call(this, "timeline");
     this.registerRequiredCSS("timeline/timelinePanel.css");
-    this.registerRequiredCSS("ui/filter.css");
     this.element.addEventListener("contextmenu", this._contextMenu.bind(this), false);
     this._dropTarget = new WebInspector.DropTarget(this.element, [WebInspector.DropTarget.Types.Files, WebInspector.DropTarget.Types.URIList], WebInspector.UIString("Drop timeline file or URL here"), this._handleDrop.bind(this));
 
+    this._state = WebInspector.TimelinePanel.State.Idle;
     this._detailsLinkifier = new WebInspector.Linkifier();
     this._windowStartTime = 0;
     this._windowEndTime = Infinity;
     this._millisecondsToRecordAfterLoadEvent = 3000;
+    this._toggleRecordAction = WebInspector.actionRegistry.action("timeline.toggle-recording");
 
-    // Create model.
+    // Create models.
     this._tracingModelBackingStorage = new WebInspector.TempFileBackingStorage("tracing");
     this._tracingModel = new WebInspector.TracingModel(this._tracingModelBackingStorage);
     this._model = new WebInspector.TimelineModel(this._tracingModel, WebInspector.TimelineUIUtils.visibleEventsFilter());
+    this._frameModel = new WebInspector.TracingTimelineFrameModel();
 
     this._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStarted, this._onRecordingStarted, this);
     this._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStopped, this._onRecordingStopped, this);
     this._model.addEventListener(WebInspector.TimelineModel.Events.RecordsCleared, this._onRecordsCleared, this);
-    this._model.addEventListener(WebInspector.TimelineModel.Events.RecordFilterChanged, this._refreshViews, this);
     this._model.addEventListener(WebInspector.TimelineModel.Events.BufferUsage, this._onTracingBufferUsage, this);
     this._model.addEventListener(WebInspector.TimelineModel.Events.RetrieveEventsProgress, this._onRetrieveEventsProgress, this);
 
-    this._categoryFilter = new WebInspector.TimelineCategoryFilter();
-    this._durationFilter = new WebInspector.TimelineIsLongFilter();
-    this._textFilter = new WebInspector.TimelineTextFilter();
-    this._model.addFilter(this._categoryFilter);
-    this._model.addFilter(this._durationFilter);
-    this._model.addFilter(this._textFilter);
-    this._model.addFilter(new WebInspector.TimelineStaticFilter());
+    if (Runtime.experiments.isEnabled("cpuThrottling"))
+        this._cpuThrottlingManager = new WebInspector.CPUThrottlingManager();
 
     /** @type {!Array.<!WebInspector.TimelineModeView>} */
     this._currentViews = [];
 
-    this._flameChartEnabledSetting = WebInspector.settings.createSetting("timelineFlameChartEnabled", true);
     this._viewModeSetting = WebInspector.settings.createSetting("timelineViewMode", WebInspector.TimelinePanel.ViewMode.FlameChart);
+    this._captureNetworkSetting = WebInspector.settings.createSetting("timelineCaptureNetwork", false);
+    this._captureJSProfileSetting = WebInspector.settings.createSetting("timelineEnableJSSampling", true);
+    this._captureMemorySetting = WebInspector.settings.createSetting("timelineCaptureMemory", false);
+    this._captureLayersAndPicturesSetting = WebInspector.settings.createSetting("timelineCaptureLayersAndPictures", false);
+    this._captureFilmStripSetting = WebInspector.settings.createSetting("timelineCaptureFilmStrip", false);
+
+    this._panelToolbar = new WebInspector.Toolbar("", this.element);
     this._createToolbarItems();
 
     var timelinePane = new WebInspector.VBox();
@@ -87,7 +89,6 @@ WebInspector.TimelinePanel = function()
     this._statusPaneContainer = timelinePane.element.createChild("div", "status-pane-container fill");
 
     this._createFileSelector();
-    this._registerShortcuts();
 
     WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.PageReloadRequested, this._pageReloadRequested, this);
     WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.Load, this._loadEventFired, this);
@@ -95,7 +96,7 @@ WebInspector.TimelinePanel = function()
     // Create top level properties splitter.
     this._detailsSplitWidget = new WebInspector.SplitWidget(false, true, "timelinePanelDetailsSplitViewState");
     this._detailsSplitWidget.element.classList.add("timeline-details-split");
-    this._detailsView = new WebInspector.TimelineDetailsView(this._model);
+    this._detailsView = new WebInspector.TimelineDetailsView(this._model, this);
     this._detailsSplitWidget.installResizer(this._detailsView.headerElement());
     this._detailsSplitWidget.setSidebarWidget(this._detailsView);
 
@@ -106,18 +107,18 @@ WebInspector.TimelinePanel = function()
 
     this._stackView = new WebInspector.StackView(false);
     this._stackView.element.classList.add("timeline-view-stack");
+
     if (Runtime.experiments.isEnabled("multipleTimelineViews")) {
         this._tabbedPane = new WebInspector.TabbedPane();
         this._tabbedPane.appendTab(WebInspector.TimelinePanel.ViewMode.FlameChart, WebInspector.UIString("Flame Chart"), new WebInspector.VBox());
-        this._tabbedPane.appendTab(WebInspector.TimelinePanel.ViewMode.Waterfall, WebInspector.UIString("Waterfall"), new WebInspector.VBox());
-        this._tabbedPane.appendTab(WebInspector.TimelinePanel.ViewMode.TreeView, WebInspector.UIString("Tree View"), new WebInspector.VBox());
+        this._tabbedPane.appendTab(WebInspector.TimelinePanel.ViewMode.CallTree, WebInspector.UIString("Call Tree"), new WebInspector.VBox());
+        this._tabbedPane.appendTab(WebInspector.TimelinePanel.ViewMode.BottomUp, WebInspector.UIString("Bottom-Up"), new WebInspector.VBox());
         this._tabbedPane.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._onMainViewChanged.bind(this));
         this._tabbedPane.show(this._searchableView.element);
     } else {
         this._stackView.show(this._searchableView.element);
         this._onModeChanged();
     }
-    this._flameChartEnabledSetting.addChangeListener(this._onModeChanged, this);
     this._detailsSplitWidget.show(timelinePane.element);
     this._detailsSplitWidget.hideSidebar();
     WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._onSuspendStateChanged, this);
@@ -127,10 +128,19 @@ WebInspector.TimelinePanel = function()
 /**
  * @enum {string}
  */
+WebInspector.TimelinePanel.Perspectives = {
+    Load: "Load",
+    Responsiveness: "Responsiveness",
+    Custom: "Custom"
+}
+
+/**
+ * @enum {string}
+ */
 WebInspector.TimelinePanel.ViewMode = {
-    Waterfall: "Waterfall",
     FlameChart: "FlameChart",
-    TreeView: "TreeView"
+    CallTree: "CallTree",
+    BottomUp: "BottomUp",
 }
 
 /**
@@ -138,18 +148,27 @@ WebInspector.TimelinePanel.ViewMode = {
  */
 WebInspector.TimelinePanel.DetailsTab = {
     Details: "Details",
-    BottomUpTree: "BottomUpTree",
+    Events: "Events",
+    CallTree: "CallTree",
+    BottomUp: "BottomUp",
     PaintProfiler: "PaintProfiler",
     LayerViewer: "LayerViewer"
-};
+}
+
+/**
+ * @enum {symbol}
+ */
+WebInspector.TimelinePanel.State = {
+    Idle: Symbol("Idle"),
+    StartPending: Symbol("StartPending"),
+    Recording: Symbol("Recording"),
+    StopPending: Symbol("StopPending"),
+    Loading: Symbol("Loading")
+}
 
 // Define row and header height, should be in sync with styles for timeline graphs.
 WebInspector.TimelinePanel.rowHeight = 18;
 WebInspector.TimelinePanel.headerHeight = 20;
-
-WebInspector.TimelinePanel._aggregatedStatsKey = Symbol("aggregatedStats");
-
-WebInspector.TimelinePanel.durationFilterPresetsMs = [0, 1, 15];
 
 WebInspector.TimelinePanel.prototype = {
     /**
@@ -201,16 +220,6 @@ WebInspector.TimelinePanel.prototype = {
     /**
      * @param {!WebInspector.Event} event
      */
-    _sidebarResized: function(event)
-    {
-        var width = /** @type {number} */ (event.data);
-        for (var i = 0; i < this._currentViews.length; ++i)
-            this._currentViews[i].setSidebarSize(width);
-    },
-
-    /**
-     * @param {!WebInspector.Event} event
-     */
     _onWindowChanged: function(event)
     {
         this._windowStartTime = event.data.startTime;
@@ -249,35 +258,31 @@ WebInspector.TimelinePanel.prototype = {
     },
 
     /**
-     * @return {!WebInspector.TimelineFrameModelBase}
-     */
-    _frameModel: function()
-    {
-        if (!this._lazyFrameModel) {
-            var tracingFrameModel = new WebInspector.TracingTimelineFrameModel();
-            tracingFrameModel.addTraceEvents(this._model.target(), this._model.inspectedTargetEvents(), this._model.sessionId() || "");
-            this._lazyFrameModel = tracingFrameModel;
-        }
-        return this._lazyFrameModel;
-    },
-
-    /**
      * @return {!WebInspector.Widget}
      */
     _layersView: function()
     {
         if (this._lazyLayersView)
             return this._lazyLayersView;
-        this._lazyLayersView = new WebInspector.TimelineLayersView();
-        this._lazyLayersView.setTimelineModelAndDelegate(this._model, this);
+        this._lazyLayersView = new WebInspector.TimelineLayersView(this._model, showPaintEventDetails.bind(this));
         return this._lazyLayersView;
+
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         * @this {WebInspector.TimelinePanel}
+         */
+        function showPaintEventDetails(event)
+        {
+            this._showEventInPaintProfiler(event, true);
+            this._detailsView.selectTab(WebInspector.TimelinePanel.DetailsTab.PaintProfiler, true);
+        }
     },
 
     _paintProfilerView: function()
     {
         if (this._lazyPaintProfilerView)
             return this._lazyPaintProfilerView;
-        this._lazyPaintProfilerView = new WebInspector.TimelinePaintProfilerView(/** @type {!WebInspector.TracingTimelineFrameModel} */(this._frameModel()));
+        this._lazyPaintProfilerView = new WebInspector.TimelinePaintProfilerView(this._frameModel);
         return this._lazyPaintProfilerView;
     },
 
@@ -287,20 +292,25 @@ WebInspector.TimelinePanel.prototype = {
     _addModeView: function(modeView)
     {
         modeView.setWindowTimes(this.windowStartTime(), this.windowEndTime());
-        modeView.refreshRecords(this._textFilter._regex);
+        modeView.refreshRecords();
         this._stackView.appendView(modeView.view(), "timelinePanelTimelineStackSplitViewState", undefined, 112);
-        modeView.view().addEventListener(WebInspector.SplitWidget.Events.SidebarSizeChanged, this._sidebarResized, this);
         this._currentViews.push(modeView);
     },
 
     _removeAllModeViews: function()
     {
-        for (var i = 0; i < this._currentViews.length; ++i) {
-            this._currentViews[i].removeEventListener(WebInspector.SplitWidget.Events.SidebarSizeChanged, this._sidebarResized, this);
-            this._currentViews[i].dispose();
-        }
+        this._currentViews.forEach(view => view.dispose());
         this._currentViews = [];
         this._stackView.detachChildWidgets();
+    },
+
+    /**
+     * @param {!WebInspector.TimelinePanel.State} state
+     */
+    _setState: function(state)
+    {
+        this._state = state;
+        this._updateTimelineControls();
     },
 
     /**
@@ -320,135 +330,124 @@ WebInspector.TimelinePanel.prototype = {
 
     _createToolbarItems: function()
     {
-        this._panelToolbar = new WebInspector.Toolbar(this.element);
+        this._panelToolbar.removeToolbarItems();
 
-        this.toggleTimelineButton = WebInspector.ToolbarButton.createActionButton("timeline.toggle-recording");
-        this._panelToolbar.appendToolbarItem(this.toggleTimelineButton);
-        this._updateToggleTimelineButton(false);
+        var perspectiveSetting = WebInspector.settings.createSetting("timelinePerspective", WebInspector.TimelinePanel.Perspectives.Load);
+        if (Runtime.experiments.isEnabled("timelineRecordingPerspectives")) {
+            /**
+             * @this {!WebInspector.TimelinePanel}
+             */
+            function onPerspectiveChanged()
+            {
+                perspectiveSetting.set(perspectiveCombobox.selectElement().value);
+                this._createToolbarItems();
+            }
 
+            /**
+             * @param {string} id
+             * @param {string} title
+             */
+            function addPerspectiveOption(id, title)
+            {
+                var option = perspectiveCombobox.createOption(title, "", id);
+                perspectiveCombobox.addOption(option);
+                if (id === perspectiveSetting.get())
+                    perspectiveCombobox.select(option);
+            }
+
+            var perspectiveCombobox = new WebInspector.ToolbarComboBox(onPerspectiveChanged.bind(this));
+            addPerspectiveOption(WebInspector.TimelinePanel.Perspectives.Load, WebInspector.UIString("Page Load"));
+            addPerspectiveOption(WebInspector.TimelinePanel.Perspectives.Responsiveness, WebInspector.UIString("Responsiveness"));
+            addPerspectiveOption(WebInspector.TimelinePanel.Perspectives.Custom, WebInspector.UIString("Custom"));
+            this._panelToolbar.appendToolbarItem(perspectiveCombobox);
+
+            switch (perspectiveSetting.get()) {
+            case WebInspector.TimelinePanel.Perspectives.Load:
+                this._captureNetworkSetting.set(true);
+                this._captureJSProfileSetting.set(true);
+                this._captureMemorySetting.set(false);
+                this._captureLayersAndPicturesSetting.set(false);
+                this._captureFilmStripSetting.set(true);
+                break;
+            case WebInspector.TimelinePanel.Perspectives.Responsiveness:
+                this._captureNetworkSetting.set(true);
+                this._captureJSProfileSetting.set(true);
+                this._captureMemorySetting.set(false);
+                this._captureLayersAndPicturesSetting.set(false);
+                this._captureFilmStripSetting.set(false);
+                break;
+            }
+        }
+        if (Runtime.experiments.isEnabled("timelineRecordingPerspectives") && perspectiveSetting.get() === WebInspector.TimelinePanel.Perspectives.Load) {
+            this._reloadButton = new WebInspector.ToolbarButton(WebInspector.UIString("Record & Reload"), "refresh-toolbar-item");
+            this._reloadButton.addEventListener("click", () => WebInspector.targetManager.reloadPage());
+            this._panelToolbar.appendToolbarItem(this._reloadButton);
+        } else {
+            this._panelToolbar.appendToolbarItem(WebInspector.Toolbar.createActionButton(this._toggleRecordAction));
+        }
+
+        this._updateTimelineControls();
         var clearButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear recording"), "clear-toolbar-item");
         clearButton.addEventListener("click", this._onClearButtonClick, this);
         this._panelToolbar.appendToolbarItem(clearButton);
+
         this._panelToolbar.appendSeparator();
 
-        this._filterBar = this._createFilterBar();
-        this._panelToolbar.appendToolbarItem(this._filterBar.filterButton());
+        this._panelToolbar.appendText(WebInspector.UIString("Capture:"));
 
-        var garbageCollectButton = new WebInspector.ToolbarButton(WebInspector.UIString("Collect garbage"), "garbage-collect-toolbar-item");
-        garbageCollectButton.addEventListener("click", this._garbageCollectButtonClicked, this);
-        this._panelToolbar.appendToolbarItem(garbageCollectButton);
-        this._panelToolbar.appendSeparator();
-
-        if (!Runtime.experiments.isEnabled("multipleTimelineViews")) {
-            var viewModeLabel = new WebInspector.ToolbarText(WebInspector.UIString("View:"), "toolbar-group-label");
-            this._panelToolbar.appendToolbarItem(viewModeLabel);
-
-            this._flameChartToggleButton = new WebInspector.ToolbarSettingToggle(this._flameChartEnabledSetting, "flame-chart-toolbar-item", WebInspector.UIString("Flame chart view. (Use WASD or time selection to navigate)"));
-            this._panelToolbar.appendToolbarItem(this._flameChartToggleButton);
-            this._panelToolbar.appendSeparator();
-        }
-
-        var captureSettingsLabel = new WebInspector.ToolbarText(WebInspector.UIString("Capture:"), "toolbar-group-label");
-        this._panelToolbar.appendToolbarItem(captureSettingsLabel);
-
-        this._captureNetworkSetting = WebInspector.settings.createSetting("timelineCaptureNetwork", false);
         this._captureNetworkSetting.addChangeListener(this._onNetworkChanged, this);
-        if (Runtime.experiments.isEnabled("networkRequestsOnTimeline")) {
-            this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Network"),
-                                                                             this._captureNetworkSetting,
-                                                                             WebInspector.UIString("Capture network requests information")));
+        if (!Runtime.experiments.isEnabled("timelineRecordingPerspectives") || perspectiveSetting.get() === WebInspector.TimelinePanel.Perspectives.Custom) {
+            if (Runtime.experiments.isEnabled("networkRequestsOnTimeline")) {
+                this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Network"),
+                                                                                 this._captureNetworkSetting,
+                                                                                 WebInspector.UIString("Capture network requests information")));
+            }
+            this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("JS Profile"),
+                                                                             this._captureJSProfileSetting,
+                                                                             WebInspector.UIString("Capture JavaScript stacks with sampling profiler. (Has performance overhead)")));
+            this._captureMemorySetting.addChangeListener(this._onModeChanged, this);
+            this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Memory"),
+                                                                             this._captureMemorySetting,
+                                                                             WebInspector.UIString("Capture memory information on every timeline event.")));
+            this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Paint"),
+                                                                             this._captureLayersAndPicturesSetting,
+                                                                             WebInspector.UIString("Capture graphics layer positions and painted pictures. (Has performance overhead)")));
         }
-        this._enableJSSamplingSettingSetting = WebInspector.settings.createSetting("timelineEnableJSSampling", true);
-        this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("JS Profile"),
-                                                                         this._enableJSSamplingSettingSetting,
-                                                                         WebInspector.UIString("Capture JavaScript stacks with sampling profiler. (Has performance overhead)")));
 
-        this._captureMemorySetting = WebInspector.settings.createSetting("timelineCaptureMemory", false);
-        this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Memory"),
-                                                                         this._captureMemorySetting,
-                                                                         WebInspector.UIString("Capture memory information on every timeline event.")));
-        this._captureMemorySetting.addChangeListener(this._onModeChanged, this);
-        this._captureLayersAndPicturesSetting = WebInspector.settings.createSetting("timelineCaptureLayersAndPictures", false);
-        this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Paint"),
-                                                                         this._captureLayersAndPicturesSetting,
-                                                                         WebInspector.UIString("Capture graphics layer positions and painted pictures. (Has performance overhead)")));
-
-        this._captureFilmStripSetting = WebInspector.settings.createSetting("timelineCaptureFilmStrip", false);
         this._captureFilmStripSetting.addChangeListener(this._onModeChanged, this);
         this._panelToolbar.appendToolbarItem(this._createSettingCheckbox(WebInspector.UIString("Screenshots"),
                                                                          this._captureFilmStripSetting,
                                                                          WebInspector.UIString("Capture screenshots while recording. (Has performance overhead)")));
 
+        this._panelToolbar.appendSeparator();
+        var garbageCollectButton = new WebInspector.ToolbarButton(WebInspector.UIString("Collect garbage"), "garbage-collect-toolbar-item");
+        garbageCollectButton.addEventListener("click", this._garbageCollectButtonClicked, this);
+        this._panelToolbar.appendToolbarItem(garbageCollectButton);
+
+        if (Runtime.experiments.isEnabled("cpuThrottling")) {
+            this._panelToolbar.appendSeparator();
+            this._cpuThrottlingCombobox = new WebInspector.ToolbarComboBox(this._onCPUThrottlingChanged.bind(this));
+            /**
+             * @param {string} name
+             * @param {number} value
+             * @this {WebInspector.TimelinePanel}
+             */
+            function addGroupingOption(name, value)
+            {
+                var option = this._cpuThrottlingCombobox.createOption(name, "", String(value));
+                this._cpuThrottlingCombobox.addOption(option);
+                if (value === this._cpuThrottlingManager.rate())
+                    this._cpuThrottlingCombobox.select(option);
+            }
+            addGroupingOption.call(this, WebInspector.UIString("No CPU throttling"), 1);
+            for (var rate of [1.2, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 30, 50])
+                addGroupingOption.call(this, WebInspector.UIString("%fx slowdown", rate), rate);
+            this._panelToolbar.appendToolbarItem(this._cpuThrottlingCombobox);
+        }
+
         this._progressToolbarItem = new WebInspector.ToolbarItem(createElement("div"));
         this._progressToolbarItem.setVisible(false);
         this._panelToolbar.appendToolbarItem(this._progressToolbarItem);
-
-        this.element.appendChild(this._filterBar.filtersElement());
-    },
-
-    /**
-     * @return {!WebInspector.FilterBar}
-     */
-    _createFilterBar: function()
-    {
-        this._filterBar = new WebInspector.FilterBar("timelinePanel");
-        this._filters = {};
-        this._filters._textFilterUI = new WebInspector.TextFilterUI();
-        this._filters._textFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._textFilterChanged, this);
-        this._filterBar.addFilter(this._filters._textFilterUI);
-
-        var durationOptions = [];
-        for (var presetIndex = 0; presetIndex < WebInspector.TimelinePanel.durationFilterPresetsMs.length; ++presetIndex) {
-            var durationMs = WebInspector.TimelinePanel.durationFilterPresetsMs[presetIndex];
-            var durationOption = {};
-            if (!durationMs) {
-                durationOption.label = WebInspector.UIString("All");
-                durationOption.title = WebInspector.UIString("Show all records");
-            } else {
-                durationOption.label = WebInspector.UIString("\u2265 %dms", durationMs);
-                durationOption.title = WebInspector.UIString("Hide records shorter than %dms", durationMs);
-            }
-            durationOption.value = durationMs;
-            durationOptions.push(durationOption);
-        }
-        this._filters._durationFilterUI = new WebInspector.ComboBoxFilterUI(durationOptions);
-        this._filters._durationFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._durationFilterChanged, this);
-        this._filterBar.addFilter(this._filters._durationFilterUI);
-
-        this._filters._categoryFiltersUI = {};
-        var categories = WebInspector.TimelineUIUtils.categories();
-        for (var categoryName in categories) {
-            var category = categories[categoryName];
-            if (!category.visible)
-                continue;
-            var filter = new WebInspector.CheckboxFilterUI(category.name, category.title);
-            filter.setColor(category.fillColorStop0, category.borderColor);
-            this._filters._categoryFiltersUI[category.name] = filter;
-            filter.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._categoriesFilterChanged.bind(this, categoryName), this);
-            this._filterBar.addFilter(filter);
-        }
-        return this._filterBar;
-    },
-
-    _textFilterChanged: function(event)
-    {
-        var searchQuery = this._filters._textFilterUI.value();
-        this.searchCanceled();
-        this._textFilter.setRegex(searchQuery ? createPlainTextSearchRegex(searchQuery, "i") : null);
-    },
-
-    _durationFilterChanged: function()
-    {
-        var duration = this._filters._durationFilterUI.value();
-        var minimumRecordDuration = parseInt(duration, 10);
-        this._durationFilter.setMinimumRecordDuration(minimumRecordDuration);
-    },
-
-    _categoriesFilterChanged: function(name, event)
-    {
-        var categories = WebInspector.TimelineUIUtils.categories();
-        categories[name].hidden = !this._filters._categoryFiltersUI[name].checked();
-        this._categoryFilter.notifyFilterChanged();
     },
 
     /**
@@ -456,62 +455,41 @@ WebInspector.TimelinePanel.prototype = {
      */
     _prepareToLoadTimeline: function()
     {
-        if (this._recordingInProgress()) {
-            this._updateToggleTimelineButton(false);
-            this._stopRecording();
-        }
-
         /**
          * @this {!WebInspector.TimelinePanel}
          */
         function finishLoading()
         {
-            this._setOperationInProgress(null);
-            this._updateToggleTimelineButton(false);
+            this._setState(WebInspector.TimelinePanel.State.Idle);
+            this._progressToolbarItem.setVisible(false);
+            this._progressToolbarItem.element.removeChildren();
             this._hideRecordingHelpMessage();
         }
+        console.assert(this._state === WebInspector.TimelinePanel.State.Idle);
+        this._setState(WebInspector.TimelinePanel.State.Loading);
         var progressIndicator = new WebInspector.ProgressIndicator();
-        this._setOperationInProgress(progressIndicator);
+        this._progressToolbarItem.setVisible(true);
+        this._progressToolbarItem.element.appendChild(progressIndicator.element);
         return new WebInspector.ProgressProxy(progressIndicator, finishLoading.bind(this));
-    },
-
-    /**
-     * @param {?WebInspector.ProgressIndicator} indicator
-     */
-    _setOperationInProgress: function(indicator)
-    {
-        this._operationInProgress = !!indicator;
-        this._panelToolbar.setEnabled(!this._operationInProgress);
-        this._dropTarget.setEnabled(!this._operationInProgress);
-
-        this._progressToolbarItem.setVisible(this._operationInProgress);
-        this._progressToolbarItem.element.removeChildren();
-        if (indicator)
-            this._progressToolbarItem.element.appendChild(indicator.element);
-    },
-
-    _registerShortcuts: function()
-    {
-        this.registerShortcuts(WebInspector.ShortcutsScreen.TimelinePanelShortcuts.SaveToFile, this._saveToFile.bind(this));
-        this.registerShortcuts(WebInspector.ShortcutsScreen.TimelinePanelShortcuts.LoadFromFile, this._selectFileToLoad.bind(this));
-        this.registerShortcuts(WebInspector.ShortcutsScreen.TimelinePanelShortcuts.JumpToPreviousFrame, this._jumpToFrame.bind(this, -1));
-        this.registerShortcuts(WebInspector.ShortcutsScreen.TimelinePanelShortcuts.JumpToNextFrame, this._jumpToFrame.bind(this, 1));
     },
 
     _createFileSelector: function()
     {
         if (this._fileSelectorElement)
             this._fileSelectorElement.remove();
-
         this._fileSelectorElement = WebInspector.createFileSelectorElement(this._loadFromFile.bind(this));
         this.element.appendChild(this._fileSelectorElement);
     },
 
+    /**
+     * @param {!Event} event
+     */
     _contextMenu: function(event)
     {
         var contextMenu = new WebInspector.ContextMenu(event);
-        contextMenu.appendItem(WebInspector.UIString.capitalize("Save Timeline ^data\u2026"), this._saveToFile.bind(this), this._operationInProgress);
-        contextMenu.appendItem(WebInspector.UIString.capitalize("Load Timeline ^data\u2026"), this._selectFileToLoad.bind(this), this._operationInProgress);
+        var disabled = this._state !== WebInspector.TimelinePanel.State.Idle;
+        contextMenu.appendItem(WebInspector.UIString.capitalize("Save Timeline ^data\u2026"), this._saveToFile.bind(this), disabled);
+        contextMenu.appendItem(WebInspector.UIString.capitalize("Load Timeline ^data\u2026"), this._selectFileToLoad.bind(this), disabled);
         contextMenu.show();
     },
 
@@ -520,7 +498,7 @@ WebInspector.TimelinePanel.prototype = {
      */
     _saveToFile: function()
     {
-        if (this._operationInProgress)
+        if (this._state !== WebInspector.TimelinePanel.State.Idle)
             return true;
 
         var now = new Date();
@@ -556,7 +534,7 @@ WebInspector.TimelinePanel.prototype = {
      */
     _loadFromFile: function(file)
     {
-        if (this._operationInProgress)
+        if (this._state !== WebInspector.TimelinePanel.State.Idle)
             return;
         this._model.loadFromFile(file, this._prepareToLoadTimeline());
         this._createFileSelector();
@@ -567,7 +545,8 @@ WebInspector.TimelinePanel.prototype = {
      */
     _loadFromURL: function(url)
     {
-        console.assert(!this._operationInProgress);
+        if (this._state !== WebInspector.TimelinePanel.State.Idle)
+            return;
         this._model.loadFromURL(url, this._prepareToLoadTimeline());
     },
 
@@ -575,7 +554,7 @@ WebInspector.TimelinePanel.prototype = {
     {
         for (var i = 0; i < this._currentViews.length; ++i) {
             var view = this._currentViews[i];
-            view.refreshRecords(this._textFilter._regex);
+            view.refreshRecords();
         }
         this._updateSelectionDetails();
     },
@@ -584,10 +563,10 @@ WebInspector.TimelinePanel.prototype = {
     {
         // Set up overview controls.
         this._overviewControls = [];
+        this._overviewControls.push(new WebInspector.TimelineEventOverview.Responsiveness(this._model, this._frameModel));
         if (Runtime.experiments.isEnabled("inputEventsOnTimelineOverview"))
             this._overviewControls.push(new WebInspector.TimelineEventOverview.Input(this._model));
-        this._overviewControls.push(new WebInspector.TimelineEventOverview.Responsiveness(this._model, this._frameModel()));
-        this._overviewControls.push(new WebInspector.TimelineEventOverview.Frames(this._model, this._frameModel()));
+        this._overviewControls.push(new WebInspector.TimelineEventOverview.Frames(this._model, this._frameModel));
         this._overviewControls.push(new WebInspector.TimelineEventOverview.CPUActivity(this._model));
         this._overviewControls.push(new WebInspector.TimelineEventOverview.Network(this._model));
         if (this._captureFilmStripSetting.get())
@@ -597,37 +576,26 @@ WebInspector.TimelinePanel.prototype = {
         this._overviewPane.setOverviewControls(this._overviewControls);
 
         // Set up the main view.
-        this._stackView.detach();
         this._removeAllModeViews();
-        var viewMode = this._flameChartEnabledSetting.get() ? WebInspector.TimelinePanel.ViewMode.FlameChart : WebInspector.TimelinePanel.ViewMode.Waterfall;
-        if (Runtime.experiments.isEnabled("multipleTimelineViews") && this._tabbedPane) {
-            viewMode = this._tabbedPane.selectedTabId;
-            this._stackView.show(this._tabbedPane.visibleView.element);
-        } else {
-            this._stackView.show(this._searchableView.element);
-        }
+        var viewMode = WebInspector.TimelinePanel.ViewMode.FlameChart;
         this._flameChart = null;
+        if (Runtime.experiments.isEnabled("multipleTimelineViews")) {
+            viewMode = this._tabbedPane.selectedTabId;
+            this._stackView.detach();
+            this._stackView.show(this._tabbedPane.visibleView.element);
+        }
         if (viewMode === WebInspector.TimelinePanel.ViewMode.FlameChart) {
-            this._filterBar.filterButton().setEnabled(false);
-            this._filterBar.filtersElement().classList.toggle("hidden", true);
-            this._flameChart = new WebInspector.TimelineFlameChartView(this, this._model, this._frameModel());
+            this._flameChart = new WebInspector.TimelineFlameChartView(this, this._model, this._frameModel);
             this._flameChart.enableNetworkPane(this._captureNetworkSetting.get());
             this._addModeView(this._flameChart);
-        } else if (viewMode === WebInspector.TimelinePanel.ViewMode.Waterfall) {
-            this._filterBar.filterButton().setEnabled(true);
-            this._filterBar.filtersElement().classList.toggle("hidden", !this._filterBar.filtersToggled());
-            var timelineView = new WebInspector.TimelineView(this, this._model);
-            this._addModeView(timelineView);
-            timelineView.setFrameModel(this._frameModel());
-        } else if (viewMode === WebInspector.TimelinePanel.ViewMode.TreeView) {
-            this._filterBar.filterButton().setEnabled(false);
-            this._filterBar.filtersElement().classList.toggle("hidden", true);
-            var treeView = new WebInspector.TimelineTreeModeView(this, this._model);
+        } else if (viewMode === WebInspector.TimelinePanel.ViewMode.CallTree || viewMode === WebInspector.TimelinePanel.ViewMode.BottomUp) {
+            var innerView = viewMode === WebInspector.TimelinePanel.ViewMode.BottomUp ? new WebInspector.BottomUpTimelineTreeView(this._model) : new WebInspector.CallTreeTimelineTreeView(this._model);
+            var treeView = new WebInspector.TimelineTreeModeView(this, innerView);
             this._addModeView(treeView);
         }
 
-        if (this._captureMemorySetting.get() && viewMode !== WebInspector.TimelinePanel.ViewMode.TreeView)
-            this._addModeView(new WebInspector.MemoryCountersGraph(this, this._model));
+        if (this._captureMemorySetting.get() && viewMode !== WebInspector.TimelinePanel.ViewMode.CallTree && viewMode !== WebInspector.TimelinePanel.ViewMode.BottomUp)
+            this._addModeView(new WebInspector.MemoryCountersGraph(this, this._model, [WebInspector.TimelineUIUtils.visibleEventsFilter()]));
 
         this.doResize();
         this.select(null);
@@ -639,17 +607,25 @@ WebInspector.TimelinePanel.prototype = {
             this._flameChart.enableNetworkPane(this._captureNetworkSetting.get(), true);
     },
 
+    _onCPUThrottlingChanged: function()
+    {
+        if (!this._cpuThrottlingManager)
+            return;
+        var value = Number.parseFloat(this._cpuThrottlingCombobox.selectedOption().value);
+        this._cpuThrottlingManager.setRate(value);
+    },
+
     /**
      * @param {boolean} enabled
      */
     _setUIControlsEnabled: function(enabled)
     {
         /**
-         * @param {!WebInspector.ToolbarButton} toolbarItem
+         * @param {!WebInspector.ToolbarButton} toolbarButton
          */
-        function handler(toolbarItem)
+        function handler(toolbarButton)
         {
-            toolbarItem.setEnabled(enabled);
+            toolbarButton.setEnabled(enabled);
         }
         this._recordingOptionUIControls.forEach(handler);
     },
@@ -660,15 +636,14 @@ WebInspector.TimelinePanel.prototype = {
     _startRecording: function(userInitiated)
     {
         console.assert(!this._statusPane, "Status pane is already opened.");
+        this._setState(WebInspector.TimelinePanel.State.StartPending);
         this._statusPane = new WebInspector.TimelinePanel.StatusPane();
         this._statusPane.addEventListener(WebInspector.TimelinePanel.StatusPane.Events.Finish, this._stopRecording, this);
         this._statusPane.showPane(this._statusPaneContainer);
-        this._updateStatus(WebInspector.UIString("Initializing recording\u2026"));
+        this._statusPane.updateStatus(WebInspector.UIString("Initializing recording\u2026"));
 
-        this._autoRecordGeneration = userInitiated ? null : {};
-        this._model.startRecording(true, this._enableJSSamplingSettingSetting.get(), this._captureMemorySetting.get(), this._captureLayersAndPicturesSetting.get(), this._captureFilmStripSetting && this._captureFilmStripSetting.get());
-        if (this._lazyFrameModel)
-            this._lazyFrameModel.setMergeRecords(false);
+        this._autoRecordGeneration = userInitiated ? null : Symbol("Generation");
+        this._model.startRecording(true, this._captureJSProfileSetting.get(), this._captureMemorySetting.get(), this._captureLayersAndPicturesSetting.get(), this._captureFilmStripSetting && this._captureFilmStripSetting.get());
 
         for (var i = 0; i < this._overviewControls.length; ++i)
             this._overviewControls[i].timelineStarted();
@@ -681,11 +656,10 @@ WebInspector.TimelinePanel.prototype = {
 
     _stopRecording: function()
     {
-        if (this._statusPane)
-            this._statusPane.finish();
-        this._updateStatus(WebInspector.UIString("Retrieving timeline\u2026"));
-        this._stopPending = true;
-        this._updateToggleTimelineButton(false);
+        this._statusPane.finish();
+        this._statusPane.updateStatus(WebInspector.UIString("Retrieving timeline\u2026"));
+        this._statusPane.updateProgressBar(WebInspector.UIString("Received"), 0);
+        this._setState(WebInspector.TimelinePanel.State.StopPending);
         this._autoRecordGeneration = null;
         this._model.stopRecording();
         this._setUIControlsEnabled(true);
@@ -693,44 +667,28 @@ WebInspector.TimelinePanel.prototype = {
 
     _onSuspendStateChanged: function()
     {
-        this._updateToggleTimelineButton(this.toggleTimelineButton.toggled());
+        this._updateTimelineControls();
     },
 
-    /**
-     * @param {boolean} toggled
-     */
-    _updateToggleTimelineButton: function(toggled)
+    _updateTimelineControls: function()
     {
-        this.toggleTimelineButton.setToggled(toggled);
-        if (toggled) {
-            this.toggleTimelineButton.setTitle(WebInspector.UIString("Stop"));
-            this.toggleTimelineButton.setEnabled(true);
-        } else if (this._stopPending) {
-            this.toggleTimelineButton.setTitle(WebInspector.UIString("Stop pending"));
-            this.toggleTimelineButton.setEnabled(false);
-        } else if (WebInspector.targetManager.allTargetsSuspended()) {
-            this.toggleTimelineButton.setTitle(WebInspector.anotherProfilerActiveLabel());
-            this.toggleTimelineButton.setEnabled(false);
-        } else {
-            this.toggleTimelineButton.setTitle(WebInspector.UIString("Record"));
-            this.toggleTimelineButton.setEnabled(true);
-        }
+        var state = WebInspector.TimelinePanel.State;
+        var title =
+            this._state === state.Idle ? WebInspector.UIString("Record") :
+            this._state === state.Recording ? WebInspector.UIString("Stop") : "";
+        this._toggleRecordAction.setTitle(title);
+        this._toggleRecordAction.setToggled(this._state === state.Recording);
+        this._toggleRecordAction.setEnabled(this._state === state.Recording || this._state === state.Idle);
+        this._panelToolbar.setEnabled(this._state !== state.Loading);
+        this._dropTarget.setEnabled(this._state === state.Idle);
     },
 
-    /**
-     * @return {boolean}
-     */
-    _toggleTimelineButtonClicked: function()
+    _toggleRecording: function()
     {
-        if (!this.toggleTimelineButton.enabled())
-            return true;
-        if (this._operationInProgress)
-            return true;
-        if (this._recordingInProgress())
-            this._stopRecording();
-        else
+        if (this._state === WebInspector.TimelinePanel.State.Idle)
             this._startRecording(true);
-        return true;
+        else if (this._state === WebInspector.TimelinePanel.State.Recording)
+            this._stopRecording();
     },
 
     _garbageCollectButtonClicked: function()
@@ -751,8 +709,7 @@ WebInspector.TimelinePanel.prototype = {
     {
         this.requestWindowTimes(0, Infinity);
         delete this._selection;
-        if (this._lazyFrameModel)
-            this._lazyFrameModel.reset();
+        this._frameModel.reset();
         this._overviewPane.reset();
         for (var i = 0; i < this._currentViews.length; ++i)
             this._currentViews[i].reset();
@@ -768,16 +725,13 @@ WebInspector.TimelinePanel.prototype = {
      */
     _onRecordingStarted: function(event)
     {
-        this._updateToggleTimelineButton(true);
-        var message = event.data && event.data.fromFile ? WebInspector.UIString("Loading\u2026") : WebInspector.UIString("Recording\u2026");
-        this._updateStatus(message);
-        if (this._statusPane)
+        var fromFile = event.data && event.data.fromFile;
+        this._setState(fromFile ? WebInspector.TimelinePanel.State.Loading : WebInspector.TimelinePanel.State.Recording);
+        if (this._statusPane) {
+            this._statusPane.updateStatus(fromFile ? WebInspector.UIString("Loading\u2026") : WebInspector.UIString("Recording\u2026"));
+            this._statusPane.updateProgressBar(fromFile ? WebInspector.UIString("Loaded") : WebInspector.UIString("Buffer usage"), 0)
             this._statusPane.startTimer();
-    },
-
-    _recordingInProgress: function()
-    {
-        return this.toggleTimelineButton.toggled();
+        }
     },
 
     /**
@@ -787,21 +741,19 @@ WebInspector.TimelinePanel.prototype = {
     {
         var usage = /** @type {number} */ (event.data);
         if (this._statusPane)
-            this._statusPane.updateBufferUsage(usage * 100);
-    },
-
-    _onRetrieveEventsProgress: function()
-    {
-        this._updateStatus(WebInspector.UIString("Retrieving timeline\u2026"));
+            this._statusPane.updateProgressBar(WebInspector.UIString("Buffer usage"), usage * 100);
     },
 
     /**
-     * @param {string} statusMessage
+     * @param {!WebInspector.Event} event
      */
-    _updateStatus: function(statusMessage)
+    _onRetrieveEventsProgress: function(event)
     {
-        if (this._statusPane)
-            this._statusPane.updateStatus(statusMessage);
+        if (!this._statusPane)
+            return;
+        this._statusPane.updateStatus(WebInspector.UIString("Retrieving timeline\u2026"));
+        var usage = /** @type {number} */ (event.data);
+        this._statusPane.updateProgressBar(WebInspector.UIString("Received"), usage * 100);
     },
 
     _showRecordingHelpMessage: function()
@@ -818,19 +770,19 @@ WebInspector.TimelinePanel.prototype = {
             return e;
         }
 
-        var recordNode = encloseWithTag("b", WebInspector.ShortcutsScreen.TimelinePanelShortcuts.StartStopRecording[0].name);
-        var reloadNode = encloseWithTag("b", WebInspector.ShortcutsScreen.TimelinePanelShortcuts.RecordPageReload[0].name);
+        var recordNode = encloseWithTag("b", WebInspector.shortcutRegistry.shortcutDescriptorsForAction("timeline.toggle-recording")[0].name);
+        var reloadNode = encloseWithTag("b", WebInspector.shortcutRegistry.shortcutDescriptorsForAction("main.reload")[0].name);
         var navigateNode = encloseWithTag("b", WebInspector.UIString("WASD"));
-        var hintText = createElementWithClass("div", "recording-hint");
-        hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("To capture a new timeline, click the record toolbar button or hit %s."), [recordNode], null));
+        var hintText = createElementWithClass("div");
+        hintText.appendChild(WebInspector.formatLocalized("To capture a new timeline, click the record toolbar button or hit %s.", [recordNode]));
         hintText.createChild("br");
-        hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("To evaluate page load performance, hit %s to record the reload."), [reloadNode], null));
+        hintText.appendChild(WebInspector.formatLocalized("To evaluate page load performance, hit %s to record the reload.", [reloadNode]));
         hintText.createChild("p");
-        hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("After recording, select an area of interest in the overview by dragging."), [], null));
+        hintText.appendChild(WebInspector.formatLocalized("After recording, select an area of interest in the overview by dragging.", []));
         hintText.createChild("br");
-        hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("Then, zoom and pan the timeline with the mousewheel and %s keys."), [navigateNode], null));
+        hintText.appendChild(WebInspector.formatLocalized("Then, zoom and pan the timeline with the mousewheel and %s keys.", [navigateNode]));
         this._hideRecordingHelpMessage();
-        this._helpMessageElement = this._searchableView.element.createChild("div", "timeline-status-pane fill");
+        this._helpMessageElement = this._searchableView.element.createChild("div", "banner timeline-status-pane");
         this._helpMessageElement.appendChild(hintText);
     },
 
@@ -843,15 +795,12 @@ WebInspector.TimelinePanel.prototype = {
 
     _onRecordingStopped: function()
     {
-        this._stopPending = false;
-        this._updateToggleTimelineButton(false);
-        if (this._lazyFrameModel) {
-            this._lazyFrameModel.reset();
-            this._lazyFrameModel.addTraceEvents(this._model.target(), this._model.inspectedTargetEvents(), this._model.sessionId());
-        }
+        this._setState(WebInspector.TimelinePanel.State.Idle);
+        this._frameModel.reset();
+        this._frameModel.addTraceEvents(this._model.target(), this._model.inspectedTargetEvents(), this._model.sessionId() || "");
         this._overviewPane.reset();
         this._overviewPane.setBounds(this._model.minimumRecordTime(), this._model.maximumRecordTime());
-        this.requestWindowTimes(this._model.minimumRecordTime(), this._model.maximumRecordTime());
+        this._setAutoWindowTimes();
         this._refreshViews();
         for (var i = 0; i < this._overviewControls.length; ++i)
             this._overviewControls[i].timelineStopped();
@@ -883,7 +832,7 @@ WebInspector.TimelinePanel.prototype = {
      */
     _pageReloadRequested: function(event)
     {
-        if (this._operationInProgress || this._recordingInProgress() || !this.isShowing())
+        if (this._state !== WebInspector.TimelinePanel.State.Idle || !this.isShowing())
             return;
         this._startRecording(false);
     },
@@ -893,7 +842,7 @@ WebInspector.TimelinePanel.prototype = {
      */
     _loadEventFired: function(event)
     {
-        if (!this._recordingInProgress() || !this._autoRecordGeneration)
+        if (this._state !== WebInspector.TimelinePanel.State.Recording || !this._autoRecordGeneration)
             return;
         setTimeout(stopRecordingOnReload.bind(this, this._autoRecordGeneration), this._millisecondsToRecordAfterLoadEvent);
 
@@ -904,7 +853,7 @@ WebInspector.TimelinePanel.prototype = {
         function stopRecordingOnReload(recordGeneration)
         {
             // Check if we're still in the same recording session.
-            if (this._autoRecordGeneration !== recordGeneration)
+            if (this._state !== WebInspector.TimelinePanel.State.Recording || this._autoRecordGeneration !== recordGeneration)
                 return;
             this._stopRecording();
         }
@@ -952,12 +901,18 @@ WebInspector.TimelinePanel.prototype = {
         return false;
     },
 
+    /**
+     * @param {number} index
+     */
     _jumpToSearchResult: function(index)
     {
         this._selectSearchResult((index + this._searchResults.length) % this._searchResults.length);
         this._currentViews[0].highlightSearchResult(this._selectedSearchResult, this._searchRegex, true);
     },
 
+    /**
+     * @param {number} index
+     */
     _selectSearchResult: function(index)
     {
         this._selectedSearchResult = this._searchResults[index];
@@ -976,7 +931,7 @@ WebInspector.TimelinePanel.prototype = {
      */
     _updateSearchHighlight: function(revealRecord, shouldJump, jumpBackwards)
     {
-        if (!this._textFilter.isEmpty() || !this._searchRegex) {
+        if (!this._searchRegex) {
             this._clearHighlight();
             return;
         }
@@ -1010,7 +965,7 @@ WebInspector.TimelinePanel.prototype = {
             if (WebInspector.TimelineUIUtils.testContentMatching(record.traceEvent(), searchRegExp))
                 matches.push(record);
         }
-        this._model.forAllFilteredRecords(processRecord.bind(this));
+        this._model.forAllFilteredRecords([WebInspector.TimelineUIUtils.visibleEventsFilter()], processRecord.bind(this));
 
         var matchesCount = matches.length;
         if (matchesCount) {
@@ -1055,14 +1010,9 @@ WebInspector.TimelinePanel.prototype = {
     _updateSelectionDetails: function()
     {
         switch (this._selection.type()) {
-        case WebInspector.TimelineSelection.Type.Record:
-            var record = /** @type {!WebInspector.TimelineModel.Record} */ (this._selection.object());
-            var event = record.traceEvent();
-            WebInspector.TimelineUIUtils.buildTraceEventDetails(event, this._model, this._detailsLinkifier, this._appendDetailsTabsForTraceEventAndShowDetails.bind(this, event));
-            break;
         case WebInspector.TimelineSelection.Type.TraceEvent:
             var event = /** @type {!WebInspector.TracingModel.Event} */ (this._selection.object());
-            WebInspector.TimelineUIUtils.buildTraceEventDetails(event, this._model, this._detailsLinkifier, this._appendDetailsTabsForTraceEventAndShowDetails.bind(this, event));
+            WebInspector.TimelineUIUtils.buildTraceEventDetails(event, this._model, this._detailsLinkifier, true, this._appendDetailsTabsForTraceEventAndShowDetails.bind(this, event));
             break;
         case WebInspector.TimelineSelection.Type.Frame:
             var frame = /** @type {!WebInspector.TimelineFrame} */ (this._selection.object());
@@ -1072,7 +1022,7 @@ WebInspector.TimelinePanel.prototype = {
             var filmStripFrame = this._filmStripModel && this._filmStripModel.frameByTimestamp(screenshotTime);
             if (filmStripFrame && filmStripFrame.timestamp - frame.endTime > 10)
                 filmStripFrame = null;
-            this.showInDetails(WebInspector.TimelineUIUtils.generateDetailsContentForFrame(this._lazyFrameModel, frame, filmStripFrame));
+            this.showInDetails(WebInspector.TimelineUIUtils.generateDetailsContentForFrame(this._frameModel, frame, filmStripFrame));
             if (frame.layerTree) {
                 var layersView = this._layersView();
                 layersView.showLayerTree(frame.layerTree, frame.paints);
@@ -1104,9 +1054,8 @@ WebInspector.TimelinePanel.prototype = {
             return /** @type {!WebInspector.TimelineFrame} */ (selection.object());
         case WebInspector.TimelineSelection.Type.Range:
             return null;
-        case WebInspector.TimelineSelection.Type.Record:
         case WebInspector.TimelineSelection.Type.TraceEvent:
-            return this._frameModel().filteredFrames(selection._endTime, selection._endTime)[0];
+            return this._frameModel.filteredFrames(selection._endTime, selection._endTime)[0];
         default:
             console.assert(false, "Should never be reached");
             return null;
@@ -1121,7 +1070,7 @@ WebInspector.TimelinePanel.prototype = {
         var currentFrame = this._frameForSelection(this._selection);
         if (!currentFrame)
             return;
-        var frames = this._frameModel().frames();
+        var frames = this._frameModel.frames();
         var index = frames.indexOf(currentFrame);
         console.assert(index >= 0, "Can't find current frame in the frame list");
         index = Number.constrain(index + offset, 0, frames.length - 1);
@@ -1160,88 +1109,12 @@ WebInspector.TimelinePanel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
-     * @param {number} startTime
-     * @param {number} endTime
-     * @param {!Object} aggregatedStats
-     */
-    _collectAggregatedStatsForRecord: function(record, startTime, endTime, aggregatedStats)
-    {
-        var records = [];
-
-        if (!record.endTime() || record.endTime() < startTime || record.startTime() > endTime)
-            return;
-
-        var childrenTime = 0;
-        var children = record.children() || [];
-        for (var i = 0; i < children.length; ++i) {
-            var child = children[i];
-            if (!child.endTime() || child.endTime() < startTime || child.startTime() > endTime)
-                continue;
-            childrenTime += Math.min(endTime, child.endTime()) - Math.max(startTime, child.startTime());
-            this._collectAggregatedStatsForRecord(child, startTime, endTime, aggregatedStats);
-        }
-        var categoryName = WebInspector.TimelineUIUtils.categoryForRecord(record).name;
-        var ownTime = Math.min(endTime, record.endTime()) - Math.max(startTime, record.startTime()) - childrenTime;
-        aggregatedStats[categoryName] = (aggregatedStats[categoryName] || 0) + ownTime;
-    },
-
-    /**
      * @param {number} startTime
      * @param {number} endTime
      */
     _updateSelectedRangeStats: function(startTime, endTime)
     {
-        // Return early in case 0 selection window.
-        if (startTime < 0)
-            return;
-
-        var aggregatedStats = {};
-
-        /**
-         * @param {number} value
-         * @param {!WebInspector.TimelineModel.Record} task
-         * @return {number}
-         */
-        function compareEndTime(value, task)
-        {
-            return value < task.endTime() ? -1 : 1;
-        }
-        var mainThreadTasks = this._model.mainThreadTasks();
-        var taskIndex = insertionIndexForObjectInListSortedByFunction(startTime, mainThreadTasks, compareEndTime);
-        for (; taskIndex < mainThreadTasks.length; ++taskIndex) {
-            var task = mainThreadTasks[taskIndex];
-            if (task.startTime() > endTime)
-                break;
-            if (task.startTime() > startTime && task.endTime() < endTime) {
-                // cache stats for top-level entries that fit the range entirely.
-                var taskStats = task[WebInspector.TimelinePanel._aggregatedStatsKey];
-                if (!taskStats) {
-                    taskStats = {};
-                    this._collectAggregatedStatsForRecord(task, startTime, endTime, taskStats);
-                    task[WebInspector.TimelinePanel._aggregatedStatsKey] = taskStats;
-                }
-                for (var key in taskStats)
-                    aggregatedStats[key] = (aggregatedStats[key] || 0) + taskStats[key];
-                continue;
-            }
-            this._collectAggregatedStatsForRecord(task, startTime, endTime, aggregatedStats);
-        }
-
-        var aggregatedTotal = 0;
-        for (var categoryName in aggregatedStats)
-            aggregatedTotal += aggregatedStats[categoryName];
-        aggregatedStats["idle"] = Math.max(0, endTime - startTime - aggregatedTotal);
-
-        var contentHelper = new WebInspector.TimelineDetailsContentHelper(null, null, null, true);
-        var pieChart = WebInspector.TimelineUIUtils.generatePieChart(aggregatedStats);
-
-        var startOffset = startTime - this._model.minimumRecordTime();
-        var endOffset = endTime - this._model.minimumRecordTime();
-        contentHelper.appendTextRow(WebInspector.UIString("Range"), WebInspector.UIString("%s \u2013 %s", Number.millisToString(startOffset), Number.millisToString(endOffset)));
-        contentHelper.appendElementRow(WebInspector.UIString("Aggregated Time"), pieChart);
-
-        this.showInDetails(contentHelper.element);
+        this.showInDetails(WebInspector.TimelineUIUtils.buildRangeStats(this._model, startTime, endTime));
     },
 
     /**
@@ -1258,11 +1131,19 @@ WebInspector.TimelinePanel.prototype = {
         if (preferredTab)
             this._detailsView.setPreferredTab(preferredTab);
 
-        for (var i = 0; i < this._currentViews.length; ++i) {
-            var view = this._currentViews[i];
+        for (var view of this._currentViews)
             view.setSelection(selection);
-        }
         this._updateSelectionDetails();
+    },
+
+    /**
+     * @override
+     * @param {?WebInspector.TracingModel.Event} event
+     */
+    highlightEvent: function(event)
+    {
+        for (var view of this._currentViews)
+            view.highlightEvent(event);
     },
 
     /**
@@ -1278,17 +1159,6 @@ WebInspector.TimelinePanel.prototype = {
             timeShift = startTime - this._windowStartTime;
         if (timeShift)
             this.requestWindowTimes(this._windowStartTime + timeShift, this._windowEndTime + timeShift);
-    },
-
-    /**
-     * @override
-     * @param {!WebInspector.TimelineModel.Record} record
-     */
-    showNestedRecordDetails: function(record)
-    {
-        var event = record.traceEvent();
-        this._showEventInPaintProfiler(event, true);
-        this._detailsView.selectTab(WebInspector.TimelinePanel.DetailsTab.PaintProfiler, true);
     },
 
     /**
@@ -1321,6 +1191,48 @@ WebInspector.TimelinePanel.prototype = {
         }
     },
 
+    _setAutoWindowTimes: function()
+    {
+        var tasks = this._model.mainThreadTasks();
+        if (!tasks.length) {
+            this.requestWindowTimes(this._tracingModel.minimumRecordTime(), this._tracingModel.maximumRecordTime());
+            return;
+        }
+        /**
+         * @param {number} startIndex
+         * @param {number} stopIndex
+         * @return {number}
+         */
+        function findLowUtilizationRegion(startIndex, stopIndex)
+        {
+            var /** @const */ threshold = 0.1;
+            var cutIndex = startIndex;
+            var cutTime = (tasks[cutIndex].startTime() + tasks[cutIndex].endTime()) / 2;
+            var usedTime = 0;
+            var step = Math.sign(stopIndex - startIndex);
+            for (var i = startIndex; i !== stopIndex; i += step) {
+                var task = tasks[i];
+                var taskTime = (task.startTime() + task.endTime()) / 2;
+                var interval = Math.abs(cutTime - taskTime);
+                if (usedTime < threshold * interval) {
+                    cutIndex = i;
+                    cutTime = taskTime;
+                    usedTime = 0;
+                }
+                usedTime += task.endTime() - task.startTime();
+            }
+            return cutIndex;
+        }
+        var rightIndex = findLowUtilizationRegion(tasks.length - 1, 0);
+        var leftIndex = findLowUtilizationRegion(0, rightIndex);
+        var leftTime = tasks[leftIndex].startTime();
+        var rightTime = tasks[rightIndex].endTime();
+        var span = rightTime - leftTime;
+        leftTime = Math.max(leftTime - 0.05 * span, this._tracingModel.minimumRecordTime());
+        rightTime = Math.min(rightTime + 0.05 * span, this._tracingModel.maximumRecordTime());
+        this.requestWindowTimes(leftTime, rightTime);
+    },
+
     __proto__: WebInspector.Panel.prototype
 }
 
@@ -1329,12 +1241,12 @@ WebInspector.TimelinePanel.prototype = {
  * @extends {WebInspector.VBox}
  * @implements {WebInspector.TimelineModeView}
  * @param {!WebInspector.TimelineModeViewDelegate} delegate
- * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.TimelineTreeView} innerTreeView
  */
-WebInspector.TimelineTreeModeView = function(delegate, model)
+WebInspector.TimelineTreeModeView = function(delegate, innerTreeView)
 {
     WebInspector.VBox.call(this);
-    this._treeView = new WebInspector.TimelineTreeView(model);
+    this._treeView = innerTreeView;
     this._treeView.show(this.element);
 }
 
@@ -1350,6 +1262,14 @@ WebInspector.TimelineTreeModeView.prototype = {
      * @override
      */
     highlightSearchResult: function()
+    {
+    },
+
+    /**
+     * @override
+     * @param {?WebInspector.TracingModel.Event} event
+     */
+    highlightEvent: function(event)
     {
     },
 
@@ -1371,13 +1291,6 @@ WebInspector.TimelineTreeModeView.prototype = {
      * @override
      */
     setSelection: function()
-    {
-    },
-
-    /**
-     * @override
-     */
-    setSidebarSize: function()
     {
     },
 
@@ -1407,27 +1320,35 @@ WebInspector.TimelineTreeModeView.prototype = {
  * @constructor
  * @extends {WebInspector.TabbedPane}
  * @param {!WebInspector.TimelineModel} timelineModel
+ * @param {!WebInspector.TimelineModeViewDelegate} delegate
  */
-WebInspector.TimelineDetailsView = function(timelineModel)
+WebInspector.TimelineDetailsView = function(timelineModel, delegate)
 {
     WebInspector.TabbedPane.call(this);
     this.element.classList.add("timeline-details");
 
+    var tabIds = WebInspector.TimelinePanel.DetailsTab;
     this._defaultDetailsWidget = new WebInspector.VBox();
     this._defaultDetailsWidget.element.classList.add("timeline-details-view");
     this._defaultDetailsContentElement = this._defaultDetailsWidget.element.createChild("div", "timeline-details-view-body vbox");
-    this.appendTab(WebInspector.TimelinePanel.DetailsTab.Details, WebInspector.UIString("Summary"), this._defaultDetailsWidget);
-    this.setPreferredTab(WebInspector.TimelinePanel.DetailsTab.Details);
+    this.appendTab(tabIds.Details, WebInspector.UIString("Summary"), this._defaultDetailsWidget);
+    this.setPreferredTab(tabIds.Details);
 
+    /** @type Map<string, WebInspector.TimelineTreeView> */
+    this._rangeDetailViews = new Map();
     if (!Runtime.experiments.isEnabled("multipleTimelineViews")) {
-        this._heavyTreeView = new WebInspector.TimelineTreeView(timelineModel);
-        this.appendTab(WebInspector.TimelinePanel.DetailsTab.BottomUpTree, WebInspector.UIString("Aggregated Details"), this._heavyTreeView);
-    }
+        var bottomUpView = new WebInspector.BottomUpTimelineTreeView(timelineModel);
+        this.appendTab(tabIds.BottomUp, WebInspector.UIString("Bottom-Up"), bottomUpView);
+        this._rangeDetailViews.set(tabIds.BottomUp, bottomUpView);
 
-    this._staticTabs = new Set([
-        WebInspector.TimelinePanel.DetailsTab.Details,
-        WebInspector.TimelinePanel.DetailsTab.BottomUpTree
-    ]);
+        var callTreeView = new WebInspector.CallTreeTimelineTreeView(timelineModel);
+        this.appendTab(tabIds.CallTree, WebInspector.UIString("Call Tree"), callTreeView);
+        this._rangeDetailViews.set(tabIds.CallTree, callTreeView);
+
+        var eventsView = new WebInspector.EventsTimelineTreeView(timelineModel, delegate);
+        this.appendTab(tabIds.Events, WebInspector.UIString("Event Log"), eventsView);
+        this._rangeDetailViews.set(tabIds.Events, eventsView);
+    }
 
     this.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._tabSelected, this);
 }
@@ -1438,11 +1359,10 @@ WebInspector.TimelineDetailsView.prototype = {
      */
     setContent: function(node)
     {
-        var allTabs = this.allTabs();
+        var allTabs = this.otherTabs(WebInspector.TimelinePanel.DetailsTab.Details);
         for (var i = 0; i < allTabs.length; ++i) {
-            var tabId = allTabs[i].id;
-            if (this._staticTabs.has(tabId))
-                this.closeTab(tabId);
+            if (!this._rangeDetailViews.has(allTabs[i]))
+                this.closeTab(allTabs[i]);
         }
         this._defaultDetailsContentElement.removeChildren();
         this._defaultDetailsContentElement.appendChild(node);
@@ -1454,8 +1374,9 @@ WebInspector.TimelineDetailsView.prototype = {
     updateContents: function(selection)
     {
         this._selection = selection;
-        if (this.selectedTabId === WebInspector.TimelinePanel.DetailsTab.BottomUpTree && this._heavyTreeView)
-            this._heavyTreeView.updateContents(selection);
+        var view = this.selectedTabId ? this._rangeDetailViews.get(this.selectedTabId) : null;
+        if (view)
+            view.updateContents(selection);
     },
 
     /**
@@ -1515,24 +1436,11 @@ WebInspector.TimelineSelection = function(type, startTime, endTime, object)
  * @enum {string}
  */
 WebInspector.TimelineSelection.Type = {
-    Record: "Record",
     Frame: "Frame",
     NetworkRequest: "NetworkRequest",
     TraceEvent: "TraceEvent",
     Range: "Range"
 };
-
-/**
- * @param {!WebInspector.TimelineModel.Record} record
- * @return {!WebInspector.TimelineSelection}
- */
-WebInspector.TimelineSelection.fromRecord = function(record)
-{
-    return new WebInspector.TimelineSelection(
-        WebInspector.TimelineSelection.Type.Record,
-        record.startTime(), record.endTime(),
-        record);
-}
 
 /**
  * @param {!WebInspector.TimelineFrame} frame
@@ -1634,10 +1542,7 @@ WebInspector.TimelineModeView.prototype = {
 
     reset: function() {},
 
-    /**
-     * @param {?RegExp} textFilter
-     */
-    refreshRecords: function(textFilter) {},
+    refreshRecords: function() {},
 
     /**
      * @param {?WebInspector.TimelineModel.Record} record
@@ -1653,14 +1558,14 @@ WebInspector.TimelineModeView.prototype = {
     setWindowTimes: function(startTime, endTime) {},
 
     /**
-     * @param {number} width
-     */
-    setSidebarSize: function(width) {},
-
-    /**
      * @param {?WebInspector.TimelineSelection} selection
      */
     setSelection: function(selection) {},
+
+    /**
+     * @param {?WebInspector.TracingModel.Event} event
+     */
+    highlightEvent: function(event) { }
 }
 
 /**
@@ -1682,14 +1587,14 @@ WebInspector.TimelineModeViewDelegate.prototype = {
     select: function(selection, preferredTab) {},
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
-     */
-    showNestedRecordDetails: function(record) {},
-
-    /**
      * @param {!Node} node
      */
     showInDetails: function(node) {},
+
+    /**
+     * @param {?WebInspector.TracingModel.Event} event
+     */
+    highlightEvent: function(event) {}
 }
 
 /**
@@ -1732,7 +1637,6 @@ WebInspector.TimelineIsLongFilter.prototype = {
     setMinimumRecordDuration: function(value)
     {
         this._minimumRecordDuration = value;
-        this.notifyFilterChanged();
     },
 
     /**
@@ -1761,20 +1665,11 @@ WebInspector.TimelineTextFilter = function()
 
 WebInspector.TimelineTextFilter.prototype = {
     /**
-     * @return {boolean}
+     * @param {?RegExp} regExp
      */
-    isEmpty: function()
+    _setRegExp: function(regExp)
     {
-        return !this._regex;
-    },
-
-    /**
-     * @param {?RegExp} regex
-     */
-    setRegex: function(regex)
-    {
-        this._regex = regex;
-        this.notifyFilterChanged();
+        this._regExp = regExp;
     },
 
     /**
@@ -1784,7 +1679,7 @@ WebInspector.TimelineTextFilter.prototype = {
      */
     accept: function(event)
     {
-        return !this._regex || WebInspector.TimelineUIUtils.testContentMatching(event, this._regex);
+        return !this._regExp || WebInspector.TimelineUIUtils.testContentMatching(event, this._regExp);
     },
 
     __proto__: WebInspector.TimelineModel.Filter.prototype
@@ -1827,14 +1722,23 @@ WebInspector.TimelineStaticFilter.prototype = {
 WebInspector.TimelinePanel.StatusPane = function()
 {
     WebInspector.VBox.call(this, true);
-    var shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element);
-    shadowRoot.appendChild(WebInspector.Widget.createStyleElement("timeline/timelineStatusDialog.css"));
-    this._contentElement = shadowRoot.createChild("div", "timeline-status-dialog");
-    this._status = this._contentElement.createChild("div", "status");
-    this._time = this._contentElement.createChild("div", "time");
-    this._bufferUsage = this._contentElement.createChild("div", "buffer-usage").createChild("div", "indicator-container").createChild("div", "indicator");
+    this.registerRequiredCSS("timeline/timelineStatusDialog.css");
+    this.contentElement.classList.add("timeline-status-dialog");
+
+    var statusLine = this.contentElement.createChild("div", "status-dialog-line status");
+    statusLine.createChild("div", "label").textContent = WebInspector.UIString("Status");
+    this._status = statusLine.createChild("div", "content");
+
+    var timeLine = this.contentElement.createChild("div", "status-dialog-line time");
+    timeLine.createChild("div", "label").textContent = WebInspector.UIString("Time");
+    this._time = timeLine.createChild("div", "content");
+
+    var progressLine = this.contentElement.createChild("div", "status-dialog-line progress");
+    this._progressLabel = progressLine.createChild("div", "label");
+    this._progressBar = progressLine.createChild("div", "indicator-container").createChild("div", "indicator");
+
     this._stopButton = createTextButton(WebInspector.UIString("Finish"), this._onFinish.bind(this));
-    this._contentElement.createChild("div", "stop-button").appendChild(this._stopButton);
+    this.contentElement.createChild("div", "stop-button").appendChild(this._stopButton);
 }
 
 WebInspector.TimelinePanel.StatusPane.Events = {
@@ -1872,11 +1776,13 @@ WebInspector.TimelinePanel.StatusPane.prototype = {
     },
 
     /**
+     * @param {string} activity
      * @param {number} percent
      */
-    updateBufferUsage: function(percent)
+    updateProgressBar: function(activity, percent)
     {
-        this._bufferUsage.style.width = percent.toFixed(1) + "%";
+        this._progressLabel.textContent = activity;
+        this._progressBar.style.width = percent.toFixed(1) + "%";
         this._updateTimer();
     },
 
@@ -1889,6 +1795,7 @@ WebInspector.TimelinePanel.StatusPane.prototype = {
     {
         this._startTime = Date.now();
         this._timeUpdateTimer = setInterval(this._updateTimer.bind(this, false), 1000);
+        this._updateTimer();
     },
 
     _stopTimer: function()
@@ -1905,6 +1812,8 @@ WebInspector.TimelinePanel.StatusPane.prototype = {
      */
     _updateTimer: function(precise)
     {
+        if (!this._timeUpdateTimer)
+            return;
         var elapsed = (Date.now() - this._startTime) / 1000;
         this._time.textContent = WebInspector.UIString("%s\u2009sec", elapsed.toFixed(precise ? 1 : 0));
     },
@@ -1970,20 +1879,225 @@ WebInspector.LoadTimelineHandler.prototype = {
  * @constructor
  * @implements {WebInspector.ActionDelegate}
  */
-WebInspector.TimelinePanel.RecordActionDelegate = function()
+WebInspector.TimelinePanel.ActionDelegate = function()
 {
 }
 
-WebInspector.TimelinePanel.RecordActionDelegate.prototype = {
+WebInspector.TimelinePanel.ActionDelegate.prototype = {
     /**
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var panel = WebInspector.context.flavor(WebInspector.TimelinePanel);
         console.assert(panel && panel instanceof WebInspector.TimelinePanel);
-        panel._toggleTimelineButtonClicked();
+        switch (actionId) {
+        case "timeline.toggle-recording":
+            panel._toggleRecording();
+            return true;
+        case "timeline.save-to-file":
+            panel._saveToFile();
+            return true;
+        case "timeline.load-from-file":
+            panel._selectFileToLoad();
+            return true;
+        case "timeline.jump-to-previous-frame":
+            panel._jumpToFrame(-1);
+            return true;
+        case "timeline.jump-to-next-frame":
+            panel._jumpToFrame(1);
+            return true;
+        }
+        return false;
     }
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.Object}
+ */
+WebInspector.TimelineFilters = function()
+{
+    WebInspector.Object.call(this);
+
+    this._categoryFilter = new WebInspector.TimelineCategoryFilter();
+    this._durationFilter = new WebInspector.TimelineIsLongFilter();
+    this._textFilter = new WebInspector.TimelineTextFilter();
+    this._filters = [this._categoryFilter, this._durationFilter, this._textFilter];
+
+    this._createFilterBar();
+}
+
+WebInspector.TimelineFilters.Events = {
+    FilterChanged: Symbol("FilterChanged")
+};
+
+WebInspector.TimelineFilters._durationFilterPresetsMs = [0, 1, 15];
+
+WebInspector.TimelineFilters.prototype = {
+    /**
+     * @return {!Array<!WebInspector.TimelineModel.Filter>}
+     */
+    filters: function()
+    {
+        return this._filters;
+    },
+
+    /**
+     * @return {?RegExp}
+     */
+    searchRegExp: function()
+    {
+        return this._textFilter._regExp;
+    },
+
+    /**
+     * @return {!WebInspector.ToolbarItem}
+     */
+    filterButton: function()
+    {
+        return this._filterBar.filterButton();
+    },
+
+    /**
+     * @return {!WebInspector.Widget}
+     */
+    filtersWidget: function()
+    {
+        return this._filterBar;
+    },
+
+    _createFilterBar: function()
+    {
+        this._filterBar = new WebInspector.FilterBar("timelinePanel");
+
+        this._textFilterUI = new WebInspector.TextFilterUI();
+        this._textFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, textFilterChanged, this);
+        this._filterBar.addFilter(this._textFilterUI);
+
+        var durationOptions = [];
+        for (var durationMs of WebInspector.TimelineFilters._durationFilterPresetsMs) {
+            var durationOption = {};
+            if (!durationMs) {
+                durationOption.label = WebInspector.UIString("All");
+                durationOption.title = WebInspector.UIString("Show all records");
+            } else {
+                durationOption.label = WebInspector.UIString("\u2265 %dms", durationMs);
+                durationOption.title = WebInspector.UIString("Hide records shorter than %dms", durationMs);
+            }
+            durationOption.value = durationMs;
+            durationOptions.push(durationOption);
+        }
+        var durationFilterUI = new WebInspector.ComboBoxFilterUI(durationOptions);
+        durationFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, durationFilterChanged, this);
+        this._filterBar.addFilter(durationFilterUI);
+
+        var categoryFiltersUI = {};
+        var categories = WebInspector.TimelineUIUtils.categories();
+        for (var categoryName in categories) {
+            var category = categories[categoryName];
+            if (!category.visible)
+                continue;
+            var filter = new WebInspector.CheckboxFilterUI(category.name, category.title);
+            filter.setColor(category.fillColorStop0, category.borderColor);
+            categoryFiltersUI[category.name] = filter;
+            filter.addEventListener(WebInspector.FilterUI.Events.FilterChanged, categoriesFilterChanged.bind(this, categoryName));
+            this._filterBar.addFilter(filter);
+        }
+        return this._filterBar;
+
+        /**
+         * @this {WebInspector.TimelineFilters}
+         */
+        function textFilterChanged()
+        {
+            var searchQuery = this._textFilterUI.value();
+            this._textFilter._setRegExp(searchQuery ? createPlainTextSearchRegex(searchQuery, "i") : null);
+            this._notifyFiltersChanged();
+        }
+
+        /**
+         * @this {WebInspector.TimelineFilters}
+         */
+        function durationFilterChanged()
+        {
+            var duration = durationFilterUI.value();
+            var minimumRecordDuration = parseInt(duration, 10);
+            this._durationFilter.setMinimumRecordDuration(minimumRecordDuration);
+            this._notifyFiltersChanged();
+        }
+
+        /**
+         * @param {string} name
+         * @this {WebInspector.TimelineFilters}
+         */
+        function categoriesFilterChanged(name)
+        {
+            var categories = WebInspector.TimelineUIUtils.categories();
+            categories[name].hidden = !categoryFiltersUI[name].checked();
+            this._notifyFiltersChanged();
+        }
+    },
+
+    _notifyFiltersChanged: function()
+    {
+        this.dispatchEventToListeners(WebInspector.TimelineFilters.Events.FilterChanged);
+    },
+
+    __proto__: WebInspector.Object.prototype
+};
+
+/**
+ * @constructor
+ * @extends {WebInspector.Object}
+ * @implements {WebInspector.TargetManager.Observer}
+ */
+WebInspector.CPUThrottlingManager = function()
+{
+    this._targets = [];
+    this._throttlingRate = 1.; // No throttling
+    WebInspector.targetManager.observeTargets(this);
+}
+
+WebInspector.CPUThrottlingManager.prototype = {
+    /**
+     * @param {number} value
+     */
+    setRate: function(value)
+    {
+        this._throttlingRate = value;
+        this._targets.forEach(target => target.emulationAgent().setCPUThrottlingRate(value));
+    },
+
+    /**
+     * @return {number}
+     */
+    rate: function()
+    {
+        return this._throttlingRate;
+    },
+
+    /**
+     * @override
+     * @param {!WebInspector.Target} target
+     */
+    targetAdded: function(target)
+    {
+        this._targets.push(target);
+        target.emulationAgent().setCPUThrottlingRate(this._throttlingRate);
+    },
+
+    /**
+     * @override
+     * @param {!WebInspector.Target} target
+     */
+    targetRemoved: function(target)
+    {
+        this._targets.remove(target, true);
+    },
+
+    __proto__: WebInspector.Object.prototype
 }

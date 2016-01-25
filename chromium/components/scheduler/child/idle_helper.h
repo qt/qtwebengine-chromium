@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_CHILD_IDLE_HELPER_H_
 #define COMPONENTS_SCHEDULER_CHILD_IDLE_HELPER_H_
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "components/scheduler/base/cancelable_closure_holder.h"
 #include "components/scheduler/base/task_queue_selector.h"
@@ -150,8 +151,8 @@ class SCHEDULER_EXPORT IdleHelper
    private:
     void TraceEventIdlePeriodStateChange(IdlePeriodState new_state,
                                          bool new_running_idle_task,
-                                         base::TraceTicks new_deadline,
-                                         base::TraceTicks optional_now);
+                                         base::TimeTicks new_deadline,
+                                         base::TimeTicks optional_now);
 
     SchedulerHelper* helper_;  // NOT OWNED
     Delegate* delegate_;       // NOT OWNED
@@ -159,8 +160,7 @@ class SCHEDULER_EXPORT IdleHelper
     IdlePeriodState idle_period_state_;
     base::TimeTicks idle_period_deadline_;
 
-    base::TraceTicks idle_period_deadline_for_tracing_;
-    base::TraceTicks last_idle_task_trace_time_;
+    base::TimeTicks last_idle_task_trace_time_;
     bool idle_period_trace_event_started_;
     bool running_idle_task_for_tracing_;
     const char* tracing_category_;

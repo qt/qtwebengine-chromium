@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/paint/FilterEffectBuilder.h"
 
 #include "core/layout/LayoutObject.h"
@@ -42,20 +41,80 @@
 
 namespace blink {
 
-static inline void endMatrixRow(Vector<float>& parameters)
+namespace {
+
+inline void endMatrixRow(Vector<float>& matrix)
 {
-    parameters.append(0);
-    parameters.append(0);
+    matrix.uncheckedAppend(0);
+    matrix.uncheckedAppend(0);
 }
 
-static inline void lastMatrixRow(Vector<float>& parameters)
+inline void lastMatrixRow(Vector<float>& matrix)
 {
-    parameters.append(0);
-    parameters.append(0);
-    parameters.append(0);
-    parameters.append(1);
-    parameters.append(0);
+    matrix.uncheckedAppend(0);
+    matrix.uncheckedAppend(0);
+    matrix.uncheckedAppend(0);
+    matrix.uncheckedAppend(1);
+    matrix.uncheckedAppend(0);
 }
+
+Vector<float> grayscaleMatrix(double amount)
+{
+    double oneMinusAmount = clampTo(1 - amount, 0.0, 1.0);
+
+    // See https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#grayscaleEquivalent
+    // for information on parameters.
+    Vector<float> matrix;
+    matrix.reserveInitialCapacity(20);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.2126 + 0.7874 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.7152 - 0.7152 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.0722 - 0.0722 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.2126 - 0.2126 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.7152 + 0.2848 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.0722 - 0.0722 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.2126 - 0.2126 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.7152 - 0.7152 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.0722 + 0.9278 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    lastMatrixRow(matrix);
+    return matrix;
+}
+
+Vector<float> sepiaMatrix(double amount)
+{
+    double oneMinusAmount = clampTo(1 - amount, 0.0, 1.0);
+
+    // See https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#sepiaEquivalent
+    // for information on parameters.
+    Vector<float> matrix;
+    matrix.reserveInitialCapacity(20);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.393 + 0.607 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.769 - 0.769 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.189 - 0.189 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.349 - 0.349 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.686 + 0.314 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.168 - 0.168 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.272 - 0.272 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.534 - 0.534 * oneMinusAmount));
+    matrix.uncheckedAppend(narrowPrecisionToFloat(0.131 + 0.869 * oneMinusAmount));
+    endMatrixRow(matrix);
+
+    lastMatrixRow(matrix);
+    return matrix;
+}
+
+} // namespace
 
 FilterEffectBuilder::FilterEffectBuilder()
 {
@@ -71,7 +130,7 @@ DEFINE_TRACE(FilterEffectBuilder)
     visitor->trace(m_referenceFilters);
 }
 
-bool FilterEffectBuilder::build(Element* element, const FilterOperations& operations, float zoom)
+bool FilterEffectBuilder::build(Element* element, const FilterOperations& operations, float zoom, const SkPaint* fillPaint, const SkPaint* strokePaint)
 {
     // Create a parent filter for shorthand filters. These have already been scaled by the CSS code for page zoom, so scale is 1.0 here.
     RefPtrWillBeRawPtr<Filter> parentFilter = Filter::create(1.0f);
@@ -81,7 +140,7 @@ bool FilterEffectBuilder::build(Element* element, const FilterOperations& operat
         FilterOperation* filterOperation = operations.operations().at(i).get();
         switch (filterOperation->type()) {
         case FilterOperation::REFERENCE: {
-            RefPtrWillBeRawPtr<Filter> referenceFilter = ReferenceFilterBuilder::build(zoom, element, previousEffect.get(), toReferenceFilterOperation(*filterOperation));
+            RefPtrWillBeRawPtr<Filter> referenceFilter = ReferenceFilterBuilder::build(zoom, element, previousEffect.get(), toReferenceFilterOperation(*filterOperation), fillPaint, strokePaint);
             if (referenceFilter) {
                 effect = referenceFilter->lastEffect();
                 m_referenceFilters.append(referenceFilter);
@@ -89,56 +148,12 @@ bool FilterEffectBuilder::build(Element* element, const FilterOperations& operat
             break;
         }
         case FilterOperation::GRAYSCALE: {
-            Vector<float> inputParameters;
-            double oneMinusAmount = clampTo(1 - toBasicColorMatrixFilterOperation(filterOperation)->amount(), 0.0, 1.0);
-
-            // See https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#grayscaleEquivalent
-            // for information on parameters.
-
-            inputParameters.append(narrowPrecisionToFloat(0.2126 + 0.7874 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.7152 - 0.7152 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.0722 - 0.0722 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            inputParameters.append(narrowPrecisionToFloat(0.2126 - 0.2126 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.7152 + 0.2848 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.0722 - 0.0722 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            inputParameters.append(narrowPrecisionToFloat(0.2126 - 0.2126 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.7152 - 0.7152 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.0722 + 0.9278 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            lastMatrixRow(inputParameters);
-
+            Vector<float> inputParameters = grayscaleMatrix(toBasicColorMatrixFilterOperation(filterOperation)->amount());
             effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_MATRIX, inputParameters);
             break;
         }
         case FilterOperation::SEPIA: {
-            Vector<float> inputParameters;
-            double oneMinusAmount = clampTo(1 - toBasicColorMatrixFilterOperation(filterOperation)->amount(), 0.0, 1.0);
-
-            // See https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#sepiaEquivalent
-            // for information on parameters.
-
-            inputParameters.append(narrowPrecisionToFloat(0.393 + 0.607 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.769 - 0.769 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.189 - 0.189 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            inputParameters.append(narrowPrecisionToFloat(0.349 - 0.349 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.686 + 0.314 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.168 - 0.168 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            inputParameters.append(narrowPrecisionToFloat(0.272 - 0.272 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.534 - 0.534 * oneMinusAmount));
-            inputParameters.append(narrowPrecisionToFloat(0.131 + 0.869 * oneMinusAmount));
-            endMatrixRow(inputParameters);
-
-            lastMatrixRow(inputParameters);
-
+            Vector<float> inputParameters = sepiaMatrix(toBasicColorMatrixFilterOperation(filterOperation)->amount());
             effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_MATRIX, inputParameters);
             break;
         }

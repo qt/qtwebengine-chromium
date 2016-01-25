@@ -5,6 +5,7 @@
 #ifndef CSPDirective_h
 #define CSPDirective_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -12,7 +13,7 @@ namespace blink {
 class ContentSecurityPolicy;
 
 class CSPDirective {
-    WTF_MAKE_FAST_ALLOCATED(CSPDirective);
+    USING_FAST_MALLOC(CSPDirective);
     WTF_MAKE_NONCOPYABLE(CSPDirective);
 public:
     CSPDirective(const String& name, const String& value, ContentSecurityPolicy* policy)
@@ -30,7 +31,8 @@ protected:
 private:
     String m_name;
     String m_text;
-    ContentSecurityPolicy* m_policy;
+    // TODO(Oilpan): consider moving ContentSecurityPolicy auxilliary objects to the heap.
+    RawPtrWillBeUntracedMember<ContentSecurityPolicy> m_policy;
 };
 
 } // namespace blink

@@ -29,7 +29,7 @@ bool GlRenderer::Initialize() {
     return false;
   }
 
-  surface_->Resize(size_);
+  surface_->Resize(size_, 1.f, true);
 
   if (!context_->MakeCurrent(surface_.get())) {
     LOG(ERROR) << "Failed to make GL context current";
@@ -51,9 +51,8 @@ void GlRenderer::RenderFrame() {
   glClearColor(1 - fraction, fraction, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  if (!surface_->SwapBuffersAsync(base::Bind(&GlRenderer::PostRenderFrameTask,
-                                             weak_ptr_factory_.GetWeakPtr())))
-    LOG(FATAL) << "Failed to swap buffers";
+  surface_->SwapBuffersAsync(base::Bind(&GlRenderer::PostRenderFrameTask,
+                                        weak_ptr_factory_.GetWeakPtr()));
 }
 
 void GlRenderer::PostRenderFrameTask(gfx::SwapResult result) {

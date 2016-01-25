@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_AURALINUX_H_
 #define CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_MANAGER_AURALINUX_H_
 
+#include "base/macros.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 
 struct ViewHostMsg_AccessibilityNotification_Params;
@@ -18,13 +19,13 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAuraLinux
  public:
   BrowserAccessibilityManagerAuraLinux(
       AtkObject* parent_object,
-      const SimpleAXTreeUpdate& initial_tree,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   ~BrowserAccessibilityManagerAuraLinux() override;
 
-  static SimpleAXTreeUpdate GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   // Implementation BrowserAccessibilityManager methods
   void NotifyAccessibilityEvent(ui::AXEvent event_type,

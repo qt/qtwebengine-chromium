@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "base/lazy_instance.h"
 #include "base/run_loop.h"
+#include "build/build_config.h"
 #include "ipc/ipc_perftest_support.h"
 #include "ipc/mojo/ipc_channel_mojo.h"
-#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
 #include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
 
 namespace {
 

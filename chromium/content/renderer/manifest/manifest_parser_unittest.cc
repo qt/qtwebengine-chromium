@@ -4,6 +4,9 @@
 
 #include "content/renderer/manifest/manifest_parser.h"
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "content/public/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,7 +31,11 @@ class ManifestParserTest : public testing::Test  {
                                  const GURL& manifest_url) {
     ManifestParser parser(data, document_url, manifest_url);
     parser.Parse();
-    errors_ = parser.errors();
+    errors_.clear();
+    for (const scoped_ptr<ManifestParser::ErrorInfo>& error_info :
+         parser.errors()) {
+      errors_.push_back(error_info->error_msg);
+    }
     return parser.manifest();
   }
 

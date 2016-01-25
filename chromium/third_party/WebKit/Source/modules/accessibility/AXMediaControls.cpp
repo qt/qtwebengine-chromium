@@ -27,7 +27,6 @@
  */
 
 
-#include "config.h"
 #include "modules/accessibility/AXMediaControls.h"
 
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -76,17 +75,7 @@ MediaControlElementType AccessibilityMediaControl::controlType() const
     return mediaControlElementType(layoutObject()->node());
 }
 
-String AccessibilityMediaControl::deprecatedTitle(TextUnderElementMode mode) const
-{
-    // FIXME: the ControlsPanel container should never be visible in the
-    // accessibility hierarchy.
-    if (controlType() == MediaControlsPanel)
-        return queryString(WebLocalizedString::AXMediaDefault);
-
-    return AXLayoutObject::deprecatedTitle(mode);
-}
-
-String AccessibilityMediaControl::deprecatedAccessibilityDescription() const
+String AccessibilityMediaControl::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
 {
     switch (controlType()) {
     case MediaEnterFullscreenButton:
@@ -118,7 +107,7 @@ String AccessibilityMediaControl::deprecatedAccessibilityDescription() const
     }
 }
 
-String AccessibilityMediaControl::deprecatedHelpText() const
+String AccessibilityMediaControl::description(AXNameFrom nameFrom, AXDescriptionFrom& descriptionFrom, AXObjectVector* descriptionObjects) const
 {
     switch (controlType()) {
     case MediaEnterFullscreenButton:
@@ -196,12 +185,12 @@ AXObject* AXMediaControlsContainer::create(LayoutObject* layoutObject, AXObjectC
     return new AXMediaControlsContainer(layoutObject, axObjectCache);
 }
 
-String AXMediaControlsContainer::deprecatedAccessibilityDescription() const
+String AXMediaControlsContainer::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
 {
     return queryString(isControllingVideoElement() ? WebLocalizedString::AXMediaVideoElement : WebLocalizedString::AXMediaAudioElement);
 }
 
-String AXMediaControlsContainer::deprecatedHelpText() const
+String AXMediaControlsContainer::description(AXNameFrom nameFrom, AXDescriptionFrom& descriptionFrom, AXObjectVector* descriptionObjects) const
 {
     return queryString(isControllingVideoElement() ? WebLocalizedString::AXMediaVideoElementHelp : WebLocalizedString::AXMediaAudioElementHelp);
 }
@@ -240,7 +229,7 @@ String AccessibilityMediaTimeline::valueDescription() const
     return localizedMediaTimeDescription(toHTMLInputElement(node)->value().toFloat());
 }
 
-String AccessibilityMediaTimeline::deprecatedHelpText() const
+String AccessibilityMediaTimeline::description(AXNameFrom nameFrom, AXDescriptionFrom& descriptionFrom, AXObjectVector* descriptionObjects) const
 {
     return queryString(isControllingVideoElement() ? WebLocalizedString::AXMediaVideoSliderHelp : WebLocalizedString::AXMediaAudioSliderHelp);
 }
@@ -270,7 +259,7 @@ bool AccessibilityMediaTimeDisplay::computeAccessibilityIsIgnored(IgnoredReasons
     return accessibilityIsIgnoredByDefault(ignoredReasons);
 }
 
-String AccessibilityMediaTimeDisplay::deprecatedAccessibilityDescription() const
+String AccessibilityMediaTimeDisplay::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
 {
     if (controlType() == MediaCurrentTimeDisplay)
         return queryString(WebLocalizedString::AXMediaCurrentTimeDisplay);

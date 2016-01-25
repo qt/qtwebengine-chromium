@@ -5,25 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include <stdio.h>
-
+#include "DumpRecord.h"
+#include "LazyDecodeBitmap.h"
 #include "SkCommandLineFlags.h"
-#include "SkGraphics.h"
 #include "SkPicture.h"
+#include "SkPictureRecorder.h"
+#include "SkRecordDraw.h"
 #include "SkRecordOpts.h"
 #include "SkRecorder.h"
 #include "SkStream.h"
-
-#include "DumpRecord.h"
-#include "LazyDecodeBitmap.h"
-
-#include <stdlib.h>
+#include <stdio.h>
 
 DEFINE_string2(skps, r, "", ".SKPs to dump.");
 DEFINE_string(match, "", "The usual filters on file names to dump.");
 DEFINE_bool2(optimize, O, false, "Run SkRecordOptimize before dumping.");
+DEFINE_bool(optimize2, false, "Run SkRecordOptimize2 before dumping.");
 DEFINE_int32(tile, 1000000000, "Simulated tile size.");
 DEFINE_bool(timeWithCommand, false, "If true, print time next to command, else in first column.");
+DEFINE_string2(write, w, "", "Write the (optimized) picture to the named file.");
 
 static void dump(const char* name, int w, int h, const SkRecord& record) {
     SkBitmap bitmap;
@@ -37,11 +36,9 @@ static void dump(const char* name, int w, int h, const SkRecord& record) {
     DumpRecord(record, &canvas, FLAGS_timeWithCommand);
 }
 
-
 int tool_main(int argc, char** argv);
 int tool_main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
-    SkAutoGraphics ag;
 
     for (int i = 0; i < FLAGS_skps.count(); i++) {
         if (SkCommandLineFlags::ShouldSkip(FLAGS_match, FLAGS_skps[i])) {
@@ -51,13 +48,13 @@ int tool_main(int argc, char** argv) {
         SkAutoTDelete<SkStream> stream(SkStream::NewFromFile(FLAGS_skps[i]));
         if (!stream) {
             SkDebugf("Could not read %s.\n", FLAGS_skps[i]);
-            exit(1);
+            return 1;
         }
         SkAutoTUnref<SkPicture> src(
                 SkPicture::CreateFromStream(stream, sk_tools::LazyDecodeBitmap));
         if (!src) {
             SkDebugf("Could not read %s as an SkPicture.\n", FLAGS_skps[i]);
-            exit(1);
+            return 1;
         }
         const int w = SkScalarCeilToInt(src->cullRect().width());
         const int h = SkScalarCeilToInt(src->cullRect().height());
@@ -69,8 +66,25 @@ int tool_main(int argc, char** argv) {
         if (FLAGS_optimize) {
             SkRecordOptimize(&record);
         }
+        if (FLAGS_optimize2) {
+            SkRecordOptimize2(&record);
+        }
 
         dump(FLAGS_skps[i], w, h, record);
+
+        if (FLAGS_write.count() > 0) {
+            SkPictureRecorder r;
+            SkRecordDraw(record,
+                         r.beginRecording(SkRect::MakeIWH(w, h)),
+                         nullptr,
+                         nullptr,
+                         0,
+                         nullptr,
+                         nullptr);
+            SkAutoTUnref<SkPicture> dst(r.endRecording());
+            SkFILEWStream ostream(FLAGS_write[0]);
+            dst->serialize(&ostream);
+        }
     }
 
     return 0;

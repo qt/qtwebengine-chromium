@@ -4,17 +4,20 @@
 
 #include "media/capture/video/linux/video_capture_device_linux.h"
 
-#if defined(OS_OPENBSD)
-#include <sys/videoio.h>
-#else
-#include <linux/videodev2.h>
-#endif
+#include <stddef.h>
 
 #include <list>
 
 #include "base/bind.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "media/capture/video/linux/v4l2_capture_delegate.h"
+
+#if defined(OS_OPENBSD)
+#include <sys/videoio.h>
+#else
+#include <linux/videodev2.h>
+#endif
 
 namespace media {
 
@@ -43,8 +46,8 @@ static bool ReadIdFile(const std::string& path, std::string* id) {
 
 // Translates Video4Linux pixel formats to Chromium pixel formats.
 // static
-VideoPixelFormat
-VideoCaptureDeviceLinux::V4l2FourCcToChromiumPixelFormat(uint32 v4l2_fourcc) {
+VideoPixelFormat VideoCaptureDeviceLinux::V4l2FourCcToChromiumPixelFormat(
+    uint32_t v4l2_fourcc) {
   return V4L2CaptureDelegate::V4l2FourCcToChromiumPixelFormat(v4l2_fourcc);
 }
 
@@ -101,7 +104,7 @@ void VideoCaptureDeviceLinux::AllocateAndStart(
   capture_impl_ = V4L2CaptureDelegate::CreateV4L2CaptureDelegate(
       device_name_, v4l2_thread_.task_runner(), line_frequency);
   if (!capture_impl_) {
-    client->OnError("Failed to create VideoCaptureDelegate");
+    client->OnError(FROM_HERE, "Failed to create VideoCaptureDelegate");
     return;
   }
   v4l2_thread_.message_loop()->PostTask(
@@ -132,11 +135,12 @@ void VideoCaptureDeviceLinux::SetRotation(int rotation) {
 }
 
 // static
-int VideoCaptureDeviceLinux::TranslatePowerLineFrequencyToV4L2(int frequency) {
+int VideoCaptureDeviceLinux::TranslatePowerLineFrequencyToV4L2(
+    PowerLineFrequency frequency) {
   switch (frequency) {
-    case static_cast<int>(media::PowerLineFrequency::FREQUENCY_50HZ):
+    case media::PowerLineFrequency::FREQUENCY_50HZ:
       return V4L2_CID_POWER_LINE_FREQUENCY_50HZ;
-    case static_cast<int>(media::PowerLineFrequency::FREQUENCY_60HZ):
+    case media::PowerLineFrequency::FREQUENCY_60HZ:
       return V4L2_CID_POWER_LINE_FREQUENCY_60HZ;
     default:
       // If we have no idea of the frequency, at least try and set it to AUTO.

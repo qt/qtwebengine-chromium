@@ -15,13 +15,12 @@
 #include "client/simulate_crash_mac.h"
 
 #include <string.h>
+#include <sys/types.h>
 
-#include <vector>
-
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/mac/mach_logging.h"
 #include "base/mac/scoped_mach_port.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "util/mach/exc_client_variants.h"
@@ -216,14 +215,14 @@ void SimulateCrash(const NativeCPUContext& cpu_context) {
   for (size_t target_type_index = 0;
        !success && target_type_index < arraysize(kTargetTypes);
        ++target_type_index) {
-    std::vector<ExceptionPorts::ExceptionHandler> handlers;
+    ExceptionPorts::ExceptionHandlerVector handlers;
     ExceptionPorts exception_ports(kTargetTypes[target_type_index],
                                    MACH_PORT_NULL);
     if (exception_ports.GetExceptionPorts(EXC_MASK_CRASH, &handlers)) {
       DCHECK_LE(handlers.size(), 1u);
       if (handlers.size() == 1) {
         DCHECK(handlers[0].mask & EXC_MASK_CRASH);
-        success = DeliverException(thread,
+        success = DeliverException(thread.get(),
                                    mach_task_self(),
                                    exception,
                                    codes,

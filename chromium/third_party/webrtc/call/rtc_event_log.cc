@@ -11,14 +11,17 @@
 #include "webrtc/call/rtc_event_log.h"
 
 #include <deque>
+#include <vector>
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/call.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/file_wrapper.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/file_wrapper.h"
 
 #ifdef ENABLE_RTC_EVENT_LOG
 // Files generated at build-time by the protobuf compiler.
@@ -36,7 +39,9 @@ namespace webrtc {
 // No-op implementation if flag is not set.
 class RtcEventLogImpl final : public RtcEventLog {
  public:
+  void SetBufferDuration(int64_t buffer_duration_us) override {}
   void StartLogging(const std::string& file_name, int duration_ms) override {}
+  bool StartLogging(rtc::PlatformFile log_file) override { return false; }
   void StopLogging(void) override {}
   void LogVideoReceiveStreamConfig(
       const VideoReceiveStream::Config& config) override {}
@@ -51,6 +56,9 @@ class RtcEventLogImpl final : public RtcEventLog {
                      const uint8_t* packet,
                      size_t length) override {}
   void LogAudioPlayout(uint32_t ssrc) override {}
+  void LogBwePacketLossEvent(int32_t bitrate,
+                             uint8_t fraction_loss,
+                             int32_t total_packets) override {}
 };
 
 #else  // ENABLE_RTC_EVENT_LOG is defined
@@ -59,7 +67,9 @@ class RtcEventLogImpl final : public RtcEventLog {
  public:
   RtcEventLogImpl();
 
+  void SetBufferDuration(int64_t buffer_duration_us) override;
   void StartLogging(const std::string& file_name, int duration_ms) override;
+  bool StartLogging(rtc::PlatformFile log_file) override;
   void StopLogging() override;
   void LogVideoReceiveStreamConfig(
       const VideoReceiveStream::Config& config) override;
@@ -73,8 +83,14 @@ class RtcEventLogImpl final : public RtcEventLog {
                      const uint8_t* packet,
                      size_t length) override;
   void LogAudioPlayout(uint32_t ssrc) override;
+  void LogBwePacketLossEvent(int32_t bitrate,
+                             uint8_t fraction_loss,
+                             int32_t total_packets) override;
 
  private:
+  // Starts logging. This function assumes the file_ has been opened succesfully
+  // and that the start_time_us_ and _duration_us_ have been set.
+  void StartLoggingLocked() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   // Stops logging and clears the stored data and buffers.
   void StopLoggingLocked() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   // Adds a new event to the logfile if logging is active, or adds it to the
@@ -88,14 +104,17 @@ class RtcEventLogImpl final : public RtcEventLog {
   void AddRecentEvent(const rtclog::Event& event)
       EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
-  // Amount of time in microseconds to record log events, before starting the
-  // actual log.
-  const int recent_log_duration_us = 10000000;
-
   rtc::CriticalSection crit_;
-  rtc::scoped_ptr<FileWrapper> file_ GUARDED_BY(crit_);
+  rtc::scoped_ptr<FileWrapper> file_ GUARDED_BY(crit_) =
+      rtc::scoped_ptr<FileWrapper>(FileWrapper::Create());
+  rtc::PlatformFile platform_file_ GUARDED_BY(crit_) =
+      rtc::kInvalidPlatformFileValue;
   rtclog::EventStream stream_ GUARDED_BY(crit_);
   std::deque<rtclog::Event> recent_log_events_ GUARDED_BY(crit_);
+  std::vector<rtclog::Event> config_events_ GUARDED_BY(crit_);
+
+  // Microseconds to record log events, before starting the actual log.
+  int64_t buffer_duration_us_ GUARDED_BY(crit_);
   bool currently_logging_ GUARDED_BY(crit_);
   int64_t start_time_us_ GUARDED_BY(crit_);
   int64_t duration_us_ GUARDED_BY(crit_);
@@ -142,14 +161,30 @@ rtclog::MediaType ConvertMediaType(MediaType media_type) {
 
 }  // namespace
 
+namespace {
+bool IsConfigEvent(const rtclog::Event& event) {
+  rtclog::Event_EventType event_type = event.type();
+  return event_type == rtclog::Event::VIDEO_RECEIVER_CONFIG_EVENT ||
+         event_type == rtclog::Event::VIDEO_SENDER_CONFIG_EVENT ||
+         event_type == rtclog::Event::AUDIO_RECEIVER_CONFIG_EVENT ||
+         event_type == rtclog::Event::AUDIO_SENDER_CONFIG_EVENT;
+}
+}  // namespace
+
 // RtcEventLogImpl member functions.
 RtcEventLogImpl::RtcEventLogImpl()
     : file_(FileWrapper::Create()),
       stream_(),
+      buffer_duration_us_(10000000),
       currently_logging_(false),
       start_time_us_(0),
       duration_us_(0),
       clock_(Clock::GetRealTimeClock()) {
+}
+
+void RtcEventLogImpl::SetBufferDuration(int64_t buffer_duration_us) {
+  rtc::CritScope lock(&crit_);
+  buffer_duration_us_ = buffer_duration_us;
 }
 
 void RtcEventLogImpl::StartLogging(const std::string& file_name,
@@ -161,12 +196,51 @@ void RtcEventLogImpl::StartLogging(const std::string& file_name,
   if (file_->OpenFile(file_name.c_str(), false) != 0) {
     return;
   }
-  currently_logging_ = true;
   start_time_us_ = clock_->TimeInMicroseconds();
   duration_us_ = static_cast<int64_t>(duration_ms) * 1000;
-  // Write all the recent events to the log file, ignoring any old events.
+  StartLoggingLocked();
+}
+
+bool RtcEventLogImpl::StartLogging(rtc::PlatformFile log_file) {
+  rtc::CritScope lock(&crit_);
+
+  if (currently_logging_) {
+    StopLoggingLocked();
+  }
+  RTC_DCHECK(platform_file_ == rtc::kInvalidPlatformFileValue);
+
+  FILE* file_stream = rtc::FdopenPlatformFileForWriting(log_file);
+  if (!file_stream) {
+    rtc::ClosePlatformFile(log_file);
+    return false;
+  }
+
+  if (file_->OpenFromFileHandle(file_stream, true, false) != 0) {
+    rtc::ClosePlatformFile(log_file);
+    return false;
+  }
+  platform_file_ = log_file;
+  // Set the start time and duration to keep logging for 10 minutes.
+  start_time_us_ = clock_->TimeInMicroseconds();
+  duration_us_ = 10 * 60 * 1000000;
+  StartLoggingLocked();
+  return true;
+}
+
+void RtcEventLogImpl::StartLoggingLocked() {
+  currently_logging_ = true;
+
+  // Write all old configuration events to the log file.
+  for (auto& event : config_events_) {
+    StoreToFile(&event);
+  }
+  // Write all recent configuration events to the log file, and
+  // write all other recent events to the log file, ignoring any old events.
   for (auto& event : recent_log_events_) {
-    if (event.timestamp_us() >= start_time_us_ - recent_log_duration_us) {
+    if (IsConfigEvent(event)) {
+      StoreToFile(&event);
+      config_events_.push_back(event);
+    } else if (event.timestamp_us() >= start_time_us_ - buffer_duration_us_) {
       StoreToFile(&event);
     }
   }
@@ -174,9 +248,7 @@ void RtcEventLogImpl::StartLogging(const std::string& file_name,
   // Write a LOG_START event to the file.
   rtclog::Event start_event;
   start_event.set_timestamp_us(start_time_us_);
-  start_event.set_type(rtclog::Event::DEBUG_EVENT);
-  auto debug_event = start_event.mutable_debug_event();
-  debug_event->set_type(rtclog::DebugEvent_EventType_LOG_START);
+  start_event.set_type(rtclog::Event::LOG_START);
   StoreToFile(&start_event);
 }
 
@@ -190,8 +262,7 @@ void RtcEventLogImpl::LogVideoReceiveStreamConfig(
   rtc::CritScope lock(&crit_);
 
   rtclog::Event event;
-  const int64_t timestamp = clock_->TimeInMicroseconds();
-  event.set_timestamp_us(timestamp);
+  event.set_timestamp_us(clock_->TimeInMicroseconds());
   event.set_type(rtclog::Event::VIDEO_RECEIVER_CONFIG_EVENT);
 
   rtclog::VideoReceiveConfig* receiver_config =
@@ -200,9 +271,6 @@ void RtcEventLogImpl::LogVideoReceiveStreamConfig(
   receiver_config->set_local_ssrc(config.rtp.local_ssrc);
 
   receiver_config->set_rtcp_mode(ConvertRtcpMode(config.rtp.rtcp_mode));
-
-  receiver_config->set_receiver_reference_time_report(
-      config.rtp.rtcp_xr.receiver_reference_time_report);
   receiver_config->set_remb(config.rtp.remb);
 
   for (const auto& kv : config.rtp.rtx) {
@@ -224,10 +292,6 @@ void RtcEventLogImpl::LogVideoReceiveStreamConfig(
     decoder->set_name(d.payload_name);
     decoder->set_payload_type(d.payload_type);
   }
-  // TODO(terelius): We should use a separate event queue for config events.
-  // The current approach of storing the configuration together with the
-  // RTP events causes the configuration information to be removed 10s
-  // after the ReceiveStream is created.
   HandleEvent(&event);
 }
 
@@ -236,8 +300,7 @@ void RtcEventLogImpl::LogVideoSendStreamConfig(
   rtc::CritScope lock(&crit_);
 
   rtclog::Event event;
-  const int64_t timestamp = clock_->TimeInMicroseconds();
-  event.set_timestamp_us(timestamp);
+  event.set_timestamp_us(clock_->TimeInMicroseconds());
   event.set_type(rtclog::Event::VIDEO_SENDER_CONFIG_EVENT);
 
   rtclog::VideoSendConfig* sender_config = event.mutable_video_sender_config();
@@ -258,16 +321,9 @@ void RtcEventLogImpl::LogVideoSendStreamConfig(
   }
   sender_config->set_rtx_payload_type(config.rtp.rtx.payload_type);
 
-  sender_config->set_c_name(config.rtp.c_name);
-
   rtclog::EncoderConfig* encoder = sender_config->mutable_encoder();
   encoder->set_name(config.encoder_settings.payload_name);
   encoder->set_payload_type(config.encoder_settings.payload_type);
-
-  // TODO(terelius): We should use a separate event queue for config events.
-  // The current approach of storing the configuration together with the
-  // RTP events causes the configuration information to be removed 10s
-  // after the ReceiveStream is created.
   HandleEvent(&event);
 }
 
@@ -293,8 +349,7 @@ void RtcEventLogImpl::LogRtpHeader(bool incoming,
 
   rtc::CritScope lock(&crit_);
   rtclog::Event rtp_event;
-  const int64_t timestamp = clock_->TimeInMicroseconds();
-  rtp_event.set_timestamp_us(timestamp);
+  rtp_event.set_timestamp_us(clock_->TimeInMicroseconds());
   rtp_event.set_type(rtclog::Event::RTP_EVENT);
   rtp_event.mutable_rtp_packet()->set_incoming(incoming);
   rtp_event.mutable_rtp_packet()->set_type(ConvertMediaType(media_type));
@@ -309,41 +364,98 @@ void RtcEventLogImpl::LogRtcpPacket(bool incoming,
                                     size_t length) {
   rtc::CritScope lock(&crit_);
   rtclog::Event rtcp_event;
-  const int64_t timestamp = clock_->TimeInMicroseconds();
-  rtcp_event.set_timestamp_us(timestamp);
+  rtcp_event.set_timestamp_us(clock_->TimeInMicroseconds());
   rtcp_event.set_type(rtclog::Event::RTCP_EVENT);
   rtcp_event.mutable_rtcp_packet()->set_incoming(incoming);
   rtcp_event.mutable_rtcp_packet()->set_type(ConvertMediaType(media_type));
-  rtcp_event.mutable_rtcp_packet()->set_packet_data(packet, length);
+
+  RTCPUtility::RtcpCommonHeader header;
+  const uint8_t* block_begin = packet;
+  const uint8_t* packet_end = packet + length;
+  RTC_DCHECK(length <= IP_PACKET_SIZE);
+  uint8_t buffer[IP_PACKET_SIZE];
+  uint32_t buffer_length = 0;
+  while (block_begin < packet_end) {
+    if (!RtcpParseCommonHeader(block_begin, packet_end - block_begin,
+                               &header)) {
+      break;  // Incorrect message header.
+    }
+    uint32_t block_size = header.BlockSize();
+    switch (header.packet_type) {
+      case RTCPUtility::PT_SR:
+        FALLTHROUGH();
+      case RTCPUtility::PT_RR:
+        FALLTHROUGH();
+      case RTCPUtility::PT_BYE:
+        FALLTHROUGH();
+      case RTCPUtility::PT_IJ:
+        FALLTHROUGH();
+      case RTCPUtility::PT_RTPFB:
+        FALLTHROUGH();
+      case RTCPUtility::PT_PSFB:
+        FALLTHROUGH();
+      case RTCPUtility::PT_XR:
+        // We log sender reports, receiver reports, bye messages
+        // inter-arrival jitter, third-party loss reports, payload-specific
+        // feedback and extended reports.
+        memcpy(buffer + buffer_length, block_begin, block_size);
+        buffer_length += block_size;
+        break;
+      case RTCPUtility::PT_SDES:
+        FALLTHROUGH();
+      case RTCPUtility::PT_APP:
+        FALLTHROUGH();
+      default:
+        // We don't log sender descriptions, application defined messages
+        // or message blocks of unknown type.
+        break;
+    }
+
+    block_begin += block_size;
+  }
+  rtcp_event.mutable_rtcp_packet()->set_packet_data(buffer, buffer_length);
   HandleEvent(&rtcp_event);
 }
 
 void RtcEventLogImpl::LogAudioPlayout(uint32_t ssrc) {
   rtc::CritScope lock(&crit_);
   rtclog::Event event;
-  const int64_t timestamp = clock_->TimeInMicroseconds();
-  event.set_timestamp_us(timestamp);
-  event.set_type(rtclog::Event::DEBUG_EVENT);
-  auto debug_event = event.mutable_debug_event();
-  debug_event->set_type(rtclog::DebugEvent_EventType_AUDIO_PLAYOUT);
-  debug_event->set_local_ssrc(ssrc);
+  event.set_timestamp_us(clock_->TimeInMicroseconds());
+  event.set_type(rtclog::Event::AUDIO_PLAYOUT_EVENT);
+  auto playout_event = event.mutable_audio_playout_event();
+  playout_event->set_local_ssrc(ssrc);
+  HandleEvent(&event);
+}
+
+void RtcEventLogImpl::LogBwePacketLossEvent(int32_t bitrate,
+                                            uint8_t fraction_loss,
+                                            int32_t total_packets) {
+  rtc::CritScope lock(&crit_);
+  rtclog::Event event;
+  event.set_timestamp_us(clock_->TimeInMicroseconds());
+  event.set_type(rtclog::Event::BWE_PACKET_LOSS_EVENT);
+  auto bwe_event = event.mutable_bwe_packet_loss_event();
+  bwe_event->set_bitrate(bitrate);
+  bwe_event->set_fraction_loss(fraction_loss);
+  bwe_event->set_total_packets(total_packets);
   HandleEvent(&event);
 }
 
 void RtcEventLogImpl::StopLoggingLocked() {
   if (currently_logging_) {
     currently_logging_ = false;
-    // Create a LogEnd debug event
+    // Create a LogEnd event
     rtclog::Event event;
-    int64_t timestamp = clock_->TimeInMicroseconds();
-    event.set_timestamp_us(timestamp);
-    event.set_type(rtclog::Event::DEBUG_EVENT);
-    auto debug_event = event.mutable_debug_event();
-    debug_event->set_type(rtclog::DebugEvent_EventType_LOG_END);
+    event.set_timestamp_us(clock_->TimeInMicroseconds());
+    event.set_type(rtclog::Event::LOG_END);
     // Store the event and close the file
     RTC_DCHECK(file_->Open());
     StoreToFile(&event);
     file_->CloseFile();
+    if (platform_file_ != rtc::kInvalidPlatformFileValue) {
+      rtc::ClosePlatformFile(platform_file_);
+      platform_file_ = rtc::kInvalidPlatformFileValue;
+    }
   }
   RTC_DCHECK(!file_->Open());
   stream_.Clear();
@@ -377,7 +489,10 @@ void RtcEventLogImpl::StoreToFile(rtclog::Event* event) {
 void RtcEventLogImpl::AddRecentEvent(const rtclog::Event& event) {
   recent_log_events_.push_back(event);
   while (recent_log_events_.front().timestamp_us() <
-         event.timestamp_us() - recent_log_duration_us) {
+         event.timestamp_us() - buffer_duration_us_) {
+    if (IsConfigEvent(recent_log_events_.front())) {
+      config_events_.push_back(recent_log_events_.front());
+    }
     recent_log_events_.pop_front();
   }
 }
@@ -404,4 +519,5 @@ bool RtcEventLog::ParseRtcEventLog(const std::string& file_name,
 rtc::scoped_ptr<RtcEventLog> RtcEventLog::Create() {
   return rtc::scoped_ptr<RtcEventLog>(new RtcEventLogImpl());
 }
+
 }  // namespace webrtc

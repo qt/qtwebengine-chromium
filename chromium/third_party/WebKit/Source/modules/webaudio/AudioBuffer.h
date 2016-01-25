@@ -35,13 +35,14 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/build_config.h"
 
 namespace blink {
 
 class AudioBus;
 class ExceptionState;
 
-class MODULES_EXPORT AudioBuffer : public GarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
+class MODULES_EXPORT AudioBuffer final : public GarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static AudioBuffer* create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);

@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webdatabase/Database.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -86,6 +85,13 @@
 
 namespace blink {
 
+// Defines static local variable after making sure that guid lock is held.
+// (We can't use DEFINE_STATIC_LOCAL for this because it asserts thread
+// safety, which is externally guaranteed by the guideMutex lock)
+#define DEFINE_STATIC_LOCAL_WITH_LOCK(type, name, arguments) \
+    ASSERT(guidMutex().locked()); \
+    static type& name = *new type arguments
+
 static const char versionKey[] = "WebKitDatabaseVersionKey";
 static const char infoTableName[] = "__WebKitDatabaseInfoTable__";
 
@@ -142,16 +148,14 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
 // FIXME: move all guid-related functions to a DatabaseVersionTracker class.
 static RecursiveMutex& guidMutex()
 {
-    AtomicallyInitializedStaticReference(RecursiveMutex, mutex, new RecursiveMutex);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(RecursiveMutex, mutex, new RecursiveMutex);
     return mutex;
 }
 
 typedef HashMap<DatabaseGuid, String> GuidVersionMap;
 static GuidVersionMap& guidToVersionMap()
 {
-    // Ensure the the mutex is locked.
-    ASSERT(guidMutex().locked());
-    DEFINE_STATIC_LOCAL_NOASSERT(GuidVersionMap, map, ());
+    DEFINE_STATIC_LOCAL_WITH_LOCK(GuidVersionMap, map, ());
     return map;
 }
 
@@ -172,13 +176,10 @@ static inline void updateGuidVersionMap(DatabaseGuid guid, String newVersion)
     guidToVersionMap().set(guid, newVersion.isEmpty() ? String() : newVersion.isolatedCopy());
 }
 
-typedef HashMap<DatabaseGuid, HashSet<Database*>*> GuidDatabaseMap;
-static GuidDatabaseMap& guidToDatabaseMap()
+static HashCountedSet<DatabaseGuid>& guidCount()
 {
-    // Ensure the the mutex is locked.
-    ASSERT(guidMutex().locked());
-    DEFINE_STATIC_LOCAL_NOASSERT(GuidDatabaseMap, map, ());
-    return map;
+    DEFINE_STATIC_LOCAL_WITH_LOCK(HashCountedSet<DatabaseGuid>, guidCount, ());
+    return guidCount;
 }
 
 static DatabaseGuid guidForOriginAndName(const String& origin, const String& name)
@@ -189,7 +190,7 @@ static DatabaseGuid guidForOriginAndName(const String& origin, const String& nam
     String stringID = origin + "/" + name;
 
     typedef HashMap<String, int> IDGuidMap;
-    DEFINE_STATIC_LOCAL_NOASSERT(IDGuidMap, stringIdentifierToGUIDMap, ());
+    DEFINE_STATIC_LOCAL_WITH_LOCK(IDGuidMap, stringIdentifierToGUIDMap, ());
     DatabaseGuid guid = stringIdentifierToGUIDMap.get(stringID);
     if (!guid) {
         static int currentNewGUID = 1;
@@ -222,13 +223,7 @@ Database::Database(DatabaseContext* databaseContext, const String& name, const S
     {
         SafePointAwareMutexLocker locker(guidMutex());
         m_guid = guidForOriginAndName(securityOrigin()->toString(), name);
-        HashSet<Database*>* hashSet = guidToDatabaseMap().get(m_guid);
-        if (!hashSet) {
-            hashSet = new HashSet<Database*>;
-            guidToDatabaseMap().set(m_guid, hashSet);
-        }
-
-        hashSet->add(this);
+        guidCount().add(m_guid);
     }
 
     m_filename = DatabaseManager::manager().fullPathForDatabase(securityOrigin(), m_name);
@@ -381,13 +376,8 @@ void Database::closeDatabase()
     {
         SafePointAwareMutexLocker locker(guidMutex());
 
-        HashSet<Database*>* hashSet = guidToDatabaseMap().get(m_guid);
-        ASSERT(hashSet);
-        ASSERT(hashSet->contains(this));
-        hashSet->remove(this);
-        if (hashSet->isEmpty()) {
-            guidToDatabaseMap().remove(m_guid);
-            delete hashSet;
+        ASSERT(guidCount().contains(m_guid));
+        if (guidCount().remove(m_guid)) {
             guidToVersionMap().remove(m_guid);
         }
     }
@@ -844,7 +834,7 @@ void Database::runTransaction(
         ASSERT(callback == originalErrorCallback);
         if (callback) {
             OwnPtr<SQLErrorData> error = SQLErrorData::create(SQLError::UNKNOWN_ERR, "database has been closed");
-            executionContext()->postTask(FROM_HERE, createSameThreadTask(&callTransactionErrorCallback, callback, error.release()));
+            executionContext()->postTask(BLINK_FROM_HERE, createSameThreadTask(&callTransactionErrorCallback, callback, error.release()));
         }
     }
 }
@@ -853,7 +843,7 @@ void Database::scheduleTransactionCallback(SQLTransaction* transaction)
 {
     // The task is constructed in a database thread, and destructed in the
     // context thread.
-    executionContext()->postTask(FROM_HERE, createCrossThreadTask(&SQLTransaction::performPendingCallback, transaction));
+    executionContext()->postTask(BLINK_FROM_HERE, createCrossThreadTask(&SQLTransaction::performPendingCallback, transaction));
 }
 
 Vector<String> Database::performGetTableNames()

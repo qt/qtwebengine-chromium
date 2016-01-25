@@ -13,9 +13,8 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/common_video/libyuv/include/scaler.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace webrtc {
 
@@ -114,8 +113,13 @@ TEST_F(TestScaler, ScaleSendingBufferTooSmall) {
   EXPECT_EQ(half_height_, test_frame2.height());
 }
 
-//TODO (mikhal): Converge the test into one function that accepts the method.
-TEST_F(TestScaler, DISABLED_ON_ANDROID(PointScaleTest)) {
+// TODO(mikhal): Converge the test into one function that accepts the method.
+#if defined(WEBRTC_ANDROID)
+#define MAYBE_PointScaleTest DISABLED_PointScaleTest
+#else
+#define MAYBE_PointScaleTest PointScaleTest
+#endif
+TEST_F(TestScaler, MAYBE_PointScaleTest) {
   double avg_psnr;
   FILE* source_file2;
   ScaleMethod method = kScalePoint;
@@ -182,7 +186,12 @@ TEST_F(TestScaler, DISABLED_ON_ANDROID(PointScaleTest)) {
   ASSERT_EQ(0, fclose(source_file2));
 }
 
-TEST_F(TestScaler, DISABLED_ON_ANDROID(BiLinearScaleTest)) {
+#if defined(WEBRTC_ANDROID)
+#define MAYBE_BilinearScaleTest DISABLED_BiLinearScaleTest
+#else
+#define MAYBE_BilinearScaleTest BiLinearScaleTest
+#endif
+TEST_F(TestScaler, MAYBE_BiLinearScaleTest) {
   double avg_psnr;
   FILE* source_file2;
   ScaleMethod method = kScaleBilinear;
@@ -234,7 +243,12 @@ TEST_F(TestScaler, DISABLED_ON_ANDROID(BiLinearScaleTest)) {
                 400, 300);
 }
 
-TEST_F(TestScaler, DISABLED_ON_ANDROID(BoxScaleTest)) {
+#if defined(WEBRTC_ANDROID)
+#define MAYBE_BoxScaleTest DISABLED_BoxScaleTest
+#else
+#define MAYBE_BoxScaleTest BoxScaleTest
+#endif
+TEST_F(TestScaler, MAYBE_BoxScaleTest) {
   double avg_psnr;
   FILE* source_file2;
   ScaleMethod method = kScaleBox;
@@ -322,7 +336,7 @@ double TestScaler::ComputeAvgSequencePSNR(FILE* input_file,
   return avg_psnr;
 }
 
-// TODO (mikhal): Move part to a separate scale test.
+// TODO(mikhal): Move part to a separate scale test.
 void TestScaler::ScaleSequence(ScaleMethod method,
                    FILE* source_file, std::string out_name,
                    int src_width, int src_height,

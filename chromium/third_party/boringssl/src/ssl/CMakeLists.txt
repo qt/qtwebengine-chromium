@@ -31,13 +31,14 @@ add_library(
   ssl_rsa.c
   ssl_session.c
   ssl_stat.c
-  ssl_txt.c
   t1_enc.c
   t1_lib.c
   tls_record.c
 
   $<TARGET_OBJECTS:pqueue>
 )
+
+target_link_libraries(ssl crypto)
 
 add_executable(
   ssl_test
@@ -48,3 +49,4 @@ add_executable(
 )
 
 target_link_libraries(ssl_test ssl crypto)
+add_dependencies(all_tests ssl_test)

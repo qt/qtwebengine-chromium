@@ -4,9 +4,6 @@
 # found in the LICENSE file.
 #
 {
-  'includes': [
-    'apptype_console.gypi',
-  ],
   'targets': [
     {
       'target_name': 'SampleApp',
@@ -20,9 +17,9 @@
         '../src/lazy',
         '../gm',       # needed to pull gm.h
         '../samplecode', # To pull SampleApp.h and SampleCode.h
-        '../src/pipe/utils', # For TiledPipeController
         '../src/utils/debugger',
         '../tools',
+        '../experimental',
       ],
       'includes': [
         'gmslides.gypi',
@@ -34,11 +31,13 @@
         '../samplecode/ClockFaceView.cpp',
         '../samplecode/OverView.cpp',
         '../samplecode/OverView.h',
+        '../samplecode/PerlinPatch.cpp',
         '../samplecode/Sample2PtRadial.cpp',
         '../samplecode/SampleAAClip.cpp',
         '../samplecode/SampleAARects.cpp',
         '../samplecode/SampleAARectModes.cpp',
         '../samplecode/SampleAll.cpp',
+        '../samplecode/SampleAnimatedText.cpp',
         '../samplecode/SampleAnimator.cpp',
         '../samplecode/SampleAnimBlur.cpp',
         '../samplecode/SampleApp.cpp',
@@ -58,7 +57,6 @@
         '../samplecode/SampleColorFilter.cpp',
         '../samplecode/SampleComplexClip.cpp',
         '../samplecode/SampleConcavePaths.cpp',
-        '../samplecode/SampleCull.cpp',
         '../samplecode/SampleDegenerateTwoPtRadials.cpp',
         '../samplecode/SampleDither.cpp',
         '../samplecode/SampleDitherBitmap.cpp',
@@ -101,6 +99,7 @@
         '../samplecode/SampleRepeatTile.cpp',
         '../samplecode/SampleShaders.cpp',
         '../samplecode/SampleShaderText.cpp',
+        '../samplecode/SampleShip.cpp',
         '../samplecode/SampleSkLayer.cpp',
         '../samplecode/SampleSlides.cpp',
         '../samplecode/SampleStringArt.cpp',
@@ -131,9 +130,9 @@
         #'../experimental/Networking/SkSockets.cpp',
         #'../experimental/Networking/SkSockets.h',
 
-        # TiledPipeController
-        '../src/pipe/utils/SamplePipeControllers.h',
-        '../src/pipe/utils/SamplePipeControllers.cpp',
+        # PerlinNoise2
+        '../experimental/SkPerlinNoiseShader2/SkPerlinNoiseShader2.cpp',
+        '../experimental/SkPerlinNoiseShader2/SkPerlinNoiseShader2.h',
 
         # Lua
         '../src/utils/SkLuaCanvas.cpp',
@@ -158,13 +157,20 @@
         'views_animated.gyp:views_animated',
         'xml.gyp:xml',
       ],
+      'msvs_settings': {
+        'VCLinkerTool': {
+          #Allows for creation / output to console.
+          #Console (/SUBSYSTEM:CONSOLE)
+          'SubSystem': '1',
+
+          #Console app, use main/wmain
+          'EntryPointSymbol': 'mainCRTStartup',
+        },
+      },
       'conditions' : [
         [ 'skia_os == "ios"', {
+          'mac_bundle' : 1,
           # TODO: This doesn't build properly yet, but it's getting there.
-          'sources!': [
-            '../samplecode/SampleDecode.cpp',
-            '../experimental/SimpleiOSApp/SimpleApp.mm',
-          ],
           'sources': [
             '../src/views/mac/SkEventNotifier.mm',
             '../experimental/iOSSampleApp/SkSampleUIView.mm',
@@ -182,12 +188,10 @@
             # iPad
             '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.mm',
             '../experimental/iOSSampleApp/iPad/SkUISplitViewController.mm',
-            '../experimental/iOSSampleApp/iPad/MainWindow_iPad.xib',
 
             # iPhone
             '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.mm',
             '../experimental/iOSSampleApp/iPhone/SkUINavigationController.mm',
-            '../experimental/iOSSampleApp/iPhone/MainWindow_iPhone.xib',
 
             '../src/views/ios/SkOSWindow_iOS.mm',
 
@@ -229,17 +233,29 @@
           'sources!': [
             '../samplecode/SampleAnimator.cpp',
           ],
+          'conditions': [
+            ['skia_android_framework == 0', {
+              'dependencies': [
+                'android_deps.gyp:Android_EntryPoint',
+                'skia_launcher.gyp:skia_launcher',
+              ],
+            }],
+          ],
           'dependencies!': [
             'animator.gyp:animator',
             'experimental.gyp:experimental',
           ],
           'dependencies': [
+            'android_output.gyp:android_output',
             'android_deps.gyp:Android_SampleApp',
           ],
         }],
         [ 'skia_os == "chromeos"', {
           'sources!': [
             '../samplecode/SampleLighting.cpp',  #doesn't compile due to gpu dependencies
+          ],
+          'include_dirs' : [
+            '../include/gpu',
           ],
         }],
         [ 'skia_gpu == 1', {

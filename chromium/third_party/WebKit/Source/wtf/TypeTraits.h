@@ -22,75 +22,22 @@
 #ifndef TypeTraits_h
 #define TypeTraits_h
 
+#include <cstddef>
+#include <type_traits>
 #include <utility>
+
+#include "wtf/Compiler.h"
 
 namespace WTF {
 
-// The following are provided in this file:
-//
-//   IsInteger<T>::value
-//   IsPod<T>::value
-//   IsConvertibleToInteger<T>::value
-//
-//   IsArray<T>::value
-//
-//   IsSameType<T, U>::value
-//
-//   RemovePointer<T>::Type
-//   RemoveReference<T>::Type
-//   RemoveConst<T>::Type
-//   RemoveVolatile<T>::Type
-//   RemoveConstVolatile<T>::Type
-//   RemoveExtent<T>::Type
-//
-//   static_assert's in TypeTraits.cpp illustrate their usage and what they do.
+// Returns a string that contains the type name of |T| as a substring.
+template<typename T>
+inline const char* getStringWithTypeName()
+{
+    return WTF_PRETTY_FUNCTION;
+}
 
-template <bool Predicate, class T = void> struct EnableIf;
-template <class T> struct EnableIf<true, T> { typedef T Type; };
-
-template <typename T> struct IsInteger           { static const bool value = false; };
-template <> struct IsInteger<bool>               { static const bool value = true; };
-template <> struct IsInteger<char>               { static const bool value = true; };
-template <> struct IsInteger<signed char>        { static const bool value = true; };
-template <> struct IsInteger<unsigned char>      { static const bool value = true; };
-template <> struct IsInteger<short>              { static const bool value = true; };
-template <> struct IsInteger<unsigned short>     { static const bool value = true; };
-template <> struct IsInteger<int>                { static const bool value = true; };
-template <> struct IsInteger<unsigned>           { static const bool value = true; };
-template <> struct IsInteger<long>               { static const bool value = true; };
-template <> struct IsInteger<unsigned long>      { static const bool value = true; };
-template <> struct IsInteger<long long>          { static const bool value = true; };
-template <> struct IsInteger<unsigned long long> { static const bool value = true; };
-#if !COMPILER(MSVC) || defined(_NATIVE_WCHAR_T_DEFINED)
-template <> struct IsInteger<wchar_t>            { static const bool value = true; };
-#endif
-
-template <typename T> struct IsFloatingPoint     { static const bool value = false; };
-template <> struct IsFloatingPoint<float>        { static const bool value = true; };
-template <> struct IsFloatingPoint<double>       { static const bool value = true; };
-template <> struct IsFloatingPoint<long double>  { static const bool value = true; };
-
-template <typename T> struct IsArithmetic        { static const bool value = IsInteger<T>::value || IsFloatingPoint<T>::value; };
-
-template <typename T> struct IsPointer {
-    static const bool value = false;
-};
-
-template <typename P> struct IsPointer<const P*> {
-    static const bool value = true;
-};
-
-template <typename P> struct IsPointer<P*> {
-    static const bool value = true;
-};
-
-template <typename T> struct IsEnum {
-    static const bool value = __is_enum(T);
-};
-
-template <typename T> struct IsScalar {
-    static const bool value = IsEnum<T>::value || IsArithmetic<T>::value || IsPointer<T>::value;
-};
+template<typename T> class RawPtr;
 
 template <typename T> struct IsWeak {
     static const bool value = false;
@@ -99,10 +46,6 @@ template <typename T> struct IsWeak {
 enum WeakHandlingFlag {
     NoWeakHandlingInCollections,
     WeakHandlingInCollections
-};
-
-template <typename T> struct IsPod {
-    static const bool value = __is_pod(T);
 };
 
 template <typename T> struct IsTriviallyCopyAssignable {
@@ -119,66 +62,6 @@ template <typename T> struct IsTriviallyDefaultConstructible {
 
 template <typename T> struct IsTriviallyDestructible {
     static const bool value = __has_trivial_destructor(T);
-};
-
-template <typename T> class IsConvertibleToInteger {
-    // Avoid "possible loss of data" warning when using Microsoft's C++ compiler
-    // by not converting int's to doubles.
-    template <bool performCheck, typename U> class IsConvertibleToDouble;
-    template <typename U> class IsConvertibleToDouble<false, U> {
-    public:
-        static const bool value = false;
-    };
-
-    template <typename U> class IsConvertibleToDouble<true, U> {
-        typedef char YesType;
-        struct NoType {
-            char padding[8];
-        };
-
-        static YesType floatCheck(long double);
-        static NoType floatCheck(...);
-        static T& t;
-    public:
-        static const bool value = sizeof(floatCheck(t)) == sizeof(YesType);
-    };
-
-public:
-    static const bool value = IsInteger<T>::value || IsConvertibleToDouble<!IsInteger<T>::value, T>::value;
-};
-
-template <typename From, typename To> class IsPointerConvertible {
-    typedef char YesType;
-    struct NoType {
-        char padding[8];
-    };
-
-    static YesType convertCheck(To* x);
-    static NoType convertCheck(...);
-public:
-    enum {
-        Value = (sizeof(YesType) == sizeof(convertCheck(static_cast<From*>(0))))
-    };
-};
-
-template <class T> struct IsArray {
-    static const bool value = false;
-};
-
-template <class T> struct IsArray<T[]> {
-    static const bool value = true;
-};
-
-template <class T, size_t N> struct IsArray<T[N]> {
-    static const bool value = true;
-};
-
-template <typename T, typename U> struct IsSameType {
-    static const bool value = false;
-};
-
-template <typename T> struct IsSameType<T, T> {
-    static const bool value = true;
 };
 
 template <typename T, typename U> class IsSubclass {
@@ -245,67 +128,35 @@ struct RemoveTemplate<OuterTemplate<T>, OuterTemplate> {
     typedef T Type;
 };
 
-template <typename T> struct RemoveConst {
-    typedef T Type;
+#if (COMPILER(MSVC) || !GCC_VERSION_AT_LEAST(4, 9, 0)) && !COMPILER(CLANG)
+// FIXME: MSVC bug workaround. Remove once MSVC STL is fixed.
+// FIXME: GCC before 4.9.0 seems to have the same issue.
+// C++ 2011 Spec (ISO/IEC 14882:2011(E)) 20.9.6.2 Table 51 states that
+// the template parameters shall be a complete type if they are different types.
+// However, MSVC checks for type completeness even if they are the same type.
+// Here, we use a template specialization for same type case to allow incomplete
+// types.
+
+template <typename T, typename U> class IsBaseOf {
+public:
+    static const bool value = std::is_base_of<T, U>::value;
 };
 
-template <typename T> struct RemoveConst<const T> {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveVolatile {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveVolatile<volatile T> {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveConstVolatile {
-    typedef typename RemoveVolatile<typename RemoveConst<T>::Type>::Type Type;
-};
-
-template <typename T> struct RemovePointer {
-    typedef T Type;
-};
-
-template <typename T> struct RemovePointer<T*> {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveReference {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveReference<T&> {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveReference<T&&> {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveExtent {
-    typedef T Type;
-};
-
-template <typename T> struct RemoveExtent<T[]> {
-    typedef T Type;
-};
-
-template <typename T, size_t N> struct RemoveExtent<T[N]> {
-    typedef T Type;
-};
-
-// Determines whether this type has a vtable.
-template <typename T> struct IsPolymorphic {
-    static const bool value = __is_polymorphic(T);
+template <typename T> class IsBaseOf<T, T> {
+public:
+    static const bool value = true;
 };
 
 #define EnsurePtrConvertibleArgDecl(From, To) \
-    typename WTF::EnableIf<WTF::IsPointerConvertible<From, To>::Value, bool>::Type = true
+    typename std::enable_if<WTF::IsBaseOf<To, From>::value>::type* = nullptr
 #define EnsurePtrConvertibleArgDefn(From, To) \
-    typename WTF::EnableIf<WTF::IsPointerConvertible<From, To>::Value, bool>::Type
+    typename std::enable_if<WTF::IsBaseOf<To, From>::value>::type*
+#else
+#define EnsurePtrConvertibleArgDecl(From, To) \
+    typename std::enable_if<std::is_base_of<To, From>::value>::type* = nullptr
+#define EnsurePtrConvertibleArgDefn(From, To) \
+    typename std::enable_if<std::is_base_of<To, From>::value>::type*
+#endif
 
 } // namespace WTF
 
@@ -325,7 +176,7 @@ class NeedsTracing {
     } NoType;
 
     // Note that this also checks if a superclass of V has a trace method.
-    template <typename V> static YesType checkHasTraceMethod(V* v, blink::Visitor* p = nullptr, typename EnableIf<IsSameType<decltype(v->trace(p)), void>::value>::Type* g = nullptr);
+    template <typename V> static YesType checkHasTraceMethod(V* v, blink::Visitor* p = nullptr, typename std::enable_if<std::is_same<decltype(v->trace(p)), void>::value>::type* g = nullptr);
     template <typename V> static NoType checkHasTraceMethod(...);
 public:
     // We add sizeof(T) to both sides here, because we want it to fail for
@@ -337,7 +188,7 @@ public:
 // Convenience template wrapping the NeedsTracingLazily template in
 // Collection Traits. It helps make the code more readable.
 template <typename Traits>
-class ShouldBeTraced {
+class NeedsTracingTrait {
 public:
     static const bool value = Traits::template NeedsTracingLazily<>::value;
 };
@@ -347,20 +198,62 @@ struct NeedsTracing<std::pair<T, U>> {
     static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
 };
 
-// This is used to check that ALLOW_ONLY_INLINE_ALLOCATION objects are not
+// This is used to check that DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects are not
 // stored in off-heap Vectors, HashTables etc.
 template <typename T>
-struct IsAllowOnlyInlineAllocation {
+struct AllowsOnlyPlacementNew {
 private:
     using YesType = char;
     struct NoType {
         char padding[8];
     };
 
-    template <typename U> static YesType checkMarker(typename U::IsAllowOnlyInlineAllocation*);
+    template <typename U> static YesType checkMarker(typename U::IsAllowOnlyPlacementNew*);
     template <typename U> static NoType checkMarker(...);
 public:
     static const bool value = sizeof(checkMarker<T>(nullptr)) == sizeof(YesType);
+};
+
+template<typename T>
+class IsGarbageCollectedType {
+    typedef char YesType;
+    typedef struct NoType {
+        char padding[8];
+    } NoType;
+
+    template <typename U> static YesType checkGarbageCollectedType(typename U::IsGarbageCollectedTypeMarker*);
+    template <typename U> static NoType checkGarbageCollectedType(...);
+public:
+    static const bool value = (sizeof(YesType) == sizeof(checkGarbageCollectedType<T>(nullptr)));
+};
+
+template<typename T>
+class IsPersistentReferenceType {
+    typedef char YesType;
+    typedef struct NoType {
+        char padding[8];
+    } NoType;
+
+    template <typename U> static YesType checkPersistentReferenceType(typename U::IsPersistentReferenceTypeMarker*);
+    template <typename U> static NoType checkPersistentReferenceType(...);
+public:
+    static const bool value = (sizeof(YesType) == sizeof(checkPersistentReferenceType<T>(nullptr)));
+};
+
+template<typename T>
+class IsPointerToGarbageCollectedType {
+public:
+    static const bool value = false;
+};
+template<typename T>
+class IsPointerToGarbageCollectedType<T*> {
+public:
+    static const bool value = IsGarbageCollectedType<T>::value;
+};
+template<typename T>
+class IsPointerToGarbageCollectedType<RawPtr<T>> {
+public:
+    static const bool value = IsGarbageCollectedType<T>::value;
 };
 
 } // namespace WTF

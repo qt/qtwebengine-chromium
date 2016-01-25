@@ -154,7 +154,7 @@ to any Mojo service.
 For illustrative purposes only, we can create a message pipe and bind an
 `InterfacePtr` to one end as follows:
 
-```
+```cpp
   mojo::MessagePipe pipe;
   mojo::InterfacePtr<frob::Frobinator> frobinator;
   frobinator.Bind(
@@ -184,7 +184,7 @@ see later, a first-class concept in Mojom interface definitions.
 As with `InterfacePtr<T>`, we can manually bind an `InterfaceRequest<T>` to a
 pipe endpoint:
 
-```
+```cpp
 mojo::MessagePipe pipe;
 
 mojo::InterfacePtr<frob::Frobinator> frobinator;
@@ -208,7 +208,7 @@ Defined in
 `mojo::GetProxy<T>` is the function you will most commonly use to create a new
 message pipe. Its signature is as follows:
 
-```
+```cpp
 template <typename T>
 mojo::InterfaceRequest<T> GetProxy(mojo::InterfacePtr<T>* ptr);
 ```
@@ -218,7 +218,7 @@ This function creates a new message pipe, binds one end to the given
 which it then returns. Equivalent to the sample code just above is the following
 snippet:
 
-```
+```cpp
   mojo::InterfacePtr<frob::Frobinator> frobinator;
   mojo::InterfaceRequest<frob::Frobinator> frobinator_request =
       mojo::GetProxy(&frobinator);
@@ -237,7 +237,7 @@ taken from a passed `InterfaceRequest<T>`.
 
 A common usage pattern looks something like this:
 
-```
+```cpp
 #include "components/frob/public/interfaces/frobinator.mojom.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
@@ -258,7 +258,7 @@ class FrobinatorImpl : public frob::Frobinator {
 
 And then we could write some code to test this:
 
-```
+```cpp
 // Fun fact: The bindings generator emits a type alias like this for every
 // interface type. frob::FrobinatorPtr is an InterfacePtr<frob::Frobinator>.
 frob::FrobinatorPtr frobinator;
@@ -336,7 +336,7 @@ interface ServiceProvider {
 ```
 
 Definitions for these interfaces can be found in
-`/mojo/application/public/interfaces`. Also note that `mojo::URLRequest` is a
+`/mojo/shell/public/interfaces`. Also note that `mojo::URLRequest` is a
 Mojo struct defined in
 `/mojo/services/network/public/interfaces/url_loader.mojom`.
 
@@ -383,7 +383,7 @@ interface Application {
 Of course, in Chromium and Mandoline environments this interface is obscured
 from application code and applications should generally just implement
 `mojo::ApplicationDelegate` (defined in
-`/mojo/application/public/cpp/application_delegate.h`.) We'll see a concrete
+`/mojo/shell/public/cpp/application_delegate.h`.) We'll see a concrete
 example of this in the next section,
 [Your First Mojo Application](#Your-First-Mojo-Application).
 
@@ -425,7 +425,8 @@ First create a new `//components/hello` directory. Inside this directory we're
 going to add the following files:
 
 **components/hello/main.cc**
-```
+
+```cpp
 #include "base/logging.h"
 #include "third_party/mojo/src/mojo/public/c/system/main.h"
 
@@ -436,6 +437,7 @@ MojoResult MojoMain(MojoHandle shell_handle) {
 ```
 
 **components/hello/BUILD.gn**
+
 ```
 import("//mojo/public/mojo_application.gni")
 
@@ -484,9 +486,10 @@ least one service to connecting applications.
 Let's update `main.cc` with the following contents:
 
 **components/hello/main.cc**
-```
+
+```cpp
 #include "components/hello/hello_app.h"
-#include "mojo/application/public/cpp/application_runner.h"
+#include "mojo/shell/public/cpp/application_runner.h"
 #include "third_party/mojo/src/mojo/public/c/system/main.h"
 
 MojoResult MojoMain(MojoHandle shell_handle) {
@@ -501,6 +504,7 @@ want -- a `mojo::ApplicationRunner` constructed over a
 the shell. We'll add some new files to the app as well:
 
 **components/hello/public/interfaces/greeter.mojom**
+
 ```
 module hello;
 interface Greeter {
@@ -512,6 +516,7 @@ Note the new arrow syntax on the `Greet` method. This indicates that the caller
 expects a response from the service.
 
 **components/hello/public/interfaces/BUILD.gn**
+
 ```
 import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
@@ -523,14 +528,15 @@ mojom("interfaces") {
 ```
 
 **components/hello/hello_app.h**
-```
+
+```cpp
 #ifndef COMPONENTS_HELLO_HELLO_APP_H_
 #define COMPONENTS_HELLO_HELLO_APP_H_
 
 #include "base/macros.h"
 #include "components/hello/public/interfaces/greeter.mojom.h"
-#include "mojo/application/public/cpp/application_delegate.h"
-#include "mojo/application/public/cpp/interface_factory.h"
+#include "mojo/shell/public/cpp/application_delegate.h"
+#include "mojo/shell/public/cpp/interface_factory.h"
 
 namespace hello {
 
@@ -559,10 +565,11 @@ class HelloApp : public mojo::ApplicationDelegate,
 
 
 **components/hello/hello_app.cc**
-```
+
+```cpp
 #include "base/macros.h"
 #include "components/hello/hello_app.h"
-#include "mojo/application/public/cpp/application_connection.h"
+#include "mojo/shell/public/cpp/application_connection.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/strong_binding.h"
 
@@ -616,6 +623,7 @@ And finally we need to update our app's `BUILD.gn` to add some new sources and
 dependencies:
 
 **components/hello/BUILD.gn**
+
 ```
 import("//mojo/public/mojo_application.gni")
 
@@ -627,8 +635,8 @@ source_set("lib") {
   deps = [
     "//base",
     "//components/hello/public/interfaces",
-    "//mojo/application/public/cpp",
     "//mojo/environment:chromium",
+    "//mojo/shell/public/cpp",
   ]
 }
 
@@ -664,15 +672,16 @@ which can connect to one or more applications-under-test.
 First let's introduce some test code:
 
 **components/hello/hello_apptest.cc**
-```
+
+```cpp
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "components/hello/public/interfaces/greeter.mojom.h"
-#include "mojo/application/public/cpp/application_impl.h"
-#include "mojo/application/public/cpp/application_test_base.h"
+#include "mojo/shell/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/application_test_base.h"
 
 namespace hello {
 namespace {
@@ -726,7 +735,7 @@ mojo_native_application("apptests") {
   ]
   deps = [
     "//base",
-    "//mojo/application/public/cpp:test_support",
+    "//mojo/shell/public/cpp:test_support",
   ]
   public_deps = [
     "//components/hello/public/interfaces",
@@ -775,12 +784,12 @@ This is exploited by the definition of
 `mojo::ApplicationConnection::ConnectToService<T>`, which uses `T::Name_` as the
 name of the service to connect to. The type `T` in this context is inferred from
 the `InterfacePtr<T>*` argument. You can inspect the definition of
-`ConnectToService` in `/mojo/application/public/cpp/application_connection.h`
+`ConnectToService` in `/mojo/shell/public/cpp/application_connection.h`
 for additional clarity.
 
 We could have instead written this code as:
 
-```
+```cpp
 mojo::URLRequestPtr app_url = mojo::URLRequest::New();
 app_url->url = "mojo::hello";
 
@@ -835,15 +844,19 @@ Let's modify `ChromeContentBrowserClient::RegisterInProcessMojoApplications`
 (in `//chrome/browser/chrome_content_browser_client.cc`) by adding the following
 code:
 
-    apps->insert(std::make_pair(GURL("mojo:hello"),
-                                base::Bind(&HelloApp::CreateApp)));
+```cpp
+apps->insert(std::make_pair(GURL("mojo:hello"),
+                            base::Bind(&HelloApp::CreateApp)));
+```
 
 you'll also want to add the following convenience method to your `HelloApp`
 definition in `//components/hello/hello_app.h`:
 
-    static scoped_ptr<mojo::ApplicationDelegate> HelloApp::CreateApp() {
-      return scoped_ptr<mojo::ApplicationDelegate>(new HelloApp);
-    }
+```cpp
+static scoped_ptr<mojo::ApplicationDelegate> HelloApp::CreateApp() {
+  return scoped_ptr<mojo::ApplicationDelegate>(new HelloApp);
+}
+```
 
 This introduces a dependency from `//chrome/browser` on to
 `//components/hello:lib`, which you can add to the `"browser"` target's deps in
@@ -862,7 +875,7 @@ shell proxy, but the vast majority of Chromium code doesn't yet belong to a Mojo
 application. So how do we use an app's services from arbitrary browser code? We
 use `content::MojoAppConnection`, like this:
 
-```
+```cpp
 #include "base/bind.h"
 #include "base/logging.h"
 #include "components/hello/public/interfaces/greeter.mojom.h"
@@ -930,7 +943,7 @@ We can also connect to Mojo apps from a `RenderFrame`. This is made possible by
 `RenderFrame`'s `GetServiceRegistry()` interface. The `ServiceRegistry` can be
 used to acquire a shell proxy and in turn connect to an app like so:
 
-```
+```cpp
 void GreetWorld(content::RenderFrame* frame) {
   mojo::ShellPtr shell;
   frame->GetServiceRegistry()->ConnectToRemoteService(

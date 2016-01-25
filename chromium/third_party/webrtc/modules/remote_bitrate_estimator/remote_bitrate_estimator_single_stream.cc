@@ -10,16 +10,18 @@
 
 #include "webrtc/modules/remote_bitrate_estimator/remote_bitrate_estimator_single_stream.h"
 
+#include <utility>
+
 #include "webrtc/base/constructormagic.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
+#include "webrtc/modules/remote_bitrate_estimator/aimd_rate_control.h"
 #include "webrtc/modules/remote_bitrate_estimator/inter_arrival.h"
 #include "webrtc/modules/remote_bitrate_estimator/overuse_detector.h"
 #include "webrtc/modules/remote_bitrate_estimator/overuse_estimator.h"
-#include "webrtc/modules/remote_bitrate_estimator/aimd_rate_control.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -28,19 +30,20 @@ enum { kTimestampGroupLengthMs = 5 };
 static const double kTimestampToMs = 1.0 / 90.0;
 
 struct RemoteBitrateEstimatorSingleStream::Detector {
-    explicit Detector(int64_t last_packet_time_ms,
-                      const OverUseDetectorOptions& options,
-                      bool enable_burst_grouping)
-        : last_packet_time_ms(last_packet_time_ms),
-          inter_arrival(90 * kTimestampGroupLengthMs, kTimestampToMs,
-                        enable_burst_grouping),
-          estimator(options),
-          detector(options) {}
-    int64_t last_packet_time_ms;
-    InterArrival inter_arrival;
-    OveruseEstimator estimator;
-    OveruseDetector detector;
-  };
+  explicit Detector(int64_t last_packet_time_ms,
+                    const OverUseDetectorOptions& options,
+                    bool enable_burst_grouping)
+      : last_packet_time_ms(last_packet_time_ms),
+        inter_arrival(90 * kTimestampGroupLengthMs,
+                      kTimestampToMs,
+                      enable_burst_grouping),
+        estimator(options),
+        detector(options) {}
+  int64_t last_packet_time_ms;
+  InterArrival inter_arrival;
+  OveruseEstimator estimator;
+  OveruseDetector detector;
+};
 
   RemoteBitrateEstimatorSingleStream::RemoteBitrateEstimatorSingleStream(
       RemoteBitrateObserver* observer,

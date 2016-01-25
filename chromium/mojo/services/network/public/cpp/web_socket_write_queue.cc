@@ -4,6 +4,8 @@
 
 #include "network/public/cpp/web_socket_write_queue.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
 
@@ -20,10 +22,8 @@ struct WebSocketWriteQueue::Operation {
 };
 
 WebSocketWriteQueue::WebSocketWriteQueue(DataPipeProducerHandle handle)
-    : handle_(handle),
-      handle_watcher_(8),
-      is_busy_(false),
-      weak_factory_(this) {}
+    : handle_(handle), is_busy_(false), weak_factory_(this) {
+}
 
 WebSocketWriteQueue::~WebSocketWriteQueue() {
 }

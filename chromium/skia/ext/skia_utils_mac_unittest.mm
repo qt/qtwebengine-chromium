@@ -6,6 +6,7 @@
 
 #import <AppKit/AppKit.h>
 
+#include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -154,7 +155,7 @@ void SkiaUtilsMacTest::RunBitLockerTest(BitLockerTest test) {
     canvas.clipRect(clipRect);
   }
   {
-    gfx::SkiaBitLocker bitLocker(&canvas);
+    skia::SkiaBitLocker bitLocker(&canvas);
     CGContextRef cgContext = bitLocker.cgContext();
     CGColorRef testColor = CGColorGetConstantColor(kCGColorWhite);
     CGContextSetFillColorWithColor(cgContext, testColor);
@@ -182,14 +183,16 @@ void SkiaUtilsMacTest::ShapeHelper(int width, int height,
   SkBitmap thing(CreateSkBitmap(width, height, isred, tfbit));
 
   // Confirm size
-  NSImage* image = gfx::SkBitmapToNSImage(thing);
+  NSImage* image = skia::SkBitmapToNSImage(thing);
   EXPECT_DOUBLE_EQ([image size].width, (double)width);
   EXPECT_DOUBLE_EQ([image size].height, (double)height);
 
   EXPECT_TRUE([[image representations] count] == 1);
   EXPECT_TRUE([[[image representations] lastObject]
       isKindOfClass:[NSBitmapImageRep class]]);
-  TestImageRep([[image representations] lastObject], isred);
+  TestImageRep(base::mac::ObjCCastStrict<NSBitmapImageRep>(
+                   [[image representations] lastObject]),
+               isred);
 }
 
 TEST_F(SkiaUtilsMacTest, BitmapToNSImage_RedSquare64x64) {
@@ -209,7 +212,7 @@ TEST_F(SkiaUtilsMacTest, BitmapToNSBitmapImageRep_BlueRectangle20x30) {
   int height = 30;
 
   SkBitmap bitmap(CreateSkBitmap(width, height, false, true));
-  NSBitmapImageRep* imageRep = gfx::SkBitmapToNSBitmapImageRep(bitmap);
+  NSBitmapImageRep* imageRep = skia::SkBitmapToNSBitmapImageRep(bitmap);
 
   EXPECT_DOUBLE_EQ(width, [imageRep size].width);
   EXPECT_DOUBLE_EQ(height, [imageRep size].height);
@@ -222,9 +225,10 @@ TEST_F(SkiaUtilsMacTest, NSImageRepToSkBitmap) {
 
   NSImage* image = CreateNSImage(width, height);
   EXPECT_EQ(1u, [[image representations] count]);
-  NSBitmapImageRep* imageRep = [[image representations] lastObject];
+  NSBitmapImageRep* imageRep = base::mac::ObjCCastStrict<NSBitmapImageRep>(
+      [[image representations] lastObject]);
   NSColorSpace* colorSpace = [NSColorSpace genericRGBColorSpace];
-  SkBitmap bitmap(gfx::NSImageRepToSkBitmapWithColorSpace(
+  SkBitmap bitmap(skia::NSImageRepToSkBitmapWithColorSpace(
       imageRep, [image size], false, [colorSpace CGColorSpace]));
   TestSkBitmap(bitmap);
 }

@@ -15,9 +15,9 @@
 #include <set>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 #ifdef _WIN32
 // Disable warning C4355: 'this' : used in base member initializer list.
@@ -93,7 +93,7 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
       nack_last_time_sent_full_(0),
       nack_last_time_sent_full_prev_(0),
       nack_last_seq_number_sent_(0),
-      key_frame_req_method_(kKeyFrameReqFirRtp),
+      key_frame_req_method_(kKeyFrameReqPliRtcp),
       remote_bitrate_(configuration.remote_bitrate_estimator),
       rtt_stats_(configuration.rtt_stats),
       critical_section_rtt_(CriticalSectionWrapper::CreateCriticalSection()),
@@ -183,8 +183,13 @@ int32_t ModuleRtpRtcpImpl::Process() {
       set_rtt_ms(rtt_stats_->LastProcessedRtt());
   }
 
-  if (rtcp_sender_.TimeToSendRTCPReport())
-    rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpReport);
+  // For sending streams, make sure to not send a SR before media has been sent.
+  if (rtcp_sender_.TimeToSendRTCPReport()) {
+    RTCPSender::FeedbackState state = GetFeedbackState();
+    // Prevent sending streams to send SR before any media has been sent.
+    if (!rtcp_sender_.Sending() || state.packets_sent > 0)
+      rtcp_sender_.SendRTCP(state, kRtcpReport);
+  }
 
   if (UpdateRTCPReceiveInformationTimers()) {
     // A receiver has timed out
@@ -402,6 +407,7 @@ int32_t ModuleRtpRtcpImpl::SendOutgoingData(
     const RTPFragmentationHeader* fragmentation,
     const RTPVideoHeader* rtp_video_hdr) {
   rtcp_sender_.SetLastRtpTime(time_stamp, capture_time_ms);
+  // Make sure an RTCP report isn't queued behind a key frame.
   if (rtcp_sender_.TimeToSendRTCPReport(kVideoFrameKey == frame_type)) {
       rtcp_sender_.SendRTCP(GetFeedbackState(), kRtcpReport);
   }
@@ -794,9 +800,8 @@ int32_t ModuleRtpRtcpImpl::SetSendREDPayloadType(
 }
 
 // Get payload type for Redundant Audio Data RFC 2198.
-int32_t ModuleRtpRtcpImpl::SendREDPayloadType(
-    int8_t& payload_type) const {
-  return rtp_sender_.RED(&payload_type);
+int32_t ModuleRtpRtcpImpl::SendREDPayloadType(int8_t* payload_type) const {
+  return rtp_sender_.RED(payload_type);
 }
 
 void ModuleRtpRtcpImpl::SetTargetSendBitrate(uint32_t bitrate_bps) {
@@ -811,8 +816,6 @@ int32_t ModuleRtpRtcpImpl::SetKeyFrameRequestMethod(
 
 int32_t ModuleRtpRtcpImpl::RequestKeyFrame() {
   switch (key_frame_req_method_) {
-    case kKeyFrameReqFirRtp:
-      return rtp_sender_.SendRTPIntraRequest();
     case kKeyFrameReqPliRtcp:
       return SendRTCP(kRtcpPli);
     case kKeyFrameReqFirRtcp:
@@ -834,11 +837,10 @@ void ModuleRtpRtcpImpl::SetGenericFECStatus(
   rtp_sender_.SetGenericFECStatus(enable, payload_type_red, payload_type_fec);
 }
 
-void ModuleRtpRtcpImpl::GenericFECStatus(bool& enable,
-                                         uint8_t& payload_type_red,
-                                         uint8_t& payload_type_fec) {
-  rtp_sender_.GenericFECStatus(&enable, &payload_type_red,
-                                      &payload_type_fec);
+void ModuleRtpRtcpImpl::GenericFECStatus(bool* enable,
+                                         uint8_t* payload_type_red,
+                                         uint8_t* payload_type_fec) {
+  rtp_sender_.GenericFECStatus(enable, payload_type_red, payload_type_fec);
 }
 
 int32_t ModuleRtpRtcpImpl::SetFecParameters(
@@ -954,8 +956,8 @@ bool ModuleRtpRtcpImpl::UpdateRTCPReceiveInformationTimers() {
 }
 
 // Called from RTCPsender.
-int32_t ModuleRtpRtcpImpl::BoundingSet(bool& tmmbr_owner,
-                                       TMMBRSet*& bounding_set) {
+int32_t ModuleRtpRtcpImpl::BoundingSet(bool* tmmbr_owner,
+                                       TMMBRSet* bounding_set) {
   return rtcp_receiver_.BoundingSet(tmmbr_owner, bounding_set);
 }
 

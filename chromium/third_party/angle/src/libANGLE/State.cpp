@@ -10,6 +10,7 @@
 
 #include "libANGLE/Context.h"
 #include "libANGLE/Caps.h"
+#include "libANGLE/Debug.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Query.h"
@@ -20,17 +21,42 @@ namespace gl
 {
 
 State::State()
+    : mMaxDrawBuffers(0),
+      mMaxCombinedTextureImageUnits(0),
+      mDepthClearValue(0),
+      mStencilClearValue(0),
+      mScissorTest(false),
+      mSampleCoverage(false),
+      mSampleCoverageValue(0),
+      mSampleCoverageInvert(false),
+      mStencilRef(0),
+      mStencilBackRef(0),
+      mLineWidth(0),
+      mGenerateMipmapHint(GL_NONE),
+      mFragmentShaderDerivativeHint(GL_NONE),
+      mNearZ(0),
+      mFarZ(0),
+      mReadFramebuffer(nullptr),
+      mDrawFramebuffer(nullptr),
+      mProgram(nullptr),
+      mVertexArray(nullptr),
+      mActiveSampler(0),
+      mPrimitiveRestart(false)
 {
-    mMaxDrawBuffers = 0;
-    mMaxCombinedTextureImageUnits = 0;
-
     // Initialize dirty bit masks
     // TODO(jmadill): additional ES3 state
     mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_ALIGNMENT);
     mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_ROW_LENGTH);
+    mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_IMAGE_HEIGHT);
+    mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_SKIP_IMAGES);
+    mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_SKIP_ROWS);
+    mUnpackStateBitMask.set(DIRTY_BIT_UNPACK_SKIP_PIXELS);
 
     mPackStateBitMask.set(DIRTY_BIT_PACK_ALIGNMENT);
     mPackStateBitMask.set(DIRTY_BIT_PACK_REVERSE_ROW_ORDER);
+    mPackStateBitMask.set(DIRTY_BIT_PACK_ROW_LENGTH);
+    mPackStateBitMask.set(DIRTY_BIT_PACK_SKIP_ROWS);
+    mPackStateBitMask.set(DIRTY_BIT_PACK_SKIP_PIXELS);
 
     mClearStateBitMask.set(DIRTY_BIT_RASTERIZER_DISCARD_ENABLED);
     mClearStateBitMask.set(DIRTY_BIT_SCISSOR_TEST_ENABLED);
@@ -53,7 +79,10 @@ State::~State()
     reset();
 }
 
-void State::initialize(const Caps &caps, GLuint clientVersion)
+void State::initialize(const Caps &caps,
+                       const Extensions &extensions,
+                       GLuint clientVersion,
+                       bool debug)
 {
     mMaxDrawBuffers = caps.maxDrawBuffers;
     mMaxCombinedTextureImageUnits = caps.maxCombinedTextureImageUnits;
@@ -160,6 +189,9 @@ void State::initialize(const Caps &caps, GLuint clientVersion)
     mDrawFramebuffer = NULL;
 
     mPrimitiveRestart = false;
+
+    mDebug.setOutputEnabled(debug);
+    mDebug.setMaxLoggedMessages(extensions.maxDebugLoggedMessages);
 }
 
 void State::reset()
@@ -556,6 +588,12 @@ void State::setEnableFeature(GLenum feature, bool enabled)
       case GL_DITHER:                        setDither(enabled);                break;
       case GL_PRIMITIVE_RESTART_FIXED_INDEX: setPrimitiveRestart(enabled);      break;
       case GL_RASTERIZER_DISCARD:            setRasterizerDiscard(enabled);     break;
+      case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+          mDebug.setOutputSynchronous(enabled);
+          break;
+      case GL_DEBUG_OUTPUT:
+          mDebug.setOutputEnabled(enabled);
+          break;
       default:                               UNREACHABLE();
     }
 }
@@ -575,6 +613,10 @@ bool State::getEnableFeature(GLenum feature)
       case GL_DITHER:                        return isDitherEnabled();
       case GL_PRIMITIVE_RESTART_FIXED_INDEX: return isPrimitiveRestartEnabled();
       case GL_RASTERIZER_DISCARD:            return isRasterizerDiscardEnabled();
+      case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+          return mDebug.isOutputSynchronous();
+      case GL_DEBUG_OUTPUT:
+          return mDebug.isOutputEnabled();
       default:                               UNREACHABLE(); return false;
     }
 }
@@ -974,17 +1016,6 @@ GLuint State::getArrayBufferId() const
     return mArrayBuffer.id();
 }
 
-bool State::removeArrayBufferBinding(GLuint buffer)
-{
-    if (mArrayBuffer.id() == buffer)
-    {
-        mArrayBuffer.set(NULL);
-        return true;
-    }
-
-    return false;
-}
-
 void State::setGenericUniformBufferBinding(Buffer *buffer)
 {
     mGenericUniformBuffer.set(buffer);
@@ -1035,6 +1066,28 @@ Buffer *State::getTargetBuffer(GLenum target) const
       case GL_UNIFORM_BUFFER:            return mGenericUniformBuffer.get();
       default: UNREACHABLE();            return NULL;
     }
+}
+
+void State::detachBuffer(GLuint bufferName)
+{
+    BindingPointer<Buffer> *buffers[] = {&mArrayBuffer,        &mCopyReadBuffer,
+                                         &mCopyWriteBuffer,    &mPack.pixelBuffer,
+                                         &mUnpack.pixelBuffer, &mGenericUniformBuffer};
+    for (auto buffer : buffers)
+    {
+        if (buffer->id() == bufferName)
+        {
+            buffer->set(nullptr);
+        }
+    }
+
+    TransformFeedback *curTransformFeedback = getCurrentTransformFeedback();
+    if (curTransformFeedback)
+    {
+        curTransformFeedback->detachBuffer(bufferName);
+    }
+
+    getVertexArray()->detachBuffer(bufferName);
 }
 
 void State::setEnableVertexAttribArray(unsigned int attribNum, bool enabled)
@@ -1116,6 +1169,39 @@ bool State::getPackReverseRowOrder() const
     return mPack.reverseRowOrder;
 }
 
+void State::setPackRowLength(GLint rowLength)
+{
+    mPack.rowLength = rowLength;
+    mDirtyBits.set(DIRTY_BIT_PACK_ROW_LENGTH);
+}
+
+GLint State::getPackRowLength() const
+{
+    return mPack.rowLength;
+}
+
+void State::setPackSkipRows(GLint skipRows)
+{
+    mPack.skipRows = skipRows;
+    mDirtyBits.set(DIRTY_BIT_PACK_SKIP_ROWS);
+}
+
+GLint State::getPackSkipRows() const
+{
+    return mPack.skipRows;
+}
+
+void State::setPackSkipPixels(GLint skipPixels)
+{
+    mPack.skipPixels = skipPixels;
+    mDirtyBits.set(DIRTY_BIT_PACK_SKIP_PIXELS);
+}
+
+GLint State::getPackSkipPixels() const
+{
+    return mPack.skipPixels;
+}
+
 const PixelPackState &State::getPackState() const
 {
     return mPack;
@@ -1148,6 +1234,50 @@ GLint State::getUnpackRowLength() const
     return mUnpack.rowLength;
 }
 
+void State::setUnpackImageHeight(GLint imageHeight)
+{
+    mUnpack.imageHeight = imageHeight;
+    mDirtyBits.set(DIRTY_BIT_UNPACK_IMAGE_HEIGHT);
+}
+
+GLint State::getUnpackImageHeight() const
+{
+    return mUnpack.imageHeight;
+}
+
+void State::setUnpackSkipImages(GLint skipImages)
+{
+    mUnpack.skipImages = skipImages;
+    mDirtyBits.set(DIRTY_BIT_UNPACK_SKIP_IMAGES);
+}
+
+GLint State::getUnpackSkipImages() const
+{
+    return mUnpack.skipImages;
+}
+
+void State::setUnpackSkipRows(GLint skipRows)
+{
+    mUnpack.skipRows = skipRows;
+    mDirtyBits.set(DIRTY_BIT_UNPACK_SKIP_ROWS);
+}
+
+GLint State::getUnpackSkipRows() const
+{
+    return mUnpack.skipRows;
+}
+
+void State::setUnpackSkipPixels(GLint skipPixels)
+{
+    mUnpack.skipPixels = skipPixels;
+    mDirtyBits.set(DIRTY_BIT_UNPACK_SKIP_PIXELS);
+}
+
+GLint State::getUnpackSkipPixels() const
+{
+    return mUnpack.skipPixels;
+}
+
 const PixelUnpackState &State::getUnpackState() const
 {
     return mUnpack;
@@ -1156,6 +1286,16 @@ const PixelUnpackState &State::getUnpackState() const
 PixelUnpackState &State::getUnpackState()
 {
     return mUnpack;
+}
+
+const Debug &State::getDebug() const
+{
+    return mDebug;
+}
+
+Debug &State::getDebug()
+{
+    return mDebug;
 }
 
 void State::getBooleanv(GLenum pname, GLboolean *params)
@@ -1181,6 +1321,18 @@ void State::getBooleanv(GLenum pname, GLboolean *params)
       case GL_DITHER:                    *params = mBlend.dither;                 break;
       case GL_TRANSFORM_FEEDBACK_ACTIVE: *params = getCurrentTransformFeedback()->isActive() ? GL_TRUE : GL_FALSE; break;
       case GL_TRANSFORM_FEEDBACK_PAUSED: *params = getCurrentTransformFeedback()->isPaused() ? GL_TRUE : GL_FALSE; break;
+      case GL_PRIMITIVE_RESTART_FIXED_INDEX:
+          *params = mPrimitiveRestart;
+          break;
+      case GL_RASTERIZER_DISCARD:
+          *params = isRasterizerDiscardEnabled() ? GL_TRUE : GL_FALSE;
+          break;
+      case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+          *params = mDebug.isOutputSynchronous() ? GL_TRUE : GL_FALSE;
+          break;
+      case GL_DEBUG_OUTPUT:
+          *params = mDebug.isOutputEnabled() ? GL_TRUE : GL_FALSE;
+          break;
       default:
         UNREACHABLE();
         break;
@@ -1250,8 +1402,29 @@ void State::getIntegerv(const gl::Data &data, GLenum pname, GLint *params)
       case GL_CURRENT_PROGRAM:                          *params = mProgram ? mProgram->id() : 0;                  break;
       case GL_PACK_ALIGNMENT:                           *params = mPack.alignment;                                break;
       case GL_PACK_REVERSE_ROW_ORDER_ANGLE:             *params = mPack.reverseRowOrder;                          break;
+      case GL_PACK_ROW_LENGTH:
+          *params = mPack.rowLength;
+          break;
+      case GL_PACK_SKIP_ROWS:
+          *params = mPack.skipRows;
+          break;
+      case GL_PACK_SKIP_PIXELS:
+          *params = mPack.skipPixels;
+          break;
       case GL_UNPACK_ALIGNMENT:                         *params = mUnpack.alignment;                              break;
       case GL_UNPACK_ROW_LENGTH:                        *params = mUnpack.rowLength;                              break;
+      case GL_UNPACK_IMAGE_HEIGHT:
+          *params = mUnpack.imageHeight;
+          break;
+      case GL_UNPACK_SKIP_IMAGES:
+          *params = mUnpack.skipImages;
+          break;
+      case GL_UNPACK_SKIP_ROWS:
+          *params = mUnpack.skipRows;
+          break;
+      case GL_UNPACK_SKIP_PIXELS:
+          *params = mUnpack.skipPixels;
+          break;
       case GL_GENERATE_MIPMAP_HINT:                     *params = mGenerateMipmapHint;                            break;
       case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:      *params = mFragmentShaderDerivativeHint;                  break;
       case GL_ACTIVE_TEXTURE:
@@ -1399,6 +1572,9 @@ void State::getIntegerv(const gl::Data &data, GLenum pname, GLint *params)
       case GL_UNIFORM_BUFFER_BINDING:
         *params = mGenericUniformBuffer.id();
         break;
+      case GL_TRANSFORM_FEEDBACK_BINDING:
+        *params = mTransformFeedback.id();
+        break;
       case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
         *params = mTransformFeedback->getGenericBuffer().id();
         break;
@@ -1414,9 +1590,34 @@ void State::getIntegerv(const gl::Data &data, GLenum pname, GLint *params)
       case GL_PIXEL_UNPACK_BUFFER_BINDING:
         *params = mUnpack.pixelBuffer.id();
         break;
+      case GL_DEBUG_LOGGED_MESSAGES:
+          *params = static_cast<GLint>(mDebug.getMessageCount());
+          break;
+      case GL_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH:
+          *params = static_cast<GLint>(mDebug.getNextMessageLength());
+          break;
+      case GL_DEBUG_GROUP_STACK_DEPTH:
+          *params = static_cast<GLint>(mDebug.getGroupStackDepth());
+          break;
       default:
         UNREACHABLE();
         break;
+    }
+}
+
+void State::getPointerv(GLenum pname, void **params) const
+{
+    switch (pname)
+    {
+        case GL_DEBUG_CALLBACK_FUNCTION:
+            *params = reinterpret_cast<void *>(mDebug.getCallback());
+            break;
+        case GL_DEBUG_CALLBACK_USER_PARAM:
+            *params = const_cast<void *>(mDebug.getUserParam());
+            break;
+        default:
+            UNREACHABLE();
+            break;
     }
 }
 

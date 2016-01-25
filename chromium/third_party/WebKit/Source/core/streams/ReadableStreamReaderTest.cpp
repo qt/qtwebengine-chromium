@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/streams/ReadableStreamReader.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -16,7 +15,7 @@
 #include "core/streams/ReadableStreamImpl.h"
 #include "core/streams/UnderlyingSource.h"
 #include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -181,8 +180,8 @@ TEST_F(ReadableStreamReaderTest, Release)
     EXPECT_TRUE(onRejected.isNull());
 
     isolate()->RunMicrotasks();
-    EXPECT_EQ("undefined", onFulfilled);
-    EXPECT_TRUE(onRejected.isNull());
+    EXPECT_TRUE(onFulfilled.isNull());
+    EXPECT_EQ("AbortError: the reader is already released", onRejected);
 
     ReadableStreamReader* another = new ReadableStreamReader(executionContext(), m_stream);
     EXPECT_TRUE(another->isActive());
@@ -211,10 +210,8 @@ TEST_F(ReadableStreamReaderTest, ReadAfterRelease)
     EXPECT_TRUE(onRejected.isNull());
     isolate()->RunMicrotasks();
 
-    EXPECT_TRUE(result.isSet);
-    EXPECT_TRUE(result.isDone);
-    EXPECT_EQ("undefined", result.valueString);
-    EXPECT_TRUE(onRejected.isNull());
+    EXPECT_FALSE(result.isSet);
+    EXPECT_EQ("TypeError: the reader is already released", onRejected);
     EXPECT_FALSE(exceptionState.hadException());
 }
 
@@ -328,7 +325,7 @@ TEST_F(ReadableStreamReaderTest, ClosedReader)
 
     m_stream->close();
 
-    EXPECT_FALSE(reader->isActive());
+    EXPECT_TRUE(reader->isActive());
 
     String onClosedFulfilled, onClosedRejected;
     ReadResult result;
@@ -360,7 +357,7 @@ TEST_F(ReadableStreamReaderTest, ErroredReader)
     m_stream->error(DOMException::create(SyntaxError, "some error"));
 
     EXPECT_EQ(ReadableStream::Errored, m_stream->stateInternal());
-    EXPECT_FALSE(reader->isActive());
+    EXPECT_TRUE(reader->isActive());
 
     String onClosedFulfilled, onClosedRejected;
     String onReadFulfilled, onReadRejected;
@@ -470,7 +467,7 @@ TEST_F(ReadableStreamReaderTest, PendingReadsShouldBeResolvedWhenCanceled)
     EXPECT_TRUE(onRejected2.isNull());
 
     reader->cancel(scriptState(), ScriptValue(scriptState(), v8::Undefined(isolate())));
-    EXPECT_FALSE(reader->isActive());
+    EXPECT_TRUE(reader->isActive());
     EXPECT_FALSE(result.isSet);
     EXPECT_TRUE(onRejected.isNull());
     EXPECT_FALSE(result2.isSet);
@@ -507,8 +504,8 @@ TEST_F(ReadableStreamReaderTest, CancelShouldNotWorkWhenNotActive)
 
     isolate()->RunMicrotasks();
 
-    EXPECT_EQ("undefined", onFulfilled);
-    EXPECT_TRUE(onRejected.isNull());
+    EXPECT_TRUE(onFulfilled.isNull());
+    EXPECT_EQ("TypeError: the reader is already released", onRejected);
     EXPECT_EQ(ReadableStream::Readable, m_stream->stateInternal());
     EXPECT_FALSE(exceptionState.hadException());
 }

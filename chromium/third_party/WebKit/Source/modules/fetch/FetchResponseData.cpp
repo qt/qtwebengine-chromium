@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchResponseData.h"
 
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchUtils.h"
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/DataConsumerHandleUtil.h"
 #include "modules/fetch/DataConsumerTee.h"
@@ -76,7 +76,7 @@ FetchResponseData* FetchResponseData::createBasicFilteredResponse()
     response->m_url = m_url;
     for (size_t i = 0; i < m_headerList->size(); ++i) {
         const FetchHeaderList::Header* header = m_headerList->list()[i].get();
-        if (header->first == "set-cookie" || header->first == "set-cookie2")
+        if (FetchUtils::isForbiddenResponseHeaderName(header->first))
             continue;
         response->m_headerList->append(header->first, header->second);
     }
@@ -103,9 +103,9 @@ FetchResponseData* FetchResponseData::createCORSFilteredResponse()
         parseAccessControlExposeHeadersAllowList(accessControlExposeHeaders, accessControlExposeHeaderSet);
     for (size_t i = 0; i < m_headerList->size(); ++i) {
         const FetchHeaderList::Header* header = m_headerList->list()[i].get();
-        if (!isOnAccessControlResponseHeaderWhitelist(header->first) && !accessControlExposeHeaderSet.contains(header->first))
-            continue;
-        response->m_headerList->append(header->first, header->second);
+        const String& name = header->first;
+        if (isOnAccessControlResponseHeaderWhitelist(name) || (accessControlExposeHeaderSet.contains(name) && !FetchUtils::isForbiddenResponseHeaderName(name)))
+            response->m_headerList->append(name, header->second);
     }
     response->m_buffer = m_buffer;
     response->m_mimeType = m_mimeType;
@@ -183,8 +183,7 @@ FetchResponseData* FetchResponseData::clone(ExecutionContext* executionContext)
         ASSERT(!m_internalResponse);
         if (m_buffer) {
             OwnPtr<WebDataConsumerHandle> handle1, handle2;
-            // TODO(yhirano): unlock the buffer appropriately.
-            DataConsumerTee::create(executionContext, m_buffer->lock(executionContext), &handle1, &handle2);
+            DataConsumerTee::create(executionContext, m_buffer->releaseHandle(executionContext), &handle1, &handle2);
             m_buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(handle1.release()));
             newResponse->m_buffer = new BodyStreamBuffer(createFetchDataConsumerHandleFromWebHandle(handle2.release()));
         }

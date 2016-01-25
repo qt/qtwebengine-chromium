@@ -4,6 +4,8 @@
 
 #include "cc/output/filter_operations.h"
 
+#include <stddef.h>
+
 #include <cmath>
 
 #include "base/trace_event/trace_event_argument.h"
@@ -63,6 +65,8 @@ void FilterOperations::GetOutsets(int* top,
     const FilterOperation& op = operations_[i];
     // TODO(hendrikw): We should refactor some of this. See crbug.com/523534.
     if (op.type() == FilterOperation::REFERENCE) {
+      if (!op.image_filter())
+        continue;
       SkIRect src = SkIRect::MakeWH(0, 0);
       SkIRect dst;
       bool result = op.image_filter()->filterBounds(src, SkMatrix::I(), &dst);

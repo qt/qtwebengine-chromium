@@ -16,12 +16,12 @@ class LayoutObject;
 struct PaintInfo;
 
 enum RoundedInnerRectClipperBehavior {
-    ApplyToDisplayListIfEnabled,
+    ApplyToDisplayList,
     ApplyToContext
 };
 
 class RoundedInnerRectClipper {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     RoundedInnerRectClipper(const LayoutObject&, const PaintInfo&, const LayoutRect&, const FloatRoundedRect& clipRect, RoundedInnerRectClipperBehavior);
     ~RoundedInnerRectClipper();
@@ -29,7 +29,7 @@ public:
 private:
     const LayoutObject& m_layoutObject;
     const PaintInfo& m_paintInfo;
-    bool m_useDisplayItemList;
+    bool m_usePaintController;
     DisplayItem::Type m_clipType;
 };
 

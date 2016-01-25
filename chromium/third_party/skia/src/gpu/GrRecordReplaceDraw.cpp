@@ -10,16 +10,11 @@
 #include "GrRecordReplaceDraw.h"
 #include "SkBigPicture.h"
 #include "SkCanvasPriv.h"
-#include "SkGrPixelRef.h"
+#include "SkGr.h"
 #include "SkImage.h"
 #include "SkRecordDraw.h"
 #include "SkRecords.h"
 
-static inline void wrap_texture(GrTexture* texture, int width, int height, SkBitmap* result) {
-    SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-    result->setInfo(info);
-    result->setPixelRef(new SkGrPixelRef(info, texture))->unref();
-}
 
 static inline void draw_replacement_bitmap(GrCachedLayer* layer, SkCanvas* canvas) {
 
@@ -30,27 +25,28 @@ static inline void draw_replacement_bitmap(GrCachedLayer* layer, SkCanvas* canva
     }
 
     SkBitmap bm;
-    wrap_texture(layer->texture(),
-                 !layer->isAtlased() ? layer->rect().width()  : layer->texture()->width(),
-                 !layer->isAtlased() ? layer->rect().height() : layer->texture()->height(),
-                 &bm);
+    GrWrapTextureInBitmap(layer->texture(),
+                          !layer->isAtlased() ? layer->rect().width()  : layer->texture()->width(),
+                          !layer->isAtlased() ? layer->rect().height() : layer->texture()->height(),
+                          false,
+                          &bm);
 
+    canvas->save();
+    canvas->setMatrix(SkMatrix::I());
     if (layer->isAtlased()) {
         const SkRect src = SkRect::Make(layer->rect());
         const SkRect dst = SkRect::Make(layer->srcIR());
 
         SkASSERT(layer->offset().isZero());
 
-        canvas->save();
-        canvas->setMatrix(SkMatrix::I());
         canvas->drawBitmapRect(bm, src, dst, layer->paint(), SkCanvas::kStrict_SrcRectConstraint);
-        canvas->restore();
     } else {
-        canvas->drawSprite(bm,
-                           layer->srcIR().fLeft + layer->offset().fX,
-                           layer->srcIR().fTop + layer->offset().fY,
+        canvas->drawBitmap(bm,
+                           SkIntToScalar(layer->srcIR().fLeft + layer->offset().fX),
+                           SkIntToScalar(layer->srcIR().fTop + layer->offset().fY),
                            layer->paint());
     }
+    canvas->restore();
 }
 
 // Used by GrRecordReplaceDraw. It intercepts nested drawPicture calls and

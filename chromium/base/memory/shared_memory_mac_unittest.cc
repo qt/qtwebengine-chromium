@@ -5,10 +5,14 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <servers/bootstrap.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "base/command_line.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/mach_logging.h"
 #include "base/mac/scoped_mach_port.h"
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/process/process_handle.h"
 #include "base/rand_util.h"
@@ -21,6 +25,46 @@
 namespace base {
 
 namespace {
+
+// Gets the current and maximum protection levels of the memory region.
+// Returns whether the operation was successful.
+// |current| and |max| are output variables only populated on success.
+bool GetProtections(void* address, size_t size, int* current, int* max) {
+  vm_region_info_t region_info;
+  mach_vm_address_t mem_address = reinterpret_cast<mach_vm_address_t>(address);
+  mach_vm_size_t mem_size = size;
+  vm_region_basic_info_64 basic_info;
+
+  region_info = reinterpret_cast<vm_region_recurse_info_t>(&basic_info);
+  vm_region_flavor_t flavor = VM_REGION_BASIC_INFO_64;
+  memory_object_name_t memory_object;
+  mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+
+  kern_return_t kr =
+      mach_vm_region(mach_task_self(), &mem_address, &mem_size, flavor,
+                     region_info, &count, &memory_object);
+  if (kr != KERN_SUCCESS) {
+    MACH_LOG(ERROR, kr) << "Failed to get region info.";
+    return false;
+  }
+
+  *current = basic_info.protection;
+  *max = basic_info.max_protection;
+  return true;
+}
+
+// Creates a new SharedMemory with the given |size|, filled with 'a'.
+scoped_ptr<SharedMemory> CreateSharedMemory(int size) {
+  SharedMemoryHandle shm(size);
+  if (!shm.IsValid()) {
+    LOG(ERROR) << "Failed to make SharedMemoryHandle";
+    return nullptr;
+  }
+  scoped_ptr<SharedMemory> shared_memory(new SharedMemory(shm, false));
+  shared_memory->Map(size);
+  memset(shared_memory->memory(), 'a', size);
+  return shared_memory;
+}
 
 static const std::string g_service_switch_name = "service_name";
 
@@ -97,6 +141,7 @@ void SendMachPort(mach_port_t receiving_port,
   send_hdr->msgh_remote_port = receiving_port;
   send_hdr->msgh_local_port = MACH_PORT_NULL;
   send_hdr->msgh_reserved = 0;
+  send_hdr->msgh_id = 0;
   send_msg.body.msgh_descriptor_count = 1;
   send_msg.data.name = port_to_send;
   send_msg.data.disposition = disposition;
@@ -125,7 +170,7 @@ mach_port_t CommonChildProcessSetUp() {
   mach_port_t client_port = MakeReceivingPort();
 
   // Send the port that this process is listening on to the server.
-  SendMachPort(server_port, client_port, MACH_MSG_TYPE_MAKE_SEND);
+  SendMachPort(server_port.get(), client_port, MACH_MSG_TYPE_MAKE_SEND);
   return client_port;
 }
 
@@ -160,7 +205,7 @@ class SharedMemoryMacMultiProcessTest : public MultiProcessTest {
     service_name_ = CreateRandomServiceName();
     server_port_.reset(BecomeMachServer(service_name_.c_str()));
     child_process_ = SpawnChild(name);
-    client_port_.reset(ReceiveMachPort(server_port_));
+    client_port_.reset(ReceiveMachPort(server_port_.get()));
   }
 
   static const int s_memory_size = 99999;
@@ -183,16 +228,17 @@ class SharedMemoryMacMultiProcessTest : public MultiProcessTest {
 // Tests that content written to shared memory in the server process can be read
 // by the child process.
 TEST_F(SharedMemoryMacMultiProcessTest, MachBasedSharedMemory) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
   SetUpChild("MachBasedSharedMemoryClient");
 
-  SharedMemoryHandle shm(s_memory_size);
-  ASSERT_TRUE(shm.IsValid());
-  SharedMemory shared_memory(shm, false);
-  shared_memory.Map(s_memory_size);
-  memset(shared_memory.memory(), 'a', s_memory_size);
+  scoped_ptr<SharedMemory> shared_memory(CreateSharedMemory(s_memory_size));
 
   // Send the underlying memory object to the client process.
-  SendMachPort(client_port_, shm.GetMemoryObject(), MACH_MSG_TYPE_COPY_SEND);
+  SendMachPort(client_port_.get(), shared_memory->handle().GetMemoryObject(),
+               MACH_MSG_TYPE_COPY_SEND);
   int rv = -1;
   ASSERT_TRUE(child_process_.WaitForExitWithTimeout(
       TestTimeouts::action_timeout(), &rv));
@@ -202,7 +248,7 @@ TEST_F(SharedMemoryMacMultiProcessTest, MachBasedSharedMemory) {
 MULTIPROCESS_TEST_MAIN(MachBasedSharedMemoryClient) {
   mac::ScopedMachReceiveRight client_port(CommonChildProcessSetUp());
   // The next mach port should be for a memory object.
-  mach_port_t memory_object = ReceiveMachPort(client_port);
+  mach_port_t memory_object = ReceiveMachPort(client_port.get());
   SharedMemoryHandle shm(memory_object,
                          SharedMemoryMacMultiProcessTest::s_memory_size,
                          GetCurrentProcId());
@@ -217,6 +263,10 @@ MULTIPROCESS_TEST_MAIN(MachBasedSharedMemoryClient) {
 
 // Tests that mapping shared memory with an offset works correctly.
 TEST_F(SharedMemoryMacMultiProcessTest, MachBasedSharedMemoryWithOffset) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
   SetUpChild("MachBasedSharedMemoryWithOffsetClient");
 
   SharedMemoryHandle shm(s_memory_size);
@@ -231,7 +281,8 @@ TEST_F(SharedMemoryMacMultiProcessTest, MachBasedSharedMemoryWithOffset) {
   memset(start + 2 * page_size, 'c', page_size);
 
   // Send the underlying memory object to the client process.
-  SendMachPort(client_port_, shm.GetMemoryObject(), MACH_MSG_TYPE_COPY_SEND);
+  SendMachPort(
+      client_port_.get(), shm.GetMemoryObject(), MACH_MSG_TYPE_COPY_SEND);
   int rv = -1;
   ASSERT_TRUE(child_process_.WaitForExitWithTimeout(
       TestTimeouts::action_timeout(), &rv));
@@ -241,7 +292,7 @@ TEST_F(SharedMemoryMacMultiProcessTest, MachBasedSharedMemoryWithOffset) {
 MULTIPROCESS_TEST_MAIN(MachBasedSharedMemoryWithOffsetClient) {
   mac::ScopedMachReceiveRight client_port(CommonChildProcessSetUp());
   // The next mach port should be for a memory object.
-  mach_port_t memory_object = ReceiveMachPort(client_port);
+  mach_port_t memory_object = ReceiveMachPort(client_port.get());
   SharedMemoryHandle shm(memory_object,
                          SharedMemoryMacMultiProcessTest::s_memory_size,
                          GetCurrentProcId());
@@ -261,6 +312,10 @@ MULTIPROCESS_TEST_MAIN(MachBasedSharedMemoryWithOffsetClient) {
 // Tests that duplication and closing has the right effect on Mach reference
 // counts.
 TEST_F(SharedMemoryMacMultiProcessTest, MachDuplicateAndClose) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
   mach_msg_type_number_t active_name_count = GetActiveNameCount();
 
   // Making a new SharedMemoryHandle increments the name count.
@@ -284,10 +339,29 @@ TEST_F(SharedMemoryMacMultiProcessTest, MachDuplicateAndClose) {
   EXPECT_EQ(active_name_count, GetActiveNameCount());
 }
 
+// Tests that Mach shared memory can be mapped and unmapped.
+TEST_F(SharedMemoryMacMultiProcessTest, MachUnmapMap) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
+  mach_msg_type_number_t active_name_count = GetActiveNameCount();
+
+  scoped_ptr<SharedMemory> shared_memory = CreateSharedMemory(s_memory_size);
+  ASSERT_TRUE(shared_memory->Unmap());
+  ASSERT_TRUE(shared_memory->Map(s_memory_size));
+  shared_memory.reset();
+  EXPECT_EQ(active_name_count, GetActiveNameCount());
+}
+
 // Tests that passing a SharedMemoryHandle to a SharedMemory object also passes
 // ownership, and that destroying the SharedMemory closes the SharedMemoryHandle
 // as well.
 TEST_F(SharedMemoryMacMultiProcessTest, MachSharedMemoryTakesOwnership) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
   mach_msg_type_number_t active_name_count = GetActiveNameCount();
 
   // Making a new SharedMemoryHandle increments the name count.
@@ -307,17 +381,109 @@ TEST_F(SharedMemoryMacMultiProcessTest, MachSharedMemoryTakesOwnership) {
 
 // Tests that the read-only flag works.
 TEST_F(SharedMemoryMacMultiProcessTest, MachReadOnly) {
-  SharedMemoryHandle shm(s_memory_size);
-  ASSERT_TRUE(shm.IsValid());
-  SharedMemory shared_memory(shm, false);
-  shared_memory.Map(s_memory_size);
-  memset(shared_memory.memory(), 'a', s_memory_size);
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
 
-  SharedMemoryHandle shm2 = shm.Duplicate();
+  scoped_ptr<SharedMemory> shared_memory(CreateSharedMemory(s_memory_size));
+
+  SharedMemoryHandle shm2 = shared_memory->handle().Duplicate();
   ASSERT_TRUE(shm2.IsValid());
-  SharedMemory shared_memory2(shm, true);
+  SharedMemory shared_memory2(shm2, true);
   shared_memory2.Map(s_memory_size);
   ASSERT_DEATH(memset(shared_memory2.memory(), 'b', s_memory_size), "");
+}
+
+// Tests that the method ShareToProcess() works.
+TEST_F(SharedMemoryMacMultiProcessTest, MachShareToProcess) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
+  mach_msg_type_number_t active_name_count = GetActiveNameCount();
+
+  {
+    scoped_ptr<SharedMemory> shared_memory(CreateSharedMemory(s_memory_size));
+
+    SharedMemoryHandle shm2;
+    ASSERT_TRUE(shared_memory->ShareToProcess(GetCurrentProcId(), &shm2));
+    ASSERT_TRUE(shm2.IsValid());
+    SharedMemory shared_memory2(shm2, true);
+    shared_memory2.Map(s_memory_size);
+
+    ASSERT_EQ(0, memcmp(shared_memory->memory(), shared_memory2.memory(),
+                        s_memory_size));
+  }
+
+  EXPECT_EQ(active_name_count, GetActiveNameCount());
+}
+
+// Tests that the method ShareReadOnlyToProcess() creates a memory object that
+// is read only.
+TEST_F(SharedMemoryMacMultiProcessTest, MachShareToProcessReadonly) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
+  scoped_ptr<SharedMemory> shared_memory(CreateSharedMemory(s_memory_size));
+
+  // Check the protection levels.
+  int current_prot, max_prot;
+  ASSERT_TRUE(GetProtections(shared_memory->memory(),
+                             shared_memory->mapped_size(), &current_prot,
+                             &max_prot));
+  ASSERT_EQ(VM_PROT_READ | VM_PROT_WRITE, current_prot);
+  ASSERT_EQ(VM_PROT_READ | VM_PROT_WRITE, max_prot);
+
+  // Make a new memory object.
+  SharedMemoryHandle shm2;
+  ASSERT_TRUE(shared_memory->ShareReadOnlyToProcess(GetCurrentProcId(), &shm2));
+  ASSERT_TRUE(shm2.IsValid());
+
+  // Mapping with |readonly| set to |false| should fail.
+  SharedMemory shared_memory2(shm2, false);
+  shared_memory2.Map(s_memory_size);
+  ASSERT_EQ(nullptr, shared_memory2.memory());
+
+  // Now trying mapping with |readonly| set to |true|.
+  SharedMemory shared_memory3(shm2.Duplicate(), true);
+  shared_memory3.Map(s_memory_size);
+  ASSERT_NE(nullptr, shared_memory3.memory());
+
+  // Check the protection levels.
+  ASSERT_TRUE(GetProtections(shared_memory3.memory(),
+                             shared_memory3.mapped_size(), &current_prot,
+                             &max_prot));
+  ASSERT_EQ(VM_PROT_READ, current_prot);
+  ASSERT_EQ(VM_PROT_READ, max_prot);
+
+  // The memory should still be readonly, since the underlying memory object
+  // is readonly.
+  ASSERT_DEATH(memset(shared_memory2.memory(), 'b', s_memory_size), "");
+}
+
+// Tests that the method ShareReadOnlyToProcess() doesn't leak.
+TEST_F(SharedMemoryMacMultiProcessTest, MachShareToProcessReadonlyLeak) {
+  // Mach-based SharedMemory isn't support on OSX 10.6.
+  if (mac::IsOSSnowLeopard())
+    return;
+
+  mach_msg_type_number_t active_name_count = GetActiveNameCount();
+
+  {
+    scoped_ptr<SharedMemory> shared_memory(CreateSharedMemory(s_memory_size));
+
+    SharedMemoryHandle shm2;
+    ASSERT_TRUE(
+        shared_memory->ShareReadOnlyToProcess(GetCurrentProcId(), &shm2));
+    ASSERT_TRUE(shm2.IsValid());
+
+    // Intentionally map with |readonly| set to |false|.
+    SharedMemory shared_memory2(shm2, false);
+    shared_memory2.Map(s_memory_size);
+  }
+
+  EXPECT_EQ(active_name_count, GetActiveNameCount());
 }
 
 }  //  namespace base

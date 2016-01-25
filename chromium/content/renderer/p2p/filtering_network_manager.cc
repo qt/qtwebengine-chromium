@@ -4,6 +4,8 @@
 
 #include "content/renderer/p2p/filtering_network_manager.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -17,7 +19,7 @@ FilteringNetworkManager::FilteringNetworkManager(
     const GURL& requesting_origin,
     scoped_ptr<media::MediaPermission> media_permission)
     : network_manager_(network_manager),
-      media_permission_(media_permission.Pass()),
+      media_permission_(std::move(media_permission)),
       requesting_origin_(requesting_origin),
       weak_ptr_factory_(this) {
   thread_checker_.DetachFromThread();
@@ -91,6 +93,12 @@ void FilteringNetworkManager::GetNetworks(NetworkList* networks) const {
     network_manager_->GetNetworks(networks);
 
   VLOG(3) << "GetNetworks() returns " << networks->size() << " networks.";
+}
+
+bool FilteringNetworkManager::GetDefaultLocalAddress(
+    int family,
+    rtc::IPAddress* ipaddress) const {
+  return network_manager_->GetDefaultLocalAddress(family, ipaddress);
 }
 
 void FilteringNetworkManager::OnPermissionStatus(bool granted) {

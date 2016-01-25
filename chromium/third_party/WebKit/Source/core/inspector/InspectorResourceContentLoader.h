@@ -19,7 +19,7 @@ class Resource;
 
 class CORE_EXPORT InspectorResourceContentLoader final : public NoBaseWillBeGarbageCollectedFinalized<InspectorResourceContentLoader> {
     WTF_MAKE_NONCOPYABLE(InspectorResourceContentLoader);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorResourceContentLoader);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorResourceContentLoader);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorResourceContentLoader> create(LocalFrame* inspectedFrame)
     {
@@ -46,8 +46,8 @@ private:
     bool m_allRequestsStarted;
     bool m_started;
     RawPtrWillBeMember<LocalFrame> m_inspectedFrame;
-    HashSet<ResourceClient*> m_pendingResourceClients;
-    Vector<ResourcePtr<Resource> > m_resources;
+    WillBeHeapHashSet<RawPtrWillBeMember<ResourceClient>> m_pendingResourceClients;
+    Vector<ResourcePtr<Resource>> m_resources;
 
     friend class ResourceClient;
 };

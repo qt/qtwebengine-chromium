@@ -11,12 +11,16 @@
 
 namespace blink {
 
+class Element;
 class TimingFunction;
+class QualifiedName;
 
 class CORE_EXPORT AnimationInputHelpers {
     STATIC_ONLY(AnimationInputHelpers);
 public:
-    static CSSPropertyID keyframeAttributeToCSSPropertyID(const String&);
+    static CSSPropertyID keyframeAttributeToCSSProperty(const String&);
+    static CSSPropertyID keyframeAttributeToPresentationAttribute(const String&, const Element&);
+    static const QualifiedName* keyframeAttributeToSVGAttribute(const String&, Element&);
     static PassRefPtr<TimingFunction> parseTimingFunction(const String&);
 };
 

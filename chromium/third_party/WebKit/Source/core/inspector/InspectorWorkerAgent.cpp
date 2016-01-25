@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/inspector/InspectorWorkerAgent.h"
 
 #include "core/InspectorFrontend.h"
@@ -191,6 +189,7 @@ DEFINE_TRACE(InspectorWorkerAgent)
 #if ENABLE(OILPAN)
     visitor->trace(m_idToClient);
     visitor->trace(m_consoleAgent);
+    visitor->trace(m_workerInfos);
 #endif
     InspectorBaseAgent<InspectorWorkerAgent, InspectorFrontend::Worker>::trace(visitor);
 }

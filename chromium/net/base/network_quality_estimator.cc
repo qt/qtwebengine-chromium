@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "base/logging.h"
@@ -27,44 +28,6 @@
 #endif  // OS_ANDROID
 
 namespace {
-
-// Implements SocketPerformanceWatcher for TCP sockets.
-class SocketPerformanceWatcherTCP : public net::SocketPerformanceWatcher {
- public:
-  SocketPerformanceWatcherTCP() {}
-
-  ~SocketPerformanceWatcherTCP() override {
-    DCHECK(thread_checker_.CalledOnValidThread());
-  }
-
-  // net::SocketPerformanceWatcher implementation:
-  void OnUpdatedRTTAvailable(const base::TimeDelta& rtt) override {
-    DCHECK(thread_checker_.CalledOnValidThread());
-    // TODO(tbansal): Notify any relevant observers.
-  }
-
- private:
-  base::ThreadChecker thread_checker_;
-};
-
-// Implements SocketPerformanceWatcher for UDP sockets.
-class SocketPerformanceWatcherUDP : public net::SocketPerformanceWatcher {
- public:
-  SocketPerformanceWatcherUDP() {}
-
-  ~SocketPerformanceWatcherUDP() override {
-    DCHECK(thread_checker_.CalledOnValidThread());
-  }
-
-  // net::SocketPerformanceWatcher implementation:
-  void OnUpdatedRTTAvailable(const base::TimeDelta& rtt) override {
-    DCHECK(thread_checker_.CalledOnValidThread());
-    // TODO(tbansal): Notify any relevant observers.
-  }
-
- private:
-  base::ThreadChecker thread_checker_;
-};
 
 // Default value of the half life (in seconds) for computing time weighted
 // percentiles. Every half life, the weight of all observations reduces by
@@ -159,7 +122,7 @@ const int32_t NetworkQualityEstimator::kInvalidThroughput = 0;
 NetworkQualityEstimator::NetworkQualityEstimator(
     scoped_ptr<ExternalEstimateProvider> external_estimates_provider,
     const std::map<std::string, std::string>& variation_params)
-    : NetworkQualityEstimator(external_estimates_provider.Pass(),
+    : NetworkQualityEstimator(std::move(external_estimates_provider),
                               variation_params,
                               false,
                               false) {}
@@ -178,7 +141,7 @@ NetworkQualityEstimator::NetworkQualityEstimator(
       downstream_throughput_kbps_observations_(
           GetWeightMultiplierPerSecond(variation_params)),
       rtt_msec_observations_(GetWeightMultiplierPerSecond(variation_params)),
-      external_estimate_provider_(external_estimates_provider.Pass()) {
+      external_estimate_provider_(std::move(external_estimates_provider)) {
   static_assert(kMinRequestDurationMicroseconds > 0,
                 "Minimum request duration must be > 0");
   static_assert(kDefaultHalfLifeSeconds > 0,
@@ -440,7 +403,7 @@ void NetworkQualityEstimator::RecordRTTUMA(int32_t estimated_value_msec,
   if (actual_value_msec == 0)
     return;
 
-  int32 ratio = (estimated_value_msec * 100) / actual_value_msec;
+  int32_t ratio = (estimated_value_msec * 100) / actual_value_msec;
 
   // Record the accuracy of estimation by recording the ratio of estimated
   // value to the actual value.
@@ -958,17 +921,31 @@ void NetworkQualityEstimator::CacheNetworkQualityEstimate() {
 }
 
 scoped_ptr<SocketPerformanceWatcher>
-NetworkQualityEstimator::CreateTCPSocketPerformanceWatcher() const {
+NetworkQualityEstimator::CreateSocketPerformanceWatcher(
+    const Protocol protocol) {
   DCHECK(thread_checker_.CalledOnValidThread());
+
   return scoped_ptr<SocketPerformanceWatcher>(
-      new SocketPerformanceWatcherTCP());
+      new SocketPerformanceWatcher(protocol, this));
 }
 
-scoped_ptr<SocketPerformanceWatcher>
-NetworkQualityEstimator::CreateUDPSocketPerformanceWatcher() const {
+void NetworkQualityEstimator::OnUpdatedRTTAvailable(
+    const Protocol protocol,
+    const base::TimeDelta& rtt) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return scoped_ptr<SocketPerformanceWatcher>(
-      new SocketPerformanceWatcherUDP());
+
+  switch (protocol) {
+    case PROTOCOL_TCP:
+      NotifyObserversOfRTT(
+          Observation(rtt.InMilliseconds(), base::TimeTicks::Now(), TCP));
+      return;
+    case PROTOCOL_QUIC:
+      NotifyObserversOfRTT(
+          Observation(rtt.InMilliseconds(), base::TimeTicks::Now(), QUIC));
+      return;
+    default:
+      NOTREACHED();
+  }
 }
 
 void NetworkQualityEstimator::NotifyObserversOfRTT(

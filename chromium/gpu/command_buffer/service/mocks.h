@@ -10,12 +10,15 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_MOCKS_H_
 #define GPU_COMMAND_BUFFER_SERVICE_MOCKS_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
-#include "gpu/command_buffer/service/cmd_parser.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
+#include "gpu/command_buffer/service/cmd_parser.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_cache.h"
 #include "gpu/command_buffer/service/shader_translator.h"
@@ -95,15 +98,17 @@ class MockShaderTranslator : public ShaderTranslatorInterface {
                     const ShBuiltInResources* resources,
                     ShShaderOutput shader_output_language,
                     ShCompileOptions driver_bug_workarounds));
-  MOCK_CONST_METHOD8(Translate, bool(
-      const std::string& shader_source,
-      std::string* info_log,
-      std::string* translated_source,
-      int* shader_version,
-      AttributeMap* attrib_map,
-      UniformMap* uniform_map,
-      VaryingMap* varying_map,
-      NameMap* name_map));
+  MOCK_CONST_METHOD10(Translate,
+                      bool(const std::string& shader_source,
+                           std::string* info_log,
+                           std::string* translated_source,
+                           int* shader_version,
+                           AttributeMap* attrib_map,
+                           UniformMap* uniform_map,
+                           VaryingMap* varying_map,
+                           InterfaceBlockMap* interface_block_map,
+                           OutputVariableList* output_variable_list,
+                           NameMap* name_map));
   MOCK_CONST_METHOD0(
       GetStringForOptionsThatWouldAffectCompilation, std::string());
  private:
@@ -142,8 +147,8 @@ class MockMemoryTracker : public MemoryTracker {
  public:
   MockMemoryTracker();
 
-  MOCK_METHOD3(TrackMemoryAllocatedChange, void(
-      size_t old_size, size_t new_size, Pool pool));
+  MOCK_METHOD2(TrackMemoryAllocatedChange, void(
+      size_t old_size, size_t new_size));
   MOCK_METHOD1(EnsureGPUMemoryAvailable, bool(size_t size_needed));
   MOCK_CONST_METHOD0(ClientTracingId, uint64_t());
   MOCK_CONST_METHOD0(ClientId, int());

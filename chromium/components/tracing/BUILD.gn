@@ -8,6 +8,8 @@ component("tracing") {
     "child_memory_dump_manager_delegate_impl.h",
     "child_trace_message_filter.cc",
     "child_trace_message_filter.h",
+    "graphics_memory_dump_provider_android.cc",
+    "graphics_memory_dump_provider_android.h",
     "tracing_export.h",
     "tracing_messages.cc",
     "tracing_messages.h",
@@ -25,6 +27,8 @@ component("startup_tracing") {
   sources = [
     "trace_config_file.cc",
     "trace_config_file.h",
+    "trace_to_console.cc",
+    "trace_to_console.h",
     "tracing_export.h",
     "tracing_switches.cc",
     "tracing_switches.h",
@@ -41,12 +45,17 @@ source_set("unit_tests") {
   testonly = true
 
   sources = [
-    "trace_config_file_unittest.cc",
+    "graphics_memory_dump_provider_android_unittest.cc",
   ]
 
   deps = [
-    ":startup_tracing",
+    ":tracing",
     "//base/test:test_support",
     "//testing/gtest",
   ]
+
+  if (!is_android) {
+    sources += [ "trace_config_file_unittest.cc" ]
+    deps += [ ":startup_tracing" ]
+  }
 }

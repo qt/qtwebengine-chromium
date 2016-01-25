@@ -9,7 +9,6 @@
   'target_defaults' : {
     'include_dirs': [
       '..',
-      '../third_party/mojo/src',
     ],
     'direct_dependent_settings': {
       'include_dirs': [
@@ -37,7 +36,6 @@
       ],
       'sources': [
         'edk/embedder/configuration.h',
-        'edk/embedder/channel_info_forward.h',
         'edk/embedder/embedder.cc',
         'edk/embedder/embedder.h',
         'edk/embedder/embedder_internal.h',
@@ -69,6 +67,12 @@
         'edk/system/awakable_list.h',
         'edk/system/async_waiter.cc',
         'edk/system/async_waiter.h',
+        'edk/system/broker.h',
+        'edk/system/broker_messages.h',
+        'edk/system/broker_state.cc',
+        'edk/system/broker_state.h',
+        'edk/system/child_broker_host.cc',
+        'edk/system/child_broker_host.h',
         'edk/system/configuration.cc',
         'edk/system/configuration.h',
         'edk/system/core.cc',
@@ -93,18 +97,24 @@
         'edk/system/message_pipe_dispatcher.cc',
         'edk/system/message_pipe_dispatcher.h',
         'edk/system/options_validation.h',
+        'edk/system/child_broker.cc',
+        'edk/system/child_broker.h',
         'edk/system/platform_handle_dispatcher.cc',
         'edk/system/platform_handle_dispatcher.h',
         'edk/system/raw_channel.cc',
         'edk/system/raw_channel.h',
         'edk/system/raw_channel_posix.cc',
         'edk/system/raw_channel_win.cc',
+        'edk/system/routed_raw_channel.cc',
+        'edk/system/routed_raw_channel.h',
         'edk/system/shared_buffer_dispatcher.cc',
         'edk/system/shared_buffer_dispatcher.h',
         'edk/system/simple_dispatcher.cc',
         'edk/system/simple_dispatcher.h',
         'edk/system/transport_data.cc',
         'edk/system/transport_data.h',
+        'edk/system/wait_set_dispatcher.cc',
+        'edk/system/wait_set_dispatcher.h',
         'edk/system/waiter.cc',
         'edk/system/waiter.h',
         # Test-only code:

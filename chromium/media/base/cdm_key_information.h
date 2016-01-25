@@ -5,10 +5,12 @@
 #ifndef MEDIA_BASE_CDM_KEY_INFORMATION_H_
 #define MEDIA_BASE_CDM_KEY_INFORMATION_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -25,12 +27,24 @@ struct MEDIA_EXPORT CdmKeyInformation {
     KEY_STATUS_MAX = RELEASED
   };
 
+  // Default constructor needed for passing this type through IPC. Regular
+  // code should use one of the other constructors.
   CdmKeyInformation();
+  CdmKeyInformation(const std::vector<uint8_t>& key_id,
+                    KeyStatus status,
+                    uint32_t system_code);
+  CdmKeyInformation(const std::string& key_id,
+                    KeyStatus status,
+                    uint32_t system_code);
+  CdmKeyInformation(const uint8_t* key_id_data,
+                    size_t key_id_length,
+                    KeyStatus status,
+                    uint32_t system_code);
   ~CdmKeyInformation();
 
-  std::vector<uint8> key_id;
+  std::vector<uint8_t> key_id;
   KeyStatus status;
-  uint32 system_code;
+  uint32_t system_code;
 };
 
 }  // namespace media

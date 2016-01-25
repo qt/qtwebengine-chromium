@@ -22,10 +22,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLIFrameElement.h"
 
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/frame/UseCounter.h"
@@ -40,7 +38,7 @@ using namespace HTMLNames;
 inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     : HTMLFrameElementBase(iframeTag, document)
     , m_didLoadNonEmptyDocument(false)
-    , m_sandbox(DOMSettableTokenList::create(this))
+    , m_sandbox(HTMLIFrameElementSandbox::create(this))
     , m_referrerPolicy(ReferrerPolicyDefault)
 {
 }
@@ -93,23 +91,7 @@ void HTMLIFrameElement::collectStyleForPresentationAttribute(const QualifiedName
     }
 }
 
-void HTMLIFrameElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == srcAttr && inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("iframe");
-            argv.append(srcAttr.toString());
-            argv.append(oldValue);
-            argv.append(newValue);
-            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
-        }
-    }
-    HTMLFrameElementBase::attributeWillChange(name, oldValue, newValue);
-}
-
-void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == nameAttr) {
         if (inDocument() && document().isHTMLDocument() && !isInShadowTree()) {
@@ -126,7 +108,9 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         if (!value.isNull())
             SecurityPolicy::referrerPolicyFromString(value, &m_referrerPolicy);
     } else {
-        HTMLFrameElementBase::parseAttribute(name, value);
+        if (name == srcAttr)
+            logUpdateAttributeIfIsolatedWorldAndInDocument("iframe", srcAttr, oldValue, value);
+        HTMLFrameElementBase::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -142,18 +126,10 @@ LayoutObject* HTMLIFrameElement::createLayoutObject(const ComputedStyle&)
 
 Node::InsertionNotificationRequest HTMLIFrameElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("iframe");
-            argv.append(fastGetAttribute(srcAttr));
-            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
-        }
-    }
     InsertionNotificationRequest result = HTMLFrameElementBase::insertedInto(insertionPoint);
     if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
         toHTMLDocument(document()).addExtraNamedItem(m_name);
+    logAddElementIfIsolatedWorldAndInDocument("iframe", srcAttr);
     return result;
 }
 
@@ -169,7 +145,7 @@ bool HTMLIFrameElement::isInteractiveContent() const
     return true;
 }
 
-void HTMLIFrameElement::valueChanged()
+void HTMLIFrameElement::valueWasSet()
 {
     String invalidTokens;
     setSandboxFlags(m_sandbox->value().isNull() ? SandboxNone : parseSandboxPolicy(m_sandbox->tokens(), invalidTokens));

@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/common.h"
 #include "webrtc/common_types.h"
 #include "webrtc/typedefs.h"
 
@@ -49,10 +50,13 @@ struct FecConfig {
   int red_rtx_payload_type;
 };
 
-// RTP header extension to use for the video stream, see RFC 5285.
+// RTP header extension, see RFC 5285.
 struct RtpExtension {
   RtpExtension(const std::string& name, int id) : name(name), id(id) {}
   std::string ToString() const;
+  bool operator==(const RtpExtension& rhs) const {
+    return name == rhs.name && id == rhs.id;
+  }
   static bool IsSupportedForAudio(const std::string& name);
   static bool IsSupportedForVideo(const std::string& name);
 
@@ -104,6 +108,7 @@ struct VideoEncoderConfig {
   std::string ToString() const;
 
   std::vector<VideoStream> streams;
+  std::vector<SpatialLayer> spatial_layers;
   ContentType content_type;
   void* encoder_specific_settings;
 
@@ -124,6 +129,7 @@ struct VideoEncoderConfig {
 struct NetEqCapacityConfig {
   NetEqCapacityConfig() : enabled(false), capacity(0) {}
   explicit NetEqCapacityConfig(int value) : enabled(true), capacity(value) {}
+  static const ConfigOptionID identifier = ConfigOptionID::kNetEqCapacityConfig;
   bool enabled;
   int capacity;
 };
@@ -131,6 +137,14 @@ struct NetEqCapacityConfig {
 struct NetEqFastAccelerate {
   NetEqFastAccelerate() : enabled(false) {}
   explicit NetEqFastAccelerate(bool value) : enabled(value) {}
+  static const ConfigOptionID identifier = ConfigOptionID::kNetEqFastAccelerate;
+  bool enabled;
+};
+
+struct VoicePacing {
+  VoicePacing() : enabled(false) {}
+  explicit VoicePacing(bool value) : enabled(value) {}
+  static const ConfigOptionID identifier = ConfigOptionID::kVoicePacing;
   bool enabled;
 };
 

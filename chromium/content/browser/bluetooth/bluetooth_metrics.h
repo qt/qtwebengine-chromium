@@ -29,6 +29,8 @@ enum class UMAWebBluetoothFunction {
   GET_CHARACTERISTIC = 3,
   CHARACTERISTIC_READ_VALUE = 4,
   CHARACTERISTIC_WRITE_VALUE = 5,
+  CHARACTERISTIC_START_NOTIFICATIONS = 6,
+  CHARACTERISTIC_STOP_NOTIFICATIONS = 7,
   // NOTE: Add new actions immediately above this line. Make sure to update
   // the enum list in tools/metrics/histograms/histograms.xml accordingly.
   COUNT
@@ -37,6 +39,15 @@ enum class UMAWebBluetoothFunction {
 // There should be a call to this function for every call to the Web Bluetooth
 // API.
 void RecordWebBluetoothFunctionCall(UMAWebBluetoothFunction function);
+
+// Enumation for outcomes of querying the bluetooth cache.
+enum class CacheQueryOutcome {
+  SUCCESS = 0,
+  BAD_RENDERER = 1,
+  NO_DEVICE = 2,
+  NO_SERVICE = 3,
+  NO_CHARACTERISTIC = 4,
+};
 
 // requestDevice() Metrics
 enum class UMARequestDeviceOutcome {
@@ -50,6 +61,7 @@ enum class UMARequestDeviceOutcome {
   OBSOLETE_BLUETOOTH_ADAPTER_OFF = 7,
   CHOSEN_DEVICE_VANISHED = 8,
   BLUETOOTH_CHOOSER_CANCELLED = 9,
+  BLUETOOTH_CHOOSER_DENIED_PERMISSION = 10,
   // NOTE: Add new requestDevice() outcomes immediately above this line. Make
   // sure to update the enum list in
   // tools/metrics/histograms/histograms.xml accordingly.
@@ -83,6 +95,13 @@ enum class UMAConnectGATTOutcome {
   AUTH_REJECTED = 7,
   AUTH_TIMEOUT = 8,
   UNSUPPORTED_DEVICE = 9,
+  ATTRIBUTE_LENGTH_INVALID = 10,
+  CONNECTION_CONGESTED = 11,
+  INSUFFICIENT_ENCRYPTION = 12,
+  OFFSET_INVALID = 13,
+  READ_NOT_PERMITTED = 14,
+  REQUEST_NOT_SUPPORTED = 15,
+  WRITE_NOT_PERMITTED = 16,
   // Note: Add new ConnectGATT outcomes immediately above this line. Make sure
   // to update the enum list in tools/metrics/histograms/histograms.xml
   // accordingly.
@@ -92,6 +111,9 @@ enum class UMAConnectGATTOutcome {
 // Send(BluetoothMsg_ConnectGATTSuccess) and
 // Send(BluetoothMsg_ConnectGATTError).
 void RecordConnectGATTOutcome(UMAConnectGATTOutcome outcome);
+// Records the outcome of the cache query for connectGATT. Should only be called
+// if QueryCacheForDevice fails.
+void RecordConnectGATTOutcome(CacheQueryOutcome outcome);
 // Records how long it took for the connection to succeed.
 void RecordConnectGATTTimeSuccess(const base::TimeDelta& duration);
 // Records how long it took for the connection to fail.
@@ -113,6 +135,9 @@ void RecordGetPrimaryServiceService(const device::BluetoothUUID& service);
 // Send(BluetoothMsg_GetPrimaryServiceSuccess) and
 // Send(BluetoothMsg_GetPrimaryServiceError).
 void RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome outcome);
+// Records the outcome of the cache query for getPrimaryService. Should only be
+// called if QueryCacheForDevice fails.
+void RecordGetPrimaryServiceOutcome(CacheQueryOutcome outcome);
 
 // getCharacteristic() Metrics
 enum class UMAGetCharacteristicOutcome {
@@ -129,6 +154,9 @@ enum class UMAGetCharacteristicOutcome {
 // Send(BluetoothMsg_GetCharacteristicSuccess) and
 // Send(BluetoothMsg_GetCharacteristicError).
 void RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome outcome);
+// Records the outcome of the cache query for getCharacteristic. Should only be
+// called if QueryCacheForService fails.
+void RecordGetCharacteristicOutcome(CacheQueryOutcome outcome);
 // Records the UUID of the characteristic used when calling getCharacteristic.
 void RecordGetCharacteristicCharacteristic(const std::string& characteristic);
 
@@ -159,6 +187,7 @@ enum UMAGATTOperationOutcome {
 enum class UMAGATTOperation {
   CHARACTERISTIC_READ,
   CHARACTERISTIC_WRITE,
+  START_NOTIFICATIONS,
   // Note: Add new GATT Operations immediately above this line.
   COUNT
 };
@@ -174,12 +203,27 @@ void RecordGATTOperationOutcome(UMAGATTOperation operation,
 // Send(BluetoothMsg_ReadCharacteristicValueSuccess) and
 // Send(BluetoothMsg_ReadCharacteristicValueError).
 void RecordCharacteristicReadValueOutcome(UMAGATTOperationOutcome error);
+// Records the outcome of a cache query for readValue. Should only be called if
+// QueryCacheForCharacteristic fails.
+void RecordCharacteristicReadValueOutcome(CacheQueryOutcome outcome);
 
 // Characteristic.writeValue() Metrics
 // There should be a call to this function for every call to
 // Send(BluetoothMsg_WriteCharacteristicValueSuccess) and
 // Send(BluetoothMsg_WriteCharacteristicValueError).
 void RecordCharacteristicWriteValueOutcome(UMAGATTOperationOutcome error);
+// Records the outcome of a cache query for writeValue. Should only be called if
+// QueryCacheForCharacteristic fails.
+void RecordCharacteristicWriteValueOutcome(CacheQueryOutcome outcome);
+
+// Characteristic.startNotifications() Metrics
+// There should be a call to this function for every call to
+// Send(BluetoothMsg_StartNotificationsSuccess) and
+// Send(BluetoothMsg_StopNotificationsError).
+void RecordStartNotificationsOutcome(UMAGATTOperationOutcome outcome);
+// Records the outcome of a cache query for startNotifications. Should only be
+// called if QueryCacheForCharacteristic fails.
+void RecordStartNotificationsOutcome(CacheQueryOutcome outcome);
 
 }  // namespace content
 

@@ -4,8 +4,11 @@
 
 #include "media/capture/content/screen_capture_device_core.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -42,20 +45,18 @@ void ScreenCaptureDeviceCore::AllocateAndStart(
     return;
   }
 
-  if (!(params.requested_format.pixel_format == PIXEL_FORMAT_I420 &&
-        params.requested_format.pixel_storage == PIXEL_STORAGE_CPU) &&
-      !(params.requested_format.pixel_format == PIXEL_FORMAT_ARGB &&
-        params.requested_format.pixel_storage == PIXEL_STORAGE_TEXTURE)) {
-    const std::string error_msg = base::StringPrintf(
-        "unsupported format: %s",
-        VideoCaptureFormat::ToString(params.requested_format).c_str());
-    DVLOG(1) << error_msg;
-    client->OnError(error_msg);
+  if (params.requested_format.pixel_format != PIXEL_FORMAT_I420 ||
+      params.requested_format.pixel_storage != PIXEL_STORAGE_CPU) {
+    client->OnError(
+        FROM_HERE,
+        base::StringPrintf(
+            "unsupported format: %s",
+            VideoCaptureFormat::ToString(params.requested_format).c_str()));
     return;
   }
 
   oracle_proxy_ = new ThreadSafeCaptureOracle(
-      client.Pass(), params, capture_machine_->IsAutoThrottlingEnabled());
+      std::move(client), params, capture_machine_->IsAutoThrottlingEnabled());
 
   capture_machine_->Start(
       oracle_proxy_, params,
@@ -80,16 +81,13 @@ void ScreenCaptureDeviceCore::StopAndDeAllocate() {
 
 void ScreenCaptureDeviceCore::CaptureStarted(bool success) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!success) {
-    std::string reason("Failed to start capture machine.");
-    DVLOG(1) << reason;
-    Error(reason);
-  }
+  if (!success)
+    Error(FROM_HERE, "Failed to start capture machine.");
 }
 
 ScreenCaptureDeviceCore::ScreenCaptureDeviceCore(
     scoped_ptr<VideoCaptureMachine> capture_machine)
-    : state_(kIdle), capture_machine_(capture_machine.Pass()) {
+    : state_(kIdle), capture_machine_(std::move(capture_machine)) {
   DCHECK(capture_machine_.get());
 }
 
@@ -107,8 +105,9 @@ void ScreenCaptureDeviceCore::TransitionStateTo(State next_state) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
 #ifndef NDEBUG
-  static const char* kStateNames[] = {
-      "Idle", "Allocated", "Capturing", "Error"};
+  static const char* kStateNames[] = {"Idle", "Capturing", "Error"};
+  static_assert(arraysize(kStateNames) == kLastCaptureState,
+                "Different number of states and textual descriptions");
   DVLOG(1) << "State change: " << kStateNames[state_] << " --> "
            << kStateNames[next_state];
 #endif
@@ -116,14 +115,15 @@ void ScreenCaptureDeviceCore::TransitionStateTo(State next_state) {
   state_ = next_state;
 }
 
-void ScreenCaptureDeviceCore::Error(const std::string& reason) {
+void ScreenCaptureDeviceCore::Error(const tracked_objects::Location& from_here,
+                                    const std::string& reason) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (state_ == kIdle)
     return;
 
   if (oracle_proxy_.get())
-    oracle_proxy_->ReportError(reason);
+    oracle_proxy_->ReportError(from_here, reason);
 
   StopAndDeAllocate();
   TransitionStateTo(kError);

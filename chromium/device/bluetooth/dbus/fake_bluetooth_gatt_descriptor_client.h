@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_
-#define CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_
+#ifndef DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_
+#define DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_
+
+#include <stdint.h>
 
 #include <map>
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "dbus/object_path.h"
@@ -49,7 +52,7 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothGattDescriptorClient
                  const ValueCallback& callback,
                  const ErrorCallback& error_callback) override;
   void WriteValue(const dbus::ObjectPath& object_path,
-                  const std::vector<uint8>& value,
+                  const std::vector<uint8_t>& value,
                   const base::Closure& callback,
                   const ErrorCallback& error_callback) override;
 
@@ -100,4 +103,4 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothGattDescriptorClient
 
 }  // namespace bluez
 
-#endif  // CHROMEOS_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_
+#endif  // DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_GATT_DESCRIPTOR_CLIENT_H_

@@ -28,13 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/UnicodeUtilities.h"
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CharacterNames.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 #include <unicode/uchar.h>
 
 namespace blink {

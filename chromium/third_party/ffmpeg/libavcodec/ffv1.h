@@ -53,6 +53,11 @@
 #define MAX_QUANT_TABLES 8
 #define MAX_CONTEXT_INPUTS 5
 
+#define AC_GOLOMB_RICE          0
+#define AC_RANGE_DEFAULT_TAB    1
+#define AC_RANGE_CUSTOM_TAB     2
+#define AC_RANGE_DEFAULT_TAB_FORCE -2
+
 typedef struct VlcState {
     int16_t drift;
     uint16_t error_sum;
@@ -118,6 +123,7 @@ typedef struct FFV1Context {
 
     struct FFV1Context *slice_context[MAX_SLICES];
     int slice_count;
+    int max_slice_count;
     int num_v_slices;
     int num_h_slices;
     int slice_width;

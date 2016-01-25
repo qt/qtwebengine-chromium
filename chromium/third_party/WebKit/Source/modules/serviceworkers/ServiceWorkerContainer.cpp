@@ -27,7 +27,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "config.h"
 #include "modules/serviceworkers/ServiceWorkerContainer.h"
 
 #include "bindings/core/v8/ScriptPromise.h"
@@ -42,6 +41,7 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/UseCounter.h"
 #include "modules/EventTargetModules.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
@@ -209,7 +209,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
     String errorMessage;
     // Restrict to secure origins: https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-privileged
     if (!executionContext->isSecureContext(errorMessage)) {
-        resolver->reject(DOMException::create(NotSupportedError, errorMessage));
+        resolver->reject(DOMException::create(SecurityError, errorMessage));
         return promise;
     }
 
@@ -219,7 +219,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
         return promise;
     }
 
-    KURL scriptURL = callingExecutionContext(scriptState->isolate())->completeURL(url);
+    KURL scriptURL = enteredExecutionContext(scriptState->isolate())->completeURL(url);
     scriptURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(scriptURL)) {
         RefPtr<SecurityOrigin> scriptOrigin = SecurityOrigin::create(scriptURL);
@@ -235,7 +235,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
     if (options.scope().isNull())
         patternURL = KURL(scriptURL, "./");
     else
-        patternURL = callingExecutionContext(scriptState->isolate())->completeURL(options.scope());
+        patternURL = enteredExecutionContext(scriptState->isolate())->completeURL(options.scope());
     patternURL.removeFragmentIdentifier();
 
     if (!documentOrigin->canRequest(patternURL)) {
@@ -277,7 +277,7 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
     if (!executionContext->isSecureContext(errorMessage)) {
-        resolver->reject(DOMException::create(NotSupportedError, errorMessage));
+        resolver->reject(DOMException::create(SecurityError, errorMessage));
         return promise;
     }
 
@@ -287,7 +287,7 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
         return promise;
     }
 
-    KURL completedURL = callingExecutionContext(scriptState->isolate())->completeURL(documentURL);
+    KURL completedURL = enteredExecutionContext(scriptState->isolate())->completeURL(documentURL);
     completedURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(completedURL)) {
         RefPtr<SecurityOrigin> documentURLOrigin = SecurityOrigin::create(completedURL);
@@ -313,7 +313,7 @@ ScriptPromise ServiceWorkerContainer::getRegistrations(ScriptState* scriptState)
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
     if (!executionContext->isSecureContext(errorMessage)) {
-        resolver->reject(DOMException::create(NotSupportedError, errorMessage));
+        resolver->reject(DOMException::create(SecurityError, errorMessage));
         return promise;
     }
 
@@ -353,34 +353,25 @@ ScriptPromise ServiceWorkerContainer::ready(ScriptState* callerState)
     return m_ready->promise(callerState->world());
 }
 
-// If the WebServiceWorker is up for adoption (does not have a
-// WebServiceWorkerProxy owner), rejects the adoption by deleting the
-// WebServiceWorker.
-static void deleteIfNoExistingOwner(WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::setController(WebPassOwnPtr<WebServiceWorker::Handle> handle, bool shouldNotifyControllerChange)
 {
-    if (serviceWorker && !serviceWorker->proxy())
-        delete serviceWorker;
-}
-
-void ServiceWorkerContainer::setController(WebServiceWorker* serviceWorker, bool shouldNotifyControllerChange)
-{
-    if (!executionContext()) {
-        deleteIfNoExistingOwner(serviceWorker);
+    if (!executionContext())
         return;
-    }
-    m_controller = ServiceWorker::from(executionContext(), serviceWorker);
+    m_controller = ServiceWorker::from(executionContext(), handle.release());
+    if (m_controller)
+        UseCounter::count(executionContext(), UseCounter::ServiceWorkerControlledPage);
     if (shouldNotifyControllerChange)
         dispatchEvent(Event::create(EventTypeNames::controllerchange));
 }
 
-void ServiceWorkerContainer::dispatchMessageEvent(WebServiceWorker* serviceWorker, const WebString& message, const WebMessagePortChannelArray& webChannels)
+void ServiceWorkerContainer::dispatchMessageEvent(WebPassOwnPtr<WebServiceWorker::Handle> handle, const WebString& message, const WebMessagePortChannelArray& webChannels)
 {
     if (!executionContext() || !executionContext()->executingWindow())
         return;
 
     MessagePortArray* ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
     RefPtr<SerializedScriptValue> value = SerializedScriptValueFactory::instance().createFromWire(message);
-    ServiceWorker* source = ServiceWorker::from(executionContext(), serviceWorker);
+    ServiceWorker* source = ServiceWorker::from(executionContext(), handle.release());
     dispatchEvent(ServiceWorkerMessageEvent::create(ports, value, source, executionContext()->securityOrigin()->toString()));
 }
 

@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AbstractAudioContext.h"
-
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
@@ -53,6 +50,7 @@
 #include "modules/webaudio/DelayNode.h"
 #include "modules/webaudio/DynamicsCompressorNode.h"
 #include "modules/webaudio/GainNode.h"
+#include "modules/webaudio/IIRFilterNode.h"
 #include "modules/webaudio/MediaElementAudioSourceNode.h"
 #include "modules/webaudio/MediaStreamAudioDestinationNode.h"
 #include "modules/webaudio/MediaStreamAudioSourceNode.h"
@@ -66,6 +64,7 @@
 #include "modules/webaudio/StereoPannerNode.h"
 #include "modules/webaudio/WaveShaperNode.h"
 #include "platform/ThreadSafeFunctional.h"
+#include "platform/audio/IIRFilter.h"
 #include "public/platform/Platform.h"
 #include "wtf/text/WTFString.h"
 
@@ -82,13 +81,18 @@ AbstractAudioContext* AbstractAudioContext::create(Document& document, Exception
 // Constructor for rendering to the audio hardware.
 AbstractAudioContext::AbstractAudioContext(Document* document)
     : ActiveDOMObject(document)
-    , m_isCleared(false)
     , m_destinationNode(nullptr)
+    , m_isCleared(false)
     , m_isResolvingResumePromises(false)
     , m_connectionCount(0)
     , m_didInitializeContextGraphMutex(false)
     , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_contextState(Suspended)
+    , m_closedContextSampleRate(-1)
+    , m_periodicWaveSine(nullptr)
+    , m_periodicWaveSquare(nullptr)
+    , m_periodicWaveSawtooth(nullptr)
+    , m_periodicWaveTriangle(nullptr)
 {
     m_didInitializeContextGraphMutex = true;
     m_destinationNode = DefaultAudioDestinationNode::create(this);
@@ -99,21 +103,20 @@ AbstractAudioContext::AbstractAudioContext(Document* document)
 // Constructor for offline (non-realtime) rendering.
 AbstractAudioContext::AbstractAudioContext(Document* document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
     : ActiveDOMObject(document)
-    , m_isCleared(false)
     , m_destinationNode(nullptr)
+    , m_isCleared(false)
     , m_isResolvingResumePromises(false)
     , m_connectionCount(0)
     , m_didInitializeContextGraphMutex(false)
     , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_contextState(Suspended)
+    , m_closedContextSampleRate(-1)
+    , m_periodicWaveSine(nullptr)
+    , m_periodicWaveSquare(nullptr)
+    , m_periodicWaveSawtooth(nullptr)
+    , m_periodicWaveTriangle(nullptr)
 {
     m_didInitializeContextGraphMutex = true;
-    // Create a new destination for offline rendering.
-    m_renderTarget = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
-    if (m_renderTarget.get())
-        m_destinationNode = OfflineAudioDestinationNode::create(this, m_renderTarget.get());
-
-    initialize();
 }
 
 AbstractAudioContext::~AbstractAudioContext()
@@ -197,20 +200,44 @@ AudioBuffer* AbstractAudioContext::createBuffer(unsigned numberOfChannels, size_
     return AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate, exceptionState);
 }
 
-void AbstractAudioContext::decodeAudioData(DOMArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, ExceptionState& exceptionState)
+ScriptPromise AbstractAudioContext::decodeAudioData(ScriptState* scriptState, DOMArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, ExceptionState& exceptionState)
 {
-    if (isContextClosed()) {
-        throwExceptionForClosedState(exceptionState);
-        return;
+    ASSERT(isMainThread());
+    ASSERT(audioData);
+
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    float rate = isContextClosed() ? closedContextSampleRate() : sampleRate();
+
+    ASSERT(rate > 0);
+
+    m_decodeAudioResolvers.add(resolver);
+    m_audioDecoder.decodeAsync(audioData, rate, successCallback, errorCallback, resolver, this);
+
+    return promise;
+}
+
+void AbstractAudioContext::handleDecodeAudioData(AudioBuffer* audioBuffer, ScriptPromiseResolver* resolver, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback)
+{
+    ASSERT(isMainThread());
+
+    if (audioBuffer) {
+        // Resolve promise successfully and run the success callback
+        resolver->resolve(audioBuffer);
+        if (successCallback)
+            successCallback->handleEvent(audioBuffer);
+    } else {
+        // Reject the promise and run the error callback
+        DOMException* error = DOMException::create(EncodingError, "Unable to decode audio data");
+        resolver->reject(error);
+        if (errorCallback)
+            errorCallback->handleEvent(error);
     }
 
-    if (!audioData) {
-        exceptionState.throwDOMException(
-            SyntaxError,
-            "invalid ArrayBuffer for audioData.");
-        return;
-    }
-    m_audioDecoder.decodeAsync(audioData, sampleRate(), successCallback, errorCallback);
+    // We've resolved the promise.  Remove it now.
+    ASSERT(m_decodeAudioResolvers.contains(resolver));
+    m_decodeAudioResolvers.remove(resolver);
 }
 
 AudioBufferSourceNode* AbstractAudioContext::createBufferSource(ExceptionState& exceptionState)
@@ -239,13 +266,6 @@ MediaElementAudioSourceNode* AbstractAudioContext::createMediaElementSource(HTML
         return nullptr;
     }
 
-    if (!mediaElement) {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid HTMLMedialElement.");
-        return nullptr;
-    }
-
     // First check if this media element already has a source node.
     if (mediaElement->audioSourceNode()) {
         exceptionState.throwDOMException(
@@ -268,13 +288,6 @@ MediaStreamAudioSourceNode* AbstractAudioContext::createMediaStreamSource(MediaS
 
     if (isContextClosed()) {
         throwExceptionForClosedState(exceptionState);
-        return nullptr;
-    }
-
-    if (!mediaStream) {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid MediaStream source");
         return nullptr;
     }
 
@@ -564,20 +577,6 @@ PeriodicWave* AbstractAudioContext::createPeriodicWave(DOMFloat32Array* real, DO
         return nullptr;
     }
 
-    if (!real) {
-        exceptionState.throwDOMException(
-            SyntaxError,
-            "invalid real array");
-        return nullptr;
-    }
-
-    if (!imag) {
-        exceptionState.throwDOMException(
-            SyntaxError,
-            "invalid imaginary array");
-        return nullptr;
-    }
-
     if (real->length() != imag->length()) {
         exceptionState.throwDOMException(
             IndexSizeError,
@@ -591,6 +590,119 @@ PeriodicWave* AbstractAudioContext::createPeriodicWave(DOMFloat32Array* real, DO
     DictionaryHelper::getWithUndefinedOrNullCheck(options, "disableNormalization", isNormalizationDisabled);
 
     return PeriodicWave::create(sampleRate(), real, imag, isNormalizationDisabled);
+}
+
+IIRFilterNode* AbstractAudioContext::createIIRFilter(Vector<double> feedforwardCoef, Vector<double> feedbackCoef,  ExceptionState& exceptionState)
+{
+    ASSERT(isMainThread());
+
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    if (feedbackCoef.size() == 0 || (feedbackCoef.size() > IIRFilter::kMaxOrder + 1)) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexOutsideRange<size_t>(
+                "number of feedback coefficients",
+                feedbackCoef.size(),
+                1,
+                ExceptionMessages::InclusiveBound,
+                IIRFilter::kMaxOrder + 1,
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
+    }
+
+    if (feedforwardCoef.size() == 0 || (feedforwardCoef.size() > IIRFilter::kMaxOrder + 1)) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexOutsideRange<size_t>(
+                "number of feedforward coefficients",
+                feedforwardCoef.size(),
+                1,
+                ExceptionMessages::InclusiveBound,
+                IIRFilter::kMaxOrder + 1,
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
+    }
+
+    if (feedbackCoef[0] == 0) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "First feedback coefficient cannot be zero.");
+        return nullptr;
+    }
+
+    bool hasNonZeroCoef = false;
+
+    for (size_t k = 0; k < feedforwardCoef.size(); ++k) {
+        if (feedforwardCoef[k] != 0) {
+            hasNonZeroCoef = true;
+            break;
+        }
+    }
+
+    if (!hasNonZeroCoef) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "At least one feedforward coefficient must be non-zero.");
+        return nullptr;
+    }
+
+    // Make sure all coefficents are finite.
+    for (size_t k = 0; k < feedforwardCoef.size(); ++k) {
+        double c = feedforwardCoef[k];
+        if (!std::isfinite(c)) {
+            String name = "feedforward coefficient " + String::number(k);
+            exceptionState.throwDOMException(
+                InvalidStateError,
+                ExceptionMessages::notAFiniteNumber(c, name.ascii().data()));
+            return nullptr;
+        }
+    }
+
+    for (size_t k = 0; k < feedbackCoef.size(); ++k) {
+        double c = feedbackCoef[k];
+        if (!std::isfinite(c)) {
+            String name = "feedback coefficient " + String::number(k);
+            exceptionState.throwDOMException(
+                InvalidStateError,
+                ExceptionMessages::notAFiniteNumber(c, name.ascii().data()));
+            return nullptr;
+        }
+    }
+
+    return IIRFilterNode::create(*this, sampleRate(), feedforwardCoef, feedbackCoef);
+}
+
+PeriodicWave* AbstractAudioContext::periodicWave(int type)
+{
+    switch (type) {
+    case OscillatorHandler::SINE:
+        // Initialize the table if necessary
+        if (!m_periodicWaveSine)
+            m_periodicWaveSine = PeriodicWave::createSine(sampleRate());
+        return m_periodicWaveSine;
+    case OscillatorHandler::SQUARE:
+        // Initialize the table if necessary
+        if (!m_periodicWaveSquare)
+            m_periodicWaveSquare = PeriodicWave::createSquare(sampleRate());
+        return m_periodicWaveSquare;
+    case OscillatorHandler::SAWTOOTH:
+        // Initialize the table if necessary
+        if (!m_periodicWaveSawtooth)
+            m_periodicWaveSawtooth = PeriodicWave::createSawtooth(sampleRate());
+        return m_periodicWaveSawtooth;
+    case OscillatorHandler::TRIANGLE:
+        // Initialize the table if necessary
+        if (!m_periodicWaveTriangle)
+            m_periodicWaveTriangle = PeriodicWave::createTriangle(sampleRate());
+        return m_periodicWaveTriangle;
+    default:
+        ASSERT_NOT_REACHED();
+        return nullptr;
+    }
 }
 
 String AbstractAudioContext::state() const
@@ -635,7 +747,7 @@ void AbstractAudioContext::setContextState(AudioContextState newState)
 
     // Notify context that state changed
     if (executionContext())
-        executionContext()->postTask(FROM_HERE, createSameThreadTask(&AbstractAudioContext::notifyStateChange, this));
+        executionContext()->postTask(BLINK_FROM_HERE, createSameThreadTask(&AbstractAudioContext::notifyStateChange, this));
 }
 
 void AbstractAudioContext::notifyStateChange()
@@ -765,7 +877,7 @@ void AbstractAudioContext::resolvePromisesForResume()
     // promises in the main thread.
     if (!m_isResolvingResumePromises && m_resumeResolvers.size() > 0) {
         m_isResolvingResumePromises = true;
-        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&AbstractAudioContext::resolvePromisesForResumeOnMainThread, this));
+        Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&AbstractAudioContext::resolvePromisesForResumeOnMainThread, this));
     }
 }
 
@@ -780,6 +892,11 @@ void AbstractAudioContext::rejectPendingResolvers()
     }
     m_resumeResolvers.clear();
     m_isResolvingResumePromises = false;
+
+    // Now reject any pending decodeAudioData resolvers
+    for (auto& resolver : m_decodeAudioResolvers)
+        resolver->reject(DOMException::create(InvalidStateError, "Audio context is going away"));
+    m_decodeAudioResolvers.clear();
 }
 
 const AtomicString& AbstractAudioContext::interfaceName() const
@@ -804,34 +921,8 @@ void AbstractAudioContext::startRendering()
     }
 }
 
-void AbstractAudioContext::fireCompletionEvent()
-{
-    ASSERT(isMainThread());
-    if (!isMainThread())
-        return;
-
-    AudioBuffer* renderedBuffer = m_renderTarget.get();
-
-    // For an offline context, we set the state to closed here so that the oncomplete handler sees
-    // that the context has been closed.
-    setContextState(Closed);
-
-    ASSERT(renderedBuffer);
-    if (!renderedBuffer)
-        return;
-
-    // Avoid firing the event if the document has already gone away.
-    if (executionContext()) {
-        // Call the offline rendering completion event listener and resolve the promise too.
-        dispatchEvent(OfflineAudioCompletionEvent::create(renderedBuffer));
-        m_offlineResolver->resolve(renderedBuffer);
-    }
-}
-
 DEFINE_TRACE(AbstractAudioContext)
 {
-    visitor->trace(m_offlineResolver);
-    visitor->trace(m_renderTarget);
     visitor->trace(m_destinationNode);
     visitor->trace(m_listener);
     // trace() can be called in AbstractAudioContext constructor, and
@@ -843,6 +934,12 @@ DEFINE_TRACE(AbstractAudioContext)
         visitor->trace(m_activeSourceNodes);
     }
     visitor->trace(m_resumeResolvers);
+    visitor->trace(m_decodeAudioResolvers);
+
+    visitor->trace(m_periodicWaveSine);
+    visitor->trace(m_periodicWaveSquare);
+    visitor->trace(m_periodicWaveSawtooth);
+    visitor->trace(m_periodicWaveTriangle);
     RefCountedGarbageCollectedEventTargetWithInlineData<AbstractAudioContext>::trace(visitor);
     ActiveDOMObject::trace(visitor);
 }
@@ -857,4 +954,3 @@ SecurityOrigin* AbstractAudioContext::securityOrigin() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

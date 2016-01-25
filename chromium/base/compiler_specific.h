@@ -9,6 +9,9 @@
 
 #if defined(COMPILER_MSVC)
 
+// For _Printf_format_string_.
+#include <sal.h>
+
 // Macros for suppressing and disabling warnings on MSVC.
 //
 // Warning numbers are enumerated at:
@@ -57,6 +60,7 @@
 
 #else  // Not MSVC
 
+#define _Printf_format_string_
 #define MSVC_SUPPRESS_WARNING(n)
 #define MSVC_PUSH_DISABLE_WARNING(n)
 #define MSVC_PUSH_WARNING_LEVEL(n)
@@ -108,7 +112,7 @@
 
 // Return the byte alignment of the given type (available at compile time).
 // Use like:
-//   ALIGNOF(int32)  // this would be 4
+//   ALIGNOF(int32_t)  // this would be 4
 #if defined(COMPILER_MSVC)
 #define ALIGNOF(type) __alignof(type)
 #elif defined(COMPILER_GCC)
@@ -119,7 +123,8 @@
 // Use like:
 //   int foo() WARN_UNUSED_RESULT;
 // To explicitly ignore a result, see |ignore_result()| in base/macros.h.
-#if defined(COMPILER_GCC)
+#undef WARN_UNUSED_RESULT
+#if defined(COMPILER_GCC) || defined(__clang__)
 #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
 #else
 #define WARN_UNUSED_RESULT

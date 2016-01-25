@@ -8,9 +8,9 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 
 namespace content {
 
@@ -178,10 +178,19 @@ MediaStreamVideoTrack::FrameDeliverer::GetBlackFrame(
       media::VideoFrame::WrapVideoFrame(
           black_frame_, black_frame_->visible_rect(),
           black_frame_->natural_size());
+  if (!wrapped_black_frame)
+    return nullptr;
   wrapped_black_frame->AddDestructionObserver(
       base::Bind(&ReleaseOriginalFrame, black_frame_));
 
   wrapped_black_frame->set_timestamp(reference_frame->timestamp());
+  base::TimeTicks reference_time;
+  if (reference_frame->metadata()->GetTimeTicks(
+          media::VideoFrameMetadata::REFERENCE_TIME, &reference_time)) {
+    wrapped_black_frame->metadata()->SetTimeTicks(
+        media::VideoFrameMetadata::REFERENCE_TIME, reference_time);
+  }
+
   return wrapped_black_frame;
 }
 

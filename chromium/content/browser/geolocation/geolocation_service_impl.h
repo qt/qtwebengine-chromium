@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/geolocation/geolocation_provider_impl.h"
 #include "content/common/geolocation_service.mojom.h"
 #include "content/public/common/mojo_geoposition.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/binding.h"
 
 #ifndef CONTENT_BROWSER_GEOLOCATION_GEOLOCATION_SERVICE_IMPL_H_
 #define CONTENT_BROWSER_GEOLOCATION_GEOLOCATION_SERVICE_IMPL_H_

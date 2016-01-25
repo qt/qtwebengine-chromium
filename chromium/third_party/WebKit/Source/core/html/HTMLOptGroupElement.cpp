@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLOptGroupElement.h"
 
 #include "core/HTMLNames.h"
@@ -64,9 +63,9 @@ void HTMLOptGroupElement::childrenChanged(const ChildrenChange& change)
     HTMLElement::childrenChanged(change);
 }
 
-void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
-    HTMLElement::parseAttribute(name, value);
+    HTMLElement::parseAttribute(name, oldValue, value);
     recalcSelectOptions();
 
     if (name == disabledAttr) {
@@ -79,6 +78,7 @@ void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const Atomic
 
 void HTMLOptGroupElement::recalcSelectOptions()
 {
+    // TODO(tkent): Should use ownerSelectElement().
     if (HTMLSelectElement* select = Traversal<HTMLSelectElement>::firstAncestor(*this))
         select->setRecalcListItems();
 }
@@ -140,6 +140,7 @@ String HTMLOptGroupElement::groupLabelText() const
 
 HTMLSelectElement* HTMLOptGroupElement::ownerSelectElement() const
 {
+    // TODO(tkent): We should return only the parent <select>.
     return Traversal<HTMLSelectElement>::firstAncestor(*this);
 }
 

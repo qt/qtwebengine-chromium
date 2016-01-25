@@ -143,31 +143,30 @@ OPENSSL_EXPORT int EVP_PKEY_type(int nid);
  * The following functions get and set the underlying public key in an
  * |EVP_PKEY| object. The |set1| functions take an additional reference to the
  * underlying key and return one on success or zero on error. The |assign|
- * functions adopt the caller's reference. The getters return a fresh reference
- * to the underlying object. */
+ * functions adopt the caller's reference. The |get1| functions return a fresh
+ * reference to the underlying object or NULL if |pkey| is not of the correct
+ * type. The |get0| functions behave the same but return a non-owning
+ * pointer. */
 
 OPENSSL_EXPORT int EVP_PKEY_set1_RSA(EVP_PKEY *pkey, RSA *key);
 OPENSSL_EXPORT int EVP_PKEY_assign_RSA(EVP_PKEY *pkey, RSA *key);
+OPENSSL_EXPORT RSA *EVP_PKEY_get0_RSA(EVP_PKEY *pkey);
 OPENSSL_EXPORT RSA *EVP_PKEY_get1_RSA(EVP_PKEY *pkey);
 
-OPENSSL_EXPORT int EVP_PKEY_set1_DSA(EVP_PKEY *pkey, struct dsa_st *key);
+OPENSSL_EXPORT int EVP_PKEY_set1_DSA(EVP_PKEY *pkey, DSA *key);
 OPENSSL_EXPORT int EVP_PKEY_assign_DSA(EVP_PKEY *pkey, DSA *key);
-OPENSSL_EXPORT struct dsa_st *EVP_PKEY_get1_DSA(EVP_PKEY *pkey);
+OPENSSL_EXPORT DSA *EVP_PKEY_get0_DSA(EVP_PKEY *pkey);
+OPENSSL_EXPORT DSA *EVP_PKEY_get1_DSA(EVP_PKEY *pkey);
 
-OPENSSL_EXPORT int EVP_PKEY_set1_EC_KEY(EVP_PKEY *pkey, struct ec_key_st *key);
+OPENSSL_EXPORT int EVP_PKEY_set1_EC_KEY(EVP_PKEY *pkey, EC_KEY *key);
 OPENSSL_EXPORT int EVP_PKEY_assign_EC_KEY(EVP_PKEY *pkey, EC_KEY *key);
-OPENSSL_EXPORT struct ec_key_st *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey);
-
-OPENSSL_EXPORT int EVP_PKEY_set1_DH(EVP_PKEY *pkey, struct dh_st *key);
-OPENSSL_EXPORT int EVP_PKEY_assign_DH(EVP_PKEY *pkey, DH *key);
-OPENSSL_EXPORT struct dh_st *EVP_PKEY_get1_DH(EVP_PKEY *pkey);
+OPENSSL_EXPORT EC_KEY *EVP_PKEY_get0_EC_KEY(EVP_PKEY *pkey);
+OPENSSL_EXPORT EC_KEY *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey);
 
 #define EVP_PKEY_NONE NID_undef
 #define EVP_PKEY_RSA NID_rsaEncryption
 #define EVP_PKEY_RSA2 NID_rsa
 #define EVP_PKEY_DSA NID_dsa
-#define EVP_PKEY_DH NID_dhKeyAgreement
-#define EVP_PKEY_DHX NID_dhpublicnumber
 #define EVP_PKEY_EC NID_X9_62_id_ecPublicKey
 
 /* EVP_PKEY_assign sets the underlying key of |pkey| to |key|, which must be of
@@ -643,6 +642,10 @@ OPENSSL_EXPORT int EVP_PKEY_CTX_get0_rsa_oaep_label(EVP_PKEY_CTX *ctx,
 
 /* Deprecated functions. */
 
+/* EVP_PKEY_DH is defined for compatibility, but it is impossible to create an
+ * |EVP_PKEY| of that type. */
+#define EVP_PKEY_DH NID_dhKeyAgreement
+
 /* OpenSSL_add_all_algorithms does nothing. */
 OPENSSL_EXPORT void OpenSSL_add_all_algorithms(void);
 
@@ -664,7 +667,11 @@ OPENSSL_EXPORT void EVP_cleanup(void);
 OPENSSL_EXPORT const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find(ENGINE **pengine,
                                                               int nid);
 
-/* TODO(fork): move to PEM? */
+/* EVP_PKEY_asn1_find_str returns an |EVP_PKEY_ASN1_METHOD| by matching values
+ * of the |len| bytes at |name|. For example, if name equals "EC" then it will
+ * return an ECC method. The |pengine| argument is ignored.
+ *
+ * TODO(fork): move to PEM? */
 OPENSSL_EXPORT const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find_str(
     ENGINE **pengine, const char *name, size_t len);
 

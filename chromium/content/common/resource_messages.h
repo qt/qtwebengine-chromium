@@ -7,9 +7,13 @@
 // NOTE: All messages must send an |int request_id| as their first parameter.
 
 // Multiply-included message file, hence no include guard.
+
+#include <stdint.h>
+
 #include "base/memory/shared_memory.h"
 #include "base/process/process.h"
 #include "content/common/content_param_traits_macros.h"
+#include "content/common/navigation_params.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/common_param_traits.h"
@@ -114,6 +118,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(mime_type)
   IPC_STRUCT_TRAITS_MEMBER(charset)
   IPC_STRUCT_TRAITS_MEMBER(security_info)
+  IPC_STRUCT_TRAITS_MEMBER(has_major_certificate_errors)
   IPC_STRUCT_TRAITS_MEMBER(content_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_data_length)
   IPC_STRUCT_TRAITS_MEMBER(appcache_id)
@@ -135,6 +140,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_start_time)
   IPC_STRUCT_TRAITS_MEMBER(service_worker_ready_time)
   IPC_STRUCT_TRAITS_MEMBER(proxy_server)
+  IPC_STRUCT_TRAITS_MEMBER(is_using_lofi)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(net::RedirectInfo)
@@ -159,6 +165,10 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // bypassed by setting first_party_for_cookies = url, but this should ideally
   // only be done if there really is no way to determine the correct value.
   IPC_STRUCT_MEMBER(GURL, first_party_for_cookies)
+
+  // The origin of the context which initiated the request, which will be used
+  // for cookie checks like 'First-Party-Only'.
+  IPC_STRUCT_MEMBER(url::Origin, request_initiator)
 
   // The referrer to use (may be empty).
   IPC_STRUCT_MEMBER(GURL, referrer)
@@ -190,7 +200,7 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   IPC_STRUCT_MEMBER(net::RequestPriority, priority)
 
   // Used by plugin->browser requests to get the correct net::URLRequestContext.
-  IPC_STRUCT_MEMBER(uint32, request_context)
+  IPC_STRUCT_MEMBER(uint32_t, request_context)
 
   // Indicates which frame (or worker context) the request is being loaded into,
   // or kAppCacheNoHostId.
@@ -270,6 +280,10 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
 
   // Whether to intercept headers to pass back to the renderer.
   IPC_STRUCT_MEMBER(bool, report_raw_headers)
+
+  // Whether or not to request a LoFi version of the resource or let the browser
+  // decide.
+  IPC_STRUCT_MEMBER(content::LoFiState, lofi_state)
 IPC_STRUCT_END()
 
 // Parameters for a ResourceMsg_RequestComplete
@@ -290,7 +304,7 @@ IPC_STRUCT_BEGIN(ResourceMsg_RequestCompleteData)
   IPC_STRUCT_MEMBER(base::TimeTicks, completion_time)
 
   // Total amount of data received from the network.
-  IPC_STRUCT_MEMBER(int64, encoded_data_length)
+  IPC_STRUCT_MEMBER(int64_t, encoded_data_length)
 IPC_STRUCT_END()
 
 // Resource messages sent from the browser to the renderer.
@@ -308,8 +322,8 @@ IPC_MESSAGE_CONTROL2(ResourceMsg_ReceivedCachedMetadata,
 // Sent as upload progress is being made.
 IPC_MESSAGE_CONTROL3(ResourceMsg_UploadProgress,
                      int /* request_id */,
-                     int64 /* position */,
-                     int64 /* size */)
+                     int64_t /* position */,
+                     int64_t /* size */)
 
 // Sent when the request has been redirected.  The receiver is expected to
 // respond with either a FollowRedirect message (if the redirect is to be
@@ -335,6 +349,12 @@ IPC_MESSAGE_CONTROL4(ResourceMsg_SetDataBuffer,
                      base::SharedMemoryHandle /* shm_handle */,
                      int /* shm_size */,
                      base::ProcessId /* renderer_pid */)
+
+// A message that always precedes ResourceMsg_DataReceived. Exists to help debug
+// https://code.google.com/p/chromium/issues/detail?id=527588.
+IPC_MESSAGE_CONTROL2(ResourceMsg_DataReceivedDebug,
+                     int /* request_id */,
+                     int /* data_offset */)
 
 // Sent when some data from a resource request is ready.  The data offset and
 // length specify a byte range into the shared memory buffer provided by the

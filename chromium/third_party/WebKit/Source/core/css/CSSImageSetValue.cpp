@@ -23,7 +23,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSImageSetValue.h"
 
 #include "core/css/CSSImageValue.h"
@@ -38,6 +37,7 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -98,13 +98,13 @@ bool CSSImageSetValue::isCachePending(float deviceScaleFactor) const
     return m_isCachePending || deviceScaleFactor != m_cachedScaleFactor;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(float deviceScaleFactor)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(float deviceScaleFactor) const
 {
     ASSERT(!isCachePending(deviceScaleFactor));
     return m_cachedImageSet.get();
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float deviceScaleFactor, const ResourceLoaderOptions& options)
+StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float deviceScaleFactor, CrossOriginAttributeValue crossOrigin)
 {
     ASSERT(document);
 
@@ -116,25 +116,20 @@ StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float 
         // All forms of scale should be included: Page::pageScaleFactor(), LocalFrame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor(deviceScaleFactor);
-        FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
+        FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css);
         request.mutableResourceRequest().setHTTPReferrer(image.referrer);
 
-        if (options.corsEnabled == IsCORSEnabled)
-            request.setCrossOriginAccessControl(document->securityOrigin(), options.allowCredentials, options.credentialsRequested);
+        if (crossOrigin != CrossOriginAttributeNotSet)
+            request.setCrossOriginAccessControl(document->securityOrigin(), crossOrigin);
 
         if (ResourcePtr<ImageResource> cachedImage = ImageResource::fetch(request, document->fetcher())) {
-            m_cachedImageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
+            m_cachedImageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this, request.url());
             m_cachedScaleFactor = deviceScaleFactor;
             m_isCachePending = false;
         }
     }
 
     return m_cachedImageSet.get();
-}
-
-StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float deviceScaleFactor)
-{
-    return cacheImageSet(document, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
 }
 
 String CSSImageSetValue::customCSSText() const

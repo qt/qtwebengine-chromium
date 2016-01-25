@@ -64,6 +64,7 @@ static_library("test_support") {
 
   deps = [
     ":touch_selection",
+    "//base:base",
   ]
 }
 
@@ -95,7 +96,9 @@ test("ui_touch_selection_unittests") {
     "//ui/gfx:test_support",
   ]
 
-  data_deps = [ "//third_party/mesa:osmesa" ]
+  data_deps = [
+    "//third_party/mesa:osmesa",
+  ]
 }
 
 if (is_android) {
@@ -103,16 +106,10 @@ if (is_android) {
     sources = [
       "selection_event_type.h",
     ]
-    outputs = [
-      "org/chromium/ui/touch_selection/SelectionEventType.java",
-    ]
   }
   java_cpp_enum("ui_touch_handle_orientation_srcjar") {
     sources = [
       "touch_handle_orientation.h",
-    ]
-    outputs = [
-      "org/chromium/ui/touch_selection/TouchHandleOrientation.java",
     ]
   }
 }

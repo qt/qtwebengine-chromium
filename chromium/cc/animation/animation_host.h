@@ -8,12 +8,15 @@
 #include <vector>
 
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "cc/animation/animation_events.h"
+#include "cc/animation/animation.h"
 #include "cc/base/cc_export.h"
 #include "cc/trees/mutator_host_client.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace gfx {
 class ScrollOffset;
@@ -21,6 +24,7 @@ class ScrollOffset;
 
 namespace cc {
 
+class AnimationEvents;
 class AnimationPlayer;
 class AnimationRegistrar;
 class AnimationTimeline;
@@ -72,6 +76,7 @@ class CC_EXPORT AnimationHost {
   void SetMutatorHostClient(MutatorHostClient* client);
 
   void SetNeedsCommit();
+  void SetNeedsRebuildPropertyTrees();
 
   void PushPropertiesTo(AnimationHost* host_impl);
 
@@ -86,10 +91,10 @@ class CC_EXPORT AnimationHost {
   bool ActivateAnimations();
   bool AnimateLayers(base::TimeTicks monotonic_time);
   bool UpdateAnimationState(bool start_ready_animations,
-                            AnimationEventsVector* events);
+                            AnimationEvents* events);
 
-  scoped_ptr<AnimationEventsVector> CreateEvents();
-  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events);
+  scoped_ptr<AnimationEvents> CreateEvents();
+  void SetAnimationEvents(scoped_ptr<AnimationEvents> events);
 
   bool ScrollOffsetAnimationWasInterrupted(int layer_id) const;
 
@@ -146,6 +151,8 @@ class CC_EXPORT AnimationHost {
       const gfx::Vector2dF& scroll_delta,
       const gfx::ScrollOffset& max_scroll_offset,
       base::TimeTicks frame_monotonic_time);
+
+  void ScrollAnimationAbort();
 
  private:
   explicit AnimationHost(ThreadInstance thread_instance);

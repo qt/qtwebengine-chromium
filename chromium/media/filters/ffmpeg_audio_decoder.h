@@ -8,6 +8,7 @@
 #include <list>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder.h"
@@ -38,6 +39,7 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   // AudioDecoder implementation.
   std::string GetDisplayName() const override;
   void Initialize(const AudioDecoderConfig& config,
+                  const SetCdmReadyCB& set_cdm_ready_cb,
                   const InitCB& init_cb,
                   const OutputCB& output_cb) override;
   void Decode(const scoped_refptr<DecoderBuffer>& buffer,

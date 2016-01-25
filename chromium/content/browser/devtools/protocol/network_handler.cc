@@ -4,6 +4,8 @@
 
 #include "content/browser/devtools/protocol/network_handler.h"
 
+#include <stddef.h>
+
 #include "base/containers/hash_tables.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -322,6 +324,6 @@ Response NetworkHandler::ShowCertificateViewer(int certificate_id) {
   return Response::OK();
 }
 
-}  // namespace dom
+}  // namespace network
 }  // namespace devtools
 }  // namespace content

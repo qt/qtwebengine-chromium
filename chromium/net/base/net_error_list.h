@@ -357,6 +357,12 @@ NET_ERROR(CT_STH_PARSING_FAILED, -168)
 // OK but was missing some of the fields.
 NET_ERROR(CT_STH_INCOMPLETE, -169)
 
+// The attempt to reuse a connection to send proxy auth credentials failed
+// before the AuthController was used to generate credentials. The caller should
+// reuse the controller with a new connection. This error is only used
+// internally by the network stack.
+NET_ERROR(UNABLE_TO_REUSE_CONNECTION_FOR_PROXY_AUTH, -170)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -620,8 +626,9 @@ NET_ERROR(RESPONSE_HEADERS_TRUNCATED, -357)
 // to read any requests sent, so they may be resent.
 NET_ERROR(QUIC_HANDSHAKE_FAILED, -358)
 
-// An https resource was requested over an insecure QUIC connection.
-NET_ERROR(REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC, -359)
+// Obsolete.  Kept here to avoid reuse, as the old error can still appear on
+// histograms.
+// NET_ERROR(REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC, -359)
 
 // Transport security is inadequate for the SPDY version.
 NET_ERROR(SPDY_INADEQUATE_TRANSPORT_SECURITY, -360)

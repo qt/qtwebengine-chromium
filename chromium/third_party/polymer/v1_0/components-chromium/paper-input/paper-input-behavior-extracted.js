@@ -1,6 +1,4 @@
-
-
-  /**
+/**
    * Use `Polymer.PaperInputBehavior` to implement inputs with `<paper-input-container>`. This
    * behavior is implemented by `<paper-input>`. It exposes a number of properties from
    * `<paper-input-container>` and `<input is="iron-input">` and they should be bound in your
@@ -11,7 +9,6 @@
    * @polymerBehavior Polymer.PaperInputBehavior
    */
   Polymer.PaperInputBehaviorImpl = {
-
     properties: {
       /**
        * Fired when the input changes due to user interaction.
@@ -20,7 +17,8 @@
        */
 
       /**
-       * The label for this input. Bind this to `<paper-input-container>`'s `label` property.
+       * The label for this input. Bind this to `<label>`'s content and `hidden` property, e.g.
+       * `<label hidden$="[[!label]]">[[label]]</label>` in your `template`
        */
       label: {
         type: String
@@ -79,7 +77,7 @@
       },
 
       /**
-       * The datalist of the input (if any). This should match the id of an existing <datalist>. Bind this
+       * The datalist of the input (if any). This should match the id of an existing `<datalist>`. Bind this
        * to the `<input is="iron-input">`'s `list` property.
        */
       list: {
@@ -275,13 +273,32 @@
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `results` property, , used with type=search.
+       * Bind this to the `<input is="iron-input">`'s `results` property, used with type=search.
        */
       results: {
         type: Number
       },
 
+      /**
+       * Bind this to the `<input is="iron-input">`'s `accept` property, used with type=file.
+       */
+      accept: {
+        type: String
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `multiple` property, used with type=file.
+       */
+      multiple: {
+        type: Boolean
+      },
+
       _ariaDescribedBy: {
+        type: String,
+        value: ''
+      },
+
+      _ariaLabelledBy: {
         type: String,
         value: ''
       }
@@ -289,18 +306,34 @@
     },
 
     listeners: {
-      'addon-attached': '_onAddonAttached'
+      'addon-attached': '_onAddonAttached',
+      'focus': '_onFocus'
     },
 
     observers: [
       '_focusedControlStateChanged(focused)'
     ],
 
+    keyBindings: {
+      'shift+tab:keydown': '_onShiftTabDown'
+    },
+
+    hostAttributes: {
+      tabindex: 0
+    },
+
     /**
      * Returns a reference to the input element.
      */
     get inputElement() {
       return this.$.input;
+    },
+
+    /**
+     * Returns a reference to the focusable element.
+     */
+    get _focusableElement() {
+      return this.inputElement;
     },
 
     attached: function() {
@@ -334,6 +367,30 @@
      */
     validate: function() {
       return this.inputElement.validate();
+    },
+
+    /**
+     * Forward focus to inputElement
+     */
+    _onFocus: function() {
+      if (!this._shiftTabPressed) {
+        this._focusableElement.focus();
+      }
+    },
+
+    /**
+     * Handler that is called when a shift+tab keypress is detected by the menu.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onShiftTabDown: function(event) {
+      var oldTabIndex = this.getAttribute('tabindex');
+      this._shiftTabPressed = true;
+      this.setAttribute('tabindex', '-1');
+      this.async(function() {
+        this.setAttribute('tabindex', oldTabIndex);
+        this._shiftTabPressed = false;
+      }, 1);
     },
 
     /**
@@ -416,9 +473,11 @@
         });
       }
     }
-
   };
 
   /** @polymerBehavior */
-  Polymer.PaperInputBehavior = [Polymer.IronControlState, Polymer.PaperInputBehaviorImpl];
-
+  Polymer.PaperInputBehavior = [
+    Polymer.IronControlState,
+    Polymer.IronA11yKeysBehavior,
+    Polymer.PaperInputBehaviorImpl
+  ];

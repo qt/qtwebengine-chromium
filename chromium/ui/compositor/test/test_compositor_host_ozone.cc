@@ -4,10 +4,10 @@
 
 #include "ui/compositor/test/test_compositor_host.h"
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/thread_task_runner_handle.h"
@@ -53,7 +53,7 @@ void TestCompositorHostOzone::Show() {
   // with a non-0 widget.
   // TODO(rjkroege): Use a "real" ozone widget when it is
   // available: http://crbug.com/255128
-  compositor_.SetAcceleratedWidgetAndStartCompositor(1);
+  compositor_.SetAcceleratedWidget(1);
   compositor_.SetScaleAndSize(1.0f, bounds_.size());
 }
 

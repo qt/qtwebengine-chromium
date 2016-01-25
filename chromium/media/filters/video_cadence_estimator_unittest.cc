@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -40,10 +42,13 @@ std::vector<int> CreateCadenceFromString(const std::string& cadence) {
   return result;
 }
 
-static void VerifyCadenceVector(VideoCadenceEstimator* estimator,
-                                double frame_hertz,
-                                double render_hertz,
-                                const std::string& expected_cadence) {
+static void VerifyCadenceVectorWithCustomDeviationAndDrift(
+    VideoCadenceEstimator* estimator,
+    double frame_hertz,
+    double render_hertz,
+    base::TimeDelta deviation,
+    base::TimeDelta acceptable_drift,
+    const std::string& expected_cadence) {
   SCOPED_TRACE(base::StringPrintf("Checking %.03f fps into %0.03f", frame_hertz,
                                   render_hertz));
 
@@ -51,10 +56,9 @@ static void VerifyCadenceVector(VideoCadenceEstimator* estimator,
       CreateCadenceFromString(expected_cadence);
 
   estimator->Reset();
-  const base::TimeDelta acceptable_drift = std::max(Interval(frame_hertz) / 2,
-                                                    Interval(render_hertz));
   const bool cadence_changed = estimator->UpdateCadenceEstimate(
-      Interval(render_hertz), Interval(frame_hertz), acceptable_drift);
+      Interval(render_hertz), Interval(frame_hertz), deviation,
+      acceptable_drift);
   EXPECT_EQ(cadence_changed, estimator->has_cadence());
   EXPECT_EQ(expected_cadence_vector.empty(), !estimator->has_cadence());
 
@@ -70,6 +74,41 @@ static void VerifyCadenceVector(VideoCadenceEstimator* estimator,
     ASSERT_EQ(expected_cadence_vector[i % expected_cadence_vector.size()],
               estimator->GetCadenceForFrame(i));
   }
+}
+
+static void VerifyCadenceVectorWithCustomDrift(
+    VideoCadenceEstimator* estimator,
+    double frame_hertz,
+    double render_hertz,
+    base::TimeDelta acceptable_drift,
+    const std::string& expected_cadence) {
+  VerifyCadenceVectorWithCustomDeviationAndDrift(
+      estimator, frame_hertz, render_hertz, base::TimeDelta(), acceptable_drift,
+      expected_cadence);
+}
+
+static void VerifyCadenceVectorWithCustomDeviation(
+    VideoCadenceEstimator* estimator,
+    double frame_hertz,
+    double render_hertz,
+    base::TimeDelta deviation,
+    const std::string& expected_cadence) {
+  const base::TimeDelta acceptable_drift =
+      std::max(Interval(frame_hertz) / 2, Interval(render_hertz));
+  VerifyCadenceVectorWithCustomDeviationAndDrift(
+      estimator, frame_hertz, render_hertz, deviation, acceptable_drift,
+      expected_cadence);
+}
+
+static void VerifyCadenceVector(VideoCadenceEstimator* estimator,
+                                double frame_hertz,
+                                double render_hertz,
+                                const std::string& expected_cadence) {
+  const base::TimeDelta acceptable_drift =
+      std::max(Interval(frame_hertz) / 2, Interval(render_hertz));
+  VerifyCadenceVectorWithCustomDeviationAndDrift(
+      estimator, frame_hertz, render_hertz, base::TimeDelta(), acceptable_drift,
+      expected_cadence);
 }
 
 // Spot check common display and frame rate pairs for correctness.
@@ -125,6 +164,47 @@ TEST(VideoCadenceEstimatorTest, CadenceCalculations) {
 
 }
 
+// Check the extreme case that max_acceptable_drift is larger than
+// minimum_time_until_max_drift.
+TEST(VideoCadenceEstimatorTest, CadenceCalculationWithLargeDrift) {
+  VideoCadenceEstimator estimator(
+      base::TimeDelta::FromSeconds(kMinimumAcceptableTimeBetweenGlitchesSecs));
+  estimator.set_cadence_hysteresis_threshold_for_testing(base::TimeDelta());
+
+  base::TimeDelta drift = base::TimeDelta::FromHours(1);
+  VerifyCadenceVectorWithCustomDrift(&estimator, 1, NTSC(60), drift, "[60]");
+
+  VerifyCadenceVectorWithCustomDrift(&estimator, 30, 60, drift, "[2]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, NTSC(30), 60, drift, "[2]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, 30, NTSC(60), drift, "[2]");
+
+  VerifyCadenceVectorWithCustomDrift(&estimator, 25, 60, drift, "[2]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, NTSC(25), 60, drift, "[2]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, 25, NTSC(60), drift, "[2]");
+
+  // Test cases for cadence below 1.
+  VerifyCadenceVectorWithCustomDrift(&estimator, 120, 24, drift, "[1]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, 120, 48, drift, "[1]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, 120, 72, drift, "[1]");
+  VerifyCadenceVectorWithCustomDrift(&estimator, 90, 60, drift, "[1]");
+}
+
+// Check the case that the estimator excludes variable FPS case from Cadence.
+TEST(VideoCadenceEstimatorTest, CadenceCalculationWithLargeDeviation) {
+  VideoCadenceEstimator estimator(
+      base::TimeDelta::FromSeconds(kMinimumAcceptableTimeBetweenGlitchesSecs));
+  estimator.set_cadence_hysteresis_threshold_for_testing(base::TimeDelta());
+
+  const base::TimeDelta deviation = base::TimeDelta::FromMilliseconds(30);
+  VerifyCadenceVectorWithCustomDeviation(&estimator, 1, 60, deviation, "[]");
+  VerifyCadenceVectorWithCustomDeviation(&estimator, 30, 60, deviation, "[]");
+  VerifyCadenceVectorWithCustomDeviation(&estimator, 25, 60, deviation, "[]");
+
+  // Test cases for cadence with low refresh rate.
+  VerifyCadenceVectorWithCustomDeviation(&estimator, 60, 12, deviation,
+                                         "[1:0:0:0:0]");
+}
+
 TEST(VideoCadenceEstimatorTest, CadenceVariesWithAcceptableDrift) {
   VideoCadenceEstimator estimator(
       base::TimeDelta::FromSeconds(kMinimumAcceptableTimeBetweenGlitchesSecs));
@@ -134,15 +214,15 @@ TEST(VideoCadenceEstimatorTest, CadenceVariesWithAcceptableDrift) {
   const base::TimeDelta frame_interval = Interval(120);
 
   base::TimeDelta acceptable_drift = frame_interval / 2;
-  EXPECT_FALSE(estimator.UpdateCadenceEstimate(render_interval, frame_interval,
-                                               acceptable_drift));
+  EXPECT_FALSE(estimator.UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_FALSE(estimator.has_cadence());
 
   // Increasing the acceptable drift should be result in more permissive
   // detection of cadence.
   acceptable_drift = render_interval;
-  EXPECT_TRUE(estimator.UpdateCadenceEstimate(render_interval, frame_interval,
-                                              acceptable_drift));
+  EXPECT_TRUE(estimator.UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator.has_cadence());
   EXPECT_EQ("[1:0]", estimator.GetCadenceForTesting());
 }
@@ -156,8 +236,8 @@ TEST(VideoCadenceEstimatorTest, CadenceVariesWithAcceptableGlitchTime) {
   const base::TimeDelta frame_interval = Interval(120);
   const base::TimeDelta acceptable_drift = frame_interval / 2;
 
-  EXPECT_FALSE(estimator->UpdateCadenceEstimate(render_interval, frame_interval,
-                                                acceptable_drift));
+  EXPECT_FALSE(estimator->UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_FALSE(estimator->has_cadence());
 
   // Decreasing the acceptable glitch time should be result in more permissive
@@ -165,8 +245,8 @@ TEST(VideoCadenceEstimatorTest, CadenceVariesWithAcceptableGlitchTime) {
   estimator.reset(new VideoCadenceEstimator(base::TimeDelta::FromSeconds(
       kMinimumAcceptableTimeBetweenGlitchesSecs / 2)));
   estimator->set_cadence_hysteresis_threshold_for_testing(base::TimeDelta());
-  EXPECT_TRUE(estimator->UpdateCadenceEstimate(render_interval, frame_interval,
-                                               acceptable_drift));
+  EXPECT_TRUE(estimator->UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator->has_cadence());
   EXPECT_EQ("[1:0]", estimator->GetCadenceForTesting());
 }
@@ -181,33 +261,36 @@ TEST(VideoCadenceEstimatorTest, CadenceHystersisPreventsOscillation) {
   estimator->set_cadence_hysteresis_threshold_for_testing(render_interval * 2);
 
   // Cadence hysteresis should prevent the cadence from taking effect yet.
-  EXPECT_FALSE(estimator->UpdateCadenceEstimate(render_interval, frame_interval,
-                                                acceptable_drift));
+  EXPECT_FALSE(estimator->UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_FALSE(estimator->has_cadence());
 
   // A second call should exceed cadence hysteresis and take into effect.
-  EXPECT_TRUE(estimator->UpdateCadenceEstimate(render_interval, frame_interval,
-                                               acceptable_drift));
+  EXPECT_TRUE(estimator->UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator->has_cadence());
 
   // One bad interval shouldn't cause cadence to drop
-  EXPECT_FALSE(estimator->UpdateCadenceEstimate(
-      render_interval, frame_interval * 0.75, acceptable_drift));
+  EXPECT_FALSE(
+      estimator->UpdateCadenceEstimate(render_interval, frame_interval * 0.75,
+                                       base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator->has_cadence());
 
   // Resumption of cadence should clear bad interval count.
-  EXPECT_FALSE(estimator->UpdateCadenceEstimate(render_interval, frame_interval,
-                                                acceptable_drift));
+  EXPECT_FALSE(estimator->UpdateCadenceEstimate(
+      render_interval, frame_interval, base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator->has_cadence());
 
   // So one more bad interval shouldn't cause cadence to drop
-  EXPECT_FALSE(estimator->UpdateCadenceEstimate(
-      render_interval, frame_interval * 0.75, acceptable_drift));
+  EXPECT_FALSE(
+      estimator->UpdateCadenceEstimate(render_interval, frame_interval * 0.75,
+                                       base::TimeDelta(), acceptable_drift));
   EXPECT_TRUE(estimator->has_cadence());
 
   // Two bad intervals should.
-  EXPECT_TRUE(estimator->UpdateCadenceEstimate(
-      render_interval, frame_interval * 0.75, acceptable_drift));
+  EXPECT_TRUE(
+      estimator->UpdateCadenceEstimate(render_interval, frame_interval * 0.75,
+                                       base::TimeDelta(), acceptable_drift));
   EXPECT_FALSE(estimator->has_cadence());
 }
 

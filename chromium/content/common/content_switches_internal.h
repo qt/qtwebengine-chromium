@@ -5,6 +5,7 @@
 #ifndef CONTENT_COMMON_CONTENT_SWITCHES_INTERNAL_H_
 #define CONTENT_COMMON_CONTENT_SWITCHES_INTERNAL_H_
 
+#include "build/build_config.h"
 #include "content/public/common/web_preferences.h"
 
 namespace content {
@@ -20,6 +21,8 @@ bool IsWin32kRendererLockdownEnabled();
 bool IsWin32kLockdownEnabledForMimeType(const std::string& mime_type);
 #endif
 V8CacheOptions GetV8CacheOptions();
+
+bool IsUseZoomForDSFEnabled();
 
 } // namespace content
 

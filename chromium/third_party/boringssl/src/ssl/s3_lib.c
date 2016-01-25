@@ -299,8 +299,8 @@ int SSL_CTX_set_tmp_ecdh(SSL_CTX *ctx, const EC_KEY *ec_key) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
     return 0;
   }
-  ctx->cert->ecdh_nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key));
-  return 1;
+  int nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key));
+  return SSL_CTX_set1_curves(ctx, &nid, 1);
 }
 
 int SSL_set_tmp_ecdh(SSL *ssl, const EC_KEY *ec_key) {
@@ -308,8 +308,8 @@ int SSL_set_tmp_ecdh(SSL *ssl, const EC_KEY *ec_key) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
     return 0;
   }
-  ssl->cert->ecdh_nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key));
-  return 1;
+  int nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key));
+  return SSL_set1_curves(ssl, &nid, 1);
 }
 
 int SSL_CTX_enable_tls_channel_id(SSL_CTX *ctx) {
@@ -335,14 +335,18 @@ int SSL_CTX_set1_tls_channel_id(SSL_CTX *ctx, EVP_PKEY *private_key) {
 }
 
 int SSL_set1_tls_channel_id(SSL *ssl, EVP_PKEY *private_key) {
-  ssl->tlsext_channel_id_enabled = 1;
-  if (EVP_PKEY_id(private_key) != EVP_PKEY_EC ||
-      EVP_PKEY_bits(private_key) != 256) {
+  EC_KEY *ec_key = EVP_PKEY_get0_EC_KEY(private_key);
+  if (ec_key == NULL ||
+      EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key)) !=
+          NID_X9_62_prime256v1) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_CHANNEL_ID_NOT_P256);
     return 0;
   }
+
   EVP_PKEY_free(ssl->tlsext_channel_id_private);
   ssl->tlsext_channel_id_private = EVP_PKEY_up_ref(private_key);
+  ssl->tlsext_channel_id_enabled = 1;
+
   return 1;
 }
 
@@ -500,8 +504,8 @@ const SSL_CIPHER *ssl3_choose_cipher(
 
     ok = 1;
 
-    /* Skip TLS v1.2 only ciphersuites if not supported */
-    if ((c->algorithm_ssl & SSL_TLSV1_2) && !SSL_USE_TLS1_2_CIPHERS(s)) {
+    /* Check the TLS version. */
+    if (SSL_CIPHER_get_min_version(c) > ssl3_version_from_wire(s, s->version)) {
       ok = 0;
     }
 

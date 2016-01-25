@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/parser/SizesCalcParser.h"
 
 #include "core/MediaTypeNames.h"
@@ -10,8 +9,7 @@
 #include "core/css/MediaValuesCached.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/parser/CSSTokenizer.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 

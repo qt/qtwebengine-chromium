@@ -7,17 +7,20 @@
 #include <fcntl.h>
 #include <linux/videodev2.h>
 #include <poll.h>
+#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
 #include "media/base/media_switches.h"
 #include "media/filters/h264_parser.h"
@@ -53,20 +56,25 @@
 
 namespace content {
 
+// static
+const uint32_t V4L2VideoDecodeAccelerator::supported_input_fourccs_[] = {
+    V4L2_PIX_FMT_H264, V4L2_PIX_FMT_VP8, V4L2_PIX_FMT_VP9,
+};
+
 struct V4L2VideoDecodeAccelerator::BitstreamBufferRef {
   BitstreamBufferRef(
       base::WeakPtr<Client>& client,
       scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
       base::SharedMemory* shm,
       size_t size,
-      int32 input_id);
+      int32_t input_id);
   ~BitstreamBufferRef();
   const base::WeakPtr<Client> client;
   const scoped_refptr<base::SingleThreadTaskRunner> client_task_runner;
   const scoped_ptr<base::SharedMemory> shm;
   const size_t size;
   size_t bytes_used;
-  const int32 input_id;
+  const int32_t input_id;
 };
 
 struct V4L2VideoDecodeAccelerator::EGLSyncKHRRef {
@@ -88,14 +96,13 @@ V4L2VideoDecodeAccelerator::BitstreamBufferRef::BitstreamBufferRef(
     scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
     base::SharedMemory* shm,
     size_t size,
-    int32 input_id)
+    int32_t input_id)
     : client(client),
       client_task_runner(client_task_runner),
       shm(shm),
       size(size),
       bytes_used(0),
-      input_id(input_id) {
-}
+      input_id(input_id) {}
 
 V4L2VideoDecodeAccelerator::BitstreamBufferRef::~BitstreamBufferRef() {
   if (input_id >= 0) {
@@ -199,36 +206,28 @@ V4L2VideoDecodeAccelerator::~V4L2VideoDecodeAccelerator() {
   DCHECK(output_buffer_map_.empty());
 }
 
-bool V4L2VideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
+bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
                                             Client* client) {
   DVLOG(3) << "Initialize()";
   DCHECK(child_task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kUninitialized);
 
+  if (config.is_encrypted) {
+    NOTREACHED() << "Encrypted streams are not supported for this VDA";
+    return false;
+  }
+
+  if (!device_->SupportsDecodeProfileForV4L2PixelFormats(
+          config.profile, arraysize(supported_input_fourccs_),
+          supported_input_fourccs_)) {
+    DVLOG(1) << "Initialize(): unsupported profile=" << config.profile;
+    return false;
+  }
+
   client_ptr_factory_.reset(new base::WeakPtrFactory<Client>(client));
   client_ = client_ptr_factory_->GetWeakPtr();
 
-  switch (profile) {
-    case media::H264PROFILE_BASELINE:
-      DVLOG(2) << "Initialize(): profile H264PROFILE_BASELINE";
-      break;
-    case media::H264PROFILE_MAIN:
-      DVLOG(2) << "Initialize(): profile H264PROFILE_MAIN";
-      break;
-    case media::H264PROFILE_HIGH:
-      DVLOG(2) << "Initialize(): profile H264PROFILE_HIGH";
-      break;
-    case media::VP8PROFILE_ANY:
-      DVLOG(2) << "Initialize(): profile VP8PROFILE_ANY";
-      break;
-    case media::VP9PROFILE_ANY:
-      DVLOG(2) << "Initialize(): profile VP9PROFILE_ANY";
-      break;
-    default:
-      DLOG(ERROR) << "Initialize(): unsupported profile=" << profile;
-      return false;
-  };
-  video_profile_ = profile;
+  video_profile_ = config.profile;
 
   if (egl_display_ == EGL_NO_DISPLAY) {
     LOG(ERROR) << "Initialize(): could not get EGLDisplay";
@@ -251,15 +250,19 @@ bool V4L2VideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
 
   // Capabilities check.
   struct v4l2_capability caps;
-  const __u32 kCapsRequired =
-      V4L2_CAP_VIDEO_CAPTURE_MPLANE |
-      V4L2_CAP_VIDEO_OUTPUT_MPLANE |
-      V4L2_CAP_STREAMING;
+  const __u32 kCapsRequired = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QUERYCAP, &caps);
   if ((caps.capabilities & kCapsRequired) != kCapsRequired) {
-    LOG(ERROR) << "Initialize(): ioctl() failed: VIDIOC_QUERYCAP"
-        ", caps check failed: 0x" << std::hex << caps.capabilities;
-    return false;
+    // This cap combination is deprecated, but some older drivers may still be
+    // returning it.
+    const __u32 kCapsRequiredCompat = V4L2_CAP_VIDEO_CAPTURE_MPLANE |
+                                      V4L2_CAP_VIDEO_OUTPUT_MPLANE |
+                                      V4L2_CAP_STREAMING;
+    if ((caps.capabilities & kCapsRequiredCompat) != kCapsRequiredCompat) {
+      LOG(ERROR) << "Initialize(): ioctl() failed: VIDIOC_QUERYCAP"
+          ", caps check failed: 0x" << std::hex << caps.capabilities;
+      return false;
+    }
   }
 
   if (!SetupFormats())
@@ -389,7 +392,7 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
   pictures_assigned_.Signal();
 }
 
-void V4L2VideoDecodeAccelerator::ReusePictureBuffer(int32 picture_buffer_id) {
+void V4L2VideoDecodeAccelerator::ReusePictureBuffer(int32_t picture_buffer_id) {
   DVLOG(3) << "ReusePictureBuffer(): picture_buffer_id=" << picture_buffer_id;
   // Must be run on child thread, as we'll insert a sync in the EGL context.
   DCHECK(child_task_runner_->BelongsToCurrentThread());
@@ -464,10 +467,8 @@ V4L2VideoDecodeAccelerator::GetSupportedProfiles() {
   if (!device)
     return SupportedProfiles();
 
-  const uint32_t supported_formats[] = {
-      V4L2_PIX_FMT_H264, V4L2_PIX_FMT_VP8, V4L2_PIX_FMT_VP9};
-  return device->GetSupportedDecodeProfiles(arraysize(supported_formats),
-                                            supported_formats);
+  return device->GetSupportedDecodeProfiles(arraysize(supported_input_fourccs_),
+                                            supported_input_fourccs_);
 }
 
 void V4L2VideoDecodeAccelerator::DecodeTask(
@@ -552,7 +553,7 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   const size_t size = decoder_current_bitstream_buffer_->size;
   size_t decoded_size = 0;
   if (size == 0) {
-    const int32 input_id = decoder_current_bitstream_buffer_->input_id;
+    const int32_t input_id = decoder_current_bitstream_buffer_->input_id;
     if (input_id >= 0) {
       // This is a buffer queued from the client that has zero size.  Skip.
       schedule_task = true;
@@ -582,8 +583,8 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
     }
   } else {
     // This is a buffer queued from the client, with actual contents.  Decode.
-    const uint8* const data =
-        reinterpret_cast<const uint8*>(
+    const uint8_t* const data =
+        reinterpret_cast<const uint8_t*>(
             decoder_current_bitstream_buffer_->shm->memory()) +
         decoder_current_bitstream_buffer_->bytes_used;
     const size_t data_size =
@@ -620,7 +621,7 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
     if (decoder_current_bitstream_buffer_->bytes_used ==
         decoder_current_bitstream_buffer_->size) {
       // Our current bitstream buffer is done; return it.
-      int32 input_id = decoder_current_bitstream_buffer_->input_id;
+      int32_t input_id = decoder_current_bitstream_buffer_->input_id;
       DVLOG(3) << "DecodeBufferTask(): finished input_id=" << input_id;
       // BitstreamBufferRef destructor calls NotifyEndOfBitstreamBuffer().
       decoder_current_bitstream_buffer_.reset();
@@ -629,10 +630,9 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   }
 }
 
-bool V4L2VideoDecodeAccelerator::AdvanceFrameFragment(
-    const uint8* data,
-    size_t size,
-    size_t* endpos) {
+bool V4L2VideoDecodeAccelerator::AdvanceFrameFragment(const uint8_t* data,
+                                                      size_t size,
+                                                      size_t* endpos) {
   if (video_profile_ >= media::H264PROFILE_MIN &&
       video_profile_ <= media::H264PROFILE_MAX) {
     // For H264, we need to feed HW one frame at a time.  This is going to take
@@ -851,10 +851,9 @@ bool V4L2VideoDecodeAccelerator::AppendToInputFrame(
     NOTIFY_ERROR(UNREADABLE_INPUT);
     return false;
   }
-  memcpy(
-      reinterpret_cast<uint8*>(input_record.address) + input_record.bytes_used,
-      data,
-      size);
+  memcpy(reinterpret_cast<uint8_t*>(input_record.address) +
+             input_record.bytes_used,
+         data, size);
   input_record.bytes_used += size;
 
   return true;
@@ -1207,7 +1206,8 @@ bool V4L2VideoDecodeAccelerator::EnqueueOutputRecord() {
 }
 
 void V4L2VideoDecodeAccelerator::ReusePictureBufferTask(
-    int32 picture_buffer_id, scoped_ptr<EGLSyncKHRRef> egl_sync_ref) {
+    int32_t picture_buffer_id,
+    scoped_ptr<EGLSyncKHRRef> egl_sync_ref) {
   DVLOG(3) << "ReusePictureBufferTask(): picture_buffer_id="
            << picture_buffer_id;
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());

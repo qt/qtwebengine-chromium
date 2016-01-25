@@ -14,6 +14,7 @@
       'dependencies': [
         'about_credits',
       ],
+      'hard_dependency': 1,
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/components',
       },
@@ -22,7 +23,6 @@
           # GN version: //components/resources:components_resources
           'action_name': 'generate_components_resources',
           'variables': {
-            'grit_whitelist': '',
             'grit_grd_file': 'resources/components_resources.grd',
             'grit_additional_defines': [
               '-E', 'about_credits_file=<(about_credits_file)',
@@ -34,7 +34,6 @@
           # GN version: //components/resources:components_scaled_resources
           'action_name': 'generate_components_scaled_resources',
           'variables': {
-            'grit_whitelist': '',
             'grit_grd_file': 'resources/components_scaled_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],

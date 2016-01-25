@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/LiveNodeListBase.h"
 
 #include "core/dom/LiveNodeList.h"
@@ -39,8 +38,8 @@ void LiveNodeListBase::invalidateCacheForAttribute(const QualifiedName* attrName
 
 ContainerNode& LiveNodeListBase::rootNode() const
 {
-    if (isRootedAtDocument() && m_ownerNode->inDocument())
-        return m_ownerNode->document();
+    if (isRootedAtTreeScope() && m_ownerNode->isInTreeScope())
+        return m_ownerNode->treeScope().rootNode();
     return *m_ownerNode;
 }
 

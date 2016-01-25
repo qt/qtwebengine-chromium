@@ -6,12 +6,13 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/sockaddr_storage.h"
 #include "net/socket/socket_posix.h"
 
 namespace net {
@@ -23,7 +24,7 @@ UnixDomainClientSocket::UnixDomainClientSocket(const std::string& socket_path,
 }
 
 UnixDomainClientSocket::UnixDomainClientSocket(scoped_ptr<SocketPosix> socket)
-    : use_abstract_namespace_(false), socket_(socket.Pass()) {}
+    : use_abstract_namespace_(false), socket_(std::move(socket)) {}
 
 UnixDomainClientSocket::~UnixDomainClientSocket() {
   Disconnect();
@@ -152,6 +153,11 @@ void UnixDomainClientSocket::GetConnectionAttempts(
   out->clear();
 }
 
+int64_t UnixDomainClientSocket::GetTotalReceivedBytes() const {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 int UnixDomainClientSocket::Read(IOBuffer* buf, int buf_len,
                                  const CompletionCallback& callback) {
   DCHECK(socket_);
@@ -164,12 +170,12 @@ int UnixDomainClientSocket::Write(IOBuffer* buf, int buf_len,
   return socket_->Write(buf, buf_len, callback);
 }
 
-int UnixDomainClientSocket::SetReceiveBufferSize(int32 size) {
+int UnixDomainClientSocket::SetReceiveBufferSize(int32_t size) {
   NOTIMPLEMENTED();
   return ERR_NOT_IMPLEMENTED;
 }
 
-int UnixDomainClientSocket::SetSendBufferSize(int32 size) {
+int UnixDomainClientSocket::SetSendBufferSize(int32_t size) {
   NOTIMPLEMENTED();
   return ERR_NOT_IMPLEMENTED;
 }

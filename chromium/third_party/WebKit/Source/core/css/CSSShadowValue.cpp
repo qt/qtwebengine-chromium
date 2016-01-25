@@ -17,7 +17,6 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-#include "config.h"
 #include "core/css/CSSShadowValue.h"
 
 #include "core/css/CSSPrimitiveValue.h"
@@ -32,7 +31,7 @@ CSSShadowValue::CSSShadowValue(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> x,
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> blur,
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> spread,
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> style,
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> color)
+    PassRefPtrWillBeRawPtr<CSSValue> color)
     : CSSValue(ShadowClass)
     , x(x)
     , y(y)

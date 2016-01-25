@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "media/base/media_util.h"
@@ -35,7 +39,7 @@ StreamParserBuffer::BufferQueue
 GenerateFakeBuffers(const int* frame_pts_ms,
                     const bool* is_key_frame,
                     size_t frame_count) {
-  uint8 dummy_buffer[] = {0, 0, 0, 0};
+  uint8_t dummy_buffer[] = {0, 0, 0, 0};
 
   StreamParserBuffer::BufferQueue buffers(frame_count);
   for (size_t k = 0; k < frame_count; k++) {

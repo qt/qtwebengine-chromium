@@ -25,8 +25,6 @@
 #ifndef MediaStreamAudioDestinationNode_h
 #define MediaStreamAudioDestinationNode_h
 
-#if ENABLE(WEB_AUDIO)
-
 #include "modules/mediastream/MediaStream.h"
 #include "modules/webaudio/AudioBasicInspectorNode.h"
 #include "platform/audio/AudioBus.h"
@@ -46,6 +44,9 @@ public:
 
     // AudioHandler.
     void process(size_t framesToProcess) override;
+    void setChannelCount(unsigned long, ExceptionState&) override;
+
+    unsigned long maxChannelCount() const;
 
 private:
     MediaStreamAudioDestinationHandler(AudioNode&, size_t numberOfChannels);
@@ -54,7 +55,10 @@ private:
 
     // This Persistent doesn't make a reference cycle.
     Persistent<MediaStream> m_stream;
-    RefPtr<MediaStreamSource> m_source;
+    Persistent<MediaStreamSource> m_source;
+
+    // This internal mix bus is for up/down mixing the input to the actual
+    // number of channels in the destination.
     RefPtr<AudioBus> m_mixBus;
 };
 
@@ -69,7 +73,5 @@ private:
 };
 
 } // namespace blink
-
-#endif // ENABLE(WEB_AUDIO)
 
 #endif // MediaStreamAudioDestinationNode_h

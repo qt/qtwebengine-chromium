@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 
 #include "core/layout/LayoutObject.h"
@@ -122,9 +121,7 @@ void SVGFEDiffuseLightingElement::lightElementAttributeChanged(const SVGFELightE
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
-
-    if (!input1)
-        return nullptr;
+    ASSERT(input1);
 
     LayoutObject* layoutObject = this->layoutObject();
     if (!layoutObject)

@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/svg/LayoutSVGBlock.h"
 
 #include "core/layout/LayoutView.h"
@@ -69,8 +68,11 @@ void LayoutSVGBlock::willBeDestroyed()
 
 void LayoutSVGBlock::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    if (diff.needsFullLayout())
+    if (diff.needsFullLayout()) {
         setNeedsBoundariesUpdate();
+        if (style()->hasTransform())
+            setNeedsTransformUpdate();
+    }
 
     if (isBlendingAllowed()) {
         bool hasBlendModeChanged = (oldStyle && oldStyle->hasBlendMode()) == !style()->hasBlendMode();
@@ -82,9 +84,9 @@ void LayoutSVGBlock::styleDidChange(StyleDifference diff, const ComputedStyle* o
     SVGResourcesCache::clientStyleChanged(this, diff, styleRef());
 }
 
-void LayoutSVGBlock::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGBlock::mapLocalToAncestor(const LayoutBoxModelObject* ancestor, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
-    SVGLayoutSupport::mapLocalToContainer(this, paintInvalidationContainer, transformState, wasFixed, paintInvalidationState);
+    SVGLayoutSupport::mapLocalToAncestor(this, ancestor, transformState, wasFixed, paintInvalidationState);
 }
 
 const LayoutObject* LayoutSVGBlock::pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
@@ -97,11 +99,11 @@ LayoutRect LayoutSVGBlock::clippedOverflowRectForPaintInvalidation(const LayoutB
     return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(*this, paintInvalidationContainer, paintInvalidationState);
 }
 
-void LayoutSVGBlock::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGBlock::mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
     FloatRect paintInvalidationRect(rect);
     const LayoutSVGRoot& svgRoot = SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(*this, paintInvalidationRect, rect);
-    svgRoot.mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
+    svgRoot.mapToVisibleRectInAncestorSpace(ancestor, rect, paintInvalidationState);
 }
 
 bool LayoutSVGBlock::nodeAtPoint(HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)

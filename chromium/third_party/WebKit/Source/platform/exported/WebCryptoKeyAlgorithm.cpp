@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebCryptoKeyAlgorithm.h"
 
 #include "wtf/OwnPtr.h"
@@ -46,7 +45,7 @@ class WebCryptoKeyAlgorithmPrivate : public ThreadSafeRefCounted<WebCryptoKeyAlg
 public:
     WebCryptoKeyAlgorithmPrivate(WebCryptoAlgorithmId id, PassOwnPtr<WebCryptoKeyAlgorithmParams> params)
         : id(id)
-        , params(params)
+        , params(std::move(params))
     {
     }
 
@@ -55,7 +54,7 @@ public:
 };
 
 WebCryptoKeyAlgorithm::WebCryptoKeyAlgorithm(WebCryptoAlgorithmId id, PassOwnPtr<WebCryptoKeyAlgorithmParams> params)
-    : m_private(adoptRef(new WebCryptoKeyAlgorithmPrivate(id, params)))
+    : m_private(adoptRef(new WebCryptoKeyAlgorithmPrivate(id, std::move(params))))
 {
 }
 

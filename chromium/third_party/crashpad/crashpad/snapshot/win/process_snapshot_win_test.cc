@@ -15,15 +15,16 @@
 #include "snapshot/win/process_snapshot_win.h"
 
 #include "base/files/file_path.h"
+#include "build/build_config.h"
 #include "gtest/gtest.h"
 #include "snapshot/win/module_snapshot_win.h"
 #include "snapshot/win/pe_image_reader.h"
 #include "snapshot/win/process_reader_win.h"
+#include "test/paths.h"
+#include "test/win/child_launcher.h"
 #include "util/file/file_io.h"
 #include "util/win/scoped_handle.h"
 #include "util/win/scoped_process_suspend.h"
-#include "test/paths.h"
-#include "test/win/child_launcher.h"
 
 namespace crashpad {
 namespace test {
@@ -52,8 +53,8 @@ void TestImageReaderChild(const base::string16& directory_modification) {
   ScopedProcessSuspend suspend(child.process_handle());
 
   ProcessSnapshotWin process_snapshot;
-  ASSERT_TRUE(process_snapshot.Initialize(child.process_handle(),
-                                          ProcessSuspensionState::kSuspended));
+  ASSERT_TRUE(process_snapshot.Initialize(
+      child.process_handle(), ProcessSuspensionState::kSuspended, 0));
 
   ASSERT_GE(process_snapshot.Modules().size(), 2u);
 

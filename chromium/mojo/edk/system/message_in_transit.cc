@@ -4,9 +4,11 @@
 
 #include "mojo/edk/system/message_in_transit.h"
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
-
 #include <ostream>
+#include <utility>
 
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
@@ -133,7 +135,7 @@ void MessageInTransit::SetDispatchers(
   DCHECK(!dispatchers_);
   DCHECK(!transport_data_);
 
-  dispatchers_ = dispatchers.Pass();
+  dispatchers_ = std::move(dispatchers);
 }
 
 void MessageInTransit::SetTransportData(
@@ -142,7 +144,7 @@ void MessageInTransit::SetTransportData(
   DCHECK(!transport_data_);
   DCHECK(!dispatchers_);
 
-  transport_data_ = transport_data.Pass();
+  transport_data_ = std::move(transport_data);
   UpdateTotalSize();
 }
 
@@ -152,7 +154,7 @@ void MessageInTransit::SerializeAndCloseDispatchers() {
   if (!dispatchers_ || !dispatchers_->size())
     return;
 
-  transport_data_.reset(new TransportData(dispatchers_.Pass()));
+  transport_data_.reset(new TransportData(std::move(dispatchers_)));
 
   // Update the sizes in the message header.
   UpdateTotalSize();
@@ -164,8 +166,10 @@ void MessageInTransit::ConstructorHelper(Type type,
 
   // |total_size| is updated below, from the other values.
   header()->type = type;
+  header()->unusedforalignment = 0;
   header()->num_bytes = num_bytes;
   header()->unused = 0;
+  header()->route_id = 0;
   // Note: If dispatchers are subsequently attached, then |total_size| will have
   // to be adjusted.
   UpdateTotalSize();

@@ -6,13 +6,15 @@
 #define MOJO_SHELL_CONNECT_TO_APPLICATION_PARAMS_H_
 
 #include <string>
+#include <utility>
 
 #include "base/callback.h"
-#include "mojo/application/public/interfaces/service_provider.mojom.h"
-#include "mojo/application/public/interfaces/shell.mojom.h"
+#include "base/macros.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "mojo/services/network/public/interfaces/url_loader.mojom.h"
 #include "mojo/shell/identity.h"
+#include "mojo/shell/public/interfaces/service_provider.mojom.h"
+#include "mojo/shell/public/interfaces/shell.mojom.h"
 #include "url/gurl.h"
 
 namespace mojo {
@@ -44,17 +46,23 @@ class ConnectToApplicationParams {
     return target_url_request_.get();
   }
   // NOTE: This doesn't reset |target_|.
-  URLRequestPtr TakeTargetURLRequest() { return target_url_request_.Pass(); }
+  URLRequestPtr TakeTargetURLRequest() {
+    return std::move(target_url_request_);
+  }
 
   void set_services(InterfaceRequest<ServiceProvider> value) {
-    services_ = value.Pass();
+    services_ = std::move(value);
   }
-  InterfaceRequest<ServiceProvider> TakeServices() { return services_.Pass(); }
+  InterfaceRequest<ServiceProvider> TakeServices() {
+    return std::move(services_);
+  }
 
   void set_exposed_services(ServiceProviderPtr value) {
-    exposed_services_ = value.Pass();
+    exposed_services_ = std::move(value);
   }
-  ServiceProviderPtr TakeExposedServices() { return exposed_services_.Pass(); }
+  ServiceProviderPtr TakeExposedServices() {
+    return std::move(exposed_services_);
+  }
 
   void set_on_application_end(const base::Closure& value) {
     on_application_end_ = value;

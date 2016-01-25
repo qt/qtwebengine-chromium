@@ -247,11 +247,13 @@ struct tag_value {
 #define LAB_SIGNATURE  0x4C616220
 
 struct _qcms_profile {
+	uint32_t icc_version;
 	char description[64];
 	uint32_t class;
 	uint32_t color_space;
 	uint32_t pcs;
 	qcms_intent rendering_intent;
+	struct XYZNumber mediaWhitePoint;
 	struct XYZNumber redColorant;
 	struct XYZNumber blueColorant;
 	struct XYZNumber greenColorant;

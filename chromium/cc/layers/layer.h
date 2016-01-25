@@ -5,11 +5,15 @@
 #ifndef CC_LAYERS_LAYER_H_
 #define CC_LAYERS_LAYER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "cc/animation/layer_animation_controller.h"
@@ -17,7 +21,6 @@
 #include "cc/animation/layer_animation_value_provider.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
-#include "cc/base/scoped_ptr_vector.h"
 #include "cc/debug/frame_timing_request.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/layer_lists.h"
@@ -67,6 +70,12 @@ class ScrollbarLayerInterface;
 class SimpleEnclosedRegion;
 struct AnimationEvent;
 
+namespace proto {
+class LayerNode;
+class LayerProperties;
+class LayerUpdate;
+}  // namespace proto
+
 // Base class for composited layers. Special layer types are derived from
 // this class.
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
@@ -74,6 +83,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
                         public LayerAnimationValueProvider {
  public:
   typedef LayerList LayerListType;
+  typedef base::hash_map<int, scoped_refptr<Layer>> LayerIdMap;
 
   enum LayerIdLabels {
     INVALID_ID = -1,
@@ -345,6 +355,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual bool DrawsContent() const;
 
   // This methods typically need to be overwritten by derived classes.
+  // TODO(chrishtr): Blink no longer resizes anything during paint. We can
+  // remove this.
   virtual void SavePaintProperties();
   // Returns true iff anything was updated that needs to be committed.
   virtual bool Update();
@@ -358,6 +370,46 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual void PushPropertiesTo(LayerImpl* layer);
 
+  // Sets the type proto::LayerType that should be used for serialization
+  // of the current layer by calling LayerNode::set_type(proto::LayerType).
+  // TODO(nyquist): Start using a forward declared enum class when
+  // https://github.com/google/protobuf/issues/67 has been fixed and rolled in.
+  // This function would preferably instead return a proto::LayerType, but
+  // since that is an enum (the protobuf library does not generate enum
+  // classes), it can't be forward declared. We don't want to include
+  // //cc/proto/layer.pb.h in this header file, as it requires that all
+  // dependent targets would have to be given the config for how to include it.
+  virtual void SetTypeForProtoSerialization(proto::LayerNode* proto) const;
+
+  // Recursively iterate over this layer and all children and write the
+  // hierarchical structure to the given LayerNode proto. In addition to the
+  // structure itself, the Layer id and type is also written to facilitate
+  // construction of the correct layer on the client.
+  void ToLayerNodeProto(proto::LayerNode* proto) const;
+
+  // Recursively iterate over the given LayerNode proto and read the structure
+  // into this node and its children. The |layer_map| should be used to look
+  // for previously existing Layers, since they should be re-used between each
+  // hierarchy update.
+  void FromLayerNodeProto(const proto::LayerNode& proto,
+                          const LayerIdMap& layer_map);
+
+  // This method is similar to PushPropertiesTo, but instead of pushing to
+  // a LayerImpl, it pushes the properties to proto::LayerProperties. It adds
+  // this layer to the proto::LayerUpdate if it or any of its descendants
+  // have changed properties. If this layer contains changed properties, the
+  // properties themselves will also be pushed the proto::LayerProperties.
+  // Similarly to PushPropertiesTo, this method also resets
+  // |needs_push_properties_| and |num_dependents_need_push_properties_|.
+  // Returns whether any of the descendants have changed properties.
+  bool ToLayerPropertiesProto(proto::LayerUpdate* layer_update);
+
+  // Read all property values from the given LayerProperties object and update
+  // the current layer. The values for |needs_push_properties_| and
+  // |num_dependents_need_push_properties_| are always updated, but the rest
+  // of |proto| is only read if |needs_push_properties_| is set.
+  void FromLayerPropertiesProto(const proto::LayerProperties& proto);
+
   LayerTreeHost* layer_tree_host() { return layer_tree_host_; }
   const LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
 
@@ -365,6 +417,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
   void RemoveAnimation(int animation_id, Animation::TargetProperty property);
+  void AbortAnimation(int animation_id);
   LayerAnimationController* layer_animation_controller() const {
     return layer_animation_controller_.get();
   }
@@ -473,6 +526,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   const gfx::Rect& clip_rect() const { return clip_rect_; }
   void set_clip_rect(const gfx::Rect& rect) { clip_rect_ = rect; }
 
+  // This should only be called during BeginMainFrame since it does not trigger
+  // a Commit. This is called right after property tree being built and should
+  // not trigger property tree rebuild.
+  void SetHasRenderSurface(bool has_render_surface);
   bool has_render_surface() const {
     return has_render_surface_;
   }
@@ -486,15 +543,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   }
 
   void DidBeginTracing();
-  // TODO(weiliangc): this should move to the effect tree.
-  void set_num_layer_or_descendant_with_copy_request(
-      int num_layer_or_descendants_with_copy_request) {
-    num_layer_or_descendants_with_copy_request_ =
-        num_layer_or_descendants_with_copy_request;
-  }
-  int num_layer_or_descendants_with_copy_request() {
-    return num_layer_or_descendants_with_copy_request_;
-  }
+
+  int num_copy_requests_in_target_subtree();
+
+  void SetElementId(uint64_t id);
+  uint64_t element_id() const { return element_id_; }
+
+  void SetMutableProperties(uint32_t properties);
+  uint32_t mutable_properties() const { return mutable_properties_; }
 
   void set_visited(bool visited);
   bool visited();
@@ -502,6 +558,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool layer_or_descendant_is_drawn();
   void set_sorted_for_recursion(bool sorted_for_recursion);
   bool sorted_for_recursion();
+  void set_is_hidden_from_property_trees(bool is_hidden) {
+    if (is_hidden == is_hidden_from_property_trees_)
+      return;
+    is_hidden_from_property_trees_ = is_hidden;
+    SetNeedsPushProperties();
+  }
 
   // LayerAnimationValueProvider implementation.
   gfx::ScrollOffset ScrollOffsetForAnimation() const override;
@@ -560,6 +622,24 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   bool IsPropertyChangeAllowed() const;
 
+  // Serialize all the necessary properties to be able to reconstruct this Layer
+  // into proto::LayerProperties. This function must not set values for
+  // |needs_push_properties_| or |num_dependents_need_push_properties_| as they
+  // are dealt with at a higher level. This is only called if
+  // |needs_push_properties_| is set. For descendants of Layer, implementations
+  // must first call their parent class. This method is not marked as const
+  // as some implementations need reset member fields, similarly to
+  // PushPropertiesTo().
+  virtual void LayerSpecificPropertiesToProto(proto::LayerProperties* proto);
+
+  // Deserialize all the necessary properties from proto::LayerProperties into
+  // this Layer. This function must not set values for |needs_push_properties_|
+  // or |num_dependents_need_push_properties_| as they are dealt with at a
+  // higher level. This is only called if |needs_push_properties_| is set. For
+  // descendants of Layer, implementations must first call their parent class.
+  virtual void FromLayerSpecificPropertiesProto(
+      const proto::LayerProperties& proto);
+
   // This flag is set when the layer needs to push properties to the impl
   // side.
   bool needs_push_properties_;
@@ -595,13 +675,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
  private:
   friend class base::RefCounted<Layer>;
+  friend class LayerSerializationTest;
   friend class LayerTreeHostCommon;
+
   void SetParent(Layer* layer);
   bool DescendantIsFixedToContainerLayer() const;
-
-  // This should only be called during BeginMainFrame since it does not
-  // trigger a Commit.
-  void SetHasRenderSurface(bool has_render_surface);
 
   // This should only be called from RemoveFromParent().
   void RemoveChildOrDependent(Layer* child);
@@ -617,8 +695,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // When we detach or attach layer to new LayerTreeHost, all property trees'
   // indices becomes invalid.
   void InvalidatePropertyTreesIndices();
-
-  void UpdateNumCopyRequestsForSubtree(int delta);
 
   LayerList children_;
   Layer* parent_;
@@ -644,7 +720,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   int effect_tree_index_;
   int clip_tree_index_;
   int property_tree_sequence_number_;
-  int num_layer_or_descendants_with_copy_request_;
+  uint64_t element_id_;
+  uint32_t mutable_properties_;
   gfx::Vector2dF offset_to_transform_parent_;
   bool should_flatten_transform_from_property_tree_ : 1;
   bool should_scroll_on_main_thread_ : 1;
@@ -700,7 +777,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   LayerClient* client_;
 
-  ScopedPtrVector<CopyOutputRequest> copy_requests_;
+  std::vector<scoped_ptr<CopyOutputRequest>> copy_requests_;
 
   base::Closure did_scroll_callback_;
 
@@ -713,6 +790,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   std::vector<FrameTimingRequest> frame_timing_requests_;
   bool frame_timing_requests_dirty_;
+  bool is_hidden_from_property_trees_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

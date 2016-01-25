@@ -34,7 +34,7 @@
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 #include "core/inspector/InspectorTaskRunner.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -53,9 +53,9 @@ class WorkerGlobalScope;
 class WorkerRuntimeAgent;
 class WorkerThreadDebugger;
 
-class WorkerInspectorController : public RefCountedWillBeGarbageCollectedFinalized<WorkerInspectorController>, public InspectorRuntimeAgent::Client {
+class WorkerInspectorController final : public RefCountedWillBeGarbageCollectedFinalized<WorkerInspectorController>, public InspectorRuntimeAgent::Client {
     WTF_MAKE_NONCOPYABLE(WorkerInspectorController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WorkerInspectorController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(WorkerInspectorController);
 public:
     explicit WorkerInspectorController(WorkerGlobalScope*);
     ~WorkerInspectorController();
@@ -79,6 +79,11 @@ private:
     void resumeStartup() override;
     bool isRunRequired() override;
 
+    class PageInspectorProxy;
+    friend WTF::OwnedPtrDeleter<PageInspectorProxy>;
+
+    InspectorFrontendChannel* frontendChannel() const;
+
     RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
     OwnPtr<InspectorStateClient> m_stateClient;
     OwnPtrWillBeMember<InspectorCompositeState> m_state;
@@ -86,7 +91,7 @@ private:
     OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     OwnPtr<WorkerThreadDebugger> m_workerThreadDebugger;
     InspectorAgentRegistry m_agents;
-    OwnPtr<InspectorFrontendChannel> m_frontendChannel;
+    OwnPtrWillBeMember<PageInspectorProxy> m_pageInspectorProxy;
     OwnPtr<InspectorFrontend> m_frontend;
     RefPtrWillBeMember<InspectorBackendDispatcher> m_backendDispatcher;
     RawPtrWillBeMember<WorkerDebuggerAgent> m_workerDebuggerAgent;

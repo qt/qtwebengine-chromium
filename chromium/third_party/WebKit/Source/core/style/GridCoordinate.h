@@ -32,7 +32,7 @@
 #define GridCoordinate_h
 
 #include "core/style/GridResolvedPosition.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
@@ -41,115 +41,151 @@
 namespace blink {
 
 // Recommended maximum size for both explicit and implicit grids.
-const size_t kGridMaxTracks = 1000000;
+const int kGridMaxTracks = 1000000;
 
 // A span in a single direction (either rows or columns). Note that |resolvedInitialPosition|
-// and |resolvedFinalPosition| are grid areas' indexes, NOT grid lines'. Iterating over the
-// span should include both |resolvedInitialPosition| and |resolvedFinalPosition| to be correct.
+// and |resolvedFinalPosition| are grid lines' indexes.
+// Iterating over the span shouldn't include |resolvedFinalPosition| to be correct.
 struct GridSpan {
-    WTF_MAKE_FAST_ALLOCATED(GridSpan);
+    USING_FAST_MALLOC(GridSpan);
 public:
-    static PassOwnPtr<GridSpan> create(const GridResolvedPosition& resolvedInitialPosition, const GridResolvedPosition& resolvedFinalPosition)
+
+    static GridSpan untranslatedDefiniteGridSpan(int resolvedInitialPosition, int resolvedFinalPosition)
     {
-        return adoptPtr(new GridSpan(resolvedInitialPosition, resolvedFinalPosition));
+        return GridSpan(resolvedInitialPosition, resolvedFinalPosition, UntranslatedDefinite);
     }
 
-    static PassOwnPtr<GridSpan> createWithSpanAgainstOpposite(const GridResolvedPosition& resolvedOppositePosition, const GridPosition& position, GridPositionSide side)
+    static GridSpan translatedDefiniteGridSpan(size_t resolvedInitialPosition, size_t resolvedFinalPosition)
     {
-        // 'span 1' is contained inside a single grid track regardless of the direction.
-        // That's why the CSS span value is one more than the offset we apply.
-        size_t positionOffset = position.spanPosition() - 1;
-        if (side == ColumnStartSide || side == RowStartSide) {
-            GridResolvedPosition initialResolvedPosition = GridResolvedPosition(std::max<int>(0, resolvedOppositePosition.toInt() - positionOffset));
-            return GridSpan::create(initialResolvedPosition, resolvedOppositePosition);
-        }
-
-        return GridSpan::create(resolvedOppositePosition, GridResolvedPosition(resolvedOppositePosition.toInt() + positionOffset));
+        return GridSpan(resolvedInitialPosition, resolvedFinalPosition, TranslatedDefinite);
     }
 
-    static PassOwnPtr<GridSpan> createWithNamedSpanAgainstOpposite(const GridResolvedPosition& resolvedOppositePosition, const GridPosition& position, GridPositionSide side, const Vector<size_t>& gridLines)
+    static GridSpan indefiniteGridSpan()
     {
-        if (side == RowStartSide || side == ColumnStartSide)
-            return createWithInitialNamedSpanAgainstOpposite(resolvedOppositePosition, position, gridLines);
-
-        return createWithFinalNamedSpanAgainstOpposite(resolvedOppositePosition, position, gridLines);
-    }
-
-    static PassOwnPtr<GridSpan> createWithInitialNamedSpanAgainstOpposite(const GridResolvedPosition& resolvedOppositePosition, const GridPosition& position, const Vector<size_t>& gridLines)
-    {
-        // The grid line inequality needs to be strict (which doesn't match the after / end case) because |resolvedOppositePosition|
-        // is already converted to an index in our grid representation (ie one was removed from the grid line to account for the side).
-        size_t firstLineBeforeOppositePositionIndex = 0;
-        const size_t* firstLineBeforeOppositePosition = std::lower_bound(gridLines.begin(), gridLines.end(), resolvedOppositePosition.toInt());
-        if (firstLineBeforeOppositePosition != gridLines.end()) {
-            if (*firstLineBeforeOppositePosition > resolvedOppositePosition.toInt() && firstLineBeforeOppositePosition != gridLines.begin())
-                --firstLineBeforeOppositePosition;
-
-            firstLineBeforeOppositePositionIndex = firstLineBeforeOppositePosition - gridLines.begin();
-        }
-
-        size_t gridLineIndex = std::max<int>(0, firstLineBeforeOppositePositionIndex - position.spanPosition() + 1);
-        GridResolvedPosition resolvedGridLinePosition = GridResolvedPosition(gridLines[gridLineIndex]);
-        if (resolvedGridLinePosition > resolvedOppositePosition)
-            resolvedGridLinePosition = resolvedOppositePosition;
-        return GridSpan::create(resolvedGridLinePosition, resolvedOppositePosition);
-    }
-
-    static PassOwnPtr<GridSpan> createWithFinalNamedSpanAgainstOpposite(const GridResolvedPosition& resolvedOppositePosition, const GridPosition& position, const Vector<size_t>& gridLines)
-    {
-        size_t firstLineAfterOppositePositionIndex = gridLines.size() - 1;
-        const size_t* firstLineAfterOppositePosition = std::upper_bound(gridLines.begin(), gridLines.end(), resolvedOppositePosition.toInt());
-        if (firstLineAfterOppositePosition != gridLines.end())
-            firstLineAfterOppositePositionIndex = firstLineAfterOppositePosition - gridLines.begin();
-
-        size_t gridLineIndex = std::min(gridLines.size() - 1, firstLineAfterOppositePositionIndex + position.spanPosition() - 1);
-        GridResolvedPosition resolvedGridLinePosition = GridResolvedPosition::adjustGridPositionForAfterEndSide(gridLines[gridLineIndex]);
-        if (resolvedGridLinePosition < resolvedOppositePosition)
-            resolvedGridLinePosition = resolvedOppositePosition;
-        return GridSpan::create(resolvedOppositePosition, resolvedGridLinePosition);
-    }
-
-    GridSpan(const GridResolvedPosition& resolvedInitialPosition, const GridResolvedPosition& resolvedFinalPosition)
-        : resolvedInitialPosition(std::min(resolvedInitialPosition.toInt(), kGridMaxTracks - 1))
-        , resolvedFinalPosition(std::min(resolvedFinalPosition.toInt(), kGridMaxTracks))
-    {
-        ASSERT(resolvedInitialPosition <= resolvedFinalPosition);
+        return GridSpan(0, 1, Indefinite);
     }
 
     bool operator==(const GridSpan& o) const
     {
-        return resolvedInitialPosition == o.resolvedInitialPosition && resolvedFinalPosition == o.resolvedFinalPosition;
+        return m_type == o.m_type && m_resolvedInitialPosition == o.m_resolvedInitialPosition && m_resolvedFinalPosition == o.m_resolvedFinalPosition;
     }
 
     size_t integerSpan() const
     {
-        return resolvedFinalPosition.toInt() - resolvedInitialPosition.toInt() + 1;
+        ASSERT(isTranslatedDefinite());
+        ASSERT(m_resolvedFinalPosition > m_resolvedInitialPosition);
+        return m_resolvedFinalPosition - m_resolvedInitialPosition;
     }
 
-    GridResolvedPosition resolvedInitialPosition;
-    GridResolvedPosition resolvedFinalPosition;
-
-    typedef GridResolvedPosition iterator;
-
-    iterator begin() const
+    int untranslatedResolvedInitialPosition() const
     {
-        return resolvedInitialPosition;
+        ASSERT(m_type == UntranslatedDefinite);
+        return m_resolvedInitialPosition;
     }
 
-    iterator end() const
+    int untranslatedResolvedFinalPosition() const
     {
-        return resolvedFinalPosition.next();
+        ASSERT(m_type == UntranslatedDefinite);
+        return m_resolvedFinalPosition;
     }
+
+    size_t resolvedInitialPosition() const
+    {
+        ASSERT(isTranslatedDefinite());
+        ASSERT(m_resolvedInitialPosition >= 0);
+        return m_resolvedInitialPosition;
+    }
+
+    size_t resolvedFinalPosition() const
+    {
+        ASSERT(isTranslatedDefinite());
+        ASSERT(m_resolvedFinalPosition > 0);
+        return m_resolvedFinalPosition;
+    }
+
+    struct GridSpanIterator {
+        GridSpanIterator(size_t v) : value(v) {}
+
+        size_t operator*() const { return value; }
+        size_t operator++() { return value++; }
+        bool operator!=(GridSpanIterator other) const { return value != other.value; }
+
+        size_t value;
+    };
+
+    GridSpanIterator begin() const
+    {
+        ASSERT(isTranslatedDefinite());
+        return m_resolvedInitialPosition;
+    }
+
+    GridSpanIterator end() const
+    {
+        ASSERT(isTranslatedDefinite());
+        return m_resolvedFinalPosition;
+    }
+
+    bool isTranslatedDefinite() const
+    {
+        return m_type == TranslatedDefinite;
+    }
+
+    bool isIndefinite() const
+    {
+        return m_type == Indefinite;
+    }
+
+    void translate(size_t offset)
+    {
+        ASSERT(m_type == UntranslatedDefinite);
+
+        m_type = TranslatedDefinite;
+        m_resolvedInitialPosition += offset;
+        m_resolvedFinalPosition += offset;
+
+        ASSERT(m_resolvedInitialPosition >= 0);
+        ASSERT(m_resolvedFinalPosition > 0);
+    }
+
+private:
+
+    enum GridSpanType {UntranslatedDefinite, TranslatedDefinite, Indefinite};
+
+    GridSpan(int resolvedInitialPosition, int resolvedFinalPosition, GridSpanType type)
+        : m_type(type)
+    {
+#if ENABLE(ASSERT)
+        ASSERT(resolvedInitialPosition < resolvedFinalPosition);
+        if (type == TranslatedDefinite) {
+            ASSERT(resolvedInitialPosition >= 0);
+            ASSERT(resolvedFinalPosition > 0);
+        }
+#endif
+
+        if (resolvedInitialPosition >= 0)
+            m_resolvedInitialPosition = std::min(resolvedInitialPosition, kGridMaxTracks - 1);
+        else
+            m_resolvedInitialPosition = std::max(resolvedInitialPosition, -kGridMaxTracks);
+
+        if (resolvedFinalPosition >= 0)
+            m_resolvedFinalPosition = std::min(resolvedFinalPosition, kGridMaxTracks);
+        else
+            m_resolvedFinalPosition = std::max(resolvedFinalPosition, -kGridMaxTracks + 1);
+    }
+
+    int m_resolvedInitialPosition;
+    int m_resolvedFinalPosition;
+    GridSpanType m_type;
 };
 
 // This represents a grid area that spans in both rows' and columns' direction.
 struct GridCoordinate {
-    WTF_MAKE_FAST_ALLOCATED(GridCoordinate);
+    USING_FAST_MALLOC(GridCoordinate);
 public:
     // HashMap requires a default constuctor.
     GridCoordinate()
-        : columns(0, 0)
-        , rows(0, 0)
+        : columns(GridSpan::indefiniteGridSpan())
+        , rows(GridSpan::indefiniteGridSpan())
     {
     }
 
@@ -167,22 +203,6 @@ public:
     bool operator!=(const GridCoordinate& o) const
     {
         return !(*this == o);
-    }
-
-    GridResolvedPosition positionForSide(GridPositionSide side) const
-    {
-        switch (side) {
-        case ColumnStartSide:
-            return columns.resolvedInitialPosition;
-        case ColumnEndSide:
-            return columns.resolvedFinalPosition;
-        case RowStartSide:
-            return rows.resolvedInitialPosition;
-        case RowEndSide:
-            return rows.resolvedFinalPosition;
-        }
-        ASSERT_NOT_REACHED();
-        return 0;
     }
 
     GridSpan columns;

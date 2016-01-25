@@ -11,19 +11,21 @@
 }
 
 .elements-disclosure li {
+    /** Keep margin-left & padding-left in sync with ElementsTreeElements.updateDecorators **/
     padding: 0 0 0 14px;
     margin-top: 1px;
     margin-left: -2px;
     word-wrap: break-word;
+    position: relative;
+    min-height: 14px;
 }
 
 .elements-disclosure li.parent {
+    /** Keep it in sync with ElementsTreeElements.updateDecorators **/
     margin-left: -13px;
 }
 
 .elements-disclosure li.parent::before {
-    float: left;
-    width: 10px;
     box-sizing: border-box;
 }
 
@@ -31,10 +33,10 @@
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
     -webkit-mask-size: 352px 168px;
-    content: "a";
+    content: "aa";
     color: transparent;
     text-shadow: none;
-    margin-right: 1px;
+    margin-right: -3px;
 }
 
 .elements-disclosure li.always-parent::before {
@@ -54,11 +56,8 @@
 
 .elements-disclosure li .selection {
     display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 15px;
     z-index: -1;
+    margin-left: -10000px;
 }
 
 .elements-disclosure li.hovered:not(.selected) .selection {
@@ -80,6 +79,7 @@
 
 .elements-disclosure ol {
     list-style-type: none;
+    /** Keep it in sync with ElementsTreeElements.updateDecorators **/
     -webkit-padding-start: 12px;
     margin: 0;
 }
@@ -231,32 +231,6 @@ button, input, select {
     white-space: nowrap;
 }
 
-.elements-tree-element-pick-node-1 {
-    border-radius: 3px;
-    padding: 1px 0 1px 0;
-    -webkit-animation: elements-tree-element-pick-node-animation-1 0.5s 1;
-}
-
-.elements-tree-element-pick-node-2 {
-    border-radius: 3px;
-    padding: 1px 0 1px 0;
-    -webkit-animation: elements-tree-element-pick-node-animation-2 0.5s 1;
-}
-
-@-webkit-keyframes elements-tree-element-pick-node-animation-1 {
-    from { background-color: rgb(255, 210, 126); }
-    to { background-color: inherit; }
-}
-
-@-webkit-keyframes elements-tree-element-pick-node-animation-2 {
-    from { background-color: rgb(255, 210, 126); }
-    to { background-color: inherit; }
-}
-
-.pick-node-mode {
-    cursor: pointer;
-}
-
 .webkit-html-attribute-value a {
     cursor: default !important;
 }
@@ -284,9 +258,27 @@ button, input, select {
     }
 }
 
+@-webkit-keyframes dom-update-highlight-animation-dark {
+    from {
+        background-color: rgb(158, 54, 153);
+        color: white;
+    }
+    80% {
+        background-color: #333;
+        color: inherit;
+    }
+    to {
+        background-color: inherit;
+    }
+}
+
 .dom-update-highlight {
     -webkit-animation: dom-update-highlight-animation 1.4s 1 cubic-bezier(0, 0, 0.2, 1);
     border-radius: 2px;
+}
+
+:host-context(.-theme-with-dark-background) .dom-update-highlight {
+    -webkit-animation: dom-update-highlight-animation-dark 1.4s 1 cubic-bezier(0, 0, 0.2, 1);
 }
 
 .elements-disclosure.single-node li {
@@ -322,8 +314,12 @@ ol:focus li.selected .webkit-html-attribute-name {
     color: #ccc;
 }
 
-.elements-disclosure li.selected .gutter-container:not(.has-decorations) {
+.elements-disclosure .gutter-container {
     position: absolute;
+    top: 0;
+}
+
+.elements-disclosure li.selected .gutter-container:not(.has-decorations) {
     left: 0px;
     width: 16.25px;
     height: 18px;

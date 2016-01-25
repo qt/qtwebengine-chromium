@@ -32,7 +32,10 @@
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
+
+class SkImage;
 
 namespace blink {
 
@@ -41,16 +44,18 @@ class Image;
 class KURL;
 
 class PLATFORM_EXPORT DragImage {
+    USING_FAST_MALLOC(DragImage);
+    WTF_MAKE_NONCOPYABLE(DragImage);
 public:
     static PassOwnPtr<DragImage> create(Image*,
         RespectImageOrientationEnum = DoNotRespectImageOrientation, float deviceScaleFactor = 1,
         InterpolationQuality = InterpolationHigh, float opacity = 1,
-        const FloatSize& imageScale = FloatSize(1, 1));
+        FloatSize imageScale = FloatSize(1, 1));
 
     static PassOwnPtr<DragImage> create(const KURL&, const String& label, const FontDescription& systemFont, float deviceScaleFactor);
     ~DragImage();
 
-    static FloatSize clampedImageScale(const Image&, const IntSize&, const IntSize& maxSize);
+    static FloatSize clampedImageScale(const IntSize&, const IntSize&, const IntSize& maxSize);
 
     const SkBitmap& bitmap() { return m_bitmap; }
     float resolutionScale() const { return m_resolutionScale; }
@@ -58,10 +63,10 @@ public:
 
     void scale(float scaleX, float scaleY);
 
+    static PassRefPtr<SkImage> resizeAndOrientImage(PassRefPtr<SkImage>, ImageOrientation, FloatSize imageScale = FloatSize(1, 1), float opacity = 1.0, InterpolationQuality = InterpolationNone);
+
 private:
     DragImage(const SkBitmap&, float resolutionScale, InterpolationQuality);
-
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     SkBitmap m_bitmap;
     float m_resolutionScale;

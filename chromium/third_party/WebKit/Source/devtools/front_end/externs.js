@@ -200,6 +200,12 @@ DevToolsHost.ContextMenuDescriptor;
 DevToolsHost.zoomFactor = function() { }
 
 /**
+ * @param {number} length
+ * @return {number}
+ */
+DevToolsHost.convertLengthForEmbedder = function(length) { }
+
+/**
  * @param {string} origin
  * @param {string} script
  */
@@ -222,11 +228,6 @@ DevToolsHost.platform = function() { }
  * @param {!Document} document
  */
 DevToolsHost.showContextMenuAtPoint = function(x, y, items, document) { }
-
-/**
- * @param {string} message
- */
-DevToolsHost.sendMessageToBackend = function(message) { }
 
 /**
  * @param {string} message
@@ -314,6 +315,12 @@ Adb.Browser;
 Adb.Device;
 /** @typedef {!Object.<string, string>} */
 Adb.PortForwardingConfig;
+/** @typedef {!{port: string, address: string}} */
+Adb.PortForwardingRule;
+/** @typedef {{ports: !Object<string, number>, browserId: string}} */
+Adb.DevicePortForwardingStatus;
+/** @typedef {!Object<string, !Adb.DevicePortForwardingStatus>} */
+Adb.PortForwardingStatus;
 
 /**
  * @constructor
@@ -538,6 +545,12 @@ CodeMirror.Pos.prototype.ch;
  * @return {number}
  */
 CodeMirror.cmpPos = function(pos1, pos2) { };
+
+/**
+ * @param {string} mode
+ * @param {?} definition
+ */
+CodeMirror.defineSimpleMode = function(mode, definition) {};
 
 /** @constructor */
 CodeMirror.StringStream = function(line)

@@ -177,7 +177,7 @@
 int ssl3_accept(SSL *s) {
   BUF_MEM *buf = NULL;
   uint32_t alg_a;
-  void (*cb)(const SSL *ssl, int type, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
   int ret = -1;
   int new_state, state, skip = 0;
 
@@ -399,6 +399,7 @@ int ssl3_accept(SSL *s) {
 
       case SSL3_ST_SR_KEY_EXCH_A:
       case SSL3_ST_SR_KEY_EXCH_B:
+      case SSL3_ST_SR_KEY_EXCH_C:
         ret = ssl3_get_client_key_exchange(s);
         if (ret <= 0) {
           goto end;
@@ -418,27 +419,25 @@ int ssl3_accept(SSL *s) {
         s->init_num = 0;
         break;
 
-      case SSL3_ST_SR_CHANGE: {
-        char next_proto_neg = 0;
-        char channel_id = 0;
-        next_proto_neg = s->s3->next_proto_neg_seen;
-        channel_id = s->s3->tlsext_channel_id_valid;
+      case SSL3_ST_SR_CHANGE:
+        ret = s->method->ssl_read_change_cipher_spec(s);
+        if (ret <= 0) {
+          goto end;
+        }
 
-        /* At this point, the next message must be entirely behind a
-         * ChangeCipherSpec. */
-        if (!ssl3_expect_change_cipher_spec(s)) {
+        if (!ssl3_do_change_cipher_spec(s)) {
           ret = -1;
           goto end;
         }
-        if (next_proto_neg) {
+
+        if (s->s3->next_proto_neg_seen) {
           s->state = SSL3_ST_SR_NEXT_PROTO_A;
-        } else if (channel_id) {
+        } else if (s->s3->tlsext_channel_id_valid) {
           s->state = SSL3_ST_SR_CHANNEL_ID_A;
         } else {
           s->state = SSL3_ST_SR_FINISHED_A;
         }
         break;
-      }
 
       case SSL3_ST_SR_NEXT_PROTO_A:
       case SSL3_ST_SR_NEXT_PROTO_B:
@@ -944,8 +943,15 @@ int ssl3_get_client_hello(SSL *s) {
     session = NULL;
 
     s->verify_result = s->session->verify_result;
-  } else if (!ssl_get_new_session(s, 1)) {
-    goto err;
+  } else {
+    if (!ssl_get_new_session(s, 1 /* server */)) {
+      goto err;
+    }
+
+    /* Clear the session ID if we want the session to be single-use. */
+    if (!(s->ctx->session_cache_mode & SSL_SESS_CACHE_SERVER)) {
+      s->session->session_id_length = 0;
+    }
   }
 
   if (s->ctx->dos_protection_cb != NULL && s->ctx->dos_protection_cb(&early_ctx) == 0) {
@@ -1091,9 +1097,7 @@ int ssl3_get_client_hello(SSL *s) {
    * s->hit             - session reuse flag
    * s->tmp.new_cipher  - the new cipher to use. */
 
-  if (ret < 0) {
-    ret = -ret;
-  }
+  ret = 1;
 
   if (0) {
   f_err:
@@ -1106,90 +1110,55 @@ err:
   return ret;
 }
 
-int ssl3_send_server_hello(SSL *s) {
-  uint8_t *buf;
-  uint8_t *p, *d;
-  int sl;
-  unsigned long l;
-
-  if (s->state == SSL3_ST_SW_SRVR_HELLO_A) {
-    /* We only accept ChannelIDs on connections with ECDHE in order to avoid a
-     * known attack while we fix ChannelID itself. */
-    if (s->s3->tlsext_channel_id_valid &&
-        (s->s3->tmp.new_cipher->algorithm_mkey & SSL_kECDHE) == 0) {
-      s->s3->tlsext_channel_id_valid = 0;
-    }
-
-    /* If this is a resumption and the original handshake didn't support
-     * ChannelID then we didn't record the original handshake hashes in the
-     * session and so cannot resume with ChannelIDs. */
-    if (s->hit && s->session->original_handshake_hash_len == 0) {
-      s->s3->tlsext_channel_id_valid = 0;
-    }
-
-    buf = (uint8_t *)s->init_buf->data;
-    /* Do the message type and length last */
-    d = p = ssl_handshake_start(s);
-
-    *(p++) = s->version >> 8;
-    *(p++) = s->version & 0xff;
-
-    /* Random stuff */
-    if (!ssl_fill_hello_random(s->s3->server_random, SSL3_RANDOM_SIZE,
-                               1 /* server */)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-      return -1;
-    }
-    memcpy(p, s->s3->server_random, SSL3_RANDOM_SIZE);
-    p += SSL3_RANDOM_SIZE;
-
-    /* There are several cases for the session ID to send
-     * back in the server hello:
-     * - For session reuse from the session cache, we send back the old session
-     *   ID.
-     * - If stateless session reuse (using a session ticket) is successful, we
-     *   send back the client's "session ID" (which doesn't actually identify
-     *   the session).
-     * - If it is a new session, we send back the new session ID.
-     * - However, if we want the new session to be single-use, we send back a
-     *   0-length session ID.
-     * s->hit is non-zero in either case of session reuse, so the following
-     * won't overwrite an ID that we're supposed to send back. */
-    if (!(s->ctx->session_cache_mode & SSL_SESS_CACHE_SERVER) && !s->hit) {
-      s->session->session_id_length = 0;
-    }
-
-    sl = s->session->session_id_length;
-    if (sl > (int)sizeof(s->session->session_id)) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-      return -1;
-    }
-    *(p++) = sl;
-    memcpy(p, s->session->session_id, sl);
-    p += sl;
-
-    /* put the cipher */
-    s2n(ssl_cipher_get_value(s->s3->tmp.new_cipher), p);
-
-    /* put the compression method */
-    *(p++) = 0;
-
-    p = ssl_add_serverhello_tlsext(s, p, buf + SSL3_RT_MAX_PLAIN_LENGTH);
-    if (p == NULL) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-      return -1;
-    }
-
-    /* do the header */
-    l = (p - d);
-    if (!ssl_set_handshake_header(s, SSL3_MT_SERVER_HELLO, l)) {
-      return -1;
-    }
-    s->state = SSL3_ST_SW_SRVR_HELLO_B;
+int ssl3_send_server_hello(SSL *ssl) {
+  if (ssl->state == SSL3_ST_SW_SRVR_HELLO_B) {
+    return ssl_do_write(ssl);
   }
 
-  /* SSL3_ST_SW_SRVR_HELLO_B */
-  return ssl_do_write(s);
+  assert(ssl->state == SSL3_ST_SW_SRVR_HELLO_A);
+
+  /* We only accept ChannelIDs on connections with ECDHE in order to avoid a
+   * known attack while we fix ChannelID itself. */
+  if (ssl->s3->tlsext_channel_id_valid &&
+      (ssl->s3->tmp.new_cipher->algorithm_mkey & SSL_kECDHE) == 0) {
+    ssl->s3->tlsext_channel_id_valid = 0;
+  }
+
+  /* If this is a resumption and the original handshake didn't support
+   * ChannelID then we didn't record the original handshake hashes in the
+   * session and so cannot resume with ChannelIDs. */
+  if (ssl->hit && ssl->session->original_handshake_hash_len == 0) {
+    ssl->s3->tlsext_channel_id_valid = 0;
+  }
+
+  if (!ssl_fill_hello_random(ssl->s3->server_random, SSL3_RANDOM_SIZE,
+                             1 /* server */)) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    return -1;
+  }
+
+  CBB cbb, session_id;
+  size_t length;
+  CBB_zero(&cbb);
+  if (!CBB_init_fixed(&cbb, ssl_handshake_start(ssl),
+                      ssl->init_buf->max - SSL_HM_HEADER_LENGTH(ssl)) ||
+      !CBB_add_u16(&cbb, ssl->version) ||
+      !CBB_add_bytes(&cbb, ssl->s3->server_random, SSL3_RANDOM_SIZE) ||
+      !CBB_add_u8_length_prefixed(&cbb, &session_id) ||
+      !CBB_add_bytes(&session_id, ssl->session->session_id,
+                     ssl->session->session_id_length) ||
+      !CBB_add_u16(&cbb, ssl_cipher_get_value(ssl->s3->tmp.new_cipher)) ||
+      !CBB_add_u8(&cbb, 0 /* no compression */) ||
+      !ssl_add_serverhello_tlsext(ssl, &cbb) ||
+      !CBB_finish(&cbb, NULL, &length) ||
+      !ssl_set_handshake_header(ssl, SSL3_MT_SERVER_HELLO, length)) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    CBB_cleanup(&cbb);
+    return -1;
+  }
+
+  ssl->state = SSL3_ST_SW_SRVR_HELLO_B;
+  return ssl_do_write(ssl);
 }
 
 int ssl3_send_certificate_status(SSL *ssl) {
@@ -1248,6 +1217,9 @@ int ssl3_send_server_key_exchange(SSL *s) {
   int n;
   CERT *cert;
   BIGNUM *r[4];
+  /* r_pad_bytes[i] contains the number of zero padding bytes that need to
+   * precede |r[i]| when serialising it. */
+  unsigned r_pad_bytes[4] = {0};
   int nr[4];
   BUF_MEM *buf;
   EVP_MD_CTX md_ctx;
@@ -1255,6 +1227,8 @@ int ssl3_send_server_key_exchange(SSL *s) {
   if (s->state == SSL3_ST_SW_KEY_EXCH_C) {
     return ssl_do_write(s);
   }
+
+  EVP_MD_CTX_init(&md_ctx);
 
   if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
     if (!ssl_has_private_key(s)) {
@@ -1266,7 +1240,6 @@ int ssl3_send_server_key_exchange(SSL *s) {
     max_sig_len = 0;
   }
 
-  EVP_MD_CTX_init(&md_ctx);
   enum ssl_private_key_result_t sign_result;
   if (s->state == SSL3_ST_SW_KEY_EXCH_A) {
     alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
@@ -1318,21 +1291,13 @@ int ssl3_send_server_key_exchange(SSL *s) {
       r[0] = dh->p;
       r[1] = dh->g;
       r[2] = dh->pub_key;
+      /* Due to a bug in yaSSL, the public key must be zero padded to the size
+       * of the prime. */
+      assert(BN_num_bytes(dh->pub_key) <= BN_num_bytes(dh->p));
+      r_pad_bytes[2] = BN_num_bytes(dh->p) - BN_num_bytes(dh->pub_key);
     } else if (alg_k & SSL_kECDHE) {
       /* Determine the curve to use. */
-      int nid = NID_undef;
-      if (cert->ecdh_nid != NID_undef) {
-        nid = cert->ecdh_nid;
-      } else if (cert->ecdh_tmp_cb != NULL) {
-        /* Note: |ecdh_tmp_cb| does NOT pass ownership of the result
-         * to the caller. */
-        EC_KEY *template = s->cert->ecdh_tmp_cb(s, 0, 1024);
-        if (template != NULL && EC_KEY_get0_group(template) != NULL) {
-          nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(template));
-        }
-      } else {
-        nid = tls1_get_shared_curve(s);
-      }
+      int nid = tls1_get_shared_curve(s);
       if (nid == NID_undef) {
         al = SSL_AD_HANDSHAKE_FAILURE;
         OPENSSL_PUT_ERROR(SSL, SSL_R_MISSING_TMP_ECDH_KEY);
@@ -1404,7 +1369,7 @@ int ssl3_send_server_key_exchange(SSL *s) {
     }
 
     for (i = 0; i < 4 && r[i] != NULL; i++) {
-      nr[i] = BN_num_bytes(r[i]);
+      nr[i] = BN_num_bytes(r[i]) + r_pad_bytes[i];
       n += 2 + nr[i];
     }
 
@@ -1416,7 +1381,10 @@ int ssl3_send_server_key_exchange(SSL *s) {
 
     for (i = 0; i < 4 && r[i] != NULL; i++) {
       s2n(nr[i], p);
-      BN_bn2bin(r[i], p);
+      if (!BN_bn2bin_padded(p, nr[i], r[i])) {
+        OPENSSL_PUT_ERROR(SSL, ERR_LIB_BN);
+        goto err;
+      }
       p += nr[i];
     }
 
@@ -1604,16 +1572,13 @@ err:
 }
 
 int ssl3_get_client_key_exchange(SSL *s) {
-  int al, ok;
-  long n;
+  int al;
   CBS client_key_exchange;
   uint32_t alg_k;
   uint32_t alg_a;
   uint8_t *premaster_secret = NULL;
   size_t premaster_secret_len = 0;
-  RSA *rsa = NULL;
   uint8_t *decrypt_buf = NULL;
-  EVP_PKEY *pkey = NULL;
   BIGNUM *pub = NULL;
   DH *dh_srvr;
 
@@ -1624,17 +1589,18 @@ int ssl3_get_client_key_exchange(SSL *s) {
   unsigned int psk_len = 0;
   uint8_t psk[PSK_MAX_PSK_LEN];
 
-  n = s->method->ssl_get_message(s, SSL3_ST_SR_KEY_EXCH_A,
-                                 SSL3_ST_SR_KEY_EXCH_B,
-                                 SSL3_MT_CLIENT_KEY_EXCHANGE, 2048, /* ??? */
-                                 ssl_hash_message, &ok);
-
-  if (!ok) {
-    return n;
+  if (s->state == SSL3_ST_SR_KEY_EXCH_A ||
+      s->state == SSL3_ST_SR_KEY_EXCH_B) {
+    int ok;
+    const long n = s->method->ssl_get_message(
+        s, SSL3_ST_SR_KEY_EXCH_A, SSL3_ST_SR_KEY_EXCH_B,
+        SSL3_MT_CLIENT_KEY_EXCHANGE, 2048 /* ??? */, ssl_hash_message, &ok);
+    if (!ok) {
+      return n;
+    }
   }
 
-  CBS_init(&client_key_exchange, s->init_msg, n);
-
+  CBS_init(&client_key_exchange, s->init_msg, s->init_num);
   alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
   alg_a = s->s3->tmp.new_cipher->algorithm_auth;
 
@@ -1691,53 +1657,8 @@ int ssl3_get_client_key_exchange(SSL *s) {
     CBS encrypted_premaster_secret;
     uint8_t rand_premaster_secret[SSL_MAX_MASTER_KEY_LENGTH];
     uint8_t good;
-    size_t rsa_size, decrypt_len, premaster_index, j;
-
-    pkey = s->cert->privatekey;
-    if (pkey == NULL || pkey->type != EVP_PKEY_RSA || pkey->pkey.rsa == NULL) {
-      al = SSL_AD_HANDSHAKE_FAILURE;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_MISSING_RSA_CERTIFICATE);
-      goto f_err;
-    }
-    rsa = pkey->pkey.rsa;
-
-    /* TLS and [incidentally] DTLS{0xFEFF} */
-    if (s->version > SSL3_VERSION) {
-      CBS copy = client_key_exchange;
-      if (!CBS_get_u16_length_prefixed(&client_key_exchange,
-                                       &encrypted_premaster_secret) ||
-          CBS_len(&client_key_exchange) != 0) {
-        if (!(s->options & SSL_OP_TLS_D5_BUG)) {
-          al = SSL_AD_DECODE_ERROR;
-          OPENSSL_PUT_ERROR(SSL, SSL_R_TLS_RSA_ENCRYPTED_VALUE_LENGTH_IS_WRONG);
-          goto f_err;
-        } else {
-          encrypted_premaster_secret = copy;
-        }
-      }
-    } else {
-      encrypted_premaster_secret = client_key_exchange;
-    }
-
-    /* Reject overly short RSA keys because we want to be sure that the buffer
-     * size makes it safe to iterate over the entire size of a premaster secret
-     * (SSL_MAX_MASTER_KEY_LENGTH). The actual expected size is larger due to
-     * RSA padding, but the bound is sufficient to be safe. */
-    rsa_size = RSA_size(rsa);
-    if (rsa_size < SSL_MAX_MASTER_KEY_LENGTH) {
-      al = SSL_AD_DECRYPT_ERROR;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_DECRYPTION_FAILED);
-      goto f_err;
-    }
-
-    /* We must not leak whether a decryption failure occurs because of
-     * Bleichenbacher's attack on PKCS #1 v1.5 RSA padding (see RFC 2246,
-     * section 7.4.7.1). The code follows that advice of the TLS RFC and
-     * generates a random premaster secret for the case that the decrypt fails.
-     * See https://tools.ietf.org/html/rfc5246#section-7.4.7.1 */
-    if (!RAND_bytes(rand_premaster_secret, sizeof(rand_premaster_secret))) {
-      goto err;
-    }
+    size_t decrypt_len, premaster_index, j;
+    const size_t rsa_size = ssl_private_key_max_signature_len(s);
 
     /* Allocate a buffer large enough for an RSA decryption. */
     decrypt_buf = OPENSSL_malloc(rsa_size);
@@ -1746,13 +1667,63 @@ int ssl3_get_client_key_exchange(SSL *s) {
       goto err;
     }
 
-    /* Decrypt with no padding. PKCS#1 padding will be removed as part of the
-     * timing-sensitive code below. */
-    if (!RSA_decrypt(rsa, &decrypt_len, decrypt_buf, rsa_size,
-                     CBS_data(&encrypted_premaster_secret),
-                     CBS_len(&encrypted_premaster_secret), RSA_NO_PADDING)) {
-      goto err;
+    enum ssl_private_key_result_t decrypt_result;
+    if (s->state == SSL3_ST_SR_KEY_EXCH_B) {
+      if (!ssl_has_private_key(s) || ssl_private_key_type(s) != EVP_PKEY_RSA) {
+        al = SSL_AD_HANDSHAKE_FAILURE;
+        OPENSSL_PUT_ERROR(SSL, SSL_R_MISSING_RSA_CERTIFICATE);
+        goto f_err;
+      }
+      /* TLS and [incidentally] DTLS{0xFEFF} */
+      if (s->version > SSL3_VERSION) {
+        if (!CBS_get_u16_length_prefixed(&client_key_exchange,
+                                         &encrypted_premaster_secret) ||
+            CBS_len(&client_key_exchange) != 0) {
+          al = SSL_AD_DECODE_ERROR;
+          OPENSSL_PUT_ERROR(SSL,
+                            SSL_R_TLS_RSA_ENCRYPTED_VALUE_LENGTH_IS_WRONG);
+          goto f_err;
+        }
+      } else {
+        encrypted_premaster_secret = client_key_exchange;
+      }
+
+      /* Reject overly short RSA keys because we want to be sure that the buffer
+       * size makes it safe to iterate over the entire size of a premaster
+       * secret (SSL_MAX_MASTER_KEY_LENGTH). The actual expected size is larger
+       * due to RSA padding, but the bound is sufficient to be safe. */
+      if (rsa_size < SSL_MAX_MASTER_KEY_LENGTH) {
+        al = SSL_AD_DECRYPT_ERROR;
+        OPENSSL_PUT_ERROR(SSL, SSL_R_DECRYPTION_FAILED);
+        goto f_err;
+      }
+
+      /* Decrypt with no padding. PKCS#1 padding will be removed as part of the
+       * timing-sensitive code below. */
+      decrypt_result = ssl_private_key_decrypt(
+          s, decrypt_buf, &decrypt_len, rsa_size,
+          CBS_data(&encrypted_premaster_secret),
+          CBS_len(&encrypted_premaster_secret));
+    } else {
+      assert(s->state == SSL3_ST_SR_KEY_EXCH_C);
+      /* Complete async decrypt. */
+      decrypt_result = ssl_private_key_decrypt_complete(
+          s, decrypt_buf, &decrypt_len, rsa_size);
     }
+
+    switch (decrypt_result) {
+      case ssl_private_key_success:
+        s->rwstate = SSL_NOTHING;
+        break;
+      case ssl_private_key_failure:
+        s->rwstate = SSL_NOTHING;
+        goto err;
+      case ssl_private_key_retry:
+        s->rwstate = SSL_PRIVATE_KEY_OPERATION;
+        s->state = SSL3_ST_SR_KEY_EXCH_C;
+        goto err;
+    }
+
     if (decrypt_len != rsa_size) {
       /* This should never happen, but do a check so we do not read
        * uninitialized memory. */
@@ -1795,6 +1766,15 @@ int ssl3_get_client_key_exchange(SSL *s) {
                                (unsigned)(s->client_version >> 8));
     good &= constant_time_eq_8(premaster_secret[1],
                                (unsigned)(s->client_version & 0xff));
+
+    /* We must not leak whether a decryption failure occurs because of
+     * Bleichenbacher's attack on PKCS #1 v1.5 RSA padding (see RFC 2246,
+     * section 7.4.7.1). The code follows that advice of the TLS RFC and
+     * generates a random premaster secret for the case that the decrypt
+     * fails. See https://tools.ietf.org/html/rfc5246#section-7.4.7.1 */
+    if (!RAND_bytes(rand_premaster_secret, sizeof(rand_premaster_secret))) {
+      goto err;
+    }
 
     /* Now copy rand_premaster_secret over premaster_secret using
      * decrypt_good_mask. */
@@ -1850,7 +1830,7 @@ int ssl3_get_client_key_exchange(SSL *s) {
 
     premaster_secret_len = dh_len;
   } else if (alg_k & SSL_kECDHE) {
-    int field_size = 0, ecdh_len;
+    int ecdh_len;
     const EC_KEY *tkey;
     const EC_GROUP *group;
     const BIGNUM *priv_key;
@@ -1905,8 +1885,8 @@ int ssl3_get_client_key_exchange(SSL *s) {
     }
 
     /* Allocate a buffer for both the secret and the PSK. */
-    field_size = EC_GROUP_get_degree(group);
-    if (field_size <= 0) {
+    unsigned field_size = EC_GROUP_get_degree(group);
+    if (field_size == 0) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_ECDH_LIB);
       goto err;
     }
@@ -2052,9 +2032,17 @@ int ssl3_get_cert_verify(SSL *s) {
   CBS_init(&certificate_verify, s->init_msg, n);
 
   /* Determine the digest type if needbe. */
-  if (SSL_USE_SIGALGS(s) &&
-      !tls12_check_peer_sigalg(&md, &al, s, &certificate_verify, pkey)) {
-    goto f_err;
+  if (SSL_USE_SIGALGS(s)) {
+    uint8_t hash, signature_type;
+    if (!CBS_get_u8(&certificate_verify, &hash) ||
+        !CBS_get_u8(&certificate_verify, &signature_type)) {
+      al = SSL_AD_DECODE_ERROR;
+      OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+      goto f_err;
+    }
+    if (!tls12_check_peer_sigalg(s, &md, &al, hash, signature_type, pkey)) {
+      goto f_err;
+    }
   }
 
   /* Compute the digest. */
@@ -2181,8 +2169,9 @@ int ssl3_get_client_certificate(SSL *s) {
     }
     is_first_certificate = 0;
 
+    /* A u24 length cannot overflow a long. */
     data = CBS_data(&certificate);
-    x = d2i_X509(NULL, &data, CBS_len(&certificate));
+    x = d2i_X509(NULL, &data, (long)CBS_len(&certificate));
     if (x == NULL) {
       al = SSL_AD_BAD_CERTIFICATE;
       OPENSSL_PUT_ERROR(SSL, ERR_R_ASN1_LIB);
@@ -2415,17 +2404,6 @@ int ssl3_get_next_proto(SSL *s) {
     return n;
   }
 
-  /* s->state doesn't reflect whether ChangeCipherSpec has been received in
-   * this handshake, but s->s3->change_cipher_spec does (will be reset by
-   * ssl3_get_finished).
-   *
-   * TODO(davidben): Is this check now redundant with
-   * SSL3_FLAGS_EXPECT_CCS? */
-  if (!s->s3->change_cipher_spec) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_GOT_NEXT_PROTO_BEFORE_A_CCS);
-    return -1;
-  }
-
   CBS_init(&next_protocol, s->init_msg, n);
 
   /* The payload looks like:
@@ -2476,16 +2454,6 @@ int ssl3_get_channel_id(SSL *s) {
   assert(channel_id_hash_len == SHA256_DIGEST_LENGTH);
 
   if (!ssl3_hash_current_message(s)) {
-    return -1;
-  }
-
-  /* s->state doesn't reflect whether ChangeCipherSpec has been received in
-   * this handshake, but s->s3->change_cipher_spec does (will be reset by
-   * ssl3_get_finished).
-   *
-   * TODO(davidben): Is this check now redundant with SSL3_FLAGS_EXPECT_CCS? */
-  if (!s->s3->change_cipher_spec) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_GOT_CHANNEL_ID_BEFORE_A_CCS);
     return -1;
   }
 

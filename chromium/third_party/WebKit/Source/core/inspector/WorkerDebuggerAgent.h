@@ -40,7 +40,7 @@ class WorkerThreadDebugger;
 
 class WorkerDebuggerAgent final : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WorkerDebuggerAgent);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(WorkerDebuggerAgent);
 public:
     static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
     ~WorkerDebuggerAgent() override;
@@ -50,7 +50,6 @@ private:
     WorkerDebuggerAgent(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
 
     // V8DebuggerAgent::Client implemntation.
-    InjectedScript defaultInjectedScript() override;
     void muteConsole() override;
     void unmuteConsole() override;
 

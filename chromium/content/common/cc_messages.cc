@@ -4,6 +4,9 @@
 
 #include "content/common/cc_messages.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
 #include "cc/quads/draw_quad.h"
@@ -300,7 +303,6 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
-  WriteParam(m, p.referenced_surfaces);
   WriteParam(m, p.quad_list.size());
 
   cc::SharedQuadStateList::ConstIterator shared_quad_state_iter =
@@ -384,9 +386,6 @@ static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
 
   // The largest quad type, verified by a unit test.
   to_reserve += p.quad_list.size() * cc::LargestDrawQuadSize();
-
-  // The actual list of referenced surfaces.
-  to_reserve += p.referenced_surfaces.size() * sizeof(cc::SurfaceId);
   return to_reserve;
 }
 
@@ -408,14 +407,12 @@ bool ParamTraits<cc::RenderPass>::Read(const Message* m,
   gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
-  std::vector<cc::SurfaceId> referenced_surfaces;
   size_t quad_list_size;
 
   if (!ReadParam(m, iter, &id) || !ReadParam(m, iter, &output_rect) ||
       !ReadParam(m, iter, &damage_rect) ||
       !ReadParam(m, iter, &transform_to_root_target) ||
       !ReadParam(m, iter, &has_transparent_background) ||
-      !ReadParam(m, iter, &referenced_surfaces) ||
       !ReadParam(m, iter, &quad_list_size))
     return false;
 
@@ -424,7 +421,6 @@ bool ParamTraits<cc::RenderPass>::Read(const Message* m,
             damage_rect,
             transform_to_root_target,
             has_transparent_background);
-  p->referenced_surfaces.swap(referenced_surfaces);
 
   for (size_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
@@ -512,8 +508,6 @@ void ParamTraits<cc::RenderPass>::Log(
   LogParam(p.transform_to_root_target, l);
   l->append(", ");
   LogParam(p.has_transparent_background, l);
-  l->append(", ");
-  LogParam(p.referenced_surfaces, l);
   l->append(", ");
 
   l->append("[");
@@ -679,8 +673,7 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
 
   size_t to_reserve = sizeof(p.device_scale_factor);
   to_reserve += p.resource_list.size() * sizeof(cc::TransferableResource);
-  for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
-    const cc::RenderPass* pass = p.render_pass_list[i];
+  for (const auto& pass : p.render_pass_list) {
     to_reserve += sizeof(size_t) * 2;
     to_reserve += ReserveSizeForRenderPassWrite(*pass);
   }
@@ -689,7 +682,7 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
   WriteParam(m, p.device_scale_factor);
   WriteParam(m, p.resource_list);
   WriteParam(m, p.render_pass_list.size());
-  for (const auto* pass : p.render_pass_list) {
+  for (const auto& pass : p.render_pass_list) {
     WriteParam(m, pass->quad_list.size());
     WriteParam(m, pass->shared_quad_state_list.size());
     WriteParam(m, *pass);
@@ -736,7 +729,7 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
         return false;
     }
     pass_set.insert(render_pass->id);
-    p->render_pass_list.push_back(render_pass.Pass());
+    p->render_pass_list.push_back(std::move(render_pass));
   }
   return true;
 }
@@ -800,7 +793,6 @@ void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Write(
     const param_type& p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     WriteParam(m, p.size_in_pixels[i]);
-    WriteParam(m, p.allow_overlay[i]);
   }
 }
 
@@ -810,8 +802,6 @@ bool ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Read(
     param_type* p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     if (!ReadParam(m, iter, &p->size_in_pixels[i]))
-      return false;
-    if (!ReadParam(m, iter, &p->allow_overlay[i]))
       return false;
   }
   return true;
@@ -823,8 +813,6 @@ void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Log(
   l->append("StreamVideoDrawQuad::OverlayResources([");
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     LogParam(p.size_in_pixels[i], l);
-    l->append(", ");
-    LogParam(p.allow_overlay[i], l);
     if (i < (cc::DrawQuad::Resources::kMaxResourceIdCount - 1))
       l->append(", ");
   }
@@ -836,7 +824,6 @@ void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Write(
     const param_type& p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     WriteParam(m, p.size_in_pixels[i]);
-    WriteParam(m, p.allow_overlay[i]);
   }
 }
 
@@ -846,8 +833,6 @@ bool ParamTraits<cc::TextureDrawQuad::OverlayResources>::Read(
     param_type* p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     if (!ReadParam(m, iter, &p->size_in_pixels[i]))
-      return false;
-    if (!ReadParam(m, iter, &p->allow_overlay[i]))
       return false;
   }
   return true;
@@ -859,8 +844,6 @@ void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Log(
   l->append("TextureDrawQuad::OverlayResources([");
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     LogParam(p.size_in_pixels[i], l);
-    l->append(", ");
-    LogParam(p.allow_overlay[i], l);
     if (i < (cc::DrawQuad::Resources::kMaxResourceIdCount - 1))
       l->append(", ");
   }

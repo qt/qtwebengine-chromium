@@ -5,6 +5,9 @@
 #ifndef NET_QUIC_TEST_TOOLS_QUIC_CHROMIUM_CLIENT_SESSION_PEER_H_
 #define NET_QUIC_TEST_TOOLS_QUIC_CHROMIUM_CLIENT_SESSION_PEER_H_
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -21,6 +24,9 @@ class QuicChromiumClientSessionPeer {
 
   static void SetChannelIDSent(QuicChromiumClientSession* session,
                                bool channel_id_sent);
+
+  static void SetHostname(QuicChromiumClientSession* session,
+                          const std::string& hostname);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicChromiumClientSessionPeer);

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/serviceworkers/ServiceWorkerWindowClient.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -14,6 +13,7 @@
 #include "core/workers/WorkerLocation.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
+#include "modules/serviceworkers/ServiceWorkerWindowClientCallback.h"
 #include "public/platform/WebString.h"
 #include "wtf/RefPtr.h"
 
@@ -72,11 +72,11 @@ ScriptPromise ServiceWorkerWindowClient::navigate(ScriptState* scriptState, cons
         return promise;
     }
     if (!context->securityOrigin()->canDisplay(parsedUrl)) {
-        resolver->reject(DOMException::create(SecurityError, "'" + parsedUrl.elidedString() + "' cannot navigate."));
+        resolver->reject(V8ThrowException::createTypeError(scriptState->isolate(), "'" + parsedUrl.elidedString() + "' cannot navigate."));
         return promise;
     }
 
-    ServiceWorkerGlobalScopeClient::from(context)->navigate(uuid(), parsedUrl, new CallbackPromiseAdapter<ServiceWorkerWindowClient, ServiceWorkerError>(resolver));
+    ServiceWorkerGlobalScopeClient::from(context)->navigate(uuid(), parsedUrl, new NavigateClientCallback(resolver));
     return promise;
 }
 

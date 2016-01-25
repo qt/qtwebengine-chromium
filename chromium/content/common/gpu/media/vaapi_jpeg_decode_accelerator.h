@@ -5,6 +5,9 @@
 #ifndef CONTENT_COMMON_GPU_MEDIA_VAAPI_JPEG_DECODE_ACCELERATOR_H_
 #define CONTENT_COMMON_GPU_MEDIA_VAAPI_JPEG_DECODE_ACCELERATOR_H_
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
@@ -87,7 +90,7 @@ class CONTENT_EXPORT VaapiJpegDecodeAccelerator
   // decoder thread to the ChildThread should use |weak_this_|.
   base::WeakPtr<VaapiJpegDecodeAccelerator> weak_this_;
 
-  scoped_ptr<VaapiWrapper> vaapi_wrapper_;
+  scoped_refptr<VaapiWrapper> vaapi_wrapper_;
 
   // Comes after vaapi_wrapper_ to ensure its destructor is executed before
   // |vaapi_wrapper_| is destroyed.

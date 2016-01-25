@@ -25,7 +25,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/SelectorChecker.h"
 
 #include "core/HTMLNames.h"
@@ -116,10 +115,10 @@ static Element* parentElement(const SelectorChecker::SelectorCheckingContext& co
 
 static bool scopeContainsLastMatchedElement(const SelectorChecker::SelectorCheckingContext& context)
 {
-    if (!context.scopeContainsLastMatchedElement)
+    // If this context isn't scoped, skip checking.
+    if (!context.scope)
         return true;
 
-    ASSERT(context.scope);
     if (context.scope->treeScope() == context.element->treeScope())
         return true;
 
@@ -295,24 +294,24 @@ SelectorChecker::Match SelectorChecker::matchForSubSelector(const SelectorChecki
     return matchSelector(nextContext, result);
 }
 
-static inline bool isOpenShadowRoot(const Node* node)
+static inline bool isV0ShadowRoot(const Node* node)
 {
-    return node && node->isShadowRoot() && toShadowRoot(node)->isOpen();
+    return node && node->isShadowRoot() && toShadowRoot(node)->type() == ShadowRootType::V0;
 }
 
 SelectorChecker::Match SelectorChecker::matchForPseudoShadow(const SelectorCheckingContext& context, const ContainerNode* node, MatchResult& result) const
 {
-    if (!isOpenShadowRoot(node))
+    if (!isV0ShadowRoot(node))
         return SelectorFailsCompletely;
     if (!context.previousElement)
         return SelectorFailsCompletely;
     return matchSelector(context, result);
 }
 
-static inline Element* parentOrShadowHostElementButDisallowClosedShadowTree(const Element& element)
+static inline Element* parentOrV0ShadowHostElement(const Element& element)
 {
     if (element.parentNode() && element.parentNode()->isShadowRoot()) {
-        if (!toShadowRoot(element.parentNode())->isOpen())
+        if (toShadowRoot(element.parentNode())->type() != ShadowRootType::V0)
             return nullptr;
     }
     return element.parentOrShadowHostElement();
@@ -443,7 +442,7 @@ SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingC
             nextContext.isSubSelector = false;
             nextContext.inRightmostCompound = false;
 
-            for (nextContext.element = parentOrShadowHostElementButDisallowClosedShadowTree(*context.element); nextContext.element; nextContext.element = parentOrShadowHostElementButDisallowClosedShadowTree(*nextContext.element)) {
+            for (nextContext.element = parentOrV0ShadowHostElement(*context.element); nextContext.element; nextContext.element = parentOrV0ShadowHostElement(*nextContext.element)) {
                 Match match = matchSelector(nextContext, result);
                 if (match == SelectorMatches || match == SelectorFailsCompletely)
                     return match;
@@ -507,7 +506,7 @@ static bool attributeValueMatches(const Attribute& attributeItem, CSSSelector::M
     case CSSSelector::AttributeExact:
         if (caseSensitivity == TextCaseSensitive)
             return selectorValue == value;
-        return equalIgnoringCase(selectorValue, value);
+        return equalIgnoringASCIICase(selectorValue, value);
     case CSSSelector::AttributeSet:
         return true;
     case CSSSelector::AttributeList:
@@ -571,7 +570,7 @@ static bool anyAttributeMatches(Element& element, CSSSelector::Match match, cons
     element.synchronizeAttribute(selectorAttr.localName());
 
     const AtomicString& selectorValue = selector.value();
-    TextCaseSensitivity caseSensitivity = (selector.attributeMatchType() == CSSSelector::CaseInsensitive) ? TextCaseInsensitive : TextCaseSensitive;
+    TextCaseSensitivity caseSensitivity = (selector.attributeMatchType() == CSSSelector::CaseInsensitive) ? TextCaseASCIIInsensitive : TextCaseSensitive;
 
     AttributeCollection attributes = element.attributesWithoutUpdate();
     for (const auto& attributeItem: attributes) {
@@ -581,7 +580,7 @@ static bool anyAttributeMatches(Element& element, CSSSelector::Match match, cons
         if (attributeValueMatches(attributeItem, match, selectorValue, caseSensitivity))
             return true;
 
-        if (caseSensitivity == TextCaseInsensitive) {
+        if (caseSensitivity == TextCaseASCIIInsensitive) {
             if (selectorAttr.namespaceURI() != starAtom)
                 return false;
             continue;
@@ -594,7 +593,7 @@ static bool anyAttributeMatches(Element& element, CSSSelector::Match match, cons
 
         // If case-insensitive, re-check, and count if result differs.
         // See http://code.google.com/p/chromium/issues/detail?id=327060
-        if (legacyCaseInsensitive && attributeValueMatches(attributeItem, match, selectorValue, TextCaseInsensitive)) {
+        if (legacyCaseInsensitive && attributeValueMatches(attributeItem, match, selectorValue, TextCaseASCIIInsensitive)) {
             UseCounter::count(element.document(), UseCounter::CaseInsensitiveAttrSelectorMatch);
             return true;
         }
@@ -835,26 +834,32 @@ bool SelectorChecker::checkPseudoClass(const SelectorCheckingContext& context, M
         return element.isLink() && context.visitedMatchType == VisitedMatchEnabled;
     case CSSSelector::PseudoDrag:
         if (m_mode == ResolvingStyle) {
-            if (context.inRightmostCompound)
+            if (context.inRightmostCompound) {
                 context.elementStyle->setAffectedByDrag();
-            else
+            } else {
+                context.elementStyle->setUnique();
                 element.setChildrenOrSiblingsAffectedByDrag();
+            }
         }
         return element.layoutObject() && element.layoutObject()->isDragging();
     case CSSSelector::PseudoFocus:
         if (m_mode == ResolvingStyle) {
-            if (context.inRightmostCompound)
+            if (context.inRightmostCompound) {
                 context.elementStyle->setAffectedByFocus();
-            else
+            } else {
+                context.elementStyle->setUnique();
                 element.setChildrenOrSiblingsAffectedByFocus();
+            }
         }
         return matchesFocusPseudoClass(element);
     case CSSSelector::PseudoHover:
         if (m_mode == ResolvingStyle) {
-            if (context.inRightmostCompound)
+            if (context.inRightmostCompound) {
                 context.elementStyle->setAffectedByHover();
-            else
+            } else {
+                context.elementStyle->setUnique();
                 element.setChildrenOrSiblingsAffectedByHover();
+            }
         }
         if (!shouldMatchHoverOrActive(context))
             return false;
@@ -863,10 +868,12 @@ bool SelectorChecker::checkPseudoClass(const SelectorCheckingContext& context, M
         return element.hovered();
     case CSSSelector::PseudoActive:
         if (m_mode == ResolvingStyle) {
-            if (context.inRightmostCompound)
+            if (context.inRightmostCompound) {
                 context.elementStyle->setAffectedByActive();
-            else
+            } else {
+                context.elementStyle->setUnique();
                 element.setChildrenOrSiblingsAffectedByActive();
+            }
         }
         if (!shouldMatchHoverOrActive(context))
             return false;
@@ -933,7 +940,7 @@ bool SelectorChecker::checkPseudoClass(const SelectorCheckingContext& context, M
             else
                 value = element.computeInheritedLanguage();
             const AtomicString& argument = selector.argument();
-            if (value.isEmpty() || !startsWithIgnoringASCIICase(value, argument))
+            if (value.isEmpty() || !value.startsWith(argument, TextCaseASCIIInsensitive))
                 break;
             if (value.length() != argument.length() && value[argument.length()] != '-')
                 break;
@@ -964,9 +971,9 @@ bool SelectorChecker::checkPseudoClass(const SelectorCheckingContext& context, M
     case CSSSelector::PseudoScope:
         if (m_mode == SharingRules)
             return true;
-        if (context.scope)
-            return context.scope == element;
-        return element == element.document().documentElement();
+        if (context.scope == &element.document())
+            return element == element.document().documentElement();
+        return context.scope == &element;
     case CSSSelector::PseudoUnresolved:
         return element.isUnresolvedCustomElement();
     case CSSSelector::PseudoHost:
@@ -1009,7 +1016,7 @@ bool SelectorChecker::checkPseudoElement(const SelectorCheckingContext& context,
         {
             SelectorCheckingContext subContext(context);
             subContext.isSubSelector = true;
-            subContext.scopeContainsLastMatchedElement = false;
+            subContext.scope = nullptr;
             subContext.treatShadowHostAsNormalScope = false;
 
             for (subContext.selector = selector.selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(*subContext.selector)) {
@@ -1087,7 +1094,6 @@ bool SelectorChecker::checkPseudoHost(const SelectorCheckingContext& context, Ma
                 maxSpecificity = std::max(maxSpecificity, hostContext.selector->specificity() + subResult.specificity);
                 break;
             }
-            hostContext.scopeContainsLastMatchedElement = false;
             hostContext.treatShadowHostAsNormalScope = false;
             hostContext.scope = nullptr;
 
@@ -1161,27 +1167,27 @@ bool SelectorChecker::checkScrollbarPseudoClass(const SelectorCheckingContext& c
         return part == BackButtonEndPart || part == ForwardButtonEndPart || part == ForwardTrackPart;
     case CSSSelector::PseudoDoubleButton:
         {
-            ScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme()->buttonsPlacement();
+            WebScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme().buttonsPlacement();
             if (part == BackButtonStartPart || part == ForwardButtonStartPart || part == BackTrackPart)
-                return buttonsPlacement == ScrollbarButtonsPlacementDoubleStart || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth;
+                return buttonsPlacement == WebScrollbarButtonsPlacementDoubleStart || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth;
             if (part == BackButtonEndPart || part == ForwardButtonEndPart || part == ForwardTrackPart)
-                return buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd || buttonsPlacement == ScrollbarButtonsPlacementDoubleBoth;
+                return buttonsPlacement == WebScrollbarButtonsPlacementDoubleEnd || buttonsPlacement == WebScrollbarButtonsPlacementDoubleBoth;
             return false;
         }
     case CSSSelector::PseudoSingleButton:
         {
-            ScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme()->buttonsPlacement();
+            WebScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme().buttonsPlacement();
             if (part == BackButtonStartPart || part == ForwardButtonEndPart || part == BackTrackPart || part == ForwardTrackPart)
-                return buttonsPlacement == ScrollbarButtonsPlacementSingle;
+                return buttonsPlacement == WebScrollbarButtonsPlacementSingle;
             return false;
         }
     case CSSSelector::PseudoNoButton:
         {
-            ScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme()->buttonsPlacement();
+            WebScrollbarButtonsPlacement buttonsPlacement = scrollbar->theme().buttonsPlacement();
             if (part == BackTrackPart)
-                return buttonsPlacement == ScrollbarButtonsPlacementNone || buttonsPlacement == ScrollbarButtonsPlacementDoubleEnd;
+                return buttonsPlacement == WebScrollbarButtonsPlacementNone || buttonsPlacement == WebScrollbarButtonsPlacementDoubleEnd;
             if (part == ForwardTrackPart)
-                return buttonsPlacement == ScrollbarButtonsPlacementNone || buttonsPlacement == ScrollbarButtonsPlacementDoubleStart;
+                return buttonsPlacement == WebScrollbarButtonsPlacementNone || buttonsPlacement == WebScrollbarButtonsPlacementDoubleStart;
             return false;
         }
     case CSSSelector::PseudoCornerPresent:

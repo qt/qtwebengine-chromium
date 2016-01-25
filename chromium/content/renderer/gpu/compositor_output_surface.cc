@@ -4,10 +4,13 @@
 
 #include "content/renderer/gpu/compositor_output_surface.h"
 
+#include <utility>
+
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/managed_memory_policy.h"
@@ -26,8 +29,8 @@
 namespace content {
 
 CompositorOutputSurface::CompositorOutputSurface(
-    int32 routing_id,
-    uint32 output_surface_id,
+    int32_t routing_id,
+    uint32_t output_surface_id,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
     const scoped_refptr<ContextProviderCommandBuffer>& worker_context_provider,
     scoped_ptr<cc::SoftwareOutputDevice> software_device,
@@ -35,11 +38,11 @@ CompositorOutputSurface::CompositorOutputSurface(
     bool use_swap_compositor_frame_message)
     : OutputSurface(context_provider,
                     worker_context_provider,
-                    software_device.Pass()),
+                    std::move(software_device)),
       output_surface_id_(output_surface_id),
       use_swap_compositor_frame_message_(use_swap_compositor_frame_message),
-      output_surface_filter_(
-          RenderThreadImpl::current()->compositor_message_filter()),
+      output_surface_filter_(RenderThreadImpl::current()
+                                 ->compositor_message_filter()),
       frame_swap_message_queue_(swap_frame_message_queue),
       routing_id_(routing_id),
 #if defined(OS_ANDROID)
@@ -50,7 +53,6 @@ CompositorOutputSurface::CompositorOutputSurface(
       weak_ptrs_(this) {
   DCHECK(output_surface_filter_.get());
   DCHECK(frame_swap_message_queue_.get());
-  capabilities_.max_frames_pending = 1;
   message_sender_ = RenderThreadImpl::current()->sync_message_filter();
   DCHECK(message_sender_.get());
 }
@@ -93,7 +95,7 @@ void CompositorOutputSurface::DetachFromClient() {
 }
 
 void CompositorOutputSurface::ShortcutSwapAck(
-    uint32 output_surface_id,
+    uint32_t output_surface_id,
     scoped_ptr<cc::GLFrameData> gl_frame_data) {
   if (!layout_test_previous_frame_ack_) {
     layout_test_previous_frame_ack_.reset(new cc::CompositorFrameAck);
@@ -102,7 +104,7 @@ void CompositorOutputSurface::ShortcutSwapAck(
 
   OnSwapAck(output_surface_id, *layout_test_previous_frame_ack_);
 
-  layout_test_previous_frame_ack_->gl_frame_data = gl_frame_data.Pass();
+  layout_test_previous_frame_ack_->gl_frame_data = std::move(gl_frame_data);
 }
 
 void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
@@ -125,9 +127,13 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
 
     if (context_provider()) {
       gpu::gles2::GLES2Interface* context = context_provider()->ContextGL();
+      const uint64_t fence_sync = context->InsertFenceSyncCHROMIUM();
       context->Flush();
-      uint32 sync_point = context->InsertSyncPointCHROMIUM();
-      context_provider()->ContextSupport()->SignalSyncPoint(sync_point,
+
+      gpu::SyncToken sync_token;
+      context->GenUnverifiedSyncTokenCHROMIUM(fence_sync, sync_token.GetData());
+
+      context_provider()->ContextSupport()->SignalSyncToken(sync_token,
                                                             closure);
     } else {
       base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
@@ -136,12 +142,12 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
     return;
   } else {
     {
-      ScopedVector<IPC::Message> messages;
+      std::vector<scoped_ptr<IPC::Message>> messages;
       std::vector<IPC::Message> messages_to_deliver_with_frame;
       scoped_ptr<FrameSwapMessageQueue::SendMessageScope> send_message_scope =
           frame_swap_message_queue_->AcquireSendMessageScope();
       frame_swap_message_queue_->DrainMessages(&messages);
-      FrameSwapMessageQueue::TransferMessages(messages,
+      FrameSwapMessageQueue::TransferMessages(&messages,
                                               &messages_to_deliver_with_frame);
       Send(new ViewHostMsg_SwapCompositorFrame(routing_id_,
                                                output_surface_id_,
@@ -172,7 +178,7 @@ void CompositorOutputSurface::OnUpdateVSyncParametersFromBrowser(
   CommitVSyncParameters(timebase, interval);
 }
 
-void CompositorOutputSurface::OnSwapAck(uint32 output_surface_id,
+void CompositorOutputSurface::OnSwapAck(uint32_t output_surface_id,
                                         const cc::CompositorFrameAck& ack) {
   // Ignore message if it's a stale one coming from a different output surface
   // (e.g. after a lost context).
@@ -183,7 +189,7 @@ void CompositorOutputSurface::OnSwapAck(uint32 output_surface_id,
 }
 
 void CompositorOutputSurface::OnReclaimResources(
-    uint32 output_surface_id,
+    uint32_t output_surface_id,
     const cc::CompositorFrameAck& ack) {
   // Ignore message if it's a stale one coming from a different output surface
   // (e.g. after a lost context).

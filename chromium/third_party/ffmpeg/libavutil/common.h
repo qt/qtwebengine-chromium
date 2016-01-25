@@ -40,6 +40,7 @@
 #include <string.h>
 
 #include "attributes.h"
+#include "macros.h"
 #include "version.h"
 #include "libavutil/avconfig.h"
 
@@ -53,7 +54,7 @@
 #define RSHIFT(a,b) ((a) > 0 ? ((a) + ((1<<(b))>>1))>>(b) : ((a) + ((1<<(b))>>1)-1)>>(b))
 /* assume b>0 */
 #define ROUNDED_DIV(a,b) (((a)>0 ? (a) + ((b)>>1) : (a) - ((b)>>1))/(b))
-/* assume a>0 and b>0 */
+/* Fast a/(1<<b) rounded toward +inf. Assume a>=0 and b>=0 */
 #define FF_CEIL_RSHIFT(a,b) (!av_builtin_constant_p(b) ? -((-(a)) >> (b)) \
                                                        : ((a) + (1<<(b)) - 1) >> (b))
 #define FFUDIV(a,b) (((a)>0 ?(a):(a)-(b)+1) / (b))
@@ -76,6 +77,17 @@
  */
 #define FFNABS(a) ((a) <= 0 ? (a) : (-(a)))
 
+/**
+ * Comparator.
+ * For two numerical expressions x and y, gives 1 if x > y, -1 if x < y, and 0
+ * if x == y. This is useful for instance in a qsort comparator callback.
+ * Furthermore, compilers are able to optimize this to branchless code, and
+ * there is no risk of overflow with signed types.
+ * As with many macros, this evaluates its argument multiple times, it thus
+ * must not have a side-effect.
+ */
+#define FFDIFFSIGN(x,y) (((x)>(y)) - ((x)<(y)))
+
 #define FFMAX(a,b) ((a) > (b) ? (a) : (b))
 #define FFMAX3(a,b,c) FFMAX(FFMAX(a,b),c)
 #define FFMIN(a,b) ((a) > (b) ? (b) : (a))
@@ -83,7 +95,6 @@
 
 #define FFSWAP(type,a,b) do{type SWAP_tmp= b; b= a; a= SWAP_tmp;}while(0)
 #define FF_ARRAY_ELEMS(a) (sizeof(a) / sizeof((a)[0]))
-#define FFALIGN(x, a) (((x)+(a)-1)&~((a)-1))
 
 /* misc math functions */
 
@@ -320,6 +331,11 @@ static av_always_inline av_const int av_popcount64_c(uint64_t x)
     return av_popcount((uint32_t)x) + av_popcount((uint32_t)(x >> 32));
 }
 
+static av_always_inline av_const int av_parity_c(uint32_t v)
+{
+    return av_popcount(v) & 1;
+}
+
 #define MKTAG(a,b,c,d) ((a) | ((b) << 8) | ((c) << 16) | ((unsigned)(d) << 24))
 #define MKBETAG(a,b,c,d) ((d) | ((c) << 8) | ((b) << 16) | ((unsigned)(a) << 24))
 
@@ -505,4 +521,7 @@ static av_always_inline av_const int av_popcount64_c(uint64_t x)
 #endif
 #ifndef av_popcount64
 #   define av_popcount64    av_popcount64_c
+#endif
+#ifndef av_parity
+#   define av_parity        av_parity_c
 #endif

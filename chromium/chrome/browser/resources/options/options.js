@@ -35,7 +35,6 @@ var PageManager = cr.ui.pageManager.PageManager;
 var PasswordManager = options.PasswordManager;
 var Preferences = options.Preferences;
 var PreferredNetworks = options.PreferredNetworks;
-var ResetProfileSettingsBanner = options.ResetProfileSettingsBanner;
 var ResetProfileSettingsOverlay = options.ResetProfileSettingsOverlay;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
@@ -46,6 +45,8 @@ var SupervisedUserImportOverlay = options.SupervisedUserImportOverlay;
 var SupervisedUserLearnMoreOverlay = options.SupervisedUserLearnMoreOverlay;
 var SyncSetupOverlay = options.SyncSetupOverlay;
 var ThirdPartyImeConfirmOverlay = options.ThirdPartyImeConfirmOverlay;
+var TriggeredResetProfileSettingsOverlay =
+    options.TriggeredResetProfileSettingsOverlay;
 
 /**
  * DOMContentLoaded handler, sets up the page.
@@ -168,6 +169,13 @@ function load() {
   PageManager.registerOverlay(SyncSetupOverlay.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('customize-sync')]);
+
+<if expr="is_win">
+  PageManager.registerOverlay(
+      TriggeredResetProfileSettingsOverlay.getInstance(),
+      BrowserOptions.getInstance());
+</if>
+
   if (loadTimeData.getBoolean('showAbout')) {
     PageManager.registerOverlay(help.HelpPage.getInstance(),
                                 BrowserOptions.getInstance());
@@ -231,7 +239,6 @@ function load() {
 
   OptionsFocusManager.getInstance().initialize();
   Preferences.getInstance().initialize();
-  ResetProfileSettingsBanner.getInstance().initialize();
   AutomaticSettingsResetBanner.getInstance().initialize();
   OptionsPage.initialize();
   PageManager.initialize(BrowserOptions.getInstance());

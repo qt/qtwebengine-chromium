@@ -42,7 +42,6 @@
       'dependencies': [
         'blacklist',
         'chrome_elf_breakpad',
-        'chrome_elf_lib',
         'chrome_elf_resources',
       ],
       'msvs_settings': {
@@ -71,16 +70,13 @@
       'sources': [
         'blacklist/test/blacklist_test.cc',
         'chrome_elf_util_unittest.cc',
-        'create_file/chrome_create_file_unittest.cc',
         'elf_imports_unittest.cc',
-        'ntdll_cache_unittest.cc',
       ],
       'include_dirs': [
         '..',
         '<(SHARED_INTERMEDIATE_DIR)',
       ],
       'dependencies': [
-        'chrome_elf_lib',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
@@ -106,24 +102,6 @@
       ],
     },
     {
-      'target_name': 'chrome_elf_lib',
-      'type': 'static_library',
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        'create_file/chrome_create_file.cc',
-        'create_file/chrome_create_file.h',
-        'ntdll_cache.cc',
-        'ntdll_cache.h',
-      ],
-      'dependencies': [
-        'chrome_elf_common',
-        '../base/base.gyp:base_static',
-        '../sandbox/sandbox.gyp:sandbox',
-      ],
-    },
-    {
       'target_name': 'chrome_elf_constants',
       'type': 'static_library',
       'include_dirs': [
@@ -144,7 +122,6 @@
         '..',
       ],
       'sources': [
-        'chrome_elf_types.h',
         'chrome_elf_util.cc',
         'chrome_elf_util.h',
         'thunk_getter.cc',
@@ -165,41 +142,8 @@
       'dependencies': [
         'chrome_elf_common',
         '../breakpad/breakpad.gyp:breakpad_handler',
-        '../chrome/chrome.gyp:chrome_version_header',
+        '../chrome/common_constants.gyp:version_header',
       ],
     },
   ], # targets
-  'conditions': [
-    ['component=="shared_library"', {
-      'targets': [
-        {
-          'target_name': 'chrome_redirects',
-          'type': 'shared_library',
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'chrome_redirects.def',
-            'chrome_redirects_main.cc',
-          ],
-          'dependencies': [
-            'chrome_elf_lib',
-          ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'conditions': [
-                ['target_arch=="ia32"', {
-                  # Don't set an x64 base address (to avoid breaking HE-ASLR).
-                  'BaseAddress': '0x01c20000',
-                }],
-              ],
-              # Set /SUBSYSTEM:WINDOWS.
-              'SubSystem': '2',
-            },
-          },
-        },
-      ],
-    }],
-  ],
 }
-

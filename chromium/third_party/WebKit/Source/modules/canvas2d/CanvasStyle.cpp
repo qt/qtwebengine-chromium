@@ -26,7 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/canvas2d/CanvasStyle.h"
 
 #include "core/CSSPropertyNames.h"
@@ -41,7 +40,7 @@ namespace blink {
 
 enum ColorParseResult { ParsedRGBA, ParsedCurrentColor, ParsedSystemColor, ParseFailed };
 
-static ColorParseResult parseColor(RGBA32& parsedColor, const String& colorString)
+static ColorParseResult parseColor(Color& parsedColor, const String& colorString)
 {
     if (equalIgnoringCase(colorString, "currentcolor"))
         return ParsedCurrentColor;
@@ -53,16 +52,16 @@ static ColorParseResult parseColor(RGBA32& parsedColor, const String& colorStrin
     return ParseFailed;
 }
 
-static RGBA32 currentColor(HTMLCanvasElement* canvas)
+static Color currentColor(HTMLCanvasElement* canvas)
 {
     if (!canvas || !canvas->inDocument() || !canvas->inlineStyle())
         return Color::black;
-    RGBA32 rgba = Color::black;
-    CSSParser::parseColor(rgba, canvas->inlineStyle()->getPropertyValue(CSSPropertyColor));
-    return rgba;
+    Color color = Color::black;
+    CSSParser::parseColor(color, canvas->inlineStyle()->getPropertyValue(CSSPropertyColor));
+    return color;
 }
 
-bool parseColorOrCurrentColor(RGBA32& parsedColor, const String& colorString, HTMLCanvasElement* canvas)
+bool parseColorOrCurrentColor(Color& parsedColor, const String& colorString, HTMLCanvasElement* canvas)
 {
     ColorParseResult parseResult = parseColor(parsedColor, colorString);
     switch (parseResult) {
@@ -110,19 +109,21 @@ CanvasStyle* CanvasStyle::createFromPattern(CanvasPattern* pattern)
     return new CanvasStyle(pattern);
 }
 
-SkShader* CanvasStyle::shader() const
+void CanvasStyle::applyToPaint(SkPaint& paint) const
 {
     switch (m_type) {
     case ColorRGBA:
-        return nullptr;
+        paint.setShader(nullptr);
+        break;
     case Gradient:
-        return canvasGradient()->gradient()->shader();
+        canvasGradient()->gradient()->applyToPaint(paint);
+        break;
     case ImagePattern:
-        return canvasPattern()->pattern()->shader();
+        canvasPattern()->pattern()->applyToPaint(paint);
+        break;
     default:
         ASSERT_NOT_REACHED();
     }
-    return nullptr;
 }
 
 RGBA32 CanvasStyle::paintColor() const

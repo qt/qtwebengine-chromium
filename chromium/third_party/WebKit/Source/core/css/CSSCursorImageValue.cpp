@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSCursorImageValue.h"
 
 #include "core/SVGNames.h"
@@ -124,7 +123,7 @@ bool CSSCursorImageValue::isCachePending(float deviceScaleFactor) const
     return m_isCachePending;
 }
 
-StyleImage* CSSCursorImageValue::cachedImage(float deviceScaleFactor)
+StyleImage* CSSCursorImageValue::cachedImage(float deviceScaleFactor) const
 {
     ASSERT(!isCachePending(deviceScaleFactor));
 

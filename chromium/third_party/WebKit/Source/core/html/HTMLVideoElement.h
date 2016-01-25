@@ -30,6 +30,7 @@
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/canvas/CanvasImageSource.h"
+#include "core/imagebitmap/ImageBitmapSource.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 
 class SkPaint;
@@ -45,7 +46,7 @@ class GraphicsContext;
 typedef unsigned GLenum;
 typedef int GC3Dint;
 
-class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement, public CanvasImageSource {
+class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement, public CanvasImageSource, public ImageBitmapSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
@@ -86,13 +87,17 @@ public:
 
     bool isHTMLVideoElement() const override { return true; }
 
+    // ImageBitmapSource implementation
+    IntSize bitmapSourceSize() const override;
+    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, ExceptionState&) override;
+
 private:
     HTMLVideoElement(Document&);
 
     bool layoutObjectIsNeeded(const ComputedStyle&) override;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
     void attach(const AttachContext& = AttachContext()) override;
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     bool hasVideo() const override { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }

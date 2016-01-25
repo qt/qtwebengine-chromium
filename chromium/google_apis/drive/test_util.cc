@@ -82,10 +82,10 @@ scoped_ptr<base::Value> LoadJSONFile(const std::string& relative_path) {
 
   std::string error;
   JSONFileValueDeserializer deserializer(path);
-  scoped_ptr<base::Value> value(deserializer.Deserialize(NULL, &error));
+  scoped_ptr<base::Value> value = deserializer.Deserialize(NULL, &error);
   LOG_IF(WARNING, !value.get()) << "Failed to parse " << path.value()
                                 << ": " << error;
-  return value.Pass();
+  return value;
 }
 
 // Returns a HttpResponse created from the given file path.
@@ -105,7 +105,7 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
   http_response->set_code(net::HTTP_OK);
   http_response->set_content(content);
   http_response->set_content_type(content_type);
-  return http_response.Pass();
+  return http_response;
 }
 
 scoped_ptr<net::test_server::HttpResponse> HandleDownloadFileRequest(
@@ -122,9 +122,9 @@ scoped_ptr<net::test_server::HttpResponse> HandleDownloadFileRequest(
 }
 
 bool ParseContentRangeHeader(const std::string& value,
-                             int64* start_position,
-                             int64* end_position,
-                             int64* length) {
+                             int64_t* start_position,
+                             int64_t* end_position,
+                             int64_t* length) {
   DCHECK(start_position);
   DCHECK(end_position);
   DCHECK(length);
@@ -151,8 +151,8 @@ bool ParseContentRangeHeader(const std::string& value,
 }
 
 void AppendProgressCallbackResult(std::vector<ProgressInfo>* progress_values,
-                                  int64 progress,
-                                  int64 total) {
+                                  int64_t progress,
+                                  int64_t total) {
   progress_values->push_back(ProgressInfo(progress, total));
 }
 

@@ -7,16 +7,14 @@
 
 #include <map>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "content/browser/android/content_video_view.h"
 #include "content/browser/media/android/media_session_observer.h"
 #include "content/common/content_export.h"
-#include "content/common/media/media_player_messages_enums_android.h"
-#include "content/public/browser/android/content_view_core.h"
 #include "ipc/ipc_message.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
@@ -32,7 +30,9 @@ struct MediaPlayerHostMsg_Initialize_Params;
 
 namespace content {
 class BrowserDemuxerAndroid;
-class ContentViewCoreImpl;
+#if !defined(USE_AURA)
+class ContentViewCore;
+#endif
 class ExternalVideoSurfaceContainer;
 class RenderFrameHost;
 class WebContents;
@@ -64,7 +64,9 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // Returns a new instance using the registered factory if available.
   static BrowserMediaPlayerManager* Create(RenderFrameHost* rfh);
 
+#if !defined(USE_AURA)
   ContentViewCore* GetContentViewCore() const;
+#endif
 
   ~BrowserMediaPlayerManager() override;
 
@@ -101,7 +103,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   media::MediaUrlInterceptor* GetMediaUrlInterceptor() override;
   media::MediaPlayerAndroid* GetFullscreenPlayer() override;
   media::MediaPlayerAndroid* GetPlayer(int player_id) override;
-  bool RequestPlay(int player_id, base::TimeDelta duration) override;
+  bool RequestPlay(int player_id, base::TimeDelta duration,
+                   bool has_audio) override;
 #if defined(VIDEO_HOLE)
   void AttachExternalVideoSurface(int player_id, jobject surface);
   void DetachExternalVideoSurface(int player_id);
@@ -121,11 +124,13 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnPause(int player_id, bool is_media_related_action);
   virtual void OnSetVolume(int player_id, double volume);
   virtual void OnSetPoster(int player_id, const GURL& poster);
-  virtual void OnReleaseResources(int player_id);
+  virtual void OnSuspendAndReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
   virtual void OnRequestRemotePlayback(int player_id);
   virtual void OnRequestRemotePlaybackControl(int player_id);
+  virtual bool IsPlayingRemotely(int player_id);
   virtual void ReleaseFullscreenPlayer(media::MediaPlayerAndroid* player);
+
 #if defined(VIDEO_HOLE)
   void OnNotifyExternalSurface(
       int player_id, bool is_request, const gfx::RectF& rect);
@@ -141,7 +146,10 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void AddPlayer(media::MediaPlayerAndroid* player);
 
   // Removes the player with the specified id.
-  void RemovePlayer(int player_id);
+  void DestroyPlayer(int player_id);
+
+  // Release resources associated to a player.
+  virtual void ReleaseResources(int player_id);
 
   // Replaces a player with the specified id with a given MediaPlayerAndroid
   // object. This will also return the original MediaPlayerAndroid object that

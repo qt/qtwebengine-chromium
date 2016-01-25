@@ -34,6 +34,7 @@
 #include "wtf/PartitionAlloc.h"
 #include "wtf/WTF.h"
 #include "wtf/WTFExport.h"
+#include <string.h>
 
 namespace WTF {
 
@@ -43,29 +44,17 @@ public:
     // memory snapshots.
     static const char* const kAllocatedObjectPoolName;
 
-    static void initialize();
-    // TODO(bashi): Remove this function and make initialize() take
-    // HistogramEnumerationFunction when we can make sure that WTF::initialize()
-    // is called before using this class.
-    static void setHistogramEnumeration(HistogramEnumerationFunction);
+    static void initialize(HistogramEnumerationFunction);
     static void shutdown();
     ALWAYS_INLINE static PartitionRootGeneric* bufferPartition()
     {
-        // TODO(haraken): This check is needed because some call sites allocate
-        // Blink things before WTF::initialize(). We should fix those call sites
-        // and remove the check.
-        if (UNLIKELY(!s_initialized))
-            initialize();
+        ASSERT(s_initialized);
         return m_bufferAllocator.root();
     }
 
     ALWAYS_INLINE static PartitionRootGeneric* fastMallocPartition()
     {
-        // TODO(haraken): This check is needed because some call sites allocate
-        // Blink things before WTF::initialize(). We should fix those call sites
-        // and remove the check.
-        if (UNLIKELY(!s_initialized))
-            initialize();
+        ASSERT(s_initialized);
         return m_fastMallocAllocator.root();
     }
 
@@ -102,30 +91,41 @@ public:
 
     static void dumpMemoryStats(bool isLightDump, PartitionStatsDumper*);
 
-    ALWAYS_INLINE static void* bufferMalloc(size_t n)
+    ALWAYS_INLINE static void* bufferMalloc(size_t n, const char* typeName)
     {
-        return partitionAllocGeneric(bufferPartition(), n);
+        return partitionAllocGeneric(bufferPartition(), n, typeName);
     }
-
-    ALWAYS_INLINE static void* bufferRealloc(void* p, size_t n)
-    {
-        return partitionReallocGeneric(bufferPartition(), p, n);
-    }
-
     ALWAYS_INLINE static void bufferFree(void* p)
     {
         partitionFreeGeneric(bufferPartition(), p);
     }
-
     ALWAYS_INLINE static size_t bufferActualSize(size_t n)
     {
         return partitionAllocActualSize(bufferPartition(), n);
+    }
+    static void* fastMalloc(size_t n, const char* typeName)
+    {
+        return partitionAllocGeneric(Partitions::fastMallocPartition(), n, typeName);
+    }
+    static void* fastZeroedMalloc(size_t n, const char* typeName)
+    {
+        void* result = fastMalloc(n, typeName);
+        memset(result, 0, n);
+        return result;
+    }
+    static void* fastRealloc(void* p, size_t n, const char* typeName)
+    {
+        return partitionReallocGeneric(Partitions::fastMallocPartition(), p, n, typeName);
+    }
+    static void fastFree(void* p)
+    {
+        partitionFreeGeneric(Partitions::fastMallocPartition(), p);
     }
 
     static void handleOutOfMemory();
 
 private:
-    static int s_initializationLock;
+    static SpinLock s_initializationLock;
     static bool s_initialized;
 
     // We have the following four partitions.

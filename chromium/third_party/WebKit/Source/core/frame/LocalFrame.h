@@ -76,7 +76,7 @@ class WebFrameHostScheduler;
 class WebFrameScheduler;
 template <typename Strategy> class PositionWithAffinityTemplate;
 
-class CORE_EXPORT LocalFrame : public Frame, public LocalFrameLifecycleNotifier, public WillBeHeapSupplementable<LocalFrame> {
+class CORE_EXPORT LocalFrame : public Frame, public LocalFrameLifecycleNotifier, public WillBeHeapSupplementable<LocalFrame>, public DisplayItemClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFrame);
 public:
     static PassRefPtrWillBeRawPtr<LocalFrame> create(FrameLoaderClient*, FrameHost*, FrameOwner*);
@@ -162,7 +162,7 @@ public:
     String selectedTextForClipboard() const;
 
     PositionWithAffinityTemplate<EditingAlgorithm<NodeTraversal>> positionForPoint(const IntPoint& framePoint);
-    Document* documentAtPoint(const IntPoint& windowPoint);
+    Document* documentAtPoint(const IntPoint&);
     EphemeralRangeTemplate<EditingAlgorithm<NodeTraversal>> rangeForPoint(const IntPoint& framePoint);
 
     bool isURLAllowed(const KURL&) const;
@@ -174,19 +174,18 @@ public:
     ScrollResult applyScrollDelta(const FloatSize& delta, bool isScrollBegin);
     bool shouldScrollTopControls(const FloatSize& delta) const;
 
-#if ENABLE(OILPAN)
-    void registerPluginElement(HTMLPlugInElement*);
-    void unregisterPluginElement(HTMLPlugInElement*);
-    void clearWeakMembers(Visitor*);
-#endif
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
-    String debugName() const { return "LocalFrame"; }
+    // DisplayItemClient methods
+    String debugName() const final { return "LocalFrame"; }
+    // TODO(chrishtr): fix this.
+    IntRect visualRect() const override { return IntRect(); }
 
-    // ========
+    bool shouldThrottleRendering() const;
 
     // Returns the frame scheduler, creating one if needed.
     WebFrameScheduler* frameScheduler();
-    void updateFrameSecurityOrigin();
+    void scheduleVisualUpdateUnlessThrottled();
+
+    void updateSecurityOrigin(SecurityOrigin*);
 
     bool isNavigationAllowed() const { return m_navigationDisableCount == 0; }
 
@@ -202,7 +201,7 @@ private:
 
     // Paints the area for the given rect into a DragImage, with the given displayItemClient id attached.
     // The rect is in the coordinate space of the frame.
-    PassOwnPtr<DragImage> paintIntoDragImage(const DisplayItemClientWrapper&,
+    PassOwnPtr<DragImage> paintIntoDragImage(const DisplayItemClient&,
         RespectImageOrientationEnum shouldRespectImageOrientation, const GlobalPaintFlags,
         IntRect paintingRect, float opacity = 1);
 
@@ -227,23 +226,6 @@ private:
     OwnPtr<WebFrameScheduler> m_frameScheduler;
 
     int m_navigationDisableCount;
-
-#if ENABLE(OILPAN)
-    // Oilpan: in order to reliably finalize plugin elements with
-    // renderer-less plugins, the frame keeps track of them. When
-    // the frame is detached and disposed, these will be disposed
-    // of in the process. This is needed as the plugin element
-    // might not itself be attached to a DOM tree and be
-    // explicitly detached&disposed of.
-    //
-    // A weak reference is all wanted; the plugin element must
-    // otherwise be referenced and kept alive. So as to be able
-    // to process the set of weak references during the LocalFrame's
-    // weak callback, the set itself is not on the heap and the
-    // references are bare pointers (rather than WeakMembers.)
-    // See LocalFrame::clearWeakMembers().
-    HashSet<HTMLPlugInElement*> m_pluginElements;
-#endif
 
     float m_pageZoomFactor;
     float m_textZoomFactor;
@@ -345,10 +327,5 @@ private:
 };
 
 } // namespace blink
-
-// During refactoring, there are some places where we need to do type conversions that
-// will not be needed once all instances of LocalFrame and RemoteFrame are sorted out.
-// At that time this #define will be removed and all the uses of it will need to be corrected.
-#define toLocalFrameTemporary toLocalFrame
 
 #endif // LocalFrame_h

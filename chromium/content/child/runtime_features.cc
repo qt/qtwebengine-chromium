@@ -7,9 +7,13 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "content/common/content_switches_internal.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "ui/gl/gl_switches.h"
@@ -18,10 +22,7 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 #include "base/android/build_info.h"
-#include "base/metrics/field_trial.h"
-#include "media/base/android/media_codec_bridge.h"
-#elif defined(OS_WIN)
-#include "base/win/windows_version.h"
+#include "media/base/android/media_codec_util.h"
 #endif
 
 using blink::WebRuntimeFeatures;
@@ -29,12 +30,9 @@ using blink::WebRuntimeFeatures;
 namespace content {
 
 static void SetRuntimeFeatureDefaultsForPlatform() {
-  // Enable non-standard "apple-touch-icon" and "apple-touch-icon-precomposed".
-  WebRuntimeFeatures::enableTouchIconLoading(true);
-
 #if defined(OS_ANDROID)
   // MSE/EME implementation needs Android MediaCodec API.
-  if (!media::MediaCodecBridge::IsAvailable()) {
+  if (!media::MediaCodecUtil::IsMediaCodecAvailable()) {
     WebRuntimeFeatures::enableMediaSource(false);
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
     WebRuntimeFeatures::enableEncryptedMedia(false);
@@ -43,7 +41,7 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // is available.
   AndroidCpuFamily cpu_family = android_getCpuFamily();
   WebRuntimeFeatures::enableWebAudio(
-      media::MediaCodecBridge::IsAvailable() &&
+      media::MediaCodecUtil::IsMediaCodecAvailable() &&
       ((cpu_family == ANDROID_CPU_FAMILY_ARM) ||
        (cpu_family == ANDROID_CPU_FAMILY_ARM64) ||
        (cpu_family == ANDROID_CPU_FAMILY_X86) ||
@@ -62,6 +60,8 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // intended behavior for which is in flux by itself.
   WebRuntimeFeatures::enableNotificationConstructor(false);
   WebRuntimeFeatures::enableNewMediaPlaybackUi(true);
+  // Android does not yet support switching of audio output devices
+  WebRuntimeFeatures::enableAudioOutputDevices(false);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
@@ -74,24 +74,15 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
     // Only Android, ChromeOS, and IOS support NetInfo right now.
     WebRuntimeFeatures::enableNetworkInformation(false);
 #endif
-
-#if defined(OS_WIN)
-  // Screen Orientation API is currently broken on Windows 8 Metro mode and
-  // until we can find how to disable it only for Blink instances running in a
-  // renderer process in Metro, we need to disable the API altogether for Win8.
-  // See http://crbug.com/400846
-  base::win::Version version = base::win::OSInfo::GetInstance()->version();
-  if (version == base::win::VERSION_WIN8 ||
-      version == base::win::VERSION_WIN8_1) {
-    WebRuntimeFeatures::enableScreenOrientation(false);
-  }
-#endif // OS_WIN
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
+
+  if (base::FeatureList::IsEnabled(features::kExperimentalFramework))
+    WebRuntimeFeatures::enableExperimentalFramework(true);
 
   if (command_line.HasSwitch(switches::kEnableWebBluetooth))
     WebRuntimeFeatures::enableWebBluetooth(true);
@@ -119,7 +110,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   // API is available.
   WebRuntimeFeatures::enableWebAudio(
       !command_line.HasSwitch(switches::kDisableWebAudio) &&
-      media::MediaCodecBridge::IsAvailable());
+      media::MediaCodecUtil::IsMediaCodecAvailable());
 #else
   if (command_line.HasSwitch(switches::kDisableWebAudio))
     WebRuntimeFeatures::enableWebAudio(false);
@@ -164,9 +155,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths))
-    WebRuntimeFeatures::enableBleedingEdgeFastPaths(true);
-
   if (command_line.HasSwitch(switches::kEnablePreciseMemoryInfo))
     WebRuntimeFeatures::enablePreciseMemoryInfo(true);
 
@@ -179,15 +167,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableCredentialManagerAPI))
     WebRuntimeFeatures::enableCredentialManagerAPI(true);
 
-  if (command_line.HasSwitch(switches::kDisableSVG1DOM)) {
-    WebRuntimeFeatures::enableSVG1DOM(false);
-  }
-
   if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
     WebRuntimeFeatures::enableReducedReferrerGranularity(true);
-
-  if (command_line.HasSwitch(switches::kEnablePushMessagePayload))
-    WebRuntimeFeatures::enablePushMessagingData(true);
 
   if (command_line.HasSwitch(switches::kDisablePermissionsAPI))
     WebRuntimeFeatures::enablePermissionsAPI(false);
@@ -208,6 +189,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::enablePresentationAPI(false);
+
+  if (base::FeatureList::IsEnabled(features::kWebFontsIntervention))
+    WebRuntimeFeatures::enableWebFontsIntervention(true);
+
+  if (command_line.HasSwitch(switches::kEnableSlimmingPaintV2))
+    WebRuntimeFeatures::enableSlimmingPaintV2(true);
 
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.

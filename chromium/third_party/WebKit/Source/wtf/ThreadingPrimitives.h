@@ -31,8 +31,8 @@
 #ifndef ThreadingPrimitives_h
 #define ThreadingPrimitives_h
 
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/Locker.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/WTFExport.h"
@@ -41,13 +41,13 @@
 #include <windows.h>
 #endif
 
-#if USE(PTHREADS)
+#if OS(POSIX)
 #include <pthread.h>
 #endif
 
 namespace WTF {
 
-#if USE(PTHREADS)
+#if OS(POSIX)
 struct PlatformMutex {
     pthread_mutex_t m_internalMutex;
 #if ENABLE(ASSERT)
@@ -77,7 +77,7 @@ typedef void* PlatformCondition;
 #endif
 
 class WTF_EXPORT MutexBase {
-    WTF_MAKE_NONCOPYABLE(MutexBase); WTF_MAKE_FAST_ALLOCATED(MutexBase);
+    WTF_MAKE_NONCOPYABLE(MutexBase); USING_FAST_MALLOC(MutexBase);
 public:
     ~MutexBase();
 

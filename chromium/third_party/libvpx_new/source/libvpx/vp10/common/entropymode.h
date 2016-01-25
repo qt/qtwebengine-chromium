@@ -14,6 +14,7 @@
 #include "vp10/common/entropy.h"
 #include "vp10/common/entropymv.h"
 #include "vp10/common/filter.h"
+#include "vp10/common/seg_common.h"
 #include "vpx_dsp/vpx_filter.h"
 
 #ifdef __cplusplus
@@ -41,6 +42,12 @@ struct tx_counts {
   unsigned int tx_totals[TX_SIZES];
 };
 
+struct seg_counts {
+  unsigned int tree_total[MAX_SEGMENTS];
+  unsigned int tree_mispred[MAX_SEGMENTS];
+  unsigned int pred[PREDICTION_PROBS][2];
+};
+
 typedef struct frame_contexts {
   vpx_prob y_mode_prob[BLOCK_SIZE_GROUPS][INTRA_MODES - 1];
   vpx_prob uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
@@ -56,10 +63,14 @@ typedef struct frame_contexts {
   struct tx_probs tx_probs;
   vpx_prob skip_probs[SKIP_CONTEXTS];
   nmv_context nmvc;
+#if CONFIG_MISC_FIXES
+  struct segmentation_probs seg;
+#endif
   int initialized;
 } FRAME_CONTEXT;
 
 typedef struct FRAME_COUNTS {
+  unsigned int kf_y_mode[INTRA_MODES][INTRA_MODES][INTRA_MODES];
   unsigned int y_mode[BLOCK_SIZE_GROUPS][INTRA_MODES];
   unsigned int uv_mode[INTRA_MODES][INTRA_MODES];
   unsigned int partition[PARTITION_CONTEXTS][PARTITION_TYPES];
@@ -76,22 +87,30 @@ typedef struct FRAME_COUNTS {
   struct tx_counts tx;
   unsigned int skip[SKIP_CONTEXTS][2];
   nmv_context_counts mv;
+#if CONFIG_MISC_FIXES
+  struct seg_counts seg;
+#endif
 } FRAME_COUNTS;
 
-extern const vpx_prob vp10_kf_uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
 extern const vpx_prob vp10_kf_y_mode_prob[INTRA_MODES][INTRA_MODES]
                                         [INTRA_MODES - 1];
+#if !CONFIG_MISC_FIXES
+extern const vpx_prob vp10_kf_uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
 extern const vpx_prob vp10_kf_partition_probs[PARTITION_CONTEXTS]
                                             [PARTITION_TYPES - 1];
+#endif
+
 extern const vpx_tree_index vp10_intra_mode_tree[TREE_SIZE(INTRA_MODES)];
 extern const vpx_tree_index vp10_inter_mode_tree[TREE_SIZE(INTER_MODES)];
 extern const vpx_tree_index vp10_partition_tree[TREE_SIZE(PARTITION_TYPES)];
 extern const vpx_tree_index vp10_switchable_interp_tree
                                 [TREE_SIZE(SWITCHABLE_FILTERS)];
 
+
 void vp10_setup_past_independence(struct VP10Common *cm);
 
-void vp10_adapt_mode_probs(struct VP10Common *cm);
+void vp10_adapt_intra_frame_probs(struct VP10Common *cm);
+void vp10_adapt_inter_frame_probs(struct VP10Common *cm);
 
 void vp10_tx_counts_to_branch_counts_32x32(const unsigned int *tx_count_32x32p,
                                       unsigned int (*ct_32x32p)[2]);
@@ -99,6 +118,15 @@ void vp10_tx_counts_to_branch_counts_16x16(const unsigned int *tx_count_16x16p,
                                       unsigned int (*ct_16x16p)[2]);
 void vp10_tx_counts_to_branch_counts_8x8(const unsigned int *tx_count_8x8p,
                                     unsigned int (*ct_8x8p)[2]);
+
+static INLINE int vp10_ceil_log2(int n) {
+  int i = 1, p = 2;
+  while (p < n) {
+    i++;
+    p = p << 1;
+  }
+  return i;
+}
 
 #ifdef __cplusplus
 }  // extern "C"

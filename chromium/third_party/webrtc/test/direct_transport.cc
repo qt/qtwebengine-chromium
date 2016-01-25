@@ -12,29 +12,23 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/call.h"
-#include "webrtc/system_wrappers/interface/clock.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace test {
 
-DirectTransport::DirectTransport()
-    : packet_event_(EventWrapper::Create()),
-      thread_(
-          ThreadWrapper::CreateThread(NetworkProcess, this, "NetworkProcess")),
-      clock_(Clock::GetRealTimeClock()),
-      shutting_down_(false),
-      fake_network_(FakeNetworkPipe::Config()) {
-  EXPECT_TRUE(thread_->Start());
-}
+DirectTransport::DirectTransport(Call* send_call)
+    : DirectTransport(FakeNetworkPipe::Config(), send_call) {}
 
-DirectTransport::DirectTransport(const FakeNetworkPipe::Config& config)
-    : packet_event_(EventWrapper::Create()),
-      thread_(
-          ThreadWrapper::CreateThread(NetworkProcess, this, "NetworkProcess")),
+DirectTransport::DirectTransport(const FakeNetworkPipe::Config& config,
+                                 Call* send_call)
+    : send_call_(send_call),
+      packet_event_(false, false),
+      thread_(NetworkProcess, this, "NetworkProcess"),
       clock_(Clock::GetRealTimeClock()),
       shutting_down_(false),
-      fake_network_(config) {
-  EXPECT_TRUE(thread_->Start());
+      fake_network_(clock_, config) {
+  thread_.Start();
 }
 
 DirectTransport::~DirectTransport() { StopSending(); }
@@ -49,8 +43,8 @@ void DirectTransport::StopSending() {
     shutting_down_ = true;
   }
 
-  packet_event_->Set();
-  EXPECT_TRUE(thread_->Stop());
+  packet_event_.Set();
+  thread_.Stop();
 }
 
 void DirectTransport::SetReceiver(PacketReceiver* receiver) {
@@ -60,15 +54,24 @@ void DirectTransport::SetReceiver(PacketReceiver* receiver) {
 bool DirectTransport::SendRtp(const uint8_t* data,
                               size_t length,
                               const PacketOptions& options) {
+  if (send_call_) {
+    rtc::SentPacket sent_packet(options.packet_id,
+                                clock_->TimeInMilliseconds());
+    send_call_->OnSentPacket(sent_packet);
+  }
   fake_network_.SendPacket(data, length);
-  packet_event_->Set();
+  packet_event_.Set();
   return true;
 }
 
 bool DirectTransport::SendRtcp(const uint8_t* data, size_t length) {
   fake_network_.SendPacket(data, length);
-  packet_event_->Set();
+  packet_event_.Set();
   return true;
+}
+
+int DirectTransport::GetAverageDelayMs() {
+  return fake_network_.AverageDelay();
 }
 
 bool DirectTransport::NetworkProcess(void* transport) {
@@ -79,15 +82,7 @@ bool DirectTransport::SendPackets() {
   fake_network_.Process();
   int64_t wait_time_ms = fake_network_.TimeUntilNextProcess();
   if (wait_time_ms > 0) {
-    switch (packet_event_->Wait(static_cast<unsigned long>(wait_time_ms))) {
-      case kEventSignaled:
-        break;
-      case kEventTimeout:
-        break;
-      case kEventError:
-        // TODO(pbos): Log a warning here?
-        return true;
-    }
+    packet_event_.Wait(static_cast<int>(wait_time_ms));
   }
   rtc::CritScope crit(&lock_);
   return shutting_down_ ? false : true;

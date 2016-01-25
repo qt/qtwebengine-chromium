@@ -54,9 +54,8 @@ WebInspector.Spectrum = function()
     var contrastRatioSVG = this._colorElement.createSVGChild("svg", "spectrum-contrast-container fill");
     this._contrastRatioLine = contrastRatioSVG.createSVGChild("path", "spectrum-contrast-line");
 
-    var toolbar = new WebInspector.Toolbar(this.contentElement);
-    toolbar.element.classList.add("spectrum-eye-dropper");
-    this._colorPickerButton = new WebInspector.ToolbarButton(WebInspector.UIString("Toggle color picker"), "eyedropper-toolbar-item");
+    var toolbar = new WebInspector.Toolbar("spectrum-eye-dropper", this.contentElement);
+    this._colorPickerButton = new WebInspector.ToolbarToggle(WebInspector.UIString("Toggle color picker"), "eyedropper-toolbar-item");
     this._colorPickerButton.setToggled(true);
     this._colorPickerButton.addEventListener("click", this._toggleColorPicker.bind(this, undefined));
     toolbar.appendToolbarItem(this._colorPickerButton);
@@ -110,25 +109,25 @@ WebInspector.Spectrum = function()
     this._palettePanelShowing = false;
     this._paletteContainer = this.contentElement.createChild("div", "spectrum-palette");
     this._paletteContainer.addEventListener("contextmenu", this._showPaletteColorContextMenu.bind(this, -1));
+    this._shadesContainer = this.contentElement.createChild("div", "palette-color-shades hidden");
     WebInspector.installDragHandle(this._paletteContainer, this._paletteDragStart.bind(this), this._paletteDrag.bind(this), this._paletteDragEnd.bind(this), "default");
     var paletteSwitcher = this.contentElement.createChild("div", "spectrum-palette-switcher spectrum-switcher");
     appendSwitcherIcon(paletteSwitcher);
     paletteSwitcher.addEventListener("click", this._togglePalettePanel.bind(this, true));
 
-    this._deleteIconToolbar = new WebInspector.Toolbar();
-    this._deleteIconToolbar.element.classList.add("delete-color-toolbar");
+    this._deleteIconToolbar = new WebInspector.Toolbar("delete-color-toolbar");
     this._deleteButton = new WebInspector.ToolbarButton("", "garbage-collect-toolbar-item");
     this._deleteIconToolbar.appendToolbarItem(this._deleteButton);
 
     var overlay = this.contentElement.createChild("div", "spectrum-overlay fill");
     overlay.addEventListener("click", this._togglePalettePanel.bind(this, false));
 
-    this._addColorToolbar = new WebInspector.Toolbar();
-    this._addColorToolbar.element.classList.add("add-color-toolbar");
+    this._addColorToolbar = new WebInspector.Toolbar("add-color-toolbar");
     var addColorButton = new WebInspector.ToolbarButton(WebInspector.UIString("Add to palette"), "add-toolbar-item");
     addColorButton.addEventListener("click", this._addColorToCustomPalette.bind(this));
     this._addColorToolbar.appendToolbarItem(addColorButton);
 
+    this._loadPalettes();
     new WebInspector.Spectrum.PaletteGenerator(this._generatedPaletteLoaded.bind(this));
 
     /**
@@ -204,7 +203,7 @@ WebInspector.Spectrum.prototype = {
         this._palettePanel.removeChildren();
         var title = this._palettePanel.createChild("div", "palette-title");
         title.textContent = WebInspector.UIString("Color Palettes");
-        var toolbar = new WebInspector.Toolbar(this._palettePanel);
+        var toolbar = new WebInspector.Toolbar("", this._palettePanel);
         var closeButton = new WebInspector.ToolbarButton("Return to color picker", "delete-toolbar-item");
         closeButton.addEventListener("click", this._togglePalettePanel.bind(this, false));
         toolbar.appendToolbarItem(closeButton);
@@ -221,10 +220,15 @@ WebInspector.Spectrum.prototype = {
             return;
         if (show)
             this._updatePalettePanel();
-        else
-            WebInspector.restoreFocusFromElement(this.element);
+        this._focus();
         this._palettePanelShowing = show;
         this.contentElement.classList.toggle("palette-panel-showing", show);
+    },
+
+    _focus: function()
+    {
+        if (this.isShowing() && WebInspector.currentFocusElement() !== this.contentElement)
+            WebInspector.setCurrentFocusElement(this.contentElement);
     },
 
     /**
@@ -249,6 +253,7 @@ WebInspector.Spectrum.prototype = {
      */
     _showPalette: function(palette, animate, event)
     {
+        this._resizeForSelectedPalette();
         this._paletteContainer.removeChildren();
         for (var i = 0; i < palette.colors.length; i++) {
             var animationDelay = animate ? i * 100 / palette.colors.length : 0;
@@ -258,6 +263,14 @@ WebInspector.Spectrum.prototype = {
                 colorElement.__mutable = true;
                 colorElement.__color = palette.colors[i];
                 colorElement.addEventListener("contextmenu", this._showPaletteColorContextMenu.bind(this, i));
+            } else if (palette === WebInspector.Spectrum.MaterialPalette) {
+                colorElement.classList.add("has-material-shades");
+                var shadow = colorElement.createChild("div", "spectrum-palette-color spectrum-palette-color-shadow");
+                shadow.style.background = palette.colors[i];
+                shadow = colorElement.createChild("div", "spectrum-palette-color spectrum-palette-color-shadow");
+                shadow.style.background = palette.colors[i];
+                colorElement.title = WebInspector.UIString(palette.colors[i] + ". Long-click to show alternate shades.");
+                new WebInspector.LongClickController(colorElement, this._showLightnessShades.bind(this, colorElement, palette.colors[i]));
             }
             this._paletteContainer.appendChild(colorElement);
         }
@@ -266,7 +279,6 @@ WebInspector.Spectrum.prototype = {
         var numItems = palette.colors.length;
         if (palette.mutable)
             numItems++;
-        var rowsNeeded = Math.max(1, Math.ceil(numItems / WebInspector.Spectrum._itemsPerPaletteRow));
         if (palette.mutable) {
             this._paletteContainer.appendChild(this._addColorToolbar.element);
             this._paletteContainer.appendChild(this._deleteIconToolbar.element);
@@ -276,10 +288,48 @@ WebInspector.Spectrum.prototype = {
         }
 
         this._togglePalettePanel(false);
-        var paletteColorHeight = 12;
-        var paletteMargin = 12;
-        this.element.style.height = (this._paletteContainer.offsetTop + paletteMargin + (paletteColorHeight + paletteMargin) * rowsNeeded) + "px";
-        this.dispatchEventToListeners(WebInspector.Spectrum.Events.SizeChanged);
+        this._focus();
+    },
+
+    /**
+     * @param {!Element} colorElement
+     * @param {string} colorText
+     * @param {!Event} event
+     */
+    _showLightnessShades: function(colorElement, colorText, event)
+    {
+        /**
+         * @param {!Element} element
+         * @this {!WebInspector.Spectrum}
+         */
+        function closeLightnessShades(element)
+        {
+            this._shadesContainer.classList.add("hidden");
+            element.classList.remove("spectrum-shades-shown");
+            this._shadesContainer.ownerDocument.removeEventListener("mousedown", this._shadesCloseHandler, true);
+            delete this._shadesCloseHandler;
+        }
+
+        if (this._shadesCloseHandler)
+            this._shadesCloseHandler();
+
+        this._shadesContainer.classList.remove("hidden");
+        this._shadesContainer.removeChildren();
+        this._shadesContainer.animate([{ transform: "scaleY(0)", opacity: "0" }, { transform: "scaleY(1)", opacity: "1" }], { duration: 200, easing: "cubic-bezier(0.4, 0, 0.2, 1)" });
+        this._shadesContainer.style.top = colorElement.offsetTop + colorElement.parentElement.offsetTop + "px";
+        this._shadesContainer.style.left = colorElement.offsetLeft + "px";
+        colorElement.classList.add("spectrum-shades-shown");
+
+        var shades = WebInspector.Spectrum.MaterialPaletteShades[colorText];
+        for (var i = shades.length - 1; i >= 0; i--) {
+            var shadeElement = this._createPaletteColor(shades[i], i * 200 / shades.length + 100);
+            shadeElement.addEventListener("mousedown", this._paletteColorSelected.bind(this, shades[i], false));
+            this._shadesContainer.appendChild(shadeElement);
+        }
+
+        WebInspector.setCurrentFocusElement(this._shadesContainer);
+        this._shadesCloseHandler = closeLightnessShades.bind(this, colorElement);
+        this._shadesContainer.ownerDocument.addEventListener("mousedown", this._shadesCloseHandler, true);
     },
 
     /**
@@ -318,8 +368,6 @@ WebInspector.Spectrum.prototype = {
         this._dragElement = element;
         this._dragHotSpotX = e.pageX - (index % WebInspector.Spectrum._itemsPerPaletteRow) * WebInspector.Spectrum._colorChipSize;
         this._dragHotSpotY = e.pageY - (index / WebInspector.Spectrum._itemsPerPaletteRow | 0) * WebInspector.Spectrum._colorChipSize;
-
-        this._deleteIconToolbar.element.classList.add("dragging");
         return true;
     },
 
@@ -335,6 +383,7 @@ WebInspector.Spectrum.prototype = {
         var offsetY = e.pageY - (newIndex / WebInspector.Spectrum._itemsPerPaletteRow | 0) * WebInspector.Spectrum._colorChipSize;
 
         var isDeleting = this._isDraggingToBin(e);
+        this._deleteIconToolbar.element.classList.add("dragging");
         this._deleteIconToolbar.element.classList.toggle("delete-color-toolbar-active", isDeleting);
         var dragElementTransform = "translateX(" + (offsetX - this._dragHotSpotX) + "px) translateY(" + (offsetY - this._dragHotSpotY) + "px)";
         this._dragElement.style.transform = isDeleting ? dragElementTransform + " scale(0.8)" : dragElementTransform;
@@ -382,7 +431,20 @@ WebInspector.Spectrum.prototype = {
 
         this._deleteIconToolbar.element.classList.remove("dragging");
         this._deleteIconToolbar.element.classList.remove("delete-color-toolbar-active");
-        this._deleteButton.setToggled(false);
+    },
+
+    _loadPalettes: function()
+    {
+        this._palettes.set(WebInspector.Spectrum.MaterialPalette.title, WebInspector.Spectrum.MaterialPalette);
+        /** @type {!WebInspector.Spectrum.Palette} */
+        var defaultCustomPalette = { title: "Custom", colors: [], mutable: true };
+        this._customPaletteSetting = WebInspector.settings.createSetting("customColorPalette", defaultCustomPalette);
+        this._palettes.set(this._customPaletteSetting.get().title, this._customPaletteSetting.get());
+
+        this._selectedColorPalette = WebInspector.settings.createSetting("selectedColorPalette", WebInspector.Spectrum.GeneratedPaletteTitle);
+        var palette = this._palettes.get(this._selectedColorPalette.get());
+        if (palette)
+            this._showPalette(palette, true);
     },
 
     /**
@@ -392,17 +454,13 @@ WebInspector.Spectrum.prototype = {
     {
         if (generatedPalette.colors.length)
             this._palettes.set(generatedPalette.title, generatedPalette);
-        this._palettes.set(WebInspector.Spectrum.MaterialPalette.title, WebInspector.Spectrum.MaterialPalette);
-        /** @type {!WebInspector.Spectrum.Palette} */
-        var defaultCustomPalette = { title: "Custom", colors: [], mutable: true };
-        this._customPaletteSetting = WebInspector.settings.createSetting("customColorPalette", defaultCustomPalette);
-        this._palettes.set(this._customPaletteSetting.get().title, this._customPaletteSetting.get());
-
-        this._selectedColorPalette = WebInspector.settings.createSetting("selectedColorPalette", WebInspector.Spectrum.GeneratedPaletteTitle);
-        var paletteToShow = this._palettes.get(this._selectedColorPalette.get() || WebInspector.Spectrum.GeneratedPaletteTitle)
-            || this._palettes.get("Material");
-        if (paletteToShow)
-            this._showPalette(paletteToShow, true);
+        if (this._selectedColorPalette.get() !== generatedPalette.title) {
+            return;
+        } else if (!generatedPalette.colors.length) {
+            this._paletteSelected(WebInspector.Spectrum.MaterialPalette);
+            return;
+        }
+        this._showPalette(generatedPalette, true);
     },
 
     /**
@@ -430,6 +488,25 @@ WebInspector.Spectrum.prototype = {
     {
         this._selectedColorPalette.set(palette.title);
         this._showPalette(palette, true);
+    },
+
+    _resizeForSelectedPalette: function()
+    {
+        var palette = this._palettes.get(this._selectedColorPalette.get());
+        if (!palette)
+            return;
+        var numColors = palette.colors.length;
+        if (palette === this._customPaletteSetting.get())
+            numColors++;
+        var rowsNeeded = Math.max(1, Math.ceil(numColors / WebInspector.Spectrum._itemsPerPaletteRow));
+        if (this._numPaletteRowsShown === rowsNeeded)
+            return;
+        this._numPaletteRowsShown = rowsNeeded;
+        var paletteColorHeight = 12;
+        var paletteMargin = 12;
+        var paletteTop = 235;
+        this.element.style.height = (paletteTop + paletteMargin + (paletteColorHeight + paletteMargin) * rowsNeeded) + "px";
+        this.dispatchEventToListeners(WebInspector.Spectrum.Events.SizeChanged);
     },
 
     /**
@@ -626,57 +703,62 @@ WebInspector.Spectrum.prototype = {
         /** const */ var width = this.dragWidth;
         /** const */ var height = this.dragHeight;
         /** const */ var dS = 0.02;
-        /** const */ var epsilon = 0.01;
+        /** const */ var epsilon = 0.002;
+        /** const */ var H = 0;
+        /** const */ var S = 1;
+        /** const */ var V = 2;
+        /** const */ var A = 3;
 
         var fgRGBA = [];
         WebInspector.Color.hsva2rgba(this._hsv, fgRGBA);
         var fgLuminance = WebInspector.Color.luminance(fgRGBA);
         var bgRGBA = this._contrastColor.rgba();
         var bgLuminance = WebInspector.Color.luminance(bgRGBA);
-        var delta = fgLuminance < bgLuminance ? 1 : -1;
+        var fgIsLighter = fgLuminance > bgLuminance;
+        var desiredLuminance = WebInspector.Color.desiredLuminance(bgLuminance, requiredContrast, fgIsLighter);
 
-        var lastV = this._hsv[2];
+        var lastV = this._hsv[V];
         var currentSlope = 0;
-        var candidateHSVA = [this._hsv[0], 0, 0, this._hsv[3]];
+        var candidateHSVA = [this._hsv[H], 0, 0, this._hsv[A]];
         var pathBuilder = [];
         var candidateRGBA = [];
         WebInspector.Color.hsva2rgba(candidateHSVA, candidateRGBA);
-        var flattenedRGBA = [];
-        WebInspector.Color.flattenColors(candidateRGBA, bgRGBA, flattenedRGBA);
+        var blendedRGBA = [];
+        WebInspector.Color.blendColors(candidateRGBA, bgRGBA, blendedRGBA);
 
         /**
          * Approach the desired contrast ratio by modifying the given component
          * from the given starting value.
          * @param {number} index
          * @param {number} x
+         * @param {boolean} onAxis
          * @return {?number}
          */
-        function approach(index, x)
+        function approach(index, x, onAxis)
         {
             while (0 <= x && x <= 1) {
                 candidateHSVA[index] = x;
                 WebInspector.Color.hsva2rgba(candidateHSVA, candidateRGBA);
-                WebInspector.Color.flattenColors(candidateRGBA, bgRGBA, flattenedRGBA);
-                var contrast = WebInspector.Color.calculateContrastRatio(flattenedRGBA, bgRGBA);
-                var dContrast = contrast - requiredContrast;
-                if (Math.abs(dContrast) < epsilon) {
+                WebInspector.Color.blendColors(candidateRGBA, bgRGBA, blendedRGBA);
+                var fgLuminance = WebInspector.Color.luminance(blendedRGBA);
+                var dLuminance = fgLuminance - desiredLuminance;
+
+                if (Math.abs(dLuminance) < (onAxis ? epsilon / 10 : epsilon))
                     return x;
-                } else {
-                    // 21 is the maximum possible value for contrast ratio:
-                    // http://www.w3.org/TR/UNDERSTANDING-WCAG20/visual-audio-contrast-contrast.html#contrast-ratiodef
-                    x += delta * (dContrast / 21);
-                }
+                else
+                    x += (index === V ? -dLuminance : dLuminance);
             }
             return null;
         }
 
         for (var s = 0; s < 1 + dS; s += dS) {
             s = Math.min(1, s);
-            candidateHSVA[1] = s;
+            candidateHSVA[S] = s;
+
             var v = lastV;
             v = lastV + currentSlope * dS;
 
-            v = approach(2, v);
+            v = approach(V, v, s == 0);
             if (v === null)
                 break;
 
@@ -689,11 +771,10 @@ WebInspector.Spectrum.prototype = {
 
         if (s < 1 + dS) {
             s -= dS;
-            delta = -delta;
-            candidateHSVA[2] = 1;
-            s = approach(1, s);
+            candidateHSVA[V] = 1;
+            s = approach(S, s, true);
             if (s !== null)
-                pathBuilder = pathBuilder.concat(["L", s * width, 0])
+                pathBuilder = pathBuilder.concat(["L", s * width, -1])
         }
 
         this._contrastRatioLine.setAttribute("d", pathBuilder.join(" "));
@@ -923,24 +1004,26 @@ WebInspector.Spectrum.PaletteGenerator.prototype = {
     }
 }
 
-WebInspector.Spectrum.MaterialPalette = { title: "Material", mutable: false, matchUserFormat: true, colors: [
-    "#F44336",
-    "#E91E63",
-    "#9C27B0",
-    "#673AB7",
-    "#3F51B5",
-    "#2196F3",
-    "#03A9F4",
-    "#00BCD4",
-    "#009688",
-    "#4CAF50",
-    "#8BC34A",
-    "#CDDC39",
-    "#FFEB3B",
-    "#FFC107",
-    "#FF9800",
-    "#FF5722",
-    "#795548",
-    "#9E9E9E",
-    "#607D8B"
-]};
+WebInspector.Spectrum.MaterialPaletteShades = {
+    "#F44336": ["#FFEBEE", "#FFCDD2", "#EF9A9A", "#E57373", "#EF5350", "#F44336", "#E53935", "#D32F2F", "#C62828", "#B71C1C"],
+    "#E91E63": ["#FCE4EC", "#F8BBD0", "#F48FB1", "#F06292", "#EC407A", "#E91E63", "#D81B60", "#C2185B", "#AD1457", "#880E4F"],
+    "#9C27B0": ["#F3E5F5", "#E1BEE7", "#CE93D8", "#BA68C8", "#AB47BC", "#9C27B0", "#8E24AA", "#7B1FA2", "#6A1B9A", "#4A148C"],
+    "#673AB7": ["#EDE7F6", "#D1C4E9", "#B39DDB", "#9575CD", "#7E57C2", "#673AB7", "#5E35B1", "#512DA8", "#4527A0", "#311B92"],
+    "#3F51B5": ["#E8EAF6", "#C5CAE9", "#9FA8DA", "#7986CB", "#5C6BC0", "#3F51B5", "#3949AB", "#303F9F", "#283593", "#1A237E"],
+    "#2196F3": ["#E3F2FD", "#BBDEFB", "#90CAF9", "#64B5F6", "#42A5F5", "#2196F3", "#1E88E5", "#1976D2", "#1565C0", "#0D47A1"],
+    "#03A9F4": ["#E1F5FE", "#B3E5FC", "#81D4FA", "#4FC3F7", "#29B6F6", "#03A9F4", "#039BE5", "#0288D1", "#0277BD", "#01579B"],
+    "#00BCD4": ["#E0F7FA", "#B2EBF2", "#80DEEA", "#4DD0E1", "#26C6DA", "#00BCD4", "#00ACC1", "#0097A7", "#00838F", "#006064"],
+    "#009688": ["#E0F2F1", "#B2DFDB", "#80CBC4", "#4DB6AC", "#26A69A", "#009688", "#00897B", "#00796B", "#00695C", "#004D40"],
+    "#4CAF50": ["#E8F5E9", "#C8E6C9", "#A5D6A7", "#81C784", "#66BB6A", "#4CAF50", "#43A047", "#388E3C", "#2E7D32", "#1B5E20"],
+    "#8BC34A": ["#F1F8E9", "#DCEDC8", "#C5E1A5", "#AED581", "#9CCC65", "#8BC34A", "#7CB342", "#689F38", "#558B2F", "#33691E"],
+    "#CDDC39": ["#F9FBE7", "#F0F4C3", "#E6EE9C", "#DCE775", "#D4E157", "#CDDC39", "#C0CA33", "#AFB42B", "#9E9D24", "#827717"],
+    "#FFEB3B": ["#FFFDE7", "#FFF9C4", "#FFF59D", "#FFF176", "#FFEE58", "#FFEB3B", "#FDD835", "#FBC02D", "#F9A825", "#F57F17"],
+    "#FFC107": ["#FFF8E1", "#FFECB3", "#FFE082", "#FFD54F", "#FFCA28", "#FFC107", "#FFB300", "#FFA000", "#FF8F00", "#FF6F00"],
+    "#FF9800": ["#FFF3E0", "#FFE0B2", "#FFCC80", "#FFB74D", "#FFA726", "#FF9800", "#FB8C00", "#F57C00", "#EF6C00", "#E65100"],
+    "#FF5722": ["#FBE9E7", "#FFCCBC", "#FFAB91", "#FF8A65", "#FF7043", "#FF5722", "#F4511E", "#E64A19", "#D84315", "#BF360C"],
+    "#795548": ["#EFEBE9", "#D7CCC8", "#BCAAA4", "#A1887F", "#8D6E63", "#795548", "#6D4C41", "#5D4037", "#4E342E", "#3E2723"],
+    "#9E9E9E": ["#FAFAFA", "#F5F5F5", "#EEEEEE", "#E0E0E0", "#BDBDBD", "#9E9E9E", "#757575", "#616161", "#424242", "#212121"],
+    "#607D8B": ["#ECEFF1", "#CFD8DC", "#B0BEC5", "#90A4AE", "#78909C", "#607D8B", "#546E7A", "#455A64", "#37474F", "#263238"]
+};
+
+WebInspector.Spectrum.MaterialPalette = { title: "Material", mutable: false, matchUserFormat: true, colors: Object.keys(WebInspector.Spectrum.MaterialPaletteShades) };

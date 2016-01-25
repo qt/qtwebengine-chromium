@@ -27,7 +27,6 @@
 #ifndef WTF_PassOwnPtr_h
 #define WTF_PassOwnPtr_h
 
-#include "wtf/NullPtr.h"
 #include "wtf/OwnPtrCommon.h"
 
 namespace WTF {
@@ -39,7 +38,7 @@ template <typename T> PassOwnPtr<T[]> adoptArrayPtr(T*);
 
 template <typename T> class PassOwnPtr {
 public:
-    typedef typename RemoveExtent<T>::Type ValueType;
+    typedef typename std::remove_extent<T>::type ValueType;
     typedef ValueType* PtrType;
 
     PassOwnPtr() : m_ptr(nullptr) {}
@@ -112,7 +111,7 @@ template <typename T>
 template <typename U> inline PassOwnPtr<T>::PassOwnPtr(const PassOwnPtr<U>& o, EnsurePtrConvertibleArgDefn(U, T))
     : m_ptr(o.leakPtr())
 {
-    static_assert(!IsArray<T>::value, "pointers to array must never be converted");
+    static_assert(!std::is_array<T>::value, "pointers to array must never be converted");
 }
 
 template <typename T> inline typename PassOwnPtr<T>::PtrType PassOwnPtr<T>::leakPtr() const
@@ -154,7 +153,7 @@ template <typename T> inline PassOwnPtr<T[]> adoptArrayPtr(T* ptr)
 
 template <typename T, typename U> inline PassOwnPtr<T> static_pointer_cast(const PassOwnPtr<U>& p)
 {
-    static_assert(!IsArray<T>::value, "pointers to array must never be converted");
+    static_assert(!std::is_array<T>::value, "pointers to array must never be converted");
     return adoptPtr(static_cast<T*>(p.leakPtr()));
 }
 

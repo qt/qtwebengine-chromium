@@ -17,6 +17,7 @@
 #include <mach/mach.h>
 #include <mach-o/loader.h>
 
+#include "base/files/file_path.h"
 #include "base/strings/stringprintf.h"
 #include "snapshot/mac/mach_o_image_annotations_reader.h"
 #include "snapshot/mac/mach_o_image_reader.h"
@@ -150,9 +151,15 @@ ModuleSnapshot::ModuleType ModuleSnapshotMac::GetModuleType() const {
   }
 }
 
-void ModuleSnapshotMac::UUID(crashpad::UUID* uuid) const {
+void ModuleSnapshotMac::UUIDAndAge(crashpad::UUID* uuid, uint32_t* age) const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  return mach_o_image_reader_->UUID(uuid);
+  mach_o_image_reader_->UUID(uuid);
+  *age = 0;
+}
+
+std::string ModuleSnapshotMac::DebugFileName() const {
+  INITIALIZATION_STATE_DCHECK_VALID(initialized_);
+  return base::FilePath(Name()).BaseName().value();
 }
 
 std::vector<std::string> ModuleSnapshotMac::AnnotationsVector() const {

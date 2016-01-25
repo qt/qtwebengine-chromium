@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioScheduledSourceNode.h"
-
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
@@ -43,7 +40,6 @@ AudioScheduledSourceHandler::AudioScheduledSourceHandler(NodeType nodeType, Audi
     : AudioHandler(nodeType, node, sampleRate)
     , m_startTime(0)
     , m_endTime(UnknownTime)
-    , m_hasEndedListener(false)
     , m_playbackState(UNSCHEDULED_STATE)
 {
 }
@@ -153,14 +149,14 @@ void AudioScheduledSourceHandler::start(double when, ExceptionState& exceptionSt
         return;
     }
 
-    // This synchronizes with process(). updateSchedulingInfo will read some of the variables being
-    // set here.
-    MutexLocker processLocker(m_processLock);
-
     // The node is started. Add a reference to keep us alive so that audio will eventually get
     // played even if Javascript should drop all references to this node. The reference will get
     // dropped when the source has finished playing.
     context()->notifySourceNodeStartedProcessing(node());
+
+    // This synchronizes with process(). updateSchedulingInfo will read some of the variables being
+    // set here.
+    MutexLocker processLocker(m_processLock);
 
     // If |when| < currentTime, the source must start now according to the spec.
     // So just set startTime to currentTime in this case to start the source now.
@@ -208,12 +204,13 @@ void AudioScheduledSourceHandler::finishWithoutOnEnded()
         setPlaybackState(FINISHED_STATE);
     }
 }
+
 void AudioScheduledSourceHandler::finish()
 {
     finishWithoutOnEnded();
 
-    if (m_hasEndedListener && context()->executionContext()) {
-        context()->executionContext()->postTask(FROM_HERE, createCrossThreadTask(&AudioScheduledSourceHandler::notifyEnded, PassRefPtr<AudioScheduledSourceHandler>(this)));
+    if (context()->executionContext()) {
+        context()->executionContext()->postTask(BLINK_FROM_HERE, createCrossThreadTask(&AudioScheduledSourceHandler::notifyEnded, PassRefPtr<AudioScheduledSourceHandler>(this)));
     }
 }
 
@@ -263,10 +260,8 @@ EventListener* AudioScheduledSourceNode::onended()
 
 void AudioScheduledSourceNode::setOnended(PassRefPtrWillBeRawPtr<EventListener> listener)
 {
-    audioScheduledSourceHandler().setHasEndedListener();
     setAttributeEventListener(EventTypeNames::ended, listener);
 }
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

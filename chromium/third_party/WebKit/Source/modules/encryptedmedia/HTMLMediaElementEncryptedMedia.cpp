@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -143,7 +142,7 @@ SetMediaKeysHandler::SetMediaKeysHandler(ScriptState* scriptState, HTMLMediaElem
     WTF_LOG(Media, "SetMediaKeysHandler::SetMediaKeysHandler");
 
     // 3. Run the remaining steps asynchronously.
-    m_timer.startOneShot(0, FROM_HERE);
+    m_timer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 SetMediaKeysHandler::~SetMediaKeysHandler()

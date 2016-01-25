@@ -4,6 +4,8 @@
 
 #include "ui/events/gestures/gesture_provider_aura.h"
 
+#include <utility>
+
 #include "base/auto_reset.h"
 #include "base/logging.h"
 #include "ui/events/event.h"
@@ -13,12 +15,14 @@
 
 namespace ui {
 
-GestureProviderAura::GestureProviderAura(GestureProviderAuraClient* client)
+GestureProviderAura::GestureProviderAura(GestureConsumer* consumer,
+                                         GestureProviderAuraClient* client)
     : client_(client),
       filtered_gesture_provider_(
           GetGestureProviderConfig(GestureProviderConfigType::CURRENT_PLATFORM),
           this),
-      handling_event_(false) {
+      handling_event_(false),
+      gesture_consumer_(consumer) {
   filtered_gesture_provider_.SetDoubleTapSupportForPlatformEnabled(false);
 }
 
@@ -37,7 +41,7 @@ bool GestureProviderAura::OnTouchEvent(TouchEvent* event) {
   return true;
 }
 
-void GestureProviderAura::OnTouchEventAck(uint32 unique_event_id,
+void GestureProviderAura::OnTouchEventAck(uint32_t unique_event_id,
                                           bool event_consumed) {
   DCHECK(pending_gestures_.empty());
   DCHECK(!handling_event_);
@@ -47,21 +51,16 @@ void GestureProviderAura::OnTouchEventAck(uint32 unique_event_id,
 
 void GestureProviderAura::OnGestureEvent(
     const GestureEventData& gesture) {
-  GestureEventDetails details = gesture.details;
-  details.set_oldest_touch_id(gesture.motion_event_id);
   scoped_ptr<ui::GestureEvent> event(
-      new ui::GestureEvent(gesture.x,
-                           gesture.y,
-                           gesture.flags,
-                           gesture.time - base::TimeTicks(),
-                           details));
+      new ui::GestureEvent(gesture.x, gesture.y, gesture.flags,
+                           gesture.time - base::TimeTicks(), gesture.details));
 
   if (!handling_event_) {
     // Dispatching event caused by timer.
-    client_->OnGestureEvent(event.get());
+    client_->OnGestureEvent(gesture_consumer_, event.get());
   } else {
     // Memory managed by ScopedVector pending_gestures_.
-    pending_gestures_.push_back(event.Pass());
+    pending_gestures_.push_back(std::move(event));
   }
 }
 

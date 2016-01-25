@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/nfc/NavigatorNFC.h"
 
 #include "core/frame/Navigator.h"
@@ -29,13 +28,13 @@ NavigatorNFC& NavigatorNFC::from(Navigator& navigator)
     return *supplement;
 }
 
-NFC* NavigatorNFC::nfc(ExecutionContext* context, Navigator& navigator)
+NFC* NavigatorNFC::nfc(Navigator& navigator)
 {
     NavigatorNFC& self = NavigatorNFC::from(navigator);
     if (!self.m_nfc) {
         if (!navigator.frame())
             return nullptr;
-        self.m_nfc = NFC::create(context, navigator.frame());
+        self.m_nfc = NFC::create(navigator.frame());
     }
     return self.m_nfc.get();
 }

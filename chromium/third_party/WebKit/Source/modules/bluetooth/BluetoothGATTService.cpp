@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/bluetooth/BluetoothGATTService.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -34,7 +33,7 @@ BluetoothGATTService* BluetoothGATTService::take(ScriptPromiseResolver*, PassOwn
 ScriptPromise BluetoothGATTService::getCharacteristic(ScriptState* scriptState,
     const StringOrUnsignedLong& characteristic, ExceptionState& exceptionState)
 {
-    WebBluetooth* webbluetooth = BluetoothSupplement::from(scriptState);
+    WebBluetooth* webbluetooth = BluetoothSupplement::fromScriptState(scriptState);
 
     String characteristicUUID = BluetoothUUID::getCharacteristic(characteristic, exceptionState);
     if (exceptionState.hadException())

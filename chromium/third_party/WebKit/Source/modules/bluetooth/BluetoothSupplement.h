@@ -16,6 +16,7 @@ class WebBluetooth;
 // code in modules/.
 class BLINK_EXPORT BluetoothSupplement : public NoBaseWillBeGarbageCollected<BluetoothSupplement>, public WillBeHeapSupplement<LocalFrame> {
     WTF_MAKE_NONCOPYABLE(BluetoothSupplement);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(BluetoothSupplement);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BluetoothSupplement);
 
 public:
@@ -23,9 +24,14 @@ public:
 
     static void provideTo(LocalFrame&, WebBluetooth*);
 
-    // Returns the WebBluetooth attached to the ScriptState's frame if that exists;
-    // otherwise the Platform's WebBluetooth.
-    static WebBluetooth* from(ScriptState*);
+    // Returns the WebBluetooth attached to the frame.
+    static WebBluetooth* from(LocalFrame*);
+
+    // Returns the WebBluetooth attached to the frame if the frame exists.
+    // Otherwise returns nullptr.
+    static WebBluetooth* fromScriptState(ScriptState*);
+    // Returns the WebBluetooth attached to the execution context.
+    static WebBluetooth* fromExecutionContext(ExecutionContext*);
 
     DECLARE_VIRTUAL_TRACE();
 

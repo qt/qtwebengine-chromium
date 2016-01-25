@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/frame/LocalDOMWindow.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -149,6 +148,8 @@ public:
         SuspendableTimer::trace(visitor);
     }
 
+    // TODO(alexclarke): Override timerTaskRunner() to pass in a document specific default task runner.
+
 private:
     void fired() override
     {
@@ -178,7 +179,7 @@ static void updateSuddenTerminationStatus(LocalDOMWindow* domWindow, bool addedL
         domWindow->frame()->loader().client()->suddenTerminationDisablerChanged(addedListener, disablerType);
 }
 
-typedef HashCountedSet<LocalDOMWindow*> DOMWindowSet;
+using DOMWindowSet = WillBePersistentHeapHashCountedSet<RawPtrWillBeWeakMember<LocalDOMWindow>>;
 
 static DOMWindowSet& windowsWithUnloadEventListeners()
 {
@@ -469,6 +470,11 @@ ExecutionContext* LocalDOMWindow::executionContext() const
     return m_document.get();
 }
 
+const LocalDOMWindow* LocalDOMWindow::toDOMWindow() const
+{
+    return this;
+}
+
 LocalDOMWindow* LocalDOMWindow::toDOMWindow()
 {
     return this;
@@ -477,11 +483,6 @@ LocalDOMWindow* LocalDOMWindow::toDOMWindow()
 PassRefPtrWillBeRawPtr<MediaQueryList> LocalDOMWindow::matchMedia(const String& media)
 {
     return document() ? document()->mediaQueryMatcher().matchMedia(media) : nullptr;
-}
-
-Page* LocalDOMWindow::page()
-{
-    return frame() ? frame()->page() : nullptr;
 }
 
 void LocalDOMWindow::willDetachFrameHost()
@@ -669,7 +670,7 @@ void LocalDOMWindow::schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent> ev
 {
     // Schedule the message.
     OwnPtrWillBeRawPtr<PostMessageTimer> timer = adoptPtrWillBeNoop(new PostMessageTimer(*this, event, source, target, stackTrace, UserGestureIndicator::currentToken()));
-    timer->startOneShot(0, FROM_HERE);
+    timer->startOneShot(0, BLINK_FROM_HERE);
     timer->suspendIfNeeded();
     m_postMessageTimers.add(timer.release());
 }
@@ -719,37 +720,10 @@ DOMSelection* LocalDOMWindow::getSelection()
 
 Element* LocalDOMWindow::frameElement() const
 {
-    if (!frame())
+    if (!(frame() && frame()->owner() && frame()->owner()->isLocal()))
         return nullptr;
 
-    // The bindings security check should ensure we're same origin...
     return toHTMLFrameOwnerElement(frame()->owner());
-}
-
-void LocalDOMWindow::focus(ExecutionContext* context)
-{
-    if (!frame())
-        return;
-
-    FrameHost* host = frame()->host();
-    if (!host)
-        return;
-
-    ASSERT(context);
-
-    bool allowFocus = context->isWindowInteractionAllowed();
-    if (allowFocus) {
-        context->consumeWindowInteraction();
-    } else {
-        ASSERT(isMainThread());
-        allowFocus = opener() && (opener() != this) && (toDocument(context)->domWindow() == opener());
-    }
-
-    // If we're a top level window, bring the window to the front.
-    if (frame()->isMainFrame() && allowFocus)
-        host->chromeClient().focus();
-
-    frame()->eventHandler().focusDocumentView();
 }
 
 void LocalDOMWindow::blur()
@@ -929,8 +903,8 @@ static FloatSize getViewportSize(LocalFrame* frame)
     }
 
     return frame->isMainFrame() && !host->settings().inertVisualViewport()
-        ? host->visualViewport().visibleRect().size()
-        : view->visibleContentRect(IncludeScrollbars).size();
+        ? FloatSize(host->visualViewport().visibleRect().size())
+        : FloatSize(view->visibleContentRect(IncludeScrollbars).size());
 }
 
 int LocalDOMWindow::innerHeight() const
@@ -1130,10 +1104,11 @@ void LocalDOMWindow::scrollBy(double x, double y, ScrollBehavior scrollBehavior)
     x = ScrollableArea::normalizeNonFiniteScroll(x);
     y = ScrollableArea::normalizeNonFiniteScroll(y);
 
-    DoublePoint currentOffset = view->scrollableArea()->scrollPositionDouble();
+    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
+    DoublePoint currentOffset = viewport->scrollPositionDouble();
     DoubleSize scaledDelta(x * frame()->pageZoomFactor(), y * frame()->pageZoomFactor());
 
-    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
     viewport->setScrollPosition(currentOffset + scaledDelta, ProgrammaticScroll, scrollBehavior);
 }
 
@@ -1201,7 +1176,9 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
     double scaledX = 0.0;
     double scaledY = 0.0;
 
-    DoublePoint currentOffset = view->scrollableArea()->scrollPositionDouble();
+    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
+    DoublePoint currentOffset = viewport->scrollPositionDouble();
     scaledX = currentOffset.x();
     scaledY = currentOffset.y();
 
@@ -1213,7 +1190,7 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
 
     ScrollBehavior scrollBehavior = ScrollBehaviorAuto;
     ScrollableArea::scrollBehaviorFromString(scrollToOptions.behavior(), scrollBehavior);
-    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
     viewport->setScrollPosition(DoublePoint(scaledX, scaledY), ProgrammaticScroll, scrollBehavior);
 }
 
@@ -1312,10 +1289,10 @@ void LocalDOMWindow::cancelIdleCallback(int id)
         document->cancelIdleCallback(id);
 }
 
-bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, bool useCapture)
+bool LocalDOMWindow::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, const EventListenerOptions& options)
 {
     RefPtrWillBeRawPtr<EventListener> listener = prpListener;
-    if (!EventTarget::addEventListener(eventType, listener, useCapture))
+    if (!EventTarget::addEventListenerInternal(eventType, listener, options))
         return false;
 
     if (frame() && frame()->host())
@@ -1346,9 +1323,9 @@ bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtrW
     return true;
 }
 
-bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool LocalDOMWindow::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    if (!EventTarget::removeEventListener(eventType, listener, useCapture))
+    if (!EventTarget::removeEventListenerInternal(eventType, listener, options))
         return false;
 
     if (frame() && frame()->host())
@@ -1427,7 +1404,7 @@ void LocalDOMWindow::finishedLoading()
     }
 }
 
-void LocalDOMWindow::printErrorMessage(const String& message)
+void LocalDOMWindow::printErrorMessage(const String& message) const
 {
     if (!isCurrentlyDisplayedInFrame())
         return;
@@ -1489,7 +1466,9 @@ PassRefPtrWillBeRawPtr<DOMWindow> LocalDOMWindow::open(const String& urlString, 
         return targetFrame->domWindow();
     }
 
-    return createWindow(urlString, frameName, WindowFeatures(windowFeaturesString), *callingWindow, *firstFrame, *frame());
+    WindowFeatures features(windowFeaturesString);
+    RefPtrWillBeRawPtr<DOMWindow> newWindow = createWindow(urlString, frameName, features, *callingWindow, *firstFrame, *frame());
+    return features.noopener ? nullptr : newWindow;
 }
 
 DEFINE_TRACE(LocalDOMWindow)

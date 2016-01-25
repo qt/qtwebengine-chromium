@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webdatabase/sqlite/SQLiteDatabase.h"
 
 #include "platform/Logging.h"
@@ -91,6 +90,11 @@ bool SQLiteDatabase::open(const String& filename)
 
     if (!SQLiteStatement(*this, "PRAGMA temp_store = MEMORY;").executeCommand())
         WTF_LOG_ERROR("SQLite database could not set temp_store to memory");
+
+    // Foreign keys are not supported by WebDatabase.  Make sure foreign key support is consistent
+    // if SQLite has SQLITE_DEFAULT_FOREIGN_KEYS.
+    if (!SQLiteStatement(*this, "PRAGMA foreign_keys = OFF;").executeCommand())
+        WTF_LOG_ERROR("SQLite database could not turn off foreign_keys");
 
     return isOpen();
 }

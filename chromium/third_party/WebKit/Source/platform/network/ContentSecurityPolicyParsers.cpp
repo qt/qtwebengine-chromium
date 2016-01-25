@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 
 #include "wtf/ASCIICType.h"
@@ -65,11 +64,6 @@ bool isNotColonOrSlash(UChar c)
 bool isMediaTypeCharacter(UChar c)
 {
     return !isASCIISpace(c) && c != '/';
-}
-
-WTF::StringUTF8Adaptor normalizeSource(const String& source)
-{
-    return WTF::StringUTF8Adaptor(source, WTF::StringUTF8Adaptor::Normalize, WTF::EntitiesForUnencodables);
 }
 
 } // namespace

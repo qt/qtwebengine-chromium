@@ -4,6 +4,9 @@
 
 #include "ui/base/cursor/cursors_aura.h"
 
+#include <stddef.h>
+
+#include "base/macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/geometry/point.h"
@@ -128,8 +131,8 @@ const CursorData kLargeCursors[] = {
 };
 
 const CursorData kAnimatedCursors[] = {
-  {ui::kCursorWait, IDR_THROBBER, {7, 7}, {14, 14}},
-  {ui::kCursorProgress, IDR_THROBBER, {7, 7}, {14, 14}},
+  {ui::kCursorWait, IDR_AURA_CURSOR_THROBBER, {7, 7}, {14, 14}},
+  {ui::kCursorProgress, IDR_AURA_CURSOR_THROBBER, {7, 7}, {14, 14}},
 };
 
 const CursorSet kCursorSets[] = {

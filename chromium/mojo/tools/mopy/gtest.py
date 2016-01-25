@@ -14,10 +14,14 @@ import time
 from mopy.config import Config
 from mopy.paths import Paths
 
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)),
-                             '..', '..', '..', 'testing'))
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+sys.path.append(os.path.join(THIS_DIR, '..', '..', '..', 'testing'))
 import xvfb
 
+sys.path.append(os.path.join(THIS_DIR, '..', '..', '..', 'tools',
+                             'swarming_client', 'utils'))
+import subprocess42
 
 # The DISPLAY ID number used for xvfb, incremented with each use.
 XVFB_DISPLAY_ID = 9
@@ -40,7 +44,7 @@ def run_apptest(config, shell, args, apptest, isolate):
     return _run_apptest_with_retry(config, shell, args, apptest)
 
   fixtures = _get_fixtures(config, shell, args, apptest)
-  fixtures = [f for f in fixtures if not f.startswith('DISABLED_')]
+  fixtures = [f for f in fixtures if not '.DISABLED_' in f]
   failed = []
   for fixture in fixtures:
     arguments = args + ['--gtest_filter=%s' % fixture]
@@ -62,7 +66,8 @@ def _run_apptest_with_retry(config, shell, args, apptest, retry_count=2):
     print 'Retrying failed tests (%d attempts remaining)' % retry_count
     arguments = args
     # Retry only the failing fixtures if there is no existing filter specified.
-    if failed and not [a for a in args if a.startswith('--gtest_filter')]:
+    if (failed and ':'.join(failed) is not apptest and
+        not any(a.startswith('--gtest_filter') for a in args)):
       arguments += ['--gtest_filter=%s' % ':'.join(failed)]
     failed = _run_apptest(config, shell, arguments, apptest)[1]
     retry_count -= 1
@@ -76,26 +81,27 @@ def _run_apptest(config, shell, args, apptest):
   start_time = time.time()
 
   try:
-    output = _run_test_with_xvfb(config, shell, args, apptest)
+    out = _run_test_with_xvfb(config, shell, args, apptest)
   except Exception as e:
-    _print_exception(command, e)
+    _print_exception(command, e, int(round(1000 * (time.time() - start_time))))
     return ([apptest], [apptest])
 
   # Find all fixtures begun from gtest's '[ RUN      ] <Suite.Fixture>' output.
-  tests = [x for x in output.split('\n') if x.find('[ RUN      ] ') != -1]
+  tests = [x for x in out.split('\n') if x.find('[ RUN      ] ') != -1]
   tests = [x.strip(' \t\n\r')[x.find('[ RUN      ] ') + 13:] for x in tests]
+  tests = tests or [apptest]
 
   # Fail on output with gtest's '[  FAILED  ]' or a lack of '[       OK ]'.
   # The latter check ensures failure on broken command lines, hung output, etc.
   # Check output instead of exit codes because mojo shell always exits with 0.
-  failed = [x for x in tests if (re.search('\[  FAILED  \].*' + x, output) or
-                                 not re.search('\[       OK \].*' + x, output))]
+  failed = [x for x in tests if (re.search('\[  FAILED  \].*' + x, out) or
+                                 not re.search('\[       OK \].*' + x, out))]
 
   ms = int(round(1000 * (time.time() - start_time)))
   if failed:
-    _print_exception(command, output, ms)
+    _print_exception(command, out, ms)
   else:
-    logging.getLogger().debug('Passed in %d ms with output:\n%s' % (ms, output))
+    logging.getLogger().debug('Passed (in %d ms) with output:\n%s' % (ms, out))
   return (tests, failed)
 
 
@@ -107,7 +113,7 @@ def _get_fixtures(config, shell, args, apptest):
   try:
     tests = _run_test_with_xvfb(config, shell, arguments, apptest)
     # Remove log lines from the output and ensure it matches known formatting.
-    # Ignore empty fixture lists when the commandline has a gtest filter flag.
+    # Ignore empty fixture lists when the command line has a gtest filter flag.
     tests = re.sub('^(\[|WARNING: linker:).*\n', '', tests, flags=re.MULTILINE)
     if (not re.match('^(\w*\.\r?\n(  \w*\r?\n)+)+', tests) and
         not [a for a in args if a.startswith('--gtest_filter')]):
@@ -182,27 +188,71 @@ def _run_test_with_xvfb(config, shell, args, apptest):
 # TODO(msw): Determine proper test timeout durations (starting small).
 def _run_test_with_timeout(config, shell, args, apptest, env, seconds=10):
   '''Run the test with a timeout; return the output or raise an exception.'''
+  if config.target_os == Config.OS_ANDROID:
+    return _run_test_with_timeout_on_android(shell, args, apptest, seconds)
+
+  output = ''
+  error = []
+  command = _build_command_line(config, args, apptest)
+  proc = subprocess42.Popen(command, detached=True, stdout=subprocess42.PIPE,
+                            stderr=subprocess42.STDOUT, env=env)
+  try:
+    output = proc.communicate(timeout=seconds)[0] or ''
+    if proc.duration() > seconds:
+      error.append('ERROR: Test timeout with duration: %s.' % proc.duration())
+      raise subprocess42.TimeoutExpired(proc.args, seconds, output, None)
+  except subprocess42.TimeoutExpired as e:
+    output = e.output or ''
+    logging.getLogger().debug('Terminating the test for timeout.')
+    error.append('ERROR: Test timeout after %d seconds.' % proc.duration())
+    proc.terminate()
+    try:
+      output += proc.communicate(timeout=30)[0] or ''
+    except subprocess42.TimeoutExpired as e:
+      output += e.output or ''
+      logging.getLogger().debug('Test termination failed; attempting to kill.')
+      proc.kill()
+    try:
+      output += proc.communicate(timeout=30)[0] or ''
+    except subprocess42.TimeoutExpired as e:
+      output += e.output or ''
+      logging.getLogger().debug('Failed to kill the test process!')
+
+  if proc.returncode:
+    error.append('ERROR: Test exited with code: %d.' % proc.returncode)
+  elif proc.returncode is None:
+    error.append('ERROR: Failed to kill the test process!')
+
+  if not output:
+    error.append('ERROR: Test exited with no output.')
+  elif output.startswith('This program contains tests'):
+    error.append('ERROR: GTest printed help; check the command line.')
+
+  if error:
+    raise Exception(output + '\n'.join(error))
+  return output
+
+
+def _run_test_with_timeout_on_android(shell, args, apptest, seconds):
+  '''Run the test with a timeout; return the output or raise an exception.'''
+  assert shell
   result = Queue.Queue()
-  thread = threading.Thread(target=_run_test,
-                            args=(config, shell, args, apptest, env, result))
+  thread = threading.Thread(target=_run_test_on_android,
+                            args=(shell, args, apptest, result))
   thread.start()
-  process_or_shell = result.get()
   thread.join(seconds)
   timeout_exception = ''
 
   if thread.is_alive():
-    timeout_exception = '\nError: Test timeout after %s seconds' % seconds
-    logging.getLogger().debug('Killing the runner or shell for timeout.')
-    try:
-      process_or_shell.kill()
-    except OSError:
-      pass  # The process may have ended after checking |is_alive|.
+    timeout_exception = '\nERROR: Test timeout after %d seconds.' % seconds
+    logging.getLogger().debug('Killing the Android shell for timeout.')
+    shell.kill()
+    thread.join(seconds)
 
-  thread.join(seconds)
   if thread.is_alive():
-    raise Exception('Error: Test hung and could not be killed!')
+    raise Exception('ERROR: Failed to kill the test process!')
   if result.empty():
-    raise Exception('Error: Test exited with no output.')
+    raise Exception('ERROR: Test exited with no output.')
   (output, exception) = result.get()
   exception += timeout_exception
   if exception:
@@ -210,33 +260,17 @@ def _run_test_with_timeout(config, shell, args, apptest, env, seconds=10):
   return output
 
 
-def _run_test(config, shell, args, apptest, env, result):
-  '''Run the test; put the shell/proc, output, and any exception in |result|.'''
+def _run_test_on_android(shell, args, apptest, result):
+  '''Run the test on Android; put output and any exception in |result|.'''
   output = ''
   exception = ''
   try:
-    if config.target_os != Config.OS_ANDROID:
-      command = _build_command_line(config, args, apptest)
-      process = subprocess.Popen(command, stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, env=env)
-      result.put(process)
-      (output, stderr_output) = process.communicate()
-      if process.returncode:
-        exception = 'Error: Test exited with code: %d\n%s' % (
-            process.returncode, stderr_output)
-      elif config.is_verbose:
-        output += '\n' + stderr_output
-      if output.startswith('This program contains tests'):
-        exception = 'Error: GTest printed help; check command line flags.'
-    else:
-      assert shell
-      result.put(shell)
-      (r, w) = os.pipe()
-      with os.fdopen(r, 'r') as rf:
-        with os.fdopen(w, 'w') as wf:
-          arguments = args + [apptest]
-          shell.StartActivity('MojoShellActivity', arguments, wf, wf.close)
-          output = rf.read()
+    (r, w) = os.pipe()
+    with os.fdopen(r, 'r') as rf:
+      with os.fdopen(w, 'w') as wf:
+        arguments = args + [apptest]
+        shell.StartActivity('MojoShellActivity', arguments, wf, wf.close)
+        output = rf.read()
   except Exception as e:
     output += (e.output + '\n') if hasattr(e, 'output') else ''
     exception += str(e)

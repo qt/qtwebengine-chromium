@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutPart.h"
 
 #include "core/dom/AXObjectCache.h"
@@ -267,7 +266,7 @@ void LayoutPart::updateOnWidgetChange()
         return;
 
     if (!needsLayout())
-        updateWidgetGeometry();
+        updateWidgetGeometryInternal();
 
     if (style()->visibility() != VISIBLE) {
         widget->hide();
@@ -278,13 +277,13 @@ void LayoutPart::updateOnWidgetChange()
     }
 }
 
-void LayoutPart::updateWidgetPosition()
+void LayoutPart::updateWidgetGeometry()
 {
     Widget* widget = this->widget();
     if (!widget || !node()) // Check the node in case destroy() has been called.
         return;
 
-    bool boundsChanged = updateWidgetGeometry();
+    bool boundsChanged = updateWidgetGeometryInternal();
 
     // If the frame bounds got changed, or if view needs layout (possibly indicating
     // content size is wrong) we have to do a layout to set the right widget size.
@@ -294,17 +293,11 @@ void LayoutPart::updateWidgetPosition()
         if ((boundsChanged || frameView->needsLayout()) && frameView->frame().page())
             frameView->layout();
     }
+
+    widget->widgetGeometryMayHaveChanged();
 }
 
-void LayoutPart::widgetPositionsUpdated()
-{
-    Widget* widget = this->widget();
-    if (!widget)
-        return;
-    widget->widgetPositionsUpdated();
-}
-
-bool LayoutPart::updateWidgetGeometry()
+bool LayoutPart::updateWidgetGeometryInternal()
 {
     Widget* widget = this->widget();
     ASSERT(widget);
@@ -315,7 +308,7 @@ bool LayoutPart::updateWidgetGeometry()
         contentBox.setLocation(absoluteContentBox.location());
         return setWidgetGeometry(contentBox);
     }
-
+    // TODO(chrishtr): why are these widgets using an absolute rect for their frameRect?
     return setWidgetGeometry(absoluteContentBox);
 }
 
@@ -350,11 +343,24 @@ void LayoutPart::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& paint
 {
     if (widget() && widget()->isFrameView()) {
         FrameView* childFrameView = toFrameView(widget());
-        PaintInvalidationState childViewPaintInvalidationState(*childFrameView->layoutView(), paintInvalidationState);
-        toFrameView(widget())->invalidateTreeIfNeeded(childViewPaintInvalidationState);
+        // |childFrameView| is in another document, which could be
+        // missing its LayoutView. TODO(jchaffraix): Ideally we should
+        // not need this code.
+        if (LayoutView* childLayoutView = childFrameView->layoutView()) {
+            PaintInvalidationState childViewPaintInvalidationState(*childLayoutView, paintInvalidationState);
+            childFrameView->invalidateTreeIfNeeded(childViewPaintInvalidationState);
+        }
     }
 
     LayoutReplaced::invalidatePaintOfSubtreesIfNeeded(paintInvalidationState);
+}
+
+bool LayoutPart::isThrottledFrameView() const
+{
+    if (!widget() || !widget()->isFrameView())
+        return false;
+    const FrameView* frameView = toFrameView(widget());
+    return frameView->shouldThrottleRendering();
 }
 
 }

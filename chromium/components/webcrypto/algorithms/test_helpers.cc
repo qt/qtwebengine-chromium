@@ -4,14 +4,17 @@
 
 #include "components/webcrypto/algorithms/test_helpers.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
+#include "base/base64url.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/path_service.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -23,9 +26,20 @@
 #include "components/webcrypto/status.h"
 #include "third_party/WebKit/public/platform/WebCryptoAlgorithmParams.h"
 #include "third_party/WebKit/public/platform/WebCryptoKeyAlgorithm.h"
-#include "third_party/re2/re2/re2.h"
+#include "third_party/re2/src/re2/re2.h"
 
 namespace webcrypto {
+
+namespace {
+
+bool Base64DecodeUrlSafe(const std::string& input, std::string* output) {
+  // The JSON web signature spec says that padding is omitted.
+  // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-36#section-2
+  return base::Base64UrlDecode(
+      input, base::Base64UrlDecodePolicy::DISALLOW_PADDING, output);
+}
+
+}  // namespace
 
 // static
 void WebCryptoTestBase::SetUpTestCase() {
@@ -98,10 +112,10 @@ blink::WebCryptoAlgorithm CreateRsaHashedKeyGenAlgorithm(
     const std::vector<uint8_t>& public_exponent) {
   DCHECK(blink::WebCryptoAlgorithm::isHash(hash_id));
   return blink::WebCryptoAlgorithm::adoptParamsAndCreate(
-      algorithm_id, new blink::WebCryptoRsaHashedKeyGenParams(
-                        CreateAlgorithm(hash_id), modulus_length,
-                        vector_as_array(&public_exponent),
-                        static_cast<unsigned int>(public_exponent.size())));
+      algorithm_id,
+      new blink::WebCryptoRsaHashedKeyGenParams(
+          CreateAlgorithm(hash_id), modulus_length, public_exponent.data(),
+          static_cast<unsigned int>(public_exponent.size())));
 }
 
 std::vector<uint8_t> Corrupted(const std::vector<uint8_t>& input) {
@@ -376,8 +390,8 @@ Status ImportKeyJwkFromDict(const base::DictionaryValue& dict,
 
 scoped_ptr<base::DictionaryValue> GetJwkDictionary(
     const std::vector<uint8_t>& json) {
-  base::StringPiece json_string(
-      reinterpret_cast<const char*>(vector_as_array(&json)), json.size());
+  base::StringPiece json_string(reinterpret_cast<const char*>(json.data()),
+                                json.size());
   scoped_ptr<base::Value> value = base::JSONReader::Read(json_string);
   EXPECT_TRUE(value.get());
   EXPECT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));

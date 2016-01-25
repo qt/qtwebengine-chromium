@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 
 #include "core/css/CSSSelector.h"
@@ -42,7 +41,7 @@ void SelectRuleFeatureSet::collectFeaturesFromSelectorList(const CSSSelectorList
 {
     for (const CSSSelector* selector = list.first(); selector; selector = CSSSelectorList::next(*selector)) {
         for (const CSSSelector* component = selector; component; component = component->tagHistory()) {
-            if (invalidationSetForSelector(*component))
+            if (invalidationSetForSelector(*component, InvalidateDescendants))
                 continue;
 
             if (component->selectorList())

@@ -4,6 +4,9 @@
 
 #include "gpu/command_buffer/client/mapped_memory.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <algorithm>
 #include <functional>
 
@@ -25,7 +28,7 @@ base::StaticAtomicSequenceNumber g_next_mapped_memory_manager_tracing_id;
 
 }  // namespace
 
-MemoryChunk::MemoryChunk(int32 shm_id,
+MemoryChunk::MemoryChunk(int32_t shm_id,
                          scoped_refptr<gpu::Buffer> shm,
                          CommandBufferHelper* helper)
     : shm_id_(shm_id),
@@ -47,7 +50,7 @@ MappedMemoryManager::MappedMemoryManager(CommandBufferHelper* helper,
   // TODO(ericrk): Get this working in Android Webview. crbug.com/517156
   if (base::ThreadTaskRunnerHandle::IsSet()) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "gpu::MappedMemoryManager", base::ThreadTaskRunnerHandle::Get());
   }
 }
 
@@ -56,22 +59,20 @@ MappedMemoryManager::~MappedMemoryManager() {
       this);
 
   CommandBuffer* cmd_buf = helper_->command_buffer();
-  for (MemoryChunkVector::iterator iter = chunks_.begin();
-       iter != chunks_.end(); ++iter) {
-    MemoryChunk* chunk = *iter;
+  for (auto& chunk : chunks_) {
     cmd_buf->DestroyTransferBuffer(chunk->shm_id());
   }
 }
 
-void* MappedMemoryManager::Alloc(
-    unsigned int size, int32* shm_id, unsigned int* shm_offset) {
+void* MappedMemoryManager::Alloc(unsigned int size,
+                                 int32_t* shm_id,
+                                 unsigned int* shm_offset) {
   DCHECK(shm_id);
   DCHECK(shm_offset);
   if (size <= allocated_memory_) {
     size_t total_bytes_in_use = 0;
     // See if any of the chunks can satisfy this request.
-    for (size_t ii = 0; ii < chunks_.size(); ++ii) {
-      MemoryChunk* chunk = chunks_[ii];
+    for (auto& chunk : chunks_) {
       chunk->FreeUnused();
       total_bytes_in_use += chunk->bytes_in_use();
       if (chunk->GetLargestFreeSizeWithoutWaiting() >= size) {
@@ -89,8 +90,7 @@ void* MappedMemoryManager::Alloc(
     if (max_free_bytes_ != kNoLimit &&
         (allocated_memory_ - total_bytes_in_use) >= max_free_bytes_) {
       TRACE_EVENT0("gpu", "MappedMemoryManager::Alloc::wait");
-      for (size_t ii = 0; ii < chunks_.size(); ++ii) {
-        MemoryChunk* chunk = chunks_[ii];
+      for (auto& chunk : chunks_) {
         if (chunk->GetLargestFreeSizeWithWaiting() >= size) {
           void* mem = chunk->Alloc(size);
           DCHECK(mem);
@@ -112,7 +112,7 @@ void* MappedMemoryManager::Alloc(
   unsigned int chunk_size =
       ((size + chunk_size_multiple_ - 1) / chunk_size_multiple_) *
       chunk_size_multiple_;
-  int32 id = -1;
+  int32_t id = -1;
   scoped_refptr<gpu::Buffer> shm =
       cmd_buf->CreateTransferBuffer(chunk_size, &id);
   if (id  < 0)
@@ -120,7 +120,7 @@ void* MappedMemoryManager::Alloc(
   DCHECK(shm.get());
   MemoryChunk* mc = new MemoryChunk(id, shm, helper_);
   allocated_memory_ += mc->GetSize();
-  chunks_.push_back(mc);
+  chunks_.push_back(make_scoped_ptr(mc));
   void* mem = mc->Alloc(size);
   DCHECK(mem);
   *shm_id = mc->shm_id();
@@ -129,8 +129,7 @@ void* MappedMemoryManager::Alloc(
 }
 
 void MappedMemoryManager::Free(void* pointer) {
-  for (size_t ii = 0; ii < chunks_.size(); ++ii) {
-    MemoryChunk* chunk = chunks_[ii];
+  for (auto& chunk : chunks_) {
     if (chunk->IsInChunk(pointer)) {
       chunk->Free(pointer);
       return;
@@ -139,9 +138,8 @@ void MappedMemoryManager::Free(void* pointer) {
   NOTREACHED();
 }
 
-void MappedMemoryManager::FreePendingToken(void* pointer, int32 token) {
-  for (size_t ii = 0; ii < chunks_.size(); ++ii) {
-    MemoryChunk* chunk = chunks_[ii];
+void MappedMemoryManager::FreePendingToken(void* pointer, int32_t token) {
+  for (auto& chunk : chunks_) {
     if (chunk->IsInChunk(pointer)) {
       chunk->FreePendingToken(pointer, token);
       return;
@@ -154,7 +152,7 @@ void MappedMemoryManager::FreeUnused() {
   CommandBuffer* cmd_buf = helper_->command_buffer();
   MemoryChunkVector::iterator iter = chunks_.begin();
   while (iter != chunks_.end()) {
-    MemoryChunk* chunk = *iter;
+    MemoryChunk* chunk = (*iter).get();
     chunk->FreeUnused();
     if (!chunk->InUse()) {
       cmd_buf->DestroyTransferBuffer(chunk->shm_id());
@@ -169,7 +167,7 @@ void MappedMemoryManager::FreeUnused() {
 bool MappedMemoryManager::OnMemoryDump(
     const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
-  const uint64 tracing_process_id =
+  const uint64_t tracing_process_id =
       base::trace_event::MemoryDumpManager::GetInstance()
           ->GetTracingProcessId();
 

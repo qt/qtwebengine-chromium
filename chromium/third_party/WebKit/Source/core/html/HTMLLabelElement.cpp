@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLLabelElement.h"
 
 #include "core/HTMLNames.h"
@@ -33,8 +32,10 @@
 #include "core/editing/SelectionController.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/FormAssociatedElement.h"
 #include "core/input/EventHandler.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
 
@@ -51,12 +52,6 @@ PassRefPtrWillBeRawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& docu
 {
     RefPtrWillBeRawPtr<HTMLLabelElement> labelElement = adoptRefWillBeNoop(new HTMLLabelElement(document, form));
     return labelElement.release();
-}
-
-bool HTMLLabelElement::layoutObjectIsFocusable() const
-{
-    HTMLLabelElement* that = const_cast<HTMLLabelElement*>(this);
-    return that->isContentEditable();
 }
 
 LabelableElement* HTMLLabelElement::control() const
@@ -162,7 +157,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             if (LocalFrame* frame = document().frame()) {
                 // Check if there is a selection and click is not on the
                 // selection.
-                if (!nodeIsUserSelectNone(this) && frame->selection().isRange() && !frame->eventHandler().selectionController().mouseDownWasSingleClickInSelection())
+                if (layoutObject() && layoutObject()->isSelectable() && frame->selection().isRange() && !frame->eventHandler().selectionController().mouseDownWasSingleClickInSelection())
                     isLabelTextSelected = true;
                 // If selection is there and is single click i.e. text is
                 // selected by dragging over label text, then return.
@@ -184,7 +179,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             // In case of double click or triple click, selection will be there,
             // so do not focus the control element.
             if (!isLabelTextSelected)
-                element->focus(true, WebFocusTypeMouse);
+                element->focus(FocusParams(SelectionBehaviorOnFocus::Restore, WebFocusTypeMouse, nullptr));
         }
 
         // Click the corresponding control.
@@ -206,13 +201,15 @@ bool HTMLLabelElement::willRespondToMouseClickEvents()
     return HTMLElement::willRespondToMouseClickEvents();
 }
 
-void HTMLLabelElement::focus(bool, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
+void HTMLLabelElement::focus(const FocusParams& params)
 {
-    // to match other browsers, always restore previous selection
+    if (isFocusable()) {
+        HTMLElement::focus(params);
+        return;
+    }
+    // To match other browsers, always restore previous selection.
     if (HTMLElement* element = control())
-        element->focus(true, type, sourceCapabilities);
-    if (isFocusable())
-        HTMLElement::focus(true, type, sourceCapabilities);
+        element->focus(FocusParams(SelectionBehaviorOnFocus::Restore, params.type, params.sourceCapabilities));
 }
 
 void HTMLLabelElement::accessKeyAction(bool sendMouseEvents)
@@ -235,16 +232,6 @@ void HTMLLabelElement::updateLabel(TreeScope& scope, const AtomicString& oldForA
         scope.removeLabel(oldForAttributeValue, this);
     if (!newForAttributeValue.isEmpty())
         scope.addLabel(newForAttributeValue, this);
-}
-
-void HTMLLabelElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == HTMLNames::forAttr) {
-        TreeScope& scope = treeScope();
-        if (scope.shouldCacheLabelsByForAttribute())
-            updateLabel(scope, oldValue, newValue);
-    }
-    HTMLElement::attributeWillChange(name, oldValue, newValue);
 }
 
 Node::InsertionNotificationRequest HTMLLabelElement::insertedInto(ContainerNode* insertionPoint)
@@ -282,12 +269,19 @@ DEFINE_TRACE(HTMLLabelElement)
     FormAssociatedElement::trace(visitor);
 }
 
-void HTMLLabelElement::parseAttribute(const QualifiedName& attributeName, const AtomicString& attributeValue)
+void HTMLLabelElement::parseAttribute(const QualifiedName& attributeName, const AtomicString& oldValue, const AtomicString& attributeValue)
 {
-    if (attributeName == formAttr)
+    if (attributeName == formAttr) {
         formAttributeChanged();
-    else
-        HTMLElement::parseAttribute(attributeName, attributeValue);
+        UseCounter::count(document(), UseCounter::HTMLLabelElementFormContentAttribute);
+    } else {
+        if (attributeName == forAttr) {
+            TreeScope& scope = treeScope();
+            if (scope.shouldCacheLabelsByForAttribute())
+                updateLabel(scope, oldValue, attributeValue);
+        }
+        HTMLElement::parseAttribute(attributeName, oldValue, attributeValue);
+    }
 }
 
 } // namespace

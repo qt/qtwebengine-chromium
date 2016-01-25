@@ -25,17 +25,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/weborigin/KURL.h"
 
 #include "platform/weborigin/KnownPorts.h"
+#include "url/url_util.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/StringUTF8Adaptor.h"
 #include "wtf/text/TextEncoding.h"
 #include <algorithm>
-#include <url/url_util.h>
 #ifndef NDEBUG
 #include <stdio.h>
 #endif
@@ -94,6 +93,7 @@ static bool isUnicodeEncoding(const WTF::TextEncoding* encoding)
 namespace {
 
 class KURLCharsetConverter final : public url::CharsetConverter {
+    DISALLOW_NEW();
 public:
     // The encoding parameter may be 0, but in this case the object must not be called.
     explicit KURLCharsetConverter(const WTF::TextEncoding* encoding)
@@ -101,9 +101,9 @@ public:
     {
     }
 
-    void ConvertFromUTF16(const url::UTF16Char* input, int inputLength, url::CanonOutput* output) override
+    void ConvertFromUTF16(const base::char16* input, int inputLength, url::CanonOutput* output) override
     {
-        CString encoded = m_encoding->normalizeAndEncode(String(input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
+        CString encoded = m_encoding->encode(String(input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
         output->Append(encoded.data(), static_cast<int>(encoded.length()));
     }
 
@@ -184,6 +184,17 @@ const KURL& blankURL()
 bool KURL::isAboutBlankURL() const
 {
     return *this == blankURL();
+}
+
+const KURL& srcdocURL()
+{
+    DEFINE_STATIC_LOCAL(KURL, staticSrcdocURL, (ParsedURLString, "about:srcdoc"));
+    return staticSrcdocURL;
+}
+
+bool KURL::isAboutSrcdocURL() const
+{
+    return *this == srcdocURL();
 }
 
 String KURL::elidedString() const
@@ -665,14 +676,14 @@ String decodeURLEscapeSequences(const String& string, const WTF::TextEncoding& e
     // sucks, and we don't use the encoding properly, which will make some
     // obscure anchor navigations fail.
     StringUTF8Adaptor stringUTF8(string);
-    url::RawCanonOutputT<url::UTF16Char> unescaped;
+    url::RawCanonOutputT<base::char16> unescaped;
     url::DecodeURLEscapeSequences(stringUTF8.data(), stringUTF8.length(), &unescaped);
     return StringImpl::create8BitIfPossible(reinterpret_cast<UChar*>(unescaped.data()), unescaped.length());
 }
 
 String encodeWithURLEscapeSequences(const String& notEncodedString)
 {
-    CString utf8 = UTF8Encoding().normalizeAndEncode(notEncodedString, WTF::URLEncodedEntitiesForUnencodables);
+    CString utf8 = UTF8Encoding().encode(notEncodedString, WTF::URLEncodedEntitiesForUnencodables);
 
     url::RawCanonOutputT<char> buffer;
     int inputLength = utf8.length();

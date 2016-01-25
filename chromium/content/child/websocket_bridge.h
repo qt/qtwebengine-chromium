@@ -5,15 +5,15 @@
 #ifndef CONTENT_CHILD_WEBSOCKET_BRIDGE_H_
 #define CONTENT_CHILD_WEBSOCKET_BRIDGE_H_
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "content/common/websocket.h"
 #include "ipc/ipc_message.h"
-#include "third_party/WebKit/public/platform/WebSocketHandle.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/platform/modules/websockets/WebSocketHandle.h"
 
 namespace blink {
 class WebSecurityOrigin;

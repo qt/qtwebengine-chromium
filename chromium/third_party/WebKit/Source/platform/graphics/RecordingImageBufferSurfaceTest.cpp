@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/RecordingImageBufferSurface.h"
 
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageBufferClient.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
+#include "platform/testing/TestingPlatformSupport.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 
 using testing::Test;
 
@@ -236,37 +236,32 @@ namespace {
 // for the current thread. The Mock thread is capable of queuing a single non-delayed task
 // and registering a single task observer. The run loop exits immediately after running
 // the single task.
-class AutoInstallCurrentThreadPlatformMock {
+
+class CurrentThreadPlatformMock : public TestingPlatformSupport {
 public:
-    AutoInstallCurrentThreadPlatformMock()
-    {
-        m_oldPlatform = Platform::current();
-        Platform::initialize(&m_mockPlatform);
-    }
+    CurrentThreadPlatformMock() { }
+    WebThread* currentThread() override { return &m_currentThread; }
 
-    ~AutoInstallCurrentThreadPlatformMock()
-    {
-        Platform::initialize(m_oldPlatform);
-    }
-
-    void enterRunLoop()
-    {
-        m_mockPlatform.enterRunLoop();
-    }
-
+    void enterRunLoop() { m_currentThread.enterRunLoop(); }
 private:
     class MockWebTaskRunner : public WebTaskRunner {
     public:
         MockWebTaskRunner() : m_task(0) { }
         ~MockWebTaskRunner() override { }
 
-        virtual void postTask(const WebTraceLocation&, Task* task)
+        void postTask(const WebTraceLocation&, Task* task) override
         {
             EXPECT_EQ((Task*)0, m_task);
             m_task = task;
         }
 
         void postDelayedTask(const WebTraceLocation&, Task*, double delayMs) override { ASSERT_NOT_REACHED(); };
+
+        WebTaskRunner* clone() override
+        {
+            ASSERT_NOT_REACHED();
+            return nullptr;
+        }
 
         Task* m_task;
     };
@@ -329,19 +324,7 @@ private:
         TaskObserver* m_taskObserver;
     };
 
-    class CurrentThreadPlatformMock : public Platform {
-    public:
-        CurrentThreadPlatformMock() { }
-        virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) { ASSERT_NOT_REACHED(); }
-        WebThread* currentThread() override { return &m_currentThread; }
-
-        void enterRunLoop() { m_currentThread.enterRunLoop(); }
-    private:
-        CurrentThreadMock m_currentThread;
-    };
-
-    CurrentThreadPlatformMock m_mockPlatform;
-    Platform* m_oldPlatform;
+    CurrentThreadMock m_currentThread;
 };
 
 } // anonymous namespace
@@ -357,8 +340,8 @@ class TestWrapperTask_ ## TEST_METHOD : public WebTaskRunner::Task {            
 
 #define CALL_TEST_TASK_WRAPPER(TEST_METHOD)                                                               \
     {                                                                                                     \
-        AutoInstallCurrentThreadPlatformMock ctpm;                                                        \
-        Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new TestWrapperTask_ ## TEST_METHOD(this)); \
+        CurrentThreadPlatformMock ctpm;                                                                   \
+        Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new TestWrapperTask_ ## TEST_METHOD(this)); \
         ctpm.enterRunLoop();                                      \
     }
 

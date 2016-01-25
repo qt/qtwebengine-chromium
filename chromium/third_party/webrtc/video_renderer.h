@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_RENDERER_H_
-#define WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_RENDERER_H_
+#ifndef WEBRTC_VIDEO_RENDERER_H_
+#define WEBRTC_VIDEO_RENDERER_H_
 
 namespace webrtc {
 
@@ -25,9 +25,14 @@ class VideoRenderer {
 
   virtual bool IsTextureSupported() const = 0;
 
+  // This function returns true if WebRTC should not delay frames for
+  // smoothness. In general, this case means the renderer can schedule frames to
+  // optimize smoothness.
+  virtual bool SmoothsRenderedFrames() const { return false; }
+
  protected:
   virtual ~VideoRenderer() {}
 };
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_RENDERER_H_
+#endif  // WEBRTC_VIDEO_RENDERER_H_

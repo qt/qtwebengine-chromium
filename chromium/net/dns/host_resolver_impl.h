@@ -5,11 +5,13 @@
 #ifndef NET_DNS_HOST_RESOLVER_IMPL_H_
 #define NET_DNS_HOST_RESOLVER_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
@@ -93,7 +95,7 @@ class NET_EXPORT HostResolverImpl
     base::TimeDelta unresponsive_delay;
 
     // Factor to grow |unresponsive_delay| when we re-re-try.
-    uint32 retry_factor;
+    uint32_t retry_factor;
   };
 
   // Creates a HostResolver as specified by |options|.
@@ -136,7 +138,7 @@ class NET_EXPORT HostResolverImpl
   void CancelRequest(RequestHandle req) override;
   void SetDnsClientEnabled(bool enabled) override;
   HostCache* GetHostCache() override;
-  base::Value* GetDnsConfigAsValue() const override;
+  scoped_ptr<base::Value> GetDnsConfigAsValue() const override;
 
   void set_proc_params_for_test(const ProcTaskParams& proc_params) {
     proc_params_ = proc_params;
@@ -151,7 +153,6 @@ class NET_EXPORT HostResolverImpl
   class Request;
   typedef HostCache::Key Key;
   typedef std::map<Key, Job*> JobMap;
-  typedef ScopedVector<Request> RequestsList;
 
   // Number of consecutive failures of DnsTask (with successful fallback to
   // ProcTask) before the DnsClient is disabled until the next DNS change.

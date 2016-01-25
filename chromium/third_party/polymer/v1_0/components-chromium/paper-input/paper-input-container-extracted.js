@@ -1,5 +1,4 @@
-
-  Polymer({
+Polymer({
     is: 'paper-input-container',
 
     properties: {
@@ -234,21 +233,19 @@
 
         if (alwaysFloatLabel || _inputHasContent) {
           cls += ' label-is-floating';
+          // If the label is floating, ignore any offsets that may have been
+          // applied from a prefix element.
+          this.$.labelAndInputContainer.style.position = 'static';
+
           if (invalid) {
             cls += ' is-invalid';
           } else if (focused) {
             cls += " label-is-highlighted";
           }
-          // The label might have a horizontal offset if a prefix element exists
-          // which needs to be undone when displayed as a floating label.
-          if (Polymer.dom(this.$.prefix).getDistributedNodes().length > 0 &&
-              label && label.offsetParent) {
-            label.style.left = -label.offsetParent.offsetLeft + 'px';
-          }
         } else {
           // When the label is not floating, it should overlap the input element.
           if (label) {
-            label.style.left = 0;
+            this.$.labelAndInputContainer.style.position = 'relative';
           }
         }
       } else {

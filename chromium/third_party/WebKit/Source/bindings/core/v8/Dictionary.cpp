@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/Dictionary.h"
 
 #include "bindings/core/v8/ArrayValue.h"
@@ -46,7 +45,7 @@ namespace blink {
 
 static ExceptionState& emptyExceptionState()
 {
-    AtomicallyInitializedStaticReference(WTF::ThreadSpecific<NonThrowableExceptionState>, exceptionState, new ThreadSpecific<NonThrowableExceptionState>);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(WTF::ThreadSpecific<NonThrowableExceptionState>, exceptionState, new ThreadSpecific<NonThrowableExceptionState>);
     return *exceptionState;
 }
 

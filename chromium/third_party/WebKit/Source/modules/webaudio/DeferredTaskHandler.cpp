@@ -22,12 +22,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DeferredTaskHandler.h"
-
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioNodeOutput.h"
+#include "modules/webaudio/OfflineAudioContext.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "public/platform/Platform.h"
 #include "wtf/MainThread.h"
@@ -37,7 +35,7 @@ namespace blink {
 void DeferredTaskHandler::lock()
 {
     // Don't allow regular lock in real-time audio thread.
-    ASSERT(isMainThread());
+    ASSERT(!isAudioThread());
     m_contextGraphMutex.lock();
 }
 
@@ -58,6 +56,17 @@ bool DeferredTaskHandler::tryLock()
 void DeferredTaskHandler::unlock()
 {
     m_contextGraphMutex.unlock();
+}
+
+void DeferredTaskHandler::offlineLock()
+{
+    // RELEASE_ASSERT is here to make sure to explicitly crash if this is called
+    // from other than the offline render thread, which is considered as the
+    // audio thread in OfflineAudioContext.
+    RELEASE_ASSERT_WITH_MESSAGE(isAudioThread(),
+        "DeferredTaskHandler::offlineLock() must be called within the offline audio thread.");
+
+    m_contextGraphMutex.lock();
 }
 
 #if ENABLE(ASSERT)
@@ -232,6 +241,12 @@ DeferredTaskHandler::AutoLocker::AutoLocker(AbstractAudioContext* context)
     m_handler.lock();
 }
 
+DeferredTaskHandler::OfflineGraphAutoLocker::OfflineGraphAutoLocker(OfflineAudioContext* context)
+    : m_handler(context->deferredTaskHandler())
+{
+    m_handler.offlineLock();
+}
+
 void DeferredTaskHandler::addRenderingOrphanHandler(PassRefPtr<AudioHandler> handler)
 {
     ASSERT(handler);
@@ -247,7 +262,7 @@ void DeferredTaskHandler::requestToDeleteHandlersOnMainThread()
         return;
     m_deletableOrphanHandlers.appendVector(m_renderingOrphanHandlers);
     m_renderingOrphanHandlers.clear();
-    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&DeferredTaskHandler::deleteHandlersOnMainThread, PassRefPtr<DeferredTaskHandler>(this)));
+    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&DeferredTaskHandler::deleteHandlersOnMainThread, PassRefPtr<DeferredTaskHandler>(this)));
 }
 
 void DeferredTaskHandler::deleteHandlersOnMainThread()
@@ -267,4 +282,3 @@ void DeferredTaskHandler::clearHandlersToBeDeleted()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AnalyserNode.h"
-
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -199,4 +196,3 @@ void AnalyserNode::getByteTimeDomainData(DOMUint8Array* array)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

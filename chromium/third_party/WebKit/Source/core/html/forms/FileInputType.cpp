@@ -19,7 +19,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/forms/FileInputType.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -242,12 +241,8 @@ FileList* FileInputType::createFileList(const Vector<FileChooserFileInfo>& files
 
 void FileInputType::countUsage()
 {
-    // It is required by isSecureContext() but isn't
-    // actually used. This could be used later if a warning is shown in the
-    // developer console.
-    String insecureOriginMsg;
     Document* document = &element().document();
-    if (document->isSecureContext(insecureOriginMsg))
+    if (document->isSecureContext())
         UseCounter::count(*document, UseCounter::InputTypeFileInsecureOrigin);
     else
         UseCounter::count(*document, UseCounter::InputTypeFileSecureOrigin);

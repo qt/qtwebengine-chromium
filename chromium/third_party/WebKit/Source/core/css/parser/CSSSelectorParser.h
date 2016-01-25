@@ -19,7 +19,7 @@ class StyleSheetContents;
 class CORE_EXPORT CSSSelectorParser {
     STACK_ALLOCATED();
 public:
-    static void parseSelector(CSSParserTokenRange, const CSSParserContext&, StyleSheetContents*, CSSSelectorList&);
+    static CSSSelectorList parseSelector(CSSParserTokenRange, const CSSParserContext&, StyleSheetContents*);
 
     static bool consumeANPlusB(CSSParserTokenRange&, std::pair<int, int>&);
 
@@ -28,8 +28,8 @@ private:
 
     // These will all consume trailing comments if successful
 
-    void consumeComplexSelectorList(CSSParserTokenRange&, CSSSelectorList&);
-    void consumeCompoundSelectorList(CSSParserTokenRange&, CSSSelectorList&);
+    CSSSelectorList consumeComplexSelectorList(CSSParserTokenRange&);
+    CSSSelectorList consumeCompoundSelectorList(CSSParserTokenRange&);
 
     PassOwnPtr<CSSParserSelector> consumeComplexSelector(CSSParserTokenRange&);
     PassOwnPtr<CSSParserSelector> consumeCompoundSelector(CSSParserTokenRange&);
@@ -51,14 +51,34 @@ private:
     const AtomicString& defaultNamespace() const;
     const AtomicString& determineNamespace(const AtomicString& prefix);
     void prependTypeSelectorIfNeeded(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector*);
-    void rewriteSpecifiersWithElementNameForCustomPseudoElement(const QualifiedName& tag, CSSParserSelector*, bool tagIsImplicit);
-    void rewriteSpecifiersWithElementNameForContentPseudoElement(const QualifiedName& tag, CSSParserSelector*, bool tagIsImplicit);
     static PassOwnPtr<CSSParserSelector> addSimpleSelectorToCompound(PassOwnPtr<CSSParserSelector> compoundSelector, PassOwnPtr<CSSParserSelector> simpleSelector);
+    static PassOwnPtr<CSSParserSelector> splitCompoundAtImplicitShadowCrossingCombinator(PassOwnPtr<CSSParserSelector> compoundSelector);
 
     const CSSParserContext& m_context;
     RawPtrWillBeMember<StyleSheetContents> m_styleSheet; // FIXME: Should be const
 
-    bool m_failedParsing;
+    bool m_failedParsing = false;
+    bool m_disallowPseudoElements = false;
+
+    class DisallowPseudoElementsScope {
+        STACK_ALLOCATED();
+        WTF_MAKE_NONCOPYABLE(DisallowPseudoElementsScope);
+    public:
+        DisallowPseudoElementsScope(CSSSelectorParser* parser)
+            : m_parser(parser), m_wasDisallowed(m_parser->m_disallowPseudoElements)
+        {
+            m_parser->m_disallowPseudoElements = true;
+        }
+
+        ~DisallowPseudoElementsScope()
+        {
+            m_parser->m_disallowPseudoElements = m_wasDisallowed;
+        }
+
+    private:
+        CSSSelectorParser* m_parser;
+        bool m_wasDisallowed;
+    };
 };
 
 } // namespace

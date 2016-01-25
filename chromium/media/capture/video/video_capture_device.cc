@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/i18n/timezone.h"
+#include "base/macros.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "media/base/media_switches.h"
 
 namespace media {
@@ -145,10 +147,11 @@ VideoCaptureDevice::Client::Buffer::~Buffer() {
 VideoCaptureDevice::~VideoCaptureDevice() {
 }
 
-int VideoCaptureDevice::GetPowerLineFrequencyForLocation() const {
-  std::string current_country = base::CountryCodeForCurrentTimezone();
+PowerLineFrequency VideoCaptureDevice::GetPowerLineFrequencyForLocation()
+    const {
+  const std::string current_country = base::CountryCodeForCurrentTimezone();
   if (current_country.empty())
-    return 0;
+    return PowerLineFrequency::FREQUENCY_DEFAULT;
   // Sorted out list of countries with 60Hz power line frequency, from
   // http://en.wikipedia.org/wiki/Mains_electricity_by_country
   const char* countries_using_60Hz[] = {
@@ -160,17 +163,17 @@ int VideoCaptureDevice::GetPowerLineFrequencyForLocation() const {
       countries_using_60Hz + arraysize(countries_using_60Hz);
   if (std::find(countries_using_60Hz, countries_using_60Hz_end,
                 current_country) == countries_using_60Hz_end) {
-    return static_cast<int>(media::PowerLineFrequency::FREQUENCY_50HZ);
+    return media::PowerLineFrequency::FREQUENCY_50HZ;
   }
-  return static_cast<int>(media::PowerLineFrequency::FREQUENCY_60HZ);
+  return media::PowerLineFrequency::FREQUENCY_60HZ;
 }
 
-int VideoCaptureDevice::GetPowerLineFrequency(
+PowerLineFrequency VideoCaptureDevice::GetPowerLineFrequency(
     const VideoCaptureParams& params) const {
   switch (params.power_line_frequency) {
     case media::PowerLineFrequency::FREQUENCY_50HZ:  // fall through
     case media::PowerLineFrequency::FREQUENCY_60HZ:
-      return static_cast<int>(params.power_line_frequency);
+      return params.power_line_frequency;
     default:
       return GetPowerLineFrequencyForLocation();
   }

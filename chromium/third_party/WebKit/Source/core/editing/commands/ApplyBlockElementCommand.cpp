@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/ApplyBlockElementCommand.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -114,7 +113,7 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
     if (isAtUnsplittableElement(start)) {
         RefPtrWillBeRawPtr<HTMLElement> blockquote = createBlockElement();
         insertNodeAt(blockquote, start);
-        RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBreakElement(document());
+        RefPtrWillBeRawPtr<HTMLBRElement> placeholder = HTMLBRElement::create(document());
         appendNode(placeholder, blockquote);
         setEndingSelection(VisibleSelection(positionBeforeNode(placeholder.get()), TextAffinity::Downstream, endingSelection().isDirectional()));
         return;

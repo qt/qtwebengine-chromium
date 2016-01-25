@@ -8,18 +8,17 @@
         },
         {
             "type": "context-menu-item",
-            "location": "mainMenu/navigate",
+            "location": "mainMenu/tools/open",
+            "order": 50,
             "actionId": "devices.dialog.show"
         }
     ],
     "dependencies": ["platform", "ui", "host", "components"],
-    "experiment": "inspectDevicesDialog",
     "scripts": [
         "DevicesView.js",
         "DevicesDialog.js"
     ],
     "resources": [
-        "devicesView.css",
-        "sidebar.css"
+        "devicesView.css"
     ]
 }

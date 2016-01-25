@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "platform/graphics/filters/FEFlood.h"
 
 #include "SkColorFilter.h"
@@ -70,11 +69,11 @@ bool FEFlood::setFloodOpacity(float floodOpacity)
     return true;
 }
 
-PassRefPtr<SkImageFilter> FEFlood::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEFlood::createImageFilter(SkiaImageFilterBuilder& builder)
 {
     Color color = floodColor().combineWithAlpha(floodOpacity());
 
-    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder.cropOffset());
     SkAutoTUnref<SkColorFilter> cf(SkColorFilter::CreateModeFilter(color.rgb(), SkXfermode::kSrc_Mode));
     return adoptRef(SkColorFilterImageFilter::Create(cf, 0, &rect));
 }

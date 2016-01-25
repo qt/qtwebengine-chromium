@@ -5,27 +5,25 @@
 #ifndef BASE_FILES_FILE_H_
 #define BASE_FILES_FILE_H_
 
-#include "build/build_config.h"
-#if defined(OS_WIN)
-#include <windows.h>
-#endif
-
-#if defined(OS_POSIX)
-#include <sys/stat.h>
-#endif
+#include <stdint.h>
 
 #include <string>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/files/file_tracing.h"
 #include "base/files/scoped_file.h"
 #include "base/move.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 
 #if defined(OS_WIN)
+#include <windows.h>
 #include "base/win/scoped_handle.h"
+#endif
+
+#if defined(OS_POSIX)
+#include <sys/stat.h>
 #endif
 
 namespace base {
@@ -53,7 +51,7 @@ typedef struct stat64 stat_wrapper_t;
 // to the OS is not considered const, even if there is no apparent change to
 // member variables.
 class BASE_EXPORT File {
-  MOVE_ONLY_TYPE_FOR_CPP_03(File, RValue)
+  MOVE_ONLY_TYPE_FOR_CPP_03(File)
 
  public:
   // FLAG_(OPEN|CREATE).* are mutually exclusive. You should specify exactly one
@@ -85,6 +83,7 @@ class BASE_EXPORT File {
     FLAG_TERMINAL_DEVICE = 1 << 16,   // Serial port flags.
     FLAG_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only.
     FLAG_EXECUTE = 1 << 18,           // Used on Windows only.
+    FLAG_SEQUENTIAL_SCAN = 1 << 19,   // Used on Windows only.
   };
 
   // This enum has been recorded in multiple histograms. If the order of the
@@ -137,7 +136,7 @@ class BASE_EXPORT File {
 #endif
 
     // The size of the file in bytes.  Undefined when is_directory is true.
-    int64 size;
+    int64_t size;
 
     // True if the file corresponds to a directory.
     bool is_directory;
@@ -160,7 +159,7 @@ class BASE_EXPORT File {
 
   // Creates or opens the given file. This will fail with 'access denied' if the
   // |path| contains path traversal ('..') components.
-  File(const FilePath& path, uint32 flags);
+  File(const FilePath& path, uint32_t flags);
 
   // Takes ownership of |platform_file|.
   explicit File(PlatformFile platform_file);
@@ -168,20 +167,21 @@ class BASE_EXPORT File {
   // Creates an object with a specific error_details code.
   explicit File(Error error_details);
 
-  // Move constructor for C++03 move emulation of this type.
-  File(RValue other);
+  File(File&& other);
 
   ~File();
 
   // Takes ownership of |platform_file|.
   static File CreateForAsyncHandle(PlatformFile platform_file);
 
-  // Move operator= for C++03 move emulation of this type.
-  File& operator=(RValue other);
+  File& operator=(File&& other);
 
   // Creates or opens the given file.
-  void Initialize(const FilePath& path, uint32 flags);
+  void Initialize(const FilePath& path, uint32_t flags);
 
+  // Returns |true| if the handle / fd wrapped by this object is valid.  This
+  // method doesn't interact with the file system (and is safe to be called from
+  // ThreadRestrictions::SetIOAllowed(false) threads).
   bool IsValid() const;
 
   // Returns true if a new file was created (or an old one truncated to zero
@@ -205,7 +205,7 @@ class BASE_EXPORT File {
   // Changes current position in the file to an |offset| relative to an origin
   // defined by |whence|. Returns the resultant current position in the file
   // (relative to the start) or -1 in case of error.
-  int64 Seek(Whence whence, int64 offset);
+  int64_t Seek(Whence whence, int64_t offset);
 
   // Reads the given number of bytes (or until EOF is reached) starting with the
   // given offset. Returns the number of bytes read, or -1 on error. Note that
@@ -213,7 +213,7 @@ class BASE_EXPORT File {
   // is not intended for stream oriented files but instead for cases when the
   // normal expectation is that actually |size| bytes are read unless there is
   // an error.
-  int Read(int64 offset, char* data, int size);
+  int Read(int64_t offset, char* data, int size);
 
   // Same as above but without seek.
   int ReadAtCurrentPos(char* data, int size);
@@ -221,7 +221,7 @@ class BASE_EXPORT File {
   // Reads the given number of bytes (or until EOF is reached) starting with the
   // given offset, but does not make any effort to read all data on all
   // platforms. Returns the number of bytes read, or -1 on error.
-  int ReadNoBestEffort(int64 offset, char* data, int size);
+  int ReadNoBestEffort(int64_t offset, char* data, int size);
 
   // Same as above but without seek.
   int ReadAtCurrentPosNoBestEffort(char* data, int size);
@@ -232,7 +232,7 @@ class BASE_EXPORT File {
   // all platforms.
   // Ignores the offset and writes to the end of the file if the file was opened
   // with FLAG_APPEND.
-  int Write(int64 offset, const char* data, int size);
+  int Write(int64_t offset, const char* data, int size);
 
   // Save as above but without seek.
   int WriteAtCurrentPos(const char* data, int size);
@@ -242,12 +242,12 @@ class BASE_EXPORT File {
   int WriteAtCurrentPosNoBestEffort(const char* data, int size);
 
   // Returns the current size of this file, or a negative number on failure.
-  int64 GetLength();
+  int64_t GetLength();
 
   // Truncates the file to the given length. If |length| is greater than the
   // current size of the file, the file is extended with zeros. If the file
   // doesn't exist, |false| is returned.
-  bool SetLength(int64 length);
+  bool SetLength(int64_t length);
 
   // Instructs the filesystem to flush the file to disk. (POSIX: fsync, Windows:
   // FlushFileBuffers).
@@ -307,7 +307,7 @@ class BASE_EXPORT File {
 
   // Creates or opens the given file. Only called if |path| has no
   // traversal ('..') components.
-  void DoInitialize(const FilePath& path, uint32 flags);
+  void DoInitialize(const FilePath& path, uint32_t flags);
 
   // TODO(tnagel): Reintegrate into Flush() once histogram isn't needed anymore,
   // cf. issue 473337.

@@ -94,7 +94,7 @@ void SkMultiPictureDraw::draw(bool flush) {
         fThreadSafeDrawData[i].draw();
     }
 #else
-    sk_parallel_for(fThreadSafeDrawData.count(), [&](int i) {
+    SkTaskGroup().batch(fThreadSafeDrawData.count(), [&](int i) {
         fThreadSafeDrawData[i].draw();
     });
 #endif
@@ -115,6 +115,8 @@ void SkMultiPictureDraw::draw(bool flush) {
     // them (if necessary). Hoisting the free floating layers is deferred until
     // drawing the canvas that requires them.
     SkTDArray<GrHoistedLayer> atlasedNeedRendering, atlasedRecycled;
+
+    GrLayerHoister::Begin(context);
 
     for (int i = 0; i < count; ++i) {
         const DrawData& data = fGPUDrawData[i];
@@ -199,9 +201,7 @@ void SkMultiPictureDraw::draw(bool flush) {
 #if !defined(SK_IGNORE_GPU_LAYER_HOISTING) && SK_SUPPORT_GPU
     GrLayerHoister::UnlockLayers(context, atlasedNeedRendering);
     GrLayerHoister::UnlockLayers(context, atlasedRecycled);
-#if !GR_CACHE_HOISTED_LAYERS
-    GrLayerHoister::PurgeCache(context);
-#endif
+    GrLayerHoister::End(context);
 #endif
 }
 

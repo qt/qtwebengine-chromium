@@ -187,12 +187,16 @@ X509_STORE *X509_STORE_new(void)
 	if ((ret=(X509_STORE *)OPENSSL_malloc(sizeof(X509_STORE))) == NULL)
 		return NULL;
 	memset(ret, 0, sizeof(*ret));
-	ret->objs = sk_X509_OBJECT_new(x509_object_cmp);
 	CRYPTO_MUTEX_init(&ret->objs_lock);
+	ret->objs = sk_X509_OBJECT_new(x509_object_cmp);
+	if (ret->objs == NULL)
+		goto err;
 	ret->cache = 1;
 	ret->get_cert_methods = sk_X509_LOOKUP_new_null();
-
-	if ((ret->param = X509_VERIFY_PARAM_new()) == NULL)
+	if (ret->get_cert_methods == NULL)
+		goto err;
+	ret->param = X509_VERIFY_PARAM_new();
+	if (ret->param == NULL)
 		goto err;
 
 	ret->references = 1;
@@ -200,6 +204,7 @@ X509_STORE *X509_STORE_new(void)
 err:
 	if (ret)
 		{
+		CRYPTO_MUTEX_cleanup(&ret->objs_lock);
 		if (ret->param)
 			X509_VERIFY_PARAM_free(ret->param);
 		if (ret->get_cert_methods)
@@ -436,7 +441,6 @@ static int x509_object_idx_cnt(STACK_OF(X509_OBJECT) *h, int type,
 	X509_CINF cinf_s;
 	X509_CRL crl_s;
 	X509_CRL_INFO crl_info_s;
-	size_t idx;
 
 	stmp.type=type;
 	switch (type)
@@ -456,8 +460,11 @@ static int x509_object_idx_cnt(STACK_OF(X509_OBJECT) *h, int type,
 		return -1;
 		}
 
-	idx = -1;
-	if (sk_X509_OBJECT_find(h, &idx, &stmp) && pnmatch)
+	size_t idx;
+	if (!sk_X509_OBJECT_find(h, &idx, &stmp))
+		return -1;
+
+	if (pnmatch != NULL)
 		{
 		int tidx;
 		const X509_OBJECT *tobj, *pstmp;
@@ -498,6 +505,8 @@ STACK_OF(X509)* X509_STORE_get1_certs(X509_STORE_CTX *ctx, X509_NAME *nm)
 	X509 *x;
 	X509_OBJECT *obj;
 	sk = sk_X509_new_null();
+	if (sk == NULL)
+		return NULL;
 	CRYPTO_MUTEX_lock_write(&ctx->ctx->objs_lock);
 	idx = x509_object_idx_cnt(ctx->ctx->objs, X509_LU_X509, nm, &cnt);
 	if (idx < 0)
@@ -546,13 +555,10 @@ STACK_OF(X509_CRL)* X509_STORE_get1_crls(X509_STORE_CTX *ctx, X509_NAME *nm)
 	X509_CRL *x;
 	X509_OBJECT *obj, xobj;
 	sk = sk_X509_CRL_new_null();
-	CRYPTO_MUTEX_lock_write(&ctx->ctx->objs_lock);
-	/* Check cache first */
-	idx = x509_object_idx_cnt(ctx->ctx->objs, X509_LU_CRL, nm, &cnt);
+	if (sk == NULL)
+		return NULL;
 
-	/* Always do lookup to possibly add new CRLs to cache
-	 */
-	CRYPTO_MUTEX_unlock(&ctx->ctx->objs_lock);
+	/* Always do lookup to possibly add new CRLs to cache. */
 	if (!X509_STORE_get_by_subject(ctx, X509_LU_CRL, nm, &xobj))
 		{
 		sk_X509_CRL_free(sk);

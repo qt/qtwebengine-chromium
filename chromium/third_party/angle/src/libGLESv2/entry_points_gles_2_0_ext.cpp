@@ -390,7 +390,6 @@ void GL_APIENTRY GetTranslatedShaderSourceANGLE(GLuint shader, GLsizei bufsize, 
             return;
         }
 
-        // Only returns extra info if ANGLE_GENERATE_SHADER_DEBUG_INFO is defined
         shaderObject->getTranslatedSourceWithDebugInfo(bufsize, length, source);
     }
 }
@@ -752,13 +751,13 @@ void GL_APIENTRY GetProgramBinaryOES(GLuint program, GLsizei bufSize, GLsizei *l
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Program *programObject = context->getProgram(program);
-
-        if (!programObject || !programObject->isLinked())
+        if (!ValidateGetProgramBinaryOES(context, program, bufSize, length, binaryFormat, binary))
         {
-            context->recordError(Error(GL_INVALID_OPERATION));
             return;
         }
+
+        Program *programObject = context->getProgram(program);
+        ASSERT(programObject != nullptr);
 
         Error error = programObject->saveBinary(binaryFormat, binary, bufSize, length);
         if (error.isError())
@@ -777,19 +776,13 @@ void GL_APIENTRY ProgramBinaryOES(GLuint program, GLenum binaryFormat, const voi
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        const std::vector<GLenum> &programBinaryFormats = context->getCaps().programBinaryFormats;
-        if (std::find(programBinaryFormats.begin(), programBinaryFormats.end(), binaryFormat) == programBinaryFormats.end())
+        if (!ValidateProgramBinaryOES(context, program, binaryFormat, binary, length))
         {
-            context->recordError(Error(GL_INVALID_ENUM));
             return;
         }
 
         Program *programObject = context->getProgram(program);
-        if (!programObject)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
+        ASSERT(programObject != nullptr);
 
         Error error = programObject->loadBinary(binaryFormat, binary, length);
         if (error.isError())
@@ -1200,6 +1193,339 @@ ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target
             context->recordError(error);
             return;
         }
+    }
+}
+
+void GL_APIENTRY BindVertexArrayOES(GLuint array)
+{
+    EVENT("(GLuint array = %u)", array);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateBindVertexArrayOES(context, array))
+        {
+            return;
+        }
+
+        context->bindVertexArray(array);
+    }
+}
+
+void GL_APIENTRY DeleteVertexArraysOES(GLsizei n, const GLuint *arrays)
+{
+    EVENT("(GLsizei n = %d, const GLuint* arrays = 0x%0.8p)", n, arrays);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateDeleteVertexArraysOES(context, n))
+        {
+            return;
+        }
+
+        for (int arrayIndex = 0; arrayIndex < n; arrayIndex++)
+        {
+            if (arrays[arrayIndex] != 0)
+            {
+                context->deleteVertexArray(arrays[arrayIndex]);
+            }
+        }
+    }
+}
+
+void GL_APIENTRY GenVertexArraysOES(GLsizei n, GLuint *arrays)
+{
+    EVENT("(GLsizei n = %d, GLuint* arrays = 0x%0.8p)", n, arrays);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGenVertexArraysOES(context, n))
+        {
+            return;
+        }
+
+        for (int arrayIndex = 0; arrayIndex < n; arrayIndex++)
+        {
+            arrays[arrayIndex] = context->createVertexArray();
+        }
+    }
+}
+
+GLboolean GL_APIENTRY IsVertexArrayOES(GLuint array)
+{
+    EVENT("(GLuint array = %u)", array);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateIsVertexArrayOES(context))
+        {
+            return GL_FALSE;
+        }
+
+        if (array == 0)
+        {
+            return GL_FALSE;
+        }
+
+        VertexArray *vao = context->getVertexArray(array);
+
+        return (vao != nullptr ? GL_TRUE : GL_FALSE);
+    }
+
+    return GL_FALSE;
+}
+
+void GL_APIENTRY DebugMessageControlKHR(GLenum source,
+                                        GLenum type,
+                                        GLenum severity,
+                                        GLsizei count,
+                                        const GLuint *ids,
+                                        GLboolean enabled)
+{
+    EVENT(
+        "(GLenum source = 0x%X, GLenum type = 0x%X, GLenum severity = 0x%X, GLsizei count = %d, "
+        "GLint *ids = 0x%0.8p, GLboolean enabled = %d)",
+        source, type, severity, count, ids, enabled);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateDebugMessageControlKHR(context, source, type, severity, count, ids, enabled))
+        {
+            return;
+        }
+
+        std::vector<GLuint> idVector(ids, ids + count);
+        context->getState().getDebug().setMessageControl(
+            source, type, severity, std::move(idVector), (enabled != GL_FALSE));
+    }
+}
+
+void GL_APIENTRY DebugMessageInsertKHR(GLenum source,
+                                       GLenum type,
+                                       GLuint id,
+                                       GLenum severity,
+                                       GLsizei length,
+                                       const GLchar *buf)
+{
+    EVENT(
+        "(GLenum source = 0x%X, GLenum type = 0x%X, GLint id = %d, GLenum severity = 0x%X, GLsizei "
+        "length = %d, const GLchar *buf = 0x%0.8p)",
+        source, type, id, severity, length, buf);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateDebugMessageInsertKHR(context, source, type, id, severity, length, buf))
+        {
+            return;
+        }
+
+        std::string msg(buf, (length > 0) ? static_cast<size_t>(length) : strlen(buf));
+        context->getState().getDebug().insertMessage(source, type, id, severity, std::move(msg));
+    }
+}
+
+void GL_APIENTRY DebugMessageCallbackKHR(GLDEBUGPROCKHR callback, const void *userParam)
+{
+    EVENT("(GLDEBUGPROCKHR callback = 0x%0.8p, const void *userParam = 0x%0.8p)", callback,
+          userParam);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateDebugMessageCallbackKHR(context, callback, userParam))
+        {
+            return;
+        }
+
+        context->getState().getDebug().setCallback(callback, userParam);
+    }
+}
+
+GLuint GL_APIENTRY GetDebugMessageLogKHR(GLuint count,
+                                         GLsizei bufSize,
+                                         GLenum *sources,
+                                         GLenum *types,
+                                         GLuint *ids,
+                                         GLenum *severities,
+                                         GLsizei *lengths,
+                                         GLchar *messageLog)
+{
+    EVENT(
+        "(GLsizei count = %d, GLsizei bufSize = %d, GLenum *sources, GLenum *types = 0x%0.8p, "
+        "GLuint *ids = 0x%0.8p, GLenum *severities = 0x%0.8p, GLsizei *lengths = 0x%0.8p, GLchar "
+        "*messageLog = 0x%0.8p)",
+        count, bufSize, sources, types, ids, severities, lengths, messageLog);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetDebugMessageLogKHR(context, count, bufSize, sources, types, ids, severities,
+                                           lengths, messageLog))
+        {
+            return 0;
+        }
+
+        return static_cast<GLuint>(context->getState().getDebug().getMessages(
+            count, bufSize, sources, types, ids, severities, lengths, messageLog));
+    }
+
+    return 0;
+}
+
+void GL_APIENTRY PushDebugGroupKHR(GLenum source, GLuint id, GLsizei length, const GLchar *message)
+{
+    EVENT(
+        "(GLenum source = 0x%X, GLuint id = 0x%X, GLsizei length = %d, const GLchar *message = "
+        "0x%0.8p)",
+        source, id, length, message);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidatePushDebugGroupKHR(context, source, id, length, message))
+        {
+            return;
+        }
+
+        std::string msg(message, (length > 0) ? static_cast<size_t>(length) : strlen(message));
+        context->getState().getDebug().pushGroup(source, id, std::move(msg));
+    }
+}
+
+void GL_APIENTRY PopDebugGroupKHR(void)
+{
+    EVENT("()");
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidatePopDebugGroupKHR(context))
+        {
+            return;
+        }
+
+        context->getState().getDebug().popGroup();
+    }
+}
+
+void GL_APIENTRY ObjectLabelKHR(GLenum identifier, GLuint name, GLsizei length, const GLchar *label)
+{
+    EVENT(
+        "(GLenum identifier = 0x%X, GLuint name = %u, GLsizei length = %d, const GLchar *label = "
+        "0x%0.8p)",
+        identifier, name, length, label);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateObjectLabelKHR(context, identifier, name, length, label))
+        {
+            return;
+        }
+
+        LabeledObject *object = context->getLabeledObject(identifier, name);
+        ASSERT(object != nullptr);
+
+        std::string lbl(label, (length > 0) ? static_cast<size_t>(length) : strlen(label));
+        object->setLabel(lbl);
+    }
+}
+
+void GL_APIENTRY
+GetObjectLabelKHR(GLenum identifier, GLuint name, GLsizei bufSize, GLsizei *length, GLchar *label)
+{
+    EVENT(
+        "(GLenum identifier = 0x%X, GLuint name = %u, GLsizei bufSize = %d, GLsizei *length = "
+        "0x%0.8p, GLchar *label = 0x%0.8p)",
+        identifier, name, bufSize, length, label);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetObjectLabelKHR(context, identifier, name, bufSize, length, label))
+        {
+            return;
+        }
+
+        LabeledObject *object = context->getLabeledObject(identifier, name);
+        ASSERT(object != nullptr);
+
+        const std::string &objectLabel = object->getLabel();
+        size_t writeLength = std::min(static_cast<size_t>(bufSize) - 1, objectLabel.length());
+        std::copy(objectLabel.begin(), objectLabel.begin() + writeLength, label);
+        label[writeLength] = '\0';
+        *length            = static_cast<GLsizei>(writeLength);
+    }
+}
+
+void GL_APIENTRY ObjectPtrLabelKHR(const void *ptr, GLsizei length, const GLchar *label)
+{
+    EVENT("(const void *ptr = 0x%0.8p, GLsizei length = %d, const GLchar *label = 0x%0.8p)", ptr,
+          length, label);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateObjectPtrLabelKHR(context, ptr, length, label))
+        {
+            return;
+        }
+
+        LabeledObject *object = context->getLabeledObjectFromPtr(ptr);
+        ASSERT(object != nullptr);
+
+        std::string lbl(label, (length > 0) ? static_cast<size_t>(length) : strlen(label));
+        object->setLabel(lbl);
+    }
+}
+
+void GL_APIENTRY GetObjectPtrLabelKHR(const void *ptr,
+                                      GLsizei bufSize,
+                                      GLsizei *length,
+                                      GLchar *label)
+{
+    EVENT(
+        "(const void *ptr = 0x%0.8p, GLsizei bufSize = %d, GLsizei *length = 0x%0.8p, GLchar "
+        "*label = 0x%0.8p)",
+        ptr, bufSize, length, label);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetObjectPtrLabelKHR(context, ptr, bufSize, length, label))
+        {
+            return;
+        }
+
+        LabeledObject *object = context->getLabeledObjectFromPtr(ptr);
+        ASSERT(object != nullptr);
+
+        const std::string &objectLabel = object->getLabel();
+        size_t writeLength = std::min(static_cast<size_t>(bufSize) - 1, objectLabel.length());
+        std::copy(objectLabel.begin(), objectLabel.begin() + writeLength, label);
+        label[writeLength] = '\0';
+        *length            = static_cast<GLsizei>(writeLength);
+    }
+}
+
+void GL_APIENTRY GetPointervKHR(GLenum pname, void **params)
+{
+    EVENT("(GLenum pname = 0x%X, void **params = 0x%0.8p)", pname, params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetPointervKHR(context, pname, params))
+        {
+            return;
+        }
+
+        context->getPointerv(pname, params);
     }
 }
 }

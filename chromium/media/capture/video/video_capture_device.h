@@ -12,6 +12,9 @@
 #ifndef MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_DEVICE_H_
 #define MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_DEVICE_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <list>
 #include <string>
 
@@ -21,10 +24,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "media/base/media_export.h"
 #include "media/base/video_capture_types.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/gpu_memory_buffer.h"
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -186,7 +194,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
       virtual void* data(int plane) = 0;
       void* data() { return data(0); }
       virtual ClientBuffer AsClientBuffer(int plane) = 0;
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !(defined(OS_MACOSX) && !defined(OS_IOS))
       virtual base::FileDescriptor AsPlatformFile() = 0;
 #endif
     };
@@ -199,7 +207,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
     // be tightly packed. This method will try to reserve an output buffer and
     // copy from |data| into the output buffer. If no output buffer is
     // available, the frame will be silently dropped.
-    virtual void OnIncomingCapturedData(const uint8* data,
+    virtual void OnIncomingCapturedData(const uint8_t* data,
                                         int length,
                                         const VideoCaptureFormat& frame_format,
                                         int clockwise_rotation,
@@ -208,9 +216,9 @@ class MEDIA_EXPORT VideoCaptureDevice {
     // Captured a 3 planar YUV frame. Planes are possibly disjoint.
     // |frame_format| must indicate I420.
     virtual void OnIncomingCapturedYuvData(
-        const uint8* y_data,
-        const uint8* u_data,
-        const uint8* v_data,
+        const uint8_t* y_data,
+        const uint8_t* u_data,
+        const uint8_t* v_data,
         size_t y_stride,
         size_t u_stride,
         size_t v_stride,
@@ -250,7 +258,8 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
     // An error has occurred that cannot be handled and VideoCaptureDevice must
     // be StopAndDeAllocate()-ed. |reason| is a text description of the error.
-    virtual void OnError(const std::string& reason) = 0;
+    virtual void OnError(const tracked_objects::Location& from_here,
+                         const std::string& reason) = 0;
 
     // VideoCaptureDevice requests the |message| to be logged.
     virtual void OnLog(const std::string& message) {}
@@ -283,12 +292,13 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
   // Gets the power line frequency, either from the params if specified by the
   // user or from the current system time zone.
-  int GetPowerLineFrequency(const VideoCaptureParams& params) const;
+  PowerLineFrequency GetPowerLineFrequency(
+      const VideoCaptureParams& params) const;
 
  private:
   // Gets the power line frequency from the current system time zone if this is
   // defined, otherwise returns 0.
-  int GetPowerLineFrequencyForLocation() const;
+  PowerLineFrequency GetPowerLineFrequencyForLocation() const;
 };
 
 }  // namespace media

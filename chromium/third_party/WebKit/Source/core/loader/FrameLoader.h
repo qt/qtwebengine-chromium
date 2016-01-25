@@ -64,7 +64,7 @@ CORE_EXPORT bool isBackForwardLoadType(FrameLoadType);
 
 class CORE_EXPORT FrameLoader final {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     static ResourceRequest resourceRequestFromHistoryItem(HistoryItem*, ResourceRequestCachePolicy);
 
@@ -108,7 +108,6 @@ public:
     void notifyIfInitialDocumentAccessed();
 
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
-    DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
 
     void receivedMainResourceError(DocumentLoader*, const ResourceError&);
@@ -132,7 +131,7 @@ public:
 
     void receivedFirstData();
 
-    String userAgent(const KURL&) const;
+    String userAgent() const;
 
     void dispatchDidClearWindowObjectInMainWorld();
     void dispatchDidClearDocumentOfWindowObject();
@@ -173,7 +172,7 @@ public:
 
     bool allAncestorsAreComplete() const; // including this
 
-    bool shouldClose();
+    bool shouldClose(bool isReload = false);
     void dispatchUnloadEvent();
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
@@ -184,6 +183,9 @@ public:
     void saveScrollState();
 
     void restoreScrollPositionAndViewState();
+
+    bool shouldContinueForNavigationPolicy(const ResourceRequest&, const SubstituteData&, DocumentLoader*, ContentSecurityPolicyDisposition,
+        NavigationType, NavigationPolicy, bool shouldReplaceCurrentEntry);
 
     DECLARE_TRACE();
 
@@ -209,7 +211,7 @@ private:
     };
     void setHistoryItemStateForCommit(HistoryCommitType, HistoryNavigationType);
 
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, ClientRedirectPolicy);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, HistoryLoadType, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
 
@@ -232,13 +234,12 @@ private:
     // be consulted in particular as it makes sense to imply certain settings on the new loader.
     RefPtrWillBeMember<DocumentLoader> m_documentLoader;
     RefPtrWillBeMember<DocumentLoader> m_provisionalDocumentLoader;
-    RefPtrWillBeMember<DocumentLoader> m_policyDocumentLoader;
 
     RefPtrWillBeMember<HistoryItem> m_currentItem;
     RefPtrWillBeMember<HistoryItem> m_provisionalItem;
 
     class DeferredHistoryLoad : public NoBaseWillBeGarbageCollectedFinalized<DeferredHistoryLoad> {
-        DISALLOW_COPY(DeferredHistoryLoad);
+        WTF_MAKE_NONCOPYABLE(DeferredHistoryLoad);
     public:
         static PassOwnPtrWillBeRawPtr<DeferredHistoryLoad> create(ResourceRequest request, HistoryItem* item, FrameLoadType loadType, HistoryLoadType historyLoadType)
         {

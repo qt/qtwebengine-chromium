@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/gamepad/GamepadDispatcher.h"
 
 #include "modules/gamepad/NavigatorGamepad.h"
@@ -57,12 +56,12 @@ void GamepadDispatcher::dispatchDidConnectOrDisconnectGamepad(unsigned index, co
 
 void GamepadDispatcher::startListening()
 {
-    Platform::current()->startListening(WebPlatformEventGamepad, this);
+    Platform::current()->startListening(WebPlatformEventTypeGamepad, this);
 }
 
 void GamepadDispatcher::stopListening()
 {
-    Platform::current()->stopListening(WebPlatformEventGamepad);
+    Platform::current()->stopListening(WebPlatformEventTypeGamepad);
 }
 
 } // namespace blink

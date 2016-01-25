@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/loader/WorkerThreadableLoader.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -88,7 +86,7 @@ void WorkerThreadableLoader::loadResourceSynchronously(WorkerGlobalScope& worker
 
     WebWaitableEvent* signalled;
     {
-        SafePointScope scope(ThreadState::HeapPointersOnStack);
+        SafePointScope scope(BlinkGC::HeapPointersOnStack);
         signalled = Platform::current()->waitMultipleEvents(events);
     }
     if (signalled == shutdownEvent) {
@@ -142,14 +140,14 @@ void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(PassOwnPtr
     ASSERT(isMainThread());
     Document* document = toDocument(context);
 
-    OwnPtr<ResourceRequest> request(ResourceRequest::adopt(requestData));
-    if (!request->didSetHTTPReferrer())
-        request->setHTTPReferrer(SecurityPolicy::generateReferrer(referrerPolicy, request->url(), outgoingReferrer));
+    ResourceRequest request(requestData.get());
+    if (!request.didSetHTTPReferrer())
+        request.setHTTPReferrer(SecurityPolicy::generateReferrer(referrerPolicy, request.url(), outgoingReferrer));
     resourceLoaderOptions.requestInitiatorContext = WorkerContext;
-    m_mainThreadLoader = DocumentThreadableLoader::create(*document, this, *request, options, resourceLoaderOptions);
+    m_mainThreadLoader = DocumentThreadableLoader::create(*document, this, request, options, resourceLoaderOptions);
     if (!m_mainThreadLoader) {
         // DocumentThreadableLoader::create may return 0 when the document loader has been already changed.
-        didFail(ResourceError(errorDomainBlinkInternal, 0, request->url().string(), "Can't create DocumentThreadableLoader"));
+        didFail(ResourceError(errorDomainBlinkInternal, 0, request.url().string(), "The parent document page has been unloaded."));
     }
 }
 

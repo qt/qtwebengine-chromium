@@ -28,7 +28,7 @@
 #define WorkerGlobalScope_h
 
 #include "bindings/core/v8/V8CacheOptions.h"
-#include "bindings/core/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
@@ -39,10 +39,12 @@
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerEventQueue.h"
+#include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
+#include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -54,6 +56,7 @@ namespace blink {
 class ConsoleMessage;
 class ConsoleMessageStorage;
 class ExceptionState;
+class V8AbstractEventListener;
 class WorkerClients;
 class WorkerConsole;
 class WorkerInspectorController;
@@ -61,7 +64,7 @@ class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
 
-class CORE_EXPORT WorkerGlobalScope : public EventTargetWithInlineData, public RefCountedWillBeNoBase<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public WillBeHeapSupplementable<WorkerGlobalScope>, public DOMWindowBase64 {
+class CORE_EXPORT WorkerGlobalScope : public EventTargetWithInlineData, public RefCountedWillBeNoBase<WorkerGlobalScope>, public SecurityContext, public WorkerOrWorkletGlobalScope, public WillBeHeapSupplementable<WorkerGlobalScope>, public DOMWindowBase64 {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
@@ -71,6 +74,10 @@ public:
     bool isWorkerGlobalScope() const final { return true; }
 
     ExecutionContext* executionContext() const final;
+    ScriptWrappable* scriptWrappable() const final
+    {
+        return const_cast<WorkerGlobalScope*>(this);
+    }
 
     virtual void countFeature(UseCounter::Feature) const;
     virtual void countDeprecation(UseCounter::Feature) const;
@@ -78,10 +85,10 @@ public:
     const KURL& url() const { return m_url; }
     KURL completeURL(const String&) const;
 
-    String userAgent(const KURL&) const final;
+    String userAgent() const final;
     void disableEval(const String& errorMessage) final;
 
-    WorkerScriptController* script() { return m_script.get(); }
+    WorkerOrWorkletScriptController* script() final { return m_script.get(); }
 
     virtual void didEvaluateWorkerScript();
     void dispose();
@@ -111,14 +118,13 @@ public:
     v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) final;
     v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) final;
 
-    // ExecutionContextClient
+    // ExecutionContext
     WorkerEventQueue* eventQueue() const final;
     SecurityContext& securityContext() final { return *this; }
 
     bool isContextThread() const final;
     bool isJSExecutionForbidden() const final;
 
-    double timerAlignmentInterval() const final;
     DOMTimerCoordinator* timers() final;
 
     WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
@@ -140,6 +146,9 @@ public:
     virtual void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) { }
 
     bool isSecureContext(String& errorMessage, const SecureContextCheck = StandardSecureContextCheck) const override;
+
+    void registerEventListener(V8AbstractEventListener*);
+    void deregisterEventListener(V8AbstractEventListener*);
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -182,7 +191,7 @@ private:
 
     mutable UseCounter::CountBits m_deprecationWarningBits;
 
-    OwnPtrWillBeMember<WorkerScriptController> m_script;
+    OwnPtrWillBeMember<WorkerOrWorkletScriptController> m_script;
     WorkerThread* m_thread;
 
     RefPtrWillBeMember<WorkerInspectorController> m_workerInspectorController;
@@ -200,6 +209,7 @@ private:
 
     unsigned long m_workerExceptionUniqueIdentifier;
     WillBeHeapHashMap<unsigned long, RefPtrWillBeMember<ConsoleMessage>> m_pendingMessages;
+    WillBeHeapListHashSet<RefPtrWillBeMember<V8AbstractEventListener>> m_eventListeners;
 };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());

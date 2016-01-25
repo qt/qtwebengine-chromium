@@ -25,10 +25,9 @@ class HeaderVisitor : public blink::WebHTTPHeaderVisitor {
 
   void visitHeader(const blink::WebString& name,
                    const blink::WebString& value) override {
-    const std::string header_name =
-        base::UTF16ToASCII(base::StringPiece16(name));
-    const std::string header_value =
-        base::UTF16ToASCII(base::StringPiece16(value));
+    // Headers are ISO Latin 1.
+    const std::string& header_name = name.latin1();
+    const std::string& header_value = value.latin1();
     CHECK(header_name.find('\0') == std::string::npos);
     CHECK(header_value.find('\0') == std::string::npos);
     headers_->insert(ServiceWorkerHeaderMap::value_type(
@@ -40,7 +39,7 @@ class HeaderVisitor : public blink::WebHTTPHeaderVisitor {
 };
 
 scoped_ptr<HeaderVisitor> MakeHeaderVisitor(ServiceWorkerHeaderMap* headers) {
-  return scoped_ptr<HeaderVisitor>(new HeaderVisitor(headers)).Pass();
+  return scoped_ptr<HeaderVisitor>(new HeaderVisitor(headers));
 }
 
 }  // namespace

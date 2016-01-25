@@ -11,17 +11,18 @@
 #include "GrContext.h"
 #include "GrFragmentProcessor.h"
 #include "GrInvariantOutput.h"
+#include "GrPipeline.h"
 #include "GrProcessor.h"
 #include "GrTexture.h"
 #include "GrTextureAccess.h"
 #include "SkXfermode.h"
-#include "gl/GrGLCaps.h"
-#include "gl/GrGLGpu.h"
-#include "gl/GrGLSLBlend.h"
-#include "gl/GrGLFragmentProcessor.h"
-#include "gl/GrGLProgramDataManager.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLBlend.h"
 #include "glsl/GrGLSLCaps.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
+#include "glsl/GrGLSLXferProcessor.h"
 
 bool GrCustomXfermode::IsSupportedMode(SkXfermode::Mode mode) {
     return mode > SkXfermode::kLastCoeffMode && mode <= SkXfermode::kLastMode;
@@ -88,7 +89,7 @@ public:
 
     const char* name() const override { return "Custom Xfermode"; }
 
-    GrGLXferProcessor* createGLInstance() const override;
+    GrGLSLXferProcessor* createGLSLInstance() const override;
 
     SkXfermode::Mode mode() const { return fMode; }
     bool hasHWBlendEquation() const { return -1 != static_cast<int>(fHWBlendEquation); }
@@ -99,13 +100,12 @@ public:
     }
 
 private:
-    GrXferProcessor::OptFlags onGetOptimizations(const GrProcOptInfo& colorPOI,
-                                                 const GrProcOptInfo& coveragePOI,
+    GrXferProcessor::OptFlags onGetOptimizations(const GrPipelineOptimizations& optimizations,
                                                  bool doesStencilWrite,
                                                  GrColor* overrideColor,
-                                                 const GrCaps& caps) override;
+                                                 const GrCaps& caps) const override;
 
-    void onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
+    void onGetGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
     GrXferBarrierType onXferBarrier(const GrRenderTarget*, const GrCaps&) const override;
 
@@ -121,7 +121,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class GLCustomXP : public GrGLXferProcessor {
+class GLCustomXP : public GrGLSLXferProcessor {
 public:
     GLCustomXP(const GrXferProcessor&) {}
     ~GLCustomXP() override {}
@@ -132,7 +132,6 @@ public:
         if (xp.hasHWBlendEquation()) {
             SkASSERT(caps.advBlendEqInteraction() > 0);  // 0 will mean !xp.hasHWBlendEquation().
             key |= caps.advBlendEqInteraction();
-            key |= xp.readsCoverage() << 2;
             GR_STATIC_ASSERT(GrGLSLCaps::kLast_AdvBlendEqInteraction < 4);
         }
         if (!xp.hasHWBlendEquation() || caps.mustEnableSpecificAdvBlendEqs()) {
@@ -146,40 +145,58 @@ private:
         const CustomXP& xp = args.fXP.cast<CustomXP>();
         SkASSERT(xp.hasHWBlendEquation());
 
-        GrGLXPFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
-        fsBuilder->enableAdvancedBlendEquationIfNeeded(xp.hwBlendEquation());
+        GrGLSLXPFragmentBuilder* fragBuilder = args.fXPFragBuilder;
+        fragBuilder->enableAdvancedBlendEquationIfNeeded(xp.hwBlendEquation());
 
         // Apply coverage by multiplying it into the src color before blending. Mixed samples will
         // "just work" automatically. (See onGetOptimizations())
-        if (xp.readsCoverage()) {
-            fsBuilder->codeAppendf("%s = %s * %s;",
-                                   args.fOutputPrimary, args.fInputCoverage, args.fInputColor);
+        if (args.fInputCoverage) {
+            fragBuilder->codeAppendf("%s = %s * %s;",
+                                     args.fOutputPrimary, args.fInputCoverage, args.fInputColor);
         } else {
-            fsBuilder->codeAppendf("%s = %s;", args.fOutputPrimary, args.fInputColor);
+            fragBuilder->codeAppendf("%s = %s;", args.fOutputPrimary, args.fInputColor);
         }
     }
 
-    void emitBlendCodeForDstRead(GrGLXPBuilder* pb, const char* srcColor, const char* dstColor,
-                                 const char* outColor, const GrXferProcessor& proc) override {
+    void emitBlendCodeForDstRead(GrGLSLXPFragmentBuilder* fragBuilder,
+                                 GrGLSLUniformHandler* uniformHandler,
+                                 const char* srcColor,
+                                 const char* srcCoverage,
+                                 const char* dstColor,
+                                 const char* outColor,
+                                 const char* outColorSecondary,
+                                 const GrXferProcessor& proc) override {
         const CustomXP& xp = proc.cast<CustomXP>();
         SkASSERT(!xp.hasHWBlendEquation());
 
-        GrGLXPFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
-        GrGLSLBlend::AppendMode(fsBuilder, srcColor, dstColor, outColor, xp.mode());
+        GrGLSLBlend::AppendMode(fragBuilder, srcColor, dstColor, outColor, xp.mode());
+
+        // Apply coverage.
+        if (xp.dstReadUsesMixedSamples()) {
+            if (srcCoverage) {
+                fragBuilder->codeAppendf("%s *= %s;", outColor, srcCoverage);
+                fragBuilder->codeAppendf("%s = %s;", outColorSecondary, srcCoverage);
+            } else {
+                fragBuilder->codeAppendf("%s = vec4(1.0);", outColorSecondary);
+            }
+        } else if (srcCoverage) {
+            fragBuilder->codeAppendf("%s = %s * %s + (vec4(1.0) - %s) * %s;",
+                                     outColor, srcCoverage, outColor, srcCoverage, dstColor);
+        }
     }
 
-    void onSetData(const GrGLProgramDataManager&, const GrXferProcessor&) override {}
+    void onSetData(const GrGLSLProgramDataManager&, const GrXferProcessor&) override {}
 
-    typedef GrGLXferProcessor INHERITED;
+    typedef GrGLSLXferProcessor INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void CustomXP::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void CustomXP::onGetGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GLCustomXP::GenKey(*this, caps, b);
 }
 
-GrGLXferProcessor* CustomXP::createGLInstance() const {
+GrGLSLXferProcessor* CustomXP::createGLSLInstance() const {
     SkASSERT(this->willReadDstColor() != this->hasHWBlendEquation());
     return new GLCustomXP(*this);
 }
@@ -189,11 +206,10 @@ bool CustomXP::onIsEqual(const GrXferProcessor& other) const {
     return fMode == s.fMode && fHWBlendEquation == s.fHWBlendEquation;
 }
 
-GrXferProcessor::OptFlags CustomXP::onGetOptimizations(const GrProcOptInfo& colorPOI,
-                                                       const GrProcOptInfo& coveragePOI,
+GrXferProcessor::OptFlags CustomXP::onGetOptimizations(const GrPipelineOptimizations& optimizations,
                                                        bool doesStencilWrite,
                                                        GrColor* overrideColor,
-                                                       const GrCaps& caps) {
+                                                       const GrCaps& caps) const {
   /*
     Most the optimizations we do here are based on tweaking alpha for coverage.
 
@@ -291,10 +307,10 @@ GrXferProcessor::OptFlags CustomXP::onGetOptimizations(const GrProcOptInfo& colo
    */
 
     OptFlags flags = kNone_OptFlags;
-    if (colorPOI.allStagesMultiplyInput()) {
+    if (optimizations.fColorPOI.allStagesMultiplyInput()) {
         flags |= kCanTweakAlphaForCoverage_OptFlag;
     }
-    if (this->hasHWBlendEquation() && coveragePOI.isSolidWhite()) {
+    if (this->hasHWBlendEquation() && optimizations.fCoveragePOI.isSolidWhite()) {
         flags |= kIgnoreCoverage_OptFlag;
     }
     return flags;
@@ -318,23 +334,17 @@ class CustomXPFactory : public GrXPFactory {
 public:
     CustomXPFactory(SkXfermode::Mode mode);
 
-    bool supportsRGBCoverage(GrColor knownColor, uint32_t knownColorFlags) const override {
-        return true;
-    }
-
     void getInvariantBlendedColor(const GrProcOptInfo& colorPOI,
                                   GrXPFactory::InvariantBlendedColor*) const override;
 
 private:
     GrXferProcessor* onCreateXferProcessor(const GrCaps& caps,
-                                           const GrProcOptInfo& colorPOI,
-                                           const GrProcOptInfo& coveragePOI,
+                                           const GrPipelineOptimizations& optimizations,
                                            bool hasMixedSamples,
                                            const DstTexture*) const override;
 
     bool willReadDstColor(const GrCaps& caps,
-                          const GrProcOptInfo& colorPOI,
-                          const GrProcOptInfo& coveragePOI,
+                          const GrPipelineOptimizations& optimizations,
                           bool hasMixedSamples) const override;
 
     bool onIsEqual(const GrXPFactory& xpfBase) const override {
@@ -358,11 +368,10 @@ CustomXPFactory::CustomXPFactory(SkXfermode::Mode mode)
 }
 
 GrXferProcessor* CustomXPFactory::onCreateXferProcessor(const GrCaps& caps,
-                                                        const GrProcOptInfo& colorPOI,
-                                                        const GrProcOptInfo& coveragePOI,
+                                                        const GrPipelineOptimizations& opt,
                                                         bool hasMixedSamples,
                                                         const DstTexture* dstTexture) const {
-    if (can_use_hw_blend_equation(fHWBlendEquation, coveragePOI, caps)) {
+    if (can_use_hw_blend_equation(fHWBlendEquation, opt.fCoveragePOI, caps)) {
         SkASSERT(!dstTexture || !dstTexture->texture());
         return new CustomXP(fMode, fHWBlendEquation);
     }
@@ -370,10 +379,9 @@ GrXferProcessor* CustomXPFactory::onCreateXferProcessor(const GrCaps& caps,
 }
 
 bool CustomXPFactory::willReadDstColor(const GrCaps& caps,
-                                       const GrProcOptInfo& colorPOI,
-                                       const GrProcOptInfo& coveragePOI,
+                                       const GrPipelineOptimizations& optimizations,
                                        bool hasMixedSamples) const {
-    return !can_use_hw_blend_equation(fHWBlendEquation, coveragePOI, caps);
+    return !can_use_hw_blend_equation(fHWBlendEquation, optimizations.fCoveragePOI, caps);
 }
 
 void CustomXPFactory::getInvariantBlendedColor(const GrProcOptInfo& colorPOI,

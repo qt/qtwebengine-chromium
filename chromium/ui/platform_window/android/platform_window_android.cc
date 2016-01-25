@@ -7,6 +7,7 @@
 #include <android/input.h>
 #include <android/native_window_jni.h>
 
+#include "base/android/context_utils.h"
 #include "base/android/jni_android.h"
 #include "jni/PlatformWindowAndroid_jni.h"
 #include "ui/events/event.h"
@@ -61,22 +62,24 @@ PlatformWindowAndroid::PlatformWindowAndroid(PlatformWindowDelegate* delegate)
 PlatformWindowAndroid::~PlatformWindowAndroid() {
   if (window_)
     ReleaseWindow();
-  if (!java_platform_window_android_.is_empty()) {
-    JNIEnv* env = base::android::AttachCurrentThread();
-    Java_PlatformWindowAndroid_detach(
-        env, java_platform_window_android_.get(env).obj());
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> scoped_obj =
+      java_platform_window_android_.get(env);
+  if (!scoped_obj.is_null()) {
+    Java_PlatformWindowAndroid_detach(env, scoped_obj.obj());
   }
 }
 
-void PlatformWindowAndroid::Destroy(JNIEnv* env, jobject obj) {
+void PlatformWindowAndroid::Destroy(JNIEnv* env,
+                                    const JavaParamRef<jobject>& obj) {
   delegate_->OnClosed();
 }
 
-void PlatformWindowAndroid::SurfaceCreated(JNIEnv* env,
-                                           jobject obj,
-                                           jobject jsurface,
-                                           float device_pixel_ratio) {
-  base::android::ScopedJavaLocalRef<jobject> protector(env, jsurface);
+void PlatformWindowAndroid::SurfaceCreated(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    const JavaParamRef<jobject>& jsurface,
+    float device_pixel_ratio) {
   // Note: This ensures that any local references used by
   // ANativeWindow_fromSurface are released immediately. This is needed as a
   // workaround for https://code.google.com/p/android/issues/detail?id=68174
@@ -87,14 +90,15 @@ void PlatformWindowAndroid::SurfaceCreated(JNIEnv* env,
   delegate_->OnAcceleratedWidgetAvailable(window_, device_pixel_ratio);
 }
 
-void PlatformWindowAndroid::SurfaceDestroyed(JNIEnv* env, jobject obj) {
+void PlatformWindowAndroid::SurfaceDestroyed(JNIEnv* env,
+                                             const JavaParamRef<jobject>& obj) {
   DCHECK(window_);
+  delegate_->OnAcceleratedWidgetDestroyed();
   ReleaseWindow();
-  delegate_->OnAcceleratedWidgetAvailable(gfx::kNullAcceleratedWidget, 0.f);
 }
 
 void PlatformWindowAndroid::SurfaceSetSize(JNIEnv* env,
-                                           jobject obj,
+                                           const JavaParamRef<jobject>& obj,
                                            jint width,
                                            jint height,
                                            jfloat density) {
@@ -103,7 +107,7 @@ void PlatformWindowAndroid::SurfaceSetSize(JNIEnv* env,
 }
 
 bool PlatformWindowAndroid::TouchEvent(JNIEnv* env,
-                                       jobject obj,
+                                       const JavaParamRef<jobject>& obj,
                                        jlong time_ms,
                                        jint masked_action,
                                        jint pointer_id,
@@ -118,15 +122,17 @@ bool PlatformWindowAndroid::TouchEvent(JNIEnv* env,
   ui::EventType event_type = MotionEventActionToEventType(masked_action);
   if (event_type == ui::ET_UNKNOWN)
     return false;
-  ui::TouchEvent touch(event_type, gfx::PointF(x, y), ui::EF_NONE, pointer_id,
-      base::TimeDelta::FromMilliseconds(time_ms),
-      touch_major, touch_minor, orientation, pressure);
+  ui::TouchEvent touch(event_type, gfx::Point(), ui::EF_NONE, pointer_id,
+                       base::TimeDelta::FromMilliseconds(time_ms), touch_major,
+                       touch_minor, orientation, pressure);
+  touch.set_location_f(gfx::PointF(x, y));
+  touch.set_root_location_f(gfx::PointF(x, y));
   delegate_->DispatchEvent(&touch);
   return true;
 }
 
 bool PlatformWindowAndroid::KeyEvent(JNIEnv* env,
-                                     jobject obj,
+                                     const JavaParamRef<jobject>& obj,
                                      bool pressed,
                                      jint key_code,
                                      jint unicode_character) {

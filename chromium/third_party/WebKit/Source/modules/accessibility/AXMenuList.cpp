@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXMenuList.h"
 
 #include "core/html/HTMLSelectElement.h"
@@ -77,8 +76,14 @@ void AXMenuList::clearChildren()
     m_childrenDirty = false;
 }
 
+bool AXMenuList::nameFromContents() const
+{
+    return false;
+}
+
 void AXMenuList::addChildren()
 {
+    ASSERT(!isDetached());
     m_haveChildren = true;
 
     AXObjectCacheImpl& cache = axObjectCache();

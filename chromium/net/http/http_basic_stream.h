@@ -13,7 +13,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "net/http/http_basic_state.h"
 #include "net/http/http_stream.h"
 
@@ -77,6 +77,8 @@ class HttpBasicStream : public HttpStream {
   bool GetRemoteEndpoint(IPEndPoint* endpoint) override;
 
   void Drain(HttpNetworkSession* session) override;
+
+  void PopulateNetErrorDetails(NetErrorDetails* details) override;
 
   void SetPriority(RequestPriority priority) override;
 

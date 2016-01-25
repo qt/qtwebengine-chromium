@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/events/WheelEvent.h"
 
 #include "core/clipboard/DataTransfer.h"
@@ -39,8 +38,8 @@ PassRefPtrWillBeRawPtr<WheelEvent> WheelEvent::create(const PlatformWheelEvent& 
 {
     return adoptRefWillBeNoop(new WheelEvent(FloatPoint(event.wheelTicksX(), event.wheelTicksY()), FloatPoint(event.deltaX(), event.deltaY()),
         convertDeltaMode(event), view, event.globalPosition(), event.position(),
-        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(),
-        MouseEvent::platformModifiersToButtons(event.modifiers()),
+        event.modifiers(),
+        MouseEvent::platformModifiersToButtons(event.modifiers()), event.timestamp(),
         event.canScroll(), event.resendingPluginId(), event.hasPreciseScrollingDeltas(),
         static_cast<Event::RailsMode>(event.railsMode())));
 }
@@ -73,10 +72,11 @@ WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializ
 
 WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta, unsigned deltaMode,
     PassRefPtrWillBeRawPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& windowLocation,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, int resendingPluginId, bool hasPreciseScrollingDeltas, RailsMode railsMode)
+    PlatformEvent::Modifiers modifiers, unsigned short buttons, double platformTimeStamp,
+    bool canScroll, int resendingPluginId, bool hasPreciseScrollingDeltas, RailsMode railsMode)
     : MouseEvent(EventTypeNames::wheel, true, true, view, 0, screenLocation.x(), screenLocation.y(),
-        windowLocation.x(), windowLocation.y(), 0, 0, ctrlKey, altKey, shiftKey, metaKey, 0, buttons,
-        nullptr, PlatformMouseEvent::RealOrIndistinguishable)
+        windowLocation.x(), windowLocation.y(), 0, 0, modifiers, 0, buttons,
+        nullptr, platformTimeStamp, PlatformMouseEvent::RealOrIndistinguishable)
     , m_wheelDelta(wheelTicks.x() * TickMultiplier, wheelTicks.y() * TickMultiplier)
     , m_deltaX(-rawDelta.x())
     , m_deltaY(-rawDelta.y())

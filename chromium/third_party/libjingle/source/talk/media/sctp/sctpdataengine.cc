@@ -36,6 +36,7 @@
 #include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
 #include "usrsctplib/usrsctp.h"
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
@@ -76,7 +77,7 @@ std::string ListFlags(int flags) {
     MAKEFLAG(SCTP_STREAM_CHANGE_DENIED)
   };
 #undef MAKEFLAG
-  for (int i = 0; i < ARRAY_SIZE(flaginfo); ++i) {
+  for (int i = 0; i < arraysize(flaginfo); ++i) {
     if (flags & flaginfo[i].value) {
       if (!first) result << " | ";
       result << flaginfo[i].name;
@@ -88,7 +89,7 @@ std::string ListFlags(int flags) {
 
 // Returns a comma-separated, human-readable list of the integers in 'array'.
 // All 'num_elems' of them.
-std::string ListArray(const uint16* array, int num_elems) {
+std::string ListArray(const uint16_t* array, int num_elems) {
   std::stringstream result;
   for (int i = 0; i < num_elems; ++i) {
     if (i) {
@@ -473,7 +474,7 @@ bool SctpDataMediaChannel::OpenSctpSocket() {
   struct sctp_event event = {0};
   event.se_assoc_id = SCTP_ALL_ASSOC;
   event.se_on = 1;
-  for (size_t i = 0; i < ARRAY_SIZE(event_types); i++) {
+  for (size_t i = 0; i < arraysize(event_types); i++) {
     event.se_type = event_types[i];
     if (usrsctp_setsockopt(sock_, IPPROTO_SCTP, SCTP_EVENT, &event,
                            sizeof(event)) < 0) {
@@ -575,7 +576,7 @@ bool SctpDataMediaChannel::AddSendStream(const StreamParams& stream) {
   return AddStream(stream);
 }
 
-bool SctpDataMediaChannel::RemoveSendStream(uint32 ssrc) {
+bool SctpDataMediaChannel::RemoveSendStream(uint32_t ssrc) {
   return ResetStream(ssrc);
 }
 
@@ -586,7 +587,7 @@ bool SctpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
   return true;
 }
 
-bool SctpDataMediaChannel::RemoveRecvStream(uint32 ssrc) {
+bool SctpDataMediaChannel::RemoveRecvStream(uint32_t ssrc) {
   // SCTP DataChannels are always bi-directional and calling RemoveSendStream
   // will disable both sending and receiving on the stream. So RemoveRecvStream
   // is a no-op.
@@ -727,8 +728,14 @@ bool SctpDataMediaChannel::AddStream(const StreamParams& stream) {
     return false;
   }
 
-  const uint32 ssrc = stream.first_ssrc();
-  if (open_streams_.find(ssrc) != open_streams_.end()) {
+  const uint32_t ssrc = stream.first_ssrc();
+  if (ssrc >= cricket::kMaxSctpSid) {
+    LOG(LS_WARNING) << debug_name_ << "->Add(Send|Recv)Stream(...): "
+                    << "Not adding data stream '" << stream.id
+                    << "' with ssrc=" << ssrc
+                    << " because stream ssrc is too high.";
+    return false;
+  } else if (open_streams_.find(ssrc) != open_streams_.end()) {
     LOG(LS_WARNING) << debug_name_ << "->Add(Send|Recv)Stream(...): "
                     << "Not adding data stream '" << stream.id
                     << "' with ssrc=" << ssrc
@@ -747,7 +754,7 @@ bool SctpDataMediaChannel::AddStream(const StreamParams& stream) {
   return true;
 }
 
-bool SctpDataMediaChannel::ResetStream(uint32 ssrc) {
+bool SctpDataMediaChannel::ResetStream(uint32_t ssrc) {
   // We typically get this called twice for the same stream, once each for
   // Send and Recv.
   StreamSet::iterator found = open_streams_.find(ssrc);
@@ -984,7 +991,7 @@ void SctpDataMediaChannel::OnPacketFromSctpToNetwork(
                   << " even after adding " << kSctpOverhead
                   << " extra SCTP overhead";
   }
-  MediaChannel::SendPacket(buffer);
+  MediaChannel::SendPacket(buffer, rtc::PacketOptions());
 }
 
 bool SctpDataMediaChannel::SendQueuedStreamResets() {
@@ -997,10 +1004,10 @@ bool SctpDataMediaChannel::SendQueuedStreamResets() {
                   << ListStreams(sent_reset_streams_) << "]";
 
   const size_t num_streams = queued_reset_streams_.size();
-  const size_t num_bytes = sizeof(struct sctp_reset_streams)
-    + (num_streams * sizeof(uint16));
+  const size_t num_bytes =
+      sizeof(struct sctp_reset_streams) + (num_streams * sizeof(uint16_t));
 
-  std::vector<uint8> reset_stream_buf(num_bytes, 0);
+  std::vector<uint8_t> reset_stream_buf(num_bytes, 0);
   struct sctp_reset_streams* resetp = reinterpret_cast<sctp_reset_streams*>(
       &reset_stream_buf[0]);
   resetp->srs_assoc_id = SCTP_ALL_ASSOC;

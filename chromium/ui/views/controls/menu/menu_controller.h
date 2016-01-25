@@ -7,11 +7,14 @@
 
 #include "build/build_config.h"
 
+#include <stddef.h>
+
 #include <list>
 #include <set>
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
@@ -30,7 +33,6 @@ namespace gfx {
 class Screen;
 }
 namespace ui {
-class NativeTheme;
 class OSExchangeData;
 class ScopedEventDispatcher;
 }
@@ -119,6 +121,16 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // An alternative to Cancel(EXIT_ALL) that can be used with a OneShotTimer.
   void CancelAll() { Cancel(EXIT_ALL); }
 
+  // When is_nested_run() this will add a delegate to the stack. The most recent
+  // delegate will be notified. It will be removed upon the exiting of the
+  // nested menu. Ownership is not taken.
+  void AddNestedDelegate(internal::MenuControllerDelegate* delegate);
+
+  // Sets whether the subsequent call to Run is asynchronous. When nesting calls
+  // to Run, if a new MenuControllerDelegate has been nested, the previous
+  // asynchronous state will be reapplied once nesting has ended.
+  void SetAsyncRun(bool is_async);
+
   // Returns the current exit type. This returns a value other than EXIT_NONE if
   // the menu is being canceled.
   ExitType exit_type() const { return exit_type_; }
@@ -132,18 +144,21 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   //
   // NOTE: the coordinates of the events are in that of the
   // MenuScrollViewContainer.
-  void OnMousePressed(SubmenuView* source, const ui::MouseEvent& event);
-  void OnMouseDragged(SubmenuView* source, const ui::MouseEvent& event);
+  bool OnMousePressed(SubmenuView* source, const ui::MouseEvent& event);
+  bool OnMouseDragged(SubmenuView* source, const ui::MouseEvent& event);
   void OnMouseReleased(SubmenuView* source, const ui::MouseEvent& event);
   void OnMouseMoved(SubmenuView* source, const ui::MouseEvent& event);
   void OnMouseEntered(SubmenuView* source, const ui::MouseEvent& event);
   bool OnMouseWheel(SubmenuView* source, const ui::MouseWheelEvent& event);
   void OnGestureEvent(SubmenuView* source, ui::GestureEvent* event);
+  void OnTouchEvent(SubmenuView* source, ui::TouchEvent* event);
+  View* GetTooltipHandlerForPoint(SubmenuView* source, const gfx::Point& point);
+  void ViewHierarchyChanged(SubmenuView* source,
+                            const View::ViewHierarchyChangedDetails& details);
 
-  bool GetDropFormats(
-      SubmenuView* source,
-      int* formats,
-      std::set<ui::OSExchangeData::CustomFormat>* custom_formats);
+  bool GetDropFormats(SubmenuView* source,
+                      int* formats,
+                      std::set<ui::Clipboard::FormatType>* format_types);
   bool AreDropTypesRequired(SubmenuView* source);
   bool CanDrop(SubmenuView* source, const ui::OSExchangeData& data);
   void OnDragEntered(SubmenuView* source, const ui::DropTargetEvent& event);
@@ -293,7 +308,7 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   void SetSelection(MenuItemView* menu_item, int types);
 
   void SetSelectionOnPointerDown(SubmenuView* source,
-                                 const ui::LocatedEvent& event);
+                                 const ui::LocatedEvent* event);
   void StartDrag(SubmenuView* source, const gfx::Point& location);
 
   // Key processing.
@@ -301,8 +316,7 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
 
   // Creates a MenuController. If |blocking| is true a nested message loop is
   // started in |Run|.
-  MenuController(ui::NativeTheme* theme,
-                 bool blocking,
+  MenuController(bool blocking,
                  internal::MenuControllerDelegate* delegate);
 
   ~MenuController() override;
@@ -369,6 +383,17 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   bool GetMenuPartByScreenCoordinateImpl(SubmenuView* menu,
                                          const gfx::Point& screen_loc,
                                          MenuPart* part);
+
+  // Returns the RootView of the target for the mouse event, if there is a
+  // target at |source_loc|.
+  MenuHostRootView* GetRootView(SubmenuView* source,
+                                const gfx::Point& source_loc);
+
+  // Converts the located event from |source|'s geometry to |dst|'s geometry,
+  // iff the root view of source and dst differ.
+  void ConvertLocatedEventForRootView(View* source,
+                                      View* dst,
+                                      ui::LocatedEvent* event);
 
   // Returns true if the SubmenuView contains the specified location. This does
   // NOT included the scroll buttons, only the submenu view.
@@ -478,7 +503,7 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // On non-aura Windows, a new mouse event is generated and posted to
   // the window (if there is one) at the location of the event. On
   // aura, the event is reposted on the RootWindow.
-  void RepostEvent(SubmenuView* source, const ui::LocatedEvent& event);
+  void RepostEvent(SubmenuView* source, const ui::LocatedEvent* event);
 
   // Sets the drop target to new_item.
   void SetDropMenuItem(MenuItemView* new_item,
@@ -515,8 +540,18 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // Sets exit type. Calling this can terminate the active nested message-loop.
   void SetExitType(ExitType type);
 
-  // Terminates the current nested message-loop.
-  void TerminateNestedMessageLoop();
+  // Terminates the current nested message-loop, if there is any. Returns |true|
+  // if any message loop is terminated.
+  bool TerminateNestedMessageLoopIfNecessary();
+
+  // Performs the teardown of menus launched with |async_run_|. This will
+  // notifiy the |delegate_|. If |exit_type_| is EXIT_ALL all nested
+  // asynchronous runs will be exited.
+  void ExitAsyncRun();
+
+  // Performs the teardown of the menu launched by Run(). The selected item is
+  // returned.
+  MenuItemView* ExitMenuRun();
 
   // Handles the mouse location event on the submenu |source|.
   void HandleMouseLocation(SubmenuView* source,
@@ -564,6 +599,12 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // MenuController to restore the state when the nested run returns.
   typedef std::pair<State, linked_ptr<MenuButton::PressedLock> > NestedState;
   std::list<NestedState> menu_stack_;
+
+  // When Run is invoked during an active Run, it may be called from a separate
+  // MenuControllerDelegate. If not empty is means we are nested, and the
+  // stacked delegates should be notified instead of |delegate_|.
+  typedef std::pair<internal::MenuControllerDelegate*, bool> NestedDelegate;
+  std::list<NestedDelegate> delegate_stack_;
 
   // As the mouse moves around submenus are not opened immediately. Instead
   // they open after this timer fires.
@@ -623,8 +664,6 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // showing a context menu from a menu).
   int message_loop_depth_;
 
-  views::MenuConfig menu_config_;
-
   // The timestamp of the event which closed the menu - or 0 otherwise.
   base::TimeDelta closing_event_time_;
 
@@ -635,12 +674,25 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // screen coordinates). Otherwise this will be (0, 0).
   gfx::Point menu_start_mouse_press_loc_;
 
+  // Controls behviour differences between an asynchronous run, and other types
+  // of run (blocking, drag and drop).
+  bool async_run_;
+
   // Controls behavior differences between a combobox and other types of menu
   // (like a context menu).
   bool is_combobox_;
 
   // Set to true if the menu item was selected by touch.
   bool item_selected_by_touch_;
+
+  // During mouse event handling, this is the RootView to forward mouse events
+  // to. We need this, because if we forward one event to it (e.g., mouse
+  // pressed), subsequent events (like dragging) should also go to it, even if
+  // the mouse is no longer over the view.
+  MenuHostRootView* current_mouse_event_target_;
+
+  // A mask of the EventFlags for the mouse buttons currently pressed.
+  int current_mouse_pressed_state_;
 
   scoped_ptr<MenuMessageLoop> message_loop_;
 

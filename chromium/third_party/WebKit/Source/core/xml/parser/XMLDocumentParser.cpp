@@ -23,7 +23,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -178,10 +177,19 @@ private:
 
 class PendingEndElementNSCallback final : public XMLDocumentParser::PendingCallback {
 public:
+    explicit PendingEndElementNSCallback(TextPosition scriptStartPosition)
+        : m_scriptStartPosition(scriptStartPosition)
+    {
+    }
+
     void call(XMLDocumentParser* parser) override
     {
+        parser->setScriptStartPosition(m_scriptStartPosition);
         parser->endElementNs();
     }
+
+private:
+    TextPosition m_scriptStartPosition;
 };
 
 class PendingCharactersCallback final : public XMLDocumentParser::PendingCallback {
@@ -996,6 +1004,7 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
         return;
 
     if (m_parserPaused) {
+        m_scriptStartPosition = textPosition();
         m_pendingCallbacks.append(adoptPtr(new PendingStartElementNSCallback(localName, prefix, uri, nbNamespaces, libxmlNamespaces,
             nbAttributes, nbDefaulted, libxmlAttributes)));
         return;
@@ -1071,7 +1080,7 @@ void XMLDocumentParser::endElementNs()
         return;
 
     if (m_parserPaused) {
-        m_pendingCallbacks.append(adoptPtr(new PendingEndElementNSCallback()));
+        m_pendingCallbacks.append(adoptPtr(new PendingEndElementNSCallback(m_scriptStartPosition)));
         return;
     }
 
@@ -1144,6 +1153,11 @@ void XMLDocumentParser::endElementNs()
     }
     m_requestingScript = false;
     popCurrentNode();
+}
+
+void XMLDocumentParser::setScriptStartPosition(TextPosition textPosition)
+{
+    m_scriptStartPosition = textPosition;
 }
 
 void XMLDocumentParser::characters(const xmlChar* chars, int length)

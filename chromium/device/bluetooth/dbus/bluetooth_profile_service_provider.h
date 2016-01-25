@@ -5,10 +5,12 @@
 #ifndef DEVICE_BLUETOOTH_DBUS_BLUETOOTH_PROFILE_SERVICE_PROVIDER_H_
 #define DEVICE_BLUETOOTH_DBUS_BLUETOOTH_PROFILE_SERVICE_PROVIDER_H_
 
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "dbus/bus.h"
 #include "dbus/file_descriptor.h"
@@ -22,10 +24,10 @@ namespace bluez {
 //
 // Instantiate with a chosen D-Bus object path and delegate object, and pass
 // the D-Bus object path as the |agent_path| argument to the
-// chromeos::BluetoothProfileManagerClient::RegisterProfile() method.
+// bluez::BluetoothProfileManagerClient::RegisterProfile() method.
 //
 // When an incoming profile connection occurs, or after initiating a connection
-// using the chromeos::BluetoothDeviceClient::ConnectProfile() method, the
+// using the bluez::BluetoothDeviceClient::ConnectProfile() method, the
 // Bluetooth daemon will make calls to this profile object and they will be
 // passed on to your Delegate object for handling. Responses should be returned
 // using the callbacks supplied to those methods.
@@ -48,10 +50,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothProfileServiceProvider {
       ~Options() {}
 
       // Profile version.
-      uint16 version;
+      uint16_t version;
 
       // Profile features.
-      uint16 features;
+      uint16_t features;
     };
 
     // The ConfirmationCallback is used for methods which require confirmation;

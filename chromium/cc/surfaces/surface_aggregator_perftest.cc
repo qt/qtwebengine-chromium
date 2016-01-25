@@ -24,6 +24,14 @@ namespace {
 class EmptySurfaceFactoryClient : public SurfaceFactoryClient {
  public:
   void ReturnResources(const ReturnedResourceArray& resources) override {}
+  void SetBeginFrameSource(SurfaceId surface_id,
+                           BeginFrameSource* begin_frame_source) override {}
+};
+
+class EmptySurfaceAggregatorClient : public SurfaceAggregatorClient {
+ public:
+  void AddSurface(Surface* surface) override {}
+  void RemoveSurface(Surface* surface) override {}
 };
 
 class SurfaceAggregatorPerfTest : public testing::Test {
@@ -44,7 +52,8 @@ class SurfaceAggregatorPerfTest : public testing::Test {
                bool optimize_damage,
                bool full_damage,
                const std::string& name) {
-    aggregator_.reset(new SurfaceAggregator(&manager_, resource_provider_.get(),
+    aggregator_.reset(new SurfaceAggregator(&surface_aggregator_client_,
+                                            &manager_, resource_provider_.get(),
                                             optimize_damage));
     for (int i = 1; i <= num_surfaces; i++) {
       factory_.Create(SurfaceId(i));
@@ -74,7 +83,7 @@ class SurfaceAggregatorPerfTest : public testing::Test {
         bool flipped = false;
         bool nearest_neighbor = false;
         quad->SetAll(sqs, rect, opaque_rect, visible_rect, needs_blending, j,
-                     gfx::Size(), false, premultiplied_alpha, uv_top_left,
+                     gfx::Size(), premultiplied_alpha, uv_top_left,
                      uv_bottom_right, background_color, vertex_opacity, flipped,
                      nearest_neighbor);
       }
@@ -87,10 +96,10 @@ class SurfaceAggregatorPerfTest : public testing::Test {
                              SurfaceId(i - 1));
       }
 
-      frame_data->render_pass_list.push_back(pass.Pass());
+      frame_data->render_pass_list.push_back(std::move(pass));
       scoped_ptr<CompositorFrame> frame(new CompositorFrame);
-      frame->delegated_frame_data = frame_data.Pass();
-      factory_.SubmitCompositorFrame(SurfaceId(i), frame.Pass(),
+      frame->delegated_frame_data = std::move(frame_data);
+      factory_.SubmitCompositorFrame(SurfaceId(i), std::move(frame),
                                      SurfaceFactory::DrawCallback());
     }
 
@@ -111,10 +120,11 @@ class SurfaceAggregatorPerfTest : public testing::Test {
       else
         pass->damage_rect = gfx::Rect(0, 0, 1, 1);
 
-      frame_data->render_pass_list.push_back(pass.Pass());
+      frame_data->render_pass_list.push_back(std::move(pass));
       scoped_ptr<CompositorFrame> frame(new CompositorFrame);
-      frame->delegated_frame_data = frame_data.Pass();
-      factory_.SubmitCompositorFrame(SurfaceId(num_surfaces + 1), frame.Pass(),
+      frame->delegated_frame_data = std::move(frame_data);
+      factory_.SubmitCompositorFrame(SurfaceId(num_surfaces + 1),
+                                     std::move(frame),
                                      SurfaceFactory::DrawCallback());
 
       scoped_ptr<CompositorFrame> aggregated =
@@ -139,6 +149,7 @@ class SurfaceAggregatorPerfTest : public testing::Test {
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<SurfaceAggregator> aggregator_;
+  EmptySurfaceAggregatorClient surface_aggregator_client_;
   LapTimer timer_;
 };
 

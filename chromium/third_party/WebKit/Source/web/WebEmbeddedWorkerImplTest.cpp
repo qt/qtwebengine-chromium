@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "public/web/WebEmbeddedWorker.h"
 
 #include "platform/testing/URLTestHelpers.h"
@@ -13,8 +12,8 @@
 #include "public/web/WebEmbeddedWorkerStartData.h"
 #include "public/web/WebSettings.h"
 #include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 namespace {
@@ -67,6 +66,18 @@ protected:
 TEST_F(WebEmbeddedWorkerImplFailureTest, TerminateSoonAfterStart)
 {
     EXPECT_CALL(*m_mockClient, workerReadyForInspection()).Times(1);
+    m_worker->startWorkerContext(m_startData);
+    ::testing::Mock::VerifyAndClearExpectations(m_mockClient);
+
+    EXPECT_CALL(*m_mockClient, workerContextFailedToStart()).Times(1);
+    m_worker->terminateWorkerContext();
+    ::testing::Mock::VerifyAndClearExpectations(m_mockClient);
+}
+
+TEST_F(WebEmbeddedWorkerImplFailureTest, TerminateWhileWaitingForDebugger)
+{
+    EXPECT_CALL(*m_mockClient, workerReadyForInspection()).Times(1);
+    m_startData.waitForDebuggerMode = WebEmbeddedWorkerStartData::WaitForDebugger;
     m_worker->startWorkerContext(m_startData);
     ::testing::Mock::VerifyAndClearExpectations(m_mockClient);
 

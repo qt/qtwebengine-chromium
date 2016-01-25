@@ -4,6 +4,8 @@
 
 #include "content/browser/loader/resource_scheduler.h"
 
+#include <utility>
+
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -53,8 +55,8 @@ class TestRequest : public ResourceController {
               scoped_ptr<ResourceThrottle> throttle,
               ResourceScheduler* scheduler)
       : started_(false),
-        url_request_(url_request.Pass()),
-        throttle_(throttle.Pass()),
+        url_request_(std::move(url_request)),
+        throttle_(std::move(throttle)),
         scheduler_(scheduler) {
     throttle_->set_controller_for_testing(this);
   }
@@ -102,10 +104,10 @@ class CancelingTestRequest : public TestRequest {
   CancelingTestRequest(scoped_ptr<net::URLRequest> url_request,
                        scoped_ptr<ResourceThrottle> throttle,
                        ResourceScheduler* scheduler)
-      : TestRequest(url_request.Pass(), throttle.Pass(), scheduler) {}
+      : TestRequest(std::move(url_request), std::move(throttle), scheduler) {}
 
   void set_request_to_cancel(scoped_ptr<TestRequest> request_to_cancel) {
-    request_to_cancel_ = request_to_cancel.Pass();
+    request_to_cancel_ = std::move(request_to_cancel);
   }
 
  private:
@@ -181,7 +183,7 @@ class ResourceSchedulerTest : public testing::Test {
       int route_id) {
     scoped_ptr<net::URLRequest> url_request(
         context_.CreateRequest(GURL(url), priority, NULL));
-    return url_request.Pass();
+    return url_request;
   }
 
   scoped_ptr<net::URLRequest> NewURLRequest(const char* url,
@@ -238,8 +240,8 @@ class ResourceSchedulerTest : public testing::Test {
         NewURLRequestWithChildAndRoute(url, priority, child_id, route_id));
     scoped_ptr<ResourceThrottle> throttle(scheduler_->ScheduleRequest(
         child_id, route_id, is_async, url_request.get()));
-    TestRequest* request =
-        new TestRequest(url_request.Pass(), throttle.Pass(), scheduler());
+    TestRequest* request = new TestRequest(std::move(url_request),
+                                           std::move(throttle), scheduler());
     request->Start();
     return request;
   }
@@ -282,7 +284,9 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilIdle) {
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -293,8 +297,15 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilBodyInserted) {
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
+  // TODO(mmenke):  The name of this test implies this should be false.
+  // Investigate if this is now expected, remove or update this test if it is.
+  EXPECT_TRUE(low2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -305,9 +316,13 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilCriticalComplete) {
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -319,7 +334,9 @@ TEST_F(ResourceSchedulerTest, LowDoesNotBlockCriticalComplete) {
   EXPECT_TRUE(low->started());
   EXPECT_TRUE(lowest->started());
   EXPECT_FALSE(lowest2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest2->started());
 }
 
@@ -335,8 +352,10 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilBodyInsertedExceptSpdy) {
   EXPECT_TRUE(low_spdy->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -367,9 +386,13 @@ TEST_F(ResourceSchedulerTest, StartMultipleLowRequestsWhenIdle) {
   EXPECT_TRUE(high2->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   high1.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(low2->started());
+
   high2.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -382,16 +405,18 @@ TEST_F(ResourceSchedulerTest, CancelOtherRequestsWhileResuming) {
   scoped_ptr<ResourceThrottle> throttle(scheduler()->ScheduleRequest(
       kChildId, kRouteId, true, url_request.get()));
   scoped_ptr<CancelingTestRequest> low2(new CancelingTestRequest(
-      url_request.Pass(), throttle.Pass(), scheduler()));
+      std::move(url_request), std::move(throttle), scheduler()));
   low2->Start();
 
   scoped_ptr<TestRequest> low3(NewRequest("http://host/low3", net::LOWEST));
-  low2->set_request_to_cancel(low3.Pass());
+  low2->set_request_to_cancel(std::move(low3));
   scoped_ptr<TestRequest> low4(NewRequest("http://host/low4", net::LOWEST));
 
   EXPECT_TRUE(high->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low1->started());
   EXPECT_TRUE(low2->started());
   EXPECT_TRUE(low4->started());
@@ -421,10 +446,14 @@ TEST_F(ResourceSchedulerTest, LimitedNumberOfDelayableRequestsInFlight) {
                                                      net::LOWEST));
 
   EXPECT_FALSE(second_last_singlehost->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(second_last_singlehost->started());
   EXPECT_FALSE(last_singlehost->started());
+
   lows_singlehost.erase(lows_singlehost.begin());
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(last_singlehost->started());
 
   // Queue more requests from different hosts until we reach the total limit.
@@ -432,6 +461,7 @@ TEST_F(ResourceSchedulerTest, LimitedNumberOfDelayableRequestsInFlight) {
       kMaxNumDelayableRequestsPerClient - kMaxNumDelayableRequestsPerHost;
   EXPECT_GT(expected_slots_left, 0);
   ScopedVector<TestRequest> lows_different_host;
+  base::RunLoop().RunUntilIdle();
   for (int i = 0; i < expected_slots_left; ++i) {
     string url = "http://host" + base::IntToString(i) + "/low";
     lows_different_host.push_back(NewRequest(url.c_str(), net::LOWEST));
@@ -439,7 +469,7 @@ TEST_F(ResourceSchedulerTest, LimitedNumberOfDelayableRequestsInFlight) {
   }
 
   scoped_ptr<TestRequest> last_different_host(NewRequest("http://host_new/last",
-                                                        net::LOWEST));
+                                                         net::LOWEST));
   EXPECT_FALSE(last_different_host->started());
 }
 
@@ -452,6 +482,7 @@ TEST_F(ResourceSchedulerTest, RaisePriorityAndStart) {
   EXPECT_FALSE(request->started());
 
   ChangeRequestPriority(request.get(), net::HIGHEST);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(request->started());
 }
 
@@ -466,6 +497,7 @@ TEST_F(ResourceSchedulerTest, RaisePriorityInQueue) {
   EXPECT_FALSE(idle->started());
 
   ChangeRequestPriority(request.get(), net::LOWEST);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
 
@@ -478,6 +510,7 @@ TEST_F(ResourceSchedulerTest, RaisePriorityInQueue) {
 
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
   high.reset();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(request->started());
   EXPECT_FALSE(idle->started());
@@ -494,6 +527,7 @@ TEST_F(ResourceSchedulerTest, LowerPriority) {
   EXPECT_FALSE(idle->started());
 
   ChangeRequestPriority(request.get(), net::IDLE);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
 
@@ -509,6 +543,7 @@ TEST_F(ResourceSchedulerTest, LowerPriority) {
 
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
   high.reset();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(request->started());
   EXPECT_TRUE(idle->started());
@@ -532,14 +567,17 @@ TEST_F(ResourceSchedulerTest, ReprioritizedRequestGoesToBackOfQueue) {
   }
 
   ChangeRequestPriority(request.get(), net::IDLE);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
 
   ChangeRequestPriority(request.get(), net::LOWEST);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
 
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
 }
@@ -560,10 +598,12 @@ TEST_F(ResourceSchedulerTest, HigherIntraPriorityGoesToFrontOfQueue) {
   EXPECT_FALSE(request->started());
 
   ChangeRequestPriority(request.get(), net::IDLE, 1);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
 
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(request->started());
 }
 
@@ -617,6 +657,7 @@ TEST_F(ResourceSchedulerTest, SpdyProxySchedulesImmediately) {
   EXPECT_FALSE(request->started());
 
   scheduler()->OnReceivedSpdyProxiedHttpResponse(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(request->started());
 
   scoped_ptr<TestRequest> after(NewRequest("http://host/after", net::IDLE));
@@ -640,9 +681,11 @@ TEST_F(ResourceSchedulerTest, NewSpdyHostInDelayableRequests) {
   http_server_properties_.SetSupportsSpdy(
       net::HostPortPair("spdyhost1", 8080), true);
   low1_spdy.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low1->started());
 
   low1.reset();
+  base::RunLoop().RunUntilIdle();
   scoped_ptr<TestRequest> low2_spdy(
       NewRequest("http://spdyhost2:8080/low", net::IDLE));
   // Reprioritize a request after we learn the server supports SPDY.
@@ -650,6 +693,7 @@ TEST_F(ResourceSchedulerTest, NewSpdyHostInDelayableRequests) {
   http_server_properties_.SetSupportsSpdy(
       net::HostPortPair("spdyhost2", 8080), true);
   ChangeRequestPriority(low2_spdy.get(), net::LOWEST);
+  base::RunLoop().RunUntilIdle();
   scoped_ptr<TestRequest> low2(NewRequest("http://host/low", net::LOWEST));
   EXPECT_TRUE(low2->started());
 }
@@ -749,9 +793,10 @@ TEST_F(ResourceSchedulerTest, UnthrottleNewlyVisibleClient) {
 
   scheduler()->OnVisibilityChanged(
       kBackgroundChildId, kBackgroundRouteId, true);
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(ResourceScheduler::ACTIVE_AND_LOADING,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
-                                                kBackgroundRouteId));
+                                                  kBackgroundRouteId));
   EXPECT_TRUE(request->started());
 }
 
@@ -770,6 +815,7 @@ TEST_F(ResourceSchedulerTest, UnthrottleNewlyAudibleClient) {
 
   scheduler()->OnAudibilityChanged(
       kBackgroundChildId, kBackgroundRouteId, true);
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(ResourceScheduler::ACTIVE_AND_LOADING,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
                                                 kBackgroundRouteId));
@@ -843,8 +889,8 @@ TEST_F(ResourceSchedulerTest, ThrottledClientStartsNextHighestPriorityRequest) {
   EXPECT_FALSE(low->started());
   EXPECT_FALSE(high->started());
 
-  // request->CancelRequest();
   request->Cancel();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(high->started());
   EXPECT_FALSE(low->started());
 }
@@ -864,7 +910,8 @@ TEST_F(ResourceSchedulerTest, ThrottledSpdyProxySchedulesImmediately) {
   EXPECT_FALSE(request->started());
 
   scheduler()->OnReceivedSpdyProxiedHttpResponse(kBackgroundChildId,
-                                               kBackgroundRouteId);
+                                                 kBackgroundRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(request->started());
 
   scoped_ptr<TestRequest> after(
@@ -890,7 +937,8 @@ TEST_F(ResourceSchedulerTest, CoalescedClientIssuesNoRequests) {
   EXPECT_FALSE(request->started());
 
   scheduler()->OnReceivedSpdyProxiedHttpResponse(kBackgroundChildId,
-                                               kBackgroundRouteId);
+                                                 kBackgroundRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(high->started());
 
   scoped_ptr<TestRequest> after(
@@ -915,7 +963,8 @@ TEST_F(ResourceSchedulerTest, CoalescedSpdyProxyWaits) {
   EXPECT_FALSE(request->started());
 
   scheduler()->OnReceivedSpdyProxiedHttpResponse(kBackgroundChildId,
-                                               kBackgroundRouteId);
+                                                 kBackgroundRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(request->started());
 
   scoped_ptr<TestRequest> after(
@@ -1687,6 +1736,7 @@ TEST_F(ResourceSchedulerTest, FullVisibleLoadedCorrectlyUnthrottle) {
   scheduler()->OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
   scheduler()->OnLoadingStateChanged(kChildId2, kRouteId2, true);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(scheduler()->active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::THROTTLED,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
@@ -1709,6 +1759,7 @@ TEST_F(ResourceSchedulerTest, FullVisibleLoadedCorrectlyUnthrottle) {
 
   // 2 visible loaded, 1 hidden loading, 1 hidden loaded
   scheduler()->OnLoadingStateChanged(kChildId, kRouteId, true);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(scheduler()->active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::UNTHROTTLED,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
@@ -1725,6 +1776,7 @@ TEST_F(ResourceSchedulerTest, FullVisibleLoadedCorrectlyUnthrottle) {
 
   // 1 visible and 1 hidden loaded, 1 visible and 1 hidden loading
   scheduler()->OnLoadingStateChanged(kChildId, kRouteId, false);
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(scheduler()->active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::THROTTLED,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
@@ -1801,6 +1853,7 @@ TEST_F(ResourceSchedulerTest, CoalescedClientCreationStartsTimer) {
   EXPECT_FALSE(mock_timer_->IsRunning());
   scheduler()->OnLoadingStateChanged(
       kBackgroundChildId, kBackgroundRouteId, true);
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(ResourceScheduler::COALESCED,
             scheduler()->GetClientStateForTesting(kBackgroundChildId,
                                                 kBackgroundRouteId));
@@ -2024,6 +2077,7 @@ TEST_F(ResourceSchedulerTest, CoalescedRequestsIssueOnTimer) {
   EXPECT_FALSE(low->started());
 
   FireCoalescingTimer();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(low->started());
@@ -2082,6 +2136,7 @@ TEST_F(ResourceSchedulerTest, CoalescedRequestsUnthrottleCorrectlyOnTimer) {
   EXPECT_FALSE(low_spdy->started());
 
   FireCoalescingTimer();
+  base::RunLoop().RunUntilIdle();
 
   // All high priority requests should issue.
   EXPECT_TRUE(high->started());
@@ -2115,6 +2170,7 @@ TEST_F(ResourceSchedulerTest, CoalescedRequestsWaitForNextTimer) {
   EXPECT_FALSE(high->started());
 
   FireCoalescingTimer();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<TestRequest> high2(
       NewBackgroundRequest("http://host/high2", net::HIGHEST));
@@ -2126,6 +2182,7 @@ TEST_F(ResourceSchedulerTest, CoalescedRequestsWaitForNextTimer) {
   EXPECT_FALSE(low->started());
 
   FireCoalescingTimer();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(high2->started());
@@ -2163,14 +2220,14 @@ TEST_F(ResourceSchedulerTest, GetVisualSignalFromRenderViewHost) {
   // Check initial visibility is set correctly.
   EXPECT_EQ(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
                                                  rvh1->GetRoutingID()),
-            !rvh1->is_hidden());
+            !rvh1->GetWidget()->is_hidden());
   EXPECT_EQ(scheduler->IsClientVisibleForTesting(rvh2->GetProcess()->GetID(),
                                                  rvh1->GetRoutingID()),
-            !rvh2->is_hidden());
+            !rvh2->GetWidget()->is_hidden());
 
-  // 1 visible, 1 hidden
-  rvh1->WasShown(ui::LatencyInfo());
-  rvh2->WasHidden();
+  // 1 visible, 1 hidden.
+  rvh1->GetWidget()->WasShown(ui::LatencyInfo());
+  rvh2->GetWidget()->WasHidden();
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
@@ -2179,8 +2236,8 @@ TEST_F(ResourceSchedulerTest, GetVisualSignalFromRenderViewHost) {
                                                     rvh2->GetRoutingID()));
 
   // Flip the visibility and check again.
-  rvh1->WasHidden();
-  rvh2->WasShown(ui::LatencyInfo());
+  rvh1->GetWidget()->WasHidden();
+  rvh2->GetWidget()->WasShown(ui::LatencyInfo());
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
@@ -2257,7 +2314,9 @@ TEST_F(ResourceSchedulerTest, OutstandingRequestLimitDelays) {
   EXPECT_TRUE(high->started());
   EXPECT_FALSE(low->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low->started());
   EXPECT_TRUE(low2->started());
 }
@@ -2274,9 +2333,11 @@ TEST_F(ResourceSchedulerTest, RequestStartedAfterClientDeleted) {
   scoped_ptr<TestRequest> lowest2(NewRequestWithChildAndRoute(
       "http://host/lowest", net::LOWEST, kChildId2, kRouteId2));
   EXPECT_FALSE(lowest2->started());
+
   scheduler_->OnClientDeleted(kChildId2, kRouteId2);
   high.reset();
   lowest1.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest2->started());
 }
 
@@ -2297,9 +2358,11 @@ TEST_F(ResourceSchedulerTest, RequestStartedAfterClientDeletedManyDelayable) {
   scoped_ptr<TestRequest> lowest(NewRequestWithChildAndRoute(
       "http://host/lowest", net::LOWEST, kChildId2, kRouteId2));
   EXPECT_FALSE(lowest->started());
+
   scheduler_->OnClientDeleted(kChildId2, kRouteId2);
   high.reset();
   delayable_requests.clear();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest->started());
 }
 
@@ -2344,7 +2407,9 @@ TEST_F(ResourceSchedulerTest, DefaultLayoutBlockingPriority) {
   EXPECT_TRUE(low2->started());
   EXPECT_TRUE(lowest->started());
   EXPECT_FALSE(lowest2->started());
+
   lowest.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest2->started());
 }
 
@@ -2391,14 +2456,20 @@ TEST_F(ResourceSchedulerTest, IncreaseLayoutBlockingPriority) {
   EXPECT_FALSE(low2->started());
   EXPECT_FALSE(lowest->started());
   EXPECT_FALSE(lowest2->started());
+
   low.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
   EXPECT_FALSE(lowest->started());
   EXPECT_FALSE(lowest2->started());
+
   low2.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest->started());
   EXPECT_FALSE(lowest2->started());
+
   lowest.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(lowest2->started());
 }
 
@@ -2432,12 +2503,18 @@ TEST_F(ResourceSchedulerTest, UseLayoutBlockingThresholdOne) {
   EXPECT_TRUE(high2->started());
   EXPECT_FALSE(low->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   high2.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(low2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -2473,13 +2550,19 @@ TEST_F(ResourceSchedulerTest, UseLayoutBlockingThresholdTwo) {
   EXPECT_TRUE(high3->started());
   EXPECT_FALSE(low->started());
   EXPECT_FALSE(low2->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+
   high2.reset();
   high3.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(low2->started());
+
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low2->started());
 }
 
@@ -2513,8 +2596,10 @@ TEST_F(ResourceSchedulerTest, TwoDelayableLoadsUntilBodyInserted) {
   EXPECT_TRUE(low->started());
   EXPECT_TRUE(low2->started());
   EXPECT_FALSE(low3->started());
+
   high.reset();
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low3->started());
 }
 
@@ -2552,12 +2637,16 @@ TEST_F(ResourceSchedulerTest,
   EXPECT_FALSE(low->started());
   EXPECT_FALSE(low2->started());
   EXPECT_FALSE(low3->started());
+
   high.reset();
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low->started());
   EXPECT_TRUE(low2->started());
   EXPECT_FALSE(low3->started());
+
   high2.reset();
   scheduler()->OnWillInsertBody(kChildId, kRouteId);
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(low3->started());
 }
 
@@ -2637,7 +2726,7 @@ TEST_F(ResourceSchedulerTest,
   }
 
   scoped_ptr<TestRequest> last_different_host(NewRequest("http://host_new/last",
-                                                        net::LOWEST));
+                                                         net::LOWEST));
   EXPECT_FALSE(last_different_host->started());
 }
 

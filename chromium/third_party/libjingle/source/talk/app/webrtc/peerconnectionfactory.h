@@ -31,12 +31,18 @@
 #include <string>
 
 #include "talk/app/webrtc/dtlsidentitystore.h"
+#include "talk/app/webrtc/mediacontroller.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/session/media/channelmanager.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/base/thread.h"
+
+namespace rtc {
+class BasicNetworkManager;
+class BasicPacketSocketFactory;
+}
 
 namespace webrtc {
 
@@ -49,14 +55,12 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
     options_ = options;
   }
 
-  // webrtc::PeerConnectionFactoryInterface override;
-  rtc::scoped_refptr<PeerConnectionInterface>
-      CreatePeerConnection(
-          const PeerConnectionInterface::RTCConfiguration& configuration,
-          const MediaConstraintsInterface* constraints,
-          PortAllocatorFactoryInterface* allocator_factory,
-          rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
-          PeerConnectionObserver* observer) override;
+  rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
+      const PeerConnectionInterface::RTCConfiguration& configuration,
+      const MediaConstraintsInterface* constraints,
+      rtc::scoped_ptr<cricket::PortAllocator> allocator,
+      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      PeerConnectionObserver* observer) override;
 
   bool Initialize();
 
@@ -79,8 +83,11 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
                        AudioSourceInterface* audio_source) override;
 
   bool StartAecDump(rtc::PlatformFile file) override;
+  void StopAecDump() override;
+  bool StartRtcEventLog(rtc::PlatformFile file) override;
+  void StopRtcEventLog() override;
 
-  virtual cricket::ChannelManager* channel_manager();
+  virtual webrtc::MediaControllerInterface* CreateMediaController() const;
   virtual rtc::Thread* signaling_thread();
   virtual rtc::Thread* worker_thread();
   const Options& options() const { return options_; }
@@ -103,7 +110,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   rtc::Thread* signaling_thread_;
   rtc::Thread* worker_thread_;
   Options options_;
-  rtc::scoped_refptr<PortAllocatorFactoryInterface> default_allocator_factory_;
   // External Audio device used for audio playback.
   rtc::scoped_refptr<AudioDeviceModule> default_adm_;
   rtc::scoped_ptr<cricket::ChannelManager> channel_manager_;
@@ -115,6 +121,8 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   // injected any. In that case, video engine will use the internal SW decoder.
   rtc::scoped_ptr<cricket::WebRtcVideoDecoderFactory>
       video_decoder_factory_;
+  rtc::scoped_ptr<rtc::BasicNetworkManager> default_network_manager_;
+  rtc::scoped_ptr<rtc::BasicPacketSocketFactory> default_socket_factory_;
 
   rtc::scoped_refptr<RefCountedDtlsIdentityStore> dtls_identity_store_;
 };

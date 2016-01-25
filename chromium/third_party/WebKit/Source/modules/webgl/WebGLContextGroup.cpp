@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/webgl/WebGLContextGroup.h"
 
 #include "modules/webgl/WebGLSharedObject.h"
@@ -49,8 +47,7 @@ WebGLContextGroup::~WebGLContextGroup()
 WebGraphicsContext3D* WebGLContextGroup::getAWebGraphicsContext3D()
 {
     ASSERT(!m_contexts.isEmpty());
-    HashSet<WebGLRenderingContextBase*>::iterator it = m_contexts.begin();
-    return (*it)->webContext();
+    return (*m_contexts.begin())->webContext();
 }
 
 void WebGLContextGroup::addContext(WebGLRenderingContextBase* context)
@@ -80,8 +77,7 @@ void WebGLContextGroup::addObject(WebGLSharedObject* object)
 void WebGLContextGroup::detachAndRemoveAllObjects()
 {
     while (!m_groupObjects.isEmpty()) {
-        HashSet<WebGLSharedObject*>::iterator it = m_groupObjects.begin();
-        (*it)->detachContextGroup();
+        (*m_groupObjects.begin())->detachContextGroup();
     }
 }
 

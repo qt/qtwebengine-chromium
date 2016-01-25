@@ -20,14 +20,20 @@ public:
 
     WorkerObjectProxy& workerObjectProxy() const { return m_workerObjectProxy; }
 
+    // Returns the shared backing thread for all CompositorWorkers.
+    static WebThreadSupportingGC* sharedBackingThread();
+
+    static bool hasThreadForTest();
+    static bool hasIsolateForTest();
+
 protected:
     CompositorWorkerThread(PassRefPtr<WorkerLoaderProxy>, WorkerObjectProxy&, double timeOrigin);
 
     // WorkerThread:
     PassRefPtrWillBeRawPtr<WorkerGlobalScope> createWorkerGlobalScope(PassOwnPtr<WorkerThreadStartupData>) override;
     WebThreadSupportingGC& backingThread() override;
-    void didStartRunLoop() override { }
-    void didStopRunLoop() override { }
+    void didStartWorkerThread() override { }
+    void willStopWorkerThread() override { }
     void initializeBackingThread() override;
     void shutdownBackingThread() override;
     v8::Isolate* initializeIsolate() override;

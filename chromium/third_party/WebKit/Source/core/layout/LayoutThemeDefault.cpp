@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutThemeDefault.h"
 
 #include "core/CSSValueKeywords.h"
@@ -56,10 +55,11 @@ static const float maxCancelButtonSize = 21;
 static const float defaultSearchFieldResultsDecorationSize = 13;
 static const float minSearchFieldResultsDecorationSize = 9;
 static const float maxSearchFieldResultsDecorationSize = 30;
+static const int menuListArrowPaddingSize = 14;
 
 static bool useMockTheme()
 {
-    return LayoutTestSupport::isRunningLayoutTest();
+    return LayoutTestSupport::isMockThemeEnabledForTest();
 }
 
 unsigned LayoutThemeDefault::m_activeSelectionBackgroundColor = 0xff1e90ff;
@@ -78,7 +78,7 @@ LayoutThemeDefault::~LayoutThemeDefault()
 {
 }
 
-bool LayoutThemeDefault::supportsFocusRing(const ComputedStyle& style) const
+bool LayoutThemeDefault::themeDrawsFocusRing(const ComputedStyle& style) const
 {
     if (useMockTheme()) {
         // Don't use focus rings for buttons when mocking controls.
@@ -110,12 +110,11 @@ Color LayoutThemeDefault::systemColor(CSSValueID cssValueId) const
 String LayoutThemeDefault::extraDefaultStyleSheet()
 {
     return LayoutTheme::extraDefaultStyleSheet()
-        + loadResourceAsASCIIString("themeWin.css")
-        + loadResourceAsASCIIString("themeChromiumSkia.css")
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
         + loadResourceAsASCIIString("themeInputMultipleFields.css")
 #endif
-        + loadResourceAsASCIIString("themeChromium.css");
+        + loadResourceAsASCIIString("themeWin.css");
+
 }
 
 String LayoutThemeDefault::extraQuirksStyleSheet()
@@ -389,13 +388,10 @@ void LayoutThemeDefault::setDefaultFontSize(int fontSize)
     LayoutThemeFontProvider::setDefaultFontSize(fontSize);
 }
 
-int LayoutThemeDefault::menuListArrowPadding() const
-{
-    return ScrollbarTheme::theme()->scrollbarThickness();
-}
-
 int LayoutThemeDefault::menuListInternalPadding(const ComputedStyle& style, int paddingType) const
 {
+    if (style.appearance() == NoControlPart)
+        return 0;
     // This internal padding is in addition to the user-supplied padding.
     // Matches the FF behavior.
     int padding = styledMenuListInternalPadding[paddingType];
@@ -403,13 +399,11 @@ int LayoutThemeDefault::menuListInternalPadding(const ComputedStyle& style, int 
     // Reserve the space for right arrow here. The rest of the padding is
     // set by adjustMenuListStyle, since PopMenuWin.cpp uses the padding from
     // LayoutMenuList to lay out the individual items in the popup.
-    // If the MenuList actually has appearance "NoAppearance", then that means
-    // we don't draw a button, so don't reserve space for it.
     const int barType = style.direction() == LTR ? RightPadding : LeftPadding;
-    if (paddingType == barType && style.appearance() != NoControlPart)
-        padding += menuListArrowPadding();
+    if (paddingType == barType)
+        padding += menuListArrowPaddingSize;
 
-    return padding;
+    return padding * style.effectiveZoom();
 }
 
 //

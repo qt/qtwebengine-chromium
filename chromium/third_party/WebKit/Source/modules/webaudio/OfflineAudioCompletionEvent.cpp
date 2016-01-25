@@ -22,8 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
 namespace blink {
@@ -65,4 +63,3 @@ DEFINE_TRACE(OfflineAudioCompletionEvent)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

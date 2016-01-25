@@ -5,7 +5,8 @@
 // https://w3c.github.io/push-api/#pushsubscription-interface
 
 enum PushEncryptionKeyName {
-    "curve25519dh"
+    "p256dh",
+    "auth"
 };
 
 [
@@ -18,5 +19,5 @@ enum PushEncryptionKeyName {
     [RuntimeEnabled=PushMessagingData] ArrayBuffer? getKey(PushEncryptionKeyName name);
     [CallWith=ScriptState] Promise<boolean> unsubscribe();
 
-    serializer = { attribute };
+    serializer;
 };

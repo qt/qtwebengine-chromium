@@ -28,17 +28,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
 #include "bindings/core/v8/V8BindingForTesting.h"
-#include "core/dom/DOMError.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
+#include "modules/indexeddb/MockWebIDBDatabase.h"
 #include "platform/SharedBuffer.h"
-#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 #include <v8.h>
 
 namespace blink {
@@ -77,24 +77,12 @@ private:
     RefPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
-class FakeWebIDBDatabase final : public WebIDBDatabase {
-public:
-    static PassOwnPtr<FakeWebIDBDatabase> create() { return adoptPtr(new FakeWebIDBDatabase()); }
-
-    void commit(long long transactionId) override { }
-    void abort(long long transactionId) override { }
-    void close() override { }
-
-private:
-    FakeWebIDBDatabase() { }
-};
-
 class FakeIDBDatabaseCallbacks final : public IDBDatabaseCallbacks {
 public:
     static FakeIDBDatabaseCallbacks* create() { return new FakeIDBDatabaseCallbacks(); }
     void onVersionChange(int64_t oldVersion, int64_t newVersion) override { }
     void onForcedClose() override { }
-    void onAbort(int64_t transactionId, DOMError* error) override { }
+    void onAbort(int64_t transactionId, DOMException* error) override { }
     void onComplete(int64_t transactionId) override { }
 private:
     FakeIDBDatabaseCallbacks() { }
@@ -102,7 +90,9 @@ private:
 
 TEST_F(IDBTransactionTest, EnsureLifetime)
 {
-    OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
+    OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+    EXPECT_CALL(*backend, close())
+        .Times(1);
     Persistent<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), FakeIDBDatabaseCallbacks::create());
 
     const int64_t transactionId = 1234;
@@ -123,7 +113,7 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
     // This will generate an abort() call to the back end which is dropped by the fake proxy,
     // so an explicit onAbort call is made.
     executionContext()->stopActiveDOMObjects();
-    transaction->onAbort(DOMError::create(AbortError, "Aborted"));
+    transaction->onAbort(DOMException::create(AbortError, "Aborted"));
     transaction.clear();
 
     Heap::collectAllGarbage();
@@ -132,10 +122,15 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
 
 TEST_F(IDBTransactionTest, TransactionFinish)
 {
-    OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
+    const int64_t transactionId = 1234;
+
+    OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
+    EXPECT_CALL(*backend, commit(transactionId))
+        .Times(1);
+    EXPECT_CALL(*backend, close())
+        .Times(1);
     Persistent<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), FakeIDBDatabaseCallbacks::create());
 
-    const int64_t transactionId = 1234;
     const HashSet<String> transactionScope = HashSet<String>();
     Persistent<IDBTransaction> transaction = IDBTransaction::create(scriptState(), transactionId, transactionScope, WebIDBTransactionModeReadOnly, db.get());
     PersistentHeapHashSet<WeakMember<IDBTransaction>> set;
@@ -159,7 +154,7 @@ TEST_F(IDBTransactionTest, TransactionFinish)
 
     // Fire an abort to make sure this doesn't free the transaction during use. The test
     // will not fail if it is, but ASAN would notice the error.
-    db->onAbort(transactionId, DOMError::create(AbortError, "Aborted"));
+    db->onAbort(transactionId, DOMException::create(AbortError, "Aborted"));
 
     // onAbort() should have cleared the transaction's reference to the database.
     Heap::collectAllGarbage();

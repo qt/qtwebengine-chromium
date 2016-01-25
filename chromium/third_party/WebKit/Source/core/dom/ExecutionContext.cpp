@@ -25,7 +25,6 @@
  *
  */
 
-#include "config.h"
 #include "core/dom/ExecutionContext.h"
 
 #include "core/dom/ExecutionContextTask.h"
@@ -72,7 +71,6 @@ ExecutionContext::ExecutionContext()
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_activeDOMObjectsAreStopped(false)
-    , m_strictMixedContentCheckingEnforced(false)
     , m_windowInteractionTokens(0)
     , m_isRunSuspendableTasksScheduled(false)
     , m_referrerPolicy(ReferrerPolicyDefault)
@@ -107,7 +105,7 @@ void ExecutionContext::postSuspendableTask(PassOwnPtr<SuspendableTask> task)
 {
     m_suspendedTasks.append(task);
     if (!m_activeDOMObjectsAreSuspended)
-        postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
+        postTask(BLINK_FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
 }
 
 void ExecutionContext::notifyContextDestroyed()
@@ -133,7 +131,7 @@ void ExecutionContext::resumeScheduledTasks()
     if (m_isRunSuspendableTasksScheduled)
         return;
     m_isRunSuspendableTasksScheduled = true;
-    postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
+    postTask(BLINK_FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
 }
 
 void ExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
@@ -264,9 +262,15 @@ bool ExecutionContext::isWindowInteractionAllowed() const
     return m_windowInteractionTokens > 0;
 }
 
+bool ExecutionContext::isSecureContext(const SecureContextCheck privilegeContextCheck) const
+{
+    String unusedErrorMessage;
+    return isSecureContext(unusedErrorMessage, privilegeContextCheck);
+}
+
 void ExecutionContext::setReferrerPolicy(ReferrerPolicy referrerPolicy)
 {
-    // FIXME: Can we adopt the CSP referrer policy merge algorithm? Or does the web rely on being able to modify the referrer policy in-flight?
+    // When a referrer policy has already been set, the latest value takes precedence.
     UseCounter::count(this, UseCounter::SetReferrerPolicy);
     if (m_referrerPolicy != ReferrerPolicyDefault)
         UseCounter::count(this, UseCounter::ResetReferrerPolicy);

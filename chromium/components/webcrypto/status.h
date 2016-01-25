@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_WEBCRYPTO_STATUS_H_
 #define COMPONENTS_WEBCRYPTO_STATUS_H_
 
+#include <stddef.h>
+
 #include <string>
 #include "third_party/WebKit/public/platform/WebCrypto.h"
 
@@ -264,6 +266,9 @@ class Status {
 
   // No length parameter was provided for PBKDF2's Derive Bits operation.
   static Status ErrorPbkdf2DeriveBitsLengthNotSpecified();
+
+  // PBKDF2 was called with iterations == 0.
+  static Status ErrorPbkdf2Iterations0();
 
  private:
   enum Type { TYPE_ERROR, TYPE_SUCCESS };

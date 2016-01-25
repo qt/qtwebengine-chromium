@@ -30,9 +30,9 @@
 
 /**
  * @constructor
+ * @extends {WebInspector.VBox}
  * @implements {WebInspector.Searchable}
  * @implements {WebInspector.TargetManager.Observer}
- * @extends {WebInspector.VBox}
  * @param {!WebInspector.FilterBar} filterBar
  * @param {!Element} progressBarContainer
  * @param {!WebInspector.Setting} networkLogLargeRowsSetting
@@ -42,7 +42,6 @@ WebInspector.NetworkLogView = function(filterBar, progressBarContainer, networkL
     WebInspector.VBox.call(this);
     this.setMinimumSize(50, 64);
     this.registerRequiredCSS("network/networkLogView.css");
-    this.registerRequiredCSS("ui/filter.css");
 
     this._networkHideDataURLSetting = WebInspector.settings.createSetting("networkHideDataURL", false);
     this._networkResourceTypeFiltersSetting = WebInspector.settings.createSetting("networkResourceTypeFilters", {});
@@ -314,17 +313,17 @@ WebInspector.NetworkLogView.prototype = {
         this._recordingHint = this.element.createChild("div", "network-status-pane fill");
         var hintText = this._recordingHint.createChild("div", "recording-hint");
         var reloadShortcutNode = this._recordingHint.createChild("b");
-        reloadShortcutNode.textContent = WebInspector.ShortcutsScreen.TimelinePanelShortcuts.RecordPageReload[0].name;
+        reloadShortcutNode.textContent = WebInspector.shortcutRegistry.shortcutDescriptorsForAction("main.reload")[0].name;
 
         if (this._recording) {
             var recordingText = hintText.createChild("span");
             recordingText.textContent = WebInspector.UIString("Recording network activity\u2026");
             hintText.createChild("br");
-            hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("Perform a request or hit %s to record the reload."), [reloadShortcutNode], null));
+            hintText.appendChild(WebInspector.formatLocalized("Perform a request or hit %s to record the reload.", [reloadShortcutNode]));
         } else {
             var recordNode = hintText.createChild("b");
             recordNode.textContent = WebInspector.shortcutRegistry.shortcutTitleForAction("network.toggle-recording");
-            hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("Record (%s) or reload (%s) to display network activity."), [recordNode, reloadShortcutNode], null));
+            hintText.appendChild(WebInspector.formatLocalized("Record (%s) or reload (%s) to display network activity.", [recordNode, reloadShortcutNode]));
         }
     },
 
@@ -491,7 +490,7 @@ WebInspector.NetworkLogView.prototype = {
         this._dataGrid.element.addEventListener("mousedown", this._dataGridMouseDown.bind(this), true);
         this._dataGrid.element.addEventListener("mousemove", this._dataGridMouseMove.bind(this), true);
         this._dataGrid.element.addEventListener("mouseleave", this._highlightInitiatorChain.bind(this, null), true);
-        this._dataGrid.show(this.element);
+        this._dataGrid.asWidget().show(this.element);
 
         // Event listeners need to be added _after_ we attach to the document, so that owner document is properly update.
         this._dataGrid.addEventListener(WebInspector.DataGrid.Events.SortingChanged, this._sortItems, this);
@@ -980,8 +979,8 @@ WebInspector.NetworkLogView.prototype = {
         for (var i = 0; i < nodesToInsert.length; ++i) {
             var node = nodesToInsert[i];
             var request = node.request();
-            node.refresh();
             dataGrid.insertChild(node);
+            node.refresh();
             node[WebInspector.NetworkLogView._isMatchingSearchQuerySymbol] = this._matchRequest(request);
         }
 
@@ -1049,12 +1048,11 @@ WebInspector.NetworkLogView.prototype = {
     },
 
     /**
-      * @param {!WebInspector.NetworkLogView.FilterType} filterType
-      * @param {string} filterValue
+      * @param {string} filterString
       */
-    setTextFilterValue: function(filterType, filterValue)
+    setTextFilterValue: function(filterString)
     {
-        this._textFilterUI.setValue(filterType + ":" + filterValue);
+        this._textFilterUI.setValue(filterString);
     },
 
     /**
@@ -1382,7 +1380,7 @@ WebInspector.NetworkLogView.prototype = {
                 var list = blockedSetting.get();
                 list.push(url);
                 blockedSetting.set(list);
-                WebInspector.BlockedURLsPane.reveal();
+                WebInspector.inspectorView.showViewInDrawer("network.blocked-urls");
             }
         }
 
@@ -1636,6 +1634,8 @@ WebInspector.NetworkLogView.prototype = {
         if (!this._resourceCategoryFilterUI.accept(categoryName))
             return false;
         if (this._dataURLFilterUI.checked() && request.parsedURL.isDataURL())
+            return false;
+        if (request.statusText === "Service Worker Fallback Required")
             return false;
         for (var i = 0; i < this._filters.length; ++i) {
             if (!this._filters[i](request))

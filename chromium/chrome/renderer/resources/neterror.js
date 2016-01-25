@@ -114,6 +114,18 @@ function showSavedCopyButtonClick() {
   }
 }
 
+function showOfflinePagesButtonClick() {
+  if (window.errorPageController) {
+    errorPageController.showOfflinePagesButtonClick();
+  }
+}
+
+function showOfflineCopyButtonClick() {
+  if (window.errorPageController) {
+    errorPageController.showOfflineCopyButtonClick();
+  }
+}
+
 function detailsButtonClick() {
   if (window.errorPageController)
     errorPageController.detailsButtonClick();
@@ -150,6 +162,22 @@ function onDocumentLoad() {
   var reloadButton = document.getElementById('reload-button');
   var detailsButton = document.getElementById('details-button');
   var showSavedCopyButton = document.getElementById('show-saved-copy-button');
+  var showOfflinePagesButton =
+      document.getElementById('show-offline-pages-button');
+  var showOfflineCopyButton =
+      document.getElementById('show-offline-copy-button');
+
+  var reloadButtonVisible = loadTimeData.valueExists('reloadButton') &&
+      loadTimeData.getValue('reloadButton').msg;
+  var showSavedCopyButtonVisible =
+      loadTimeData.valueExists('showSavedCopyButton') &&
+      loadTimeData.getValue('showSavedCopyButton').msg;
+  var showOfflinePagesButtonVisible =
+      loadTimeData.valueExists('showOfflinePagesButton') &&
+      loadTimeData.getValue('showOfflinePagesButton').msg;
+  var showOfflineCopyButtonVisible =
+      loadTimeData.valueExists('showOfflineCopyButton') &&
+      loadTimeData.getValue('showOfflineCopyButton').msg;
 
   var primaryButton, secondaryButton;
   if (showSavedCopyButton.primary) {
@@ -175,39 +203,23 @@ function onDocumentLoad() {
   }
 
   if (reloadButton.style.display == 'none' &&
-      showSavedCopyButton.style.display == 'none') {
+      showSavedCopyButton.style.display == 'none' &&
+      showOfflinePagesButton.style.display == 'none' &&
+      showOfflineCopyButton.style.display == 'none') {
     detailsButton.classList.add('singular');
   }
 
-<if expr="not chromeos">
-  // Hide the details button if there are no details to show.
-  if (loadTimeData.valueExists('summary') &&
-          !loadTimeData.getValue('summary').msg) {
-    detailsButton.style.display = 'none';
-  }
-</if>
-
   // Show control buttons.
-  if (loadTimeData.valueExists('reloadButton') &&
-          loadTimeData.getValue('reloadButton').msg ||
-      loadTimeData.valueExists('showSavedCopyButton') &&
-          loadTimeData.getValue('showSavedCopyButton').msg) {
+  if (reloadButtonVisible || showSavedCopyButtonVisible ||
+      showOfflinePagesButtonVisible || showOfflineCopyButton) {
     controlButtonDiv.hidden = false;
 
     // Set the secondary button state in the cases of two call to actions.
-    if (loadTimeData.valueExists('reloadButton') &&
-            loadTimeData.getValue('reloadButton').msg &&
-        loadTimeData.valueExists('showSavedCopyButton') &&
-            loadTimeData.getValue('showSavedCopyButton').msg) {
+    if ((reloadButtonVisible || showOfflinePagesButtonVisible ||
+         showOfflineCopyButton) &&
+        showSavedCopyButtonVisible) {
       secondaryButton.classList.add('secondary-button');
     }
-  }
-
-  // Add a main message paragraph.
-  if (loadTimeData.valueExists('primaryParagraph')) {
-    var p = document.querySelector('#main-message p');
-    p.innerHTML = loadTimeData.getString('primaryParagraph');
-    p.hidden = false;
   }
 }
 

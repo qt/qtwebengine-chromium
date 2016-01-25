@@ -17,6 +17,7 @@
 #include <string>
 
 #include "base/numerics/safe_conversions.h"
+#include "build/build_config.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d.h"
@@ -178,6 +179,8 @@ class GFX_EXPORT Rect {
   int ManhattanInternalDistance(const Rect& rect) const;
 
   std::string ToString() const;
+
+  bool ApproximatelyEqual(const Rect& rect, int tolerance) const;
 
  private:
   gfx::Point origin_;

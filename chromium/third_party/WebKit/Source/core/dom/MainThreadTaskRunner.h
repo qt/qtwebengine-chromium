@@ -30,7 +30,7 @@
 #include "core/CoreExport.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -44,7 +44,7 @@ class ExecutionContextTask;
 
 class CORE_EXPORT MainThreadTaskRunner final : public NoBaseWillBeGarbageCollectedFinalized<MainThreadTaskRunner> {
     WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(MainThreadTaskRunner);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(MainThreadTaskRunner);
 
 public:
     static PassOwnPtrWillBeRawPtr<MainThreadTaskRunner> create(ExecutionContext*);

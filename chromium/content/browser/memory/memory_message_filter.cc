@@ -9,8 +9,20 @@
 
 namespace content {
 
-MemoryMessageFilter::MemoryMessageFilter()
-    : BrowserMessageFilter(MemoryMsgStart) {}
+MemoryMessageFilter::MemoryMessageFilter(
+    const BrowserChildProcessHost* child_process_host,
+    ProcessType process_type)
+    : BrowserMessageFilter(MemoryMsgStart),
+      process_host_(child_process_host),
+      process_type_(process_type) {
+  DCHECK_NE(process_type_, PROCESS_TYPE_RENDERER);
+}
+
+MemoryMessageFilter::MemoryMessageFilter(
+    const RenderProcessHost* render_process_host)
+    : BrowserMessageFilter(MemoryMsgStart),
+      process_host_(render_process_host),
+      process_type_(PROCESS_TYPE_RENDERER) {}
 
 MemoryMessageFilter::~MemoryMessageFilter() {}
 
@@ -34,6 +46,11 @@ void MemoryMessageFilter::SendSetPressureNotificationsSuppressed(
 void MemoryMessageFilter::SendSimulatePressureNotification(
     base::MemoryPressureListener::MemoryPressureLevel level) {
   Send(new MemoryMsg_SimulatePressureNotification(level));
+}
+
+void MemoryMessageFilter::SendPressureNotification(
+    base::MemoryPressureListener::MemoryPressureLevel level) {
+  Send(new MemoryMsg_PressureNotification(level));
 }
 
 }  // namespace content

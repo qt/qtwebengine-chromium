@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 #include "ui/events/ozone/evdev/input_device_settings_evdev.h"
@@ -62,6 +62,8 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
   void GetTouchEventLog(const base::FilePath& out_dir,
                         const GetTouchEventLogReply& reply) override;
   void SetInternalTouchpadEnabled(bool enabled) override;
+  bool IsInternalTouchpadEnabled() const override;
+  void SetTouchscreensEnabled(bool enabled) override;
   void SetInternalKeyboardFilter(bool enable_filter,
                                  std::vector<DomCode> allowed_keys) override;
 

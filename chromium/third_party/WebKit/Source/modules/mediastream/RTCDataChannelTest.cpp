@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/mediastream/RTCDataChannel.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -14,9 +13,9 @@
 #include "public/platform/WebRTCDataChannelHandler.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/platform/WebVector.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 namespace {

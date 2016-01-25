@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -41,6 +40,7 @@
 #include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutTextControl.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/MathExtras.h"
@@ -241,6 +241,14 @@ String NumberInputType::sanitizeValue(const String& proposedValue) const
     if (proposedValue.isEmpty())
         return proposedValue;
     return std::isfinite(parseToDoubleForNumberType(proposedValue)) ? proposedValue : emptyString();
+}
+
+void NumberInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value.isEmpty() || !element().sanitizeValue(value).isEmpty())
+        return;
+    element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
+        String::format("The specified value %s is not a valid number. The value must match to the following regular expression: -?(\\d+|\\d+\\.\\d+|\\.\\d+)([eE][-+]?\\d+)?", JSONValue::quoteString(value).utf8().data())));
 }
 
 bool NumberInputType::hasBadInput() const

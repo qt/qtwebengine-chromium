@@ -5,14 +5,16 @@
 #ifndef UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 #define UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
@@ -295,7 +297,10 @@ class UI_BASE_EXPORT ResourceBundle {
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetNativeImageNamed);
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleImageTest,
                            CountMaterialDesignDataPacksInResourceBundle);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundleMacImageTest,
+                           CheckImageFromMaterialDesign);
 
+  friend class ResourceBundleMacImageTest;
   friend class ResourceBundleImageTest;
   friend class ResourceBundleTest;
 

@@ -28,7 +28,7 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT FEFlood : public FilterEffect {
+class PLATFORM_EXPORT FEFlood final: public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FEFlood> create(Filter*, const Color&, float);
 
@@ -42,12 +42,12 @@ public:
     // color space regardless of the value of color-interpolation-filters.
     void setOperatingColorSpace(ColorSpace) override { }
 
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
-
     TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FEFlood(Filter*, const Color&, float);
+
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 
     Color m_floodColor;
     float m_floodOpacity;

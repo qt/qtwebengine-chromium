@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
@@ -22,6 +23,8 @@ static const int kBitsPerChannel = 16;
 static const int kSampleRate = 48000;
 static const int kBufferSize = 8192;
 static const media::ChannelLayout kChannelLayout = media::CHANNEL_LAYOUT_STEREO;
+static const media::ChannelLayout kAnotherChannelLayout =
+    media::CHANNEL_LAYOUT_2_1;
 static const std::string kDefaultDeviceId;
 static const url::Origin kSecurityOrigin;
 
@@ -108,7 +111,7 @@ TEST_F(AudioRendererMixerManagerTest, GetRemoveMixer) {
   EXPECT_EQ(mixer_count(), 1);
 
   media::AudioParameters params2(
-      AudioParameters::AUDIO_PCM_LINEAR, kChannelLayout, kSampleRate * 2,
+      AudioParameters::AUDIO_PCM_LINEAR, kAnotherChannelLayout, kSampleRate * 2,
       kBitsPerChannel, kBufferSize * 2);
   media::AudioRendererMixer* mixer2 = GetMixer(
       kRenderFrameId, params2, kDefaultDeviceId, kSecurityOrigin, nullptr);
@@ -142,21 +145,25 @@ TEST_F(AudioRendererMixerManagerTest, MixerReuse) {
   ASSERT_TRUE(mixer1);
   EXPECT_EQ(mixer_count(), 1);
 
-  // Different formats, bit depths, and buffer sizes should not result in a
-  // different mixer.
+  // Different sample rates, formats, bit depths, and buffer sizes should not
+  // result in a different mixer.
   media::AudioParameters params2(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                 kChannelLayout, kSampleRate,
-                                 kBitsPerChannel * 2, kBufferSize * 2);
+                                 kChannelLayout,
+                                 kSampleRate * 2,
+                                 kBitsPerChannel * 2,
+                                 kBufferSize * 2);
   EXPECT_EQ(mixer1, GetMixer(kRenderFrameId, params2, kDefaultDeviceId,
                              kSecurityOrigin, nullptr));
   EXPECT_EQ(mixer_count(), 1);
   RemoveMixer(kRenderFrameId, params2, kDefaultDeviceId, kSecurityOrigin);
   EXPECT_EQ(mixer_count(), 1);
 
-  // Modify some parameters that do matter.
+  // Modify some parameters that do matter: channel layout
   media::AudioParameters params3(AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                 media::CHANNEL_LAYOUT_MONO, kSampleRate * 2,
-                                 kBitsPerChannel, kBufferSize);
+                                 kAnotherChannelLayout,
+                                 kSampleRate,
+                                 kBitsPerChannel,
+                                 kBufferSize);
   ASSERT_NE(params3.channel_layout(), params1.channel_layout());
 
   EXPECT_NE(mixer1, GetMixer(kRenderFrameId, params3, kDefaultDeviceId,
@@ -188,12 +195,13 @@ TEST_F(AudioRendererMixerManagerTest, CreateInput) {
   EXPECT_EQ(mixer_count(), 0);
   media::FakeAudioRenderCallback callback(0);
   scoped_refptr<media::AudioRendererMixerInput> input(
-      manager_->CreateInput(kRenderFrameId));
+      manager_->CreateInput(kRenderFrameId, kDefaultDeviceId, kSecurityOrigin));
   input->Initialize(params, &callback);
   EXPECT_EQ(mixer_count(), 0);
   media::FakeAudioRenderCallback another_callback(1);
   scoped_refptr<media::AudioRendererMixerInput> another_input(
-      manager_->CreateInput(kAnotherRenderFrameId));
+      manager_->CreateInput(kAnotherRenderFrameId, kDefaultDeviceId,
+                            kSecurityOrigin));
   another_input->Initialize(params, &another_callback);
   EXPECT_EQ(mixer_count(), 0);
 

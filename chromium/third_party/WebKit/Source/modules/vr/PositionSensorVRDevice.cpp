@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/PositionSensorVRDevice.h"
 
 #include "modules/vr/VRController.h"
@@ -17,13 +16,12 @@ PositionSensorVRDevice::PositionSensorVRDevice(VRHardwareUnit* hardwareUnit, uns
 
 VRPositionState* PositionSensorVRDevice::getState()
 {
-    // FIXME: This value should be stable for the duration of a requestAnimationFrame callback
     return hardwareUnit()->getSensorState();
 }
 
 VRPositionState* PositionSensorVRDevice::getImmediateState()
 {
-    return hardwareUnit()->getSensorState();
+    return hardwareUnit()->getImmediateSensorState(false);
 }
 
 void PositionSensorVRDevice::resetSensor()

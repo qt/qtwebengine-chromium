@@ -4,6 +4,11 @@
 
 #include "media/blink/buffered_resource_loader.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <limits>
+#include <utility>
+
 #include "base/bits.h"
 #include "base/callback_helpers.h"
 #include "base/metrics/histogram.h"
@@ -94,15 +99,14 @@ static void ComputeTargetBufferWindow(double playback_rate, int bitrate,
     std::swap(*out_forward_capacity, *out_backward_capacity);
 }
 
-BufferedResourceLoader::BufferedResourceLoader(
-    const GURL& url,
-    CORSMode cors_mode,
-    int64 first_byte_position,
-    int64 last_byte_position,
-    DeferStrategy strategy,
-    int bitrate,
-    double playback_rate,
-    MediaLog* media_log)
+BufferedResourceLoader::BufferedResourceLoader(const GURL& url,
+                                               CORSMode cors_mode,
+                                               int64_t first_byte_position,
+                                               int64_t last_byte_position,
+                                               DeferStrategy strategy,
+                                               int bitrate,
+                                               double playback_rate,
+                                               MediaLog* media_log)
     : buffer_(kMinBufferCapacity, kMinBufferCapacity),
       loader_failed_(false),
       defer_strategy_(strategy),
@@ -126,7 +130,6 @@ BufferedResourceLoader::BufferedResourceLoader(
       playback_rate_(playback_rate),
       media_log_(media_log),
       cancel_upon_deferral_(false) {
-
   // Set the initial capacity of |buffer_| based on |bitrate_| and
   // |playback_rate_|.
   UpdateBufferWindow();
@@ -180,7 +183,7 @@ void BufferedResourceLoader::Start(
   // Check for our test WebURLLoader.
   scoped_ptr<WebURLLoader> loader;
   if (test_loader_) {
-    loader = test_loader_.Pass();
+    loader = std::move(test_loader_);
   } else {
     WebURLLoaderOptions options;
     if (cors_mode_ == kUnspecified) {
@@ -201,7 +204,7 @@ void BufferedResourceLoader::Start(
 
   // Start the resource loading.
   loader->loadAsynchronously(request, this);
-  active_loader_.reset(new ActiveLoader(loader.Pass()));
+  active_loader_.reset(new ActiveLoader(std::move(loader)));
   loading_cb_.Run(kLoading);
 }
 
@@ -216,11 +219,10 @@ void BufferedResourceLoader::Stop() {
   active_loader_.reset();
 }
 
-void BufferedResourceLoader::Read(
-    int64 position,
-    int read_size,
-    uint8* buffer,
-    const ReadCB& read_cb) {
+void BufferedResourceLoader::Read(int64_t position,
+                                  int read_size,
+                                  uint8_t* buffer,
+                                  const ReadCB& read_cb) {
   DCHECK(start_cb_.is_null());
   DCHECK(read_cb_.is_null());
   DCHECK(!read_cb.is_null());
@@ -254,8 +256,8 @@ void BufferedResourceLoader::Read(
 
   // Make sure |offset_| and |read_position_| does not differ by a large
   // amount.
-  if (read_position_ > offset_ + kint32max ||
-      read_position_ < offset_ + kint32min) {
+  if (read_position_ > offset_ + std::numeric_limits<int32_t>::max() ||
+      read_position_ < offset_ + std::numeric_limits<int32_t>::min()) {
     DoneRead(kCacheMiss, 0);
     return;
   }
@@ -312,11 +314,11 @@ void BufferedResourceLoader::Read(
   DoneRead(kCacheMiss, 0);
 }
 
-int64 BufferedResourceLoader::content_length() {
+int64_t BufferedResourceLoader::content_length() {
   return content_length_;
 }
 
-int64 BufferedResourceLoader::instance_size() {
+int64_t BufferedResourceLoader::instance_size() {
   return instance_size_;
 }
 
@@ -326,7 +328,7 @@ bool BufferedResourceLoader::range_supported() {
 
 /////////////////////////////////////////////////////////////////////////////
 // blink::WebURLLoaderClient implementation.
-void BufferedResourceLoader::willSendRequest(
+void BufferedResourceLoader::willFollowRedirect(
     WebURLLoader* loader,
     WebURLRequest& newRequest,
     const WebURLResponse& redirectResponse) {
@@ -357,10 +359,17 @@ void BufferedResourceLoader::didReceiveResponse(
     WebURLLoader* loader,
     const WebURLResponse& response) {
   DVLOG(1) << "didReceiveResponse: HTTP/"
-           << (response.httpVersion() == WebURLResponse::HTTP_0_9 ? "0.9" :
-               response.httpVersion() == WebURLResponse::HTTP_1_0 ? "1.0" :
-               response.httpVersion() == WebURLResponse::HTTP_1_1 ? "1.1" :
-               "Unknown")
+           << (response.httpVersion() == WebURLResponse::HTTPVersion_0_9
+                   ? "0.9"
+                   : response.httpVersion() == WebURLResponse::HTTPVersion_1_0
+                         ? "1.0"
+                         : response.httpVersion() ==
+                                   WebURLResponse::HTTPVersion_1_1
+                               ? "1.1"
+                               : response.httpVersion() ==
+                                         WebURLResponse::HTTPVersion_2_0
+                                     ? "2.0"
+                                     : "Unknown")
            << " " << response.httpStatusCode();
   DCHECK(active_loader_.get());
   response_original_url_ = response.wasFetchedViaServiceWorker()
@@ -372,7 +381,7 @@ void BufferedResourceLoader::didReceiveResponse(
   if (start_cb_.is_null())
     return;
 
-  uint32 reasons = GetReasonsForUncacheability(response);
+  uint32_t reasons = GetReasonsForUncacheability(response);
   might_be_reused_from_cache_in_future_ = reasons == 0;
   UMA_HISTOGRAM_BOOLEAN("Media.CacheUseful", reasons == 0);
   int shift = 0;
@@ -461,7 +470,7 @@ void BufferedResourceLoader::didReceiveData(
   DCHECK(active_loader_.get());
   DCHECK_GT(data_length, 0);
 
-  buffer_.Append(reinterpret_cast<const uint8*>(data), data_length);
+  buffer_.Append(reinterpret_cast<const uint8_t*>(data), data_length);
 
   // If there is an active read request, try to fulfill the request.
   if (HasPendingRead() && CanFulfillRead())
@@ -546,7 +555,7 @@ void BufferedResourceLoader::didFail(
   // We don't need to continue loading after failure.
   //
   // Keep it alive until we exit this method so that |error| remains valid.
-  scoped_ptr<ActiveLoader> active_loader = active_loader_.Pass();
+  scoped_ptr<ActiveLoader> active_loader = std::move(active_loader_);
   loader_failed_ = true;
   loading_cb_.Run(kLoadingFailed);
 
@@ -571,8 +580,9 @@ bool BufferedResourceLoader::HasSingleOrigin() const {
 }
 
 bool BufferedResourceLoader::DidPassCORSAccessCheck() const {
-  DCHECK(start_cb_.is_null())
-      << "Start() must complete before calling DidPassCORSAccessCheck()";
+  // Until Start() is done we don't know, assume no until we know.
+  if (!start_cb_.is_null())
+    return false;
   return !loader_failed_ && cors_mode_ != kUnspecified;
 }
 
@@ -707,14 +717,16 @@ void BufferedResourceLoader::ReadInternal() {
   DoneRead(kOk, read);
 }
 
-int64 BufferedResourceLoader::first_byte_position() const {
+int64_t BufferedResourceLoader::first_byte_position() const {
   return first_byte_position_;
 }
 
 // static
 bool BufferedResourceLoader::ParseContentRange(
-    const std::string& content_range_str, int64* first_byte_position,
-    int64* last_byte_position, int64* instance_size) {
+    const std::string& content_range_str,
+    int64_t* first_byte_position,
+    int64_t* last_byte_position,
+    int64_t* instance_size) {
   const std::string kUpThroughBytesUnit = "bytes ";
   if (content_range_str.find(kUpThroughBytesUnit) != 0)
     return false;
@@ -758,9 +770,13 @@ void BufferedResourceLoader::CancelUponDeferral() {
     active_loader_.reset();
 }
 
+int64_t BufferedResourceLoader::GetMemoryUsage() const {
+  return buffer_.forward_bytes() + buffer_.backward_bytes();
+}
+
 bool BufferedResourceLoader::VerifyPartialResponse(
     const WebURLResponse& response) {
-  int64 first_byte_position, last_byte_position, instance_size;
+  int64_t first_byte_position, last_byte_position, instance_size;
   if (!ParseContentRange(response.httpHeaderField("Content-Range").utf8(),
                          &first_byte_position, &last_byte_position,
                          &instance_size)) {

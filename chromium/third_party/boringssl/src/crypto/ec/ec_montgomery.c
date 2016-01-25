@@ -74,49 +74,6 @@
 #include "internal.h"
 
 
-const EC_METHOD *EC_GFp_mont_method(void) {
-  static const EC_METHOD ret = {EC_FLAGS_DEFAULT_OCT,
-                                ec_GFp_mont_group_init,
-                                ec_GFp_mont_group_finish,
-                                ec_GFp_mont_group_clear_finish,
-                                ec_GFp_mont_group_copy,
-                                ec_GFp_mont_group_set_curve,
-                                ec_GFp_simple_group_get_curve,
-                                ec_GFp_simple_group_get_degree,
-                                ec_GFp_simple_group_check_discriminant,
-                                ec_GFp_simple_point_init,
-                                ec_GFp_simple_point_finish,
-                                ec_GFp_simple_point_clear_finish,
-                                ec_GFp_simple_point_copy,
-                                ec_GFp_simple_point_set_to_infinity,
-                                ec_GFp_simple_set_Jprojective_coordinates_GFp,
-                                ec_GFp_simple_get_Jprojective_coordinates_GFp,
-                                ec_GFp_simple_point_set_affine_coordinates,
-                                ec_GFp_simple_point_get_affine_coordinates,
-                                0,
-                                0,
-                                0,
-                                ec_GFp_simple_add,
-                                ec_GFp_simple_dbl,
-                                ec_GFp_simple_invert,
-                                ec_GFp_simple_is_at_infinity,
-                                ec_GFp_simple_is_on_curve,
-                                ec_GFp_simple_cmp,
-                                ec_GFp_simple_make_affine,
-                                ec_GFp_simple_points_make_affine,
-                                0 /* mul */,
-                                0 /* precompute_mult */,
-                                0 /* have_precompute_mult */,
-                                ec_GFp_mont_field_mul,
-                                ec_GFp_mont_field_sqr,
-                                0 /* field_div */,
-                                ec_GFp_mont_field_encode,
-                                ec_GFp_mont_field_decode,
-                                ec_GFp_mont_field_set_to_one};
-
-  return &ret;
-}
-
 int ec_GFp_mont_group_init(EC_GROUP *group) {
   int ok;
 
@@ -280,4 +237,44 @@ int ec_GFp_mont_field_set_to_one(const EC_GROUP *group, BIGNUM *r,
     return 0;
   }
   return 1;
+}
+
+static int ec_GFp_mont_check_pub_key_order(const EC_GROUP *group,
+                                           const EC_POINT* pub_key,
+                                           BN_CTX *ctx) {
+  EC_POINT *point = EC_POINT_new(group);
+  int ret = 0;
+
+  if (point == NULL ||
+      !ec_wNAF_mul(group, point, NULL, pub_key, EC_GROUP_get0_order(group),
+                   ctx) ||
+      !EC_POINT_is_at_infinity(group, point)) {
+    goto err;
+  }
+
+  ret = 1;
+
+err:
+  EC_POINT_free(point);
+  return ret;
+}
+
+const EC_METHOD *EC_GFp_mont_method(void) {
+  static const EC_METHOD ret = {
+    ec_GFp_mont_group_init,
+    ec_GFp_mont_group_finish,
+    ec_GFp_mont_group_clear_finish,
+    ec_GFp_mont_group_copy,
+    ec_GFp_mont_group_set_curve,
+    ec_GFp_simple_point_get_affine_coordinates,
+    ec_wNAF_mul /* XXX: Not constant time. */,
+    ec_GFp_mont_check_pub_key_order,
+    ec_GFp_mont_field_mul,
+    ec_GFp_mont_field_sqr,
+    ec_GFp_mont_field_encode,
+    ec_GFp_mont_field_decode,
+    ec_GFp_mont_field_set_to_one,
+  };
+
+  return &ret;
 }

@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/shadow/DistributedNodes.h"
 
 #include "core/dom/shadow/InsertionPoint.h"
@@ -40,7 +39,7 @@ void DistributedNodes::swap(DistributedNodes& other)
 void DistributedNodes::append(PassRefPtrWillBeRawPtr<Node> node)
 {
     ASSERT(node);
-    ASSERT(!isActiveInsertionPoint(*node));
+    ASSERT(!node->isSlotOrActiveInsertionPoint());
     size_t size = m_nodes.size();
     m_indices.set(node.get(), size);
     m_nodes.append(node);

@@ -43,7 +43,7 @@ namespace blink {
 class CSSParserToken;
 
 struct MediaQueryExpValue {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     CSSValueID id;
     double value;
     CSSPrimitiveValue::UnitType unit;
@@ -81,7 +81,7 @@ struct MediaQueryExpValue {
 };
 
 class CORE_EXPORT MediaQueryExp  : public NoBaseWillBeGarbageCollectedFinalized<MediaQueryExp> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(MediaQueryExp);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(MediaQueryExp);
 public:
     static PassOwnPtrWillBeRawPtr<MediaQueryExp> createIfValid(const String& mediaFeature, const Vector<CSSParserToken, 4>&);
     ~MediaQueryExp();
@@ -93,6 +93,8 @@ public:
     bool operator==(const MediaQueryExp& other) const;
 
     bool isViewportDependent() const;
+
+    bool isDeviceDependent() const;
 
     String serialize() const;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/ScriptedIdleTaskController.h"
 
 #include "core/dom/ExecutionContext.h"
@@ -84,9 +83,9 @@ ScriptedIdleTaskController::CallbackId ScriptedIdleTaskController::registerCallb
     long long timeoutMillis = options.timeout();
 
     RefPtr<internal::IdleRequestCallbackWrapper> callbackWrapper = internal::IdleRequestCallbackWrapper::create(id, this);
-    m_scheduler->postIdleTask(FROM_HERE, WTF::bind<double>(&internal::IdleRequestCallbackWrapper::idleTaskFired, callbackWrapper));
+    m_scheduler->postIdleTask(BLINK_FROM_HERE, WTF::bind<double>(&internal::IdleRequestCallbackWrapper::idleTaskFired, callbackWrapper));
     if (timeoutMillis > 0)
-        m_scheduler->timerTaskRunner()->postDelayedTask(FROM_HERE, WTF::bind(&internal::IdleRequestCallbackWrapper::timeoutFired, callbackWrapper), timeoutMillis);
+        m_scheduler->timerTaskRunner()->postDelayedTask(BLINK_FROM_HERE, WTF::bind(&internal::IdleRequestCallbackWrapper::timeoutFired, callbackWrapper), timeoutMillis);
     TRACE_EVENT_INSTANT1("devtools.timeline", "RequestIdleCallback", TRACE_EVENT_SCOPE_THREAD, "data", InspectorIdleCallbackRequestEvent::data(executionContext(), id, timeoutMillis));
     return id;
 }
@@ -156,7 +155,7 @@ void ScriptedIdleTaskController::resume()
     // Repost idle tasks for any remaining callbacks.
     for (auto& callback : m_callbacks) {
         RefPtr<internal::IdleRequestCallbackWrapper> callbackWrapper = internal::IdleRequestCallbackWrapper::create(callback.key, this);
-        m_scheduler->postIdleTask(FROM_HERE, WTF::bind<double>(&internal::IdleRequestCallbackWrapper::idleTaskFired, callbackWrapper));
+        m_scheduler->postIdleTask(BLINK_FROM_HERE, WTF::bind<double>(&internal::IdleRequestCallbackWrapper::idleTaskFired, callbackWrapper));
     }
 }
 

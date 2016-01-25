@@ -5,6 +5,7 @@
 #ifndef UI_TOUCH_SELECTION_TOUCH_SELECTION_CONTROLLER_TEST_API_H_
 #define UI_TOUCH_SELECTION_TOUCH_SELECTION_CONTROLLER_TEST_API_H_
 
+#include "base/macros.h"
 #include "ui/touch_selection/touch_selection_controller.h"
 
 namespace ui {
@@ -19,6 +20,8 @@ class TouchSelectionControllerTestApi {
 
   bool GetStartVisible() const;
   bool GetEndVisible() const;
+  TouchHandleOrientation GetStartHandleOrientation() const;
+  TouchHandleOrientation GetEndHandleOrientation() const;
 
   bool temporarily_hidden() const { return controller_->temporarily_hidden_; }
 

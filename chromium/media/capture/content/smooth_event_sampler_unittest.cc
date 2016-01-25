@@ -4,6 +4,10 @@
 
 #include "media/capture/content/smooth_event_sampler.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -368,7 +372,7 @@ void ReplayCheckingSamplerDecisions(const DataPoint* data_points,
   base::TimeTicks t = InitialTestTimeTicks();
   for (size_t i = 0; i < num_data_points; ++i) {
     t += base::TimeDelta::FromMicroseconds(
-        static_cast<int64>(data_points[i].increment_ms * 1000));
+        static_cast<int64_t>(data_points[i].increment_ms * 1000));
     ASSERT_EQ(data_points[i].should_capture,
               AddEventAndConsiderSampling(sampler, t))
         << "at data_points[" << i << ']';

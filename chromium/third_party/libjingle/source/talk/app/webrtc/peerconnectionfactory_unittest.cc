@@ -26,10 +26,13 @@
  */
 
 #include <string>
+#include <utility>
 
-#include "talk/app/webrtc/fakeportallocatorfactory.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/peerconnectionfactory.h"
+#ifdef WEBRTC_ANDROID
+#include "talk/app/webrtc/test/androidtestinitializer.h"
+#endif
 #include "talk/app/webrtc/test/fakedtlsidentitystore.h"
 #include "talk/app/webrtc/test/fakevideotrackrenderer.h"
 #include "talk/app/webrtc/videosourceinterface.h"
@@ -39,6 +42,7 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/p2p/client/fakeportallocator.h"
 
 using webrtc::DataChannelInterface;
 using webrtc::DtlsIdentityStoreInterface;
@@ -47,16 +51,10 @@ using webrtc::MediaStreamInterface;
 using webrtc::PeerConnectionFactoryInterface;
 using webrtc::PeerConnectionInterface;
 using webrtc::PeerConnectionObserver;
-using webrtc::PortAllocatorFactoryInterface;
 using webrtc::VideoSourceInterface;
 using webrtc::VideoTrackInterface;
 
 namespace {
-
-typedef std::vector<PortAllocatorFactoryInterface::StunConfiguration>
-    StunConfigurations;
-typedef std::vector<PortAllocatorFactoryInterface::TurnConfiguration>
-    TurnConfigurations;
 
 static const char kStunIceServer[] = "stun:stun.l.google.com:19302";
 static const char kTurnIceServer[] = "turn:test%40hello.com@test.com:1234";
@@ -79,8 +77,6 @@ static const char kStunIceServerWithIPv4AddressWithoutPort[] = "stun:1.2.3.4";
 static const char kStunIceServerWithIPv6Address[] = "stun:[2401:fa00:4::]:1234";
 static const char kStunIceServerWithIPv6AddressWithoutPort[] =
     "stun:[2401:fa00:4::]";
-static const char kStunIceServerWithInvalidIPv6Address[] =
-    "stun:[2401:fa00:4:::3478";
 static const char kTurnIceServerWithIPv6Address[] =
     "turn:test@[2401:fa00:4::]:1234";
 
@@ -105,6 +101,9 @@ class NullPeerConnectionObserver : public PeerConnectionObserver {
 
 class PeerConnectionFactoryTest : public testing::Test {
   void SetUp() {
+#ifdef WEBRTC_ANDROID
+    webrtc::InitializeAndroidObjects();
+#endif
     factory_ = webrtc::CreatePeerConnectionFactory(rtc::Thread::Current(),
                                                    rtc::Thread::Current(),
                                                    NULL,
@@ -112,57 +111,58 @@ class PeerConnectionFactoryTest : public testing::Test {
                                                    NULL);
 
     ASSERT_TRUE(factory_.get() != NULL);
-    allocator_factory_ =  webrtc::FakePortAllocatorFactory::Create();
+    port_allocator_.reset(
+        new cricket::FakePortAllocator(rtc::Thread::Current(), nullptr));
+    raw_port_allocator_ = port_allocator_.get();
   }
 
  protected:
-  void VerifyStunConfigurations(StunConfigurations stun_config) {
-    webrtc::FakePortAllocatorFactory* allocator =
-        static_cast<webrtc::FakePortAllocatorFactory*>(
-            allocator_factory_.get());
-    ASSERT_TRUE(allocator != NULL);
-    EXPECT_EQ(stun_config.size(), allocator->stun_configs().size());
-    for (size_t i = 0; i < stun_config.size(); ++i) {
-      EXPECT_EQ(stun_config[i].server.ToString(),
-                allocator->stun_configs()[i].server.ToString());
-    }
+  void VerifyStunServers(cricket::ServerAddresses stun_servers) {
+    EXPECT_EQ(stun_servers, raw_port_allocator_->stun_servers());
   }
 
-  void VerifyTurnConfigurations(TurnConfigurations turn_config) {
-    webrtc::FakePortAllocatorFactory* allocator =
-        static_cast<webrtc::FakePortAllocatorFactory*>(
-            allocator_factory_.get());
-    ASSERT_TRUE(allocator != NULL);
-    EXPECT_EQ(turn_config.size(), allocator->turn_configs().size());
-    for (size_t i = 0; i < turn_config.size(); ++i) {
-      EXPECT_EQ(turn_config[i].server.ToString(),
-                allocator->turn_configs()[i].server.ToString());
-      EXPECT_EQ(turn_config[i].username, allocator->turn_configs()[i].username);
-      EXPECT_EQ(turn_config[i].password, allocator->turn_configs()[i].password);
-      EXPECT_EQ(turn_config[i].transport_type,
-                allocator->turn_configs()[i].transport_type);
+  void VerifyTurnServers(std::vector<cricket::RelayServerConfig> turn_servers) {
+    EXPECT_EQ(turn_servers.size(), raw_port_allocator_->turn_servers().size());
+    for (size_t i = 0; i < turn_servers.size(); ++i) {
+      ASSERT_EQ(1u, turn_servers[i].ports.size());
+      EXPECT_EQ(1u, raw_port_allocator_->turn_servers()[i].ports.size());
+      EXPECT_EQ(
+          turn_servers[i].ports[0].address.ToString(),
+          raw_port_allocator_->turn_servers()[i].ports[0].address.ToString());
+      EXPECT_EQ(turn_servers[i].ports[0].proto,
+                raw_port_allocator_->turn_servers()[i].ports[0].proto);
+      EXPECT_EQ(turn_servers[i].credentials.username,
+                raw_port_allocator_->turn_servers()[i].credentials.username);
+      EXPECT_EQ(turn_servers[i].credentials.password,
+                raw_port_allocator_->turn_servers()[i].credentials.password);
     }
   }
 
   rtc::scoped_refptr<PeerConnectionFactoryInterface> factory_;
   NullPeerConnectionObserver observer_;
-  rtc::scoped_refptr<PortAllocatorFactoryInterface> allocator_factory_;
+  rtc::scoped_ptr<cricket::FakePortAllocator> port_allocator_;
+  // Since the PC owns the port allocator after it's been initialized,
+  // this should only be used when known to be safe.
+  cricket::FakePortAllocator* raw_port_allocator_;
 };
 
 // Verify creation of PeerConnection using internal ADM, video factory and
 // internal libjingle threads.
 TEST(PeerConnectionFactoryTestInternal, CreatePCUsingInternalModules) {
+#ifdef WEBRTC_ANDROID
+  webrtc::InitializeAndroidObjects();
+#endif
+
   rtc::scoped_refptr<PeerConnectionFactoryInterface> factory(
       webrtc::CreatePeerConnectionFactory());
 
   NullPeerConnectionObserver observer;
-  webrtc::PeerConnectionInterface::IceServers servers;
+  webrtc::PeerConnectionInterface::RTCConfiguration config;
 
   rtc::scoped_ptr<FakeDtlsIdentityStore> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory->CreatePeerConnection(
-          servers, nullptr, nullptr, dtls_identity_store.Pass(), &observer));
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory->CreatePeerConnection(
+      config, nullptr, nullptr, std::move(dtls_identity_store), &observer));
 
   EXPECT_TRUE(pc.get() != nullptr);
 }
@@ -182,25 +182,22 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServers) {
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  StunConfigurations stun_configs;
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun1(
-      "stun.l.google.com", 19302);
-  stun_configs.push_back(stun1);
-  VerifyStunConfigurations(stun_configs);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn1(
-      "test.com", 1234, "test@hello.com", kTurnPassword, "udp", false);
-  turn_configs.push_back(turn1);
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn2(
-      "hello.com", kDefaultStunPort, "test", kTurnPassword, "tcp", false);
-  turn_configs.push_back(turn2);
-  VerifyTurnConfigurations(turn_configs);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  cricket::ServerAddresses stun_servers;
+  rtc::SocketAddress stun1("stun.l.google.com", 19302);
+  stun_servers.insert(stun1);
+  VerifyStunServers(stun_servers);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn1("test.com", 1234, "test@hello.com",
+                                   kTurnPassword, cricket::PROTO_UDP, false);
+  turn_servers.push_back(turn1);
+  cricket::RelayServerConfig turn2("hello.com", kDefaultStunPort, "test",
+                                   kTurnPassword, cricket::PROTO_TCP, false);
+  turn_servers.push_back(turn2);
+  VerifyTurnServers(turn_servers);
 }
 
 // This test verifies creation of PeerConnection with valid STUN and TURN
@@ -208,7 +205,6 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServers) {
 TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServersUrls) {
   PeerConnectionInterface::RTCConfiguration config;
   webrtc::PeerConnectionInterface::IceServer ice_server;
-  ice_server.urls.push_back("");  // Empty URLs should be ignored.
   ice_server.urls.push_back(kStunIceServer);
   ice_server.urls.push_back(kTurnIceServer);
   ice_server.urls.push_back(kTurnIceServerWithTransport);
@@ -216,63 +212,22 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServersUrls) {
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  StunConfigurations stun_configs;
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun1(
-      "stun.l.google.com", 19302);
-  stun_configs.push_back(stun1);
-  VerifyStunConfigurations(stun_configs);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn1(
-      "test.com", 1234, "test@hello.com", kTurnPassword, "udp", false);
-  turn_configs.push_back(turn1);
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn2(
-      "hello.com", kDefaultStunPort, "test", kTurnPassword, "tcp", false);
-  turn_configs.push_back(turn2);
-  VerifyTurnConfigurations(turn_configs);
-}
-
-// This test verifies creation of PeerConnection with valid STUN and TURN
-// configuration. Also verifies the URL's parsed correctly as expected.
-// This version doesn't use RTCConfiguration.
-// TODO(mallinath) - Remove this method after clients start using RTCConfig.
-TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServersOldSignature) {
-  webrtc::PeerConnectionInterface::IceServers ice_servers;
-  webrtc::PeerConnectionInterface::IceServer ice_server;
-  ice_server.uri = kStunIceServer;
-  ice_servers.push_back(ice_server);
-  ice_server.uri = kTurnIceServer;
-  ice_server.password = kTurnPassword;
-  ice_servers.push_back(ice_server);
-  ice_server.uri = kTurnIceServerWithTransport;
-  ice_server.password = kTurnPassword;
-  ice_servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
-      new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(ice_servers, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  StunConfigurations stun_configs;
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun1(
-      "stun.l.google.com", 19302);
-  stun_configs.push_back(stun1);
-  VerifyStunConfigurations(stun_configs);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn1(
-      "test.com", 1234, "test@hello.com", kTurnPassword, "udp", false);
-  turn_configs.push_back(turn1);
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn2(
-      "hello.com", kDefaultStunPort, "test", kTurnPassword, "tcp", false);
-  turn_configs.push_back(turn2);
-  VerifyTurnConfigurations(turn_configs);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  cricket::ServerAddresses stun_servers;
+  rtc::SocketAddress stun1("stun.l.google.com", 19302);
+  stun_servers.insert(stun1);
+  VerifyStunServers(stun_servers);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn1("test.com", 1234, "test@hello.com",
+                                   kTurnPassword, cricket::PROTO_UDP, false);
+  turn_servers.push_back(turn1);
+  cricket::RelayServerConfig turn2("hello.com", kDefaultStunPort, "test",
+                                   kTurnPassword, cricket::PROTO_TCP, false);
+  turn_servers.push_back(turn2);
+  VerifyTurnServers(turn_servers);
 }
 
 TEST_F(PeerConnectionFactoryTest, CreatePCUsingNoUsernameInUri) {
@@ -286,17 +241,15 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingNoUsernameInUri) {
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn(
-      "test.com", 1234, kTurnUsername, kTurnPassword, "udp", false);
-  turn_configs.push_back(turn);
-  VerifyTurnConfigurations(turn_configs);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn("test.com", 1234, kTurnUsername,
+                                  kTurnPassword, cricket::PROTO_UDP, false);
+  turn_servers.push_back(turn);
+  VerifyTurnServers(turn_servers);
 }
 
 // This test verifies the PeerConnection created properly with TURN url which
@@ -309,17 +262,15 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingTurnUrlWithTransportParam) {
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn(
-      "hello.com", kDefaultStunPort, "test", kTurnPassword, "tcp", false);
-  turn_configs.push_back(turn);
-  VerifyTurnConfigurations(turn_configs);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn("hello.com", kDefaultStunPort, "test",
+                                  kTurnPassword, cricket::PROTO_TCP, false);
+  turn_servers.push_back(turn);
+  VerifyTurnServers(turn_servers);
 }
 
 TEST_F(PeerConnectionFactoryTest, CreatePCUsingSecureTurnUrl) {
@@ -336,25 +287,23 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingSecureTurnUrl) {
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn1(
-      "hello.com", kDefaultStunTlsPort, "test", kTurnPassword, "tcp", true);
-  turn_configs.push_back(turn1);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn1("hello.com", kDefaultStunTlsPort, "test",
+                                   kTurnPassword, cricket::PROTO_TCP, true);
+  turn_servers.push_back(turn1);
   // TURNS with transport param should be default to tcp.
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn2(
-      "hello.com", 443, "test_no_transport", kTurnPassword, "tcp", true);
-  turn_configs.push_back(turn2);
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn3(
-      "hello.com", kDefaultStunTlsPort, "test_no_transport",
-      kTurnPassword, "tcp", true);
-  turn_configs.push_back(turn3);
-  VerifyTurnConfigurations(turn_configs);
+  cricket::RelayServerConfig turn2("hello.com", 443, "test_no_transport",
+                                   kTurnPassword, cricket::PROTO_TCP, true);
+  turn_servers.push_back(turn2);
+  cricket::RelayServerConfig turn3("hello.com", kDefaultStunTlsPort,
+                                   "test_no_transport", kTurnPassword,
+                                   cricket::PROTO_TCP, true);
+  turn_servers.push_back(turn3);
+  VerifyTurnServers(turn_servers);
 }
 
 TEST_F(PeerConnectionFactoryTest, CreatePCUsingIPLiteralAddress) {
@@ -368,39 +317,31 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIPLiteralAddress) {
   config.servers.push_back(ice_server);
   ice_server.uri = kStunIceServerWithIPv6AddressWithoutPort;
   config.servers.push_back(ice_server);
-  ice_server.uri = kStunIceServerWithInvalidIPv6Address;
-  config.servers.push_back(ice_server);
   ice_server.uri = kTurnIceServerWithIPv6Address;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
   rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
-  rtc::scoped_refptr<PeerConnectionInterface> pc(
-      factory_->CreatePeerConnection(config, nullptr,
-                                     allocator_factory_.get(),
-                                     dtls_identity_store.Pass(),
-                                     &observer_));
-  EXPECT_TRUE(pc.get() != NULL);
-  StunConfigurations stun_configs;
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun1(
-      "1.2.3.4", 1234);
-  stun_configs.push_back(stun1);
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun2(
-      "1.2.3.4", 3478);
-  stun_configs.push_back(stun2);  // Default port
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun3(
-      "2401:fa00:4::", 1234);
-  stun_configs.push_back(stun3);
-  webrtc::PortAllocatorFactoryInterface::StunConfiguration stun4(
-      "2401:fa00:4::", 3478);
-  stun_configs.push_back(stun4);  // Default port
-  VerifyStunConfigurations(stun_configs);
+  rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
+      config, nullptr, std::move(port_allocator_),
+      std::move(dtls_identity_store), &observer_));
+  ASSERT_TRUE(pc.get() != NULL);
+  cricket::ServerAddresses stun_servers;
+  rtc::SocketAddress stun1("1.2.3.4", 1234);
+  stun_servers.insert(stun1);
+  rtc::SocketAddress stun2("1.2.3.4", 3478);
+  stun_servers.insert(stun2);  // Default port
+  rtc::SocketAddress stun3("2401:fa00:4::", 1234);
+  stun_servers.insert(stun3);
+  rtc::SocketAddress stun4("2401:fa00:4::", 3478);
+  stun_servers.insert(stun4);  // Default port
+  VerifyStunServers(stun_servers);
 
-  TurnConfigurations turn_configs;
-  webrtc::PortAllocatorFactoryInterface::TurnConfiguration turn1(
-      "2401:fa00:4::", 1234, "test", kTurnPassword, "udp", false);
-  turn_configs.push_back(turn1);
-  VerifyTurnConfigurations(turn_configs);
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  cricket::RelayServerConfig turn1("2401:fa00:4::", 1234, "test", kTurnPassword,
+                                   cricket::PROTO_UDP, false);
+  turn_servers.push_back(turn1);
+  VerifyTurnServers(turn_servers);
 }
 
 // This test verifies the captured stream is rendered locally using a

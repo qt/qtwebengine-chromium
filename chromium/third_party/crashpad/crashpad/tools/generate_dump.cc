@@ -154,7 +154,7 @@ int GenerateDumpMain(int argc, char* argv[]) {
   ScopedKernelHANDLE process(
       OpenProcess(kXPProcessAllAccess, false, options.pid));
   if (!process.is_valid()) {
-    LOG(ERROR) << "could not open process " << options.pid;
+    PLOG(ERROR) << "could not open process " << options.pid;
     return EXIT_FAILURE;
   }
 #endif  // OS_MACOSX
@@ -186,7 +186,8 @@ int GenerateDumpMain(int argc, char* argv[]) {
     if (!process_snapshot.Initialize(process.get(),
                                      options.suspend
                                          ? ProcessSuspensionState::kSuspended
-                                         : ProcessSuspensionState::kRunning)) {
+                                         : ProcessSuspensionState::kRunning,
+                                     0)) {
       return EXIT_FAILURE;
     }
 #endif  // OS_MACOSX

@@ -22,7 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/transforms/TransformOperations.h"
 
 #include "platform/geometry/FloatBox.h"
@@ -35,7 +34,7 @@
 #include "platform/transforms/ScaleTransformOperation.h"
 #include "platform/transforms/SkewTransformOperation.h"
 #include "platform/transforms/TranslateTransformOperation.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 

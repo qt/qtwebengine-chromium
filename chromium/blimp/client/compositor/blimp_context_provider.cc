@@ -14,6 +14,8 @@
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/gl/GrGLInterface.h"
 
+namespace blimp {
+namespace client {
 namespace {
 
 // Singleton used to initialize and terminate the gles2 library.
@@ -31,15 +33,13 @@ base::LazyInstance<GLES2Initializer> g_gles2_initializer =
     LAZY_INSTANCE_INITIALIZER;
 
 static void BindGrContextCallback(const GrGLInterface* interface) {
-  blimp::BlimpContextProvider* context_provider =
-      reinterpret_cast<blimp::BlimpContextProvider*>(interface->fCallbackData);
+  BlimpContextProvider* context_provider =
+      reinterpret_cast<BlimpContextProvider*>(interface->fCallbackData);
 
   gles2::SetGLContext(context_provider->ContextGL());
 }
 
 }  // namespace
-
-namespace blimp {
 
 // static
 scoped_refptr<BlimpContextProvider> BlimpContextProvider::Create(
@@ -113,8 +113,8 @@ class GrContext* BlimpContextProvider::GrContext() {
   g_gles2_initializer.Get();
   gles2::SetGLContext(ContextGL());
 
-  skia::RefPtr<GrGLInterface> interface =
-      skia::AdoptRef(skia_bindings::CreateCommandBufferSkiaGLBinding());
+  skia::RefPtr<GrGLInterface> interface = skia::AdoptRef(new GrGLInterface);
+  skia_bindings::InitCommandBufferSkiaGLBinding(interface.get());
   interface->fCallback = BindGrContextCallback;
   interface->fCallbackData = reinterpret_cast<GrGLInterfaceCallbackData>(this);
 
@@ -139,22 +139,11 @@ base::Lock* BlimpContextProvider::GetLock() {
   return &context_lock_;
 }
 
-void BlimpContextProvider::VerifyContexts() {
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-}
-
 void BlimpContextProvider::DeleteCachedResources() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   if (gr_context_)
     gr_context_->freeGpuResources();
-}
-
-bool BlimpContextProvider::DestroyedOnMainThread() {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
-
-  base::AutoLock lock(destroyed_lock_);
-  return destroyed_;
 }
 
 void BlimpContextProvider::SetLostContextCallback(
@@ -163,26 +152,13 @@ void BlimpContextProvider::SetLostContextCallback(
   lost_context_callback_ = lost_context_callback;
 }
 
-void BlimpContextProvider::SetMemoryPolicyChangedCallback(
-    const MemoryPolicyChangedCallback& memory_policy_changed_callback) {
-  // There's no memory manager for the in-process implementation.
-  // TODO(dtrainor): Figure out if we need a memory manager for Blimp.
-}
-
 void BlimpContextProvider::OnLostContext() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
-
-  {
-    base::AutoLock lock(destroyed_lock_);
-    if (destroyed_)
-      return;
-    destroyed_ = true;
-  }
-
   if (!lost_context_callback_.is_null())
     base::ResetAndReturn(&lost_context_callback_).Run();
   if (gr_context_)
     gr_context_->abandonContext();
 }
 
+}  // namespace client
 }  // namespace blimp

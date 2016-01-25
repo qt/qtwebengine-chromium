@@ -5,8 +5,11 @@
 #include "content/public/browser/content_browser_client.h"
 
 #include "base/files/file_path.h"
+#include "build/build_config.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/common/sandbox_type.h"
+#include "media/base/cdm_factory.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
 
@@ -36,6 +39,12 @@ GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
 
 bool ContentBrowserClient::ShouldUseProcessPerSite(
     BrowserContext* browser_context, const GURL& effective_url) {
+  return false;
+}
+
+bool ContentBrowserClient::DoesSiteRequireDedicatedProcess(
+    BrowserContext* browser_context,
+    const GURL& effective_url) {
   return false;
 }
 
@@ -106,6 +115,10 @@ bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
   return false;
 }
 
+scoped_ptr<media::CdmFactory> ContentBrowserClient::CreateCdmFactory() {
+  return nullptr;
+}
+
 bool ContentBrowserClient::ShouldSwapProcessesForRedirect(
     ResourceContext* resource_context, const GURL& current_url,
     const GURL& new_url) {
@@ -163,7 +176,7 @@ bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           ResourceContext* context,
                                           int render_process_id,
                                           int render_frame_id,
-                                          net::CookieOptions* options) {
+                                          const net::CookieOptions& options) {
   return true;
 }
 
@@ -205,8 +218,19 @@ bool ContentBrowserClient::AllowWebRTCIdentityCache(const GURL& url,
 }
 #endif  // defined(ENABLE_WEBRTC)
 
+bool ContentBrowserClient::AllowKeygen(const GURL& url,
+                                       content::ResourceContext* context) {
+  return true;
+}
+
 QuotaPermissionContext* ContentBrowserClient::CreateQuotaPermissionContext() {
   return nullptr;
+}
+
+scoped_ptr<storage::QuotaEvictionPolicy>
+ContentBrowserClient::GetTemporaryStorageEvictionPolicy(
+    content::BrowserContext* context) {
+  return scoped_ptr<storage::QuotaEvictionPolicy>();
 }
 
 void ContentBrowserClient::SelectClientCertificate(
@@ -372,6 +396,10 @@ ContentBrowserClient::CreateThrottlesForNavigation(
 #if defined(OS_WIN)
 const wchar_t* ContentBrowserClient::GetResourceDllName() {
   return nullptr;
+}
+
+bool ContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy) {
+  return true;
 }
 
 base::string16 ContentBrowserClient::GetAppContainerSidForSandboxType(

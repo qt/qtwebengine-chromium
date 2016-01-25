@@ -2,11 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "media/base/media.h"
 #include "media/base/media_log.h"
 #include "media/base/test_data_util.h"
@@ -26,8 +31,8 @@ class DemuxerHostImpl : public media::DemuxerHost {
   ~DemuxerHostImpl() override {}
 
   // DemuxerHost implementation.
-  void AddBufferedTimeRange(base::TimeDelta start,
-                            base::TimeDelta end) override {}
+  void OnBufferedTimeRangesChanged(
+      const Ranges<base::TimeDelta>& ranges) override {}
   void SetDuration(base::TimeDelta duration) override {}
   void OnDemuxerError(media::PipelineStatus error) override {}
   void AddTextStream(media::DemuxerStream* text_stream,
@@ -45,7 +50,7 @@ static void QuitLoopWithStatus(base::MessageLoop* message_loop,
 }
 
 static void OnEncryptedMediaInitData(EmeInitDataType init_data_type,
-                                     const std::vector<uint8>& init_data) {
+                                     const std::vector<uint8_t>& init_data) {
   VLOG(0) << "File is encrypted.";
 }
 

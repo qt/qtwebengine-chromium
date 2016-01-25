@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/HTMLLinkElement.h"
 
-#include <gtest/gtest.h>
+#include "core/HTMLNames.h"
+#include "core/dom/DOMSettableTokenList.h"
+#include "core/dom/Document.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -70,6 +72,27 @@ TEST(HTMLLinkElementSizesAttributeTest, parseSizes)
     sizes.clear();
     HTMLLinkElement::parseSizesAttribute(sizesAttribute, sizes);
     ASSERT_EQ(0U, sizes.size());
+}
+
+TEST(HTMLLinkElementSizesAttributeTest, setSizesPropertyValue_updatesAttribute)
+{
+    RefPtrWillBeRawPtr<Document> document = Document::create();
+    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
+    RefPtrWillBeRawPtr<DOMSettableTokenList> sizes = link->sizes();
+    EXPECT_EQ(nullAtom, sizes->value());
+    sizes->setValue("   a b  c ");
+    EXPECT_EQ("   a b  c ", link->getAttribute(HTMLNames::sizesAttr));
+    EXPECT_EQ("   a b  c ", sizes->value());
+}
+
+TEST(HTMLLinkElementSizesAttributeTest, setSizesAttribute_updatesSizesPropertyValue)
+{
+    RefPtrWillBeRawPtr<Document> document = Document::create();
+    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
+    RefPtrWillBeRawPtr<DOMSettableTokenList> sizes = link->sizes();
+    EXPECT_EQ(nullAtom, sizes->value());
+    link->setAttribute(HTMLNames::sizesAttr, "y  x ");
+    EXPECT_EQ("y  x ", sizes->value());
 }
 
 } // namespace blink

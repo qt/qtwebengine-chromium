@@ -5,6 +5,8 @@
 {
     'variables':
     {
+        'angle_standalone%': 0,
+
         # These file lists are shared with the GN build.
         'libangle_common_sources':
         [
@@ -68,6 +70,8 @@
             'libANGLE/Context.h',
             'libANGLE/Data.cpp',
             'libANGLE/Data.h',
+            'libANGLE/Debug.cpp',
+            'libANGLE/Debug.h',
             'libANGLE/Device.cpp',
             'libANGLE/Device.h',
             'libANGLE/Display.cpp',
@@ -200,6 +204,8 @@
             'libANGLE/renderer/d3d/loadimage.h',
             'libANGLE/renderer/d3d/loadimage.inl',
             'libANGLE/renderer/d3d/loadimageSSE2.cpp',
+            'libANGLE/renderer/d3d/loadimage_etc.cpp',
+            'libANGLE/renderer/d3d/loadimage_etc.h',
             'libANGLE/renderer/d3d/ProgramD3D.cpp',
             'libANGLE/renderer/d3d/ProgramD3D.h',
             'libANGLE/renderer/d3d/RenderbufferD3D.cpp',
@@ -221,6 +227,8 @@
             'libANGLE/renderer/d3d/TextureStorage.h',
             'libANGLE/renderer/d3d/TransformFeedbackD3D.cpp',
             'libANGLE/renderer/d3d/TransformFeedbackD3D.h',
+            'libANGLE/renderer/d3d/VaryingPacking.cpp',
+            'libANGLE/renderer/d3d/VaryingPacking.h',
             'libANGLE/renderer/d3d/VertexBuffer.cpp',
             'libANGLE/renderer/d3d/VertexBuffer.h',
             'libANGLE/renderer/d3d/VertexDataManager.cpp',
@@ -261,6 +269,8 @@
             'libANGLE/renderer/d3d/d3d9/shaders/compiled/luminanceps.h',
             'libANGLE/renderer/d3d/d3d9/shaders/compiled/passthroughps.h',
             'libANGLE/renderer/d3d/d3d9/shaders/compiled/standardvs.h',
+            'libANGLE/renderer/d3d/d3d9/StateManager9.cpp',
+            'libANGLE/renderer/d3d/d3d9/StateManager9.h',
             'libANGLE/renderer/d3d/d3d9/SwapChain9.cpp',
             'libANGLE/renderer/d3d/d3d9/SwapChain9.h',
             'libANGLE/renderer/d3d/d3d9/TextureStorage9.cpp',
@@ -298,6 +308,10 @@
             'libANGLE/renderer/d3d/d3d11/IndexBuffer11.h',
             'libANGLE/renderer/d3d/d3d11/InputLayoutCache.cpp',
             'libANGLE/renderer/d3d/d3d11/InputLayoutCache.h',
+            'libANGLE/renderer/d3d/d3d11/internal_format_initializer_table.h',
+            'libANGLE/renderer/d3d/d3d11/internal_format_initializer_table.cpp',
+            'libANGLE/renderer/d3d/d3d11/load_functions_table.h',
+            'libANGLE/renderer/d3d/d3d11/load_functions_table_autogen.cpp',
             'libANGLE/renderer/d3d/d3d11/NativeWindow.h',
             'libANGLE/renderer/d3d/d3d11/PixelTransfer11.cpp',
             'libANGLE/renderer/d3d/d3d11/PixelTransfer11.h',
@@ -365,18 +379,18 @@
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/swizzleui2darrayps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/swizzleui2dps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/swizzleui3dps.h',
+            'libANGLE/renderer/d3d/d3d11/StateManager11.cpp',
+            'libANGLE/renderer/d3d/d3d11/StateManager11.h',
             'libANGLE/renderer/d3d/d3d11/SwapChain11.cpp',
             'libANGLE/renderer/d3d/d3d11/SwapChain11.h',
             'libANGLE/renderer/d3d/d3d11/swizzle_format_info.h',
-            'libANGLE/renderer/d3d/d3d11/swizzle_format_info.cpp',
+            'libANGLE/renderer/d3d/d3d11/swizzle_format_info_autogen.cpp',
             'libANGLE/renderer/d3d/d3d11/TextureStorage11.cpp',
             'libANGLE/renderer/d3d/d3d11/TextureStorage11.h',
             'libANGLE/renderer/d3d/d3d11/Trim11.cpp',
             'libANGLE/renderer/d3d/d3d11/Trim11.h',
-            'libANGLE/renderer/d3d/d3d11/texture_format_table.cpp',
+            'libANGLE/renderer/d3d/d3d11/texture_format_table_autogen.cpp',
             'libANGLE/renderer/d3d/d3d11/texture_format_table.h',
-            'libANGLE/renderer/d3d/d3d11/texture_format_util.cpp',
-            'libANGLE/renderer/d3d/d3d11/texture_format_util.h',
             'libANGLE/renderer/d3d/d3d11/VertexArray11.h',
             'libANGLE/renderer/d3d/d3d11/VertexBuffer11.cpp',
             'libANGLE/renderer/d3d/d3d11/VertexBuffer11.h',
@@ -725,10 +739,10 @@
                             ],
                             'link_settings': {
                                 'ldflags': [
-                                    '<!@(pkg-config --libs-only-L --libs-only-other x11 xi)',
+                                    '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi)',
                                 ],
                                 'libraries': [
-                                    '<!@(pkg-config --libs-only-l x11 xi) -ldl',
+                                    '<!@(<(pkg-config) --libs-only-l x11 xi) -ldl',
                                 ],
                             },
                         }],
@@ -780,19 +794,7 @@
                 }],
                 ['angle_build_winrt==1',
                 {
-                    'defines':
-                    [
-                        'NTDDI_VERSION=NTDDI_WINBLUE',
-                    ],
                     'msvs_requires_importlibrary' : 'true',
-                    'msvs_settings':
-                    {
-                        'VCLinkerTool':
-                        {
-                            'EnableCOMDATFolding': '1',
-                            'OptimizeReferences': '1',
-                        }
-                    },
                 }],
             ],
         },
@@ -814,14 +816,6 @@
                 ['angle_build_winrt==1',
                 {
                     'msvs_requires_importlibrary' : 'true',
-                    'msvs_settings':
-                    {
-                        'VCLinkerTool':
-                        {
-                            'EnableCOMDATFolding': '1',
-                            'OptimizeReferences': '1',
-                        }
-                    },
                 }],
                 ['angle_build_winphone==1',
                 {
@@ -829,5 +823,22 @@
                 }],
             ],
         },
+    ],
+    'conditions':
+    [
+        ['angle_standalone==0 and OS!="win"',
+        {
+            'targets':
+            [
+                {
+                    'target_name': 'libGLESv2_ANGLE',
+                    'type': 'loadable_module',
+                    'dependencies':
+                    [
+                        'libGLESv2',
+                    ],
+                },
+            ],
+        }],
     ],
 }

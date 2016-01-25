@@ -18,12 +18,12 @@
  *
  */
 
-#include "config.h"
 #include "wtf/text/StringImpl.h"
 
-#if USE(CF)
+#if OS(MACOSX)
 
 #include "wtf/MainThread.h"
+#include "wtf/Partitions.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RetainPtr.h"
 #include "wtf/Threading.h"
@@ -61,7 +61,7 @@ static void* allocate(CFIndex size, CFOptionFlags, void*)
             underlyingString->ref(); // Balanced by call to deref in deallocate below.
         }
     }
-    StringImpl** header = static_cast<StringImpl**>(fastMalloc(sizeof(StringImpl*) + size));
+    StringImpl** header = static_cast<StringImpl**>(WTF::Partitions::fastMalloc(sizeof(StringImpl*) + size, WTF_HEAP_PROFILER_TYPE_NAME(StringImpl*)));
     *header = underlyingString;
     return header + 1;
 }
@@ -71,7 +71,7 @@ static void* reallocate(void* pointer, CFIndex newSize, CFOptionFlags, void*)
     size_t newAllocationSize = sizeof(StringImpl*) + newSize;
     StringImpl** header = static_cast<StringImpl**>(pointer) - 1;
     ASSERT(!*header);
-    header = static_cast<StringImpl**>(fastRealloc(header, newAllocationSize));
+    header = static_cast<StringImpl**>(WTF::Partitions::fastRealloc(header, newAllocationSize, WTF_HEAP_PROFILER_TYPE_NAME(StringImpl*)));
     return header + 1;
 }
 
@@ -81,7 +81,7 @@ static void deallocateOnMainThread(void* headerPointer)
     StringImpl* underlyingString = *header;
     ASSERT(underlyingString);
     underlyingString->deref(); // Balanced by call to ref in allocate above.
-    fastFree(header);
+    WTF::Partitions::fastFree(header);
 }
 
 static void deallocate(void* pointer, void*)
@@ -89,13 +89,13 @@ static void deallocate(void* pointer, void*)
     StringImpl** header = static_cast<StringImpl**>(pointer) - 1;
     StringImpl* underlyingString = *header;
     if (!underlyingString) {
-        fastFree(header);
+        WTF::Partitions::fastFree(header);
     } else {
         if (!isMainThread()) {
             internal::callOnMainThread(&deallocateOnMainThread, header);
         } else {
             underlyingString->deref(); // Balanced by call to ref in allocate above.
-            fastFree(header);
+            WTF::Partitions::fastFree(header);
         }
     }
 }
@@ -159,4 +159,4 @@ RetainPtr<CFStringRef> StringImpl::createCFString()
 
 }
 
-#endif // USE(CF)
+#endif // OS(MACOSX)

@@ -4,6 +4,8 @@
 
 #include "content/browser/service_worker/service_worker_request_handler.h"
 
+#include <utility>
+
 #include "base/run_loop.h"
 #include "content/browser/fileapi/mock_url_request_delegate.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
@@ -24,7 +26,6 @@ namespace content {
 
 namespace {
 
-int kMockRenderProcessId = 1224;
 int kMockProviderId = 1;
 
 void EmptyCallback() {
@@ -38,8 +39,7 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   void SetUp() override {
-    helper_.reset(
-        new EmbeddedWorkerTestHelper(base::FilePath(), kMockRenderProcessId));
+    helper_.reset(new EmbeddedWorkerTestHelper(base::FilePath()));
 
     // A new unstored registration/version.
     registration_ = new ServiceWorkerRegistration(
@@ -51,11 +51,11 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
 
     // An empty host.
     scoped_ptr<ServiceWorkerProviderHost> host(new ServiceWorkerProviderHost(
-        kMockRenderProcessId, MSG_ROUTING_NONE, kMockProviderId,
+        helper_->mock_render_process_id(), MSG_ROUTING_NONE, kMockProviderId,
         SERVICE_WORKER_PROVIDER_FOR_WINDOW, context()->AsWeakPtr(), nullptr));
     host->SetDocumentUrl(GURL("http://host/scope/"));
     provider_host_ = host->AsWeakPtr();
-    context()->AddProviderHost(host.Pass());
+    context()->AddProviderHost(std::move(host));
 
     context()->storage()->LazyInitialize(base::Bind(&EmptyCallback));
     base::RunLoop().RunUntilIdle();
@@ -92,7 +92,7 @@ class ServiceWorkerRequestHandlerTest : public testing::Test {
     request->set_method(method);
     ServiceWorkerRequestHandler::InitializeHandler(
         request.get(), context_wrapper(), &blob_storage_context_,
-        kMockRenderProcessId, kMockProviderId, skip_service_worker,
+        helper_->mock_render_process_id(), kMockProviderId, skip_service_worker,
         FETCH_REQUEST_MODE_NO_CORS, FETCH_CREDENTIALS_MODE_OMIT,
         FetchRedirectMode::FOLLOW_MODE, resource_type,
         REQUEST_CONTEXT_TYPE_HYPERLINK, REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,

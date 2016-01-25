@@ -23,7 +23,7 @@
 
 /**
  * @file
- * Mandelbrot fraktal renderer
+ * Mandelbrot fractal renderer
  */
 
 #include "avfilter.h"
@@ -149,7 +149,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 static int query_formats(AVFilterContext *ctx)
 {
     static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_BGR32,
+        AV_PIX_FMT_0BGR32,
         AV_PIX_FMT_NONE
     };
 
@@ -183,7 +183,7 @@ static void fill_from_cache(AVFilterContext *ctx, uint32_t *color, int *in_cidx,
         int x;
         if(p->p[1] > py)
             break;
-        x= round((p->p[0] - s->start_x) / scale + s->w/2);
+        x= lrint((p->p[0] - s->start_x) / scale + s->w/2);
         if(x<0 || x >= s->w)
             continue;
         if(color) color[x] = p->val;
@@ -291,7 +291,7 @@ static void draw_mandelbrot(AVFilterContext *ctx, uint32_t *color, int linesize,
 
             use_zyklus= (x==0 || s->inner!=BLACK ||color[x-1 + y*linesize] == 0xFF000000);
             if(use_zyklus)
-                epsilon= scale*1*sqrt(SQR(x-s->w/2) + SQR(y-s->h/2))/s->w;
+                epsilon= scale*(abs(x-s->w/2) + abs(y-s->h/2))/s->w;
 
 #define Z_Z2_C(outr,outi,inr,ini)\
             outr= inr*inr - ini*ini + cr;\
@@ -334,11 +334,11 @@ static void draw_mandelbrot(AVFilterContext *ctx, uint32_t *color, int linesize,
                             switch(s->outer){
                             case            ITERATION_COUNT:
                                 zr = i;
-                                c = lrintf((sin(zr)+1)*127) + lrintf((sin(zr/1.234)+1)*127)*256*256 + lrintf((sin(zr/100)+1)*127)*256;
+                                c = lrintf((sinf(zr)+1)*127) + lrintf((sinf(zr/1.234)+1)*127)*256*256 + lrintf((sinf(zr/100)+1)*127)*256;
                                 break;
                             case NORMALIZED_ITERATION_COUNT:
                                 zr = i + log2(log(s->bailout) / log(zr*zr + zi*zi));
-                                c = lrintf((sin(zr)+1)*127) + lrintf((sin(zr/1.234)+1)*127)*256*256 + lrintf((sin(zr/100)+1)*127)*256;
+                                c = lrintf((sinf(zr)+1)*127) + lrintf((sinf(zr/1.234)+1)*127)*256*256 + lrintf((sinf(zr/100)+1)*127)*256;
                                 break;
                             case                      WHITE:
                                 c = 0xFFFFFF;

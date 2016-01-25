@@ -4,11 +4,16 @@
 
 #include "media/audio/audio_input_device.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/base/audio_bus.h"
 
@@ -36,11 +41,11 @@ class AudioInputDevice::AudioThreadCallback
   void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  void Process(uint32 pending_data) override;
+  void Process(uint32_t pending_data) override;
 
  private:
   int current_segment_id_;
-  uint32 last_buffer_id_;
+  uint32_t last_buffer_id_;
   ScopedVector<media::AudioBus> audio_buses_;
   CaptureCallback* capture_callback_;
 
@@ -52,7 +57,7 @@ AudioInputDevice::AudioInputDevice(
     const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
     : ScopedTaskRunnerObserver(io_task_runner),
       callback_(NULL),
-      ipc_(ipc.Pass()),
+      ipc_(std::move(ipc)),
       state_(IDLE),
       session_id_(0),
       agc_is_enabled_(false),
@@ -286,22 +291,22 @@ void AudioInputDevice::AudioThreadCallback::MapSharedMemory() {
   shared_memory_.Map(memory_length_);
 
   // Create vector of audio buses by wrapping existing blocks of memory.
-  uint8* ptr = static_cast<uint8*>(shared_memory_.memory());
+  uint8_t* ptr = static_cast<uint8_t*>(shared_memory_.memory());
   for (int i = 0; i < total_segments_; ++i) {
     media::AudioInputBuffer* buffer =
         reinterpret_cast<media::AudioInputBuffer*>(ptr);
     scoped_ptr<media::AudioBus> audio_bus =
         media::AudioBus::WrapMemory(audio_parameters_, buffer->audio);
-    audio_buses_.push_back(audio_bus.Pass());
+    audio_buses_.push_back(std::move(audio_bus));
     ptr += segment_length_;
   }
 }
 
-void AudioInputDevice::AudioThreadCallback::Process(uint32 pending_data) {
+void AudioInputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
   // The shared memory represents parameters, size of the data buffer and the
   // actual data buffer containing audio data. Map the memory into this
   // structure and parse out parameters and the data area.
-  uint8* ptr = static_cast<uint8*>(shared_memory_.memory());
+  uint8_t* ptr = static_cast<uint8_t*>(shared_memory_.memory());
   ptr += current_segment_id_ * segment_length_;
   AudioInputBuffer* buffer = reinterpret_cast<AudioInputBuffer*>(ptr);
 

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/filesystem/HTMLInputElementFileSystem.h"
 
 #include "core/fileapi/FileList.h"
@@ -74,14 +73,6 @@ EntryHeapVector HTMLInputElementFileSystem::webkitEntries(ExecutionContext* exec
             entries.append(FileEntry::create(filesystem, virtualPath));
     }
     return entries;
-}
-
-HTMLInputElementFileSystem::HTMLInputElementFileSystem()
-{
-}
-
-HTMLInputElementFileSystem::~HTMLInputElementFileSystem()
-{
 }
 
 } // namespace blink

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, Google Inc. All rights reserved.
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -28,21 +28,30 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/scroll/ScrollAnimator.h"
 
-#include "platform/RuntimeEnabledFeatures.h"
-#include "platform/geometry/FloatPoint.h"
+#include "platform/TraceEvent.h"
+#include "platform/graphics/GraphicsLayer.h"
 #include "platform/scroll/ScrollableArea.h"
-#include "wtf/PassOwnPtr.h"
-#include <algorithm>
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorAnimation.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-ScrollAnimator::ScrollAnimator(ScrollableArea* scrollableArea)
-    : m_scrollableArea(scrollableArea)
-    , m_currentPosX(0)
-    , m_currentPosY(0)
+PassOwnPtrWillBeRawPtr<ScrollAnimatorBase> ScrollAnimatorBase::create(ScrollableArea* scrollableArea)
+{
+    if (scrollableArea && scrollableArea->scrollAnimatorEnabled())
+        return adoptPtrWillBeNoop(new ScrollAnimator(scrollableArea));
+    return adoptPtrWillBeNoop(new ScrollAnimatorBase(scrollableArea));
+}
+
+ScrollAnimator::ScrollAnimator(ScrollableArea* scrollableArea, WTF::TimeFunction timeFunction)
+    : ScrollAnimatorBase(scrollableArea)
+    , m_timeFunction(timeFunction)
+    , m_lastGranularity(ScrollByPixel)
 {
 }
 
@@ -50,49 +59,250 @@ ScrollAnimator::~ScrollAnimator()
 {
 }
 
-ScrollResultOneDimensional ScrollAnimator::userScroll(ScrollbarOrientation orientation, ScrollGranularity, float step, float delta)
+FloatPoint ScrollAnimator::desiredTargetPosition() const
 {
-    float& currentPos = (orientation == HorizontalScrollbar) ? m_currentPosX : m_currentPosY;
-    float newPos = clampScrollPosition(orientation, currentPos + step * delta);
-    if (currentPos == newPos)
-        return ScrollResultOneDimensional(false, delta);
+    return (m_animationCurve || m_runState == RunState::WaitingToSendToCompositor)
+        ? m_targetOffset : currentPosition();
+}
 
-    float usedDelta = (newPos - currentPos) / step;
-    currentPos = newPos;
+bool ScrollAnimator::hasRunningAnimation() const
+{
+    return (m_animationCurve || m_runState == RunState::WaitingToSendToCompositor);
+}
 
-    notifyPositionChanged();
+float ScrollAnimator::computeDeltaToConsume(
+    ScrollbarOrientation orientation, float pixelDelta) const
+{
+    FloatPoint pos = desiredTargetPosition();
+    float currentPos = (orientation == HorizontalScrollbar) ? pos.x() : pos.y();
+    float newPos = clampScrollPosition(orientation, currentPos + pixelDelta);
+    return (currentPos == newPos) ? 0.0f : (newPos - currentPos);
+}
 
-    return ScrollResultOneDimensional(true, delta - usedDelta);
+void ScrollAnimator::resetAnimationState()
+{
+    ScrollAnimatorCompositorCoordinator::resetAnimationState();
+    if (m_animationCurve)
+        m_animationCurve.clear();
+    m_startTime = 0.0;
+}
+
+ScrollResultOneDimensional ScrollAnimator::userScroll(
+    ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
+{
+    if (!m_scrollableArea->scrollAnimatorEnabled())
+        return ScrollAnimatorBase::userScroll(orientation, granularity, step, delta);
+
+    TRACE_EVENT0("blink", "ScrollAnimator::scroll");
+
+    if (granularity == ScrollByPrecisePixel) {
+        if (hasRunningAnimation()) {
+            abortAnimation();
+            resetAnimationState();
+        }
+        return ScrollAnimatorBase::userScroll(orientation, granularity, step, delta);
+    }
+
+    float usedPixelDelta = computeDeltaToConsume(orientation, step * delta);
+    FloatPoint pixelDelta = (orientation == VerticalScrollbar
+        ? FloatPoint(0, usedPixelDelta) : FloatPoint(usedPixelDelta, 0));
+
+    FloatPoint targetPos = desiredTargetPosition();
+    targetPos.moveBy(pixelDelta);
+
+    if (m_animationCurve) {
+        if ((targetPos - m_targetOffset).isZero()) {
+            // Report unused delta only if there is no animation running. See
+            // comment below regarding scroll latching.
+            return ScrollResultOneDimensional(/* didScroll */ true, /* unusedScrollDelta */ 0);
+        }
+
+        m_targetOffset = targetPos;
+        ASSERT(m_runState == RunState::RunningOnMainThread
+            || m_runState == RunState::RunningOnCompositor
+            || m_runState == RunState::RunningOnCompositorButNeedsUpdate);
+
+        if (m_runState == RunState::RunningOnCompositor
+            || m_runState == RunState::RunningOnCompositorButNeedsUpdate) {
+            if (registerAndScheduleAnimation())
+                m_runState = RunState::RunningOnCompositorButNeedsUpdate;
+            return ScrollResultOneDimensional(/* didScroll */ true, /* unusedScrollDelta */ 0);
+        }
+
+        // Running on the main thread, simply update the target offset instead
+        // of sending to the compositor.
+        m_animationCurve->updateTarget(m_timeFunction() - m_startTime, targetPos);
+        return ScrollResultOneDimensional(/* didScroll */ true, /* unusedScrollDelta */ 0);
+    }
+
+    if ((targetPos - currentPosition()).isZero()) {
+        // Report unused delta only if there is no animation and we are not
+        // starting one. This ensures we latch for the duration of the
+        // animation rather than animating multiple scrollers at the same time.
+        return ScrollResultOneDimensional(/* didScroll */ false, delta);
+    }
+
+    m_targetOffset = targetPos;
+    m_startTime = m_timeFunction();
+    m_lastGranularity = granularity;
+
+    if (registerAndScheduleAnimation())
+        m_runState = RunState::WaitingToSendToCompositor;
+
+    return ScrollResultOneDimensional(/* didScroll */ true, /* unusedScrollDelta */ 0);
 }
 
 void ScrollAnimator::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 {
     m_currentPosX = offset.x();
     m_currentPosY = offset.y();
+
+    resetAnimationState();
     notifyPositionChanged();
 }
 
-void ScrollAnimator::setCurrentPosition(const FloatPoint& position)
+void ScrollAnimator::tickAnimation(double monotonicTime)
 {
-    m_currentPosX = position.x();
-    m_currentPosY = position.y();
+    if (m_runState != RunState::RunningOnMainThread)
+        return;
+
+    TRACE_EVENT0("blink", "ScrollAnimator::tickAnimation");
+    double elapsedTime = monotonicTime - m_startTime;
+
+    bool isFinished = (elapsedTime > m_animationCurve->duration());
+    FloatPoint offset = isFinished ? m_animationCurve->targetValue()
+        : m_animationCurve->getValue(elapsedTime);
+
+    offset = FloatPoint(m_scrollableArea->clampScrollPosition(offset));
+
+    m_currentPosX = offset.x();
+    m_currentPosY = offset.y();
+
+    if (isFinished)
+        resetAnimationState();
+    else
+        scrollableArea()->scheduleAnimation();
+
+    TRACE_EVENT0("blink", "ScrollAnimator::notifyPositionChanged");
+    notifyPositionChanged();
 }
 
-FloatPoint ScrollAnimator::currentPosition() const
+void ScrollAnimator::updateCompositorAnimations()
 {
-    return FloatPoint(m_currentPosX, m_currentPosY);
+    if (m_compositorAnimationId && m_runState != RunState::RunningOnCompositor
+        && m_runState != RunState::RunningOnCompositorButNeedsUpdate) {
+        // If the current run state is WaitingToSendToCompositor but we have a
+        // non-zero compositor animation id, there's a currently running
+        // compositor animation that needs to be removed here before the new
+        // animation is added below.
+        ASSERT(m_runState == RunState::WaitingToCancelOnCompositor
+            || m_runState == RunState::WaitingToSendToCompositor);
+
+        abortAnimation();
+
+        m_compositorAnimationId = 0;
+        m_compositorAnimationGroupId = 0;
+        if (m_runState == RunState::WaitingToCancelOnCompositor) {
+            resetAnimationState();
+            return;
+        }
+    }
+
+    if (m_runState == RunState::WaitingToSendToCompositor
+        || m_runState == RunState::RunningOnCompositorButNeedsUpdate) {
+        if (m_runState == RunState::RunningOnCompositorButNeedsUpdate) {
+            // Abort the running animation before a new one with an updated
+            // target is added.
+            abortAnimation();
+
+            m_compositorAnimationId = 0;
+            m_compositorAnimationGroupId = 0;
+
+            m_animationCurve->updateTarget(m_timeFunction() - m_startTime,
+                m_targetOffset);
+            m_runState = RunState::WaitingToSendToCompositor;
+        }
+
+        if (!m_animationCurve) {
+            m_animationCurve = adoptPtr(Platform::current()->compositorSupport()
+                ->createScrollOffsetAnimationCurve(
+                    m_targetOffset,
+                    WebCompositorAnimationCurve::TimingFunctionTypeEaseInOut,
+                    m_lastGranularity == ScrollByPixel ?
+                        WebScrollOffsetAnimationCurve::ScrollDurationInverseDelta :
+                        WebScrollOffsetAnimationCurve::ScrollDurationConstant));
+            m_animationCurve->setInitialValue(currentPosition());
+        }
+
+        bool sentToCompositor = false;
+        if (!m_scrollableArea->shouldScrollOnMainThread()) {
+            OwnPtr<WebCompositorAnimation> animation = adoptPtr(
+                Platform::current()->compositorSupport()->createAnimation(
+                    *m_animationCurve,
+                    WebCompositorAnimation::TargetPropertyScrollOffset));
+            // Being here means that either there is an animation that needs
+            // to be sent to the compositor, or an animation that needs to
+            // be updated (a new scroll event before the previous animation
+            // is finished). In either case, the start time is when the
+            // first animation was initiated. This re-targets the animation
+            // using the current time on main thread.
+            animation->setStartTime(m_startTime);
+
+            int animationId = animation->id();
+            int animationGroupId = animation->group();
+
+            sentToCompositor = addAnimation(animation.release());
+            if (sentToCompositor) {
+                m_runState = RunState::RunningOnCompositor;
+                m_compositorAnimationId = animationId;
+                m_compositorAnimationGroupId = animationGroupId;
+            }
+        }
+
+        if (!sentToCompositor) {
+            if (registerAndScheduleAnimation())
+                m_runState = RunState::RunningOnMainThread;
+        }
+    }
 }
 
-void ScrollAnimator::notifyPositionChanged()
+void ScrollAnimator::notifyCompositorAnimationAborted(int groupId)
 {
-    m_scrollableArea->scrollPositionChanged(DoublePoint(m_currentPosX, m_currentPosY), UserScroll);
+    // An animation aborted by the compositor is treated as a finished
+    // animation.
+    ScrollAnimatorCompositorCoordinator::compositorAnimationFinished(groupId);
 }
 
-float ScrollAnimator::clampScrollPosition(ScrollbarOrientation orientation, float pos)
+void ScrollAnimator::notifyCompositorAnimationFinished(int groupId)
 {
-    float maxScrollPos = m_scrollableArea->maximumScrollPosition(orientation);
-    float minScrollPos = m_scrollableArea->minimumScrollPosition(orientation);
-    return std::max(std::min(pos, maxScrollPos), minScrollPos);
+    ScrollAnimatorCompositorCoordinator::compositorAnimationFinished(groupId);
+}
+
+void ScrollAnimator::cancelAnimation()
+{
+    ScrollAnimatorCompositorCoordinator::cancelAnimation();
+}
+
+void ScrollAnimator::layerForCompositedScrollingDidChange(
+    WebCompositorAnimationTimeline* timeline)
+{
+    reattachCompositorPlayerIfNeeded(timeline);
+}
+
+bool ScrollAnimator::registerAndScheduleAnimation()
+{
+    scrollableArea()->registerForAnimation();
+    if (!m_scrollableArea->scheduleAnimation()) {
+        scrollToOffsetWithoutAnimation(m_targetOffset);
+        resetAnimationState();
+        return false;
+    }
+    return true;
+}
+
+DEFINE_TRACE(ScrollAnimator)
+{
+    ScrollAnimatorBase::trace(visitor);
 }
 
 } // namespace blink

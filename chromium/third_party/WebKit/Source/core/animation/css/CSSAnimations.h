@@ -52,7 +52,7 @@ class StyleResolver;
 
 class CSSAnimations final {
     WTF_MAKE_NONCOPYABLE(CSSAnimations);
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     CSSAnimations();
 
@@ -73,7 +73,7 @@ public:
         m_pendingUpdate.clear();
     }
     void maybeApplyPendingUpdate(Element*);
-    bool isEmpty() const { return m_animations.isEmpty() && m_transitions.isEmpty() && m_pendingUpdate.isEmpty(); }
+    bool isEmpty() const { return m_runningAnimations.isEmpty() && m_transitions.isEmpty() && m_pendingUpdate.isEmpty(); }
     void cancel();
 
     DECLARE_TRACE();
@@ -83,6 +83,8 @@ private:
     public:
         RunningAnimation(Animation* animation, CSSAnimationUpdate::NewAnimation newAnimation)
             : animation(animation)
+            , name(newAnimation.name)
+            , nameIndex(newAnimation.nameIndex)
             , specifiedTiming(newAnimation.timing)
             , styleRule(newAnimation.styleRule)
             , styleRuleVersion(newAnimation.styleRuleVersion)
@@ -91,6 +93,7 @@ private:
 
         void update(CSSAnimationUpdate::UpdatedAnimation update)
         {
+            ASSERT(update.animation == animation);
             styleRule = update.styleRule;
             styleRuleVersion = update.styleRuleVersion;
             specifiedTiming = update.specifiedTiming;
@@ -103,13 +106,15 @@ private:
         }
 
         Member<Animation> animation;
+        AtomicString name;
+        size_t nameIndex;
         Timing specifiedTiming;
         RefPtrWillBeMember<StyleRuleKeyframes> styleRule;
         unsigned styleRuleVersion;
     };
 
     struct RunningTransition {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         DEFINE_INLINE_TRACE()
         {
@@ -121,8 +126,7 @@ private:
         const AnimatableValue* to;
     };
 
-    using AnimationMap = HeapHashMap<AtomicString, Member<RunningAnimation>>;
-    AnimationMap m_animations;
+    HeapVector<Member<RunningAnimation>> m_runningAnimations;
 
     using TransitionMap = HeapHashMap<CSSPropertyID, RunningTransition>;
     TransitionMap m_transitions;
@@ -136,8 +140,8 @@ private:
     static void calculateTransitionUpdate(CSSAnimationUpdate&, const Element* animatingElement, const ComputedStyle&);
     static void calculateTransitionUpdateForProperty(CSSPropertyID, const CSSTransitionData&, size_t transitionIndex, const ComputedStyle& oldStyle, const ComputedStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate&, const Element*);
 
-    static void calculateAnimationActiveInterpolations(CSSAnimationUpdate&, const Element* animatingElement, double timelineCurrentTime);
-    static void calculateTransitionActiveInterpolations(CSSAnimationUpdate&, const Element* animatingElement, double timelineCurrentTime);
+    static void calculateAnimationActiveInterpolations(CSSAnimationUpdate&, const Element* animatingElement);
+    static void calculateTransitionActiveInterpolations(CSSAnimationUpdate&, const Element* animatingElement);
 
     class AnimationEventDelegate final : public AnimationEffect::EventDelegate {
     public:

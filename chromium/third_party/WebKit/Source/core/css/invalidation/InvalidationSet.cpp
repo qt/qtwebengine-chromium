@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/invalidation/InvalidationSet.h"
 
 #include "core/css/resolver/StyleResolver.h"
@@ -48,11 +47,12 @@ static const unsigned char* s_tracingEnabled = nullptr;
 
 void InvalidationSet::cacheTracingFlag()
 {
-    s_tracingEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
+    s_tracingEnabled = TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
 }
 
-InvalidationSet::InvalidationSet()
-    : m_allDescendantsMightBeInvalid(false)
+InvalidationSet::InvalidationSet(InvalidationType type)
+    : m_type(type)
+    , m_allDescendantsMightBeInvalid(false)
     , m_invalidatesSelf(false)
     , m_customPseudoInvalid(false)
     , m_treeBoundaryCrossing(false)
@@ -99,6 +99,8 @@ bool InvalidationSet::invalidatesElement(Element& element) const
 
 void InvalidationSet::combine(const InvalidationSet& other)
 {
+    ASSERT(m_type == other.m_type);
+
     // No longer bother combining data structures, since the whole subtree is deemed invalid.
     if (wholeSubtreeInvalid())
         return;
@@ -141,31 +143,39 @@ void InvalidationSet::combine(const InvalidationSet& other)
     }
 }
 
-WillBeHeapHashSet<AtomicString>& InvalidationSet::ensureClassSet()
+void InvalidationSet::destroy()
+{
+    if (isDescendantInvalidationSet())
+        delete toDescendantInvalidationSet(this);
+    else
+        delete toSiblingInvalidationSet(this);
+}
+
+HashSet<AtomicString>& InvalidationSet::ensureClassSet()
 {
     if (!m_classes)
-        m_classes = adoptPtrWillBeNoop(new WillBeHeapHashSet<AtomicString>);
+        m_classes = adoptPtr(new HashSet<AtomicString>);
     return *m_classes;
 }
 
-WillBeHeapHashSet<AtomicString>& InvalidationSet::ensureIdSet()
+HashSet<AtomicString>& InvalidationSet::ensureIdSet()
 {
     if (!m_ids)
-        m_ids = adoptPtrWillBeNoop(new WillBeHeapHashSet<AtomicString>);
+        m_ids = adoptPtr(new HashSet<AtomicString>);
     return *m_ids;
 }
 
-WillBeHeapHashSet<AtomicString>& InvalidationSet::ensureTagNameSet()
+HashSet<AtomicString>& InvalidationSet::ensureTagNameSet()
 {
     if (!m_tagNames)
-        m_tagNames = adoptPtrWillBeNoop(new WillBeHeapHashSet<AtomicString>);
+        m_tagNames = adoptPtr(new HashSet<AtomicString>);
     return *m_tagNames;
 }
 
-WillBeHeapHashSet<AtomicString>& InvalidationSet::ensureAttributeSet()
+HashSet<AtomicString>& InvalidationSet::ensureAttributeSet()
 {
     if (!m_attributes)
-        m_attributes = adoptPtrWillBeNoop(new WillBeHeapHashSet<AtomicString>);
+        m_attributes = adoptPtr(new HashSet<AtomicString>);
     return *m_attributes;
 }
 
@@ -210,16 +220,6 @@ void InvalidationSet::setWholeSubtreeInvalid()
     m_ids = nullptr;
     m_tagNames = nullptr;
     m_attributes = nullptr;
-}
-
-DEFINE_TRACE(InvalidationSet)
-{
-#if ENABLE(OILPAN)
-    visitor->trace(m_classes);
-    visitor->trace(m_ids);
-    visitor->trace(m_tagNames);
-    visitor->trace(m_attributes);
-#endif
 }
 
 void InvalidationSet::toTracedValue(TracedValue* value) const
@@ -278,5 +278,20 @@ void InvalidationSet::show() const
     fprintf(stderr, "%s\n", value->asTraceFormat().ascii().data());
 }
 #endif // NDEBUG
+
+SiblingInvalidationSet::SiblingInvalidationSet()
+    : InvalidationSet(InvalidateSiblings)
+    , m_maxDirectAdjacentSelectors(1)
+    , m_descendantInvalidationSet(DescendantInvalidationSet::create())
+{
+}
+
+void SiblingInvalidationSet::combine(const SiblingInvalidationSet& other)
+{
+    m_maxDirectAdjacentSelectors = std::max(m_maxDirectAdjacentSelectors, other.m_maxDirectAdjacentSelectors);
+    m_descendantInvalidationSet->combine(other.descendants());
+
+    InvalidationSet::combine(other);
+}
 
 } // namespace blink

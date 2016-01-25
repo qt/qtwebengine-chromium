@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLResourcePreloader.h"
 
 #include "core/dom/Document.h"
@@ -56,14 +55,7 @@ static void preconnectHost(PreloadRequest* request, const NetworkHintsInterface&
     KURL host(request->baseURL(), request->resourceURL());
     if (!host.isValid() || !host.protocolIsInHTTPFamily())
         return;
-    CrossOriginAttributeValue crossOrigin = CrossOriginAttributeNotSet;
-    if (request->isCORS()) {
-        if (request->isAllowCredentials())
-            crossOrigin = CrossOriginAttributeUseCredentials;
-        else
-            crossOrigin = CrossOriginAttributeAnonymous;
-    }
-    networkHintsInterface.preconnectHost(host, crossOrigin);
+    networkHintsInterface.preconnectHost(host, request->crossOrigin());
 }
 
 void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload, const NetworkHintsInterface& networkHintsInterface)

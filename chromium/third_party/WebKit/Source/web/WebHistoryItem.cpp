@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebHistoryItem.h"
 
 #include "bindings/core/v8/SerializedScriptValue.h"
@@ -103,16 +102,6 @@ WebFloatPoint WebHistoryItem::visualViewportScrollOffset() const
 void WebHistoryItem::setVisualViewportScrollOffset(const WebFloatPoint& scrollOffset)
 {
     m_private->setVisualViewportScrollPoint(scrollOffset);
-}
-
-WebFloatPoint WebHistoryItem::pinchViewportScrollOffset() const
-{
-    return visualViewportScrollOffset();
-}
-
-void WebHistoryItem::setPinchViewportScrollOffset(const WebFloatPoint& scrollOffset)
-{
-    setVisualViewportScrollOffset(scrollOffset);
 }
 
 WebPoint WebHistoryItem::scrollOffset() const

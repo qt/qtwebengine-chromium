@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/VisibleSelection.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -650,12 +649,11 @@ bool VisibleSelectionTemplate<Strategy>::isValidFor(const Document& document) co
 template <typename Strategy>
 void VisibleSelectionTemplate<Strategy>::setWithoutValidation(const PositionTemplate<Strategy>& base, const PositionTemplate<Strategy>& extent)
 {
-    ASSERT(!base.isNull());
-    ASSERT(!extent.isNull());
-
-    // TODO(hajimehoshi): We doubt this assertion is needed. This was introduced
-    // by http://trac.webkit.org/browser/trunk/WebCore/editing/Selection.cpp?annotate=blame&rev=21071
-    ASSERT(m_affinity == TextAffinity::Downstream);
+    if (base.isNull() || extent.isNull()) {
+        m_base = m_extent = m_start = m_end = PositionTemplate<Strategy>();
+        updateSelectionType();
+        return;
+    }
 
     m_base = base;
     m_extent = extent;
@@ -668,6 +666,12 @@ void VisibleSelectionTemplate<Strategy>::setWithoutValidation(const PositionTemp
         m_end = base;
     }
     m_selectionType = base == extent ? CaretSelection : RangeSelection;
+    if (m_selectionType != CaretSelection) {
+        // Since |m_affinity| for non-|CaretSelection| is always |Downstream|,
+        // we should keep this invariant. Note: This function can be called with
+        // |m_affinity| is |TextAffinity::Upstream|.
+        m_affinity = TextAffinity::Downstream;
+    }
     didChange();
 }
 
@@ -824,7 +828,7 @@ void VisibleSelectionTemplate<Strategy>::adjustSelectionToAvoidCrossingEditingBo
         // If the start is in non-editable content that is inside the base's editable root, put it
         // at the first editable position after start inside the base's editable root.
         if (startRoot != baseRoot) {
-            const VisiblePositionTemplate<Strategy> first = firstEditableVisiblePositionAfterPositionInRoot(m_start, baseRoot);
+            const VisiblePositionTemplate<Strategy> first = firstEditableVisiblePositionAfterPositionInRoot(m_start, *baseRoot);
             m_start = first.deepEquivalent();
             if (m_start.isNull()) {
                 ASSERT_NOT_REACHED();
@@ -835,7 +839,7 @@ void VisibleSelectionTemplate<Strategy>::adjustSelectionToAvoidCrossingEditingBo
         // If the end is in non-editable content that is inside the base's root, put it
         // at the last editable position before the end inside the base's root.
         if (endRoot != baseRoot) {
-            const VisiblePositionTemplate<Strategy> last = lastEditableVisiblePositionBeforePositionInRoot(m_end, baseRoot);
+            const VisiblePositionTemplate<Strategy> last = lastEditableVisiblePositionBeforePositionInRoot(m_end, *baseRoot);
             m_end = last.deepEquivalent();
             if (m_end.isNull())
                 m_end = m_start;

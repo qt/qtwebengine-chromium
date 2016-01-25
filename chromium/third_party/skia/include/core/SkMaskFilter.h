@@ -113,7 +113,6 @@ public:
      */
     virtual bool directFilterMaskGPU(GrTextureProvider* texProvider,
                                      GrDrawContext* drawContext,
-                                     GrRenderTarget* rt,
                                      GrPaint* grp,
                                      const GrClip&,
                                      const SkMatrix& viewMatrix,
@@ -125,7 +124,6 @@ public:
      */
     virtual bool directFilterRRectMaskGPU(GrTextureProvider* texProvider,
                                           GrDrawContext* drawContext,
-                                          GrRenderTarget* rt,
                                           GrPaint* grp,
                                           const GrClip&,
                                           const SkMatrix& viewMatrix,
@@ -186,9 +184,7 @@ protected:
 
     class NinePatch : ::SkNoncopyable {
     public:
-        NinePatch() : fCache(NULL) {
-            fMask.fImage = NULL;
-        }
+        NinePatch() : fCache(nullptr) { }
         ~NinePatch();
 
         SkMask      fMask;      // fBounds must have [0,0] in its top-left

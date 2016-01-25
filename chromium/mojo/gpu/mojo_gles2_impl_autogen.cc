@@ -11,8 +11,8 @@
 #include "mojo/gpu/mojo_gles2_impl_autogen.h"
 
 #include "base/logging.h"
-#include "third_party/mojo/src/mojo/public/c/gles2/chromium_extension.h"
-#include "third_party/mojo/src/mojo/public/c/gles2/gles2.h"
+#include "mojo/public/c/gles2/chromium_extension.h"
+#include "mojo/public/c/gles2/gles2.h"
 
 namespace mojo {
 
@@ -1410,9 +1410,10 @@ void MojoGLES2Impl::UnmapTexSubImage2DCHROMIUM(const void* mem) {
 }
 void MojoGLES2Impl::ResizeCHROMIUM(GLuint width,
                                    GLuint height,
-                                   GLfloat scale_factor) {
+                                   GLfloat scale_factor,
+                                   GLboolean alpha) {
   MojoGLES2MakeCurrent(context_);
-  glResizeCHROMIUM(width, height, scale_factor);
+  glResizeCHROMIUM(width, height, scale_factor, alpha);
 }
 const GLchar* MojoGLES2Impl::GetRequestableExtensionsCHROMIUM() {
   MojoGLES2MakeCurrent(context_);
@@ -1446,10 +1447,6 @@ void MojoGLES2Impl::GetUniformsES3CHROMIUM(GLuint program,
                                            GLsizei* size,
                                            void* info) {
   NOTREACHED() << "Unimplemented GetUniformsES3CHROMIUM.";
-}
-GLuint MojoGLES2Impl::CreateStreamTextureCHROMIUM(GLuint texture) {
-  MojoGLES2MakeCurrent(context_);
-  return glCreateStreamTextureCHROMIUM(texture);
 }
 GLuint MojoGLES2Impl::CreateImageCHROMIUM(ClientBuffer buffer,
                                           GLsizei width,
@@ -1492,8 +1489,7 @@ void MojoGLES2Impl::TexImageIOSurface2DCHROMIUM(GLenum target,
   MojoGLES2MakeCurrent(context_);
   glTexImageIOSurface2DCHROMIUM(target, width, height, ioSurfaceId, plane);
 }
-void MojoGLES2Impl::CopyTextureCHROMIUM(GLenum target,
-                                        GLenum source_id,
+void MojoGLES2Impl::CopyTextureCHROMIUM(GLenum source_id,
                                         GLenum dest_id,
                                         GLint internalformat,
                                         GLenum dest_type,
@@ -1501,12 +1497,11 @@ void MojoGLES2Impl::CopyTextureCHROMIUM(GLenum target,
                                         GLboolean unpack_premultiply_alpha,
                                         GLboolean unpack_unmultiply_alpha) {
   MojoGLES2MakeCurrent(context_);
-  glCopyTextureCHROMIUM(target, source_id, dest_id, internalformat, dest_type,
+  glCopyTextureCHROMIUM(source_id, dest_id, internalformat, dest_type,
                         unpack_flip_y, unpack_premultiply_alpha,
                         unpack_unmultiply_alpha);
 }
-void MojoGLES2Impl::CopySubTextureCHROMIUM(GLenum target,
-                                           GLenum source_id,
+void MojoGLES2Impl::CopySubTextureCHROMIUM(GLenum source_id,
                                            GLenum dest_id,
                                            GLint xoffset,
                                            GLint yoffset,
@@ -1518,28 +1513,14 @@ void MojoGLES2Impl::CopySubTextureCHROMIUM(GLenum target,
                                            GLboolean unpack_premultiply_alpha,
                                            GLboolean unpack_unmultiply_alpha) {
   MojoGLES2MakeCurrent(context_);
-  glCopySubTextureCHROMIUM(target, source_id, dest_id, xoffset, yoffset, x, y,
-                           width, height, unpack_flip_y,
-                           unpack_premultiply_alpha, unpack_unmultiply_alpha);
+  glCopySubTextureCHROMIUM(source_id, dest_id, xoffset, yoffset, x, y, width,
+                           height, unpack_flip_y, unpack_premultiply_alpha,
+                           unpack_unmultiply_alpha);
 }
-void MojoGLES2Impl::CompressedCopyTextureCHROMIUM(GLenum target,
-                                                  GLenum source_id,
+void MojoGLES2Impl::CompressedCopyTextureCHROMIUM(GLenum source_id,
                                                   GLenum dest_id) {
   MojoGLES2MakeCurrent(context_);
-  glCompressedCopyTextureCHROMIUM(target, source_id, dest_id);
-}
-void MojoGLES2Impl::CompressedCopySubTextureCHROMIUM(GLenum target,
-                                                     GLenum source_id,
-                                                     GLenum dest_id,
-                                                     GLint xoffset,
-                                                     GLint yoffset,
-                                                     GLint x,
-                                                     GLint y,
-                                                     GLsizei width,
-                                                     GLsizei height) {
-  MojoGLES2MakeCurrent(context_);
-  glCompressedCopySubTextureCHROMIUM(target, source_id, dest_id, xoffset,
-                                     yoffset, x, y, width, height);
+  glCompressedCopyTextureCHROMIUM(source_id, dest_id);
 }
 void MojoGLES2Impl::DrawArraysInstancedANGLE(GLenum mode,
                                              GLint first,
@@ -1657,6 +1638,29 @@ void MojoGLES2Impl::WaitSyncPointCHROMIUM(GLuint sync_point) {
   MojoGLES2MakeCurrent(context_);
   glWaitSyncPointCHROMIUM(sync_point);
 }
+GLuint64 MojoGLES2Impl::InsertFenceSyncCHROMIUM() {
+  MojoGLES2MakeCurrent(context_);
+  return glInsertFenceSyncCHROMIUM();
+}
+void MojoGLES2Impl::GenSyncTokenCHROMIUM(GLuint64 fence_sync,
+                                         GLbyte* sync_token) {
+  MojoGLES2MakeCurrent(context_);
+  glGenSyncTokenCHROMIUM(fence_sync, sync_token);
+}
+void MojoGLES2Impl::GenUnverifiedSyncTokenCHROMIUM(GLuint64 fence_sync,
+                                                   GLbyte* sync_token) {
+  MojoGLES2MakeCurrent(context_);
+  glGenUnverifiedSyncTokenCHROMIUM(fence_sync, sync_token);
+}
+void MojoGLES2Impl::VerifySyncTokensCHROMIUM(GLbyte** sync_tokens,
+                                             GLsizei count) {
+  MojoGLES2MakeCurrent(context_);
+  glVerifySyncTokensCHROMIUM(sync_tokens, count);
+}
+void MojoGLES2Impl::WaitSyncTokenCHROMIUM(const GLbyte* sync_token) {
+  MojoGLES2MakeCurrent(context_);
+  glWaitSyncTokenCHROMIUM(sync_token);
+}
 void MojoGLES2Impl::DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
   MojoGLES2MakeCurrent(context_);
   glDrawBuffersEXT(count, bufs);
@@ -1680,6 +1684,26 @@ void MojoGLES2Impl::ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
   glScheduleOverlayPlaneCHROMIUM(
       plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
       bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
+}
+void MojoGLES2Impl::ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
+                                            const GLfloat* contents_rect,
+                                            GLfloat opacity,
+                                            GLuint background_color,
+                                            GLuint edge_aa_mask,
+                                            const GLfloat* bounds_rect,
+                                            GLboolean is_clipped,
+                                            const GLfloat* clip_rect,
+                                            GLint sorting_context_id,
+                                            const GLfloat* transform) {
+  MojoGLES2MakeCurrent(context_);
+  glScheduleCALayerCHROMIUM(contents_texture_id, contents_rect, opacity,
+                            background_color, edge_aa_mask, bounds_rect,
+                            is_clipped, clip_rect, sorting_context_id,
+                            transform);
+}
+void MojoGLES2Impl::CommitOverlayPlanesCHROMIUM() {
+  MojoGLES2MakeCurrent(context_);
+  glCommitOverlayPlanesCHROMIUM();
 }
 void MojoGLES2Impl::SwapInterval(GLint interval) {
   MojoGLES2MakeCurrent(context_);
@@ -1771,6 +1795,107 @@ void MojoGLES2Impl::StencilThenCoverStrokePathCHROMIUM(GLuint path,
   MojoGLES2MakeCurrent(context_);
   glStencilThenCoverStrokePathCHROMIUM(path, reference, mask, coverMode);
 }
+void MojoGLES2Impl::StencilFillPathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum fillMode,
+    GLuint mask,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glStencilFillPathInstancedCHROMIUM(numPaths, pathNameType, paths, pathBase,
+                                     fillMode, mask, transformType,
+                                     transformValues);
+}
+void MojoGLES2Impl::StencilStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLint reference,
+    GLuint mask,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glStencilStrokePathInstancedCHROMIUM(numPaths, pathNameType, paths, pathBase,
+                                       reference, mask, transformType,
+                                       transformValues);
+}
+void MojoGLES2Impl::CoverFillPathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glCoverFillPathInstancedCHROMIUM(numPaths, pathNameType, paths, pathBase,
+                                   coverMode, transformType, transformValues);
+}
+void MojoGLES2Impl::CoverStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glCoverStrokePathInstancedCHROMIUM(numPaths, pathNameType, paths, pathBase,
+                                     coverMode, transformType, transformValues);
+}
+void MojoGLES2Impl::StencilThenCoverFillPathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum fillMode,
+    GLuint mask,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glStencilThenCoverFillPathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, fillMode, mask, coverMode,
+      transformType, transformValues);
+}
+void MojoGLES2Impl::StencilThenCoverStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLint reference,
+    GLuint mask,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  MojoGLES2MakeCurrent(context_);
+  glStencilThenCoverStrokePathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, reference, mask, coverMode,
+      transformType, transformValues);
+}
+void MojoGLES2Impl::BindFragmentInputLocationCHROMIUM(GLuint program,
+                                                      GLint location,
+                                                      const char* name) {
+  MojoGLES2MakeCurrent(context_);
+  glBindFragmentInputLocationCHROMIUM(program, location, name);
+}
+void MojoGLES2Impl::ProgramPathFragmentInputGenCHROMIUM(GLuint program,
+                                                        GLint location,
+                                                        GLenum genMode,
+                                                        GLint components,
+                                                        const GLfloat* coeffs) {
+  MojoGLES2MakeCurrent(context_);
+  glProgramPathFragmentInputGenCHROMIUM(program, location, genMode, components,
+                                        coeffs);
+}
+void MojoGLES2Impl::CoverageModulationCHROMIUM(GLenum components) {
+  MojoGLES2MakeCurrent(context_);
+  glCoverageModulationCHROMIUM(components);
+}
 GLenum MojoGLES2Impl::GetGraphicsResetStatusKHR() {
   MojoGLES2MakeCurrent(context_);
   return glGetGraphicsResetStatusKHR();
@@ -1782,6 +1907,23 @@ void MojoGLES2Impl::BlendBarrierKHR() {
 void MojoGLES2Impl::ApplyScreenSpaceAntialiasingCHROMIUM() {
   MojoGLES2MakeCurrent(context_);
   glApplyScreenSpaceAntialiasingCHROMIUM();
+}
+void MojoGLES2Impl::BindFragDataLocationIndexedEXT(GLuint program,
+                                                   GLuint colorNumber,
+                                                   GLuint index,
+                                                   const char* name) {
+  MojoGLES2MakeCurrent(context_);
+  glBindFragDataLocationIndexedEXT(program, colorNumber, index, name);
+}
+void MojoGLES2Impl::BindFragDataLocationEXT(GLuint program,
+                                            GLuint colorNumber,
+                                            const char* name) {
+  MojoGLES2MakeCurrent(context_);
+  glBindFragDataLocationEXT(program, colorNumber, name);
+}
+GLint MojoGLES2Impl::GetFragDataIndexEXT(GLuint program, const char* name) {
+  MojoGLES2MakeCurrent(context_);
+  return glGetFragDataIndexEXT(program, name);
 }
 
 }  // namespace mojo

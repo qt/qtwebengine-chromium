@@ -42,7 +42,7 @@ class Range;
 class Text;
 
 class CORE_EXPORT InputMethodController final : public NoBaseWillBeGarbageCollectedFinalized<InputMethodController> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InputMethodController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InputMethodController);
     WTF_MAKE_NONCOPYABLE(InputMethodController);
 public:
     enum ConfirmCompositionBehavior {
@@ -111,9 +111,6 @@ private:
     String composingText() const;
     bool insertTextForConfirmedComposition(const String& text);
     void selectComposition() const;
-    enum FinishCompositionMode { ConfirmComposition, CancelComposition };
-    // Returns true if composition exists.
-    bool finishComposition(const String&, FinishCompositionMode);
     bool setSelectionOffsets(const PlainTextRange&);
 };
 

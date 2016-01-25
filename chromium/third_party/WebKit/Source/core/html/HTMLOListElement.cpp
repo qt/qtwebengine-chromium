@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLOListElement.h"
 
 #include "core/CSSPropertyNames.h"
@@ -69,7 +68,7 @@ void HTMLOListElement::collectStyleForPresentationAttribute(const QualifiedName&
     }
 }
 
-void HTMLOListElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLOListElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == startAttr) {
         int oldStart = start();
@@ -87,7 +86,7 @@ void HTMLOListElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_isReversed = reversed;
         updateItemValues();
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 

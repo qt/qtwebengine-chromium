@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/track/AutomaticTrackSelection.h"
 
 #include "core/html/track/TextTrack.h"
@@ -168,7 +167,7 @@ void AutomaticTrackSelection::perform(TextTrackList& textTracks)
     TrackGroup metadataTracks(TrackGroup::Metadata);
 
     for (size_t i = 0; i < textTracks.length(); ++i) {
-        TextTrack* textTrack = textTracks.item(i);
+        TextTrack* textTrack = textTracks.anonymousIndexedGetter(i);
         if (!textTrack)
             continue;
 

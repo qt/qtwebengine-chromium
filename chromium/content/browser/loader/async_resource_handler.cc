@@ -11,6 +11,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/debug/alias.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -144,10 +145,10 @@ void AsyncResourceHandler::ReportUploadProgress() {
   if (progress.position() == last_upload_position_)
     return;  // No progress made since last time.
 
-  const uint64 kHalfPercentIncrements = 200;
+  const uint64_t kHalfPercentIncrements = 200;
   const TimeDelta kOneSecond = TimeDelta::FromMilliseconds(1000);
 
-  uint64 amt_since_last = progress.position() - last_upload_position_;
+  uint64_t amt_since_last = progress.position() - last_upload_position_;
   TimeDelta time_since_last = TimeTicks::Now() - last_upload_ticks_;
 
   bool is_finished = (progress.size() == progress.position());
@@ -318,6 +319,9 @@ bool AsyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
     int size;
     if (!buffer_->ShareToProcess(filter->PeerHandle(), &handle, &size))
       return false;
+
+    // TODO(erikchen): Temporary debugging. http://crbug.com/527588.
+    CHECK_LE(size, kBufferSize);
     filter->Send(new ResourceMsg_SetDataBuffer(
         GetRequestID(), handle, size, filter->peer_pid()));
     sent_first_data_msg_ = true;
@@ -329,6 +333,10 @@ bool AsyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   int encoded_data_length = current_transfer_size - reported_transfer_size_;
   reported_transfer_size_ = current_transfer_size;
 
+  // TODO(erikchen): Temporary debugging. http://crbug.com/527588.
+  CHECK_LE(data_offset, kBufferSize);
+
+  filter->Send(new ResourceMsg_DataReceivedDebug(GetRequestID(), data_offset));
   filter->Send(new ResourceMsg_DataReceived(
       GetRequestID(), data_offset, bytes_read, encoded_data_length));
   ++pending_data_count_;

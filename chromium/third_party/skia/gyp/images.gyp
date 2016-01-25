@@ -14,7 +14,7 @@
       'dependencies': [
         'core.gyp:*',
         'giflib.gyp:giflib',
-        'libjpeg.gyp:*',
+        'libjpeg-turbo-selector.gyp:libjpeg-turbo-selector',
         'etc1.gyp:libetc1',
         'ktx.gyp:libSkKTX',
         'libwebp.gyp:libwebp',
@@ -116,9 +116,6 @@
           ],
         }],
         [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
-          'export_dependent_settings': [
-            'libpng.gyp:libpng',
-          ],
           'dependencies': [
             'libpng.gyp:libpng',
           ],
@@ -129,15 +126,10 @@
              '../src/utils',
           ],
           'dependencies': [
-             'android_deps.gyp:png',
+            'libpng.gyp:libpng',
           ],
           'conditions': [
-            [ 'skia_android_framework == 0', {
-              'export_dependent_settings': [
-                'android_deps.gyp:png',
-                'libjpeg.gyp:*'
-              ],
-            }, {
+            [ 'skia_android_framework == 1', {
               # The android framework disables these decoders as they are of little use to
               # Java applications that can't take advantage of the compressed formats.
               'sources!': [

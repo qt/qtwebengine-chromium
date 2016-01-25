@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/permissions/PermissionsCallback.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
@@ -10,9 +9,10 @@
 
 namespace blink {
 
-PermissionsCallback::PermissionsCallback(ScriptPromiseResolver* resolver, PassOwnPtr<WebVector<WebPermissionType>> permission_types)
+PermissionsCallback::PermissionsCallback(ScriptPromiseResolver* resolver, PassOwnPtr<Vector<WebPermissionType>> internalPermissions, PassOwnPtr<Vector<int>> callerIndexToInternalIndex)
     : m_resolver(resolver),
-    m_permissionTypes(permission_types)
+    m_internalPermissions(internalPermissions),
+    m_callerIndexToInternalIndex(callerIndexToInternalIndex)
 {
     ASSERT(m_resolver);
 }
@@ -23,13 +23,16 @@ void PermissionsCallback::onSuccess(WebPassOwnPtr<WebVector<WebPermissionStatus>
         return;
 
     OwnPtr<WebVector<WebPermissionStatus>> statusPtr = permissionStatus.release();
+    HeapVector<Member<PermissionStatus>> result(m_callerIndexToInternalIndex->size());
 
-    Vector<PermissionStatus*> status;
-    status.reserveCapacity(statusPtr->size());
-    for (size_t i = 0; i < statusPtr->size(); ++i)
-        status.append(PermissionStatus::createAndListen(m_resolver->executionContext(), (*statusPtr)[i], (*m_permissionTypes)[i]));
-
-    m_resolver->resolve(status);
+    // Create the response vector by finding the status for each index by
+    // using the caller to internal index mapping and looking up the status
+    // using the internal index obtained.
+    for (size_t i = 0; i < m_callerIndexToInternalIndex->size(); ++i) {
+        int internalIndex = m_callerIndexToInternalIndex->operator[](i);
+        result[i] = PermissionStatus::createAndListen(m_resolver->executionContext(), statusPtr->operator[](internalIndex), m_internalPermissions->operator[](internalIndex));
+    }
+    m_resolver->resolve(result);
 }
 
 void PermissionsCallback::onError()

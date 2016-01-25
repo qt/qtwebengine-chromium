@@ -4,6 +4,9 @@
 
 #include "cc/tiles/image_decode_controller.h"
 
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "cc/debug/devtools_instrumentation.h"
 
 namespace cc {
@@ -59,14 +62,14 @@ ImageDecodeController::ImageDecodeController() {}
 ImageDecodeController::~ImageDecodeController() {}
 
 scoped_refptr<ImageDecodeTask> ImageDecodeController::GetTaskForImage(
-    const PositionImage& image,
+    const DrawImage& image,
     int layer_id,
     uint64_t prepare_tiles_id) {
-  uint32_t generation_id = image.image->uniqueID();
+  uint32_t generation_id = image.image()->uniqueID();
   scoped_refptr<ImageDecodeTask>& decode_task =
       image_decode_tasks_[layer_id][generation_id];
   if (!decode_task)
-    decode_task = CreateTaskForImage(image.image, layer_id, prepare_tiles_id);
+    decode_task = CreateTaskForImage(image.image(), layer_id, prepare_tiles_id);
   return decode_task;
 }
 

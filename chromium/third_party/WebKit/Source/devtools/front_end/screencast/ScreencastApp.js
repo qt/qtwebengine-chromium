@@ -10,7 +10,7 @@
 WebInspector.ScreencastApp = function()
 {
     this._enabledSetting = WebInspector.settings.createSetting("screencastEnabled", true);
-    this._toggleButton = new WebInspector.ToolbarButton(WebInspector.UIString("Toggle screencast"), "screencast-toolbar-item");
+    this._toggleButton = new WebInspector.ToolbarToggle(WebInspector.UIString("Toggle screencast"), "phone-toolbar-item");
     this._toggleButton.setToggled(this._enabledSetting.get());
     this._toggleButton.addEventListener("click", this._toggleButtonClicked, this);
     WebInspector.targetManager.observeTargets(this);
@@ -18,10 +18,11 @@ WebInspector.ScreencastApp = function()
 
 WebInspector.ScreencastApp.prototype = {
     /**
-     * @param {!Document} document
      * @override
+     * @param {!Document} document
+     * @param {function()} callback
      */
-    presentUI: function(document)
+    presentUI: function(document, callback)
     {
         var rootView = new WebInspector.RootView();
 
@@ -34,6 +35,7 @@ WebInspector.ScreencastApp.prototype = {
         this._rootSplitWidget.setSidebarWidget(WebInspector.inspectorView);
         WebInspector.inspectorView.showInitialPanel();
         rootView.attachToDocument(document);
+        callback();
     },
 
     /**
@@ -45,7 +47,8 @@ WebInspector.ScreencastApp.prototype = {
         if (this._target)
             return;
         this._target = target;
-        if (target.hasCapability(WebInspector.Target.Capabilities.CanScreencast)) {
+
+        if (target.isPage()) {
             this._screencastView = new WebInspector.ScreencastView(target);
             this._rootSplitWidget.setMainWidget(this._screencastView);
             this._screencastView.initialize();

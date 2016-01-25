@@ -15,12 +15,14 @@
 
 #include "media/cast/sender/congestion_control.h"
 
+#include <algorithm>
 #include <deque>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/trace_event/trace_event.h"
-#include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/constants.h"
 
 namespace media {
 namespace cast {
@@ -37,13 +39,12 @@ class AdaptiveCongestionControl : public CongestionControl {
   // CongestionControl implementation.
   void UpdateRtt(base::TimeDelta rtt) final;
   void UpdateTargetPlayoutDelay(base::TimeDelta delay) final;
-  void SendFrameToTransport(uint32 frame_id,
+  void SendFrameToTransport(uint32_t frame_id,
                             size_t frame_size_in_bits,
                             base::TimeTicks when) final;
-  void AckFrame(uint32 frame_id, base::TimeTicks when) final;
+  void AckFrame(uint32_t frame_id, base::TimeTicks when) final;
   int GetBitrate(base::TimeTicks playout_time,
-                 base::TimeDelta playout_delay,
-                 int soft_max_bitrate) final;
+                 base::TimeDelta playout_delay) final;
 
  private:
   struct FrameStats {
@@ -60,7 +61,7 @@ class AdaptiveCongestionControl : public CongestionControl {
   static base::TimeDelta DeadTime(const FrameStats& a, const FrameStats& b);
   // Get the FrameStats for a given |frame_id|.  Never returns nullptr.
   // Note: Older FrameStats will be removed automatically.
-  FrameStats* GetFrameStats(uint32 frame_id);
+  FrameStats* GetFrameStats(uint32_t frame_id);
   // Discard old FrameStats.
   void PruneFrameStats();
   // Calculate a safe bitrate. This is based on how much we've been
@@ -70,7 +71,7 @@ class AdaptiveCongestionControl : public CongestionControl {
   // Estimate when the transport will start sending the data for a given frame.
   // |estimated_bitrate| is the current estimated transmit bitrate in bits per
   // second.
-  base::TimeTicks EstimatedSendingTime(uint32 frame_id,
+  base::TimeTicks EstimatedSendingTime(uint32_t frame_id,
                                        double estimated_bitrate);
 
   base::TickClock* const clock_;  // Not owned by this class.
@@ -78,9 +79,9 @@ class AdaptiveCongestionControl : public CongestionControl {
   const int min_bitrate_configured_;
   const double max_frame_rate_;
   std::deque<FrameStats> frame_stats_;
-  uint32 last_frame_stats_;
-  uint32 last_acked_frame_;
-  uint32 last_enqueued_frame_;
+  uint32_t last_frame_stats_;
+  uint32_t last_acked_frame_;
+  uint32_t last_enqueued_frame_;
   base::TimeDelta rtt_;
   size_t history_size_;
   size_t acked_bits_in_history_;
@@ -97,13 +98,12 @@ class FixedCongestionControl : public CongestionControl {
   // CongestionControl implementation.
   void UpdateRtt(base::TimeDelta rtt) final {}
   void UpdateTargetPlayoutDelay(base::TimeDelta delay) final {}
-  void SendFrameToTransport(uint32 frame_id,
+  void SendFrameToTransport(uint32_t frame_id,
                             size_t frame_size_in_bits,
                             base::TimeTicks when) final {}
-  void AckFrame(uint32 frame_id, base::TimeTicks when) final {}
+  void AckFrame(uint32_t frame_id, base::TimeTicks when) final {}
   int GetBitrate(base::TimeTicks playout_time,
-                 base::TimeDelta playout_delay,
-                 int soft_max_bitrate) final {
+                 base::TimeDelta playout_delay) final {
     return bitrate_;
   }
 
@@ -142,18 +142,17 @@ static const size_t kHistorySize = 100;
 AdaptiveCongestionControl::FrameStats::FrameStats() : frame_size_in_bits(0) {
 }
 
-AdaptiveCongestionControl::AdaptiveCongestionControl(
-    base::TickClock* clock,
-    int max_bitrate_configured,
-    int min_bitrate_configured,
-    double max_frame_rate)
+AdaptiveCongestionControl::AdaptiveCongestionControl(base::TickClock* clock,
+                                                     int max_bitrate_configured,
+                                                     int min_bitrate_configured,
+                                                     double max_frame_rate)
     : clock_(clock),
       max_bitrate_configured_(max_bitrate_configured),
       min_bitrate_configured_(min_bitrate_configured),
       max_frame_rate_(max_frame_rate),
-      last_frame_stats_(static_cast<uint32>(-1)),
-      last_acked_frame_(static_cast<uint32>(-1)),
-      last_enqueued_frame_(static_cast<uint32>(-1)),
+      last_frame_stats_(static_cast<uint32_t>(-1)),
+      last_acked_frame_(static_cast<uint32_t>(-1)),
+      last_enqueued_frame_(static_cast<uint32_t>(-1)),
       history_size_(kHistorySize),
       acked_bits_in_history_(0) {
   DCHECK_GE(max_bitrate_configured, min_bitrate_configured) << "Invalid config";
@@ -175,10 +174,9 @@ void AdaptiveCongestionControl::UpdateRtt(base::TimeDelta rtt) {
 
 void AdaptiveCongestionControl::UpdateTargetPlayoutDelay(
     base::TimeDelta delay) {
-  const int max_unacked_frames =
-      std::min(kMaxUnackedFrames,
-               1 + static_cast<int>(delay * max_frame_rate_ /
-                                    base::TimeDelta::FromSeconds(1)));
+  const int max_unacked_frames = std::min<int>(
+      kMaxUnackedFrames, 1 + static_cast<int>(delay * max_frame_rate_ /
+                                              base::TimeDelta::FromSeconds(1)));
   DCHECK_GT(max_unacked_frames, 0);
   history_size_ = max_unacked_frames + kHistorySize;
   PruneFrameStats();
@@ -205,10 +203,10 @@ double AdaptiveCongestionControl::CalculateSafeBitrate() {
   return acked_bits_in_history_ / std::max(transmit_time, 1E-3);
 }
 
-AdaptiveCongestionControl::FrameStats*
-AdaptiveCongestionControl::GetFrameStats(uint32 frame_id) {
-  int32 offset = static_cast<int32>(frame_id - last_frame_stats_);
-  DCHECK_LT(offset, static_cast<int32>(kHistorySize));
+AdaptiveCongestionControl::FrameStats* AdaptiveCongestionControl::GetFrameStats(
+    uint32_t frame_id) {
+  int32_t offset = static_cast<int32_t>(frame_id - last_frame_stats_);
+  DCHECK_LT(offset, static_cast<int32_t>(kHistorySize));
   if (offset > 0) {
     frame_stats_.resize(frame_stats_.size() + offset);
     last_frame_stats_ += offset;
@@ -218,7 +216,7 @@ AdaptiveCongestionControl::GetFrameStats(uint32 frame_id) {
   offset += frame_stats_.size() - 1;
   // TODO(miu): Change the following to DCHECK once crash fix is confirmed.
   // http://crbug.com/517145
-  CHECK(offset >= 0 && offset < static_cast<int32>(frame_stats_.size()));
+  CHECK(offset >= 0 && offset < static_cast<int32_t>(frame_stats_.size()));
   return &frame_stats_[offset];
 }
 
@@ -235,7 +233,7 @@ void AdaptiveCongestionControl::PruneFrameStats() {
   }
 }
 
-void AdaptiveCongestionControl::AckFrame(uint32 frame_id,
+void AdaptiveCongestionControl::AckFrame(uint32_t frame_id,
                                          base::TimeTicks when) {
   FrameStats* frame_stats = GetFrameStats(last_acked_frame_);
   while (IsNewerFrameId(frame_id, last_acked_frame_)) {
@@ -255,7 +253,7 @@ void AdaptiveCongestionControl::AckFrame(uint32 frame_id,
   }
 }
 
-void AdaptiveCongestionControl::SendFrameToTransport(uint32 frame_id,
+void AdaptiveCongestionControl::SendFrameToTransport(uint32_t frame_id,
                                                      size_t frame_size_in_bits,
                                                      base::TimeTicks when) {
   last_enqueued_frame_ = frame_id;
@@ -265,7 +263,7 @@ void AdaptiveCongestionControl::SendFrameToTransport(uint32 frame_id,
 }
 
 base::TimeTicks AdaptiveCongestionControl::EstimatedSendingTime(
-    uint32 frame_id,
+    uint32_t frame_id,
     double estimated_bitrate) {
   const base::TimeTicks now = clock_->NowTicks();
 
@@ -277,7 +275,7 @@ base::TimeTicks AdaptiveCongestionControl::EstimatedSendingTime(
   // be in-flight; and therefore it is common for the |estimated_sending_time|
   // for those frames to be before |now|.
   base::TimeTicks estimated_sending_time;
-  for (uint32 f = last_acked_frame_; IsNewerFrameId(frame_id, f); ++f) {
+  for (uint32_t f = last_acked_frame_; IsNewerFrameId(frame_id, f); ++f) {
     FrameStats* const stats = GetFrameStats(f);
 
     // |estimated_ack_time| is the local time when the sender receives the ACK,
@@ -343,8 +341,7 @@ base::TimeTicks AdaptiveCongestionControl::EstimatedSendingTime(
 }
 
 int AdaptiveCongestionControl::GetBitrate(base::TimeTicks playout_time,
-                                          base::TimeDelta playout_delay,
-                                          int soft_max_bitrate) {
+                                          base::TimeDelta playout_delay) {
   double safe_bitrate = CalculateSafeBitrate();
   // Estimate when we might start sending the next frame.
   base::TimeDelta time_to_catch_up =
@@ -363,7 +360,6 @@ int AdaptiveCongestionControl::GetBitrate(base::TimeTicks playout_time,
           << " SBR:" << (safe_bitrate / 1E6);
   TRACE_COUNTER_ID1("cast.stream", "Empty Buffer Fraction", this,
                     empty_buffer_fraction);
-  bits_per_second = std::min(bits_per_second, soft_max_bitrate);
   bits_per_second = std::max(bits_per_second, min_bitrate_configured_);
   bits_per_second = std::min(bits_per_second, max_bitrate_configured_);
 

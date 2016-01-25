@@ -20,12 +20,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGAnimateTransformElement.h"
 
 #include "core/SVGNames.h"
-#include "core/svg/SVGParserUtilities.h"
+#include "core/svg/SVGTransformList.h"
 
 namespace blink {
 
@@ -49,7 +47,7 @@ bool SVGAnimateTransformElement::hasValidAttributeType()
     return animatedPropertyType() == AnimatedTransformList;
 }
 
-void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == SVGNames::typeAttr) {
         m_type = parseTransformType(value);
@@ -58,7 +56,7 @@ void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const
         return;
     }
 
-    SVGAnimateElement::parseAttribute(name, value);
+    SVGAnimateElement::parseAttribute(name, oldValue, value);
 }
 
 }

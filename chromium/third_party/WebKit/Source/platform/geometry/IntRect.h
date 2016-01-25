@@ -27,7 +27,8 @@
 #define IntRect_h
 
 #include "platform/geometry/IntPoint.h"
-#include "wtf/FastAllocBase.h"
+#include "platform/geometry/IntRectOutsets.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 #include "wtf/VectorTraits.h"
 
@@ -48,7 +49,7 @@ class FloatRect;
 class LayoutRect;
 
 class PLATFORM_EXPORT IntRect {
-    WTF_MAKE_FAST_ALLOCATED(IntRect);
+    USING_FAST_MALLOC(IntRect);
 public:
     IntRect() { }
     IntRect(const IntPoint& location, const IntSize& size)
@@ -89,6 +90,12 @@ public:
 
     void expand(const IntSize& size) { m_size += size; }
     void expand(int dw, int dh) { m_size.expand(dw, dh); }
+    void expand(const IntRectOutsets& outsets)
+    {
+        m_location.move(-outsets.left(), -outsets.top());
+        m_size.expand(outsets.left() + outsets.right(), outsets.top() + outsets.bottom());
+    }
+
     void contract(const IntSize& size) { m_size -= size; }
     void contract(int dw, int dh) { m_size.expand(-dw, -dh); }
 

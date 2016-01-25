@@ -60,7 +60,6 @@
         'media/base/testutils.cc',
         'media/base/testutils.h',
         'media/devices/fakedevicemanager.h',
-        'media/webrtc/dummyinstantiation.cc',
         'media/webrtc/fakewebrtccall.cc',
         'media/webrtc/fakewebrtccall.h',
         'media/webrtc/fakewebrtccommon.h',
@@ -92,15 +91,15 @@
         'media/base/videocapturer_unittest.cc',
         'media/base/videocommon_unittest.cc',
         'media/base/videoengine_unittest.h',
+        'media/base/videoframe_unittest.h',
         'media/devices/dummydevicemanager_unittest.cc',
         'media/devices/filevideocapturer_unittest.cc',
         'media/sctp/sctpdataengine_unittest.cc',
         'media/webrtc/simulcast_unittest.cc',
+        'media/webrtc/webrtcmediaengine_unittest.cc',
         'media/webrtc/webrtcvideocapturer_unittest.cc',
-        'media/base/videoframe_unittest.h',
         'media/webrtc/webrtcvideoframe_unittest.cc',
         'media/webrtc/webrtcvideoframefactory_unittest.cc',
-
         # Disabled because some tests fail.
         # TODO(ronghuawu): Reenable these tests.
         # 'media/devices/devicemanager_unittest.cc',
@@ -129,6 +128,17 @@
             },
           },
         }],
+        ['OS=="win" and clang==1', {
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'AdditionalOptions': [
+                # Disable warnings failing when compiling with Clang on Windows.
+                # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                '-Wno-unused-function',
+              ],
+            },
+          },
+        },],
         ['OS=="ios"', {
           'sources!': [
             'media/sctp/sctpdataengine_unittest.cc',
@@ -142,6 +152,7 @@
       'dependencies': [
         '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
         'libjingle.gyp:libjingle',
+        'libjingle.gyp:libjingle_peerconnection',
         'libjingle.gyp:libjingle_p2p',
         'libjingle_unittest_main',
       ],
@@ -176,7 +187,7 @@
     },  # target libjingle_p2p_unittest
     {
       'target_name': 'libjingle_peerconnection_unittest',
-      'type': 'executable',
+      'type': '<(gtest_target_type)',
       'dependencies': [
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
@@ -200,7 +211,6 @@
         'app/webrtc/jsepsessiondescription_unittest.cc',
         'app/webrtc/localaudiosource_unittest.cc',
         'app/webrtc/mediastream_unittest.cc',
-        'app/webrtc/mediastreamsignaling_unittest.cc',
         'app/webrtc/peerconnection_unittest.cc',
         'app/webrtc/peerconnectionendtoend_unittest.cc',
         'app/webrtc/peerconnectionfactory_unittest.cc',
@@ -208,7 +218,6 @@
         # 'app/webrtc/peerconnectionproxy_unittest.cc',
         'app/webrtc/remotevideocapturer_unittest.cc',
         'app/webrtc/rtpsenderreceiver_unittest.cc',
-        'app/webrtc/sctputils.cc',
         'app/webrtc/statscollector_unittest.cc',
         'app/webrtc/test/fakeaudiocapturemodule.cc',
         'app/webrtc/test/fakeaudiocapturemodule.h',
@@ -216,7 +225,6 @@
         'app/webrtc/test/fakeconstraints.h',
         'app/webrtc/test/fakedatachannelprovider.h',
         'app/webrtc/test/fakedtlsidentitystore.h',
-        'app/webrtc/test/fakemediastreamsignaling.h',
         'app/webrtc/test/fakeperiodicvideocapturer.h',
         'app/webrtc/test/fakevideotrackrenderer.h',
         'app/webrtc/test/mockpeerconnectionobservers.h',
@@ -230,17 +238,25 @@
       ],
       'conditions': [
         ['OS=="android"', {
-          # We want gmock features that use tr1::tuple, but we currently
-          # don't support the variadic templates used by libstdc++'s
-          # implementation. gmock supports this scenario by providing its
-          # own implementation but we must opt in to it.
-          'defines': [
-            'GTEST_USE_OWN_TR1_TUPLE=1',
-            # GTEST_USE_OWN_TR1_TUPLE only works if GTEST_HAS_TR1_TUPLE is set.
-            # gmock r625 made it so that GTEST_HAS_TR1_TUPLE is set to 0
-            # automatically on android, so it has to be set explicitly here.
-            'GTEST_HAS_TR1_TUPLE=1',
-           ],
+          'sources': [
+            'app/webrtc/test/androidtestinitializer.cc',
+            'app/webrtc/test/androidtestinitializer.h',
+          ],
+          'dependencies': [
+            '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
+            'libjingle.gyp:libjingle_peerconnection_jni',
+          ],
+        }],
+        ['OS=="win" and clang==1', {
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'AdditionalOptions': [
+                # Disable warnings failing when compiling with Clang on Windows.
+                # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                '-Wno-unused-function',
+              ],
+            },
+          },
         }],
       ],
     },  # target libjingle_peerconnection_unittest
@@ -334,7 +350,7 @@
         },
       ],  # targets
     }],  # OS=="android"
-    ['OS=="ios" or (OS=="mac" and target_arch!="ia32" and mac_sdk>="10.7")', {
+    ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
       # The >=10.7 above is required to make ARC link cleanly (e.g. as
       # opposed to _compile_ cleanly, which the library under test
       # does just fine on 10.6 too).
@@ -345,6 +361,7 @@
           'includes': [ 'build/objc_app.gypi' ],
           'dependencies': [
             '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:field_trial_default',
             'libjingle.gyp:libjingle_peerconnection_objc',
           ],
           'sources': [
@@ -376,8 +393,9 @@
           'includes': [ 'build/objc_app.gypi' ],
           'dependencies': [
             '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:field_trial_default',
             '<(DEPTH)/third_party/ocmock/ocmock.gyp:ocmock',
-            '<(webrtc_root)/libjingle_examples.gyp:apprtc_signaling',
+            '<(webrtc_root)/webrtc_examples.gyp:apprtc_signaling',
           ],
           'sources': [
             'app/webrtc/objctests/mac/main.mm',
@@ -391,6 +409,17 @@
             }],
           ],
         },  # target apprtc_signaling_gunit_test
+      ],
+    }],
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'libjingle_peerconnection_unittest_apk_target',
+          'type': 'none',
+          'dependencies': [
+            '<(DEPTH)/webrtc/build/apk_tests.gyp:libjingle_peerconnection_unittest_apk',
+          ],
+        },
       ],
     }],
     ['test_isolation_mode != "noop"', {

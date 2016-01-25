@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/LoggingCanvas.h"
 
 #include "platform/geometry/IntSize.h"
@@ -51,6 +50,7 @@ namespace blink {
 namespace {
 
 struct VerbParams {
+    STACK_ALLOCATED();
     String name;
     unsigned pointCount;
     unsigned pointOffset;
@@ -331,7 +331,6 @@ String stringForSkPaintFlags(const SkPaint& paint)
     appendFlagToString(&flagsString, paint.isEmbeddedBitmapText(), "EmbeddedBitmapText");
     appendFlagToString(&flagsString, paint.isAutohinted(), "Autohinted");
     appendFlagToString(&flagsString, paint.isVerticalText(), "VerticalText");
-    appendFlagToString(&flagsString, paint.getFlags() & SkPaint::kGenA8FromLCD_Flag, "GenA8FromLCD");
     return flagsString;
 }
 
@@ -465,15 +464,13 @@ String regionOpName(SkRegion::Op op)
     };
 }
 
-String saveFlagsToString(SkCanvas::SaveFlags flags)
+String saveLayerFlagsToString(SkCanvas::SaveLayerFlags flags)
 {
     String flagsString = "";
-    if (flags & SkCanvas::kHasAlphaLayer_SaveFlag)
-        flagsString.append("kHasAlphaLayer_SaveFlag ");
-    if (flags & SkCanvas::kFullColorLayer_SaveFlag)
-        flagsString.append("kFullColorLayer_SaveFlag ");
-    if (flags & SkCanvas::kClipToLayer_SaveFlag)
-        flagsString.append("kClipToLayer_SaveFlag ");
+    if (flags & SkCanvas::kIsOpaque_SaveLayerFlag)
+        flagsString.append("kIsOpaque_SaveLayerFlag ");
+    if (flags & SkCanvas::kPreserveLCDText_SaveLayerFlag)
+        flagsString.append("kPreserveLCDText_SaveLayerFlag ");
     return flagsString;
 }
 
@@ -666,18 +663,6 @@ void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, con
     this->SkCanvas::onDrawImageRect(image, src, dst, paint, constraint);
 }
 
-void LoggingCanvas::onDrawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("drawSprite");
-    params->setObject("bitmap", objectForSkBitmap(bitmap));
-    params->setNumber("left", left);
-    params->setNumber("top", top);
-    if (paint)
-        params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::onDrawSprite(bitmap, left, top, paint);
-}
-
 void LoggingCanvas::onDrawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[], const SkColor colors[], SkXfermode* xmode,
     const uint16_t indices[], int indexCount, const SkPaint& paint)
 {
@@ -836,16 +821,16 @@ void LoggingCanvas::willSave()
     this->SkCanvas::willSave();
 }
 
-SkCanvas::SaveLayerStrategy LoggingCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint, SaveFlags flags)
+SkCanvas::SaveLayerStrategy LoggingCanvas::getSaveLayerStrategy(const SaveLayerRec& rec)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("saveLayer");
-    if (bounds)
-        params->setObject("bounds", objectForSkRect(*bounds));
-    if (paint)
-        params->setObject("paint", objectForSkPaint(*paint));
-    params->setString("saveFlags", saveFlagsToString(flags));
-    return this->SkCanvas::willSaveLayer(bounds, paint, flags);
+    if (rec.fBounds)
+        params->setObject("bounds", objectForSkRect(*rec.fBounds));
+    if (rec.fPaint)
+        params->setObject("paint", objectForSkPaint(*rec.fPaint));
+    params->setString("saveFlags", saveLayerFlagsToString(rec.fSaveLayerFlags));
+    return this->SkCanvas::getSaveLayerStrategy(rec);
 }
 
 void LoggingCanvas::willRestore()

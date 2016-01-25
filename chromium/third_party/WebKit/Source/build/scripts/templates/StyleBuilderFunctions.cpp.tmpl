@@ -6,13 +6,14 @@
     The `properties' dict can be used to access a property's parameters in
     jinja2 templates (i.e. setter, getter, initial, type_name)
 #}
-#include "config.h"
 #include "StyleBuilderFunctions.h"
 
 #include "CSSValueKeywords.h"
 #include "core/css/BasicShapeFunctions.h"
 #include "core/css/CSSContentDistributionValue.h"
+#include "core/css/CSSCustomIdentValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
+#include "core/css/CSSURIValue.h"
 #include "core/css/CSSValuePair.h"
 #include "core/css/resolver/StyleResolverState.h"
 
@@ -36,9 +37,9 @@ state.style()->{{property.setter}}
 {% endmacro %}
 {% macro convert_and_set_value(property) %}
 {% if property.converter %}
-{{set_value(property)}}(StyleBuilderConverter::{{property.converter}}(state, value));
+{{set_value(property)}}(StyleBuilderConverter::{{property.converter}}(state, *value));
 {%- else %}
-{{set_value(property)}}(static_cast<{{property.type_name}}>(*toCSSPrimitiveValue(value)));
+{{set_value(property)}}(toCSSPrimitiveValue(value)->convertTo<{{property.type_name}}>());
 {%- endif %}
 {% endmacro %}
 
@@ -104,7 +105,7 @@ namespace blink {
     CSS{{animation}}Data& data = state.style()->access{{animation}}s();
     data.{{vector}}.clear();
     for (auto& listValue : toCSSValueList(*value))
-        data.{{vector}}.append(CSSToStyleMap::mapAnimation{{attribute}}(listValue.get()));
+        data.{{vector}}.append(CSSToStyleMap::mapAnimation{{attribute}}(*listValue));
 }
 {% endmacro %}
 {{apply_animation('CSSPropertyAnimationDelay', 'Delay', 'Animation')}}
@@ -236,13 +237,13 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
 {
     NinePieceImage image(state.style()->{{getter}}());
     {% if modifier_type == 'Outset' %}
-    image.setOutset(CSSToStyleMap::mapNinePieceImageQuad(state, value));
+    image.setOutset(CSSToStyleMap::mapNinePieceImageQuad(state, *value));
     {% elif modifier_type == 'Repeat' %}
-    CSSToStyleMap::mapNinePieceImageRepeat(state, value, image);
+    CSSToStyleMap::mapNinePieceImageRepeat(state, *value, image);
     {% elif modifier_type == 'Slice' %}
-    CSSToStyleMap::mapNinePieceImageSlice(state, value, image);
+    CSSToStyleMap::mapNinePieceImageSlice(state, *value, image);
     {% elif modifier_type == 'Width' %}
-    image.setBorderSlices(CSSToStyleMap::mapNinePieceImageQuad(state, value));
+    image.setBorderSlices(CSSToStyleMap::mapNinePieceImageQuad(state, *value));
     {% endif %}
     state.style()->{{setter}}(image);
 }
@@ -260,7 +261,7 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
 {{declare_value_function(property_id)}}
 {
     {% set property = properties[property_id] %}
-    {{set_value(property)}}(state.styleImage({{property_id}}, value));
+    {{set_value(property)}}(state.styleImage({{property_id}}, *value));
 }
 {% endmacro %}
 {{apply_value_border_image_source('CSSPropertyBorderImageSource')}}
@@ -291,9 +292,9 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
 {{declare_value_function(property_id)}}
 {
     if (state.applyPropertyToRegularStyle())
-        {{set_value(property)}}(StyleBuilderConverter::convertStyleColor(state, value));
+        {{set_value(property)}}(StyleBuilderConverter::convertStyleColor(state, *value));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(StyleBuilderConverter::convertStyleColor(state, value, true));
+        state.style()->{{visited_link_setter}}(StyleBuilderConverter::convertStyleColor(state, *value, true));
 }
 {% endmacro %}
 {{apply_color('CSSPropertyBackgroundColor', initial_color='ComputedStyle::initialBackgroundColor') }}
@@ -347,7 +348,7 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
     int length = list ? list->length() : 0;
     for (int i = 0; i < length; ++i) {
         const CSSValuePair* pair = toCSSValuePair(list->item(i));
-        AtomicString identifier(toCSSPrimitiveValue(pair->first()).getStringValue());
+        AtomicString identifier(toCSSCustomIdentValue(pair->first()).value());
         int value = toCSSPrimitiveValue(pair->second()).getIntValue();
         CounterDirectives& directives = map.add(identifier, CounterDirectives()).storedValue->value;
         {% if action == 'Reset' %}
@@ -406,12 +407,12 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
         for (unsigned int i = 0; i < valueList->length(); i++) {
             if (!currChild)
                 currChild = prevChild->ensureNext();
-            CSSToStyleMap::{{map_fill}}(state, currChild, valueList->item(i));
+            CSSToStyleMap::{{map_fill}}(state, currChild, *valueList->item(i));
             prevChild = currChild;
             currChild = currChild->next();
         }
     } else {
-        CSSToStyleMap::{{map_fill}}(state, currChild, value);
+        CSSToStyleMap::{{map_fill}}(state, currChild, *value);
         currChild = currChild->next();
     }
     while (currChild) {
@@ -463,7 +464,7 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
     Vector<GridTrackSize> trackSizes;
     NamedGridLinesMap namedGridLines;
     OrderedNamedGridLines orderedNamedGridLines;
-    StyleBuilderConverter::convertGridTrackList(value, trackSizes, namedGridLines, orderedNamedGridLines, state);
+    StyleBuilderConverter::convertGridTrackList(*value, trackSizes, namedGridLines, orderedNamedGridLines, state);
     const NamedGridAreaMap& namedGridAreas = state.style()->namedGridArea();
     if (!namedGridAreas.isEmpty())
         StyleBuilderConverter::createImplicitNamedGridLinesFromGridArea(namedGridAreas, namedGridLines, For{{type}}s);
@@ -504,23 +505,22 @@ static bool borderImageLengthMatchesAllSides(const BorderImageLengthBox& borderI
     if (value->isValueList()) {
         CSSValueList* list = toCSSValueList(value);
         ASSERT(list->length() == 2);
-        url = toCSSPrimitiveValue(list->item(0))->getStringValue();
+        url = toCSSURIValue(list->item(0))->value();
         value = list->item(1);
     }
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Color color;
     SVGPaintType paintType = SVG_PAINTTYPE_RGBCOLOR;
-    if (primitiveValue->getValueID() == CSSValueNone) {
-        paintType = url.isEmpty() ? SVG_PAINTTYPE_NONE : SVG_PAINTTYPE_URI_NONE;
-    } else if (primitiveValue->isURI()) {
+    if (value->isURIValue()) {
         paintType = SVG_PAINTTYPE_URI;
-        url = primitiveValue->getStringValue();
-    } else if (primitiveValue->getValueID() == CSSValueCurrentcolor) {
+        url = toCSSURIValue(value)->value();
+    } else if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone) {
+        paintType = url.isEmpty() ? SVG_PAINTTYPE_NONE : SVG_PAINTTYPE_URI_NONE;
+    } else if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueCurrentcolor) {
         color = state.style()->color();
         paintType = url.isEmpty() ? SVG_PAINTTYPE_CURRENTCOLOR : SVG_PAINTTYPE_URI_CURRENTCOLOR;
     } else {
-        color = StyleBuilderConverter::convertColor(state, primitiveValue);
+        color = StyleBuilderConverter::convertColor(state, *value);
         paintType = url.isEmpty() ? SVG_PAINTTYPE_RGBCOLOR : SVG_PAINTTYPE_URI_RGBCOLOR;
     }
     {{set_value(property)}}(paintType, color, url,

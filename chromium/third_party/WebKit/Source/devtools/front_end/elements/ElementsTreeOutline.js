@@ -42,8 +42,7 @@ WebInspector.ElementsTreeOutline = function(domModel, omitRootDOMNode, selectEna
 
     var element = createElement("div");
 
-    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(element);
-    this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement("elements/elementsTreeOutline.css"));
+    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(element, "elements/elementsTreeOutline.css");
     var outlineDisclosureElement = this._shadowRoot.createChild("div", "elements-disclosure");
 
     TreeOutline.call(this);
@@ -57,7 +56,6 @@ WebInspector.ElementsTreeOutline = function(domModel, omitRootDOMNode, selectEna
     this._element.addEventListener("dragleave", this._ondragleave.bind(this), false);
     this._element.addEventListener("drop", this._ondrop.bind(this), false);
     this._element.addEventListener("dragend", this._ondragend.bind(this), false);
-    this._element.addEventListener("webkitAnimationEnd", this._onAnimationEnd.bind(this), false);
     this._element.addEventListener("contextmenu", this._contextMenuEventFired.bind(this), false);
 
     outlineDisclosureElement.appendChild(this._element);
@@ -71,7 +69,6 @@ WebInspector.ElementsTreeOutline = function(domModel, omitRootDOMNode, selectEna
     this._selectedDOMNode = null;
 
     this._visible = false;
-    this._pickNodeMode = false;
 
     this._popoverHelper = new WebInspector.PopoverHelper(this._element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this));
     this._popoverHelper.setTimeout(0);
@@ -91,7 +88,6 @@ WebInspector.ElementsTreeOutline.ClipboardData;
  * @enum {string}
  */
 WebInspector.ElementsTreeOutline.Events = {
-    NodePicked: "NodePicked",
     SelectedNodeChanged: "SelectedNodeChanged",
     ElementsTreeUpdated: "ElementsTreeUpdated"
 }
@@ -149,50 +145,6 @@ WebInspector.ElementsTreeOutline.prototype = {
     setWordWrap: function(wrap)
     {
         this._element.classList.toggle("elements-tree-nowrap", !wrap);
-    },
-
-    /**
-     * @param {!Event} event
-     */
-    _onAnimationEnd: function(event)
-    {
-        event.target.classList.remove("elements-tree-element-pick-node-1");
-        event.target.classList.remove("elements-tree-element-pick-node-2");
-    },
-
-    /**
-     * @return {boolean}
-     */
-    pickNodeMode: function()
-    {
-        return this._pickNodeMode;
-    },
-
-    /**
-     * @param {boolean} value
-     */
-    setPickNodeMode: function(value)
-    {
-        this._pickNodeMode = value;
-        this._element.classList.toggle("pick-node-mode", value);
-    },
-
-    /**
-     * @param {!Element} element
-     * @param {?WebInspector.DOMNode} node
-     * @return {boolean}
-     */
-    handlePickNode: function(element, node)
-    {
-        if (!this._pickNodeMode)
-            return false;
-
-        this.dispatchEventToListeners(WebInspector.ElementsTreeOutline.Events.NodePicked, node);
-        var hasRunningAnimation = element.classList.contains("elements-tree-element-pick-node-1") || element.classList.contains("elements-tree-element-pick-node-2");
-        element.classList.toggle("elements-tree-element-pick-node-1");
-        if (hasRunningAnimation)
-            element.classList.toggle("elements-tree-element-pick-node-2");
-        return true;
     },
 
     /**
@@ -495,19 +447,6 @@ WebInspector.ElementsTreeOutline.prototype = {
         element.updateSelection();
     },
 
-    /**
-     * @param {!WebInspector.DOMNode} node
-     */
-    updateOpenCloseTags: function(node)
-    {
-        var treeElement = this.findTreeElement(node);
-        if (treeElement)
-            treeElement.updateTitle(this._updateRecordForHighlight(node));
-        var closingTagElement = treeElement.lastChild();
-        if (closingTagElement && closingTagElement.isClosingTag())
-            closingTagElement.updateTitle(this._updateRecordForHighlight(node));
-    },
-
     _selectedNodeChanged: function()
     {
         this.dispatchEventToListeners(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, this._selectedDOMNode);
@@ -723,10 +662,12 @@ WebInspector.ElementsTreeOutline.prototype = {
         element.select();
     },
 
-    _onmousemove: function(event)
+    /**
+     * @param {?TreeElement} treeElement
+     */
+    setHoverEffect: function (treeElement)
     {
-        var element = this._treeElementFromEvent(event);
-        if (element && this._previousHoveredElement === element)
+        if (this._previousHoveredElement === treeElement)
             return;
 
         if (this._previousHoveredElement) {
@@ -734,10 +675,19 @@ WebInspector.ElementsTreeOutline.prototype = {
             delete this._previousHoveredElement;
         }
 
-        if (element) {
-            element.hovered = true;
-            this._previousHoveredElement = element;
+        if (treeElement) {
+            treeElement.hovered = true;
+            this._previousHoveredElement = treeElement;
         }
+    },
+
+    _onmousemove: function(event)
+    {
+        var element = this._treeElementFromEvent(event);
+        if (element && this._previousHoveredElement === element)
+            return;
+
+        this.setHoverEffect(element);
 
         if (element instanceof WebInspector.ElementsTreeElement) {
             this._domModel.highlightDOMNodeWithConfig(element.node().id, { mode: "all", showInfo: !WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) });
@@ -750,11 +700,7 @@ WebInspector.ElementsTreeOutline.prototype = {
 
     _onmouseleave: function(event)
     {
-        if (this._previousHoveredElement) {
-            this._previousHoveredElement.hovered = false;
-            delete this._previousHoveredElement;
-        }
-
+        this.setHoverEffect(null);
         WebInspector.DOMModel.hideDOMNodeHighlight();
     },
 
@@ -1770,7 +1716,7 @@ WebInspector.ElementsTreeOutline.Renderer.prototype = {
 WebInspector.ElementsTreeOutline.ShortcutTreeElement = function(nodeShortcut)
 {
     TreeElement.call(this, "");
-    this.listItemElement.createChild("div", "selection");
+    this.listItemElement.createChild("div", "selection fill");
     var title = this.listItemElement.createChild("span", "elements-tree-shortcut-title");
     var text = nodeShortcut.nodeName.toLowerCase();
     if (nodeShortcut.nodeType === Node.ELEMENT_NODE)

@@ -204,7 +204,7 @@ interface InspectorInstrumentation {
     void didDispatchXHRLoadendEvent(ExecutionContext*, XMLHttpRequest*);
 
     [LayerTree, Inline=FastReturn]
-    void didPaint([Keep] LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
+    void didPaint([Keep] LayoutObject*, const GraphicsLayer*, GraphicsContext&, const LayoutRect&);
 
     [Resource, Inline=FastReturn]
     InspectorInstrumentationCookie willRecalculateStyle([Keep] Document*);
@@ -417,7 +417,7 @@ interface InspectorInstrumentation {
     void didCreateAnimation(Document*, unsigned);
 
     [Animation, Inline=FastReturn]
-    void didStartAnimation(Document*, Animation* player);
+    void animationPlayStateChanged(Document*, Animation*, Animation::AnimationPlayState oldPlayState, Animation::AnimationPlayState newPlayState);
 }
 
 interface InspectorConsoleInstrumentation {

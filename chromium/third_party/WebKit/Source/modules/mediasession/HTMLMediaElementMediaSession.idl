@@ -5,8 +5,7 @@
 // https://mediasession.spec.whatwg.org/#extensions-to-the-htmlmediaelement-interface
 
 [
-    TypeChecking=Interface,
     RuntimeEnabled=MediaSession,
 ] partial interface HTMLMediaElement {
-    attribute MediaSession? session;
+    [RaisesException=Setter] attribute MediaSession? session;
 };

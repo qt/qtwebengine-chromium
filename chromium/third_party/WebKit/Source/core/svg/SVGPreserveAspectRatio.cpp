@@ -19,15 +19,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 
-#include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "platform/geometry/FloatRect.h"
+#include "platform/text/ParserUtilities.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/text/WTFString.h"
 
@@ -151,12 +148,12 @@ bool SVGPreserveAspectRatio::parseInternal(const CharType*& ptr, const CharType*
     return true;
 }
 
-void SVGPreserveAspectRatio::setValueAsString(const String& string, ExceptionState& exceptionState)
+SVGParsingError SVGPreserveAspectRatio::setValueAsString(const String& string)
 {
     setDefault();
 
     if (string.isEmpty())
-        return;
+        return NoError;
 
     bool valid = false;
     if (string.is8Bit()) {
@@ -168,10 +165,7 @@ void SVGPreserveAspectRatio::setValueAsString(const String& string, ExceptionSta
         const UChar* end = ptr + string.length();
         valid = parseInternal(ptr, end, true);
     }
-
-    if (!valid) {
-        exceptionState.throwDOMException(SyntaxError, "The value provided ('" + string + "') is invalid.");
-    }
+    return valid ? NoError : ParsingAttributeFailedError;
 }
 
 bool SVGPreserveAspectRatio::parse(const LChar*& ptr, const LChar* end, bool validate)
@@ -331,53 +325,60 @@ AffineTransform SVGPreserveAspectRatio::getCTM(float logicalX, float logicalY, f
 
 String SVGPreserveAspectRatio::valueAsString() const
 {
-    String alignType;
+    StringBuilder builder;
 
+    const char* alignString = "";
     switch (m_align) {
     case SVG_PRESERVEASPECTRATIO_NONE:
-        alignType = "none";
+        alignString = "none";
         break;
     case SVG_PRESERVEASPECTRATIO_XMINYMIN:
-        alignType = "xMinYMin";
+        alignString = "xMinYMin";
         break;
     case SVG_PRESERVEASPECTRATIO_XMIDYMIN:
-        alignType = "xMidYMin";
+        alignString = "xMidYMin";
         break;
     case SVG_PRESERVEASPECTRATIO_XMAXYMIN:
-        alignType = "xMaxYMin";
+        alignString = "xMaxYMin";
         break;
     case SVG_PRESERVEASPECTRATIO_XMINYMID:
-        alignType = "xMinYMid";
+        alignString = "xMinYMid";
         break;
     case SVG_PRESERVEASPECTRATIO_XMIDYMID:
-        alignType = "xMidYMid";
+        alignString = "xMidYMid";
         break;
     case SVG_PRESERVEASPECTRATIO_XMAXYMID:
-        alignType = "xMaxYMid";
+        alignString = "xMaxYMid";
         break;
     case SVG_PRESERVEASPECTRATIO_XMINYMAX:
-        alignType = "xMinYMax";
+        alignString = "xMinYMax";
         break;
     case SVG_PRESERVEASPECTRATIO_XMIDYMAX:
-        alignType = "xMidYMax";
+        alignString = "xMidYMax";
         break;
     case SVG_PRESERVEASPECTRATIO_XMAXYMAX:
-        alignType = "xMaxYMax";
+        alignString = "xMaxYMax";
         break;
     case SVG_PRESERVEASPECTRATIO_UNKNOWN:
-        alignType = "unknown";
+        alignString = "unknown";
         break;
-    };
+    }
+    builder.append(alignString);
 
+    const char* meetOrSliceString = "";
     switch (m_meetOrSlice) {
     default:
     case SVG_MEETORSLICE_UNKNOWN:
-        return alignType;
+        break;
     case SVG_MEETORSLICE_MEET:
-        return alignType + " meet";
+        meetOrSliceString = " meet";
+        break;
     case SVG_MEETORSLICE_SLICE:
-        return alignType + " slice";
+        meetOrSliceString = " slice";
+        break;
     }
+    builder.append(meetOrSliceString);
+    return builder.toString();
 }
 
 void SVGPreserveAspectRatio::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)

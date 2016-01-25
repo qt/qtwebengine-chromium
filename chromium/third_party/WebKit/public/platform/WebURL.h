@@ -33,10 +33,10 @@
 
 #include "WebCString.h"
 #include "WebString.h"
-#include <url/third_party/mozilla/url_parse.h>
+#include "url/third_party/mozilla/url_parse.h"
 
 #if !INSIDE_BLINK
-#include <url/gurl.h>
+#include "url/gurl.h"
 #endif
 
 namespace blink {
@@ -67,13 +67,6 @@ public:
         m_parsed = url.m_parsed;
         m_isValid = url.m_isValid;
         return *this;
-    }
-
-    // FIXME: Remove this API.
-    WebCString spec() const
-    {
-        std::string spec = m_string.utf8();
-        return WebCString(spec.data(), spec.length());
     }
 
     const WebString& string() const

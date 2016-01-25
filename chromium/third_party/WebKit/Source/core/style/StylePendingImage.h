@@ -41,7 +41,7 @@ namespace blink {
 
 class StylePendingImage final : public StyleImage {
 public:
-    static PassRefPtrWillBeRawPtr<StylePendingImage> create(CSSValue* value)
+    static PassRefPtrWillBeRawPtr<StylePendingImage> create(const CSSValue& value)
     {
         return adoptRefWillBeNoop(new StylePendingImage(value));
     }
@@ -66,10 +66,9 @@ public:
     bool imageHasRelativeHeight() const override { return false; }
     void computeIntrinsicDimensions(const LayoutObject*, Length& /* intrinsicWidth */ , Length& /* intrinsicHeight */, FloatSize& /* intrinsicRatio */) override { }
     bool usesImageContainerSize() const override { return false; }
-    void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) override { }
     void addClient(LayoutObject*) override { }
     void removeClient(LayoutObject*) override { }
-    PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&, float) const override
     {
         ASSERT_NOT_REACHED();
         return nullptr;
@@ -83,12 +82,14 @@ public:
     }
 
 private:
-    explicit StylePendingImage(CSSValue* value)
-        : m_value(value)
+    explicit StylePendingImage(const CSSValue& value)
+        : m_value(const_cast<CSSValue*>(&value))
     {
         m_isPendingImage = true;
     }
 
+    // TODO(sashab): Replace this with <const CSSValue> once RefPtrWillBeMember<>
+    // supports const types.
     RefPtrWillBeMember<CSSValue> m_value;
 };
 

@@ -5,10 +5,12 @@
 #ifndef MEDIA_BASE_AUDIO_DECODER_CONFIG_H_
 #define MEDIA_BASE_AUDIO_DECODER_CONFIG_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/time/time.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
@@ -34,17 +36,20 @@ enum AudioCodec {
   kCodecPCM_S16BE = 10,
   kCodecPCM_S24BE = 11,
   kCodecOpus = 12,
-  // kCodecEAC3 = 13,
+  kCodecEAC3 = 13,
   kCodecPCM_ALAW = 14,
   kCodecALAC = 15,
+  kCodecAC3 = 16,
   // DO NOT ADD RANDOM AUDIO CODECS!
   //
   // The only acceptable time to add a new codec is if there is production code
   // that uses said codec in the same CL.
 
   // Must always be equal to the largest entry ever logged.
-  kAudioCodecMax = kCodecALAC,
+  kAudioCodecMax = kCodecAC3,
 };
+
+std::string MEDIA_EXPORT GetCodecName(AudioCodec codec);
 
 // TODO(dalecurtis): FFmpeg API uses |bytes_per_channel| instead of
 // |bits_per_channel|, we should switch over since bits are generally confusing
@@ -70,7 +75,7 @@ class MEDIA_EXPORT AudioDecoderConfig {
                   SampleFormat sample_format,
                   ChannelLayout channel_layout,
                   int samples_per_second,
-                  const std::vector<uint8>& extra_data,
+                  const std::vector<uint8_t>& extra_data,
                   bool is_encrypted,
                   base::TimeDelta seek_preroll,
                   int codec_delay);
@@ -86,8 +91,6 @@ class MEDIA_EXPORT AudioDecoderConfig {
   // Returns a human-readable string describing |*this|.  For debugging & test
   // output only.
   std::string AsHumanReadableString() const;
-
-  std::string GetHumanReadableCodecName() const;
 
   AudioCodec codec() const { return codec_; }
   int bits_per_channel() const { return bytes_per_channel_ * 8; }

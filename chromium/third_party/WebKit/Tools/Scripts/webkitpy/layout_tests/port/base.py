@@ -102,7 +102,7 @@ class Port(object):
 
         ('mountainlion', 'x86'),
         ('mavericks', 'x86'),
-        ('yosemite', 'x86'),
+        ('mac10.10', 'x86'),
         ('xp', 'x86'),
         ('win7', 'x86'),
         ('win10', 'x86'),
@@ -117,13 +117,13 @@ class Port(object):
         )
 
     ALL_BASELINE_VARIANTS = [
-        'mac-yosemite', 'mac-mavericks', 'mac-retina', 'mac-mountainlion', 'mac-lion', 'mac-snowleopard',
+        'mac-mac10.10', 'mac-mavericks', 'mac-retina', 'mac-mountainlion', 'mac-lion', 'mac-snowleopard',
         'win-win10', 'win-win7', 'win-xp'
         'linux-trusty', 'linux-precise', 'linux-x86',
     ]
 
     CONFIGURATION_SPECIFIER_MACROS = {
-        'mac': ['snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'yosemite'],
+        'mac': ['snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'mac10.10'],
         'win': ['xp', 'win7', 'win10'],
         'linux': ['linux32', 'precise', 'trusty'],
         'android': ['icecreamsandwich'],
@@ -466,16 +466,18 @@ class Port(object):
 
     def check_httpd(self):
         httpd_path = self.path_to_apache()
-        try:
-            server_name = self._filesystem.basename(httpd_path)
-            env = self.setup_environ_for_server(server_name)
-            if self._executive.run_command([httpd_path, "-v"], env=env, return_exit_code=True) != 0:
-                _log.error("httpd seems broken. Cannot run http tests.")
-                return False
-            return True
-        except OSError:
-            _log.error("No httpd found. Cannot run http tests.")
-            return False
+        if httpd_path:
+            try:
+                server_name = self._filesystem.basename(httpd_path)
+                env = self.setup_environ_for_server(server_name)
+                if self._executive.run_command([httpd_path, "-v"], env=env, return_exit_code=True) != 0:
+                    _log.error("httpd seems broken. Cannot run http tests.")
+                    return False
+                return True
+            except OSError:
+                pass
+        _log.error("No httpd found. Cannot run http tests.")
+        return False
 
     def do_text_results_differ(self, expected_text, actual_text):
         return expected_text != actual_text
@@ -1036,7 +1038,7 @@ class Port(object):
     def default_results_directory(self):
         """Absolute path to the default place to store the test results."""
         try:
-            return self.path_from_chromium_base('webkit', self.get_option('configuration'), 'layout-test-results')
+            return self.path_from_chromium_base('out', self.get_option('configuration'), 'layout-test-results')
         except AssertionError:
             return self._build_path('layout-test-results')
 
@@ -1103,7 +1105,6 @@ class Port(object):
             clean_env['DISPLAY'] = self._value_or_default_from_environ('DISPLAY', ':1')
         if self.host.platform.is_mac():
             clean_env['DYLD_LIBRARY_PATH'] = self._build_path()
-            clean_env['DYLD_FRAMEWORK_PATH'] = self._build_path()
             variables_to_copy += [
                 'HOME',
             ]
@@ -1271,7 +1272,7 @@ class Port(object):
 
         The list should be sorted so that a later platform  will reuse
         an earlier platform's baselines if they are the same (e.g.,
-        'yosemite' should precede 'mavericks')."""
+        'mac10.10' should precede 'mac10.9')."""
         return self.ALL_BASELINE_VARIANTS
 
     def _generate_all_test_configurations(self):
@@ -1293,7 +1294,13 @@ class Port(object):
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'NeverFixTests'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'StaleTestExpectations'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'SlowTests'))
+        if self._is_wpt_enabled:
+            paths.append(self._filesystem.join(self.layout_tests_dir(), 'WPTServeExpectations'))
         return paths
+
+    def _flag_specific_expectations_files(self):
+        return [self._filesystem.join(self.layout_tests_dir(), 'FlagExpectations', flag.lstrip('-'))
+                for flag in self.get_option('additional_driver_flag', [])]
 
     def expectations_dict(self):
         """Returns an OrderedDict of name -> expectations strings.
@@ -1342,7 +1349,9 @@ class Port(object):
         return {}
 
     def expectations_files(self):
-        return [self.path_to_generic_test_expectations_file()] + self._port_specific_expectations_files()
+        return ([self.path_to_generic_test_expectations_file()] +
+                self._port_specific_expectations_files() +
+                self._flag_specific_expectations_files())
 
     def repository_path(self):
         """Returns the repository path for the chromium code base."""

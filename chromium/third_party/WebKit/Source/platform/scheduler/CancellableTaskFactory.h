@@ -8,13 +8,14 @@
 #include "platform/PlatformExport.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebScheduler.h"
+#include "wtf/Allocator.h"
 #include "wtf/Functional.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/TypeTraits.h"
 #include "wtf/WeakPtr.h"
+#include <type_traits>
 
 namespace blink {
 
@@ -22,7 +23,7 @@ class TraceLocation;
 
 class PLATFORM_EXPORT CancellableTaskFactory {
     WTF_MAKE_NONCOPYABLE(CancellableTaskFactory);
-    WTF_MAKE_FAST_ALLOCATED(CancellableTaskFactory);
+    USING_FAST_MALLOC(CancellableTaskFactory);
 public:
     // A pair of mutually exclusive factory methods are provided for constructing
     // a CancellableTaskFactory, one for when a Oilpan heap object owns a
@@ -37,13 +38,13 @@ public:
     // variety, which will refer back to the owner heap object safely (but weakly.)
     //
     template<typename T>
-    static PassOwnPtr<CancellableTaskFactory> create(T* thisObject, void (T::*method)(), typename WTF::EnableIf<IsGarbageCollectedType<T>::value>::Type* = nullptr)
+    static PassOwnPtr<CancellableTaskFactory> create(T* thisObject, void (T::*method)(), typename std::enable_if<IsGarbageCollectedType<T>::value>::type* = nullptr)
     {
-        return adoptPtr(new CancellableTaskFactory(WTF::bind(method, AllowCrossThreadWeakPersistent<T>(thisObject))));
+        return adoptPtr(new CancellableTaskFactory(WTF::bind(method, CrossThreadWeakPersistentThisPointer<T>(thisObject))));
     }
 
     template<typename T>
-    static PassOwnPtr<CancellableTaskFactory> create(T* thisObject, void (T::*method)(), typename WTF::EnableIf<!IsGarbageCollectedType<T>::value>::Type* = nullptr)
+    static PassOwnPtr<CancellableTaskFactory> create(T* thisObject, void (T::*method)(), typename std::enable_if<!IsGarbageCollectedType<T>::value>::type* = nullptr)
     {
         return adoptPtr(new CancellableTaskFactory(WTF::bind(method, thisObject)));
     }
@@ -63,13 +64,14 @@ protected:
     // Only intended used by unit tests wanting to stack allocate and/or pass in a closure value.
     // Please use the create() factory method elsewhere.
     explicit CancellableTaskFactory(PassOwnPtr<Closure> closure)
-        : m_closure(closure)
+        : m_closure(std::move(closure))
         , m_weakPtrFactory(this)
     {
     }
 
 private:
     class CancellableTask : public WebTaskRunner::Task {
+        USING_FAST_MALLOC(CancellableTask);
         WTF_MAKE_NONCOPYABLE(CancellableTask);
 
     public:

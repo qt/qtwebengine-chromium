@@ -5,8 +5,12 @@
 #ifndef MEDIA_RENDERERS_GPU_VIDEO_ACCELERATOR_FACTORIES_H_
 #define MEDIA_RENDERERS_GPU_VIDEO_ACCELERATOR_FACTORIES_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -27,6 +31,10 @@ class Rect;
 class Size;
 }
 
+namespace gpu {
+struct SyncToken;
+};
+
 namespace media {
 
 class VideoDecodeAccelerator;
@@ -39,9 +47,18 @@ class VideoDecodeAccelerator;
 //   be retrieved as |GetMessageLoop()|.
 // * All calls to the Factories after construction must be made on its message
 //   loop.
-class MEDIA_EXPORT GpuVideoAcceleratorFactories
-    : public base::RefCountedThreadSafe<GpuVideoAcceleratorFactories> {
+class MEDIA_EXPORT GpuVideoAcceleratorFactories {
  public:
+  class ScopedGLContextLock {
+   public:
+    ScopedGLContextLock() {}
+    virtual gpu::gles2::GLES2Interface* ContextGL() = 0;
+    virtual ~ScopedGLContextLock(){};
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(ScopedGLContextLock);
+  };
+
   // Return whether GPU encoding/decoding is enabled.
   virtual bool IsGpuVideoAcceleratorEnabled() = 0;
   // Caller owns returned pointer, but should call Destroy() on it (instead of
@@ -55,14 +72,14 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories
   virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator() = 0;
 
   // Allocate & delete native textures.
-  virtual bool CreateTextures(int32 count,
+  virtual bool CreateTextures(int32_t count,
                               const gfx::Size& size,
-                              std::vector<uint32>* texture_ids,
+                              std::vector<uint32_t>* texture_ids,
                               std::vector<gpu::Mailbox>* texture_mailboxes,
-                              uint32 texture_target) = 0;
-  virtual void DeleteTexture(uint32 texture_id) = 0;
+                              uint32_t texture_target) = 0;
+  virtual void DeleteTexture(uint32_t texture_id) = 0;
 
-  virtual void WaitSyncPoint(uint32 sync_point) = 0;
+  virtual void WaitSyncToken(const gpu::SyncToken& sync_token) = 0;
 
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       const gfx::Size& size,
@@ -75,7 +92,7 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories
   // video frames are enabled.
   virtual VideoPixelFormat VideoFrameOutputFormat() = 0;
 
-  virtual gpu::gles2::GLES2Interface* GetGLES2Interface() = 0;
+  virtual scoped_ptr<ScopedGLContextLock> GetGLContextLock() = 0;
 
   // Allocate & return a shared memory segment.
   virtual scoped_ptr<base::SharedMemory> CreateSharedMemory(size_t size) = 0;
@@ -83,16 +100,17 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories
   // Returns the task runner the video accelerator runs on.
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() = 0;
 
-  // Returns the supported codec profiles of video decode accelerator.
-  virtual VideoDecodeAccelerator::SupportedProfiles
-      GetVideoDecodeAcceleratorSupportedProfiles() = 0;
+  // Return the capabilities of video decode accelerator, which includes the
+  // supported codec profiles.
+  virtual VideoDecodeAccelerator::Capabilities
+  GetVideoDecodeAcceleratorCapabilities() = 0;
 
   // Returns the supported codec profiles of video encode accelerator.
   virtual VideoEncodeAccelerator::SupportedProfiles
       GetVideoEncodeAcceleratorSupportedProfiles() = 0;
 
  protected:
-  friend class base::RefCountedThreadSafe<GpuVideoAcceleratorFactories>;
+  friend class base::RefCounted<GpuVideoAcceleratorFactories>;
   virtual ~GpuVideoAcceleratorFactories() {}
 };
 

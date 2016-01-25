@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "net/spdy/hpack/hpack_constants.h"
 #include "net/spdy/hpack/hpack_output_stream.h"
@@ -22,18 +21,23 @@ const char kCookieKey[] = "cookie";
 
 }  // namespace
 
-HpackDecoder::HpackDecoder(const HpackHuffmanTable& table)
+HpackDecoder::HpackDecoder()
     : max_string_literal_size_(kDefaultMaxStringLiteralSize),
+      handler_(nullptr),
       regular_header_seen_(false),
-      huffman_table_(table) {}
+      header_block_started_(false) {}
 
 HpackDecoder::~HpackDecoder() {}
 
-bool HpackDecoder::HandleControlFrameHeadersData(SpdyStreamId id,
-                                                 const char* headers_data,
+bool HpackDecoder::HandleControlFrameHeadersData(const char* headers_data,
                                                  size_t headers_data_length) {
   decoded_block_.clear();
-
+  if (!header_block_started_) {
+    header_block_started_ = true;
+    if (handler_ != nullptr) {
+      handler_->OnHeaderBlockStart();
+    }
+  }
   size_t new_size = headers_block_buffer_.size() + headers_data_length;
   if (new_size > kMaxDecodeBufferSize) {
     return false;
@@ -43,8 +47,7 @@ bool HpackDecoder::HandleControlFrameHeadersData(SpdyStreamId id,
   return true;
 }
 
-bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id,
-                                                     size_t* compressed_len) {
+bool HpackDecoder::HandleControlFrameHeadersComplete(size_t* compressed_len) {
   HpackInputStream input_stream(max_string_literal_size_,
                                 headers_block_buffer_);
   regular_header_seen_ = false;
@@ -57,8 +60,12 @@ bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id,
       return false;
     }
   }
+  if (handler_ != nullptr) {
+    handler_->OnHeaderBlockEnd(headers_block_buffer_.size());
+  }
   headers_block_buffer_.clear();
-
+  header_block_started_ = false;
+  handler_ = nullptr;
   return true;
 }
 
@@ -75,16 +82,21 @@ bool HpackDecoder::HandleHeaderRepresentation(StringPiece name,
     }
   }
 
-  auto it = decoded_block_.find(name);
-  if (it == decoded_block_.end()) {
-    // This is a new key.
-    decoded_block_[name] = value;
+  if (handler_ == nullptr) {
+    auto it = decoded_block_.find(name);
+    if (it == decoded_block_.end()) {
+      // This is a new key.
+      decoded_block_[name] = value;
+    } else {
+      // The key already exists, append |value| with appropriate delimiter.
+      string new_value = it->second.as_string();
+      new_value.append((name == kCookieKey) ? "; " : string(1, '\0'));
+      value.AppendToString(&new_value);
+      decoded_block_.ReplaceOrAppendHeader(name, new_value);
+    }
   } else {
-    // The key already exists, append |value| with appropriate delimiter.
-    string new_value = it->second.as_string();
-    new_value.append((name == kCookieKey) ? "; " : string(1, '\0'));
-    value.AppendToString(&new_value);
-    decoded_block_.ReplaceOrAppendHeader(name, new_value);
+    DCHECK(decoded_block_.empty());
+    handler_->OnHeader(name, value);
   }
   return true;
 }
@@ -117,7 +129,7 @@ bool HpackDecoder::DecodeNextOpcode(HpackInputStream* input_stream) {
 
 bool HpackDecoder::DecodeNextHeaderTableSizeUpdate(
     HpackInputStream* input_stream) {
-  uint32 size = 0;
+  uint32_t size = 0;
   if (!input_stream->DecodeNextUint32(&size)) {
     return false;
   }
@@ -129,7 +141,7 @@ bool HpackDecoder::DecodeNextHeaderTableSizeUpdate(
 }
 
 bool HpackDecoder::DecodeNextIndexedHeader(HpackInputStream* input_stream) {
-  uint32 index = 0;
+  uint32_t index = 0;
   if (!input_stream->DecodeNextUint32(&index)) {
     return false;
   }
@@ -168,7 +180,7 @@ bool HpackDecoder::DecodeNextLiteralHeader(HpackInputStream* input_stream,
 
 bool HpackDecoder::DecodeNextName(HpackInputStream* input_stream,
                                   StringPiece* next_name) {
-  uint32 index_or_zero = 0;
+  uint32_t index_or_zero = 0;
   if (!input_stream->DecodeNextUint32(&index_or_zero)) {
     return false;
   }
@@ -196,7 +208,7 @@ bool HpackDecoder::DecodeNextStringLiteral(HpackInputStream* input_stream,
                                            StringPiece* output) {
   if (input_stream->MatchPrefixAndConsume(kStringLiteralHuffmanEncoded)) {
     string* buffer = is_key ? &key_buffer_ : &value_buffer_;
-    bool result = input_stream->DecodeNextHuffmanString(huffman_table_, buffer);
+    bool result = input_stream->DecodeNextHuffmanString(buffer);
     *output = StringPiece(*buffer);
     return result;
   }

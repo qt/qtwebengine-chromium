@@ -4,6 +4,11 @@
 
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
+#include "build/build_config.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_manager.h"
@@ -73,6 +78,8 @@ void RenderWidgetHostViewChildFrame::Focus() {
 }
 
 bool RenderWidgetHostViewChildFrame::HasFocus() const {
+  if (frame_connector_)
+    return frame_connector_->HasFocus();
   return false;
 }
 
@@ -125,6 +132,9 @@ RenderWidgetHostViewChildFrame::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewChildFrame::SetBackgroundColor(SkColor color) {
+  RenderWidgetHostViewBase::SetBackgroundColor(color);
+  bool opaque = GetBackgroundOpaque();
+  host_->SetBackgroundOpaque(opaque);
 }
 
 gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
@@ -162,6 +172,8 @@ void RenderWidgetHostViewChildFrame::MovePluginWindows(
 }
 
 void RenderWidgetHostViewChildFrame::UpdateCursor(const WebCursor& cursor) {
+  if (frame_connector_)
+    frame_connector_->UpdateCursor(cursor);
 }
 
 void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
@@ -223,15 +235,15 @@ void RenderWidgetHostViewChildFrame::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
 }
 
-#if defined(OS_ANDROID)
 void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
+  NOTIMPLEMENTED();
 }
 
 void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
+  NOTIMPLEMENTED();
 }
-#endif
 
-void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32 output_surface_id,
+void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32_t output_surface_id,
                                                   cc::SurfaceDrawStatus drawn) {
   cc::CompositorFrameAck ack;
   DCHECK_GT(ack_pending_count_, 0U);
@@ -245,8 +257,8 @@ void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32 output_surface_id,
 }
 
 void RenderWidgetHostViewChildFrame::OnSwapCompositorFrame(
-      uint32 output_surface_id,
-      scoped_ptr<cc::CompositorFrame> frame) {
+    uint32_t output_surface_id,
+    scoped_ptr<cc::CompositorFrame> frame) {
   last_scroll_offset_ = frame->metadata.root_scroll_offset;
 
   if (!frame_connector_)
@@ -256,15 +268,13 @@ void RenderWidgetHostViewChildFrame::OnSwapCompositorFrame(
   // the embedder's renderer to be composited.
   if (!frame->delegated_frame_data || !use_surfaces_) {
     frame_connector_->ChildFrameCompositorFrameSwapped(
-        output_surface_id,
-        host_->GetProcess()->GetID(),
-        host_->GetRoutingID(),
-        frame.Pass());
+        output_surface_id, host_->GetProcess()->GetID(), host_->GetRoutingID(),
+        std::move(frame));
     return;
   }
 
   cc::RenderPass* root_pass =
-      frame->delegated_frame_data->render_pass_list.back();
+      frame->delegated_frame_data->render_pass_list.back().get();
 
   gfx::Size frame_size = root_pass->output_rect.size();
   float scale_factor = frame->metadata.device_scale_factor;
@@ -309,7 +319,7 @@ void RenderWidgetHostViewChildFrame::OnSwapCompositorFrame(
   ack_pending_count_++;
   // If this value grows very large, something is going wrong.
   DCHECK_LT(ack_pending_count_, 1000U);
-  surface_factory_->SubmitCompositorFrame(surface_id_, frame.Pass(),
+  surface_factory_->SubmitCompositorFrame(surface_id_, std::move(frame),
                                           ack_callback);
 }
 
@@ -371,6 +381,17 @@ void RenderWidgetHostViewChildFrame::ProcessMouseWheelEvent(
     host_->ForwardWheelEvent(event);
 }
 
+void RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpace(
+    const gfx::Point& point,
+    gfx::Point* transformed_point) {
+  *transformed_point = point;
+  if (!frame_connector_ || !use_surfaces_)
+    return;
+
+  frame_connector_->TransformPointToRootCoordSpace(point, surface_id_,
+                                                   transformed_point);
+}
+
 #if defined(OS_MACOSX)
 void RenderWidgetHostViewChildFrame::SetActive(bool active) {
 }
@@ -413,11 +434,11 @@ void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
 }
 
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) {
+    const gfx::Rect& src_subrect,
+    const scoped_refptr<media::VideoFrame>& target,
+    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
   NOTIMPLEMENTED();
-  callback.Run(false);
+  callback.Run(gfx::Rect(), false);
 }
 
 bool RenderWidgetHostViewChildFrame::CanCopyToVideoFrame() const {
@@ -459,11 +480,21 @@ void RenderWidgetHostViewChildFrame::ReturnResources(
             std::back_inserter(surface_returned_resources_));
 }
 
+void RenderWidgetHostViewChildFrame::SetBeginFrameSource(
+    cc::SurfaceId surface_id,
+    cc::BeginFrameSource* begin_frame_source) {
+  // TODO(tansell): Hook this up.
+}
+
 BrowserAccessibilityManager*
 RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
     BrowserAccessibilityDelegate* delegate) {
+#if defined(OS_ANDROID) && defined(USE_AURA)
+  return nullptr;
+#else
   return BrowserAccessibilityManager::Create(
       BrowserAccessibilityManager::GetEmptyDocument(), delegate);
+#endif
 }
 
 void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {

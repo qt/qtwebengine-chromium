@@ -26,15 +26,11 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/HRTFKernel.h"
-
 #include "platform/audio/AudioChannel.h"
 #include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -114,7 +110,7 @@ PassOwnPtr<HRTFKernel> HRTFKernel::createInterpolatedKernel(HRTFKernel* kernel1,
         return nullptr;
 
     ASSERT(x >= 0.0 && x < 1.0);
-    x = std::min(1.0f, std::max(0.0f, x));
+    x = clampTo(x, 0.0f, 1.0f);
 
     float sampleRate1 = kernel1->sampleRate();
     float sampleRate2 = kernel2->sampleRate();
@@ -130,4 +126,3 @@ PassOwnPtr<HRTFKernel> HRTFKernel::createInterpolatedKernel(HRTFKernel* kernel1,
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -41,7 +41,6 @@
  * version of this file under any of the LGPL, the MPL or the GPL.
  */
 
-#include "config.h"
 #include "core/paint/PaintLayerReflectionInfo.h"
 
 #include "core/frame/UseCounter.h"
@@ -129,15 +128,16 @@ void PaintLayerReflectionInfo::updateAfterStyleChange(const ComputedStyle* oldSt
     m_reflection->setStyle(newStyle.release());
 }
 
-void PaintLayerReflectionInfo::paint(GraphicsContext* context, const PaintLayerPaintingInfo& paintingInfo, PaintLayerFlags flags)
+PaintLayerPainter::PaintResult PaintLayerReflectionInfo::paint(GraphicsContext& context, const PaintLayerPaintingInfo& paintingInfo, PaintLayerFlags flags)
 {
     if (m_isPaintingInsideReflection)
-        return;
+        return PaintLayerPainter::FullyPainted;
 
     // Mark that we are now inside replica painting.
     m_isPaintingInsideReflection = true;
-    PaintLayerPainter(*reflectionLayer()).paintLayer(context, paintingInfo, flags);
+    PaintLayerPainter::PaintResult result = PaintLayerPainter(*reflectionLayer()).paintLayer(context, paintingInfo, flags | PaintLayerPaintingReflection);
     m_isPaintingInsideReflection = false;
+    return result;
 }
 
 } // namespace blink

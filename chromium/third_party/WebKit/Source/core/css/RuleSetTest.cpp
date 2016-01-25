@@ -27,12 +27,10 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/RuleSet.h"
 
 #include "core/css/CSSTestHelper.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -134,7 +132,7 @@ TEST(RuleSetTest, findBestRuleSetAndAdd_DivWithContent)
     const TerminatedArray<RuleData>* rules = ruleSet.tagRules(str);
     ASSERT_EQ(1u, rules->size());
     AtomicString valueStr("content");
-    ASSERT_EQ(valueStr, rules->at(0).selector().value());
+    ASSERT_EQ(valueStr, rules->at(0).selector().tagHistory()->value());
 }
 
 TEST(RuleSetTest, findBestRuleSetAndAdd_Host)

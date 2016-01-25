@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/loader/TextTrackLoader.h"
 
 #include "core/dom/Document.h"
@@ -70,7 +68,7 @@ void TextTrackLoader::cancelLoad()
     clearResource();
 }
 
-void TextTrackLoader::dataReceived(Resource* resource, const char* data, unsigned length)
+void TextTrackLoader::dataReceived(Resource* resource, const char* data, size_t length)
 {
     ASSERT(this->resource() == resource);
 
@@ -100,19 +98,19 @@ void TextTrackLoader::notifyFinished(Resource* resource)
         m_cueParser->flush();
 
     if (!m_cueLoadTimer.isActive())
-        m_cueLoadTimer.startOneShot(0, FROM_HERE);
+        m_cueLoadTimer.startOneShot(0, BLINK_FROM_HERE);
 
     cancelLoad();
 }
 
-bool TextTrackLoader::load(const KURL& url, const AtomicString& crossOriginMode)
+bool TextTrackLoader::load(const KURL& url, CrossOriginAttributeValue crossOrigin)
 {
     cancelLoad();
 
     FetchRequest cueRequest(ResourceRequest(document().completeURL(url)), FetchInitiatorTypeNames::texttrack);
 
-    if (!crossOriginMode.isNull()) {
-        cueRequest.setCrossOriginAccessControl(document().securityOrigin(), crossOriginMode);
+    if (crossOrigin != CrossOriginAttributeNotSet) {
+        cueRequest.setCrossOriginAccessControl(document().securityOrigin(), crossOrigin);
     } else if (!document().securityOrigin()->canRequestNoSuborigin(url)) {
         // Text track elements without 'crossorigin' set on the parent are "No CORS"; report error if not same-origin.
         corsPolicyPreventedLoad(document().securityOrigin(), url);
@@ -130,7 +128,7 @@ void TextTrackLoader::newCuesParsed()
         return;
 
     m_newCuesAvailable = true;
-    m_cueLoadTimer.startOneShot(0, FROM_HERE);
+    m_cueLoadTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void TextTrackLoader::newRegionsParsed()
@@ -145,7 +143,7 @@ void TextTrackLoader::fileFailedToParse()
     m_state = Failed;
 
     if (!m_cueLoadTimer.isActive())
-        m_cueLoadTimer.startOneShot(0, FROM_HERE);
+        m_cueLoadTimer.startOneShot(0, BLINK_FROM_HERE);
 
     cancelLoad();
 }

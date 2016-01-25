@@ -76,13 +76,20 @@ TCPPort::TCPPort(rtc::Thread* thread,
                  rtc::PacketSocketFactory* factory,
                  rtc::Network* network,
                  const rtc::IPAddress& ip,
-                 uint16 min_port,
-                 uint16 max_port,
+                 uint16_t min_port,
+                 uint16_t max_port,
                  const std::string& username,
                  const std::string& password,
                  bool allow_listen)
-    : Port(thread, LOCAL_PORT_TYPE, factory, network, ip, min_port, max_port,
-           username, password),
+    : Port(thread,
+           LOCAL_PORT_TYPE,
+           factory,
+           network,
+           ip,
+           min_port,
+           max_port,
+           username,
+           password),
       incoming_only_(false),
       allow_listen_(allow_listen),
       socket_(NULL),
@@ -118,9 +125,7 @@ TCPPort::~TCPPort() {
 
 Connection* TCPPort::CreateConnection(const Candidate& address,
                                       CandidateOrigin origin) {
-  // We only support TCP protocols
-  if ((address.protocol() != TCP_PROTOCOL_NAME) &&
-      (address.protocol() != SSLTCP_PROTOCOL_NAME)) {
+  if (!SupportsProtocol(address.protocol())) {
     return NULL;
   }
 
@@ -177,10 +182,13 @@ void TCPPort::PrepareAddress() {
   } else {
     LOG_J(LS_INFO, this) << "Not listening due to firewall restrictions.";
     // Note: We still add the address, since otherwise the remote side won't
-    // recognize our incoming TCP connections.
-    AddAddress(rtc::SocketAddress(ip(), 0), rtc::SocketAddress(ip(), 0),
-               rtc::SocketAddress(), TCP_PROTOCOL_NAME, "", TCPTYPE_ACTIVE_STR,
-               LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP, 0, true);
+    // recognize our incoming TCP connections. According to
+    // https://tools.ietf.org/html/rfc6544#section-4.5, for active candidate,
+    // the port must be set to the discard port, i.e. 9.
+    AddAddress(rtc::SocketAddress(ip(), DISCARD_PORT),
+               rtc::SocketAddress(ip(), 0), rtc::SocketAddress(),
+               TCP_PROTOCOL_NAME, "", TCPTYPE_ACTIVE_STR, LOCAL_PORT_TYPE,
+               ICE_TYPE_PREFERENCE_HOST_TCP, 0, true);
   }
 }
 
@@ -250,6 +258,7 @@ void TCPPort::OnNewConnection(rtc::AsyncPacketSocket* socket,
   incoming.socket = new_socket;
   incoming.socket->SignalReadPacket.connect(this, &TCPPort::OnReadPacket);
   incoming.socket->SignalReadyToSend.connect(this, &TCPPort::OnReadyToSend);
+  incoming.socket->SignalSentPacket.connect(this, &TCPPort::OnSentPacket);
 
   LOG_J(LS_VERBOSE, this) << "Accepted connection from "
                           << incoming.addr.ToSensitiveString();
@@ -276,6 +285,11 @@ void TCPPort::OnReadPacket(rtc::AsyncPacketSocket* socket,
                            const rtc::SocketAddress& remote_addr,
                            const rtc::PacketTime& packet_time) {
   Port::OnReadPacket(data, size, remote_addr, PROTO_TCP);
+}
+
+void TCPPort::OnSentPacket(rtc::AsyncPacketSocket* socket,
+                           const rtc::SentPacket& sent_packet) {
+  PortInterface::SignalSentPacket(sent_packet);
 }
 
 void TCPPort::OnReadyToSend(rtc::AsyncPacketSocket* socket) {

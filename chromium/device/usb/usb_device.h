@@ -5,9 +5,13 @@
 #ifndef DEVICE_USB_USB_DEVICE_H_
 #define DEVICE_USB_USB_DEVICE_H_
 
+#include <stdint.h>
+
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "device/usb/usb_descriptors.h"
@@ -55,10 +59,6 @@ class UsbDevice : public base::RefCountedThreadSafe<UsbDevice> {
 
   // Creates a UsbDeviceHandle for further manipulation.
   virtual void Open(const OpenCallback& callback) = 0;
-
-  // Explicitly closes a device handle. This method will be automatically called
-  // by the destructor of a UsbDeviceHandle as well.
-  virtual bool Close(scoped_refptr<UsbDeviceHandle> handle) = 0;
 
   // Gets the UsbConfigDescriptor for the active device configuration or nullptr
   // if the device is unconfigured.

@@ -26,10 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "platform/audio/Panner.h"
-
 #include "platform/audio/EqualPowerPanner.h"
 #include "platform/audio/HRTFPanner.h"
 
@@ -52,4 +49,3 @@ PassOwnPtr<Panner> Panner::create(PanningModel model, float sampleRate, HRTFData
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

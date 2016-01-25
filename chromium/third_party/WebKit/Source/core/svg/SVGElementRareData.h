@@ -22,6 +22,7 @@
 
 #include "core/svg/SVGElement.h"
 #include "platform/heap/Handle.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/StdLibExtras.h"
@@ -32,7 +33,7 @@ class CSSCursorImageValue;
 class SVGCursorElement;
 
 class SVGElementRareData : public NoBaseWillBeGarbageCollectedFinalized<SVGElementRareData> {
-    WTF_MAKE_NONCOPYABLE(SVGElementRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SVGElementRareData);
+    WTF_MAKE_NONCOPYABLE(SVGElementRareData); USING_FAST_MALLOC_WILL_BE_REMOVED(SVGElementRareData);
 public:
     SVGElementRareData(SVGElement* owner)
 #if ENABLE(OILPAN)
@@ -46,6 +47,7 @@ public:
         , m_instancesUpdatesBlocked(false)
         , m_useOverrideComputedStyle(false)
         , m_needsOverrideComputedStyleUpdate(false)
+        , m_webAnimatedAttributesDirty(false)
     {
     }
 
@@ -63,11 +65,16 @@ public:
     SVGCursorElement* cursorElement() const { return m_cursorElement; }
     void setCursorElement(SVGCursorElement* cursorElement) { m_cursorElement = cursorElement; }
 
-    SVGElement* correspondingElement() { return m_correspondingElement.get(); }
+    SVGElement* correspondingElement() const { return m_correspondingElement.get(); }
     void setCorrespondingElement(SVGElement* correspondingElement) { m_correspondingElement = correspondingElement; }
 
     CSSCursorImageValue* cursorImageValue() const { return m_cursorImageValue; }
     void setCursorImageValue(CSSCursorImageValue* cursorImageValue) { m_cursorImageValue = cursorImageValue; }
+
+    void setWebAnimatedAttributesDirty(bool dirty) { m_webAnimatedAttributesDirty = dirty; }
+    bool webAnimatedAttributesDirty() const { return m_webAnimatedAttributesDirty; }
+
+    HashSet<const QualifiedName*>& webAnimatedAttributes() { return m_webAnimatedAttributes; }
 
     MutableStylePropertySet* animatedSMILStyleProperties() const { return m_animatedSMILStyleProperties.get(); }
     MutableStylePropertySet* ensureAnimatedSMILStyleProperties();
@@ -96,10 +103,12 @@ private:
     bool m_instancesUpdatesBlocked : 1;
     bool m_useOverrideComputedStyle : 1;
     bool m_needsOverrideComputedStyleUpdate : 1;
+    bool m_webAnimatedAttributesDirty : 1;
+    HashSet<const QualifiedName*> m_webAnimatedAttributes;
     RefPtrWillBeMember<MutableStylePropertySet> m_animatedSMILStyleProperties;
     RefPtr<ComputedStyle> m_overrideComputedStyle;
     // Used by <animateMotion>
-    OwnPtr<AffineTransform> m_animateMotionTransform;
+    AffineTransform m_animateMotionTransform;
 };
 
 }

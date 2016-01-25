@@ -5,10 +5,11 @@
 #ifndef MEDIA_MOJO_SERVICES_MOJO_RENDERER_FACTORY_H_
 #define MEDIA_MOJO_SERVICES_MOJO_RENDERER_FACTORY_H_
 
+#include "base/macros.h"
 #include "media/base/media_export.h"
 #include "media/base/renderer_factory.h"
 #include "media/mojo/interfaces/renderer.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 
 namespace media {
 
@@ -17,7 +18,7 @@ class ServiceFactory;
 }
 
 // The default factory class for creating MojoRendererImpl.
-class MEDIA_EXPORT MojoRendererFactory : public RendererFactory {
+class MojoRendererFactory : public RendererFactory {
  public:
   explicit MojoRendererFactory(interfaces::ServiceFactory* service_factory);
   ~MojoRendererFactory() final;

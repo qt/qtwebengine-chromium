@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -39,18 +38,21 @@
 #include "core/editing/markers/RenderedDocumentMarker.h"
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
 class DocumentMarkerControllerTest : public ::testing::Test {
 protected:
-    void SetUp() override;
+    DocumentMarkerControllerTest()
+        : m_dummyPageHolder(DummyPageHolder::create(IntSize(800, 600)))
+    {
+    }
 
-    Document& document() const { return *m_document; }
-    DocumentMarkerController& markerController() const { return m_document->markers(); }
+    Document& document() const { return m_dummyPageHolder->document(); }
+    DocumentMarkerController& markerController() const { return document().markers(); }
 
     PassRefPtrWillBeRawPtr<Text> createTextNode(const char*);
     void markNodeContents(PassRefPtrWillBeRawPtr<Node>);
@@ -59,15 +61,7 @@ protected:
 
 private:
     OwnPtr<DummyPageHolder> m_dummyPageHolder;
-    RefPtrWillBePersistent<Document> m_document;
 };
-
-void DocumentMarkerControllerTest::SetUp()
-{
-    m_dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
-    m_document = &m_dummyPageHolder->document();
-    ASSERT(m_document);
-}
 
 PassRefPtrWillBeRawPtr<Text> DocumentMarkerControllerTest::createTextNode(const char* textContents)
 {

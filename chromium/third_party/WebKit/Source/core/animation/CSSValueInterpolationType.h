@@ -5,31 +5,36 @@
 #ifndef CSSValueInterpolationType_h
 #define CSSValueInterpolationType_h
 
-#include "core/animation/InterpolationType.h"
+#include "core/animation/CSSInterpolationType.h"
 
 namespace blink {
 
 // Never supports pairwise conversion while always supporting single conversion.
 // A catch all for default for CSSValues.
-class CSSValueInterpolationType : public InterpolationType {
+class CSSValueInterpolationType : public CSSInterpolationType {
 public:
     CSSValueInterpolationType(CSSPropertyID property)
-        : InterpolationType(property)
+        : CSSInterpolationType(property)
     { }
 
-    PassOwnPtr<PairwisePrimitiveInterpolation> maybeConvertPairwise(const CSSPropertySpecificKeyframe& startKeyframe, const CSSPropertySpecificKeyframe& endKeyframe, const StyleResolverState* state, ConversionCheckers&) const final
+    PassOwnPtr<PairwisePrimitiveInterpolation> maybeConvertPairwise(const PropertySpecificKeyframe& startKeyframe, const PropertySpecificKeyframe& endKeyframe, const InterpolationEnvironment&, const UnderlyingValue&, ConversionCheckers&) const final
     {
         return nullptr;
     }
 
-    PassOwnPtr<InterpolationValue> maybeConvertSingle(const CSSPropertySpecificKeyframe&, const StyleResolverState*, ConversionCheckers&) const final;
+    PassOwnPtr<InterpolationValue> maybeConvertSingle(const PropertySpecificKeyframe&, const InterpolationEnvironment&, const UnderlyingValue&, ConversionCheckers&) const final;
 
-    PassOwnPtr<InterpolationValue> maybeConvertUnderlyingValue(const StyleResolverState&) const final
+    PassOwnPtr<InterpolationValue> maybeConvertUnderlyingValue(const InterpolationEnvironment&) const final
     {
         return nullptr;
     }
 
-    void apply(const InterpolableValue&, const NonInterpolableValue*, StyleResolverState&) const final;
+    void composite(UnderlyingValue& underlyingValue, double underlyingFraction, const InterpolationValue& value) const final
+    {
+        underlyingValue.set(&value);
+    }
+
+    void apply(const InterpolableValue&, const NonInterpolableValue*, InterpolationEnvironment&) const final;
 };
 
 } // namespace blink

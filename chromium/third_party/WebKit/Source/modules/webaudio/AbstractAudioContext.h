@@ -35,6 +35,7 @@
 #include "modules/webaudio/AsyncAudioDecoder.h"
 #include "modules/webaudio/AudioDestinationNode.h"
 #include "modules/webaudio/DeferredTaskHandler.h"
+#include "modules/webaudio/IIRFilterNode.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
@@ -42,6 +43,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
+#include "wtf/build_config.h"
 
 namespace blink {
 
@@ -62,6 +64,7 @@ class DynamicsCompressorNode;
 class ExceptionState;
 class GainNode;
 class HTMLMediaElement;
+class IIRFilterNode;
 class MediaElementAudioSourceNode;
 class MediaStreamAudioDestinationNode;
 class MediaStreamAudioSourceNode;
@@ -131,7 +134,10 @@ public:
     AudioBuffer* createBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
 
     // Asynchronous audio file data decoding.
-    void decodeAudioData(DOMArrayBuffer*, AudioBufferCallback*, AudioBufferCallback*, ExceptionState&);
+    ScriptPromise decodeAudioData(ScriptState*, DOMArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, ExceptionState&);
+
+    // Handles the promise and callbacks when |decodeAudioData| is finished decoding.
+    void handleDecodeAudioData(AudioBuffer*, ScriptPromiseResolver*, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback);
 
     AudioListener* listener() { return m_listener.get(); }
 
@@ -167,9 +173,15 @@ public:
     // Close
     virtual ScriptPromise closeContext(ScriptState*) = 0;
 
-    // Suspend/Resume
+    // Suspend
     virtual ScriptPromise suspendContext(ScriptState*) = 0;
+
+    // Resume
     virtual ScriptPromise resumeContext(ScriptState*) = 0;
+
+    // IIRFilter
+    IIRFilterNode* createIIRFilter(Vector<double> feedforwardCoef, Vector<double> feedbackCoef,
+        ExceptionState&);
 
     // When a source node has started processing and needs to be protected,
     // this method tells the context to protect the node.
@@ -227,11 +239,9 @@ public:
     const AtomicString& interfaceName() const final;
     ExecutionContext* executionContext() const final;
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
 
     void startRendering();
-    void fireCompletionEvent();
     void notifyStateChange();
 
     // A context is considered closed if:
@@ -242,24 +252,36 @@ public:
     // Get the security origin for this audio context.
     SecurityOrigin* securityOrigin() const;
 
+    // Get the PeriodicWave for the specified oscillator type.  The table is initialized internally
+    // if necessary.
+    PeriodicWave* periodicWave(int type);
 protected:
     explicit AbstractAudioContext(Document*);
     AbstractAudioContext(Document*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
 
-    void setContextState(AudioContextState);
-    virtual void didClose() {}
+    void initialize();
     void uninitialize();
 
-    Member<ScriptPromiseResolver> m_offlineResolver;
+    void setContextState(AudioContextState);
+
+    virtual void didClose() {}
+
+    // Tries to handle AudioBufferSourceNodes that were started but became disconnected or was never
+    // connected. Because these never get pulled anymore, they will stay around forever. So if we
+    // can, try to stop them so they can be collected.
+    void handleStoppableSourceNodes();
+
+    Member<AudioDestinationNode> m_destinationNode;
 
     // FIXME(dominicc): Move m_resumeResolvers to AudioContext, because only
     // it creates these Promises.
     // Vector of promises created by resume(). It takes time to handle them, so we collect all of
     // the promises here until they can be resolved or rejected.
     HeapVector<Member<ScriptPromiseResolver>> m_resumeResolvers;
-private:
-    void initialize();
 
+    void setClosedContextSampleRate(float newSampleRate) { m_closedContextSampleRate = newSampleRate; }
+    float closedContextSampleRate() const { return m_closedContextSampleRate; }
+private:
     bool m_isCleared;
     void clear();
 
@@ -269,7 +291,6 @@ private:
     // haven't finished playing.  Make sure to release them here.
     void releaseActiveSourceNodes();
 
-    Member<AudioDestinationNode> m_destinationNode;
     Member<AudioListener> m_listener;
 
     // Only accessed in the audio thread.
@@ -304,17 +325,27 @@ private:
     bool m_didInitializeContextGraphMutex;
     RefPtr<DeferredTaskHandler> m_deferredTaskHandler;
 
-    Member<AudioBuffer> m_renderTarget;
-
     // The state of the AbstractAudioContext.
     AudioContextState m_contextState;
 
     AsyncAudioDecoder m_audioDecoder;
 
-    // Tries to handle AudioBufferSourceNodes that were started but became disconnected or was never
-    // connected. Because these never get pulled anymore, they will stay around forever. So if we
-    // can, try to stop them so they can be collected.
-    void handleStoppableSourceNodes();
+    // When a context is closed, the sample rate is cleared.  But decodeAudioData can be called
+    // after the context has been closed and it needs the sample rate.  When the context is closed,
+    // the sample rate is saved here.
+    float m_closedContextSampleRate;
+
+    // Vector of promises created by decodeAudioData.  This keeps the resolvers alive until
+    // decodeAudioData finishes decoding and can tell the main thread to resolve them.
+    HeapHashSet<Member<ScriptPromiseResolver>> m_decodeAudioResolvers;
+
+    // PeriodicWave's for the builtin oscillator types.  These only depend on the sample rate. so
+    // they can be shared with all OscillatorNodes in the context.  To conserve memory, these are
+    // lazily initiialized on first use.
+    Member<PeriodicWave> m_periodicWaveSine;
+    Member<PeriodicWave> m_periodicWaveSquare;
+    Member<PeriodicWave> m_periodicWaveSawtooth;
+    Member<PeriodicWave> m_periodicWaveTriangle;
 
     // This is considering 32 is large enough for multiple channels audio.
     // It is somewhat arbitrary and could be increased if necessary.

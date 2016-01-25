@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/InertEffect.h"
 
 #include "core/animation/Interpolation.h"
@@ -48,7 +47,7 @@ InertEffect::InertEffect(EffectModel* model, const Timing& timing, bool paused, 
 {
 }
 
-void InertEffect::sample(OwnPtr<Vector<RefPtr<Interpolation>>>& result)
+void InertEffect::sample(Vector<RefPtr<Interpolation>>& result) const
 {
     updateInheritedTime(m_inheritedTime, TimingUpdateOnDemand);
     if (!isInEffect()) {

@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLMetaElement.h"
 
 #include "core/HTMLNames.h"
@@ -29,6 +28,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLHeadElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/HttpEquiv.h"
@@ -351,6 +351,10 @@ void HTMLMetaElement::processViewportKeyValuePair(Document* document, const Stri
             // Ignore vendor-specific argument.
             return;
         }
+        CASE("shrink-to-fit") {
+            // Ignore vendor-specific argument.
+            return;
+        }
     }
     reportViewportWarning(document, UnrecognizedViewportArgumentKeyError, keyString, String());
 }
@@ -427,7 +431,7 @@ void HTMLMetaElement::processViewportContentAttribute(const String& content, Vie
 }
 
 
-void HTMLMetaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLMetaElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == http_equivAttr || name == contentAttr) {
         process();
@@ -435,7 +439,7 @@ void HTMLMetaElement::parseAttribute(const QualifiedName& name, const AtomicStri
     }
 
     if (name != nameAttr)
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
 }
 
 Node::InsertionNotificationRequest HTMLMetaElement::insertedInto(ContainerNode* insertionPoint)
@@ -490,6 +494,14 @@ void HTMLMetaElement::process()
         return;
 
     HttpEquiv::process(document(), httpEquivValue, contentValue, inDocumentHead(this));
+}
+
+WTF::TextEncoding HTMLMetaElement::computeEncoding() const
+{
+    HTMLAttributeList attributeList;
+    for (const Attribute& attr : attributes())
+        attributeList.append(std::make_pair(attr.name().localName(), attr.value().string()));
+    return encodingFromMetaAttributes(attributeList);
 }
 
 const AtomicString& HTMLMetaElement::content() const

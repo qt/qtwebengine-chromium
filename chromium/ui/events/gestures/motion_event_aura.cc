@@ -10,6 +10,22 @@
 namespace ui {
 namespace {
 
+MotionEvent::ToolType EventPointerTypeToMotionEventToolType(
+    EventPointerType type) {
+  switch (type) {
+    case EventPointerType::POINTER_TYPE_UNKNOWN:
+      return MotionEvent::TOOL_TYPE_UNKNOWN;
+    case EventPointerType::POINTER_TYPE_MOUSE:
+      return MotionEvent::TOOL_TYPE_MOUSE;
+    case EventPointerType::POINTER_TYPE_PEN:
+      return MotionEvent::TOOL_TYPE_STYLUS;
+    case EventPointerType::POINTER_TYPE_TOUCH:
+      return MotionEvent::TOOL_TYPE_FINGER;
+  }
+
+  return MotionEvent::TOOL_TYPE_UNKNOWN;
+}
+
 PointerProperties GetPointerPropertiesFromTouchEvent(const TouchEvent& touch) {
   PointerProperties pointer_properties;
   pointer_properties.x = touch.x();
@@ -31,8 +47,8 @@ PointerProperties GetPointerPropertiesFromTouchEvent(const TouchEvent& touch) {
     pointer_properties.orientation = 0;
   }
 
-  // TODO(jdduke): Plumb tool type from the platform, crbug.com/404128.
-  pointer_properties.tool_type = MotionEvent::TOOL_TYPE_UNKNOWN;
+  pointer_properties.tool_type = EventPointerTypeToMotionEventToolType(
+      touch.pointer_details().pointer_type());
 
   return pointer_properties;
 }
@@ -54,8 +70,10 @@ bool MotionEventAura::OnTouch(const TouchEvent& touch) {
     // crbug.com/446852 for details.
 
     // Cancel the existing touch, before handling the touch press.
-    TouchEvent cancel(ET_TOUCH_CANCELLED, touch.location(), touch.touch_id(),
+    TouchEvent cancel(ET_TOUCH_CANCELLED, gfx::Point(), touch.touch_id(),
                       touch.time_stamp());
+    cancel.set_location_f(touch.location_f());
+    cancel.set_root_location_f(touch.location_f());
     OnTouch(cancel);
     CleanupRemovedTouchPoints(cancel);
     DCHECK_EQ(-1, FindPointerIndexOfId(touch.touch_id()));

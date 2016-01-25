@@ -3,7 +3,6 @@
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
- *
  */
 
 #include "VisualLightweightBenchModule.h"
@@ -25,18 +24,13 @@ __SK_FORCE_IMAGE_DECODER_LINKING;
 
 // Between samples we reset context
 // Between frames we swap buffers
-
-DEFINE_int32(maxWarmupFrames, 100, "maxmium frames to try and tune for sane timings");
-DEFINE_int32(gpuFrameLag, 5, "Overestimate of maximum number of frames GPU allows to lag.");
-DEFINE_int32(samples, 10, "Number of times to time each skp.");
-DEFINE_int32(frames, 5, "Number of frames of each skp to render per sample.");
-DEFINE_double(loopMs, 5, "Target loop time in millseconds.");
 DEFINE_bool2(verbose, v, false, "enable verbose output from the test driver.");
 DEFINE_string(outResultsFile, "", "If given, write results here as JSON.");
 DEFINE_string(key, "",
               "Space-separated key/value pairs to add to JSON identifying this builder.");
 DEFINE_string(properties, "",
               "Space-separated key/value pairs to add to JSON identifying this run.");
+DEFINE_int32(samples, 10, "Number of times to time each skp.");
 
 static SkString humanize(double ms) {
     if (FLAGS_verbose) {
@@ -47,41 +41,13 @@ static SkString humanize(double ms) {
 
 #define HUMANIZE(time) humanize(time).c_str()
 
-// We draw a big nonAA path to warmup the gpu / cpu
-class WarmupBench : public Benchmark {
-public:
-    WarmupBench() {
-        make_path(fPath);
-    }
-private:
-    static void make_path(SkPath& path) {
-        #include "BigPathBench.inc"
-    }
-    const char* onGetName() override { return "warmupbench"; }
-    void onDraw(int loops, SkCanvas* canvas) override {
-        SkPaint paint;
-        paint.setStyle(SkPaint::kStroke_Style);
-        paint.setStrokeWidth(2);
-        for (int i = 0; i < loops; i++) {
-            canvas->drawPath(fPath, paint);
-        }
-    }
-    SkPath fPath;
-};
-
 VisualLightweightBenchModule::VisualLightweightBenchModule(VisualBench* owner)
-    : fCurrentSample(0)
-    , fCurrentFrame(0)
-    , fLoops(1)
-    , fState(kWarmup_State)
-    , fBenchmark(nullptr)
-    , fOwner(SkRef(owner))
+    : INHERITED(owner)
+    , fCurrentSample(0)
     , fResults(new ResultsWriter) {
-    fBenchmarkStream.reset(new VisualBenchmarkStream);
-
     // Print header
-    SkDebugf("curr/maxrss\tloops\tmin\tmedian\tmean\tmax\tstddev\t%-*s\tbench\n", FLAGS_samples,
-             "samples");
+    SkDebugf("curr/maxrss\tloops\tmin\tmedian\tmean\tmax\tstddev\t%-*s\tconfig\tbench\n",
+             FLAGS_samples, "samples");
 
     // setup json logging if required
     if (!FLAGS_outResultsFile.isEmpty()) {
@@ -103,26 +69,47 @@ VisualLightweightBenchModule::VisualLightweightBenchModule(VisualBench* owner)
             fResults->property(FLAGS_properties[i - 1], FLAGS_properties[i]);
         }
     }
+
+    // seed an initial record
+    fRecords.push_back();
 }
 
-inline void VisualLightweightBenchModule::renderFrame(SkCanvas* canvas) {
-    fBenchmark->draw(fLoops, canvas);
+void VisualLightweightBenchModule::renderFrame(SkCanvas* canvas, Benchmark* benchmark, int loops) {
+    benchmark->draw(loops, canvas);
     canvas->flush();
-    fOwner->present();
 }
 
-void VisualLightweightBenchModule::printStats() {
+void VisualLightweightBenchModule::printStats(Benchmark* benchmark, int loops) {
     const SkTArray<double>& measurements = fRecords.back().fMeasurements;
-    const char* shortName = fBenchmark->getUniqueName();
+    const char* shortName = benchmark->getUniqueName();
 
     // update log
     // Note: We currently log only the minimum.  It would be interesting to log more information
     SkString configName;
-    if (FLAGS_msaa > 0) {
-        configName.appendf("msaa_%d", FLAGS_msaa);
+    if (FLAGS_cpu) {
+        configName.append("cpu");
+    } else if (FLAGS_nvpr) {
+        if (FLAGS_offscreen) {
+            configName.appendf("nvpr_%d", FLAGS_msaa);
+        } else {
+            configName.appendf("nvpr_msaa_%d", FLAGS_msaa);
+        }
+    } else if (FLAGS_msaa > 0) {
+        if (FLAGS_offscreen) {
+            configName.appendf("offscreen_msaa_%d", FLAGS_msaa);
+        } else {
+            configName.appendf("msaa_%d", FLAGS_msaa);
+        }
     } else {
-        configName.appendf("gpu");
+        if (FLAGS_offscreen) {
+            configName.append("offscreen");
+        } else {
+            configName.append("gpu");
+        }
     }
+    // Log bench name
+    fResults->bench(shortName, benchmark->getSize().fX, benchmark->getSize().fY);
+
     fResults->config(configName.c_str());
     fResults->configOption("name", shortName);
     SkASSERT(measurements.count());
@@ -137,184 +124,31 @@ void VisualLightweightBenchModule::printStats() {
         SkDebugf("%s\n", shortName);
     } else {
         const double stdDevPercent = 100 * sqrt(stats.var) / stats.mean;
-        SkDebugf("%4d/%-4dMB\t%d\t%s\t%s\t%s\t%s\t%.0f%%\t%s\t%s\n",
+        SkDebugf("%4d/%-4dMB\t%d\t%s\t%s\t%s\t%s\t%.0f%%\t%s\t%s\t%s\n",
                  sk_tools::getCurrResidentSetSizeMB(),
                  sk_tools::getMaxResidentSetSizeMB(),
-                 fLoops,
+                 loops,
                  HUMANIZE(stats.min),
                  HUMANIZE(stats.median),
                  HUMANIZE(stats.mean),
                  HUMANIZE(stats.max),
                  stdDevPercent,
                  stats.plot.c_str(),
+                 configName.c_str(),
                  shortName);
     }
 }
 
-bool VisualLightweightBenchModule::advanceRecordIfNecessary(SkCanvas* canvas) {
-    if (!fBenchmark && fState == kWarmup_State) {
-        fOwner->clear(canvas, SK_ColorWHITE, 2);
-        fBenchmark.reset(new WarmupBench);
-        return true;
-    }
-
-    if (fBenchmark) {
-        return true;
-    }
-
-    fBenchmark.reset(fBenchmarkStream->next());
-    if (!fBenchmark) {
-        return false;
-    }
-
-    fOwner->clear(canvas, SK_ColorWHITE, 2);
-
-    fBenchmark->delayedSetup();
-    fRecords.push_back();
-
-    // Log bench name
-    fResults->bench(fBenchmark->getUniqueName(), fBenchmark->getSize().fX,
-                    fBenchmark->getSize().fY);
-    return true;
-}
-
-inline void VisualLightweightBenchModule::nextState(State nextState) {
-    fState = nextState;
-}
-
-void VisualLightweightBenchModule::perCanvasPreDraw(SkCanvas* canvas, State nextState) {
-    fBenchmark->perCanvasPreDraw(canvas);
-    fBenchmark->preDraw(canvas);
-    fCurrentFrame = 0;
-    this->nextState(nextState);
-}
-
-void VisualLightweightBenchModule::warmup(SkCanvas* canvas) {
-    if (fCurrentFrame >= FLAGS_maxWarmupFrames) {
-        this->nextState(kPreWarmLoopsPerCanvasPreDraw_State);
-        fBenchmark.reset(nullptr);
-        this->resetTimingState();
-        fLoops = 1;
-    } else {
-        bool isEven = (fCurrentFrame++ % 2) == 0;
-        if (isEven) {
-            fTimer.start();
-        } else {
-            double elapsedMs = this->elapsed();
-            if (elapsedMs < FLAGS_loopMs) {
-                fLoops *= 2;
-            }
-            fTimer = WallTimer();
-            fOwner->reset();
-        }
-    }
-}
-
-void VisualLightweightBenchModule::preWarm(State nextState) {
-    if (fCurrentFrame >= FLAGS_gpuFrameLag) {
-        // we currently time across all frames to make sure we capture all GPU work
-        this->nextState(nextState);
-        fCurrentFrame = 0;
-        fTimer.start();
-    } else {
-        fCurrentFrame++;
-    }
-}
-
-void VisualLightweightBenchModule::draw(SkCanvas* canvas) {
-    if (!this->advanceRecordIfNecessary(canvas)) {
-        SkDebugf("Exiting VisualBench successfully\n");
-        fOwner->closeWindow();
-        return;
-    }
-    this->renderFrame(canvas);
-    switch (fState) {
-        case kWarmup_State: {
-            this->warmup(canvas);
-            break;
-        }
-        case kPreWarmLoopsPerCanvasPreDraw_State: {
-            this->perCanvasPreDraw(canvas, kPreWarmLoops_State);
-            break;
-        }
-        case kPreWarmLoops_State: {
-            this->preWarm(kTuneLoops_State);
-            break;
-        }
-        case kTuneLoops_State: {
-            this->tuneLoops();
-            break;
-        }
-        case kPreWarmTimingPerCanvasPreDraw_State: {
-            this->perCanvasPreDraw(canvas, kPreWarmTiming_State);
-            break;
-        }
-        case kPreWarmTiming_State: {
-            this->preWarm(kTiming_State);
-            break;
-        }
-        case kTiming_State: {
-            this->timing(canvas);
-            break;
-        }
-    }
-}
-
-inline double VisualLightweightBenchModule::elapsed() {
-    fTimer.end();
-    return fTimer.fWall;
-}
-
-void VisualLightweightBenchModule::resetTimingState() {
-    fCurrentFrame = 0;
-    fTimer = WallTimer();
-    fOwner->reset();
-}
-
-inline void VisualLightweightBenchModule::tuneLoops() {
-    if (1 << 30 == fLoops) {
-        // We're about to wrap.  Something's wrong with the bench.
-        SkDebugf("InnerLoops wrapped\n");
-        fLoops = 1;
-    } else {
-        double elapsedMs = this->elapsed();
-        if (elapsedMs > FLAGS_loopMs) {
-            this->nextState(kPreWarmTimingPerCanvasPreDraw_State);
-        } else {
-            fLoops *= 2;
-            this->nextState(kPreWarmLoops_State);
-        }
-        this->resetTimingState();
-    }
-}
-
-void VisualLightweightBenchModule::recordMeasurement() {
-    double measurement = this->elapsed() / (FLAGS_frames * fLoops);
+bool VisualLightweightBenchModule::timingFinished(Benchmark* benchmark, int loops,
+                                                  double measurement) {
     fRecords.back().fMeasurements.push_back(measurement);
-}
-
-void VisualLightweightBenchModule::postDraw(SkCanvas* canvas) {
-    fBenchmark->postDraw(canvas);
-    fBenchmark->perCanvasPostDraw(canvas);
-    fBenchmark.reset(nullptr);
-    fCurrentSample = 0;
-    fLoops = 1;
-}
-
-inline void VisualLightweightBenchModule::timing(SkCanvas* canvas) {
-    if (fCurrentFrame >= FLAGS_frames) {
-        this->recordMeasurement();
-        if (fCurrentSample++ >= FLAGS_samples) {
-            this->printStats();
-            this->postDraw(canvas);
-            this->nextState(kPreWarmLoopsPerCanvasPreDraw_State);
-        } else {
-            this->nextState(kPreWarmTimingPerCanvasPreDraw_State);
-        }
-        this->resetTimingState();
-    } else {
-        fCurrentFrame++;
+    if (++fCurrentSample > FLAGS_samples) {
+        this->printStats(benchmark, loops);
+        fRecords.push_back();
+        fCurrentSample = 0;
+        return true;
     }
+    return false;
 }
 
 bool VisualLightweightBenchModule::onHandleChar(SkUnichar c) {

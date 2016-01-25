@@ -42,18 +42,12 @@
 #include "mpegutils.h"
 #include "mpegvideo.h"
 
-static const int8_t inv_non_linear_qscale[] = {
-    0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-   -1,17,-1,18,-1,19, -1, 20, -1, 21, -1, 22, -1,
-   23,-1,24,-1,-1,-1
-};
-
 static const uint8_t svcd_scan_offset_placeholder[] = {
     0x10, 0x0E, 0x00, 0x80, 0x81, 0x00, 0x80,
     0x81, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
 
-static uint8_t mv_penalty[MAX_FCODE + 1][MAX_MV * 2 + 1];
+static uint8_t mv_penalty[MAX_FCODE + 1][MAX_DMV * 2 + 1];
 static uint8_t fcode_tab[MAX_MV * 2 + 1];
 
 static uint8_t uni_mpeg1_ac_vlc_len[64 * 64 * 2];
@@ -402,13 +396,7 @@ static inline void encode_mb_skip_run(MpegEncContext *s, int run)
 
 static av_always_inline void put_qscale(MpegEncContext *s)
 {
-    if (s->q_scale_type) {
-        int qp = inv_non_linear_qscale[s->qscale];
-        av_assert2(s->qscale >= 1 && qp > 0);
-        put_bits(&s->pb, 5, qp);
-    } else {
-        put_bits(&s->pb, 5, s->qscale);
-    }
+    put_bits(&s->pb, 5, s->qscale);
 }
 
 void ff_mpeg1_encode_slice_header(MpegEncContext *s)
@@ -1053,7 +1041,7 @@ av_cold void ff_mpeg1_encode_init(MpegEncContext *s)
         }
 
         for (f_code = 1; f_code <= MAX_FCODE; f_code++)
-            for (mv = -MAX_MV; mv <= MAX_MV; mv++) {
+            for (mv = -MAX_DMV; mv <= MAX_DMV; mv++) {
                 int len;
 
                 if (mv == 0) {
@@ -1076,7 +1064,7 @@ av_cold void ff_mpeg1_encode_init(MpegEncContext *s)
                               2 + bit_size;
                 }
 
-                mv_penalty[f_code][mv + MAX_MV] = len;
+                mv_penalty[f_code][mv + MAX_DMV] = len;
             }
 
 
@@ -1110,11 +1098,11 @@ av_cold void ff_mpeg1_encode_init(MpegEncContext *s)
     { "gop_timecode",        "MPEG GOP Timecode in hh:mm:ss[:;.]ff format",   \
       OFFSET(tc_opt_str), AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, VE },\
     { "intra_vlc",           "Use MPEG-2 intra VLC table.",                   \
-      OFFSET(intra_vlc_format),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE }, \
+      OFFSET(intra_vlc_format),    AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE }, \
     { "drop_frame_timecode", "Timecode is in drop frame format.",             \
-      OFFSET(drop_frame_timecode), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE }, \
+      OFFSET(drop_frame_timecode), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE }, \
     { "scan_offset",         "Reserve space for SVCD scan offset user data.", \
-      OFFSET(scan_offset),         AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+      OFFSET(scan_offset),         AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
 
 static const AVOption mpeg1_options[] = {
     COMMON_OPTS
@@ -1124,8 +1112,8 @@ static const AVOption mpeg1_options[] = {
 
 static const AVOption mpeg2_options[] = {
     COMMON_OPTS
-    { "non_linear_quant", "Use nonlinear quantizer.",    OFFSET(q_scale_type),   AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
-    { "alternate_scan",   "Enable alternate scantable.", OFFSET(alternate_scan), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "non_linear_quant", "Use nonlinear quantizer.",    OFFSET(q_scale_type),   AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
+    { "alternate_scan",   "Enable alternate scantable.", OFFSET(alternate_scan), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
     { "seq_disp_ext",     "Write sequence_display_extension blocks.", OFFSET(seq_disp_ext), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, VE, "seq_disp_ext" },
     {     "auto",   NULL, 0, AV_OPT_TYPE_CONST,  {.i64 = -1},  0, 0, VE, "seq_disp_ext" },
     {     "never",  NULL, 0, AV_OPT_TYPE_CONST,  {.i64 = 0 },  0, 0, VE, "seq_disp_ext" },

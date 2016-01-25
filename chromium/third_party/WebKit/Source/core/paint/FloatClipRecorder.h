@@ -8,22 +8,22 @@
 #include "core/paint/PaintPhase.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/paint/DisplayItem.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
 
 class FloatClipRecorder {
-    WTF_MAKE_FAST_ALLOCATED(FloatClipRecorder);
+    USING_FAST_MALLOC(FloatClipRecorder);
     WTF_MAKE_NONCOPYABLE(FloatClipRecorder);
 public:
-    FloatClipRecorder(GraphicsContext&, const DisplayItemClientWrapper&, PaintPhase, const FloatRect&);
+    FloatClipRecorder(GraphicsContext&, const DisplayItemClient&, PaintPhase, const FloatRect&);
 
     ~FloatClipRecorder();
 
 private:
     GraphicsContext& m_context;
-    DisplayItemClientWrapper m_client;
+    const DisplayItemClient& m_client;
     DisplayItem::Type m_clipType;
 };
 

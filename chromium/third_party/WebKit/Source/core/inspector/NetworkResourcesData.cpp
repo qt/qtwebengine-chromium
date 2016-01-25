@@ -26,7 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/NetworkResourcesData.h"
 
 #include "core/dom/DOMImplementation.h"
@@ -80,6 +79,12 @@ NetworkResourcesData::ResourceData::ResourceData(const String& requestId, const 
     , m_httpStatusCode(0)
     , m_cachedResource(nullptr)
 {
+}
+
+DEFINE_TRACE(NetworkResourcesData::ResourceData)
+{
+    visitor->trace(m_xhrReplayData);
+    visitor->trace(m_cachedResource);
 }
 
 void NetworkResourcesData::ResourceData::setContent(const String& content, bool base64Encoded)
@@ -152,7 +157,16 @@ NetworkResourcesData::NetworkResourcesData()
 
 NetworkResourcesData::~NetworkResourcesData()
 {
+#if !ENABLE(OILPAN)
     clear();
+#endif
+}
+
+DEFINE_TRACE(NetworkResourcesData)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_requestIdToResourceDataMap);
+#endif
 }
 
 void NetworkResourcesData::resourceCreated(const String& requestId, const String& loaderId)
@@ -179,7 +193,7 @@ void NetworkResourcesData::responseReceived(const String& requestId, const Strin
         blobData->appendFile(filePath);
         AtomicString mimeType;
         if (response.isHTTP())
-            mimeType = extractMIMETypeFromMediaType(response.httpHeaderField("Content-Type"));
+            mimeType = extractMIMETypeFromMediaType(response.httpHeaderField(HTTPNames::Content_Type));
         if (mimeType.isEmpty())
             mimeType = response.mimeType();
         if (mimeType.isEmpty())
@@ -295,9 +309,9 @@ void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayDa
     resourceData->setXHRReplayData(xhrReplayData);
 }
 
-Vector<NetworkResourcesData::ResourceData*> NetworkResourcesData::resources()
+WillBeHeapVector<RawPtrWillBeMember<NetworkResourcesData::ResourceData>> NetworkResourcesData::resources()
 {
-    Vector<ResourceData*> result;
+    WillBeHeapVector<RawPtrWillBeMember<ResourceData>> result;
     for (auto& request : m_requestIdToResourceDataMap)
         result.append(request.value);
     return result;
@@ -328,8 +342,10 @@ void NetworkResourcesData::clear(const String& preservedLoaderId)
         ResourceData* resourceData = resource.value;
         if (!preservedLoaderId.isNull() && resourceData->loaderId() == preservedLoaderId)
             preservedMap.set(resource.key, resource.value);
+#if !ENABLE(OILPAN)
         else
             delete resourceData;
+#endif
     }
     m_requestIdToResourceDataMap.swap(preservedMap);
 
@@ -359,7 +375,9 @@ void NetworkResourcesData::ensureNoDataForRequestId(const String& requestId)
         return;
     if (resourceData->hasContent() || resourceData->hasData())
         m_contentSize -= resourceData->evictContent();
+#if !ENABLE(OILPAN)
     delete resourceData;
+#endif
     m_requestIdToResourceDataMap.remove(requestId);
 }
 
@@ -378,4 +396,3 @@ bool NetworkResourcesData::ensureFreeSpace(size_t size)
 }
 
 } // namespace blink
-

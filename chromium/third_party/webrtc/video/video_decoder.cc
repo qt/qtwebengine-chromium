@@ -11,10 +11,10 @@
 #include "webrtc/video_decoder.h"
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
-#include "webrtc/system_wrappers/interface/logging.h"
 
 namespace webrtc {
 VideoDecoder* VideoDecoder::Create(VideoDecoder::DecoderType codec_type) {
@@ -76,6 +76,9 @@ bool VideoDecoderSoftwareFallbackWrapper::InitFallbackDecoder() {
   }
   if (callback_ != nullptr)
     fallback_decoder_->RegisterDecodeCompleteCallback(callback_);
+  fallback_implementation_name_ =
+      std::string(fallback_decoder_->ImplementationName()) +
+      " (fallback from: " + decoder_->ImplementationName() + ")";
   return true;
 }
 
@@ -87,7 +90,7 @@ int32_t VideoDecoderSoftwareFallbackWrapper::Decode(
     int64_t render_time_ms) {
   // Try decoding with the provided decoder on every keyframe or when there's no
   // fallback decoder. This is the normal case.
-  if (!fallback_decoder_ || input_image._frameType == kKeyFrame) {
+  if (!fallback_decoder_ || input_image._frameType == kVideoFrameKey) {
     int32_t ret = decoder_->Decode(input_image, missing_frames, fragmentation,
                                    codec_specific_info, render_time_ms);
     if (ret == WEBRTC_VIDEO_CODEC_OK) {
@@ -129,6 +132,18 @@ int32_t VideoDecoderSoftwareFallbackWrapper::Reset() {
   if (fallback_decoder_)
     fallback_decoder_->Reset();
   return decoder_->Reset();
+}
+
+bool VideoDecoderSoftwareFallbackWrapper::PrefersLateDecoding() const {
+  if (fallback_decoder_)
+    return fallback_decoder_->PrefersLateDecoding();
+  return decoder_->PrefersLateDecoding();
+}
+
+const char* VideoDecoderSoftwareFallbackWrapper::ImplementationName() const {
+  if (fallback_decoder_)
+    return fallback_implementation_name_.c_str();
+  return decoder_->ImplementationName();
 }
 
 }  // namespace webrtc

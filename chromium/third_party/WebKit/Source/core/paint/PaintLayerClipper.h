@@ -90,11 +90,6 @@ public:
         return m_cacheSlot;
     }
 
-    bool isComputingPaintingRect() const
-    {
-        return m_cacheSlot == PaintingClipRectsIgnoringOverflowClip || m_cacheSlot == PaintingClipRects;
-    }
-
     const PaintLayer* rootLayer;
     const OverlayScrollbarSizeRelevancy scrollbarRelevancy;
 
@@ -152,11 +147,8 @@ private:
 // #container and #fixed are siblings in the paint tree but #container does
 // clip #fixed. This is the reason why we compute the painting clip rects during
 // a layout tree walk and cache them for painting.
-//
-// This class is NOT DEPRECATED, PaintLayer is and we match its
-// naming.
-class PaintLayerClipper {
-    DISALLOW_ALLOCATION();
+class CORE_EXPORT PaintLayerClipper {
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(PaintLayerClipper);
 public:
     explicit PaintLayerClipper(const LayoutBoxModelObject&);
@@ -164,10 +156,8 @@ public:
     void clearClipRectsIncludingDescendants();
     void clearClipRectsIncludingDescendants(ClipRectsCacheSlot);
 
-    LayoutRect childrenClipRect() const; // Returns the foreground clip rect of the layer in the document's coordinate space.
-    LayoutRect localClipRect() const; // Returns the background clip rect of the layer in the local coordinate space.
-
-    ClipRects* getClipRects(const ClipRectsContext&) const;
+    // Returns the background clip rect of the layer in the local coordinate space. Only looks for clips up to the given ancestor.
+    LayoutRect localClipRect(const PaintLayer* ancestorLayer) const;
 
     ClipRect backgroundClipRect(const ClipRectsContext&) const;
 
@@ -177,7 +167,12 @@ public:
     // Pass offsetFromRoot if known.
     void calculateRects(const ClipRectsContext&, const LayoutRect& paintDirtyRect, LayoutRect& layerBounds,
         ClipRect& backgroundRect, ClipRect& foregroundRect, const LayoutPoint* offsetFromRoot = 0) const;
+
+    ClipRects* paintingClipRects(const PaintLayer* rootLayer, ShouldRespectOverflowClip, const LayoutSize& subpixelAccumulation) const;
+
 private:
+    ClipRects* getClipRects(const ClipRectsContext&) const;
+
     void calculateClipRects(const ClipRectsContext&, ClipRects&) const;
     ClipRects* clipRectsIfCached(const ClipRectsContext&) const;
     ClipRects* storeClipRectsInCache(const ClipRectsContext&, ClipRects* parentClipRects, const ClipRects&) const;
@@ -189,8 +184,6 @@ private:
         return m_cache ? m_cache->get(context.cacheSlot()).clipRects.get() : 0;
     }
     void getOrCalculateClipRects(const ClipRectsContext&, ClipRects&) const;
-
-    PaintLayer* clippingRootForPainting() const;
 
     ClipRectsCache& cache() const
     {

@@ -5,13 +5,17 @@
 #ifndef CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_H_
 #define CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_H_
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
@@ -63,7 +67,6 @@ class ImageTransportSurface {
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) = 0;
 #endif
-  virtual void OnResize(gfx::Size size, float scale_factor) = 0;
   virtual void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) = 0;
 
@@ -149,7 +152,7 @@ class ImageTransportHelper
   GpuChannelManager* manager_;
 
   base::WeakPtr<GpuCommandBufferStub> stub_;
-  int32 route_id_;
+  int32_t route_id_;
   gfx::PluginWindowHandle handle_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageTransportHelper);
@@ -169,7 +172,16 @@ class PassThroughImageTransportSurface
   bool Initialize() override;
   void Destroy() override;
   gfx::SwapResult SwapBuffers() override;
+  void SwapBuffersAsync(const SwapCompletionCallback& callback) override;
   gfx::SwapResult PostSubBuffer(int x, int y, int width, int height) override;
+  void PostSubBufferAsync(int x,
+                          int y,
+                          int width,
+                          int height,
+                          const SwapCompletionCallback& callback) override;
+  gfx::SwapResult CommitOverlayPlanes() override;
+  void CommitOverlayPlanesAsync(
+      const SwapCompletionCallback& callback) override;
   bool OnMakeCurrent(gfx::GLContext* context) override;
 
   // ImageTransportSurface implementation.
@@ -177,7 +189,6 @@ class PassThroughImageTransportSurface
   void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) override;
 #endif
-  void OnResize(gfx::Size size, float scale_factor) override;
   gfx::Size GetSize() override;
   void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) override;
@@ -188,8 +199,14 @@ class PassThroughImageTransportSurface
   // If updated vsync parameters can be determined, send this information to
   // the browser.
   virtual void SendVSyncUpdateIfAvailable();
-  void SwapBuffersCallBack(std::vector<ui::LatencyInfo>* latency_info_ptr,
-                           gfx::SwapResult result);
+
+  scoped_ptr<std::vector<ui::LatencyInfo>> StartSwapBuffers();
+  void FinishSwapBuffers(scoped_ptr<std::vector<ui::LatencyInfo>> latency_info,
+                         gfx::SwapResult result);
+  void FinishSwapBuffersAsync(
+      scoped_ptr<std::vector<ui::LatencyInfo>> latency_info,
+      GLSurface::SwapCompletionCallback callback,
+      gfx::SwapResult result);
 
   ImageTransportHelper* GetHelper() { return helper_.get(); }
 

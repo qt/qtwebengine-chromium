@@ -99,7 +99,6 @@ class RendererGL : public Renderer
     bool testDeviceLost() override;
     bool testDeviceResettable() override;
 
-    VendorID getVendorId() const override;
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
@@ -123,6 +122,8 @@ class RendererGL : public Renderer
     BlitGL *mBlitter;
 
     WorkaroundsGL mWorkarounds;
+
+    bool mHasDebugOutput;
 
     // For performance debugging
     bool mSkipDrawCalls;

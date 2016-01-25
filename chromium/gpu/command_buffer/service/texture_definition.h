@@ -7,11 +7,12 @@
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "ui/gfx/geometry/rect.h"
 
-namespace gfx {
+namespace gl {
 class GLImage;
 }
 
@@ -24,9 +25,9 @@ class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
  public:
   static scoped_refptr<NativeImageBuffer> Create(GLuint texture_id);
 
-  virtual void AddClient(gfx::GLImage* client) = 0;
-  virtual void RemoveClient(gfx::GLImage* client) = 0;
-  virtual bool IsClient(gfx::GLImage* client) = 0;
+  virtual void AddClient(gl::GLImage* client) = 0;
+  virtual void RemoveClient(gl::GLImage* client) = 0;
+  virtual bool IsClient(gl::GLImage* client) = 0;
   virtual void BindToTexture(GLenum target) const = 0;
 
  protected:

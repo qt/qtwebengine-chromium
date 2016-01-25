@@ -23,22 +23,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/GraphicsLayer.h"
 
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
+#include "base/trace_event/trace_event_argument.h"
+#include "cc/layers/layer.h"
+#include "platform/DragImage.h"
+#include "platform/JSONValues.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/FirstPaintInvalidationTracking.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/LinkHighlight.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextStream.h"
 #include "public/platform/Platform.h"
@@ -47,15 +51,18 @@
 #include "public/platform/WebFilterOperations.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
-#include "public/platform/WebGraphicsLayerDebugInfo.h"
 #include "public/platform/WebLayer.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringUTF8Adaptor.h"
 #include "wtf/text/WTFString.h"
 #include <algorithm>
+#include <cmath>
+#include <utility>
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -67,6 +74,7 @@ static bool s_drawDebugRedFill = true;
 
 // TODO(wangxianzhu): Remove this when we no longer invalidate rects.
 struct PaintInvalidationTrackingInfo {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     Vector<FloatRect> invalidationRects;
     Vector<String> invalidationObjects;
 };
@@ -99,8 +107,9 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_isRootForIsolatedGroup(false)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
-    , m_needsDisplay(true)
+    , m_painted(false)
     , m_textPainted(false)
+    , m_imagePainted(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_parent(0)
     , m_maskLayer(0)
@@ -110,7 +119,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_paintCount(0)
     , m_contentsLayer(0)
     , m_contentsLayerId(0)
-    , m_scrollableArea(0)
+    , m_scrollableArea(nullptr)
     , m_3dRenderingContext(0)
 {
 #if ENABLE(ASSERT)
@@ -121,8 +130,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     m_contentLayerDelegate = adoptPtr(new ContentLayerDelegate(this));
     m_layer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(m_contentLayerDelegate.get()));
     m_layer->layer()->setDrawsContent(m_drawsContent && m_contentsVisible);
-    m_layer->layer()->setWebLayerClient(this);
-    m_layer->setAutomaticallyComputeRasterScale(true);
+    m_layer->layer()->setLayerClient(this);
 
     // TODO(rbyers): Expose control over this to the web - crbug.com/489802:
     setScrollBlocksOn(WebScrollBlocksOnStartTouch | WebScrollBlocksOnWheelEvent);
@@ -150,6 +158,11 @@ GraphicsLayer::~GraphicsLayer()
 
     resetTrackedPaintInvalidations();
     ASSERT(!m_parent);
+}
+
+IntRect GraphicsLayer::visualRect() const
+{
+    return enclosingIntRect(FloatRect(FloatPoint(0, 0), size()));
 }
 
 void GraphicsLayer::setDrawDebugRedFillForTesting(bool enabled)
@@ -290,15 +303,45 @@ void GraphicsLayer::setOffsetDoubleFromLayoutObject(const DoubleSize& offset, Sh
         setNeedsDisplay();
 }
 
-void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const IntRect& clip)
+IntRect GraphicsLayer::interestRect()
 {
+    return m_previousInterestRect;
+}
+
+void GraphicsLayer::paint(const IntRect* interestRect, GraphicsContext::DisabledMode disabledMode)
+{
+    if (paintWithoutCommit(interestRect, disabledMode))
+        paintController().commitNewDisplayItems();
+}
+
+bool GraphicsLayer::paintWithoutCommit(const IntRect* interestRect, GraphicsContext::DisabledMode disabledMode)
+{
+    ASSERT(drawsContent());
+
     if (!m_client)
-        return;
+        return false;
     if (firstPaintInvalidationTrackingEnabled())
         m_debugInfo.clearAnnotatedInvalidateRects();
     incrementPaintCount();
+
+    IntRect newInterestRect;
+    if (!interestRect) {
+        newInterestRect = m_client->computeInterestRect(this, m_previousInterestRect);
+        interestRect = &newInterestRect;
+    }
+
+    if (!paintController().subsequenceCachingIsDisabled()
+        && !m_client->needsRepaint()
+        && !paintController().cacheIsEmpty()
+        && m_previousInterestRect == *interestRect) {
+        ASSERT(!paintController().hasInvalidations());
+        return false;
+    }
+
+    GraphicsContext context(paintController(), disabledMode);
+
 #ifndef NDEBUG
-    if (m_displayItemList && contentsOpaque() && s_drawDebugRedFill) {
+    if (contentsOpaque() && s_drawDebugRedFill) {
         FloatRect rect(FloatPoint(), size());
         if (!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::DebugRedFill)) {
             DrawingRecorder recorder(context, *this, DisplayItem::DebugRedFill, rect);
@@ -306,10 +349,26 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
         }
     }
 #endif
-    m_client->paintContents(this, context, m_paintingPhase, clip);
-    if (!m_textPainted && m_displayItemList->textPainted()) {
+
+    m_previousInterestRect = *interestRect;
+    m_client->paintContents(this, context, m_paintingPhase, *interestRect);
+    notifyFirstPaintToClient();
+    return true;
+}
+
+void GraphicsLayer::notifyFirstPaintToClient()
+{
+    if (!m_painted) {
+        m_painted = true;
+        m_client->notifyFirstPaint();
+    }
+    if (!m_textPainted && m_paintController->textPainted()) {
         m_textPainted = true;
-        m_client->notifyTextPainted();
+        m_client->notifyFirstTextPaint();
+    }
+    if (!m_imagePainted && m_paintController->imagePainted()) {
+        m_imagePainted = true;
+        m_client->notifyFirstImagePaint();
     }
 }
 
@@ -363,7 +422,7 @@ void GraphicsLayer::updateContentsRect()
 
     if (m_contentsClippingMaskLayer) {
         if (m_contentsClippingMaskLayer->size() != m_contentsRect.size()) {
-            m_contentsClippingMaskLayer->setSize(m_contentsRect.size());
+            m_contentsClippingMaskLayer->setSize(FloatSize(m_contentsRect.size()));
             m_contentsClippingMaskLayer->setNeedsDisplay();
         }
         m_contentsClippingMaskLayer->setPosition(FloatPoint());
@@ -422,7 +481,7 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_contentsLayer = contentsLayer;
     m_contentsLayerId = m_contentsLayer->id();
 
-    m_contentsLayer->setWebLayerClient(this);
+    m_contentsLayer->setLayerClient(this);
     m_contentsLayer->setTransformOrigin(FloatPoint3D());
     m_contentsLayer->setUseParentBackfaceVisibility(true);
 
@@ -451,13 +510,6 @@ void GraphicsLayer::clearContentsLayerIfUnregistered()
 GraphicsLayerDebugInfo& GraphicsLayer::debugInfo()
 {
     return m_debugInfo;
-}
-
-WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfoFor(WebLayer* layer)
-{
-    GraphicsLayerDebugInfo* clone = m_debugInfo.clone();
-    clone->setDebugName(debugName(layer));
-    return clone;
 }
 
 WebLayer* GraphicsLayer::contentsLayerIfRegistered()
@@ -739,7 +791,12 @@ String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
     return json->toPrettyJSONString();
 }
 
-String GraphicsLayer::debugName(WebLayer* webLayer) const
+static const cc::Layer* ccLayerForWebLayer(const WebLayer* webLayer)
+{
+    return webLayer ? webLayer->ccLayer() : nullptr;
+}
+
+String GraphicsLayer::debugName(cc::Layer* layer) const
 {
     String name;
     if (!m_client)
@@ -747,17 +804,17 @@ String GraphicsLayer::debugName(WebLayer* webLayer) const
 
     String highlightDebugName;
     for (size_t i = 0; i < m_linkHighlights.size(); ++i) {
-        if (webLayer == m_linkHighlights[i]->layer()) {
+        if (layer == ccLayerForWebLayer(m_linkHighlights[i]->layer())) {
             highlightDebugName = "LinkHighlight[" + String::number(i) + "] for " + m_client->debugName(this);
             break;
         }
     }
 
-    if (webLayer == m_contentsLayer) {
+    if (layer->id() == m_contentsLayerId) {
         name = "ContentsLayer for " + m_client->debugName(this);
     } else if (!highlightDebugName.isEmpty()) {
         name = highlightDebugName;
-    } else if (webLayer == m_layer->layer()) {
+    } else if (layer == ccLayerForWebLayer(m_layer->layer())) {
         name = m_client->debugName(this);
     } else {
         ASSERT_NOT_REACHED();
@@ -800,8 +857,8 @@ void GraphicsLayer::setSize(const FloatSize& size)
 
 #ifndef NDEBUG
     // The red debug fill needs to be invalidated if the layer resizes.
-    if (m_displayItemList)
-        m_displayItemList->invalidateUntracked(displayItemClient());
+    if (m_paintController)
+        m_paintController->invalidateUntracked(*this);
 #endif
 }
 
@@ -855,6 +912,9 @@ void GraphicsLayer::setDrawsContent(bool drawsContent)
 
     m_drawsContent = drawsContent;
     updateLayerIsDrawable();
+
+    if (!drawsContent && m_paintController)
+        m_paintController.clear();
 }
 
 void GraphicsLayer::setContentsVisible(bool contentsVisible)
@@ -925,12 +985,12 @@ void GraphicsLayer::setContentsClippingMaskLayer(GraphicsLayer* contentsClipping
 void GraphicsLayer::setBackfaceVisibility(bool visible)
 {
     m_backfaceVisibility = visible;
-    m_layer->setDoubleSided(m_backfaceVisibility);
+    platformLayer()->setDoubleSided(m_backfaceVisibility);
 }
 
 void GraphicsLayer::setOpacity(float opacity)
 {
-    float clampedOpacity = std::max(std::min(opacity, 1.0f), 0.0f);
+    float clampedOpacity = clampTo(opacity, 0.0f, 1.0f);
     m_opacity = clampedOpacity;
     platformLayer()->setOpacity(opacity);
 }
@@ -968,60 +1028,27 @@ void GraphicsLayer::setContentsNeedsDisplay()
     }
 }
 
-void GraphicsLayer::setNeedsDisplayWithoutInvalidateForTesting()
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    if (!drawsContent())
-        return;
-
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
-}
-
 void GraphicsLayer::setNeedsDisplay()
 {
     if (!drawsContent())
         return;
 
     // TODO(chrishtr): stop invalidating the rects once FrameView::paintRecursively does so.
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
-
     m_layer->layer()->invalidate();
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationRect(FloatRect(FloatPoint(), m_size));
     for (size_t i = 0; i < m_linkHighlights.size(); ++i)
         m_linkHighlights[i]->invalidate();
 
-    displayItemList()->invalidateAll();
+    paintController().invalidateAll();
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationObject("##ALL##");
-}
-
-bool GraphicsLayer::needsDisplay() const
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    return m_needsDisplay;
-}
-
-bool GraphicsLayer::commitIfNeeded(DisplayListDiff& displayListDiff)
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    if (m_needsDisplay) {
-        displayItemList()->commitNewDisplayItems(&displayListDiff);
-        m_needsDisplay = false;
-        return true;
-    }
-    return false;
 }
 
 void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidationReason invalidationReason)
 {
     if (!drawsContent())
         return;
-
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
 
     m_layer->layer()->invalidateRect(rect);
     if (firstPaintInvalidationTrackingEnabled())
@@ -1032,9 +1059,12 @@ void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidation
         m_linkHighlights[i]->invalidate();
 }
 
-void GraphicsLayer::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient)
+void GraphicsLayer::invalidateDisplayItemClient(const DisplayItemClient& displayItemClient, PaintInvalidationReason)
 {
-    displayItemList()->invalidate(displayItemClient);
+    if (!drawsContent())
+        return;
+
+    paintController().invalidate(displayItemClient);
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationObject(displayItemClient.debugName());
 }
@@ -1048,9 +1078,17 @@ void GraphicsLayer::setContentsRect(const IntRect& rect)
     updateContentsRect();
 }
 
-void GraphicsLayer::setContentsToImage(Image* image)
+void GraphicsLayer::setContentsToImage(Image* image, RespectImageOrientationEnum respectImageOrientation)
 {
     RefPtr<SkImage> skImage = image ? image->imageForCurrentFrame() : nullptr;
+
+    if (image && skImage && image->isBitmapImage()) {
+        if (respectImageOrientation == RespectImageOrientation) {
+            ImageOrientation imageOrientation = toBitmapImage(image)->currentFrameOrientation();
+            skImage = DragImage::resizeAndOrientImage(skImage.release(), imageOrientation);
+        }
+    }
+
     if (image && skImage) {
         if (!m_imageLayer) {
             m_imageLayer = adoptPtr(Platform::current()->compositorSupport()->createImageLayer());
@@ -1071,7 +1109,7 @@ void GraphicsLayer::setContentsToImage(Image* image)
 
 bool GraphicsLayer::addAnimation(PassOwnPtr<WebCompositorAnimation> popAnimation)
 {
-    OwnPtr<WebCompositorAnimation> animation(popAnimation);
+    OwnPtr<WebCompositorAnimation> animation(std::move(popAnimation));
     ASSERT(animation);
     platformLayer()->setAnimationDelegate(this);
 
@@ -1088,6 +1126,11 @@ void GraphicsLayer::pauseAnimation(int animationId, double timeOffset)
 void GraphicsLayer::removeAnimation(int animationId)
 {
     platformLayer()->removeAnimation(animationId);
+}
+
+void GraphicsLayer::abortAnimation(int animationId)
+{
+    platformLayer()->abortAnimation(animationId);
 }
 
 WebLayer* GraphicsLayer::platformLayer() const
@@ -1133,7 +1176,7 @@ void GraphicsLayer::addLinkHighlight(LinkHighlight* linkHighlight)
 {
     ASSERT(linkHighlight && !m_linkHighlights.contains(linkHighlight));
     m_linkHighlights.append(linkHighlight);
-    linkHighlight->layer()->setWebLayerClient(this);
+    linkHighlight->layer()->setLayerClient(this);
     updateChildList();
 }
 
@@ -1158,12 +1201,6 @@ void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isVie
         m_layer->layer()->setScrollClient(this);
 }
 
-void GraphicsLayer::paint(GraphicsContext& context, const IntRect& clip)
-{
-    paintGraphicsLayerContents(context, clip);
-}
-
-
 void GraphicsLayer::notifyAnimationStarted(double monotonicTime, int group)
 {
     if (m_client)
@@ -1174,6 +1211,12 @@ void GraphicsLayer::notifyAnimationFinished(double, int group)
 {
     if (m_scrollableArea)
         m_scrollableArea->notifyCompositorAnimationFinished(group);
+}
+
+void GraphicsLayer::notifyAnimationAborted(double, int group)
+{
+    if (m_scrollableArea)
+        m_scrollableArea->notifyCompositorAnimationAborted(group);
 }
 
 void GraphicsLayer::didScroll()
@@ -1187,11 +1230,31 @@ void GraphicsLayer::didScroll()
     }
 }
 
-DisplayItemList* GraphicsLayer::displayItemList()
+scoped_refptr<base::trace_event::ConvertableToTraceFormat> GraphicsLayer::TakeDebugInfo(cc::Layer* layer)
 {
-    if (!m_displayItemList)
-        m_displayItemList = DisplayItemList::create();
-    return m_displayItemList.get();
+    scoped_refptr<base::trace_event::TracedValue> tracedValue = m_debugInfo.asTracedValue();
+    tracedValue->SetString("layer_name", WTF::StringUTF8Adaptor(debugName(layer)).asStringPiece());
+    return tracedValue;
+}
+
+PaintController& GraphicsLayer::paintController()
+{
+    RELEASE_ASSERT(drawsContent());
+    if (!m_paintController)
+        m_paintController = PaintController::create();
+    return *m_paintController;
+}
+
+void GraphicsLayer::setElementId(uint64_t id)
+{
+    if (WebLayer* layer = platformLayer())
+        layer->setElementId(id);
+}
+
+void GraphicsLayer::setCompositorMutableProperties(uint32_t properties)
+{
+    if (WebLayer* layer = platformLayer())
+        layer->setCompositorMutableProperties(properties);
 }
 
 } // namespace blink

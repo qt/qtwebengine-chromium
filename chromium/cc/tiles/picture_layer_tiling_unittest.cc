@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include <limits>
 #include <set>
 
+#include "base/macros.h"
 #include "cc/base/math_util.h"
 #include "cc/test/fake_display_list_raster_source.h"
 #include "cc/test/fake_output_surface.h"
@@ -43,7 +46,7 @@ class TestablePictureLayerTiling : public PictureLayerTiling {
   static scoped_ptr<TestablePictureLayerTiling> Create(
       WhichTree tree,
       float contents_scale,
-      scoped_refptr<RasterSource> raster_source,
+      scoped_refptr<DisplayListRasterSource> raster_source,
       PictureLayerTilingClient* client,
       const LayerTreeSettings& settings) {
     return make_scoped_ptr(new TestablePictureLayerTiling(
@@ -60,13 +63,14 @@ class TestablePictureLayerTiling : public PictureLayerTiling {
   using PictureLayerTiling::RemoveTilesInRegion;
 
  protected:
-  TestablePictureLayerTiling(WhichTree tree,
-                             float contents_scale,
-                             scoped_refptr<RasterSource> raster_source,
-                             PictureLayerTilingClient* client,
-                             size_t tiling_interest_area_padding,
-                             float skewport_target_time,
-                             int skewport_extrapolation_limit)
+  TestablePictureLayerTiling(
+      WhichTree tree,
+      float contents_scale,
+      scoped_refptr<DisplayListRasterSource> raster_source,
+      PictureLayerTilingClient* client,
+      size_t tiling_interest_area_padding,
+      float skewport_target_time,
+      int skewport_extrapolation_limit)
       : PictureLayerTiling(tree,
                            contents_scale,
                            raster_source,
@@ -681,6 +685,13 @@ TEST(PictureLayerTilingTest, ComputeSkewportExtremeCases) {
   tiling->ComputeTilePriorityRects(viewport2, 1.f, time, Occlusion());
   time += 0.016;
   EXPECT_TRUE(tiling->ComputeSkewport(time, viewport3).Contains(viewport3));
+
+  // Use a tiling with a large scale, so the viewport times the scale no longer
+  // fits into integers, and the viewport is not anywhere close to the tiling.
+  tiling = TestablePictureLayerTiling::Create(ACTIVE_TREE, 1000.0f,
+                                              raster_source, &client, settings);
+  tiling->ComputeTilePriorityRects(viewport3, 1.f, time, Occlusion());
+  EXPECT_EQ(gfx::Rect(), tiling->GetCurrentVisibleRectForTesting());
 }
 
 TEST(PictureLayerTilingTest, ComputeSkewport) {

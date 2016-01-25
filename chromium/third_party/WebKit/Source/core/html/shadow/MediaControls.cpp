@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/shadow/MediaControls.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -33,7 +32,6 @@
 #include "core/events/MouseEvent.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/html/MediaController.h"
 #include "core/html/track/TextTrackContainer.h"
 #include "core/layout/LayoutTheme.h"
 
@@ -60,6 +58,11 @@ static bool shouldShowFullscreenButton(const HTMLMediaElement& mediaElement)
         return false;
 
     return true;
+}
+
+static bool shouldShowCastButton(HTMLMediaElement& mediaElement)
+{
+    return !mediaElement.fastHasAttribute(HTMLNames::disableremoteplaybackAttr) && mediaElement.hasRemoteRoutes();
 }
 
 static bool preferHiddenVolumeControls(const Document& document)
@@ -261,13 +264,6 @@ void MediaControls::reset()
     m_fullScreenButton->setIsWanted(shouldShowFullscreenButton(mediaElement()));
 
     refreshCastButtonVisibilityWithoutUpdate();
-
-    // Set the panel width here, and force a layout, before the controls update.
-    // This would be harmless for the !useNewUi case too, but it causes
-    // compositing/geometry/video-fixed-scrolling.html to fail with two extra
-    // 0 height nodes in the render tree.
-    if (useNewUi)
-        m_panelWidth = m_panel->clientWidth();
 }
 
 LayoutObject* MediaControls::layoutObjectForTextTrackLayout()
@@ -379,9 +375,9 @@ void MediaControls::updatePlayState()
 
 void MediaControls::beginScrubbing()
 {
-    if (!mediaElement().togglePlayStateWillPlay()) {
+    if (!mediaElement().paused()) {
         m_isPausedForScrubbing = true;
-        mediaElement().togglePlayState();
+        mediaElement().pause();
     }
 }
 
@@ -389,8 +385,8 @@ void MediaControls::endScrubbing()
 {
     if (m_isPausedForScrubbing) {
         m_isPausedForScrubbing = false;
-        if (mediaElement().togglePlayStateWillPlay())
-            mediaElement().togglePlayState();
+        if (mediaElement().paused())
+            mediaElement().play();
     }
 }
 
@@ -415,8 +411,7 @@ void MediaControls::updateVolume()
 {
     m_muteButton->updateDisplayType();
     // Invalidate the mute button because it paints differently according to volume.
-    if (LayoutObject* layoutObject = m_muteButton->layoutObject())
-        layoutObject->setShouldDoFullPaintInvalidation();
+    invalidate(m_muteButton);
 
     if (mediaElement().muted())
         m_volumeSlider->setVolume(0);
@@ -442,8 +437,7 @@ void MediaControls::updateVolume()
     }
 
     // Invalidate the volume slider because it paints differently according to volume.
-    if (LayoutObject* layoutObject = m_volumeSlider->layoutObject())
-        layoutObject->setShouldDoFullPaintInvalidation();
+    invalidate(m_volumeSlider);
 }
 
 void MediaControls::changedClosedCaptionsVisibility()
@@ -465,43 +459,47 @@ void MediaControls::refreshCastButtonVisibility()
 
 void MediaControls::refreshCastButtonVisibilityWithoutUpdate()
 {
-    if (mediaElement().hasRemoteRoutes()) {
-        // The reason for the autoplay test is that some pages (e.g. vimeo.com) have an autoplay background video, which
-        // doesn't autoplay on Chrome for Android (we prevent it) so starts paused. In such cases we don't want to automatically
-        // show the cast button, since it looks strange and is unlikely to correspond with anything the user wants to do.
-        // If a user does want to cast a paused autoplay video then they can still do so by touching or clicking on the
-        // video, which will cause the cast button to appear.
-        if (!mediaElement().shouldShowControls() && !mediaElement().autoplay() && mediaElement().paused()) {
-            // Note that this is a case where we add the overlay cast button
-            // without wanting the panel cast button.  We depend on the fact
-            // that computeWhichControlsFit() won't change overlay cast button
-            // visibility in the case where the cast button isn't wanted.
-            // We don't call compute...() here, but it will be called as
-            // non-cast changes (e.g., resize) occur.  If the panel button
-            // is shown, however, compute...() will take control of the
-            // overlay cast button if it needs to hide it from the panel.
-            m_overlayCastButton->tryShowOverlay();
-            m_castButton->setIsWanted(false);
-        } else if (mediaElement().shouldShowControls()) {
-            m_overlayCastButton->setIsWanted(false);
-            m_castButton->setIsWanted(true);
-            // Check that the cast button actually fits on the bar.  For the
-            // newMediaPlaybackUiEnabled case, we let computeWhichControlsFit()
-            // handle this.
-            if ( !RuntimeEnabledFeatures::newMediaPlaybackUiEnabled()
-                && m_fullScreenButton->getBoundingClientRect()->right() > m_panel->getBoundingClientRect()->right()) {
-                m_castButton->setIsWanted(false);
-                m_overlayCastButton->tryShowOverlay();
-            }
-        }
-    } else {
+    if (!shouldShowCastButton(mediaElement())) {
         m_castButton->setIsWanted(false);
         m_overlayCastButton->setIsWanted(false);
+        return;
+    }
+
+    // The reason for the autoplay test is that some pages (e.g. vimeo.com) have an autoplay background video, which
+    // doesn't autoplay on Chrome for Android (we prevent it) so starts paused. In such cases we don't want to automatically
+    // show the cast button, since it looks strange and is unlikely to correspond with anything the user wants to do.
+    // If a user does want to cast a paused autoplay video then they can still do so by touching or clicking on the
+    // video, which will cause the cast button to appear.
+    if (!mediaElement().shouldShowControls() && !mediaElement().autoplay() && mediaElement().paused()) {
+        // Note that this is a case where we add the overlay cast button
+        // without wanting the panel cast button.  We depend on the fact
+        // that computeWhichControlsFit() won't change overlay cast button
+        // visibility in the case where the cast button isn't wanted.
+        // We don't call compute...() here, but it will be called as
+        // non-cast changes (e.g., resize) occur.  If the panel button
+        // is shown, however, compute...() will take control of the
+        // overlay cast button if it needs to hide it from the panel.
+        m_overlayCastButton->tryShowOverlay();
+        m_castButton->setIsWanted(false);
+    } else if (mediaElement().shouldShowControls()) {
+        m_overlayCastButton->setIsWanted(false);
+        m_castButton->setIsWanted(true);
+        // Check that the cast button actually fits on the bar.  For the
+        // newMediaPlaybackUiEnabled case, we let computeWhichControlsFit()
+        // handle this.
+        if ( !RuntimeEnabledFeatures::newMediaPlaybackUiEnabled()
+            && m_fullScreenButton->getBoundingClientRect()->right() > m_panel->getBoundingClientRect()->right()) {
+            m_castButton->setIsWanted(false);
+            m_overlayCastButton->tryShowOverlay();
+        }
     }
 }
 
-void MediaControls::showOverlayCastButton()
+void MediaControls::showOverlayCastButtonIfNeeded()
 {
+    if (mediaElement().shouldShowControls() || !shouldShowCastButton(mediaElement()))
+        return;
+
     m_overlayCastButton->tryShowOverlay();
     resetHideMediaControlsTimer();
 }
@@ -547,7 +545,7 @@ void MediaControls::defaultEventHandler(Event* event)
     if (event->type() == EventTypeNames::mouseover) {
         if (!containsRelatedTarget(event)) {
             m_isMouseOverControls = true;
-            if (!mediaElement().togglePlayStateWillPlay()) {
+            if (!mediaElement().paused()) {
                 makeOpaque();
                 if (shouldHideMediaControls())
                     startHideMediaControlsTimer();
@@ -580,7 +578,7 @@ void MediaControls::hideMediaControlsTimerFired(Timer<MediaControls>*)
     unsigned behaviorFlags = m_hideTimerBehaviorFlags | IgnoreFocus | IgnoreVideoHover;
     m_hideTimerBehaviorFlags = IgnoreNone;
 
-    if (mediaElement().togglePlayStateWillPlay())
+    if (mediaElement().paused())
         return;
 
     if (!shouldHideMediaControls(behaviorFlags))
@@ -592,7 +590,7 @@ void MediaControls::hideMediaControlsTimerFired(Timer<MediaControls>*)
 
 void MediaControls::startHideMediaControlsTimer()
 {
-    m_hideMediaControlsTimer.startOneShot(timeWithoutMouseMovementBeforeHidingMediaControls, FROM_HERE);
+    m_hideMediaControlsTimer.startOneShot(timeWithoutMouseMovementBeforeHidingMediaControls, BLINK_FROM_HERE);
 }
 
 void MediaControls::stopHideMediaControlsTimer()
@@ -638,7 +636,7 @@ void MediaControls::notifyPanelWidthChanged(const LayoutUnit& newWidth)
         return;
     m_panelWidth = ceil(m_panelWidth / m_panel->layoutObject()->style()->effectiveZoom());
 
-    m_panelWidthChangedTimer.startOneShot(0, FROM_HERE);
+    m_panelWidthChangedTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void MediaControls::panelWidthChangedTimerFired(Timer<MediaControls>*)
@@ -655,9 +653,6 @@ void MediaControls::computeWhichControlsFit()
     if (!RuntimeEnabledFeatures::newMediaPlaybackUiEnabled())
         return;
 
-    if (!m_panelWidth)
-        return;
-
     // Controls that we'll hide / show, in order of decreasing priority.
     MediaControlElement* elements[] = {
         m_playButton.get(),
@@ -670,6 +665,18 @@ void MediaControls::computeWhichControlsFit()
         m_muteButton.get(),
         m_durationDisplay.get(),
     };
+
+    if (!m_panelWidth) {
+        // No layout yet -- hide everything, then make them show up later.
+        // This prevents the wrong controls from being shown briefly
+        // immediately after the first layout and paint, but before we have
+        // a chance to revise them.
+        for (MediaControlElement* element : elements) {
+            if (element)
+                element->setDoesFit(false);
+        }
+        return;
+    }
 
     int usedWidth = 0;
     bool droppedCastButton = false;
@@ -707,6 +714,25 @@ void MediaControls::setAllowHiddenVolumeControls(bool allow)
     m_allowHiddenVolumeControls = allow;
     // Update the controls visibility.
     updateVolume();
+}
+
+void MediaControls::invalidate(Element* element)
+{
+    if (!element)
+        return;
+
+    if (LayoutObject* layoutObject = element->layoutObject())
+        layoutObject->setShouldDoFullPaintInvalidation();
+}
+
+void MediaControls::networkStateChanged()
+{
+    invalidate(m_playButton);
+    invalidate(m_overlayPlayButton);
+    invalidate(m_muteButton);
+    invalidate(m_fullScreenButton);
+    invalidate(m_timeline);
+    invalidate(m_volumeSlider);
 }
 
 DEFINE_TRACE(MediaControls)

@@ -26,13 +26,11 @@ paper-material {
   background-color: white;
   box-sizing: border-box;
   overflow: hidden;
-  padding: 16px;
 }
 
 paper-material,
 #placeholder {
   margin-bottom: 16px;
-  width: 605px;
 }
 
 :host(.neon-animating) paper-material {

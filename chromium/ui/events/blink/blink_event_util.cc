@@ -7,9 +7,13 @@
 
 #include "ui/events/blink/blink_event_util.h"
 
+#include <stddef.h>
+
+#include <algorithm>
 #include <cmath>
 
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
@@ -81,19 +85,19 @@ WebTouchPoint::PointerType ToWebTouchPointPointerType(const MotionEvent& event,
                                                       size_t pointer_index) {
   switch (event.GetToolType(pointer_index)) {
     case MotionEvent::TOOL_TYPE_UNKNOWN:
-      return WebTouchPoint::PointerTypeUnknown;
+      return WebTouchPoint::PointerType::Unknown;
     case MotionEvent::TOOL_TYPE_FINGER:
-      return WebTouchPoint::PointerTypeTouch;
+      return WebTouchPoint::PointerType::Touch;
     case MotionEvent::TOOL_TYPE_STYLUS:
-      return WebTouchPoint::PointerTypePen;
+      return WebTouchPoint::PointerType::Pen;
     case MotionEvent::TOOL_TYPE_MOUSE:
-      return WebTouchPoint::PointerTypeMouse;
+      return WebTouchPoint::PointerType::Mouse;
     case MotionEvent::TOOL_TYPE_ERASER:
-      return WebTouchPoint::PointerTypeUnknown;
+      return WebTouchPoint::PointerType::Unknown;
   }
   NOTREACHED() << "Invalid MotionEvent::ToolType = "
                << event.GetToolType(pointer_index);
-  return WebTouchPoint::PointerTypeUnknown;
+  return WebTouchPoint::PointerType::Unknown;
 }
 
 WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
@@ -122,10 +126,8 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
   float major_radius = event.GetTouchMajor(pointer_index) / 2.f;
   float minor_radius = event.GetTouchMinor(pointer_index) / 2.f;
 
-  DCHECK_LE(minor_radius, major_radius);
-  DCHECK_IMPLIES(major_radius, minor_radius);
-
-  float orientation_deg = event.GetOrientation(pointer_index) * 180.f / M_PI;
+  float orientation_rad = event.GetOrientation(pointer_index);
+  float orientation_deg = orientation_rad * 180.f / M_PI;
   DCHECK_GE(major_radius, 0);
   DCHECK_GE(minor_radius, 0);
   DCHECK_GE(major_radius, minor_radius);
@@ -157,6 +159,18 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
   }
 
   touch.force = event.GetPressure(pointer_index);
+
+  if (event.GetToolType(pointer_index) == MotionEvent::TOOL_TYPE_STYLUS) {
+    // A stylus points to a direction specified by orientation and tilts to
+    // the opposite direction. Coordinate system is left-handed.
+    float tilt_rad = event.GetTilt(pointer_index);
+    float r = sin(tilt_rad);
+    float z = cos(tilt_rad);
+    touch.tiltX = lround(atan2(sin(-orientation_rad) * r, z) * 180.f / M_PI);
+    touch.tiltY = lround(atan2(cos(-orientation_rad) * r, z) * 180.f / M_PI);
+  } else {
+    touch.tiltX = touch.tiltY = 0;
+  }
 
   return touch;
 }
@@ -201,19 +215,33 @@ int EventFlagsToWebEventModifiers(int flags) {
   if (flags & EF_ALT_DOWN)
     modifiers |= blink::WebInputEvent::AltKey;
   if (flags & EF_COMMAND_DOWN)
+#if defined(OS_WIN)
+    // Evaluate whether OSKey should be set for other platforms.
+    // Since this value was never set on Windows before as the meta
+    // key; we don't break backwards compatiblity exposing it as the
+    // true OS key. However this is not the case for Linux; see
+    // http://crbug.com/539979
+    modifiers |= blink::WebInputEvent::OSKey;
+#else
     modifiers |= blink::WebInputEvent::MetaKey;
-
+#endif
+  if (flags & EF_ALTGR_DOWN)
+    modifiers |= blink::WebInputEvent::AltGrKey;
+  if (flags & EF_NUM_LOCK_ON)
+    modifiers |= blink::WebInputEvent::NumLockOn;
+  if (flags & EF_CAPS_LOCK_ON)
+    modifiers |= blink::WebInputEvent::CapsLockOn;
+  if (flags & EF_SCROLL_LOCK_ON)
+    modifiers |= blink::WebInputEvent::ScrollLockOn;
   if (flags & EF_LEFT_MOUSE_BUTTON)
     modifiers |= blink::WebInputEvent::LeftButtonDown;
   if (flags & EF_MIDDLE_MOUSE_BUTTON)
     modifiers |= blink::WebInputEvent::MiddleButtonDown;
   if (flags & EF_RIGHT_MOUSE_BUTTON)
     modifiers |= blink::WebInputEvent::RightButtonDown;
-  if (flags & EF_CAPS_LOCK_DOWN)
-    modifiers |= blink::WebInputEvent::CapsLockOn;
   if (flags & EF_IS_REPEAT)
     modifiers |= blink::WebInputEvent::IsAutoRepeat;
-  if (flags & ui::EF_TOUCH_ACCESSIBILITY)
+  if (flags & EF_TOUCH_ACCESSIBILITY)
     modifiers |= blink::WebInputEvent::IsTouchAccessibility;
 
   return modifiers;

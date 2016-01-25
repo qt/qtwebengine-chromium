@@ -5,6 +5,7 @@
 var AutomationEvent = require('automationEvent').AutomationEvent;
 var automationInternal =
     require('binding').Binding.create('automationInternal').generate();
+var exceptionHandler = require('uncaught_exception_handler');
 var IsInteractPermitted =
     requireNative('automationInternal').IsInteractPermitted;
 
@@ -13,6 +14,55 @@ var IsInteractPermitted =
  * @return {?number} The id of the root node.
  */
 var GetRootID = requireNative('automationInternal').GetRootID;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?string} The title of the document.
+ */
+var GetDocTitle = requireNative('automationInternal').GetDocTitle;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?string} The url of the document.
+ */
+var GetDocURL = requireNative('automationInternal').GetDocURL;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?boolean} True if the document has finished loading.
+ */
+var GetDocLoaded = requireNative('automationInternal').GetDocLoaded;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?number} The loading progress, from 0.0 to 1.0 (fully loaded).
+ */
+var GetDocLoadingProgress =
+    requireNative('automationInternal').GetDocLoadingProgress;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?number} The ID of the selection anchor object.
+ */
+var GetAnchorObjectID = requireNative('automationInternal').GetAnchorObjectID;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?number} The selection anchor offset.
+ */
+var GetAnchorOffset = requireNative('automationInternal').GetAnchorOffset;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?number} The ID of the selection focus object.
+ */
+var GetFocusObjectID = requireNative('automationInternal').GetFocusObjectID;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @return {?number} The selection focus offset.
+ */
+var GetFocusOffset = requireNative('automationInternal').GetFocusOffset;
 
 /**
  * @param {number} axTreeID The id of the accessibility tree.
@@ -70,6 +120,17 @@ var GetRole = requireNative('automationInternal').GetRole;
  *     the tree or node wasn't found.
  */
 var GetLocation = requireNative('automationInternal').GetLocation;
+
+/**
+ * @param {number} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @param {number} startIndex The start index of the range.
+ * @param {number} endIndex The end index of the range.
+ * @return {?automation.Rect} The bounding box of the subrange of this node,
+ *     or the location if there are no subranges, or undefined if
+ *     the tree or node wasn't found.
+ */
+var GetBoundsForRange = requireNative('automationInternal').GetBoundsForRange;
 
 /**
  * @param {number} axTreeID The id of the accessibility tree.
@@ -172,6 +233,10 @@ AutomationNodeImpl.prototype = {
     return GetLocation(this.treeID, this.id);
   },
 
+  boundsForRange: function(startIndex, endIndex) {
+    return GetBoundsForRange(this.treeID, this.id, startIndex, endIndex);
+  },
+
   get indexInParent() {
     return GetIndexInParent(this.treeID, this.id);
   },
@@ -244,9 +309,12 @@ AutomationNodeImpl.prototype = {
   },
 
   setSelection: function(startIndex, endIndex) {
-    this.performAction_('setSelection',
-                        { startIndex: startIndex,
-                          endIndex: endIndex });
+    if (this.role == 'textField' || this.role == 'textBox') {
+      this.performAction_('setSelection',
+                          { focusNodeID: this.id,
+                            anchorOffset: startIndex,
+                            focusOffset: endIndex });
+    }
   },
 
   showContextMenu: function() {
@@ -385,9 +453,8 @@ AutomationNodeImpl.prototype = {
       try {
         listeners[i].callback(event);
       } catch (e) {
-        logging.WARNING('Error in event handler for ' + event.type +
-                        ' during phase ' + eventPhase + ': ' +
-                        e.message + '\nStack trace: ' + e.stack);
+        exceptionHandler.handle('Error in event handler for ' + event.type +
+            ' during phase ' + eventPhase, e);
       }
     }
   },
@@ -506,10 +573,6 @@ var stringAttributes = [
     'containerLiveStatus',
     'description',
     'display',
-    'docDoctype',
-    'docMimetype',
-    'docTitle',
-    'docUrl',
     'dropeffect',
     'help',
     'htmlTag',
@@ -529,7 +592,6 @@ var boolAttributes = [
     'canvasHasFallback',
     'containerLiveAtomic',
     'containerLiveBusy',
-    'docLoaded',
     'grabbed',
     'isAxTreeHost',
     'liveAtomic',
@@ -537,11 +599,9 @@ var boolAttributes = [
     'updateLocationOnly'];
 
 var intAttributes = [
-    'anchorOffset',
     'backgroundColor',
     'color',
     'colorValue',
-    'focusOffset',
     'hierarchicalLevel',
     'invalidState',
     'posInSet',
@@ -568,8 +628,6 @@ var intAttributes = [
 
 var nodeRefAttributes = [
     ['activedescendantId', 'activedescendant'],
-    ['anchorObjectId', 'anchorObject'],
-    ['focusObjectId', 'focusObject'],
     ['tableColumnHeaderId', 'tableColumnHeader'],
     ['tableHeaderId', 'tableHeader'],
     ['tableRowHeaderId', 'tableRowHeader'],
@@ -590,7 +648,6 @@ var nodeRefListAttributes = [
     ['uniqueCellIds', 'uniqueCells']];
 
 var floatAttributes = [
-    'docLoadingProgress',
     'valueForRange',
     'minValueForRange',
     'maxValueForRange',
@@ -772,6 +829,50 @@ AutomationRootNodeImpl.prototype = {
     return result;
   },
 
+  get docUrl() {
+    return GetDocURL(this.treeID);
+  },
+
+  get docTitle() {
+    return GetDocTitle(this.treeID);
+  },
+
+  get docLoaded() {
+    return GetDocLoaded(this.treeID);
+  },
+
+  get docLoadingProgress() {
+    return GetDocLoadingProgress(this.treeID);
+  },
+
+  get anchorObject() {
+    var id = GetAnchorObjectID(this.treeID);
+    if (id && id != -1)
+      return this.get(id);
+    else
+      return undefined;
+  },
+
+  get anchorOffset() {
+    var id = GetAnchorObjectID(this.treeID);
+    if (id && id != -1)
+      return GetAnchorOffset(this.treeID);
+  },
+
+  get focusObject() {
+    var id = GetFocusObjectID(this.treeID);
+    if (id && id != -1)
+      return this.get(id);
+    else
+      return undefined;
+  },
+
+  get focusOffset() {
+    var id = GetFocusObjectID(this.treeID);
+    if (id && id != -1)
+      return GetFocusOffset(this.treeID);
+  },
+
   get: function(id) {
     if (id == undefined)
       return undefined;
@@ -849,7 +950,8 @@ var AutomationNode = utils.expose('AutomationNode',
                                                 'addEventListener',
                                                 'removeEventListener',
                                                 'domQuerySelector',
-                                                'toString' ],
+                                                'toString',
+                                                'boundsForRange'],
                                     readonly: publicAttributes.concat(
                                               ['parent',
                                                'firstChild',
@@ -866,7 +968,15 @@ var AutomationNode = utils.expose('AutomationNode',
 
 var AutomationRootNode = utils.expose('AutomationRootNode',
                                       AutomationRootNodeImpl,
-                                      { superclass: AutomationNode });
+                                      { superclass: AutomationNode,
+                                        readonly: ['docTitle',
+                                                   'docUrl',
+                                                   'docLoaded',
+                                                   'docLoadingProgress',
+                                                   'anchorObject',
+                                                   'anchorOffset',
+                                                   'focusObject',
+                                                   'focusOffset'] });
 
 AutomationRootNode.get = function(treeID) {
   return AutomationRootNodeImpl.get(treeID);

@@ -44,7 +44,7 @@ class WebDevToolsAgentClient {
 public:
     // Sends response message over the protocol, update agent state on the browser side for
     // potential re-attach. |callId| for notifications is 0, |state| for notifications is empty.
-    virtual void sendProtocolMessage(int callId, const WebString& response, const WebString& state) { }
+    virtual void sendProtocolMessage(int sessionId, int callId, const WebString& response, const WebString& state) { }
 
     // Returns process id.
     virtual long processId() { return -1; }
@@ -67,6 +67,8 @@ public:
 
     virtual void enableTracing(const WebString& categoryFilter) { }
     virtual void disableTracing() { }
+
+    virtual void setCPUThrottlingRate(double rate) {}
 
 protected:
     ~WebDevToolsAgentClient() { }

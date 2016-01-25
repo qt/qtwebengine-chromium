@@ -26,14 +26,14 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT FEDropShadow : public FilterEffect {
+class PLATFORM_EXPORT FEDropShadow final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FEDropShadow> create(Filter*, float, float, float, float, const Color&, float);
 
     FloatRect mapRect(const FloatRect&, bool forward = true) final;
 
     TextStream& externalRepresentation(TextStream&, int indention) const override;
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 
 private:
     FEDropShadow(Filter*, float, float, float, float, const Color&, float);

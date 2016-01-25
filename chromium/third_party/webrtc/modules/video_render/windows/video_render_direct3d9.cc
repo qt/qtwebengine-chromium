@@ -16,9 +16,9 @@
 
 // WebRtc include files
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 
@@ -294,8 +294,8 @@ VideoRenderDirect3D9::VideoRenderDirect3D9(Trace* trace,
     _totalMemory(0),
     _availableMemory(0)
 {
-    _screenUpdateThread = ThreadWrapper::CreateThread(
-        ScreenUpdateThreadProc, this, "ScreenUpdateThread");
+    _screenUpdateThread.reset(new rtc::PlatformThread(
+        ScreenUpdateThreadProc, this, "ScreenUpdateThread"));
     _screenUpdateEvent = EventTimerWrapper::Create();
     SetRect(&_originalHwndRect, 0, 0, 0, 0);
 }
@@ -305,7 +305,7 @@ VideoRenderDirect3D9::~VideoRenderDirect3D9()
     //NOTE: we should not enter CriticalSection in here!
 
     // Signal event to exit thread, then delete it
-    ThreadWrapper* tmpPtr = _screenUpdateThread.release();
+    rtc::PlatformThread* tmpPtr = _screenUpdateThread.release();
     if (tmpPtr)
     {
         _screenUpdateEvent->Set();
@@ -546,7 +546,7 @@ int32_t VideoRenderDirect3D9::Init()
         return -1;
     }
     _screenUpdateThread->Start();
-    _screenUpdateThread->SetPriority(kRealtimePriority);
+    _screenUpdateThread->SetPriority(rtc::kRealtimePriority);
 
     // Start the event triggering the render process
     unsigned int monitorFreq = 60;

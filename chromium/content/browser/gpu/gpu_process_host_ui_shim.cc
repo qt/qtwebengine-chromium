@@ -12,6 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "content/browser/compositor/gpu_process_transport_factory.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -40,13 +41,6 @@ namespace {
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
-#endif
-
-#if defined(OS_MACOSX)
-void OnSurfaceDisplayedCallback(int output_surface_id) {
-  content::ImageTransportFactory::GetInstance()->OnSurfaceDisplayed(
-      output_surface_id);
-}
 #endif
 
 base::LazyInstance<IDMap<GpuProcessHostUIShim> > g_hosts_by_id =
@@ -246,20 +240,28 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   bool should_not_show_frame =
       content::ImageTransportFactory::GetInstance()
           ->SurfaceShouldNotShowFramesAfterSuspendForRecycle(params.surface_id);
-  if (should_not_show_frame) {
-    OnSurfaceDisplayedCallback(params.surface_id);
-  } else {
+  if (!should_not_show_frame) {
     gfx::AcceleratedWidget native_widget =
         content::GpuSurfaceTracker::Get()->AcquireNativeWidget(
             params.surface_id);
-    ui::AcceleratedWidgetMacGotAcceleratedFrame(
-        native_widget, params.surface_handle, params.latency_info, params.size,
-        params.scale_factor,
-        params.damage_rect,
-        base::Bind(&OnSurfaceDisplayedCallback, params.surface_id),
-        &ack_params.disable_throttling, &ack_params.renderer_id,
-        &ack_params.vsync_timebase, &ack_params.vsync_interval);
+    base::ScopedCFTypeRef<IOSurfaceRef> io_surface;
+    CAContextID ca_context_id = params.ca_context_id;
+
+    DCHECK((params.ca_context_id == 0) ^
+           (params.io_surface.get() == MACH_PORT_NULL));
+    if (params.io_surface.get()) {
+      io_surface.reset(IOSurfaceLookupFromMachPort(params.io_surface));
+    }
+
+    ui::AcceleratedWidgetMacGotFrame(native_widget, ca_context_id, io_surface,
+                                     params.size, params.scale_factor,
+                                     &ack_params.vsync_timebase,
+                                     &ack_params.vsync_interval);
   }
+
+  content::ImageTransportFactory::GetInstance()->OnGpuSwapBuffersCompleted(
+      params.surface_id, params.latency_info, gfx::SwapResult::SWAP_ACK);
+
   Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
 }
 #endif
@@ -270,16 +272,16 @@ void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(
       video_memory_usage_stats);
 }
 
-void GpuProcessHostUIShim::OnAddSubscription(
-    int32 process_id, unsigned int target) {
+void GpuProcessHostUIShim::OnAddSubscription(int32_t process_id,
+                                             unsigned int target) {
   RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
   if (rph) {
     rph->OnAddSubscription(target);
   }
 }
 
-void GpuProcessHostUIShim::OnRemoveSubscription(
-    int32 process_id, unsigned int target) {
+void GpuProcessHostUIShim::OnRemoveSubscription(int32_t process_id,
+                                                unsigned int target) {
   RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
   if (rph) {
     rph->OnRemoveSubscription(target);

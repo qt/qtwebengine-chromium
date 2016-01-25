@@ -23,6 +23,7 @@ class CONTENT_EXPORT MediaSessionUmaHelper {
     SystemTransient = 0,
     SystemPermanent = 1,
     UI = 2,
+    CONTENT = 3,
     Count // Leave at the end.
   };
 
@@ -30,6 +31,9 @@ class CONTENT_EXPORT MediaSessionUmaHelper {
   ~MediaSessionUmaHelper();
 
   void RecordSessionSuspended(MediaSessionSuspendedSource source) const;
+
+  // Record the result of calling the native requestAudioFocus().
+  void RecordRequestAudioFocusResult(bool result) const;
 
   void OnSessionActive();
   void OnSessionSuspended();

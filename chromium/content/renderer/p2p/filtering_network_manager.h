@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_P2P_FILTERING_NETWORK_MANAGER_H_
 #define CONTENT_RENDERER_P2P_FILTERING_NETWORK_MANAGER_H_
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
@@ -45,13 +46,16 @@ class FilteringNetworkManager : public rtc::NetworkManagerBase,
 
   CONTENT_EXPORT ~FilteringNetworkManager() override;
 
-  // Check mic/camera permission. This is called by P2PPortAllocatorFactory.
+  // Check mic/camera permission.
+  // This is called by PeerConnectionDependencyFactory.
   CONTENT_EXPORT void Initialize();
 
   // rtc::NetworkManager:
   void StartUpdating() override;
   void StopUpdating() override;
   void GetNetworks(NetworkList* networks) const override;
+  bool GetDefaultLocalAddress(int family,
+                              rtc::IPAddress* ipaddress) const override;
 
  private:
   // Receive callback from MediaPermission when the permission status is

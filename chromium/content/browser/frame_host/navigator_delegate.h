@@ -97,11 +97,6 @@ class CONTENT_EXPORT NavigatorDelegate {
   // WebContents::NotifyNavigationStateChanged.
   virtual void NotifyChangedNavigationState(InvalidateTypes changed_flags) {}
 
-  // Notifies the Navigator embedder that it is beginning to navigate a frame.
-  virtual void AboutToNavigateRenderFrame(
-      RenderFrameHostImpl* old_host,
-      RenderFrameHostImpl* new_host) {}
-
   // Notifies the Navigator embedder that a navigation to the pending
   // NavigationEntry has started in the browser process.
   virtual void DidStartNavigationToPendingEntry(
@@ -112,6 +107,10 @@ class CONTENT_EXPORT NavigatorDelegate {
   // this forwards to.
   virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                               const OpenURLParams& params) {}
+
+  // Returns whether to continue a navigation that needs to transfer to a
+  // different process between the load start and commit.
+  virtual bool ShouldTransferNavigation();
 
   // Returns whether URLs for aborted browser-initiated navigations should be
   // preserved in the omnibox.  Defaults to false.

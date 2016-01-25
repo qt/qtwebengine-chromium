@@ -4,7 +4,11 @@
 
 #include "components/user_prefs/tracked/pref_hash_store_impl.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
 #include "components/user_prefs/tracked/hash_store_contents.h"
@@ -71,20 +75,20 @@ PrefHashStoreImpl::~PrefHashStoreImpl() {
 
 void PrefHashStoreImpl::set_legacy_hash_store_contents(
     scoped_ptr<HashStoreContents> legacy_hash_store_contents) {
-  legacy_hash_store_contents_ = legacy_hash_store_contents.Pass();
+  legacy_hash_store_contents_ = std::move(legacy_hash_store_contents);
 }
 
 scoped_ptr<PrefHashStoreTransaction> PrefHashStoreImpl::BeginTransaction(
     scoped_ptr<HashStoreContents> storage) {
   return scoped_ptr<PrefHashStoreTransaction>(
-      new PrefHashStoreTransactionImpl(this, storage.Pass()));
+      new PrefHashStoreTransactionImpl(this, std::move(storage)));
 }
 
 PrefHashStoreImpl::PrefHashStoreTransactionImpl::PrefHashStoreTransactionImpl(
     PrefHashStoreImpl* outer,
     scoped_ptr<HashStoreContents> storage)
     : outer_(outer),
-      contents_(storage.Pass()),
+      contents_(std::move(storage)),
       super_mac_valid_(false),
       super_mac_dirty_(false) {
   if (!outer_->use_super_mac_)

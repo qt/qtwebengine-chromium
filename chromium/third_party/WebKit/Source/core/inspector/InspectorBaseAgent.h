@@ -48,7 +48,7 @@ class InstrumentingAgents;
 class LocalFrame;
 
 class CORE_EXPORT InspectorAgent : public NoBaseWillBeGarbageCollectedFinalized<InspectorAgent> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorAgent);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorAgent);
 public:
     explicit InspectorAgent(const String&);
     virtual ~InspectorAgent();
@@ -76,7 +76,7 @@ private:
 };
 
 class CORE_EXPORT InspectorAgentRegistry final {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(InspectorAgentRegistry);
 public:
     InspectorAgentRegistry(InstrumentingAgents*, InspectorCompositeState*);

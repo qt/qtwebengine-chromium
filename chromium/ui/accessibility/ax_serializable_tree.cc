@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/ax_serializable_tree.h"
 
+#include <stdint.h>
+
 #include "ui/accessibility/ax_node.h"
 
 namespace ui {
@@ -15,17 +17,19 @@ namespace ui {
 // AXTree directly. Another AXTreeSource is used to abstract the Blink
 // accessibility tree.
 class AX_EXPORT AXTreeSourceAdapter
-    : public AXTreeSource<const AXNode*, AXNodeData> {
+    : public AXTreeSource<const AXNode*, AXNodeData, AXTreeData> {
  public:
   AXTreeSourceAdapter(AXTree* tree) : tree_(tree) {}
   ~AXTreeSourceAdapter() override {}
 
   // AXTreeSource implementation.
+  AXTreeData GetTreeData() const override { return tree_->data(); }
+
   AXNode* GetRoot() const override { return tree_->root(); }
 
-  AXNode* GetFromId(int32 id) const override { return tree_->GetFromId(id); }
+  AXNode* GetFromId(int32_t id) const override { return tree_->GetFromId(id); }
 
-  int32 GetId(const AXNode* node) const override { return node->id(); }
+  int32_t GetId(const AXNode* node) const override { return node->id(); }
 
   void GetChildren(const AXNode* node,
                    std::vector<const AXNode*>* out_children) const override {
@@ -57,14 +61,14 @@ AXSerializableTree::AXSerializableTree()
     : AXTree() {}
 
 AXSerializableTree::AXSerializableTree(
-    const AXTreeUpdate<AXNodeData>& initial_state)
+    const AXTreeUpdate& initial_state)
     : AXTree(initial_state) {
 }
 
 AXSerializableTree::~AXSerializableTree() {
 }
 
-AXTreeSource<const AXNode*, AXNodeData>*
+AXTreeSource<const AXNode*, AXNodeData, AXTreeData>*
 AXSerializableTree::CreateTreeSource() {
   return new AXTreeSourceAdapter(this);
 }

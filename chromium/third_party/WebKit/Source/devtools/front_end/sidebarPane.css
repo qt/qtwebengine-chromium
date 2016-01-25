@@ -72,9 +72,9 @@
 }
 
 .sidebar-pane-title::before {
-    background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 352px 168px;
-    opacity: 0.5;
+    -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
+    -webkit-mask-size: 352px 168px;
+    background-color: #888;
     float: left;
     width: 11px;
     height: 11px;
@@ -85,16 +85,16 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .sidebar-pane-title::before {
-    background-image: url(Images/toolbarButtonGlyphs_2x.png);
+    -webkit-mask-image: url(Images/toolbarButtonGlyphs_2x.png);
 }
 } /* media */
 
 .sidebar-pane-title::before {
-    background-position: -4px -96px;
+    -webkit-mask-position: -4px -96px;
 }
 
 .sidebar-pane-title.expanded::before {
-    background-position: -20px -96px;
+    -webkit-mask-position: -20px -96px;
 }
 
 .sidebar-pane > .toolbar {
@@ -128,21 +128,3 @@
     background-color: #FFFFC2;
 }
 
-.sidebar-pane-button-new-rule {
-    background-image: url(Images/paneAddButtons.png);
-    background-position: 0 0;
-    position: absolute;
-    height: 16px;
-    width: 23px;
-    right: 5px;
-    bottom: 3px;
-    visibility: hidden;
-}
-
-.styles-section.matched-styles:not(.read-only):hover .sidebar-pane-button-new-rule {
-    visibility: visible;
-}
-
-.sidebar-pane-button-new-rule:hover {
-    background-position: -23px 0;
-}

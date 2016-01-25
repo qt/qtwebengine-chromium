@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/notifications/NotificationData.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -71,34 +70,21 @@ WebNotificationData createWebNotificationData(ExecutionContext* executionContext
         webData.data = serializedData;
     }
 
-    // Ignore experimental NotificationOptions members if the flag is not set.
-    if (RuntimeEnabledFeatures::notificationExperimentalEnabled()) {
-        Vector<WebNotificationAction> actions;
+    Vector<WebNotificationAction> actions;
 
-        const size_t maxActions = Notification::maxActions();
-        for (const NotificationAction& action : options.actions()) {
-            if (action.action().isEmpty()) {
-                exceptionState.throwTypeError("NotificationAction `action` must not be empty.");
-                return WebNotificationData();
-            }
+    const size_t maxActions = Notification::maxActions();
+    for (const NotificationAction& action : options.actions()) {
+        if (actions.size() >= maxActions)
+            break;
 
-            if (action.title().isEmpty()) {
-                exceptionState.throwTypeError("NotificationAction `title` must not be empty.");
-                return WebNotificationData();
-            }
+        WebNotificationAction webAction;
+        webAction.action = action.action();
+        webAction.title = action.title();
 
-            if (actions.size() >= maxActions)
-                continue;
-
-            WebNotificationAction webAction;
-            webAction.action = action.action();
-            webAction.title = action.title();
-
-            actions.append(webAction);
-        }
-
-        webData.actions = actions;
+        actions.append(webAction);
     }
+
+    webData.actions = actions;
 
     return webData;
 }

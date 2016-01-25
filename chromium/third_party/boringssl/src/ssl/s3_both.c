@@ -170,9 +170,9 @@ int ssl3_send_finished(SSL *s, int a, int b, const char *sender, int slen) {
     memcpy(p, s->s3->tmp.finish_md, n);
 
     /* Log the master secret, if logging is enabled. */
-    if (!ssl_ctx_log_master_secret(s->ctx, s->s3->client_random,
-                                   SSL3_RANDOM_SIZE, s->session->master_key,
-                                   s->session->master_key_length)) {
+    if (!ssl_log_master_secret(s, s->s3->client_random, SSL3_RANDOM_SIZE,
+                               s->session->master_key,
+                               s->session->master_key_length)) {
       return 0;
     }
 
@@ -239,15 +239,6 @@ int ssl3_get_finished(SSL *s, int a, int b) {
   if (!ssl3_hash_current_message(s)) {
     goto err;
   }
-
-  /* If this occurs, we have missed a message.
-   * TODO(davidben): Is this check now redundant with SSL3_FLAGS_EXPECT_CCS? */
-  if (!s->s3->change_cipher_spec) {
-    al = SSL_AD_UNEXPECTED_MESSAGE;
-    OPENSSL_PUT_ERROR(SSL, SSL_R_GOT_A_FIN_BEFORE_A_CCS);
-    goto f_err;
-  }
-  s->s3->change_cipher_spec = 0;
 
   p = s->init_msg;
   finished_len = s->s3->tmp.peer_finish_md_len;

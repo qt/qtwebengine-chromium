@@ -12,7 +12,8 @@
 #define WEBRTC_VIDEO_FRAME_H_
 
 #include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/common_video/interface/video_frame_buffer.h"
+#include "webrtc/common_types.h"
+#include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/common_video/rotation.h"
 #include "webrtc/typedefs.h"
 
@@ -157,6 +158,8 @@ class VideoFrame {
   // called on a non-native-handle frame.
   VideoFrame ConvertNativeToI420Frame() const;
 
+  bool EqualsFrame(const VideoFrame& frame) const;
+
  private:
   // An opaque reference counted handle that stores the pixel data.
   rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer_;
@@ -166,13 +169,6 @@ class VideoFrame {
   VideoRotation rotation_;
 };
 
-enum VideoFrameType {
-  kKeyFrame = 0,
-  kDeltaFrame = 1,
-  kGoldenFrame = 2,
-  kAltRefFrame = 3,
-  kSkipFrame = 4
-};
 
 // TODO(pbos): Rename EncodedFrame and reformat this class' members.
 class EncodedImage {
@@ -181,18 +177,31 @@ class EncodedImage {
   EncodedImage(uint8_t* buffer, size_t length, size_t size)
       : _buffer(buffer), _length(length), _size(size) {}
 
+  struct AdaptReason {
+    AdaptReason()
+        : quality_resolution_downscales(-1),
+          bw_resolutions_disabled(-1) {}
+
+    int quality_resolution_downscales;  // Number of times this frame is down
+                                        // scaled in resolution due to quality.
+                                        // Or -1 if information is not provided.
+    int bw_resolutions_disabled;  // Number of resolutions that are not sent
+                                  // due to bandwidth for this frame.
+                                  // Or -1 if information is not provided.
+  };
   uint32_t _encodedWidth = 0;
   uint32_t _encodedHeight = 0;
   uint32_t _timeStamp = 0;
   // NTP time of the capture time in local timebase in milliseconds.
   int64_t ntp_time_ms_ = 0;
   int64_t capture_time_ms_ = 0;
-  // TODO(pbos): Use webrtc::FrameType directly (and remove VideoFrameType).
-  VideoFrameType _frameType = kDeltaFrame;
+  FrameType _frameType = kVideoFrameDelta;
   uint8_t* _buffer;
   size_t _length;
   size_t _size;
   bool _completeFrame = false;
+  AdaptReason adapt_reason_;
+  int qp_ = -1;  // Quantizer value.
 };
 
 }  // namespace webrtc

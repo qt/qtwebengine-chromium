@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/FixedPositionContainerDisplayItem.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -11,12 +10,12 @@
 
 namespace blink {
 
-void BeginFixedPositionContainerDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void BeginFixedPositionContainerDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     // TODO(trchen): Should implement the compositor counterpart and update transform tree algorithm.
 }
 
-void EndFixedPositionContainerDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndFixedPositionContainerDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     // TODO(trchen): Should implement the compositor counterpart and update transform tree algorithm.
 }

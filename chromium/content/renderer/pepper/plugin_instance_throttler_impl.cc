@@ -9,7 +9,6 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
-#include "content/renderer/peripheral_content_heuristic.h"
 #include "content/renderer/render_frame_impl.h"
 #include "ppapi/shared_impl/ppapi_constants.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -51,11 +50,6 @@ void PluginInstanceThrottler::RecordUnthrottleMethodMetric(
   UMA_HISTOGRAM_ENUMERATION(
       "Plugin.PowerSaver.Unthrottle", method,
       PluginInstanceThrottler::UNTHROTTLE_METHOD_NUM_ITEMS);
-}
-
-// static
-bool PluginInstanceThrottler::IsLargeContent(int width, int height) {
-  return PeripheralContentHeuristic::IsLargeContent(width, height);
 }
 
 PluginInstanceThrottlerImpl::PluginInstanceThrottlerImpl()
@@ -145,27 +139,25 @@ void PluginInstanceThrottlerImpl::Initialize(
 
   // |frame| may be nullptr in tests.
   if (frame) {
-    PluginPowerSaverHelper* helper = frame->plugin_power_saver_helper();
-    bool cross_origin_main_content = false;
     float zoom_factor = GetWebPlugin()->container()->pageZoomFactor();
-    if (!helper->ShouldThrottleContent(
-            frame->GetWebFrame()->top()->securityOrigin(), content_origin,
-            plugin_module_name, roundf(unobscured_size.width() / zoom_factor),
-            roundf(unobscured_size.height() / zoom_factor),
-            &cross_origin_main_content)) {
+    auto status = frame->GetPeripheralContentStatus(
+        frame->GetWebFrame()->top()->securityOrigin(), content_origin,
+        gfx::Size(roundf(unobscured_size.width() / zoom_factor),
+                  roundf(unobscured_size.height() / zoom_factor)));
+    if (status != RenderFrame::CONTENT_STATUS_PERIPHERAL) {
       DCHECK_NE(THROTTLER_STATE_MARKED_ESSENTIAL, state_);
       state_ = THROTTLER_STATE_MARKED_ESSENTIAL;
       FOR_EACH_OBSERVER(Observer, observer_list_, OnPeripheralStateChange());
 
-      if (cross_origin_main_content)
-        helper->WhitelistContentOrigin(content_origin);
+      if (status == RenderFrame::CONTENT_STATUS_ESSENTIAL_CROSS_ORIGIN_BIG)
+        frame->WhitelistContentOrigin(content_origin);
 
       return;
     }
 
     // To collect UMAs, register peripheral content even if power saver mode
     // is disabled.
-    helper->RegisterPeripheralPlugin(
+    frame->RegisterPeripheralPlugin(
         content_origin,
         base::Bind(&PluginInstanceThrottlerImpl::MarkPluginEssential,
                    weak_factory_.GetWeakPtr(), UNTHROTTLE_METHOD_BY_WHITELIST));

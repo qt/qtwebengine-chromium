@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/editing/VisibleUnits.h"
 
+#include "core/dom/Text.h"
 #include "core/editing/EditingTestBase.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/html/HTMLTextFormControlElement.h"
@@ -66,6 +66,26 @@ TEST_F(VisibleUnitsTest, absoluteCaretBoundsOf)
     EXPECT_EQ(boundsInDOMTree, boundsInComposedTree);
 }
 
+TEST_F(VisibleUnitsTest, caretMinOffset)
+{
+    const char* bodyContent = "<p id=one>one</p>";
+    setBodyContent(bodyContent);
+
+    RefPtrWillBeRawPtr<Element> one = document().getElementById("one");
+
+    EXPECT_EQ(0, caretMinOffset(one->firstChild()));
+}
+
+TEST_F(VisibleUnitsTest, caretMinOffsetWithFirstLetter)
+{
+    const char* bodyContent = "<style>#one:first-letter { font-size: 200%; }</style><p id=one>one</p>";
+    setBodyContent(bodyContent);
+
+    RefPtrWillBeRawPtr<Element> one = document().getElementById("one");
+
+    EXPECT_EQ(0, caretMinOffset(one->firstChild()));
+}
+
 TEST_F(VisibleUnitsTest, characterAfter)
 {
     const char* bodyContent = "<p id='host'><b id='one'>1</b><b id='two'>22</b></p><b id='three'>333</b>";
@@ -82,6 +102,39 @@ TEST_F(VisibleUnitsTest, characterAfter)
 
     EXPECT_EQ(0, characterAfter(createVisiblePositionInDOMTree(*two->firstChild(), 2)));
     EXPECT_EQ('1', characterAfter(createVisiblePositionInComposedTree(*two->firstChild(), 2)));
+}
+
+TEST_F(VisibleUnitsTest, canonicalPositionOfWithHTMLHtmlElement)
+{
+    const char* bodyContent = "<html><div id=one contenteditable>1</div><span id=two contenteditable=false>22</span><span id=three contenteditable=false>333</span><span id=four contenteditable=false>333</span></html>";
+    setBodyContent(bodyContent);
+
+    RefPtrWillBeRawPtr<Node> one = document().querySelector("#one", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> two = document().querySelector("#two", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> three = document().querySelector("#three", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> four = document().querySelector("#four", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> html = document().createElement("html", ASSERT_NO_EXCEPTION);
+    // Move two, three and four into second html element.
+    html->appendChild(two.get());
+    html->appendChild(three.get());
+    html->appendChild(four.get());
+    one->appendChild(html.get());
+    updateLayoutAndStyleForPainting();
+
+    EXPECT_EQ(Position(), canonicalPositionOf(Position(document().documentElement(), 0)));
+
+    EXPECT_EQ(Position(one->firstChild(), 0), canonicalPositionOf(Position(one.get(), 0)));
+    EXPECT_EQ(Position(one->firstChild(), 1), canonicalPositionOf(Position(one.get(), 1)));
+
+    EXPECT_EQ(Position(one->firstChild(), 0), canonicalPositionOf(Position(one->firstChild(), 0)));
+    EXPECT_EQ(Position(one->firstChild(), 1), canonicalPositionOf(Position(one->firstChild(), 1)));
+
+    EXPECT_EQ(Position(html.get(), 0), canonicalPositionOf(Position(html.get(), 0)));
+    EXPECT_EQ(Position(html.get(), 1), canonicalPositionOf(Position(html.get(), 1)));
+    EXPECT_EQ(Position(html.get(), 2), canonicalPositionOf(Position(html.get(), 2)));
+
+    EXPECT_EQ(Position(two->firstChild(), 0), canonicalPositionOf(Position(two.get(), 0)));
+    EXPECT_EQ(Position(two->firstChild(), 2), canonicalPositionOf(Position(two.get(), 1)));
 }
 
 TEST_F(VisibleUnitsTest, characterBefore)
@@ -543,6 +596,39 @@ TEST_F(VisibleUnitsTest, isStartOfParagraph)
     EXPECT_TRUE(isStartOfParagraph(createVisiblePositionInComposedTree(*three, 0)));
 }
 
+TEST_F(VisibleUnitsTest, isVisuallyEquivalentCandidateWithHTMLHtmlElement)
+{
+    const char* bodyContent = "<html><div id=one contenteditable>1</div><span id=two contenteditable=false>22</span><span id=three contenteditable=false>333</span><span id=four contenteditable=false>333</span></html>";
+    setBodyContent(bodyContent);
+
+    RefPtrWillBeRawPtr<Node> one = document().querySelector("#one", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> two = document().querySelector("#two", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> three = document().querySelector("#three", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Node> four = document().querySelector("#four", ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<Element> html = document().createElement("html", ASSERT_NO_EXCEPTION);
+    // Move two, three and four into second html element.
+    html->appendChild(two.get());
+    html->appendChild(three.get());
+    html->appendChild(four.get());
+    one->appendChild(html.get());
+    updateLayoutAndStyleForPainting();
+
+    EXPECT_FALSE(isVisuallyEquivalentCandidate(Position(document().documentElement(), 0)));
+
+    EXPECT_FALSE(isVisuallyEquivalentCandidate(Position(one.get(), 0)));
+    EXPECT_FALSE(isVisuallyEquivalentCandidate(Position(one.get(), 1)));
+
+    EXPECT_TRUE(isVisuallyEquivalentCandidate(Position(one->firstChild(), 0)));
+    EXPECT_TRUE(isVisuallyEquivalentCandidate(Position(one->firstChild(), 1)));
+
+    EXPECT_TRUE(isVisuallyEquivalentCandidate(Position(html.get(), 0)));
+    EXPECT_TRUE(isVisuallyEquivalentCandidate(Position(html.get(), 1)));
+    EXPECT_TRUE(isVisuallyEquivalentCandidate(Position(html.get(), 2)));
+
+    EXPECT_FALSE(isVisuallyEquivalentCandidate(Position(two.get(), 0)));
+    EXPECT_FALSE(isVisuallyEquivalentCandidate(Position(two.get(), 1)));
+}
+
 TEST_F(VisibleUnitsTest, leftPositionOf)
 {
     const char* bodyContent = "<b id=zero>0</b><p id=host><b id=one>1</b><b id=two>22</b></p><b id=three>333</b>";
@@ -695,6 +781,28 @@ TEST_F(VisibleUnitsTest, mostBackwardCaretPositionAfterAnchor)
     EXPECT_EQ(PositionInComposedTree::lastPositionInNode(host.get()), mostForwardCaretPosition(PositionInComposedTree::afterNode(host.get())));
 }
 
+TEST_F(VisibleUnitsTest, mostBackwardCaretPositionFirstLetter)
+{
+    // Note: first-letter pseudo element contains letter and punctuations.
+    const char* bodyContent = "<style>p:first-letter {color:red;}</style><p id=sample> (2)45 </p>";
+    setBodyContent(bodyContent);
+    updateLayoutAndStyleForPainting();
+
+    Node* sample = document().getElementById("sample")->firstChild();
+
+    EXPECT_EQ(Position(sample->parentNode(), 0), mostBackwardCaretPosition(Position(sample, 0)));
+    EXPECT_EQ(Position(sample->parentNode(), 0), mostBackwardCaretPosition(Position(sample, 1)));
+    EXPECT_EQ(Position(sample, 2), mostBackwardCaretPosition(Position(sample, 2)));
+    EXPECT_EQ(Position(sample, 3), mostBackwardCaretPosition(Position(sample, 3)));
+    EXPECT_EQ(Position(sample, 4), mostBackwardCaretPosition(Position(sample, 4)));
+    EXPECT_EQ(Position(sample, 5), mostBackwardCaretPosition(Position(sample, 5)));
+    EXPECT_EQ(Position(sample, 6), mostBackwardCaretPosition(Position(sample, 6)));
+    EXPECT_EQ(Position(sample, 6), mostBackwardCaretPosition(Position(sample, 7)));
+    EXPECT_EQ(Position(sample, 6), mostBackwardCaretPosition(Position::lastPositionInNode(sample->parentNode())));
+    EXPECT_EQ(Position(sample, 6), mostBackwardCaretPosition(Position::afterNode(sample->parentNode())));
+    EXPECT_EQ(Position::lastPositionInNode(document().body()), mostBackwardCaretPosition(Position::lastPositionInNode(document().body())));
+}
+
 TEST_F(VisibleUnitsTest, mostForwardCaretPositionAfterAnchor)
 {
     const char* bodyContent = "<p id='host'><b id='one'>1</b></p>";
@@ -709,6 +817,28 @@ TEST_F(VisibleUnitsTest, mostForwardCaretPositionAfterAnchor)
 
     EXPECT_EQ(Position(one->firstChild(), 1), mostBackwardCaretPosition(Position::afterNode(host.get())));
     EXPECT_EQ(PositionInComposedTree(three->firstChild(), 3), mostBackwardCaretPosition(PositionInComposedTree::afterNode(host.get())));
+}
+
+TEST_F(VisibleUnitsTest, mostForwardCaretPositionFirstLetter)
+{
+    // Note: first-letter pseudo element contains letter and punctuations.
+    const char* bodyContent = "<style>p:first-letter {color:red;}</style><p id=sample> (2)45 </p>";
+    setBodyContent(bodyContent);
+    updateLayoutAndStyleForPainting();
+
+    Node* sample = document().getElementById("sample")->firstChild();
+
+    EXPECT_EQ(Position(document().body(), 0), mostForwardCaretPosition(Position::firstPositionInNode(document().body())));
+    EXPECT_EQ(Position(sample, 1), mostForwardCaretPosition(Position::beforeNode(sample->parentNode())));
+    EXPECT_EQ(Position(sample, 1), mostForwardCaretPosition(Position::firstPositionInNode(sample->parentNode())));
+    EXPECT_EQ(Position(sample, 1), mostForwardCaretPosition(Position(sample, 0)));
+    EXPECT_EQ(Position(sample, 1), mostForwardCaretPosition(Position(sample, 1)));
+    EXPECT_EQ(Position(sample, 2), mostForwardCaretPosition(Position(sample, 2)));
+    EXPECT_EQ(Position(sample, 3), mostForwardCaretPosition(Position(sample, 3)));
+    EXPECT_EQ(Position(sample, 4), mostForwardCaretPosition(Position(sample, 4)));
+    EXPECT_EQ(Position(sample, 5), mostForwardCaretPosition(Position(sample, 5)));
+    EXPECT_EQ(Position(sample, 7), mostForwardCaretPosition(Position(sample, 6)));
+    EXPECT_EQ(Position(sample, 7), mostForwardCaretPosition(Position(sample, 7)));
 }
 
 TEST_F(VisibleUnitsTest, nextPositionOf)
@@ -778,6 +908,22 @@ TEST_F(VisibleUnitsTest, previousPositionOf)
     // (one, 1) in composed tree.
     EXPECT_EQ(Position(four, 4), previousPositionOf(createVisiblePosition(Position(five, 1))).deepEquivalent());
     EXPECT_EQ(PositionInComposedTree(one, 1), previousPositionOf(createVisiblePosition(PositionInComposedTree(five, 1))).deepEquivalent());
+}
+
+TEST_F(VisibleUnitsTest, previousPositionOfOneCharPerLine)
+{
+    const char* bodyContent = "<div id=sample style='font-size: 500px'>A&#x714a;&#xfa67;</div>";
+    setBodyContent(bodyContent);
+
+    Node* sample = document().getElementById("sample")->firstChild();
+
+    // In case of each line has one character, VisiblePosition are:
+    // [C,Dn]   [C,Up]  [B, Dn]   [B, Up]
+    //  A        A       A         A|
+    //  B        B|     |B         B
+    // |C        C       C         C
+    EXPECT_EQ(PositionWithAffinity(Position(sample, 1)), previousPositionOf(createVisiblePosition(Position(sample, 2))).toPositionWithAffinity());
+    EXPECT_EQ(PositionWithAffinity(Position(sample, 1)), previousPositionOf(createVisiblePosition(Position(sample, 2), TextAffinity::Upstream)).toPositionWithAffinity());
 }
 
 TEST_F(VisibleUnitsTest, rendersInDifferentPositionAfterAnchor)

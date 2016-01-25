@@ -5,6 +5,7 @@
 #include "net/ssl/client_key_store.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
@@ -38,14 +39,14 @@ void ClientKeyStore::RemoveProvider(const CertKeyProvider* provider) {
     providers_.erase(it);
 }
 
-scoped_ptr<SSLPrivateKey> ClientKeyStore::FetchClientCertPrivateKey(
+scoped_refptr<SSLPrivateKey> ClientKeyStore::FetchClientCertPrivateKey(
     const X509Certificate& certificate) {
   base::AutoLock auto_lock(lock_);
 
   for (const auto& provider : providers_) {
-    scoped_ptr<SSLPrivateKey> key;
+    scoped_refptr<SSLPrivateKey> key;
     if (provider->GetCertificateKey(certificate, &key))
-      return key.Pass();
+      return key;
   }
   return nullptr;
 }

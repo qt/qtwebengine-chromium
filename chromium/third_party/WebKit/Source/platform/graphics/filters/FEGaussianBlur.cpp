@@ -23,8 +23,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "platform/graphics/filters/FEGaussianBlur.h"
 
 #include "platform/graphics/filters/Filter.h"
@@ -110,12 +108,12 @@ FloatRect FEGaussianBlur::determineAbsolutePaintRect(const FloatRect& originalRe
     return outputRect;
 }
 
-PassRefPtr<SkImageFilter> FEGaussianBlur::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEGaussianBlur::createImageFilter(SkiaImageFilterBuilder& builder)
 {
-    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    RefPtr<SkImageFilter> input(builder.build(inputEffect(0), operatingColorSpace()));
     float stdX = filter()->applyHorizontalScale(m_stdX);
     float stdY = filter()->applyVerticalScale(m_stdY);
-    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder.cropOffset());
     return adoptRef(SkBlurImageFilter::Create(SkFloatToScalar(stdX), SkFloatToScalar(stdY), input.get(), &rect));
 }
 

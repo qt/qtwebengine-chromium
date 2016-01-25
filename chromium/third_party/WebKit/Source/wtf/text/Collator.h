@@ -29,7 +29,7 @@
 #ifndef WTF_Collator_h
 #define WTF_Collator_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/WTFExport.h"
@@ -41,7 +41,7 @@ namespace WTF {
 
 class WTF_EXPORT Collator {
     WTF_MAKE_NONCOPYABLE(Collator);
-    WTF_MAKE_FAST_ALLOCATED(Collator);
+    USING_FAST_MALLOC(Collator);
 public:
     enum Result { Equal = 0, Greater = 1, Less = -1 };
 

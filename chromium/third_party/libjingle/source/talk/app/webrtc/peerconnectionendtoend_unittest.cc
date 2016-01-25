@@ -27,6 +27,9 @@
 
 #include "talk/app/webrtc/test/peerconnectiontestwrapper.h"
 #include "talk/app/webrtc/test/mockpeerconnectionobservers.h"
+#ifdef WEBRTC_ANDROID
+#include "talk/app/webrtc/test/androidtestinitializer.h"
+#endif
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/ssladapter.h"
@@ -50,56 +53,6 @@ namespace {
 
 const size_t kMaxWait = 10000;
 
-void RemoveLinesFromSdp(const std::string& line_start,
-                               std::string* sdp) {
-  const char kSdpLineEnd[] = "\r\n";
-  size_t ssrc_pos = 0;
-  while ((ssrc_pos = sdp->find(line_start, ssrc_pos)) !=
-      std::string::npos) {
-    size_t end_ssrc = sdp->find(kSdpLineEnd, ssrc_pos);
-    sdp->erase(ssrc_pos, end_ssrc - ssrc_pos + strlen(kSdpLineEnd));
-  }
-}
-
-// Add |newlines| to the |message| after |line|.
-void InjectAfter(const std::string& line,
-                 const std::string& newlines,
-                 std::string* message) {
-  const std::string tmp = line + newlines;
-  rtc::replace_substrs(line.c_str(), line.length(),
-                             tmp.c_str(), tmp.length(), message);
-}
-
-void Replace(const std::string& line,
-             const std::string& newlines,
-             std::string* message) {
-  rtc::replace_substrs(line.c_str(), line.length(),
-                             newlines.c_str(), newlines.length(), message);
-}
-
-void UseExternalSdes(std::string* sdp) {
-  // Remove current crypto specification.
-  RemoveLinesFromSdp("a=crypto", sdp);
-  RemoveLinesFromSdp("a=fingerprint", sdp);
-  // Add external crypto.
-  const char kAudioSdes[] =
-      "a=crypto:1 AES_CM_128_HMAC_SHA1_80 "
-      "inline:PS1uQCVeeCFCanVmcjkpPywjNWhcYD0mXXtxaVBR\r\n";
-  const char kVideoSdes[] =
-      "a=crypto:1 AES_CM_128_HMAC_SHA1_80 "
-      "inline:d0RmdmcmVCspeEc3QGZiNWpVLFJhQX1cfHAwJSoj\r\n";
-  const char kDataSdes[] =
-      "a=crypto:1 AES_CM_128_HMAC_SHA1_80 "
-      "inline:NzB4d1BINUAvLEw6UzF3WSJ+PSdFcGdUJShpX1Zj\r\n";
-  InjectAfter("a=mid:audio\r\n", kAudioSdes, sdp);
-  InjectAfter("a=mid:video\r\n", kVideoSdes, sdp);
-  InjectAfter("a=mid:data\r\n", kDataSdes, sdp);
-}
-
-void RemoveBundle(std::string* sdp) {
-  RemoveLinesFromSdp("a=group:BUNDLE", sdp);
-}
-
 }  // namespace
 
 class PeerConnectionEndToEndTest
@@ -114,6 +67,9 @@ class PeerConnectionEndToEndTest
                     "caller")),
         callee_(new rtc::RefCountedObject<PeerConnectionTestWrapper>(
                     "callee")) {
+#ifdef WEBRTC_ANDROID
+    webrtc::InitializeAndroidObjects();
+#endif
   }
 
   void CreatePcs() {
@@ -217,15 +173,20 @@ class PeerConnectionEndToEndTest
   DataChannelList callee_signaled_data_channels_;
 };
 
+// Disabled for TSan v2, see
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=4719 for details.
+// Disabled for Mac, see
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=5231 for details.
+#if !defined(THREAD_SANITIZER) && !defined(WEBRTC_MAC)
 TEST_F(PeerConnectionEndToEndTest, Call) {
   CreatePcs();
   GetAndAddUserMedia();
   Negotiate();
   WaitForCallEstablished();
 }
+#endif // if !defined(THREAD_SANITIZER) && !defined(WEBRTC_MAC)
 
-// Disabled per b/14899892
-TEST_F(PeerConnectionEndToEndTest, DISABLED_CallWithLegacySdp) {
+TEST_F(PeerConnectionEndToEndTest, CallWithLegacySdp) {
   FakeConstraints pc_constraints;
   pc_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                               false);
@@ -363,4 +324,63 @@ TEST_F(PeerConnectionEndToEndTest,
 
   EXPECT_EQ(1U, dc_1_observer->received_message_count());
   EXPECT_EQ(1U, dc_2_observer->received_message_count());
+}
+
+// Verifies that a DataChannel added from an OPEN message functions after
+// a channel has been previously closed (webrtc issue 3778).
+// This previously failed because the new channel re-uses the ID of the closed
+// channel, and the closed channel was incorrectly still assigned to the id.
+// TODO(deadbeef): This is disabled because there's currently a race condition
+// caused by the fact that a data channel signals that it's closed before it
+// really is. Re-enable this test once that's fixed.
+TEST_F(PeerConnectionEndToEndTest,
+       DISABLED_DataChannelFromOpenWorksAfterClose) {
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
+
+  CreatePcs();
+
+  webrtc::DataChannelInit init;
+  rtc::scoped_refptr<DataChannelInterface> caller_dc(
+      caller_->CreateDataChannel("data", init));
+
+  Negotiate();
+  WaitForConnection();
+
+  WaitForDataChannelsToOpen(caller_dc, callee_signaled_data_channels_, 0);
+  CloseDataChannels(caller_dc, callee_signaled_data_channels_, 0);
+
+  // Create a new channel and ensure it works after closing the previous one.
+  caller_dc = caller_->CreateDataChannel("data2", init);
+
+  WaitForDataChannelsToOpen(caller_dc, callee_signaled_data_channels_, 1);
+  TestDataChannelSendAndReceive(caller_dc, callee_signaled_data_channels_[1]);
+
+  CloseDataChannels(caller_dc, callee_signaled_data_channels_, 1);
+}
+
+// This tests that if a data channel is closed remotely while not referenced
+// by the application (meaning only the PeerConnection contributes to its
+// reference count), no memory access violation will occur.
+// See: https://code.google.com/p/chromium/issues/detail?id=565048
+TEST_F(PeerConnectionEndToEndTest, CloseDataChannelRemotelyWhileNotReferenced) {
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
+
+  CreatePcs();
+
+  webrtc::DataChannelInit init;
+  rtc::scoped_refptr<DataChannelInterface> caller_dc(
+      caller_->CreateDataChannel("data", init));
+
+  Negotiate();
+  WaitForConnection();
+
+  WaitForDataChannelsToOpen(caller_dc, callee_signaled_data_channels_, 0);
+  // This removes the reference to the remote data channel that we hold.
+  callee_signaled_data_channels_.clear();
+  caller_dc->Close();
+  EXPECT_EQ_WAIT(DataChannelInterface::kClosed, caller_dc->state(), kMaxWait);
+
+  // Wait for a bit longer so the remote data channel will receive the
+  // close message and be destroyed.
+  rtc::Thread::Current()->ProcessMessages(100);
 }

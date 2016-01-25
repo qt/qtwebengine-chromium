@@ -4,6 +4,9 @@
 
 #include "content/browser/compositor/browser_compositor_overlay_candidate_validator_ozone.h"
 
+#include <stddef.h>
+#include <utility>
+
 #include "cc/output/overlay_strategy_single_on_top.h"
 #include "cc/output/overlay_strategy_underlay.h"
 #include "ui/ozone/public/overlay_candidates_ozone.h"
@@ -27,9 +30,8 @@ BrowserCompositorOverlayCandidateValidatorOzone::
         gfx::AcceleratedWidget widget,
         scoped_ptr<ui::OverlayCandidatesOzone> overlay_candidates)
     : widget_(widget),
-      overlay_candidates_(overlay_candidates.Pass()),
-      software_mirror_active_(false) {
-}
+      overlay_candidates_(std::move(overlay_candidates)),
+      software_mirror_active_(false) {}
 
 BrowserCompositorOverlayCandidateValidatorOzone::
     ~BrowserCompositorOverlayCandidateValidatorOzone() {
@@ -37,10 +39,13 @@ BrowserCompositorOverlayCandidateValidatorOzone::
 
 void BrowserCompositorOverlayCandidateValidatorOzone::GetStrategies(
     cc::OverlayProcessor::StrategyList* strategies) {
-  strategies->push_back(scoped_ptr<cc::OverlayProcessor::Strategy>(
-      new cc::OverlayStrategyCommon(this, new cc::OverlayStrategySingleOnTop)));
-  strategies->push_back(scoped_ptr<cc::OverlayProcessor::Strategy>(
-      new cc::OverlayStrategyCommon(this, new cc::OverlayStrategyUnderlay)));
+  strategies->push_back(
+      make_scoped_ptr(new cc::OverlayStrategySingleOnTop(this)));
+  strategies->push_back(make_scoped_ptr(new cc::OverlayStrategyUnderlay(this)));
+}
+
+bool BrowserCompositorOverlayCandidateValidatorOzone::AllowCALayerOverlays() {
+  return false;
 }
 
 void BrowserCompositorOverlayCandidateValidatorOzone::CheckOverlaySupport(

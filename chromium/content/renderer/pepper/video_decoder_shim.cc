@@ -7,27 +7,28 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/thread_task_runner_handle.h"
-#ifndef NDEBUG
 #include "base/logging.h"
-#endif
+#include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/blink/context_provider_web_context.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/pepper/pepper_video_decoder_host.h"
 #include "content/renderer/render_thread_impl.h"
-#include "gpu/command_buffer/client/gles2_implementation.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/limits.h"
 #include "media/base/media_util.h"
 #include "media/base/video_decoder.h"
-#include "media/blink/skcanvas_video_renderer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/vpx_video_decoder.h"
+#include "media/renderers/skcanvas_video_renderer.h"
 #include "media/video/picture.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/pp_errors.h"
@@ -48,7 +49,11 @@ bool IsCodecSupported(media::VideoCodec codec) {
     return true;
 #endif
 
+#if !defined(MEDIA_DISABLE_FFMPEG) && !defined(DISABLE_FFMPEG_VIDEO_DECODERS)
   return media::FFmpegVideoDecoder::IsCodecSupported(codec);
+#else
+  return false;
+#endif
 }
 
 }  // namespace
@@ -450,7 +455,7 @@ void VideoDecoderShim::YUVConverter::Convert(
     uv_height_ = y_height_ / uv_height_divisor_;
 
     // Re-create to resize the textures and upload data.
-    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, ystride);
+    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, ystride);
     gl_->ActiveTexture(GL_TEXTURE0);
     gl_->BindTexture(GL_TEXTURE_2D, y_texture_);
     gl_->TexImage2D(GL_TEXTURE_2D, 0, internal_format_, y_width_, y_height_, 0,
@@ -468,7 +473,7 @@ void VideoDecoderShim::YUVConverter::Convert(
     } else {
       // if there is no alpha channel, then create a 2x2 texture with full
       // alpha.
-      gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, 0);
       const uint8_t alpha[4] = {0xff, 0xff, 0xff, 0xff};
       gl_->ActiveTexture(GL_TEXTURE3);
       gl_->BindTexture(GL_TEXTURE_2D, a_texture_);
@@ -476,7 +481,7 @@ void VideoDecoderShim::YUVConverter::Convert(
                       GL_UNSIGNED_BYTE, alpha);
     }
 
-    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, uvstride);
+    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, uvstride);
     gl_->ActiveTexture(GL_TEXTURE1);
     gl_->BindTexture(GL_TEXTURE_2D, u_texture_);
     gl_->TexImage2D(GL_TEXTURE_2D, 0, internal_format_, uv_width_, uv_height_,
@@ -490,7 +495,7 @@ void VideoDecoderShim::YUVConverter::Convert(
                     frame->data(media::VideoFrame::kVPlane));
   } else {
     // Bind textures and upload texture data
-    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, ystride);
+    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, ystride);
     gl_->ActiveTexture(GL_TEXTURE0);
     gl_->BindTexture(GL_TEXTURE_2D, y_texture_);
     gl_->TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, y_width_, y_height_, format_,
@@ -510,7 +515,7 @@ void VideoDecoderShim::YUVConverter::Convert(
       gl_->BindTexture(GL_TEXTURE_2D, a_texture_);
     }
 
-    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, uvstride);
+    gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, uvstride);
     gl_->ActiveTexture(GL_TEXTURE1);
     gl_->BindTexture(GL_TEXTURE_2D, u_texture_);
     gl_->TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uv_width_, uv_height_, format_,
@@ -576,7 +581,7 @@ void VideoDecoderShim::YUVConverter::Convert(
 
   gl_->ActiveTexture(GL_TEXTURE0);
   gl_->BindTexture(GL_TEXTURE_2D, 0);
-  gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, 0);
 
   gl_->TraceEndCHROMIUM();
 
@@ -684,23 +689,28 @@ void VideoDecoderShim::DecoderImpl::Initialize(
   DCHECK(!decoder_);
 #if !defined(MEDIA_DISABLE_LIBVPX)
   if (config.codec() == media::kCodecVP9) {
-    decoder_.reset(
-        new media::VpxVideoDecoder(base::ThreadTaskRunnerHandle::Get()));
+    decoder_.reset(new media::VpxVideoDecoder());
   } else
 #endif
+
+#if !defined(MEDIA_DISABLE_FFMPEG) && !defined(DISABLE_FFMPEG_VIDEO_DECODERS)
   {
     scoped_ptr<media::FFmpegVideoDecoder> ffmpeg_video_decoder(
-        new media::FFmpegVideoDecoder(base::ThreadTaskRunnerHandle::Get()));
+        new media::FFmpegVideoDecoder());
     ffmpeg_video_decoder->set_decode_nalus(true);
-    decoder_ = ffmpeg_video_decoder.Pass();
+    decoder_ = std::move(ffmpeg_video_decoder);
   }
+#elif defined(MEDIA_DISABLE_LIBVPX)
+  OnInitDone(false);
+  return;
+#endif
 
   // VpxVideoDecoder and FFmpegVideoDecoder support only one pending Decode()
   // request.
   DCHECK_EQ(decoder_->GetMaxDecodeRequests(), 1);
 
   decoder_->Initialize(
-      config, true /* low_delay */,
+      config, true /* low_delay */, media::SetCdmReadyCB(),
       base::Bind(&VideoDecoderShim::DecoderImpl::OnInitDone,
                  weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&VideoDecoderShim::DecoderImpl::OnOutputComplete,
@@ -858,18 +868,22 @@ VideoDecoderShim::~VideoDecoderShim() {
                  base::Owned(decoder_impl_.release())));
 }
 
-bool VideoDecoderShim::Initialize(
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+bool VideoDecoderShim::Initialize(const Config& vda_config, Client* client) {
   DCHECK_EQ(client, host_);
   DCHECK(RenderThreadImpl::current());
   DCHECK_EQ(state_, UNINITIALIZED);
+
+  if (vda_config.is_encrypted) {
+    NOTREACHED() << "Encrypted streams are not supported";
+    return false;
+  }
+
   media::VideoCodec codec = media::kUnknownVideoCodec;
-  if (profile <= media::H264PROFILE_MAX)
+  if (vda_config.profile <= media::H264PROFILE_MAX)
     codec = media::kCodecH264;
-  else if (profile <= media::VP8PROFILE_MAX)
+  else if (vda_config.profile <= media::VP8PROFILE_MAX)
     codec = media::kCodecVP8;
-  else if (profile <= media::VP9PROFILE_MAX)
+  else if (vda_config.profile <= media::VP9PROFILE_MAX)
     codec = media::kCodecVP9;
   DCHECK_NE(codec, media::kUnknownVideoCodec);
 
@@ -879,8 +893,9 @@ bool VideoDecoderShim::Initialize(
   if (!yuv_converter_->Initialize())
     return false;
 
-  media::VideoDecoderConfig config(
-      codec, profile, media::PIXEL_FORMAT_YV12, media::COLOR_SPACE_UNSPECIFIED,
+  media::VideoDecoderConfig video_decoder_config(
+      codec, vda_config.profile, media::PIXEL_FORMAT_YV12,
+      media::COLOR_SPACE_UNSPECIFIED,
       gfx::Size(32, 24),  // Small sizes that won't fail.
       gfx::Rect(32, 24), gfx::Size(32, 24),
       // TODO(bbudge): Verify extra data isn't needed.
@@ -889,8 +904,7 @@ bool VideoDecoderShim::Initialize(
   media_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&VideoDecoderShim::DecoderImpl::Initialize,
-                 base::Unretained(decoder_impl_.get()),
-                 config));
+                 base::Unretained(decoder_impl_.get()), video_decoder_config));
 
   state_ = DECODING;
 
@@ -941,7 +955,7 @@ void VideoDecoderShim::AssignPictureBuffers(
   SendPictures();
 }
 
-void VideoDecoderShim::ReusePictureBuffer(int32 picture_buffer_id) {
+void VideoDecoderShim::ReusePictureBuffer(int32_t picture_buffer_id) {
   DCHECK(RenderThreadImpl::current());
   uint32_t texture_id = static_cast<uint32_t>(picture_buffer_id);
   if (textures_to_dismiss_.find(texture_id) != textures_to_dismiss_.end()) {
@@ -1032,7 +1046,7 @@ void VideoDecoderShim::OnOutputComplete(scoped_ptr<PendingFrame> frame) {
       texture_size_ = frame->video_frame->coded_size();
     }
 
-    pending_frames_.push(linked_ptr<PendingFrame>(frame.release()));
+    pending_frames_.push(std::move(frame));
     SendPictures();
   }
 }
@@ -1041,7 +1055,7 @@ void VideoDecoderShim::SendPictures() {
   DCHECK(RenderThreadImpl::current());
   DCHECK(host_);
   while (!pending_frames_.empty() && !available_textures_.empty()) {
-    const linked_ptr<PendingFrame>& frame = pending_frames_.front();
+    const scoped_ptr<PendingFrame>& frame = pending_frames_.front();
 
     TextureIdSet::iterator it = available_textures_.begin();
     uint32_t texture_id = *it;

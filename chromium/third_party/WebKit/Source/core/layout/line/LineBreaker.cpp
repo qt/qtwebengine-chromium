@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/line/LineBreaker.h"
 
 #include "core/layout/line/BreakingContextInlineHeaders.h"
@@ -33,7 +32,7 @@ void LineBreaker::skipLeadingWhitespace(InlineBidiResolver& resolver, LineInfo& 
     while (!resolver.position().atEnd() && !requiresLineBox(resolver.position(), lineInfo, LeadingWhitespace)) {
         LayoutObject* object = resolver.position().object();
         if (object->isOutOfFlowPositioned()) {
-            setStaticPositions(m_block, LineLayoutBox(toLayoutBox(object)));
+            setStaticPositions(m_block, LineLayoutBox(toLayoutBox(object)), width.indentText());
             if (object->style()->isOriginalDisplayInlineType()) {
                 resolver.runs().addRun(createRun(0, 1, LineLayoutItem(object), resolver));
                 lineInfo.incrementRunsFromLeadingWhitespace();
@@ -82,7 +81,7 @@ InlineIterator LineBreaker::nextLineBreak(InlineBidiResolver& resolver, LineInfo
             context.handleFloat();
         } else if (context.currentObject()->isLayoutInline()) {
             context.handleEmptyInline();
-        } else if (context.currentObject()->isReplaced()) {
+        } else if (context.currentObject()->isAtomicInlineLevel()) {
             context.handleReplaced();
         } else if (context.currentObject()->isText()) {
             if (context.handleText(wordMeasurements, m_hyphenated)) {

@@ -33,7 +33,6 @@
 // FIXME: Could move what Vector and Deque share into a separate file.
 // Deque doesn't actually use Vector.
 
-#include "wtf/PassTraits.h"
 #include "wtf/Vector.h"
 #include <iterator>
 
@@ -43,7 +42,7 @@ template <typename T, size_t inlineCapacity, typename Allocator> class DequeIter
 template <typename T, size_t inlineCapacity, typename Allocator> class DequeIterator;
 template <typename T, size_t inlineCapacity, typename Allocator> class DequeConstIterator;
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class Deque : public ConditionalDestructor<Deque<T, INLINE_CAPACITY, Allocator>, (INLINE_CAPACITY == 0) && Allocator::isGarbageCollected> {
     WTF_USE_ALLOCATOR(Deque, Allocator);
 public:
@@ -51,8 +50,6 @@ public:
     typedef DequeConstIterator<T, inlineCapacity, Allocator> const_iterator;
     typedef std::reverse_iterator<iterator> reverse_iterator;
     typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-    typedef PassTraits<T> Pass;
-    typedef typename PassTraits<T>::PassType PassType;
 
     Deque();
     Deque(const Deque<T, inlineCapacity, Allocator>&);
@@ -79,11 +76,11 @@ public:
 
     T& first() { ASSERT(m_start != m_end); return m_buffer.buffer()[m_start]; }
     const T& first() const { ASSERT(m_start != m_end); return m_buffer.buffer()[m_start]; }
-    PassType takeFirst();
+    T takeFirst();
 
     T& last() { ASSERT(m_start != m_end); return *(--end()); }
     const T& last() const { ASSERT(m_start != m_end); return *(--end()); }
-    PassType takeLast();
+    T takeLast();
 
     T& at(size_t i)
     {
@@ -101,8 +98,8 @@ public:
     T& operator[](size_t i) { return at(i); }
     const T& operator[](size_t i) const { return at(i); }
 
-    template <typename U> void append(const U&);
-    template <typename U> void prepend(const U&);
+    template <typename U> void append(U&&);
+    template <typename U> void prepend(U&&);
     void removeFirst();
     void removeLast();
     void remove(iterator&);
@@ -158,7 +155,7 @@ private:
     friend class Deque<T, inlineCapacity, Allocator>;
 };
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class DequeIterator : public DequeIteratorBase<T, inlineCapacity, Allocator> {
 private:
     typedef DequeIteratorBase<T, inlineCapacity, Allocator> Base;
@@ -188,7 +185,7 @@ public:
     // postfix -- intentionally omitted
 };
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class DequeConstIterator : public DequeIteratorBase<T, inlineCapacity, Allocator> {
 private:
     typedef DequeIteratorBase<T, inlineCapacity, Allocator> Base;
@@ -214,7 +211,7 @@ public:
 
     bool operator==(const Iterator& other) const { return Base::isEqual(other); }
     bool operator!=(const Iterator& other) const { return !Base::isEqual(other); }
-    
+
     Iterator& operator++() { Base::increment(); return *this; }
     // postfix ++ intentionally omitted
     Iterator& operator--() { Base::decrement(); return *this; }
@@ -226,10 +223,11 @@ inline Deque<T, inlineCapacity, Allocator>::Deque()
     : m_start(0)
     , m_end(0)
 {
-    static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+    static_assert(!std::is_polymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
 #if ENABLE(OILPAN)
-    static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Deque");
+    static_assert(Allocator::isGarbageCollected || !AllowsOnlyPlacementNew<T>::value || !NeedsTracing<T>::value, "Cannot put DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects that have trace methods into an off-heap Deque");
 #endif
+    static_assert(Allocator::isGarbageCollected || !IsPointerToGarbageCollectedType<T>::value, "Cannot put raw pointers to garbage-collected classes into a Deque. Use HeapDeque<Member<T>> instead.");
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
@@ -364,27 +362,27 @@ void Deque<T, inlineCapacity, Allocator>::expandCapacity()
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
-inline typename Deque<T, inlineCapacity, Allocator>::PassType Deque<T, inlineCapacity, Allocator>::takeFirst()
+inline T Deque<T, inlineCapacity, Allocator>::takeFirst()
 {
-    T oldFirst = Pass::transfer(first());
+    T oldFirst = std::move(first());
     removeFirst();
-    return Pass::transfer(oldFirst);
+    return oldFirst;
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
-inline typename Deque<T, inlineCapacity, Allocator>::PassType Deque<T, inlineCapacity, Allocator>::takeLast()
+inline T Deque<T, inlineCapacity, Allocator>::takeLast()
 {
-    T oldLast = Pass::transfer(last());
+    T oldLast = std::move(last());
     removeLast();
-    return Pass::transfer(oldLast);
+    return oldLast;
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-inline void Deque<T, inlineCapacity, Allocator>::append(const U& value)
+inline void Deque<T, inlineCapacity, Allocator>::append(U&& value)
 {
     expandCapacityIfNeeded();
-    new (NotNull, &m_buffer.buffer()[m_end]) T(value);
+    new (NotNull, &m_buffer.buffer()[m_end]) T(std::forward<U>(value));
     if (m_end == m_buffer.capacity() - 1)
         m_end = 0;
     else
@@ -393,14 +391,14 @@ inline void Deque<T, inlineCapacity, Allocator>::append(const U& value)
 
 template <typename T, size_t inlineCapacity, typename Allocator>
 template <typename U>
-inline void Deque<T, inlineCapacity, Allocator>::prepend(const U& value)
+inline void Deque<T, inlineCapacity, Allocator>::prepend(U&& value)
 {
     expandCapacityIfNeeded();
     if (!m_start)
         m_start = m_buffer.capacity() - 1;
     else
         --m_start;
-    new (NotNull, &m_buffer.buffer()[m_start]) T(value);
+    new (NotNull, &m_buffer.buffer()[m_start]) T(std::forward<U>(value));
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
@@ -547,7 +545,7 @@ void Deque<T, inlineCapacity, Allocator>::trace(VisitorDispatcher visitor)
     ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
     const T* bufferBegin = m_buffer.buffer();
     const T* end = bufferBegin + m_end;
-    if (ShouldBeTraced<VectorTraits<T>>::value) {
+    if (NeedsTracingTrait<VectorTraits<T>>::value) {
         if (m_start <= m_end) {
             for (const T* bufferEntry = bufferBegin + m_start; bufferEntry != end; bufferEntry++)
                 Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));

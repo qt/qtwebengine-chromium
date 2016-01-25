@@ -16,11 +16,16 @@ namespace net {
 
 namespace {
 
+// The maximum size in bytes of the nonce, including 8 bytes of sequence number.
+// ChaCha20 uses only the 8 byte sequence number and AES-GCM uses 12 bytes.
+const size_t kMaxNonceSize = 12;
+
 // In debug builds only, log OpenSSL error stack. Then clear OpenSSL error
 // stack.
 void DLogOpenSslErrors() {
 #ifdef NDEBUG
-  while (ERR_get_error()) {}
+  while (ERR_get_error()) {
+  }
 #else
   while (unsigned long error = ERR_get_error()) {
     char buf[120];
@@ -42,6 +47,7 @@ AeadBaseEncrypter::AeadBaseEncrypter(const EVP_AEAD* aead_alg,
       nonce_prefix_size_(nonce_prefix_size) {
   DCHECK_LE(key_size_, sizeof(key_));
   DCHECK_LE(nonce_prefix_size_, sizeof(nonce_prefix_));
+  DCHECK_GE(kMaxNonceSize, nonce_prefix_size_);
 }
 
 AeadBaseEncrypter::~AeadBaseEncrypter() {}
@@ -55,8 +61,8 @@ bool AeadBaseEncrypter::SetKey(StringPiece key) {
 
   EVP_AEAD_CTX_cleanup(ctx_.get());
 
-  if (!EVP_AEAD_CTX_init(ctx_.get(), aead_alg_, key_, key_size_,
-                         auth_tag_size_, nullptr)) {
+  if (!EVP_AEAD_CTX_init(ctx_.get(), aead_alg_, key_, key_size_, auth_tag_size_,
+                         nullptr)) {
     DLogOpenSslErrors();
     return false;
   }
@@ -109,17 +115,21 @@ bool AeadBaseEncrypter::EncryptPacket(QuicPacketNumber packet_number,
   // TODO(ianswett): Introduce a check to ensure that we don't encrypt with the
   // same packet number twice.
   const size_t nonce_size = nonce_prefix_size_ + sizeof(packet_number);
-  memcpy(output, nonce_prefix_, nonce_prefix_size_);
-  memcpy(output + nonce_prefix_size_, &packet_number, sizeof(packet_number));
-  if (!Encrypt(StringPiece(output, nonce_size), associated_data, plaintext,
-               reinterpret_cast<unsigned char*>(output))) {
+  ALIGNAS(4) char nonce_buffer[kMaxNonceSize];
+  memcpy(nonce_buffer, nonce_prefix_, nonce_prefix_size_);
+  memcpy(nonce_buffer + nonce_prefix_size_, &packet_number,
+         sizeof(packet_number));
+  if (!Encrypt(StringPiece(nonce_buffer, nonce_size), associated_data,
+               plaintext, reinterpret_cast<unsigned char*>(output))) {
     return false;
   }
   *output_length = ciphertext_size;
   return true;
 }
 
-size_t AeadBaseEncrypter::GetKeySize() const { return key_size_; }
+size_t AeadBaseEncrypter::GetKeySize() const {
+  return key_size_;
+}
 
 size_t AeadBaseEncrypter::GetNoncePrefixSize() const {
   return nonce_prefix_size_;

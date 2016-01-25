@@ -5,8 +5,13 @@
 #ifndef CONTENT_COMMON_GPU_GPU_SURFACE_LOOKUP_H_
 #define CONTENT_COMMON_GPU_GPU_SURFACE_LOOKUP_H_
 
+#include "base/macros.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if defined(OS_ANDROID)
+#include "ui/gl/android/scoped_java_surface.h"
+#endif
 
 namespace content {
 
@@ -21,6 +26,10 @@ class CONTENT_EXPORT GpuSurfaceLookup {
   static void InitInstance(GpuSurfaceLookup* lookup);
 
   virtual gfx::AcceleratedWidget AcquireNativeWidget(int surface_id) = 0;
+
+#if defined(OS_ANDROID)
+  virtual gfx::ScopedJavaSurface AcquireJavaSurface(int surface_id);
+#endif
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GpuSurfaceLookup);

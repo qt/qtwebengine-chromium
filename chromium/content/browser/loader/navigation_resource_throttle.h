@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_LOADER_NAVIGATION_RESOURCE_THROTTLE_H_
 #define CONTENT_BROWSER_LOADER_NAVIGATION_RESOURCE_THROTTLE_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/resource_throttle.h"
@@ -28,6 +28,7 @@ class NavigationResourceThrottle : public ResourceThrottle {
   void WillStartRequest(bool* defer) override;
   void WillRedirectRequest(const net::RedirectInfo& redirect_info,
                            bool* defer) override;
+  void WillProcessResponse(bool* defer) override;
   const char* GetNameForLogging() const override;
 
  private:

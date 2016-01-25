@@ -5,11 +5,13 @@
 #ifndef CC_TREES_LAYER_TREE_SETTINGS_H_
 #define CC_TREES_LAYER_TREE_SETTINGS_H_
 
+#include <stddef.h>
+
 #include <vector>
 
-#include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/layer_tree_debug_state.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/renderer_settings.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -17,18 +19,21 @@
 
 namespace cc {
 
-class CC_EXPORT LayerSettings {
- public:
-  LayerSettings();
-  ~LayerSettings();
-
-  bool use_compositor_animation_timelines;
-};
+namespace proto {
+class LayerTreeSettings;
+}  // namespace proto
 
 class CC_EXPORT LayerTreeSettings {
  public:
   LayerTreeSettings();
-  ~LayerTreeSettings();
+  virtual ~LayerTreeSettings();
+
+  bool operator==(const LayerTreeSettings& other) const;
+
+  void ToProtobuf(proto::LayerTreeSettings* proto) const;
+  void FromProtobuf(const proto::LayerTreeSettings& proto);
+
+  SchedulerSettings ToSchedulerSettings() const;
 
   RendererSettings renderer_settings;
   bool single_thread_proxy_scheduler;
@@ -71,23 +76,22 @@ class CC_EXPORT LayerTreeSettings {
   size_t max_memory_for_prepaint_percentage;
   bool strict_layer_property_change_checking;
   bool use_zero_copy;
-  bool use_persistent_map_for_gpu_memory_buffers;
+  bool use_partial_raster;
   bool enable_elastic_overscroll;
   // An array of image texture targets for each GpuMemoryBuffer format.
   std::vector<unsigned> use_image_texture_targets;
   bool ignore_root_layer_flings;
   size_t scheduled_raster_task_limit;
   bool use_occlusion_for_tile_prioritization;
-  bool record_full_layer;
   bool verify_property_trees;
+  bool use_property_trees;
   bool image_decode_tasks_enabled;
   bool use_compositor_animation_timelines;
   bool wait_for_beginframe_interval;
   int max_staging_buffer_usage_in_bytes;
+  ManagedMemoryPolicy memory_policy_;
 
   LayerTreeDebugState initial_debug_state;
-
-  SchedulerSettings ToSchedulerSettings() const;
 };
 
 }  // namespace cc

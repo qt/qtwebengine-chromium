@@ -9,8 +9,9 @@
 
 #include "builders/GrGLProgramBuilder.h"
 #include "GrProcessor.h"
-#include "GrGLFragmentProcessor.h"
 #include "GrGLPathRendering.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 #include "SkRTConf.h"
 #include "SkTSearch.h"
 
@@ -19,7 +20,7 @@ SK_CONF_DECLARE(bool, c_DisplayCache, "gpu.displayCache", false,
                 "Display program cache usage.");
 #endif
 
-typedef GrGLProgramDataManager::UniformHandle UniformHandle;
+typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
 
 struct GrGLGpu::ProgramCache::Entry {
     
@@ -76,13 +77,30 @@ GrGLGpu::ProgramCache::~ProgramCache() {
 #endif
 }
 
-void GrGLGpu::ProgramCache::abandon() {
+void GrGLGpu::ProgramCache::reset() {
     for (int i = 0; i < fCount; ++i) {
         SkASSERT(fEntries[i]->fProgram.get());
         fEntries[i]->fProgram->abandon();
         delete fEntries[i];
+        fEntries[i] = nullptr;
     }
     fCount = 0;
+
+    // zero out hash table
+    for (int i = 0; i < 1 << kHashBits; i++) {
+        fHashTable[i] = nullptr;
+    }
+
+    fCurrLRUStamp = 0;
+#ifdef PROGRAM_CACHE_STATS
+    fTotalRequests = 0;
+    fCacheMisses = 0;
+    fHashMisses = 0;
+#endif
+}
+
+void GrGLGpu::ProgramCache::abandon() {
+    this->reset();
 }
 
 int GrGLGpu::ProgramCache::search(const GrProgramDesc& desc) const {

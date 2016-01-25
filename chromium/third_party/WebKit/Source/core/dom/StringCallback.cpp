@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/StringCallback.h"
 
 #include "core/dom/ExecutionContext.h"
@@ -74,7 +73,7 @@ private:
 
 void StringCallback::scheduleCallback(StringCallback* callback, ExecutionContext* context, const String& data, const String& instrumentationName)
 {
-    context->postTask(FROM_HERE, DispatchCallbackTask::create(callback, data, instrumentationName));
+    context->postTask(BLINK_FROM_HERE, DispatchCallbackTask::create(callback, data, instrumentationName));
 }
 
 } // namespace blink

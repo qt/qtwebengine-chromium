@@ -85,16 +85,26 @@ specialize qw/vp9_filter_by_weight8x8 sse2 msa/;
 # dct
 #
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
-  # Note as optimized versions of these functions are added we need to add a check to ensure
-  # that when CONFIG_EMULATE_HARDWARE is on, it defaults to the C versions only.
-  add_proto qw/void vp9_iht4x4_16_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
-  specialize qw/vp9_iht4x4_16_add/;
+  # Force C versions if CONFIG_EMULATE_HARDWARE is 1
+  if (vpx_config("CONFIG_EMULATE_HARDWARE") eq "yes") {
+    add_proto qw/void vp9_iht4x4_16_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
+    specialize qw/vp9_iht4x4_16_add/;
 
-  add_proto qw/void vp9_iht8x8_64_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
-  specialize qw/vp9_iht8x8_64_add/;
+    add_proto qw/void vp9_iht8x8_64_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
+    specialize qw/vp9_iht8x8_64_add/;
 
-  add_proto qw/void vp9_iht16x16_256_add/, "const tran_low_t *input, uint8_t *output, int pitch, int tx_type";
-  specialize qw/vp9_iht16x16_256_add/;
+    add_proto qw/void vp9_iht16x16_256_add/, "const tran_low_t *input, uint8_t *output, int pitch, int tx_type";
+    specialize qw/vp9_iht16x16_256_add/;
+  } else {
+    add_proto qw/void vp9_iht4x4_16_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
+    specialize qw/vp9_iht4x4_16_add sse2/;
+
+    add_proto qw/void vp9_iht8x8_64_add/, "const tran_low_t *input, uint8_t *dest, int dest_stride, int tx_type";
+    specialize qw/vp9_iht8x8_64_add sse2/;
+
+    add_proto qw/void vp9_iht16x16_256_add/, "const tran_low_t *input, uint8_t *output, int pitch, int tx_type";
+    specialize qw/vp9_iht16x16_256_add sse2/;
+  }
 } else {
   # Force C versions if CONFIG_EMULATE_HARDWARE is 1
   if (vpx_config("CONFIG_EMULATE_HARDWARE") eq "yes") {
@@ -184,42 +194,6 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 #
 if (vpx_config("CONFIG_VP9_ENCODER") eq "yes") {
 
-add_proto qw/unsigned int vp9_avg_8x8/, "const uint8_t *, int p";
-specialize qw/vp9_avg_8x8 sse2 neon msa/;
-
-add_proto qw/unsigned int vp9_avg_4x4/, "const uint8_t *, int p";
-specialize qw/vp9_avg_4x4 sse2 msa/;
-
-add_proto qw/void vp9_minmax_8x8/, "const uint8_t *s, int p, const uint8_t *d, int dp, int *min, int *max";
-specialize qw/vp9_minmax_8x8 sse2/;
-
-add_proto qw/void vp9_hadamard_8x8/, "int16_t const *src_diff, int src_stride, int16_t *coeff";
-specialize qw/vp9_hadamard_8x8 sse2/, "$ssse3_x86_64_x86inc";
-
-add_proto qw/void vp9_hadamard_16x16/, "int16_t const *src_diff, int src_stride, int16_t *coeff";
-specialize qw/vp9_hadamard_16x16 sse2/;
-
-add_proto qw/int16_t vp9_satd/, "const int16_t *coeff, int length";
-specialize qw/vp9_satd sse2/;
-
-add_proto qw/void vp9_int_pro_row/, "int16_t *hbuf, uint8_t const *ref, const int ref_stride, const int height";
-specialize qw/vp9_int_pro_row sse2 neon/;
-
-add_proto qw/int16_t vp9_int_pro_col/, "uint8_t const *ref, const int width";
-specialize qw/vp9_int_pro_col sse2 neon/;
-
-add_proto qw/int vp9_vector_var/, "int16_t const *ref, int16_t const *src, const int bwl";
-specialize qw/vp9_vector_var neon sse2/;
-
-if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
-  add_proto qw/unsigned int vp9_highbd_avg_8x8/, "const uint8_t *, int p";
-  specialize qw/vp9_highbd_avg_8x8/;
-  add_proto qw/unsigned int vp9_highbd_avg_4x4/, "const uint8_t *, int p";
-  specialize qw/vp9_highbd_avg_4x4/;
-  add_proto qw/void vp9_highbd_minmax_8x8/, "const uint8_t *s, int p, const uint8_t *d, int dp, int *min, int *max";
-  specialize qw/vp9_highbd_minmax_8x8/;
-}
-
 # ENCODEMB INVOKE
 
 #
@@ -231,10 +205,14 @@ if (vpx_config("CONFIG_VP9_TEMPORAL_DENOISING") eq "yes") {
 }
 
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
-# the transform coefficients are held in 32-bit
-# values, so the assembler code for  vp9_block_error can no longer be used.
   add_proto qw/int64_t vp9_block_error/, "const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz";
   specialize qw/vp9_block_error/;
+
+  add_proto qw/int64_t vp9_highbd_block_error/, "const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz, int bd";
+  specialize qw/vp9_highbd_block_error/, "$sse2_x86inc";
+
+  add_proto qw/int64_t vp9_highbd_block_error_8bit/, "const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz";
+  specialize qw/vp9_highbd_block_error_8bit/, "$sse2_x86inc", "$avx_x86inc";
 
   add_proto qw/void vp9_quantize_fp/, "const tran_low_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr, tran_low_t *dqcoeff_ptr, const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan";
   specialize qw/vp9_quantize_fp/;
@@ -298,10 +276,7 @@ $vp9_full_search_sad_sse3=vp9_full_search_sadx3;
 $vp9_full_search_sad_sse4_1=vp9_full_search_sadx8;
 
 add_proto qw/int vp9_diamond_search_sad/, "const struct macroblock *x, const struct search_site_config *cfg,  struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv";
-specialize qw/vp9_diamond_search_sad/;
-
-add_proto qw/int vp9_full_range_search/, "const struct macroblock *x, const struct search_site_config *cfg, struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv";
-specialize qw/vp9_full_range_search/;
+specialize qw/vp9_diamond_search_sad avx/;
 
 add_proto qw/void vp9_temporal_filter_apply/, "uint8_t *frame1, unsigned int stride, uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count";
 specialize qw/vp9_temporal_filter_apply sse2 msa/;
@@ -309,9 +284,6 @@ specialize qw/vp9_temporal_filter_apply sse2 msa/;
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
   # ENCODEMB INVOKE
-
-  add_proto qw/int64_t vp9_highbd_block_error/, "const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz, int bd";
-  specialize qw/vp9_highbd_block_error sse2/;
 
   add_proto qw/void vp9_highbd_quantize_fp/, "const tran_low_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr, tran_low_t *dqcoeff_ptr, const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan";
   specialize qw/vp9_highbd_quantize_fp/;

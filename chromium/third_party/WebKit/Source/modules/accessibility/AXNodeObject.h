@@ -61,27 +61,22 @@ protected:
     bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
     const AXObject* inheritsPresentationalRoleFrom() const override;
     virtual AccessibilityRole determineAccessibilityRole();
-    AccessibilityRole determineAccessibilityRoleUtil();
+    virtual AccessibilityRole nativeAccessibilityRoleIgnoringAria() const;
     String accessibilityDescriptionForElements(WillBeHeapVector<RawPtrWillBeMember<Element>> &elements) const;
     void alterSliderValue(bool increase);
     String ariaAccessibilityDescription() const;
     String ariaAutoComplete() const;
-    void ariaLabelledbyElements(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const;
     AccessibilityRole determineAriaRoleAttribute() const;
-    void tokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
-    void elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName&) const;
-    void accessibilityChildrenFromAttribute(QualifiedName attr, AccessibilityChildrenVector&) const;
+    void accessibilityChildrenFromAttribute(QualifiedName attr, AXObject::AXObjectVector&) const;
 
     bool hasContentEditableAttributeSet() const;
     bool isTextControl() const override;
-    bool allowsTextRanges() const { return isTextControl(); }
     // This returns true if it's focusable but it's not content editable and it's not a control or ARIA control.
     bool isGenericFocusableElement() const;
     HTMLLabelElement* labelForElement(const Element*) const;
     AXObject* menuButtonForMenu() const;
     Element* menuItemElementForMenu() const;
     Element* mouseButtonListener() const;
-    String deprecatedPlaceholder() const;
     AccessibilityRole remapAriaRoleDueToParent(AccessibilityRole) const;
     bool isNativeCheckboxOrRadio() const;
     void setNode(Node*);
@@ -109,7 +104,7 @@ protected:
     bool isImage() const final;
     bool isImageButton() const;
     bool isInputImage() const final;
-    bool isLink() const final;
+    bool isLink() const override;
     bool isMenu() const final;
     bool isMenuButton() const final;
     bool isMeter() const final;
@@ -128,7 +123,6 @@ protected:
     bool isClickable() const final;
     bool isEnabled() const override;
     AccessibilityExpanded isExpanded() const override;
-    bool isIndeterminate() const final;
     bool isPressed() const final;
     bool isReadOnly() const override;
     bool isRequired() const final;
@@ -140,12 +134,10 @@ protected:
     // Properties of static elements.
     RGBA32 colorValue() const final;
     bool canvasHasFallbackContent() const final;
-    bool deprecatedExposesTitleUIElement() const override;
     int headingLevel() const final;
     unsigned hierarchicalLevel() const final;
     AccessibilityOrientation orientation() const override;
     String text() const override;
-    AXObject* deprecatedTitleUIElement() const override;
 
     // Properties of interactive elements.
     AccessibilityButtonState checkboxOrRadioValue() const final;
@@ -163,15 +155,12 @@ protected:
     String ariaLabelledbyAttribute() const final;
     AccessibilityRole ariaRoleAttribute() const final;
 
-    // Accessibility Text.
-    String deprecatedTextUnderElement(TextUnderElementMode) const override;
-    String deprecatedAccessibilityDescription() const override;
-    String deprecatedTitle(TextUnderElementMode) const override;
-    String deprecatedHelpText() const override;
-    String computedName() const override;
-
-    // New AX name calculation.
-    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*) const override;
+    // AX name calculation.
+    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*) const override;
+    String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector* descriptionObjects) const override;
+    String description(AXNameFrom, AXDescriptionFrom&, DescriptionSources*, AXRelatedObjectVector*) const override;
+    String placeholder(AXNameFrom, AXDescriptionFrom) const override;
+    bool nameFromLabelElement() const override;
 
     // Location and click point in frame-relative coordinates.
     LayoutRect elementRect() const override;
@@ -181,15 +170,15 @@ protected:
     AXObject* computeParentIfExists() const override;
 
     // Low-level accessibility tree exploration.
-    AXObject* firstChild() const override;
-    AXObject* nextSibling() const override;
+    AXObject* rawFirstChild() const override;
+    AXObject* rawNextSibling() const override;
     void addChildren() override;
     bool canHaveChildren() const override;
     void addChild(AXObject*);
     void insertChild(AXObject*, unsigned index);
 
     // DOM and Render tree access.
-    Element* actionElement() const final;
+    Element* actionElement() const override;
     Element* anchorElement() const override;
     Document* document() const override;
     Node* node() const override { return m_node; }
@@ -210,25 +199,17 @@ protected:
     int setSize() const override;
 
     // Aria-owns.
-    void computeAriaOwnsChildren(HeapVector<Member<AXObject>>& ownedChildren);
+    void computeAriaOwnsChildren(HeapVector<Member<AXObject>>& ownedChildren) const;
 
 private:
     RawPtrWillBeMember<Node> m_node;
 
-    String deprecatedAlternativeTextForWebArea() const;
-    void deprecatedAlternativeText(HeapVector<Member<AccessibilityText>>&) const;
-    void deprecatedAriaLabelledbyText(HeapVector<Member<AccessibilityText>>&) const;
-
-    String textFromDescendants(AXObjectSet& visited) const;
-    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXObjectVector* nameObjects) const;
-    String textFromAriaLabelledby(AXObjectSet& visited, AXObjectVector* nameObjects) const;
-    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*, bool* foundTextAlternative) const;
+    bool isNativeCheckboxInMixedState() const;
+    String textFromDescendants(AXObjectSet& visited, bool recursive) const override;
+    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*, bool* foundTextAlternative) const;
     float stepValueForRange() const;
-    AXObject* findChildWithTagName(const HTMLQualifiedName&) const;
     bool isDescendantOfElementType(const HTMLQualifiedName& tagName) const;
 };
-
-DEFINE_AX_OBJECT_TYPE_CASTS(AXNodeObject, isAXNodeObject());
 
 } // namespace blink
 

@@ -159,40 +159,36 @@ static int tls1_P_hash(uint8_t *out, size_t out_len, const EVP_MD *md,
                        const uint8_t *seed1, size_t seed1_len,
                        const uint8_t *seed2, size_t seed2_len,
                        const uint8_t *seed3, size_t seed3_len) {
-  size_t chunk;
   HMAC_CTX ctx, ctx_tmp, ctx_init;
   uint8_t A1[EVP_MAX_MD_SIZE];
   unsigned A1_len;
   int ret = 0;
 
-  chunk = EVP_MD_size(md);
+  size_t chunk = EVP_MD_size(md);
 
   HMAC_CTX_init(&ctx);
   HMAC_CTX_init(&ctx_tmp);
   HMAC_CTX_init(&ctx_init);
   if (!HMAC_Init_ex(&ctx_init, secret, secret_len, md, NULL) ||
       !HMAC_CTX_copy_ex(&ctx, &ctx_init) ||
-      (seed1_len && !HMAC_Update(&ctx, seed1, seed1_len)) ||
-      (seed2_len && !HMAC_Update(&ctx, seed2, seed2_len)) ||
-      (seed3_len && !HMAC_Update(&ctx, seed3, seed3_len)) ||
+      !HMAC_Update(&ctx, seed1, seed1_len) ||
+      !HMAC_Update(&ctx, seed2, seed2_len) ||
+      !HMAC_Update(&ctx, seed3, seed3_len) ||
       !HMAC_Final(&ctx, A1, &A1_len)) {
     goto err;
   }
 
   for (;;) {
-    /* Reinit mac contexts. */
-    if (!HMAC_CTX_copy_ex(&ctx, &ctx_init) ||
-        !HMAC_Update(&ctx, A1, A1_len) ||
-        (out_len > chunk && !HMAC_CTX_copy_ex(&ctx_tmp, &ctx)) ||
-        (seed1_len && !HMAC_Update(&ctx, seed1, seed1_len)) ||
-        (seed2_len && !HMAC_Update(&ctx, seed2, seed2_len)) ||
-        (seed3_len && !HMAC_Update(&ctx, seed3, seed3_len))) {
-      goto err;
-    }
-
     unsigned len;
     uint8_t hmac[EVP_MAX_MD_SIZE];
-    if (!HMAC_Final(&ctx, hmac, &len)) {
+    if (!HMAC_CTX_copy_ex(&ctx, &ctx_init) ||
+        !HMAC_Update(&ctx, A1, A1_len) ||
+        /* Save a copy of |ctx| to compute the next A1 value below. */
+        (out_len > chunk && !HMAC_CTX_copy_ex(&ctx_tmp, &ctx)) ||
+        !HMAC_Update(&ctx, seed1, seed1_len) ||
+        !HMAC_Update(&ctx, seed2, seed2_len) ||
+        !HMAC_Update(&ctx, seed3, seed3_len) ||
+        !HMAC_Final(&ctx, hmac, &len)) {
       goto err;
     }
     assert(len == chunk);
@@ -291,8 +287,19 @@ int tls1_change_cipher_state(SSL *s, int which) {
   const uint8_t *key_data;
 
   /* Reset sequence number to zero. */
-  if (!SSL_IS_DTLS(s)) {
-    memset(is_read ? s->s3->read_sequence : s->s3->write_sequence, 0, 8);
+  if (is_read) {
+    if (SSL_IS_DTLS(s)) {
+      s->d1->r_epoch++;
+      memset(&s->d1->bitmap, 0, sizeof(s->d1->bitmap));
+    }
+    memset(s->s3->read_sequence, 0, sizeof(s->s3->read_sequence));
+  } else {
+    if (SSL_IS_DTLS(s)) {
+      s->d1->w_epoch++;
+      memcpy(s->d1->last_write_sequence, s->s3->write_sequence,
+             sizeof(s->s3->write_sequence));
+    }
+    memset(s->s3->write_sequence, 0, sizeof(s->s3->write_sequence));
   }
 
   mac_secret_len = s->s3->tmp.new_mac_secret_len;
@@ -358,19 +365,7 @@ int tls1_change_cipher_state(SSL *s, int which) {
       evp_aead_seal, ssl3_version_from_wire(s, s->version),
       s->s3->tmp.new_cipher, key, key_len, mac_secret, mac_secret_len, iv,
       iv_len);
-  if (s->aead_write_ctx == NULL) {
-    return 0;
-  }
-
-  s->s3->need_record_splitting = 0;
-  if (!SSL_USE_EXPLICIT_IV(s) &&
-      (s->mode & SSL_MODE_CBC_RECORD_SPLITTING) != 0 &&
-      SSL_CIPHER_is_block_cipher(s->s3->tmp.new_cipher)) {
-    /* Enable 1/n-1 record-splitting to randomize the IV. See
-     * https://www.openssl.org/~bodo/tls-cbc.txt and the BEAST attack. */
-    s->s3->need_record_splitting = 1;
-  }
-  return 1;
+  return s->aead_write_ctx != NULL;
 }
 
 int tls1_setup_key_block(SSL *s) {

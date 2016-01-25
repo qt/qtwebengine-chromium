@@ -5,6 +5,7 @@
 #include "content/browser/android/java/gin_java_bridge_message_filter.h"
 
 #include "base/auto_reset.h"
+#include "build/build_config.h"
 #include "content/browser/android/java/gin_java_bridge_dispatcher_host.h"
 #include "content/browser/android/java/java_bridge_thread.h"
 #include "content/common/gin_java_bridge_messages.h"
@@ -43,7 +44,8 @@ void GinJavaBridgeMessageFilter::OnDestruct() const {
 bool GinJavaBridgeMessageFilter::OnMessageReceived(
     const IPC::Message& message) {
   DCHECK(JavaBridgeThread::CurrentlyOn());
-  base::AutoReset<int32> routing_id(&current_routing_id_, message.routing_id());
+  base::AutoReset<int32_t> routing_id(&current_routing_id_,
+                                      message.routing_id());
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GinJavaBridgeMessageFilter, message)
     IPC_MESSAGE_HANDLER(GinJavaBridgeHostMsg_GetMethods, OnGetMethods)
@@ -103,12 +105,16 @@ GinJavaBridgeDispatcherHost* GinJavaBridgeMessageFilter::FindHost() {
   auto iter = hosts_.find(current_routing_id_);
   if (iter != hosts_.end())
     return iter->second;
-  // This is usually OK -- we can receive messages from RenderFrames for
-  // which the corresponding host part has already been destroyed. That means,
-  // any references to Java objects that the host was holding were already
-  // released (with the death of ContentViewCore), so we can just drop such
-  // messages.
-  LOG(WARNING) << "WebView: Unknown frame routing id: " << current_routing_id_;
+  // Not being able to find a host is OK -- we can receive messages from
+  // RenderFrames for which the corresponding host part has already been
+  // destroyed. That means, any references to Java objects that the host was
+  // holding were already released (with the death of ContentViewCore), so we
+  // can just ignore such messages.
+  // RenderProcessHostImpl does the same -- if it can't find a listener
+  // for the message's routing id, it just drops the message silently.
+  // The only action RenderProcessHostImpl does is sending a reply to incoming
+  // synchronous messages, but as we handle all our messages using
+  // IPC_MESSAGE_HANDLER, the reply will be sent automatically.
   return nullptr;
 }
 
@@ -160,6 +166,13 @@ void GinJavaBridgeMessageFilter::OnObjectWrapperDeleted(
   GinJavaBridgeDispatcherHost* host = FindHost();
   if (host)
     host->OnObjectWrapperDeleted(current_routing_id_, object_id);
+}
+
+// static
+void GinJavaBridgeMessageFilter::RemoveFilter(
+    GinJavaBridgeDispatcherHost* host) {
+  RenderProcessHost* rph = host->web_contents()->GetRenderProcessHost();
+  rph->RemoveUserData(kGinJavaBridgeMessageFilterKey);
 }
 
 }  // namespace content

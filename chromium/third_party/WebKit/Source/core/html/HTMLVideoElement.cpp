@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/HTMLVideoElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -34,6 +33,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Fullscreen.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/ImageBitmap.h"
 #include "core/frame/Settings.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutImage.h"
@@ -112,7 +112,7 @@ bool HTMLVideoElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLMediaElement::isPresentationAttribute(name);
 }
 
-void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == posterAttr) {
         // In case the poster attribute is set after playback, don't update the
@@ -134,7 +134,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (webMediaPlayer())
             webMediaPlayer()->setPoster(posterImageURL());
     } else {
-        HTMLMediaElement::parseAttribute(name, value);
+        HTMLMediaElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -318,6 +318,29 @@ bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigi
 FloatSize HTMLVideoElement::elementSize() const
 {
     return FloatSize(videoWidth(), videoHeight());
+}
+
+IntSize HTMLVideoElement::bitmapSourceSize() const
+{
+    return IntSize(videoWidth(), videoHeight());
+}
+
+ScriptPromise HTMLVideoElement::createImageBitmap(ScriptState* scriptState, EventTarget& eventTarget, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
+{
+    ASSERT(eventTarget.toDOMWindow());
+    if (networkState() == HTMLMediaElement::NETWORK_EMPTY) {
+        exceptionState.throwDOMException(InvalidStateError, "The provided element has not retrieved data.");
+        return ScriptPromise();
+    }
+    if (readyState() <= HTMLMediaElement::HAVE_METADATA) {
+        exceptionState.throwDOMException(InvalidStateError, "The provided element's player has no current data.");
+        return ScriptPromise();
+    }
+    if (!sw || !sh) {
+        exceptionState.throwDOMException(IndexSizeError, String::format("The source %s provided is 0.", sw ? "height" : "width"));
+        return ScriptPromise();
+    }
+    return ImageBitmapSource::fulfillImageBitmap(scriptState, ImageBitmap::create(this, IntRect(sx, sy, sw, sh), eventTarget.toDOMWindow()->document()));
 }
 
 } // namespace blink

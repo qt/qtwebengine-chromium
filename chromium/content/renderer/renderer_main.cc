@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <utility>
+
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
@@ -16,9 +19,12 @@
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
+#include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
+#include "components/startup_metric_utils/common/startup_metric_messages.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
@@ -56,6 +62,10 @@
 #include "ui/ozone/public/client_native_pixmap_factory.h"
 #endif
 
+#if defined(MOJO_SHELL_CLIENT)
+#include "content/common/mojo/mojo_shell_connection_impl.h"
+#endif
+
 namespace content {
 namespace {
 // This function provides some ways to test crash and assertion handling
@@ -78,12 +88,22 @@ base::LazyInstance<scoped_ptr<ui::ClientNativePixmapFactory>> g_pixmap_factory =
 
 // mainline routine for running as the Renderer process
 int RendererMain(const MainFunctionParams& parameters) {
-  TRACE_EVENT_BEGIN_ETW("RendererMain", 0, "");
+  // Don't use the TRACE_EVENT0 macro because the tracing infrastructure doesn't
+  // expect synchronous events around the main loop of a thread.
+  TRACE_EVENT_ASYNC_BEGIN0("startup", "RendererMain", 0);
+
+  const base::TimeTicks renderer_main_entry_time = base::TimeTicks::Now();
+
   base::trace_event::TraceLog::GetInstance()->SetProcessName("Renderer");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
 
   const base::CommandLine& parsed_command_line = parameters.command_line;
+
+#if defined(MOJO_SHELL_CLIENT)
+  if (parsed_command_line.HasSwitch(switches::kEnableMojoShellConnection))
+    MojoShellConnectionImpl::Create();
+#endif
 
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
@@ -127,15 +147,13 @@ int RendererMain(const MainFunctionParams& parameters) {
   // http://crbug.com/306348#c24 for details.
   scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
   scoped_ptr<base::MessageLoop> main_message_loop(
-      new base::MessageLoop(pump.Pass()));
+      new base::MessageLoop(std::move(pump)));
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
   scoped_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
 #endif
 
   base::PlatformThread::SetName("CrRendererMain");
-  scoped_ptr<scheduler::RendererScheduler> renderer_scheduler(
-      scheduler::RendererScheduler::Create());
 
   bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
 
@@ -164,7 +182,10 @@ int RendererMain(const MainFunctionParams& parameters) {
   feature_list->InitializeFromCommandLine(
       parsed_command_line.GetSwitchValueASCII(switches::kEnableFeatures),
       parsed_command_line.GetSwitchValueASCII(switches::kDisableFeatures));
-  base::FeatureList::SetInstance(feature_list.Pass());
+  base::FeatureList::SetInstance(std::move(feature_list));
+
+  scoped_ptr<scheduler::RendererScheduler> renderer_scheduler(
+      scheduler::RendererScheduler::Create());
 
   // PlatformInitialize uses FieldTrials, so this must happen later.
   platform.PlatformInitialize();
@@ -186,17 +207,21 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    RenderThreadImpl::Create(main_message_loop.Pass(),
-                             renderer_scheduler.Pass());
+    RenderThreadImpl::Create(std::move(main_message_loop),
+                             std::move(renderer_scheduler));
 #endif
     bool run_loop = true;
     if (!no_sandbox)
       run_loop = platform.EnableSandbox();
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    RenderThreadImpl::Create(main_message_loop.Pass(),
-                             renderer_scheduler.Pass());
+    RenderThreadImpl::Create(std::move(main_message_loop),
+                             std::move(renderer_scheduler));
 #endif
+    RenderThreadImpl::current()->Send(
+        new StartupMetricHostMsg_RecordRendererMainEntryTime(
+            renderer_main_entry_time));
+
     base::HighResolutionTimerManager hi_res_timer_manager;
 
     if (run_loop) {
@@ -204,9 +229,9 @@ int RendererMain(const MainFunctionParams& parameters) {
       if (pool)
         pool->Recycle();
 #endif
-      TRACE_EVENT_BEGIN_ETW("RendererMain.START_MSG_LOOP", 0, 0);
+      TRACE_EVENT_ASYNC_BEGIN0("toplevel", "RendererMain.START_MSG_LOOP", 0);
       base::MessageLoop::current()->Run();
-      TRACE_EVENT_END_ETW("RendererMain.START_MSG_LOOP", 0, 0);
+      TRACE_EVENT_ASYNC_END0("toplevel", "RendererMain.START_MSG_LOOP", 0);
     }
 #if defined(LEAK_SANITIZER)
     // Run leak detection before RenderProcessImpl goes out of scope. This helps
@@ -215,7 +240,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 #endif
   }
   platform.PlatformUninitialize();
-  TRACE_EVENT_END_ETW("RendererMain", 0, "");
+  TRACE_EVENT_ASYNC_END0("startup", "RendererMain", 0);
   return 0;
 }
 

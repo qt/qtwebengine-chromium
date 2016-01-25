@@ -28,7 +28,7 @@
 
 // FIXME: explain all uses of [DoNotCheckSecurity]
 [
-    CheckSecurity=Frame,
+    CheckSecurity=Receiver,
     ImplementedAs=DOMWindow,
     PrimaryGlobal,
 ] interface Window : EventTarget {
@@ -60,9 +60,9 @@
     // FIXME: opener should be of type any.
     [DoNotCheckSecurity, Custom=Setter] attribute Window opener;
     [Replaceable, DoNotCheckSecurity] readonly attribute Window parent;
-    [CheckSecurity=Node, Custom=Getter] readonly attribute Element? frameElement;
+    [CheckSecurity=ReturnValue, Custom=Getter] readonly attribute Element? frameElement;
     // FIXME: open() should have 4 optional arguments with defaults.
-    [Custom] Window open(DOMString url, DOMString target, optional DOMString features);
+    [Custom] Window? open(DOMString url, DOMString target, optional DOMString features);
     // FIXME: These getters should not have [NotEnumerable].
     [NotEnumerable, DoNotCheckSecurity] getter Window (unsigned long index);
     [Custom, NotEnumerable, DoNotCheckSecurity] getter object (DOMString name);
@@ -94,7 +94,7 @@
     // CSS Object Model (CSSOM)
     // http://dev.w3.org/csswg/cssom/#extensions-to-the-window-interface
     // FIXME: The optional pseudoElt argument should have no default.
-    [NewObject, TypeChecking=Interface] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString? pseudoElt = null);
+    [NewObject] CSSStyleDeclaration getComputedStyle(Element elt, optional DOMString? pseudoElt = null);
 
     // CSSOM View Module
     // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-window-interface
@@ -154,8 +154,8 @@
     [MeasureAs=WindowDefaultStatus] attribute DOMString defaultStatus;
     [MeasureAs=WindowDefaultstatus, ImplementedAs=defaultStatus] attribute DOMString defaultstatus;
     [MeasureAs=StyleMedia] readonly attribute StyleMedia styleMedia;
-    [DeprecateAs=GetMatchedCSSRules] CSSRuleList getMatchedCSSRules([Default=Undefined] optional Element element,
-                                                                    [TreatUndefinedAs=NullString, Default=Undefined] optional DOMString? pseudoElement);
+    [DeprecateAs=GetMatchedCSSRules, LegacyInterfaceTypeChecking] CSSRuleList getMatchedCSSRules([Default=Undefined] optional Element element,
+                                                                                                 [TreatUndefinedAs=NullString, Default=Undefined] optional DOMString? pseudoElement);
     // This is the interface orientation in degrees. Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
     //  90 is when rotated counter clockwise.
@@ -174,10 +174,6 @@
     attribute EventHandler onanimationstart;
     [RuntimeEnabled=OrientationEvent] attribute EventHandler onorientationchange;
     attribute EventHandler onsearch;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchcancel;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchend;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchmove;
-    [RuntimeEnabled=Touch] attribute EventHandler ontouchstart;
     attribute EventHandler ontransitionend;
     attribute EventHandler onwebkitanimationend;
     attribute EventHandler onwebkitanimationiteration;

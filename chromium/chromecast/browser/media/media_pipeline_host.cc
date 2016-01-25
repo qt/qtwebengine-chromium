@@ -4,6 +4,8 @@
 
 #include "chromecast/browser/media/media_pipeline_host.h"
 
+#include <stddef.h>
+
 #include <utility>
 
 #include "base/bind.h"
@@ -53,10 +55,9 @@ MediaPipelineHost::~MediaPipelineHost() {
   media_track_map_.clear();
 }
 
-void MediaPipelineHost::Initialize(
-    LoadType load_type,
-    const MediaPipelineClient& client,
-    const CreateDeviceComponentsCB& create_device_components_cb) {
+void MediaPipelineHost::Initialize(LoadType load_type,
+                                   const MediaPipelineClient& client,
+                                   const CreateBackendCB& create_backend_cb) {
   DCHECK(thread_checker_.CalledOnValidThread());
   media_pipeline_.reset(new MediaPipelineImpl());
   task_runner_.reset(new TaskRunnerImpl());
@@ -67,8 +68,8 @@ void MediaPipelineHost::Initialize(
   MediaPipelineDeviceParams default_parameters(sync_type, task_runner_.get());
 
   media_pipeline_->SetClient(client);
-  media_pipeline_->Initialize(
-      load_type, create_device_components_cb.Run(default_parameters).Pass());
+  media_pipeline_->Initialize(load_type,
+                              create_backend_cb.Run(default_parameters));
 }
 
 void MediaPipelineHost::SetAvPipe(
@@ -81,12 +82,12 @@ void MediaPipelineHost::SetAvPipe(
 
   size_t shared_mem_size = shared_mem->requested_size();
   scoped_ptr<MediaMemoryChunk> shared_memory_chunk(
-      new SharedMemoryChunk(shared_mem.Pass(), shared_mem_size));
+      new SharedMemoryChunk(std::move(shared_mem), shared_mem_size));
   scoped_ptr<MediaMessageFifo> media_message_fifo(
-      new MediaMessageFifo(shared_memory_chunk.Pass(), shared_mem_size));
+      new MediaMessageFifo(std::move(shared_memory_chunk), shared_mem_size));
   media_message_fifo->ObserveReadActivity(pipe_read_activity_cb);
   scoped_ptr<CodedFrameProviderHost> frame_provider_host(
-      new CodedFrameProviderHost(media_message_fifo.Pass()));
+      new CodedFrameProviderHost(std::move(media_message_fifo)));
 
   MediaTrackMap::iterator it = media_track_map_.find(track_id);
   MediaTrackHost* media_track_host;
@@ -99,13 +100,10 @@ void MediaPipelineHost::SetAvPipe(
   }
   media_track_host->pipe_write_cb = frame_provider_host->GetFifoWriteEventCb();
 
-  scoped_ptr<CodedFrameProvider> frame_provider(frame_provider_host.release());
   if (track_id == kAudioTrackId) {
-    media_pipeline_->GetAudioPipelineImpl()->SetCodedFrameProvider(
-        frame_provider.Pass());
+    audio_frame_provider_ = std::move(frame_provider_host);
   } else {
-    media_pipeline_->GetVideoPipelineImpl()->SetCodedFrameProvider(
-        frame_provider.Pass());
+    video_frame_provider_ = std::move(frame_provider_host);
   }
   av_pipe_set_cb.Run();
 }
@@ -117,21 +115,19 @@ void MediaPipelineHost::AudioInitialize(
     const ::media::PipelineStatusCB& status_cb) {
   DCHECK(thread_checker_.CalledOnValidThread());
   CHECK(track_id == kAudioTrackId);
-  media_pipeline_->GetAudioPipeline()->SetClient(client);
-  media_pipeline_->InitializeAudio(
-      config, scoped_ptr<CodedFrameProvider>(), status_cb);
+  media_pipeline_->InitializeAudio(config, client,
+                                   std::move(audio_frame_provider_), status_cb);
 }
 
 void MediaPipelineHost::VideoInitialize(
     TrackId track_id,
     const VideoPipelineClient& client,
-    const std::vector<::media::VideoDecoderConfig>& configs,
+    const std::vector< ::media::VideoDecoderConfig>& configs,
     const ::media::PipelineStatusCB& status_cb) {
   DCHECK(thread_checker_.CalledOnValidThread());
   CHECK(track_id == kVideoTrackId);
-  media_pipeline_->GetVideoPipeline()->SetClient(client);
-  media_pipeline_->InitializeVideo(
-      configs, scoped_ptr<CodedFrameProvider>(), status_cb);
+  media_pipeline_->InitializeVideo(configs, client,
+                                   std::move(video_frame_provider_), status_cb);
 }
 
 void MediaPipelineHost::StartPlayingFrom(base::TimeDelta time) {
@@ -157,7 +153,7 @@ void MediaPipelineHost::SetPlaybackRate(double playback_rate) {
 void MediaPipelineHost::SetVolume(TrackId track_id, float volume) {
   DCHECK(thread_checker_.CalledOnValidThread());
   CHECK(track_id == kAudioTrackId);
-  media_pipeline_->GetAudioPipeline()->SetVolume(volume);
+  media_pipeline_->SetVolume(volume);
 }
 
 void MediaPipelineHost::SetCdm(BrowserCdmCast* cdm) {

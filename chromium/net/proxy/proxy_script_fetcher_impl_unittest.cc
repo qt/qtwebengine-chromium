@@ -5,9 +5,11 @@
 #include "net/proxy/proxy_script_fetcher_impl.h"
 
 #include <string>
+#include <utility>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,7 +26,7 @@
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/transport_security_state.h"
 #include "net/ssl/ssl_config_service_defaults.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
@@ -76,12 +78,11 @@ class RequestContext : public URLRequestContext {
     params.proxy_service = proxy_service();
     params.ssl_config_service = ssl_config_service();
     params.http_server_properties = http_server_properties();
-    scoped_refptr<HttpNetworkSession> network_session(
-        new HttpNetworkSession(params));
-    storage_.set_http_transaction_factory(
-        make_scoped_ptr(new HttpCache(network_session.get(),
-                                      HttpCache::DefaultBackend::InMemory(0)))
-            .Pass());
+    storage_.set_http_network_session(
+        make_scoped_ptr(new HttpNetworkSession(params)));
+    storage_.set_http_transaction_factory(make_scoped_ptr(
+        new HttpCache(storage_.http_network_session(),
+                      HttpCache::DefaultBackend::InMemory(0), false)));
     scoped_ptr<URLRequestJobFactoryImpl> job_factory =
         make_scoped_ptr(new URLRequestJobFactoryImpl());
 #if !defined(DISABLE_FILE_SUPPORT)
@@ -89,7 +90,7 @@ class RequestContext : public URLRequestContext {
                                     make_scoped_ptr(new FileProtocolHandler(
                                         base::ThreadTaskRunnerHandle::Get())));
 #endif
-    storage_.set_job_factory(job_factory.Pass());
+    storage_.set_job_factory(std::move(job_factory));
   }
 
   ~RequestContext() override { AssertNoURLRequests(); }
@@ -187,15 +188,13 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
 
 class ProxyScriptFetcherImplTest : public PlatformTest {
  public:
-  ProxyScriptFetcherImplTest()
-      : test_server_(SpawnedTestServer::TYPE_HTTP,
-                     SpawnedTestServer::kLocalhost,
-                     base::FilePath(kDocRoot)) {
+  ProxyScriptFetcherImplTest() {
+    test_server_.AddDefaultHandlers(base::FilePath(kDocRoot));
     context_.set_network_delegate(&network_delegate_);
   }
 
  protected:
-  SpawnedTestServer test_server_;
+  EmbeddedTestServer test_server_;
   BasicNetworkDelegate network_delegate_;
   RequestContext context_;
 };
@@ -233,7 +232,7 @@ TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
   ProxyScriptFetcherImpl pac_fetcher(&context_);
 
   { // Fetch a PAC with mime type "text/plain"
-    GURL url(test_server_.GetURL("files/pac.txt"));
+    GURL url(test_server_.GetURL("/pac.txt"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -242,7 +241,7 @@ TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
     EXPECT_EQ(ASCIIToUTF16("-pac.txt-\n"), text);
   }
   { // Fetch a PAC with mime type "text/html"
-    GURL url(test_server_.GetURL("files/pac.html"));
+    GURL url(test_server_.GetURL("/pac.html"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -251,7 +250,7 @@ TEST_F(ProxyScriptFetcherImplTest, HttpMimeType) {
     EXPECT_EQ(ASCIIToUTF16("-pac.html-\n"), text);
   }
   { // Fetch a PAC with mime type "application/x-ns-proxy-autoconfig"
-    GURL url(test_server_.GetURL("files/pac.nsproxy"));
+    GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -267,7 +266,7 @@ TEST_F(ProxyScriptFetcherImplTest, HttpStatusCode) {
   ProxyScriptFetcherImpl pac_fetcher(&context_);
 
   { // Fetch a PAC which gives a 500 -- FAIL
-    GURL url(test_server_.GetURL("files/500.pac"));
+    GURL url(test_server_.GetURL("/500.pac"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -276,7 +275,7 @@ TEST_F(ProxyScriptFetcherImplTest, HttpStatusCode) {
     EXPECT_TRUE(text.empty());
   }
   { // Fetch a PAC which gives a 404 -- FAIL
-    GURL url(test_server_.GetURL("files/404.pac"));
+    GURL url(test_server_.GetURL("/404.pac"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -293,7 +292,7 @@ TEST_F(ProxyScriptFetcherImplTest, ContentDisposition) {
 
   // Fetch PAC scripts via HTTP with a Content-Disposition header -- should
   // have no effect.
-  GURL url(test_server_.GetURL("files/downloadable.pac"));
+  GURL url(test_server_.GetURL("/downloadable.pac"));
   base::string16 text;
   TestCompletionCallback callback;
   int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -309,7 +308,7 @@ TEST_F(ProxyScriptFetcherImplTest, NoCache) {
   ProxyScriptFetcherImpl pac_fetcher(&context_);
 
   // Fetch a PAC script whose HTTP headers make it cacheable for 1 hour.
-  GURL url(test_server_.GetURL("files/cacheable_1hr.pac"));
+  GURL url(test_server_.GetURL("/cacheable_1hr.pac"));
   {
     base::string16 text;
     TestCompletionCallback callback;
@@ -320,7 +319,7 @@ TEST_F(ProxyScriptFetcherImplTest, NoCache) {
   }
 
   // Kill the HTTP server.
-  ASSERT_TRUE(test_server_.Stop());
+  ASSERT_TRUE(test_server_.ShutdownAndWaitUntilComplete());
 
   // Try to fetch the file again. Since the server is not running anymore, the
   // call should fail, thus indicating that the file was not fetched from the
@@ -346,7 +345,7 @@ TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
 
   // These two URLs are the same file, but are http:// vs file://
   GURL urls[] = {
-    test_server_.GetURL("files/large-pac.nsproxy"),
+    test_server_.GetURL("/large-pac.nsproxy"),
 #if !defined(DISABLE_FILE_SUPPORT)
     GetTestFileUrl("large-pac.nsproxy")
 #endif
@@ -368,7 +367,7 @@ TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
   pac_fetcher.SetSizeConstraint(prev_size);
 
   { // Make sure we can still fetch regular URLs.
-    GURL url(test_server_.GetURL("files/pac.nsproxy"));
+    GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -390,7 +389,7 @@ TEST_F(ProxyScriptFetcherImplTest, Hang) {
   // Try fetching a URL which takes 1.2 seconds. We should abort the request
   // after 500 ms, and fail with a timeout error.
   {
-    GURL url(test_server_.GetURL("slow/proxy.pac?1.2"));
+    GURL url(test_server_.GetURL("/slow/proxy.pac?1.2"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -403,7 +402,7 @@ TEST_F(ProxyScriptFetcherImplTest, Hang) {
   pac_fetcher.SetTimeoutConstraint(prev_timeout);
 
   { // Make sure we can still fetch regular URLs.
-    GURL url(test_server_.GetURL("files/pac.nsproxy"));
+    GURL url(test_server_.GetURL("/pac.nsproxy"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -423,7 +422,7 @@ TEST_F(ProxyScriptFetcherImplTest, Encodings) {
 
   // Test a response that is gzip-encoded -- should get inflated.
   {
-    GURL url(test_server_.GetURL("files/gzipped_pac"));
+    GURL url(test_server_.GetURL("/gzipped_pac"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());
@@ -435,7 +434,7 @@ TEST_F(ProxyScriptFetcherImplTest, Encodings) {
   // Test a response that was served as UTF-16 (BE). It should
   // be converted to UTF8.
   {
-    GURL url(test_server_.GetURL("files/utf16be_pac"));
+    GURL url(test_server_.GetURL("/utf16be_pac"));
     base::string16 text;
     TestCompletionCallback callback;
     int result = pac_fetcher.Fetch(url, &text, callback.callback());

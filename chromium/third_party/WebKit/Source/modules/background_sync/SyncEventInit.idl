@@ -3,5 +3,6 @@
 // found in the LICENSE file.
 
 dictionary SyncEventInit : ExtendableEventInit {
-    required SyncRegistration registration;
+    required DOMString tag;
+    boolean lastChance = false;
 };

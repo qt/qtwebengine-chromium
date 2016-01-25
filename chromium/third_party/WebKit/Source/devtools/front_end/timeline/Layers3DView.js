@@ -39,7 +39,7 @@ WebInspector.Layers3DView = function(layerViewHost)
     WebInspector.VBox.call(this);
     this.element.classList.add("layers-3d-view");
     this._failBanner = new WebInspector.VBox();
-    this._failBanner.element.classList.add("fail-banner", "fill");
+    this._failBanner.element.classList.add("banner");
     this._failBanner.element.createTextChild(WebInspector.UIString("Layer information is not yet available."));
 
     this._layerViewHost = layerViewHost;
@@ -66,7 +66,6 @@ WebInspector.Layers3DView = function(layerViewHost)
     this._chromeTextures = [];
     this._rects = [];
 
-    WebInspector.moduleSetting("showPaintRects").addChangeListener(this._update, this);
     this._layerViewHost.showInternalLayersSetting().addChangeListener(this._update, this);
 }
 
@@ -191,13 +190,16 @@ WebInspector.Layers3DView.prototype = {
 
     onResize: function()
     {
+        this._resizeCanvas();
         this._update();
     },
 
     wasShown: function()
     {
-        if (this._needsUpdate)
-            this._update();
+        if (!this._needsUpdate)
+            return;
+        this._resizeCanvas();
+        this._update();
     },
 
     /**
@@ -280,8 +282,6 @@ WebInspector.Layers3DView.prototype = {
     {
         this._canvasElement.width = this._canvasElement.offsetWidth * window.devicePixelRatio;
         this._canvasElement.height = this._canvasElement.offsetHeight * window.devicePixelRatio;
-        this._gl.viewportWidth = this._canvasElement.width;
-        this._gl.viewportHeight = this._canvasElement.height;
     },
 
     _updateTransformAndConstraints: function()
@@ -395,15 +395,6 @@ WebInspector.Layers3DView.prototype = {
     },
 
     /**
-     * @param {!WebInspector.Layers3DView.OutlineType} type
-     * @param {!WebInspector.LayerView.Selection} selection
-     */
-    _isSelectionActive: function(type, selection)
-    {
-        return this._lastSelection[type] && this._lastSelection[type].isEqual(selection);
-    },
-
-    /**
      * @param {!WebInspector.Layer} layer
      * @return {number}
      */
@@ -455,8 +446,8 @@ WebInspector.Layers3DView.prototype = {
     _appendRect: function(rect)
     {
         var selection = rect.relatedObject;
-        var isSelected = this._isSelectionActive(WebInspector.Layers3DView.OutlineType.Selected, selection);
-        var isHovered = this._isSelectionActive(WebInspector.Layers3DView.OutlineType.Hovered, selection);
+        var isSelected = WebInspector.LayerView.Selection.isEqual(this._lastSelection[WebInspector.Layers3DView.OutlineType.Selected], selection);
+        var isHovered = WebInspector.LayerView.Selection.isEqual(this._lastSelection[WebInspector.Layers3DView.OutlineType.Hovered], selection);
         if (isSelected) {
             rect.borderColor = WebInspector.Layers3DView.SelectedBorderColor;
         } else if (isHovered) {
@@ -665,8 +656,9 @@ WebInspector.Layers3DView.prototype = {
             return;
         }
         this._failBanner.detach();
+        this._gl.viewportWidth = this._canvasElement.width;
+        this._gl.viewportHeight = this._canvasElement.height;
 
-        this._resizeCanvas();
         this._calculateDepthsAndVisibility();
         this._calculateRects();
         this._updateTransformAndConstraints();
@@ -687,7 +679,7 @@ WebInspector.Layers3DView.prototype = {
         var fragment = this.element.ownerDocument.createDocumentFragment();
         fragment.createChild("div").textContent = WebInspector.UIString("Can't display layers,");
         fragment.createChild("div").textContent = WebInspector.UIString("WebGL support is disabled in your browser.");
-        fragment.appendChild(WebInspector.formatLocalized("Check %s for possible reasons.", [WebInspector.linkifyURLAsNode("about:gpu", undefined, undefined, true)], ""));
+        fragment.appendChild(WebInspector.formatLocalized("Check %s for possible reasons.", [WebInspector.linkifyURLAsNode("about:gpu", undefined, undefined, true)]));
         return fragment;
     },
 

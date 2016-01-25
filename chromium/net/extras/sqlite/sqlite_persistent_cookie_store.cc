@@ -7,13 +7,13 @@
 #include <map>
 #include <set>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_macros.h"
@@ -42,7 +42,15 @@ namespace {
 // The persistent cookie store is loaded into memory on eTLD at a time. This
 // variable controls the delay between loading eTLDs, so as to not overload the
 // CPU or I/O with these low priority requests immediately after start up.
+#if defined(OS_IOS)
+// TODO(ellyjones): This should be 200ms, but currently CookieStoreIOS is
+// waiting for -FinishedLoadingCookies to be called after all eTLD cookies are
+// loaded before making any network requests.  Changing to 0ms for now.
+// crbug.com/462593
 const int kLoadDelayMilliseconds = 0;
+#else
+const int kLoadDelayMilliseconds = 0;
+#endif
 
 }  // namespace
 
@@ -590,7 +598,7 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     return false;
   }
 
-  int64 db_size = 0;
+  int64_t db_size = 0;
   if (base::GetFileSize(path_, &db_size))
     UMA_HISTOGRAM_COUNTS("Cookie.DBSizeInKB", db_size / 1024);
 

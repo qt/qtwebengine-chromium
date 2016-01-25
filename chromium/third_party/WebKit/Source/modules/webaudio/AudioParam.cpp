@@ -23,10 +23,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioParam.h"
-
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/FloatConversion.h"
@@ -43,31 +40,33 @@ AbstractAudioContext* AudioParamHandler::context() const
     // TODO(tkent): We can remove this dangerous function by removing
     // AbstractAudioContext dependency from AudioParamTimeline.
     ASSERT_WITH_SECURITY_IMPLICATION(deferredTaskHandler().isAudioThread());
-    return &m_context;
+    return m_context;
 }
 
 float AudioParamHandler::value()
 {
     // Update value for timeline.
+    float v = intrinsicValue();
     if (deferredTaskHandler().isAudioThread()) {
         bool hasValue;
-        float timelineValue = m_timeline.valueForContextTime(context(), narrowPrecisionToFloat(m_value), hasValue);
+        float timelineValue = m_timeline.valueForContextTime(context(), v, hasValue);
 
         if (hasValue)
-            m_value = timelineValue;
+            v = timelineValue;
     }
 
-    return narrowPrecisionToFloat(m_value);
+    setIntrinsicValue(v);
+    return v;
 }
 
 void AudioParamHandler::setValue(float value)
 {
-    m_value = value;
+    setIntrinsicValue(value);
 }
 
 float AudioParamHandler::smoothedValue()
 {
-    return narrowPrecisionToFloat(m_smoothedValue);
+    return m_smoothedValue;
 }
 
 bool AudioParamHandler::smooth()
@@ -75,33 +74,36 @@ bool AudioParamHandler::smooth()
     // If values have been explicitly scheduled on the timeline, then use the exact value.
     // Smoothing effectively is performed by the timeline.
     bool useTimelineValue = false;
+    float value = intrinsicValue();
     if (context())
-        m_value = m_timeline.valueForContextTime(context(), narrowPrecisionToFloat(m_value), useTimelineValue);
+        value = m_timeline.valueForContextTime(context(), value, useTimelineValue);
 
-    if (m_smoothedValue == m_value) {
+    if (m_smoothedValue == value) {
         // Smoothed value has already approached and snapped to value.
+        setIntrinsicValue(value);
         return true;
     }
 
     if (useTimelineValue) {
-        m_smoothedValue = m_value;
+        m_smoothedValue = value;
     } else {
         // Dezipper - exponential approach.
-        m_smoothedValue += (m_value - m_smoothedValue) * DefaultSmoothingConstant;
+        m_smoothedValue += (value - m_smoothedValue) * DefaultSmoothingConstant;
 
         // If we get close enough then snap to actual value.
         // FIXME: the threshold needs to be adjustable depending on range - but
         // this is OK general purpose value.
-        if (fabs(m_smoothedValue - m_value) < SnapThreshold)
-            m_smoothedValue = m_value;
+        if (fabs(m_smoothedValue - value) < SnapThreshold)
+            m_smoothedValue = value;
     }
 
+    setIntrinsicValue(value);
     return false;
 }
 
 float AudioParamHandler::finalValue()
 {
-    float value = m_value;
+    float value = intrinsicValue();
     calculateFinalValues(&value, 1, false);
     return value;
 }
@@ -131,12 +133,14 @@ void AudioParamHandler::calculateFinalValues(float* values, unsigned numberOfVal
     } else {
         // Calculate control-rate (k-rate) intrinsic value.
         bool hasValue;
-        float timelineValue = m_timeline.valueForContextTime(context(), narrowPrecisionToFloat(m_value), hasValue);
+        float value = intrinsicValue();
+        float timelineValue = m_timeline.valueForContextTime(context(), value, hasValue);
 
         if (hasValue)
-            m_value = timelineValue;
+            value = timelineValue;
 
-        values[0] = narrowPrecisionToFloat(m_value);
+        values[0] = value;
+        setIntrinsicValue(value);
     }
 
     // Now sum all of the audio-rate connections together (unity-gain summing junction).
@@ -166,7 +170,7 @@ void AudioParamHandler::calculateTimelineValues(float* values, unsigned numberOf
 
     // Note we're running control rate at the sample-rate.
     // Pass in the current value as default value.
-    m_value = m_timeline.valuesForFrameRange(startFrame, endFrame, narrowPrecisionToFloat(m_value), values, numberOfValues, sampleRate, sampleRate);
+    setIntrinsicValue(m_timeline.valuesForFrameRange(startFrame, endFrame, intrinsicValue(), values, numberOfValues, sampleRate, sampleRate));
 }
 
 void AudioParamHandler::connect(AudioNodeOutput& output)
@@ -225,36 +229,41 @@ float AudioParam::defaultValue() const
     return handler().defaultValue();
 }
 
-void AudioParam::setValueAtTime(float value, double time, ExceptionState& exceptionState)
+AudioParam* AudioParam::setValueAtTime(float value, double time, ExceptionState& exceptionState)
 {
     handler().timeline().setValueAtTime(value, time, exceptionState);
+    return this;
 }
 
-void AudioParam::linearRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
+AudioParam* AudioParam::linearRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
 {
     handler().timeline().linearRampToValueAtTime(value, time, exceptionState);
+    return this;
 }
 
-void AudioParam::exponentialRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
+AudioParam* AudioParam::exponentialRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
 {
     handler().timeline().exponentialRampToValueAtTime(value, time, exceptionState);
+    return this;
 }
 
-void AudioParam::setTargetAtTime(float target, double time, double timeConstant, ExceptionState& exceptionState)
+AudioParam* AudioParam::setTargetAtTime(float target, double time, double timeConstant, ExceptionState& exceptionState)
 {
     handler().timeline().setTargetAtTime(target, time, timeConstant, exceptionState);
+    return this;
 }
 
-void AudioParam::setValueCurveAtTime(DOMFloat32Array* curve, double time, double duration, ExceptionState& exceptionState)
+AudioParam* AudioParam::setValueCurveAtTime(DOMFloat32Array* curve, double time, double duration, ExceptionState& exceptionState)
 {
     handler().timeline().setValueCurveAtTime(curve, time, duration, exceptionState);
+    return this;
 }
 
-void AudioParam::cancelScheduledValues(double startTime, ExceptionState& exceptionState)
+AudioParam* AudioParam::cancelScheduledValues(double startTime, ExceptionState& exceptionState)
 {
     handler().timeline().cancelScheduledValues(startTime, exceptionState);
+    return this;
 }
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

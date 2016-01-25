@@ -7,6 +7,8 @@
 
 #import <Cocoa/Cocoa.h>
 #include <IOSurface/IOSurface.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <list>
 #include <map>
 #include <set>
@@ -15,6 +17,7 @@
 #include <vector>
 
 #include "base/mac/scoped_nsobject.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -29,7 +32,6 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/accelerated_widget_mac/display_link_mac.h"
-#include "ui/accelerated_widget_mac/io_surface_layer.h"
 #import "ui/base/cocoa/command_dispatcher.h"
 #include "ui/base/cocoa/remote_layer_api.h"
 #import "ui/base/cocoa/tool_tip_base_view.h"
@@ -208,8 +210,10 @@ class Layer;
 - (void)updateCursor:(NSCursor*)cursor;
 - (NSRect)firstViewRectForCharacterRange:(NSRange)theRange
                              actualRange:(NSRangePointer)actualRange;
+- (void)quickLookWithEvent:(NSEvent*)event;
 - (void)showLookUpDictionaryOverlayAtPoint:(NSPoint)point;
-- (void)showLookUpDictionaryOverlayFromRange:(NSRange)range;
+- (void)showLookUpDictionaryOverlayFromRange:(NSRange)range
+                                  targetView:(NSView*)targetView;
 @end
 
 namespace content {
@@ -302,7 +306,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       const std::vector<gfx::Rect>& character_bounds) override;
   void RenderProcessGone(base::TerminationStatus status,
                          int error_code) override;
-  void RenderWidgetHostGone() override;
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
   void SelectionChanged(const base::string16& text,
@@ -317,12 +320,12 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) override;
+      const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
   bool CanCopyToVideoFrame() const override;
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
   void EndFrameSubscription() override;
-  void OnSwapCompositorFrame(uint32 output_surface_id,
+  void OnSwapCompositorFrame(uint32_t output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
   void ClearCompositorFrame() override;
   BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
@@ -335,6 +338,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void GetScreenInfo(blink::WebScreenInfo* results) override;
   bool GetScreenColorProfile(std::vector<char>* color_profile) override;
   gfx::Rect GetBoundsInRootWindow() override;
+  void LockCompositingSurface() override;
+  void UnlockCompositingSurface() override;
 
   bool LockMouse() override;
   void UnlockMouse() override;
@@ -346,8 +351,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   uint32_t GetSurfaceIdNamespace() override;
   uint32_t SurfaceIdNamespaceAtPoint(const gfx::Point& point,
                                      gfx::Point* transformed_point) override;
+  // Returns true when we can do SurfaceHitTesting for the event type.
+  bool ShouldRouteEvent(const blink::WebInputEvent& event) const;
   void ProcessMouseEvent(const blink::WebMouseEvent& event) override;
   void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event) override;
+  void TransformPointToLocalCoordSpace(const gfx::Point& point,
+                                       cc::SurfaceId original_surface,
+                                       gfx::Point* transformed_point) override;
 
   // IPC::Sender implementation.
   bool Send(IPC::Message* message) override;
@@ -507,12 +517,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // AcceleratedWidgetMacNSView implementation.
   NSView* AcceleratedWidgetGetNSView() const override;
-  bool AcceleratedWidgetShouldIgnoreBackpressure() const override;
   void AcceleratedWidgetGetVSyncParameters(
       base::TimeTicks* timebase, base::TimeDelta* interval) const override;
-  void AcceleratedWidgetSwapCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info) override;
-  void AcceleratedWidgetHitError() override;
+  void AcceleratedWidgetSwapCompleted() override;
 
   // Transition from being in the Suspended state to being in the Destroyed
   // state, if appropriate (see BrowserCompositorViewState for details).

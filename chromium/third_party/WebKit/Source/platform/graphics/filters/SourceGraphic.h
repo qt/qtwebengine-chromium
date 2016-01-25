@@ -29,19 +29,17 @@ class SkPicture;
 
 namespace blink {
 
-class PLATFORM_EXPORT SourceGraphic : public FilterEffect {
+class PLATFORM_EXPORT SourceGraphic final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<SourceGraphic> create(Filter*);
     ~SourceGraphic() override;
-
-    static const AtomicString& effectName();
 
     FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
     FilterEffectType filterEffectType() const override { return FilterEffectTypeSourceInput; }
 
     TextStream& externalRepresentation(TextStream&, int indention) const override;
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 
     void setPicture(PassRefPtr<const SkPicture>);
     void setSourceRect(const IntRect&);

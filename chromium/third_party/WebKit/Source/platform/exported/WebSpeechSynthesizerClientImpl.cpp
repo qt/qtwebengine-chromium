@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/exported/WebSpeechSynthesizerClientImpl.h"
 
 #include "platform/speech/PlatformSpeechSynthesisUtterance.h"
@@ -42,7 +41,7 @@ WebSpeechSynthesizerClientImpl::~WebSpeechSynthesizerClientImpl()
 
 void WebSpeechSynthesizerClientImpl::setVoiceList(const WebVector<WebSpeechSynthesisVoice>& voices)
 {
-    HeapVector<Member<PlatformSpeechSynthesisVoice>> outVoices;
+    Vector<RefPtr<PlatformSpeechSynthesisVoice>> outVoices;
     for (size_t i = 0; i < voices.size(); i++)
         outVoices.append(voices[i]);
     m_synthesizer->setVoiceList(outVoices);

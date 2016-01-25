@@ -4,9 +4,13 @@
 
 #include "media/base/video_frame.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/format_macros.h"
+#include "base/macros.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
@@ -25,14 +29,14 @@ void InitializeYV12Frame(VideoFrame* frame, double white_to_black) {
   EXPECT_EQ(PIXEL_FORMAT_YV12, frame->format());
   const int first_black_row =
       static_cast<int>(frame->coded_size().height() * white_to_black);
-  uint8* y_plane = frame->data(VideoFrame::kYPlane);
+  uint8_t* y_plane = frame->data(VideoFrame::kYPlane);
   for (int row = 0; row < frame->coded_size().height(); ++row) {
     int color = (row < first_black_row) ? 0xFF : 0x00;
     memset(y_plane, color, frame->stride(VideoFrame::kYPlane));
     y_plane += frame->stride(VideoFrame::kYPlane);
   }
-  uint8* u_plane = frame->data(VideoFrame::kUPlane);
-  uint8* v_plane = frame->data(VideoFrame::kVPlane);
+  uint8_t* u_plane = frame->data(VideoFrame::kUPlane);
+  uint8_t* v_plane = frame->data(VideoFrame::kVPlane);
   for (int row = 0; row < frame->coded_size().height(); row += 2) {
     memset(u_plane, 0x80, frame->stride(VideoFrame::kUPlane));
     memset(v_plane, 0x80, frame->stride(VideoFrame::kVPlane));
@@ -43,7 +47,8 @@ void InitializeYV12Frame(VideoFrame* frame, double white_to_black) {
 
 // Given a |yv12_frame| this method converts the YV12 frame to RGBA and
 // makes sure that all the pixels of the RBG frame equal |expect_rgb_color|.
-void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
+void ExpectFrameColor(media::VideoFrame* yv12_frame,
+                      uint32_t expect_rgb_color) {
   ASSERT_EQ(PIXEL_FORMAT_YV12, yv12_frame->format());
   ASSERT_EQ(yv12_frame->stride(VideoFrame::kUPlane),
             yv12_frame->stride(VideoFrame::kVPlane));
@@ -55,7 +60,7 @@ void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
       0);
 
   size_t bytes_per_row = yv12_frame->coded_size().width() * 4u;
-  uint8* rgb_data = reinterpret_cast<uint8*>(
+  uint8_t* rgb_data = reinterpret_cast<uint8_t*>(
       base::AlignedAlloc(bytes_per_row * yv12_frame->coded_size().height() +
                              VideoFrame::kFrameSizePadding,
                          VideoFrame::kFrameAddressAlignment));
@@ -72,8 +77,8 @@ void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
                            media::YV12);
 
   for (int row = 0; row < yv12_frame->coded_size().height(); ++row) {
-    uint32* rgb_row_data = reinterpret_cast<uint32*>(
-        rgb_data + (bytes_per_row * row));
+    uint32_t* rgb_row_data =
+        reinterpret_cast<uint32_t*>(rgb_data + (bytes_per_row * row));
     for (int col = 0; col < yv12_frame->coded_size().width(); ++col) {
       SCOPED_TRACE(base::StringPrintf("Checking (%d, %d)", row, col));
       EXPECT_EQ(expect_rgb_color, rgb_row_data[col]);
@@ -180,8 +185,8 @@ TEST(VideoFrame, CreateZeroInitializedFrame) {
 TEST(VideoFrame, CreateBlackFrame) {
   const int kWidth = 2;
   const int kHeight = 2;
-  const uint8 kExpectedYRow[] = { 0, 0 };
-  const uint8 kExpectedUVRow[] = { 128 };
+  const uint8_t kExpectedYRow[] = {0, 0};
+  const uint8_t kExpectedUVRow[] = {128};
 
   scoped_refptr<media::VideoFrame> frame =
       VideoFrame::CreateBlackFrame(gfx::Size(kWidth, kHeight));
@@ -199,14 +204,14 @@ TEST(VideoFrame, CreateBlackFrame) {
   EXPECT_EQ(kHeight, frame->coded_size().height());
 
   // Test frames themselves.
-  uint8* y_plane = frame->data(VideoFrame::kYPlane);
+  uint8_t* y_plane = frame->data(VideoFrame::kYPlane);
   for (int y = 0; y < frame->coded_size().height(); ++y) {
     EXPECT_EQ(0, memcmp(kExpectedYRow, y_plane, arraysize(kExpectedYRow)));
     y_plane += frame->stride(VideoFrame::kYPlane);
   }
 
-  uint8* u_plane = frame->data(VideoFrame::kUPlane);
-  uint8* v_plane = frame->data(VideoFrame::kVPlane);
+  uint8_t* u_plane = frame->data(VideoFrame::kUPlane);
+  uint8_t* v_plane = frame->data(VideoFrame::kVPlane);
   for (int y = 0; y < frame->coded_size().height() / 2; ++y) {
     EXPECT_EQ(0, memcmp(kExpectedUVRow, u_plane, arraysize(kExpectedUVRow)));
     EXPECT_EQ(0, memcmp(kExpectedUVRow, v_plane, arraysize(kExpectedUVRow)));
@@ -261,21 +266,22 @@ TEST(VideoFrame, CheckFrameExtents) {
   ExpectFrameExtents(PIXEL_FORMAT_YV16, "cce408a044b212db42a10dfec304b3ef");
 }
 
-static void TextureCallback(uint32* called_sync_point,
-                            uint32 release_sync_point) {
-  *called_sync_point = release_sync_point;
+static void TextureCallback(gpu::SyncToken* called_sync_token,
+                            const gpu::SyncToken& release_sync_token) {
+  *called_sync_token = release_sync_token;
 }
 
 // Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
 // destroyed with the default release sync point.
 TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
-  uint32 called_sync_point = 1;
+  gpu::SyncToken called_sync_token(gpu::CommandBufferNamespace::GPU_IO, 0, 1,
+                                   1);
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
         PIXEL_FORMAT_ARGB,
-        gpu::MailboxHolder(gpu::Mailbox::Generate(), 5, 0 /* sync_point */),
-        base::Bind(&TextureCallback, &called_sync_point),
+        gpu::MailboxHolder(gpu::Mailbox::Generate(), gpu::SyncToken(), 5),
+        base::Bind(&TextureCallback, &called_sync_token),
         gfx::Size(10, 10),   // coded_size
         gfx::Rect(10, 10),   // visible_rect
         gfx::Size(10, 10),   // natural_size
@@ -284,22 +290,25 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
     EXPECT_EQ(VideoFrame::STORAGE_OPAQUE, frame->storage_type());
     EXPECT_TRUE(frame->HasTextures());
   }
-  // Nobody set a sync point to |frame|, so |frame| set |called_sync_point| to 0
-  // as default value.
-  EXPECT_EQ(0u, called_sync_point);
+  // Nobody set a sync point to |frame|, so |frame| set |called_sync_token|
+  // cleared to default value.
+  EXPECT_FALSE(called_sync_token.HasData());
 }
 
 namespace {
 
-class SyncPointClientImpl : public VideoFrame::SyncPointClient {
+class SyncTokenClientImpl : public VideoFrame::SyncTokenClient {
  public:
-  explicit SyncPointClientImpl(uint32 sync_point) : sync_point_(sync_point) {}
-  ~SyncPointClientImpl() override {}
-  uint32 InsertSyncPoint() override { return sync_point_; }
-  void WaitSyncPoint(uint32 sync_point) override {}
+  explicit SyncTokenClientImpl(const gpu::SyncToken& sync_token)
+      : sync_token_(sync_token) {}
+  ~SyncTokenClientImpl() override {}
+  void GenerateSyncToken(gpu::SyncToken* sync_token) override {
+    *sync_token = sync_token_;
+  }
+  void WaitSyncToken(const gpu::SyncToken& sync_token) override {}
 
  private:
-  uint32 sync_point_;
+  gpu::SyncToken sync_token_;
 };
 
 }  // namespace
@@ -310,25 +319,31 @@ class SyncPointClientImpl : public VideoFrame::SyncPointClient {
 TEST(VideoFrame,
      TexturesNoLongerNeededCallbackAfterTakingAndReleasingMailboxes) {
   const int kPlanesNum = 3;
+  const gpu::CommandBufferNamespace kNamespace =
+      gpu::CommandBufferNamespace::GPU_IO;
+  const uint64_t kCommandBufferId = 0x123;
   gpu::Mailbox mailbox[kPlanesNum];
   for (int i = 0; i < kPlanesNum; ++i) {
     mailbox[i].name[0] = 50 + 1;
   }
 
-  uint32 sync_point = 7;
-  uint32 target = 9;
-  uint32 release_sync_point = 111;
-  uint32 called_sync_point = 0;
+  gpu::SyncToken sync_token(kNamespace, 0, kCommandBufferId, 7);
+  sync_token.SetVerifyFlush();
+  uint32_t target = 9;
+  gpu::SyncToken release_sync_token(kNamespace, 0, kCommandBufferId, 111);
+  release_sync_token.SetVerifyFlush();
+
+  gpu::SyncToken called_sync_token;
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapYUV420NativeTextures(
-        gpu::MailboxHolder(mailbox[VideoFrame::kYPlane], target, sync_point),
-        gpu::MailboxHolder(mailbox[VideoFrame::kUPlane], target, sync_point),
-        gpu::MailboxHolder(mailbox[VideoFrame::kVPlane], target, sync_point),
-        base::Bind(&TextureCallback, &called_sync_point),
-        gfx::Size(10, 10),  // coded_size
-        gfx::Rect(10, 10),  // visible_rect
-        gfx::Size(10, 10),  // natural_size
-        base::TimeDelta()); // timestamp
+        gpu::MailboxHolder(mailbox[VideoFrame::kYPlane], sync_token, target),
+        gpu::MailboxHolder(mailbox[VideoFrame::kUPlane], sync_token, target),
+        gpu::MailboxHolder(mailbox[VideoFrame::kVPlane], sync_token, target),
+        base::Bind(&TextureCallback, &called_sync_token),
+        gfx::Size(10, 10),   // coded_size
+        gfx::Rect(10, 10),   // visible_rect
+        gfx::Size(10, 10),   // natural_size
+        base::TimeDelta());  // timestamp
 
     EXPECT_EQ(VideoFrame::STORAGE_OPAQUE, frame->storage_type());
     EXPECT_EQ(PIXEL_FORMAT_I420, frame->format());
@@ -338,15 +353,15 @@ TEST(VideoFrame,
       const gpu::MailboxHolder& mailbox_holder = frame->mailbox_holder(i);
       EXPECT_EQ(mailbox[i].name[0], mailbox_holder.mailbox.name[0]);
       EXPECT_EQ(target, mailbox_holder.texture_target);
-      EXPECT_EQ(sync_point, mailbox_holder.sync_point);
+      EXPECT_EQ(sync_token, mailbox_holder.sync_token);
     }
 
-    SyncPointClientImpl client(release_sync_point);
-    frame->UpdateReleaseSyncPoint(&client);
-    EXPECT_EQ(sync_point,
-              frame->mailbox_holder(VideoFrame::kYPlane).sync_point);
+    SyncTokenClientImpl client(release_sync_token);
+    frame->UpdateReleaseSyncToken(&client);
+    EXPECT_EQ(sync_token,
+              frame->mailbox_holder(VideoFrame::kYPlane).sync_token);
   }
-  EXPECT_EQ(release_sync_point, called_sync_point);
+  EXPECT_EQ(release_sync_token, called_sync_token);
 }
 
 TEST(VideoFrame, IsValidConfig_OddCodedSize) {

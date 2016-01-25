@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
 
 #include "modules/device_orientation/DeviceMotionController.h"
@@ -59,12 +58,12 @@ DEFINE_TRACE(DeviceMotionDispatcher)
 
 void DeviceMotionDispatcher::startListening()
 {
-    Platform::current()->startListening(WebPlatformEventDeviceMotion, this);
+    Platform::current()->startListening(WebPlatformEventTypeDeviceMotion, this);
 }
 
 void DeviceMotionDispatcher::stopListening()
 {
-    Platform::current()->stopListening(WebPlatformEventDeviceMotion);
+    Platform::current()->stopListening(WebPlatformEventTypeDeviceMotion);
     m_lastDeviceMotionData.clear();
 }
 

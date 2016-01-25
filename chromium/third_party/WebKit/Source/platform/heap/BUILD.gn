@@ -8,12 +8,15 @@ source_set("heap") {
   visibility = [ "//third_party/WebKit/Source/platform" ]
 
   sources = [
+    "BlinkGCInterruptor.cpp",
+    "BlinkGCInterruptor.h",
     "BlinkGCMemoryDumpProvider.cpp",
     "BlinkGCMemoryDumpProvider.h",
     "CallbackStack.cpp",
     "CallbackStack.h",
     "GCInfo.cpp",
     "GCInfo.h",
+    "GCTaskRunner.h",
     "GarbageCollected.h",
     "Handle.h",
     "Heap.cpp",
@@ -25,15 +28,16 @@ source_set("heap") {
     "InlinedGlobalMarkingVisitor.h",
     "MarkingVisitor.h",
     "MarkingVisitorImpl.h",
+    "PageMemory.cpp",
     "PageMemory.h",
     "PagePool.cpp",
     "PagePool.h",
     "PersistentNode.cpp",
     "PersistentNode.h",
-    "StackFrameDepth.cpp",
-    "StackFrameDepth.h",
     "SafePoint.cpp",
     "SafePoint.h",
+    "StackFrameDepth.cpp",
+    "StackFrameDepth.h",
     "ThreadState.cpp",
     "ThreadState.h",
     "ThreadingTraits.h",
@@ -46,6 +50,7 @@ source_set("heap") {
   configs += [
     "//third_party/WebKit/Source:config",
     "//third_party/WebKit/Source:inside_blink",
+    "//third_party/WebKit/Source:features",
     "//build/config/compiler:no_size_t_to_int_warning",
   ]
 

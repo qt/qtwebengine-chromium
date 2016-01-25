@@ -4,14 +4,15 @@
 
 #include "mojo/edk/embedder/simple_platform_shared_buffer.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>     // For |fileno()|.
 #include <sys/mman.h>  // For |mmap()|/|munmap()|.
 #include <sys/stat.h>
 #include <sys/types.h>  // For |off_t|.
 #include <unistd.h>
-
 #include <limits>
+#include <utility>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -97,7 +98,7 @@ bool SimplePlatformSharedBuffer::InitFromPlatformHandle(
 
   struct stat sb = {};
   // Note: |fstat()| isn't interruptible.
-  if (fstat(platform_handle.get().fd, &sb) != 0) {
+  if (fstat(platform_handle.get().handle, &sb) != 0) {
     PLOG(ERROR) << "fstat";
     return false;
   }
@@ -114,7 +115,7 @@ bool SimplePlatformSharedBuffer::InitFromPlatformHandle(
 
   // TODO(vtl): More checks?
 
-  handle_ = platform_handle.Pass();
+  handle_ = std::move(platform_handle);
   return true;
 }
 
@@ -134,7 +135,7 @@ scoped_ptr<PlatformSharedBufferMapping> SimplePlatformSharedBuffer::MapImpl(
 
   void* real_base =
       mmap(nullptr, real_length, PROT_READ | PROT_WRITE, MAP_SHARED,
-           handle_.get().fd, static_cast<off_t>(real_offset));
+           handle_.get().handle, static_cast<off_t>(real_offset));
   // |mmap()| should return |MAP_FAILED| (a.k.a. -1) on error. But it shouldn't
   // return null either.
   if (real_base == MAP_FAILED || !real_base) {

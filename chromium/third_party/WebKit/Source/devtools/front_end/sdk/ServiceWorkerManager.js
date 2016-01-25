@@ -383,25 +383,11 @@ WebInspector.ServiceWorker = function(manager, workerId, url, versionId)
     var parsedURL = url.asParsedURL();
     this._name = parsedURL ? parsedURL.lastPathComponentWithFragment()  : "#" + (++WebInspector.ServiceWorker._lastAnonymousTargetId);
     this._scope = parsedURL.host + parsedURL.folderPathComponents;
-    var title = WebInspector.UIString("\u2699 %s", this._name);
 
     this._manager._workers.set(workerId, this);
-    WebInspector.targetManager.createTarget(title, WebInspector.Target.Type.ServiceWorker, this._connection, manager.target(), targetCreated.bind(this));
-
-    /**
-     * @param {?WebInspector.Target} target
-     * @this {WebInspector.ServiceWorker}
-     */
-    function targetCreated(target)
-    {
-        if (!this._connection || !target) {
-            this._manager._workers.delete(workerId);
-            return;
-        }
-        this._target = target;
-        this._manager.dispatchEventToListeners(WebInspector.ServiceWorkerManager.Events.WorkersUpdated);
-        target.runtimeAgent().run();
-    }
+    this._target = WebInspector.targetManager.createTarget(this._name, WebInspector.Target.Type.ServiceWorker, this._connection, manager.target());
+    this._manager.dispatchEventToListeners(WebInspector.ServiceWorkerManager.Events.WorkersUpdated);
+    this._target.runtimeAgent().run();
 }
 
 WebInspector.ServiceWorker._lastAnonymousTargetId = 0;
@@ -446,8 +432,6 @@ WebInspector.ServiceWorker.prototype = {
 
     _closeConnection: function()
     {
-        if (!this._target)
-            return;
         this._connection._close();
         delete this._connection;
     }

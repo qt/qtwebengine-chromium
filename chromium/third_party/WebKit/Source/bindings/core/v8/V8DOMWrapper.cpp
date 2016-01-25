@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8DOMWrapper.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -142,7 +141,7 @@ void V8WrapperInstantiationScope::securityCheck(v8::Isolate* isolate, v8::Local<
     const DOMWrapperWorld& currentWorld = DOMWrapperWorld::world(m_context);
     RELEASE_ASSERT(currentWorld.worldId() == DOMWrapperWorld::world(contextForWrapper).worldId());
     if (currentWorld.isMainWorld()) {
-        RELEASE_ASSERT(BindingSecurity::shouldAllowAccessToFrame(isolate, frame, DoNotReportSecurityError));
+        RELEASE_ASSERT(BindingSecurity::shouldAllowAccessToFrame(isolate, callingDOMWindow(isolate), frame, DoNotReportSecurityError));
     }
 }
 

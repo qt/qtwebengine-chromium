@@ -82,7 +82,7 @@ private:
 
     String nodeName() const override;
     NodeType nodeType() const override;
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
+    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) override;
 
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void removedFrom(ContainerNode*) override;
@@ -97,6 +97,8 @@ private:
 
     void parseStyleSheet(const String& sheet);
     void clearSheet();
+
+    String debugName() const override { return "ProcessingInstruction"; }
 
     String m_target;
     String m_localHref;

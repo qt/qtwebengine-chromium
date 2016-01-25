@@ -5,9 +5,13 @@
 #ifndef IPC_BROKERABLE_ATTACHMENT_H_
 #define IPC_BROKERABLE_ATTACHMENT_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
+
 #include "base/macros.h"
+#include "build/build_config.h"
 #include "ipc/ipc_export.h"
 #include "ipc/ipc_message_attachment.h"
 
@@ -37,21 +41,12 @@ class IPC_EXPORT BrokerableAttachment : public MessageAttachment {
     void SerializeToBuffer(char* start_address, size_t size);
 
     bool operator==(const AttachmentId& rhs) const {
-      for (size_t i = 0; i < kNonceSize; ++i) {
-        if (nonce[i] != rhs.nonce[i])
-          return false;
-      }
-      return true;
+      return std::equal(nonce, nonce + kNonceSize, rhs.nonce);
     }
 
     bool operator<(const AttachmentId& rhs) const {
-      for (size_t i = 0; i < kNonceSize; ++i) {
-        if (nonce[i] < rhs.nonce[i])
-          return true;
-        if (nonce[i] > rhs.nonce[i])
-          return false;
-      }
-      return false;
+      return std::lexicographical_compare(nonce, nonce + kNonceSize, rhs.nonce,
+                                          rhs.nonce + kNonceSize);
     }
   };
 

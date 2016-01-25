@@ -33,7 +33,7 @@
 
 #include "core/dom/Document.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -48,7 +48,7 @@ class KURL;
 
 class HTMLImportsController final : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportsController>, public WillBeHeapSupplement<Document> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLImportsController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLImportsController);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLImportsController);
 public:
     static const char* supplementName();
     static void provideTo(Document&);

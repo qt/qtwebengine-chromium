@@ -32,16 +32,14 @@
           'libraries': [
             '-lskia',
             '-landroid',
-            '-lgui',
             '-lhwui',
             '-lutils',
           ],
           'include_dirs': [
             '../../../frameworks/base/libs/hwui/',
-            '../../../frameworks/native/include/',
           ],
           'dependencies': [
-            'utils.gyp:android_utils',
+            'tools.gyp:android_utils',
           ],
         }],
       ],

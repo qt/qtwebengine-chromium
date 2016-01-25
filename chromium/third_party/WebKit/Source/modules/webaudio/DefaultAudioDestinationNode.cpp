@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DefaultAudioDestinationNode.h"
-
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -154,4 +151,3 @@ DefaultAudioDestinationNode* DefaultAudioDestinationNode::create(AbstractAudioCo
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -54,9 +54,7 @@ public:
         
 #if SK_SUPPORT_GPU
         switch (win->getDeviceType()) {
-            // these two don't use GL
             case SampleWindow::kRaster_DeviceType:
-            case SampleWindow::kPicture_DeviceType:
                 break;
             // these guys use the native backend
             case SampleWindow::kGPU_DeviceType:
@@ -76,9 +74,7 @@ public:
         
         SkASSERT(NULL == fCurIntf);
         switch (win->getDeviceType()) {
-            // these two don't use GL
             case SampleWindow::kRaster_DeviceType:
-            case SampleWindow::kPicture_DeviceType:
                 fCurIntf = NULL;
                 break;
             case SampleWindow::kGPU_DeviceType:
@@ -316,12 +312,27 @@ static FPSState gFPS;
         fRasterLayer.actions = newActions;
         [newActions release];
         
+        // rebuild argc and argv from process info
+        NSArray* arguments = [[NSProcessInfo processInfo] arguments];
+        int argc = [arguments count];
+        char** argv = new char*[argc];
+        for (int i = 0; i < argc; ++i) {
+            NSString* arg = [arguments objectAtIndex:i];
+            int strlen = [arg lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+            argv[i] = new char[strlen+1];
+            [arg getCString:argv[i] maxLength:strlen+1 encoding:NSUTF8StringEncoding];
+        }
+        
         fDevManager = new SkiOSDeviceManager(fGL.fFramebuffer);
-        static char* kDummyArgv = const_cast<char*>("dummyExecutableName");
-        fWind = new SampleWindow(self, 1, &kDummyArgv, fDevManager);
+        fWind = new SampleWindow(self, argc, argv, fDevManager);
 
         fWind->resize(self.frame.size.width, self.frame.size.height,
                       kN32_SkColorType);
+        
+        for (int i = 0; i < argc; ++i) {
+            delete [] argv[i];
+        }
+        delete [] argv;
     }
     return self;
 }

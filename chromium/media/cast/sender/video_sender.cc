@@ -4,9 +4,11 @@
 
 #include "media/cast/sender/video_sender.h"
 
+#include <stdint.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/logging.h"
@@ -41,26 +43,36 @@ const int kTargetUtilizationPercentage = 75;
 
 // Extract capture begin/end timestamps from |video_frame|'s metadata and log
 // it.
-void LogVideoCaptureTimestamps(const CastEnvironment& cast_environment,
+void LogVideoCaptureTimestamps(CastEnvironment* cast_environment,
                                const media::VideoFrame& video_frame,
-                               RtpTimestamp rtp_timestamp) {
-  base::TimeTicks capture_begin_time;
-  base::TimeTicks capture_end_time;
+                               RtpTimeTicks rtp_timestamp) {
+  scoped_ptr<FrameEvent> capture_begin_event(new FrameEvent());
+  capture_begin_event->type = FRAME_CAPTURE_BEGIN;
+  capture_begin_event->media_type = VIDEO_EVENT;
+  capture_begin_event->rtp_timestamp = rtp_timestamp;
+
+  scoped_ptr<FrameEvent> capture_end_event(new FrameEvent());
+  capture_end_event->type = FRAME_CAPTURE_END;
+  capture_end_event->media_type = VIDEO_EVENT;
+  capture_end_event->rtp_timestamp = rtp_timestamp;
+  capture_end_event->width = video_frame.visible_rect().width();
+  capture_end_event->height = video_frame.visible_rect().height();
+
   if (!video_frame.metadata()->GetTimeTicks(
-          media::VideoFrameMetadata::CAPTURE_BEGIN_TIME, &capture_begin_time) ||
+          media::VideoFrameMetadata::CAPTURE_BEGIN_TIME,
+          &capture_begin_event->timestamp) ||
       !video_frame.metadata()->GetTimeTicks(
-          media::VideoFrameMetadata::CAPTURE_END_TIME, &capture_end_time)) {
+          media::VideoFrameMetadata::CAPTURE_END_TIME,
+          &capture_end_event->timestamp)) {
     // The frame capture timestamps were not provided by the video capture
     // source.  Simply log the events as happening right now.
-    capture_begin_time = capture_end_time =
-        cast_environment.Clock()->NowTicks();
+    capture_begin_event->timestamp = capture_end_event->timestamp =
+        cast_environment->Clock()->NowTicks();
   }
-  cast_environment.Logging()->InsertFrameEvent(
-      capture_begin_time, FRAME_CAPTURE_BEGIN, VIDEO_EVENT, rtp_timestamp,
-      kFrameIdUnknown);
-  cast_environment.Logging()->InsertCapturedVideoFrameEvent(
-      capture_end_time, rtp_timestamp, video_frame.visible_rect().width(),
-      video_frame.visible_rect().height());
+
+  cast_environment->logger()->DispatchFrameEvent(
+      std::move(capture_begin_event));
+  cast_environment->logger()->DispatchFrameEvent(std::move(capture_end_event));
 }
 
 }  // namespace
@@ -86,6 +98,7 @@ VideoSender::VideoSender(
           video_config.max_frame_rate,
           video_config.min_playout_delay,
           video_config.max_playout_delay,
+          video_config.animated_playout_delay,
           video_config.use_external_encoder
               ? NewFixedCongestionControl(
                     (video_config.min_bitrate + video_config.max_bitrate) / 2)
@@ -96,6 +109,7 @@ VideoSender::VideoSender(
       frames_in_encoder_(0),
       last_bitrate_(0),
       playout_delay_change_cb_(playout_delay_change_cb),
+      low_latency_mode_(false),
       last_reported_deadline_utilization_(-1.0),
       last_reported_lossy_utilization_(-1.0),
       weak_factory_(this) {
@@ -140,16 +154,27 @@ void VideoSender::InsertRawVideoFrame(
     return;
   }
 
-  const RtpTimestamp rtp_timestamp =
-      TimeDeltaToRtpDelta(video_frame->timestamp(), kVideoFrequency);
-  LogVideoCaptureTimestamps(*cast_environment_, *video_frame, rtp_timestamp);
+  const RtpTimeTicks rtp_timestamp =
+      RtpTimeTicks::FromTimeDelta(video_frame->timestamp(), kVideoFrequency);
+  LogVideoCaptureTimestamps(cast_environment_.get(), *video_frame,
+                            rtp_timestamp);
 
   // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
   TRACE_EVENT_INSTANT2(
       "cast_perf_test", "InsertRawVideoFrame",
       TRACE_EVENT_SCOPE_THREAD,
       "timestamp", reference_time.ToInternalValue(),
-      "rtp_timestamp", rtp_timestamp);
+      "rtp_timestamp", rtp_timestamp.lower_32_bits());
+
+  bool low_latency_mode;
+  if (video_frame->metadata()->GetBoolean(
+          VideoFrameMetadata::INTERACTIVE_CONTENT, &low_latency_mode)) {
+    if (low_latency_mode && !low_latency_mode_) {
+      VLOG(1) << "Interactive mode playout time " << min_playout_delay_;
+      playout_delay_change_cb_.Run(min_playout_delay_);
+    }
+    low_latency_mode_ = low_latency_mode;
+  }
 
   // Drop the frame if either its RTP or reference timestamp is not an increase
   // over the last frame's.  This protects: 1) the duration calculations that
@@ -157,14 +182,13 @@ void VideoSender::InsertRawVideoFrame(
   // deeper in the implementation where each frame's RTP timestamp needs to be
   // unique.
   if (!last_enqueued_frame_reference_time_.is_null() &&
-      (!IsNewerRtpTimestamp(rtp_timestamp,
-                            last_enqueued_frame_rtp_timestamp_) ||
+      (rtp_timestamp <= last_enqueued_frame_rtp_timestamp_ ||
        reference_time <= last_enqueued_frame_reference_time_)) {
     VLOG(1) << "Dropping video frame: RTP or reference time did not increase.";
     TRACE_EVENT_INSTANT2("cast.stream", "Video Frame Drop",
-                        TRACE_EVENT_SCOPE_THREAD,
-                        "rtp_timestamp", rtp_timestamp,
-                        "reason", "time did not increase");
+                         TRACE_EVENT_SCOPE_THREAD,
+                         "rtp_timestamp", rtp_timestamp.lower_32_bits(),
+                         "reason", "time did not increase");
     return;
   }
 
@@ -182,7 +206,18 @@ void VideoSender::InsertRawVideoFrame(
         current_round_trip_time_ * kRoundTripsNeeded +
         base::TimeDelta::FromMilliseconds(kConstantTimeMs),
         max_playout_delay_);
-    if (new_target_delay > target_playout_delay_) {
+    // In case of low latency mode, we prefer frame drops over increasing
+    // playout time.
+    if (!low_latency_mode_ && new_target_delay > target_playout_delay_) {
+      // In case we detect user is no longer in a low latency mode and there is
+      // a need to drop a frame, we ensure the playout delay is at-least the
+      // the starting value for playing animated content.
+      // This is intended to minimize freeze when moving from an interactive
+      // session to watching animating content while being limited by end-to-end
+      // delay.
+      VLOG(1) << "Ensure playout time is at least " << animated_playout_delay_;
+      if (new_target_delay < animated_playout_delay_)
+        new_target_delay = animated_playout_delay_;
       VLOG(1) << "New target delay: " << new_target_delay.InMilliseconds();
       playout_delay_change_cb_.Run(new_target_delay);
     }
@@ -195,9 +230,9 @@ void VideoSender::InsertRawVideoFrame(
     video_encoder_->EmitFrames();
 
     TRACE_EVENT_INSTANT2("cast.stream", "Video Frame Drop",
-                        TRACE_EVENT_SCOPE_THREAD,
-                        "rtp_timestamp", rtp_timestamp,
-                        "reason", "too much in flight");
+                         TRACE_EVENT_SCOPE_THREAD,
+                         "rtp_timestamp", rtp_timestamp.lower_32_bits(),
+                         "reason", "too much in flight");
     return;
   }
 
@@ -207,8 +242,7 @@ void VideoSender::InsertRawVideoFrame(
   }
 
   const int bitrate = congestion_control_->GetBitrate(
-      reference_time + target_playout_delay_, target_playout_delay_,
-      GetMaximumTargetBitrateForFrame(*video_frame));
+      reference_time + target_playout_delay_, target_playout_delay_);
   if (bitrate != last_bitrate_) {
     video_encoder_->SetBitRate(bitrate);
     last_bitrate_ = bitrate;
@@ -216,7 +250,9 @@ void VideoSender::InsertRawVideoFrame(
 
   TRACE_COUNTER_ID1("cast.stream", "Video Target Bitrate", this, bitrate);
 
-  MaybeRenderPerformanceMetricsOverlay(bitrate,
+  MaybeRenderPerformanceMetricsOverlay(GetTargetPlayoutDelay(),
+                                       low_latency_mode_,
+                                       bitrate,
                                        frames_in_encoder_ + 1,
                                        last_reported_deadline_utilization_,
                                        last_reported_lossy_utilization_,
@@ -230,7 +266,7 @@ void VideoSender::InsertRawVideoFrame(
                      video_frame,
                      bitrate))) {
     TRACE_EVENT_ASYNC_BEGIN1("cast.stream", "Video Encode", video_frame.get(),
-                             "rtp_timestamp", rtp_timestamp);
+                             "rtp_timestamp", rtp_timestamp.lower_32_bits());
     frames_in_encoder_++;
     duration_in_encoder_ += duration_added_by_next_frame;
     last_enqueued_frame_rtp_timestamp_ = rtp_timestamp;
@@ -238,8 +274,8 @@ void VideoSender::InsertRawVideoFrame(
   } else {
     VLOG(1) << "Encoder rejected a frame.  Skipping...";
     TRACE_EVENT_INSTANT1("cast.stream", "Video Encode Reject",
-                        TRACE_EVENT_SCOPE_THREAD,
-                        "rtp_timestamp", rtp_timestamp);
+                         TRACE_EVENT_SCOPE_THREAD,
+                         "rtp_timestamp", rtp_timestamp.lower_32_bits());
   }
 }
 
@@ -253,67 +289,12 @@ int VideoSender::GetNumberOfFramesInEncoder() const {
 
 base::TimeDelta VideoSender::GetInFlightMediaDuration() const {
   if (GetUnacknowledgedFrameCount() > 0) {
-    const uint32 oldest_unacked_frame_id = latest_acked_frame_id_ + 1;
+    const uint32_t oldest_unacked_frame_id = latest_acked_frame_id_ + 1;
     return last_enqueued_frame_reference_time_ -
         GetRecordedReferenceTime(oldest_unacked_frame_id);
   } else {
     return duration_in_encoder_;
   }
-}
-
-void VideoSender::OnAck(uint32 frame_id) {
-  video_encoder_->LatestFrameIdToReference(frame_id);
-}
-
-// static
-int VideoSender::GetMaximumTargetBitrateForFrame(
-    const media::VideoFrame& frame) {
-  enum {
-    // Constants used to linearly translate between lines of resolution and a
-    // maximum target bitrate.  These values are based on observed quality
-    // trade-offs over a wide range of content.  The math will use these values
-    // to compute a bitrate of 2 Mbps for 360 lines of resolution and 4 Mbps for
-    // 720 lines.
-    BITRATE_FOR_HIGH_RESOLUTION = 4000000,
-    BITRATE_FOR_STANDARD_RESOLUTION = 2000000,
-    HIGH_RESOLUTION_LINES = 720,
-    STANDARD_RESOLUTION_LINES = 360,
-
-    // The smallest maximum target bitrate, regardless of what the math says.
-    MAX_BITRATE_LOWER_BOUND = 1000000,
-
-    // Constants used to boost the result for high frame rate content.
-    HIGH_FRAME_RATE_THRESHOLD_USEC = 25000,  // 40 FPS
-    HIGH_FRAME_RATE_BOOST_NUMERATOR = 3,
-    HIGH_FRAME_RATE_BOOST_DENOMINATOR = 2,
-  };
-
-  // Determine the approximate height of a 16:9 frame having the same area
-  // (number of pixels) as |frame|.
-  const gfx::Size& resolution = frame.visible_rect().size();
-  const int lines_of_resolution =
-      ((resolution.width() * 9) == (resolution.height() * 16)) ?
-          resolution.height() :
-          static_cast<int>(sqrt(resolution.GetArea() * 9.0 / 16.0));
-
-  // Linearly translate from |lines_of_resolution| to a maximum target bitrate.
-  int64 result = lines_of_resolution - STANDARD_RESOLUTION_LINES;
-  result *= BITRATE_FOR_HIGH_RESOLUTION - BITRATE_FOR_STANDARD_RESOLUTION;
-  result /= HIGH_RESOLUTION_LINES - STANDARD_RESOLUTION_LINES;
-  result += BITRATE_FOR_STANDARD_RESOLUTION;
-
-  // Boost the result for high frame rate content.
-  base::TimeDelta frame_duration;
-  if (frame.metadata()->GetTimeDelta(media::VideoFrameMetadata::FRAME_DURATION,
-                                     &frame_duration) &&
-      frame_duration > base::TimeDelta() &&
-      frame_duration.InMicroseconds() <= HIGH_FRAME_RATE_THRESHOLD_USEC) {
-    result *= HIGH_FRAME_RATE_BOOST_NUMERATOR;
-    result /= HIGH_FRAME_RATE_BOOST_DENOMINATOR;
-  }
-
-  // Return a lower-bounded result.
-  return std::max<int>(result, MAX_BITRATE_LOWER_BOUND);
 }
 
 void VideoSender::OnEncodedVideoFrame(
@@ -352,7 +333,7 @@ void VideoSender::OnEncodedVideoFrame(
             std::min(1.0, attenuated_utilization) : attenuated_utilization);
   }
 
-  SendEncodedFrame(encoder_bitrate, encoded_frame.Pass());
+  SendEncodedFrame(encoder_bitrate, std::move(encoded_frame));
 }
 
 }  // namespace cast

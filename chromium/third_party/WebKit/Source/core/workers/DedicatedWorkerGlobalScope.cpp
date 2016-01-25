@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -71,12 +70,6 @@ void DedicatedWorkerGlobalScope::postMessage(ExecutionContext* context, PassRefP
     if (exceptionState.hadException())
         return;
     thread()->workerObjectProxy().postMessageToWorkerObject(message, channels.release());
-}
-
-void DedicatedWorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState& exceptionState)
-{
-    Base::importScripts(urls, exceptionState);
-    thread()->workerObjectProxy().reportPendingActivity(hasPendingActivity());
 }
 
 DedicatedWorkerThread* DedicatedWorkerGlobalScope::thread() const

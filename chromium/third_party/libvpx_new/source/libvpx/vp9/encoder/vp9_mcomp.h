@@ -31,16 +31,12 @@ extern "C" {
 // for Block_16x16
 #define BORDER_MV_PIXELS_B16 (16 + VP9_INTERP_EXTEND)
 
-// motion search site
-typedef struct search_site {
-  MV mv;
-  int offset;
-} search_site;
-
 typedef struct search_site_config {
-  search_site ss[8 * MAX_MVSEARCH_STEPS + 1];
-  int ss_count;
+  // motion search sites
+  MV  ss_mv[8 * MAX_MVSEARCH_STEPS];        // Motion vector
+  intptr_t ss_os[8 * MAX_MVSEARCH_STEPS];   // Offset
   int searches_per_step;
+  int total_steps;
 } search_site_config;
 
 void vp9_init_dsmotion_compensation(search_site_config *cfg, int stride);

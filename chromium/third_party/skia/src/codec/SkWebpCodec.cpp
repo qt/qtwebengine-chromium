@@ -20,26 +20,26 @@
 #include "webp/decode.h"
 #include "webp/encode.h"
 
-bool SkWebpCodec::IsWebp(SkStream* stream) {
+bool SkWebpCodec::IsWebp(const void* buf, size_t bytesRead) {
     // WEBP starts with the following:
     // RIFFXXXXWEBPVP
     // Where XXXX is unspecified.
-    const char LENGTH = 14;
-    char bytes[LENGTH];
-    if (stream->read(&bytes, LENGTH) != LENGTH) {
-        return false;
-    }
-    return !memcmp(bytes, "RIFF", 4) && !memcmp(&bytes[8], "WEBPVP", 6);
+    const char* bytes = static_cast<const char*>(buf);
+    return bytesRead >= 14 && !memcmp(bytes, "RIFF", 4) && !memcmp(&bytes[8], "WEBPVP", 6);
 }
-
-static const size_t WEBP_VP8_HEADER_SIZE = 30;
 
 // Parse headers of RIFF container, and check for valid Webp (VP8) content.
 // NOTE: This calls peek instead of read, since onGetPixels will need these
 // bytes again.
 static bool webp_parse_header(SkStream* stream, SkImageInfo* info) {
     unsigned char buffer[WEBP_VP8_HEADER_SIZE];
-    if (!stream->peek(buffer, WEBP_VP8_HEADER_SIZE)) {
+    SkASSERT(WEBP_VP8_HEADER_SIZE <= SkCodec::MinBufferedBytesNeeded());
+
+    const size_t bytesPeeked = stream->peek(buffer, WEBP_VP8_HEADER_SIZE);
+    if (bytesPeeked != WEBP_VP8_HEADER_SIZE) {
+        // Use read + rewind as a backup
+        if (stream->read(buffer, WEBP_VP8_HEADER_SIZE) != WEBP_VP8_HEADER_SIZE
+            || !stream->rewind())
         return false;
     }
 
@@ -114,6 +114,13 @@ SkISize SkWebpCodec::onGetScaledDimensions(float desiredScale) const {
     return dim;
 }
 
+bool SkWebpCodec::onDimensionsSupported(const SkISize& dim) {
+    const SkImageInfo& info = this->getInfo();
+    return dim.width() >= 1 && dim.width() <= info.width()
+            && dim.height() >= 1 && dim.height() <= info.height();
+}
+
+
 static WEBP_CSP_MODE webp_decode_mode(SkColorType ct, bool premultiply) {
     switch (ct) {
         case kBGRA_8888_SkColorType:
@@ -137,8 +144,8 @@ bool SkWebpCodec::onGetValidSubset(SkIRect* desiredSubset) const {
         return false;
     }
 
-    SkIRect bounds = SkIRect::MakeSize(this->getInfo().dimensions());
-    if (!desiredSubset->intersect(bounds)) {
+    SkIRect dimensions  = SkIRect::MakeSize(this->getInfo().dimensions());
+    if (!dimensions.contains(*desiredSubset)) {
         return false;
     }
 
@@ -151,7 +158,8 @@ bool SkWebpCodec::onGetValidSubset(SkIRect* desiredSubset) const {
 }
 
 SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t rowBytes,
-                                         const Options& options, SkPMColor*, int*) {
+                                         const Options& options, SkPMColor*, int*,
+                                         int* rowsDecoded) {
     if (!webp_conversion_possible(dstInfo, this->getInfo())) {
         return kInvalidConversion;
     }
@@ -222,15 +230,13 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
         return kInvalidInput;
     }
 
-    SkAutoMalloc storage(BUFFER_SIZE);
-    uint8_t* buffer = static_cast<uint8_t*>(storage.get());
+    SkAutoTMalloc<uint8_t> storage(BUFFER_SIZE);
+    uint8_t* buffer = storage.get();
     while (true) {
         const size_t bytesRead = stream()->read(buffer, BUFFER_SIZE);
         if (0 == bytesRead) {
-            // FIXME: Maybe this is an incomplete image? How to decide? Based
-            // on the number of rows decoded? We can know the number of rows
-            // decoded using WebPIDecGetRGB.
-            return kInvalidInput;
+            WebPIDecGetRGB(idec, rowsDecoded, NULL, NULL, NULL);
+            return kIncompleteInput;
         }
 
         switch (WebPIAppend(idec, buffer, bytesRead)) {

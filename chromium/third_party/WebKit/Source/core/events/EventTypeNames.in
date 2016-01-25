@@ -41,6 +41,7 @@ cancel
 canplay
 canplaythrough
 change
+characteristicvaluechanged
 chargingchange
 chargingtimechange
 checking
@@ -67,6 +68,7 @@ defaultsessionstart
 devicelight
 devicemotion
 deviceorientation
+deviceorientationabsolute
 dischargingtimechange
 disconnect
 display

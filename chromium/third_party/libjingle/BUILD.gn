@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 
 # From third_party/libjingle/libjingle.gyp's target_defaults.
@@ -32,11 +31,8 @@ config("jingle_unexported_configs") {
     "../../testing/gtest/include",
     "../../third_party",
     "../../third_party/libyuv/include",
-    "../../third_party/usrsctp",
+    "../../third_party/usrsctp/usrsctplib",
   ]
-
-  # Assumes libpeer is linked statically.
-  defines += [ "LIBPEERCONNECTION_LIB=1" ]
 
   if (is_win && current_cpu == "x86") {
     defines += [ "_USE_32BIT_TIME_T" ]
@@ -107,23 +103,14 @@ config("jingle_public_configs") {
 }
 
 # From third_party/libjingle/libjingle.gyp's target_defaults.
-config("jingle_all_dependent_configs") {
-  if (is_debug) {
-    # TODO(sergeyu): Fix libjingle to use NDEBUG instead of
-    # _DEBUG and remove this define. See GYP file as well.
-    defines = [ "_DEBUG" ]
-  }
-}
-
-# From third_party/libjingle/libjingle.gyp's target_defaults.
 group("jingle_deps") {
   public_deps = [
     "//third_party/expat",
   ]
   deps = [
     "//base",
-    "//net",
     "//crypto:platform",
+    "//net",
   ]
 }
 
@@ -246,8 +233,8 @@ static_library("libjingle") {
     ":jingle_deps",
   ]
   deps = [
-    "//third_party/webrtc/base:rtc_base",
     ":libjingle_p2p_constants",
+    "//third_party/webrtc/base:rtc_base",
   ]
 
   # From libjingle_common.gypi's conditions list.
@@ -256,12 +243,18 @@ static_library("libjingle") {
   }
 
   if (is_nacl) {
-    deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
+    # For NACL, we have to add a default implementation for field_trail.
+    deps += [
+      "//native_client_sdk/src/libraries/nacl_io",
+      "//third_party/webrtc/system_wrappers:field_trial_default",
+    ]
+  } else {
+    # Otherwise, we just add the field_trial which redirects to base.
+    sources += [ "overrides/field_trial.cc" ]
   }
 
   configs += [ ":jingle_unexported_configs" ]
   public_configs = [ ":jingle_public_configs" ]
-  all_dependent_configs = [ ":jingle_all_dependent_configs" ]
 }
 
 # This has to be is a separate project due to a bug in MSVS 2008 and the
@@ -284,7 +277,6 @@ static_library("libjingle_p2p_constants") {
   ]
   configs += [ ":jingle_unexported_configs" ]
   public_configs = [ ":jingle_public_configs" ]
-  all_dependent_configs = [ ":jingle_all_dependent_configs" ]
 }
 
 if (enable_webrtc) {
@@ -295,7 +287,7 @@ if (enable_webrtc) {
     ]
     configs += [ ":jingle_unexported_configs" ]
     public_configs = [ ":jingle_public_configs" ]
-    deps = [
+    public_deps = [
       ":libjingle_webrtc_common",
     ]
   }
@@ -307,8 +299,6 @@ if (enable_webrtc) {
       "overrides/talk/media/webrtc/webrtcexport.h",
       "source/talk/app/webrtc/audiotrack.cc",
       "source/talk/app/webrtc/audiotrack.h",
-      "source/talk/app/webrtc/audiotrackrenderer.cc",
-      "source/talk/app/webrtc/audiotrackrenderer.h",
       "source/talk/app/webrtc/datachannel.cc",
       "source/talk/app/webrtc/datachannel.h",
       "source/talk/app/webrtc/dtlsidentitystore.cc",
@@ -331,10 +321,10 @@ if (enable_webrtc) {
       "source/talk/app/webrtc/mediastreamhandler.cc",
       "source/talk/app/webrtc/mediastreamhandler.h",
       "source/talk/app/webrtc/mediastreaminterface.h",
+      "source/talk/app/webrtc/mediastreamobserver.cc",
+      "source/talk/app/webrtc/mediastreamobserver.h",
       "source/talk/app/webrtc/mediastreamprovider.h",
       "source/talk/app/webrtc/mediastreamproxy.h",
-      "source/talk/app/webrtc/mediastreamsignaling.cc",
-      "source/talk/app/webrtc/mediastreamsignaling.h",
       "source/talk/app/webrtc/mediastreamtrack.h",
       "source/talk/app/webrtc/mediastreamtrackproxy.h",
       "source/talk/app/webrtc/notifier.h",
@@ -347,6 +337,8 @@ if (enable_webrtc) {
       "source/talk/app/webrtc/portallocatorfactory.h",
       "source/talk/app/webrtc/remoteaudiosource.cc",
       "source/talk/app/webrtc/remoteaudiosource.h",
+      "source/talk/app/webrtc/remoteaudiotrack.cc",
+      "source/talk/app/webrtc/remoteaudiotrack.h",
       "source/talk/app/webrtc/remotevideocapturer.cc",
       "source/talk/app/webrtc/remotevideocapturer.h",
       "source/talk/app/webrtc/rtpreceiver.cc",
@@ -504,8 +496,8 @@ if (enable_webrtc) {
     ]
 
     deps = [
-      "//third_party/webrtc/base:rtc_base",
       ":libjingle_webrtc_common",
+      "//third_party/webrtc/base:rtc_base",
     ]
   }
 }  # enable_webrtc

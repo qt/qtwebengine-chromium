@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/ConvolverNode.h"
-
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -111,11 +108,16 @@ void ConvolverHandler::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionS
     unsigned numberOfChannels = buffer->numberOfChannels();
     size_t bufferLength = buffer->length();
 
-    // The current implementation supports up to four channel impulse responses, which are interpreted as true-stereo (see Reverb class).
-    bool isBufferGood = numberOfChannels > 0 && numberOfChannels <= 4 && bufferLength;
-    ASSERT(isBufferGood);
-    if (!isBufferGood)
+    // The current implementation supports only 1-, 2-, or 4-channel impulse responses, with the
+    // 4-channel response being interpreted as true-stereo (see Reverb class).
+    bool isChannelCountGood = numberOfChannels == 1 || numberOfChannels == 2 || numberOfChannels == 4;
+
+    if (!isChannelCountGood) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            "The buffer must have 1, 2, or 4 channels, not " + String::number(numberOfChannels));
         return;
+    }
 
     // Wrap the AudioBuffer by an AudioBus. It's an efficient pointer set and not a memcpy().
     // This memory is simply used in the Reverb constructor and no reference to it is kept for later use in that class.
@@ -202,4 +204,3 @@ void ConvolverNode::setNormalize(bool normalize)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

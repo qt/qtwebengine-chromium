@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_CHILD_WORKER_SCHEDULER_IMPL_H_
 #define COMPONENTS_SCHEDULER_CHILD_WORKER_SCHEDULER_IMPL_H_
 
+#include "base/macros.h"
 #include "components/scheduler/child/idle_helper.h"
 #include "components/scheduler/child/scheduler_helper.h"
 #include "components/scheduler/child/worker_scheduler.h"
@@ -18,17 +19,17 @@ class ConvertableToTraceFormat;
 
 namespace scheduler {
 
-class SchedulerTaskRunnerDelegate;
+class SchedulerTqmDelegate;
 
 class SCHEDULER_EXPORT WorkerSchedulerImpl : public WorkerScheduler,
                                              public IdleHelper::Delegate {
  public:
   explicit WorkerSchedulerImpl(
-      scoped_refptr<SchedulerTaskRunnerDelegate> main_task_runner);
+      scoped_refptr<SchedulerTqmDelegate> main_task_runner);
   ~WorkerSchedulerImpl() override;
 
   // WorkerScheduler implementation:
-  scoped_refptr<TaskQueue> DefaultTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
   bool CanExceedIdleDeadlineIfRequired() const override;
   bool ShouldYieldForHighPriorityWork() override;

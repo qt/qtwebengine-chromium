@@ -37,7 +37,7 @@
 namespace blink {
 
 class V8IdleTaskAdapter : public WebThread::IdleTask {
-    WTF_MAKE_FAST_ALLOCATED(V8IdleTaskAdapter);
+    USING_FAST_MALLOC(V8IdleTaskAdapter);
     WTF_MAKE_NONCOPYABLE(V8IdleTaskAdapter);
 public:
     V8IdleTaskAdapter(v8::IdleTask* task) : m_task(adoptPtr(task)) { }
@@ -51,7 +51,7 @@ private:
 };
 
 class V8IdleTaskRunner : public gin::V8IdleTaskRunner {
-    WTF_MAKE_FAST_ALLOCATED(V8IdleTaskRunner);
+    USING_FAST_MALLOC(V8IdleTaskRunner);
     WTF_MAKE_NONCOPYABLE(V8IdleTaskRunner);
 public:
     V8IdleTaskRunner(WebScheduler* scheduler) : m_scheduler(scheduler) { }
@@ -59,7 +59,7 @@ public:
     void PostIdleTask(v8::IdleTask* task) override
     {
         ASSERT(RuntimeEnabledFeatures::v8IdleTasksEnabled());
-        m_scheduler->postIdleTask(FROM_HERE, new V8IdleTaskAdapter(task));
+        m_scheduler->postIdleTask(BLINK_FROM_HERE, new V8IdleTaskAdapter(task));
     }
 private:
     WebScheduler* m_scheduler;

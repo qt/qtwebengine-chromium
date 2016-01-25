@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/style/ComputedStyle.h"
 
 #include "core/css/resolver/StyleResolver.h"
@@ -265,6 +264,10 @@ void ComputedStyle::copyNonInheritedFromCached(const ComputedStyle& other)
 
     // unique() styles are not cacheable.
     ASSERT(!other.noninherited_flags.unique);
+
+    // styles with non inherited properties that reference variables are not
+    // cacheable.
+    ASSERT(!other.noninherited_flags.variableReference);
 
     // The following flags are set during matching before we decide that we get a
     // match in the MatchedPropertiesCache which in turn calls this method. The
@@ -531,7 +534,6 @@ bool ComputedStyle::diffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle&
             || rareInheritedData->hyphenationLimitAfter != other.rareInheritedData->hyphenationLimitAfter
             || rareInheritedData->hyphenationString != other.rareInheritedData->hyphenationString
             || rareInheritedData->m_respectImageOrientation != other.rareInheritedData->m_respectImageOrientation
-            || rareInheritedData->locale != other.rareInheritedData->locale
             || rareInheritedData->m_rubyPosition != other.rareInheritedData->m_rubyPosition
             || rareInheritedData->textEmphasisMark != other.rareInheritedData->textEmphasisMark
             || rareInheritedData->textEmphasisPosition != other.rareInheritedData->textEmphasisPosition
@@ -1004,8 +1006,8 @@ void ComputedStyle::applyMotionPathTransform(float originX, float originY, Trans
 
     FloatPoint point;
     float angle;
-    if (!motionPath.path().pointAndNormalAtLength(computedDistance, point, angle))
-        return;
+    motionPath.path().pointAndNormalAtLength(computedDistance, point, angle);
+
     if (motionData.m_rotationType == MotionRotationFixed)
         angle = 0;
 
@@ -1026,14 +1028,14 @@ void ComputedStyle::setBoxShadow(PassRefPtr<ShadowList> s)
 static FloatRoundedRect::Radii calcRadiiFor(const BorderData& border, LayoutSize size)
 {
     return FloatRoundedRect::Radii(
-        IntSize(valueForLength(border.topLeft().width(), size.width()),
-            valueForLength(border.topLeft().height(), size.height())),
-        IntSize(valueForLength(border.topRight().width(), size.width()),
-            valueForLength(border.topRight().height(), size.height())),
-        IntSize(valueForLength(border.bottomLeft().width(), size.width()),
-            valueForLength(border.bottomLeft().height(), size.height())),
-        IntSize(valueForLength(border.bottomRight().width(), size.width()),
-            valueForLength(border.bottomRight().height(), size.height())));
+        FloatSize(floatValueForLength(border.topLeft().width(), size.width().toFloat()),
+            floatValueForLength(border.topLeft().height(), size.height().toFloat())),
+        FloatSize(floatValueForLength(border.topRight().width(), size.width().toFloat()),
+            floatValueForLength(border.topRight().height(), size.height().toFloat())),
+        FloatSize(floatValueForLength(border.bottomLeft().width(), size.width().toFloat()),
+            floatValueForLength(border.bottomLeft().height(), size.height().toFloat())),
+        FloatSize(floatValueForLength(border.bottomRight().width(), size.width().toFloat()),
+            floatValueForLength(border.bottomRight().height(), size.height().toFloat())));
 }
 
 StyleImage* ComputedStyle::listStyleImage() const { return rareInheritedData->listStyleImage.get(); }
@@ -1269,6 +1271,32 @@ const Vector<AppliedTextDecoration>& ComputedStyle::appliedTextDecorations() con
     return rareInheritedData->appliedTextDecorations->vector();
 }
 
+StyleVariableData* ComputedStyle::variables() const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    return rareInheritedData->variables.get();
+}
+
+void ComputedStyle::setVariable(const AtomicString& name, PassRefPtr<CSSVariableData> value)
+{
+    RefPtr<StyleVariableData>& variables = rareInheritedData.access()->variables;
+    if (!variables)
+        variables = StyleVariableData::create();
+    else if (!variables->hasOneRef())
+        variables = variables->copy();
+    variables->setVariable(name, value);
+}
+
+void ComputedStyle::removeVariable(const AtomicString& name)
+{
+    RefPtr<StyleVariableData>& variables = rareInheritedData.access()->variables;
+    if (!variables)
+        return;
+    if (!variables->hasOneRef())
+        variables = variables->copy();
+    variables->removeVariable(name);
+}
+
 float ComputedStyle::wordSpacing() const { return fontDescription().wordSpacing(); }
 float ComputedStyle::letterSpacing() const { return fontDescription().letterSpacing(); }
 
@@ -1307,12 +1335,13 @@ int ComputedStyle::computedLineHeight() const
 {
     const Length& lh = lineHeight();
 
-    // Negative value means the line height is not set. Use the font's built-in spacing.
-    if (lh.isNegative())
+    // Negative value means the line height is not set. Use the font's built-in
+    // spacing, if avalible.
+    if (lh.isNegative() && font().primaryFont())
         return fontMetrics().lineSpacing();
 
     if (lh.hasPercent())
-        return minimumValueForLength(lh, fontSize());
+        return minimumValueForLength(lh, computedFontSize());
 
     return std::min(lh.value(), LayoutUnit::max().toFloat());
 }
@@ -1532,8 +1561,6 @@ const BorderValue& ComputedStyle::borderBefore() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderTop();
-    case BottomToTopWritingMode:
-        return borderBottom();
     case LeftToRightWritingMode:
         return borderLeft();
     case RightToLeftWritingMode:
@@ -1548,8 +1575,6 @@ const BorderValue& ComputedStyle::borderAfter() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderBottom();
-    case BottomToTopWritingMode:
-        return borderTop();
     case LeftToRightWritingMode:
         return borderRight();
     case RightToLeftWritingMode:
@@ -1578,8 +1603,6 @@ int ComputedStyle::borderBeforeWidth() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderTopWidth();
-    case BottomToTopWritingMode:
-        return borderBottomWidth();
     case LeftToRightWritingMode:
         return borderLeftWidth();
     case RightToLeftWritingMode:
@@ -1594,8 +1617,6 @@ int ComputedStyle::borderAfterWidth() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderBottomWidth();
-    case BottomToTopWritingMode:
-        return borderTopWidth();
     case LeftToRightWritingMode:
         return borderRightWidth();
     case RightToLeftWritingMode:
@@ -1617,6 +1638,16 @@ int ComputedStyle::borderEndWidth() const
     if (isHorizontalWritingMode())
         return isLeftToRightDirection() ? borderRightWidth() : borderLeftWidth();
     return isLeftToRightDirection() ? borderBottomWidth() : borderTopWidth();
+}
+
+int ComputedStyle::borderOverWidth() const
+{
+    return isHorizontalWritingMode() ? borderTopWidth() : borderRightWidth();
+}
+
+int ComputedStyle::borderUnderWidth() const
+{
+    return isHorizontalWritingMode() ? borderBottomWidth() : borderLeftWidth();
 }
 
 void ComputedStyle::setMarginStart(const Length& margin)

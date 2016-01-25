@@ -35,21 +35,23 @@ namespace blink {
 
 class ExceptionState;
 
-class DOMSettableTokenListObserver : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT DOMSettableTokenListObserver : public WillBeGarbageCollectedMixin {
 public:
-    virtual void valueChanged() = 0;
+    // Called when the value property is set, even if the tokens in
+    // the set have not changed.
+    virtual void valueWasSet() = 0;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
-class DOMSettableTokenList final
+class CORE_EXPORT DOMSettableTokenList
     : public DOMTokenList
 #if !ENABLE(OILPAN)
     , public RefCounted<DOMSettableTokenList>
 #endif
     {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMSettableTokenList);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(DOMSettableTokenList);
 public:
     static PassRefPtrWillBeRawPtr<DOMSettableTokenList> create(DOMSettableTokenListObserver* observer = nullptr)
     {
@@ -65,9 +67,6 @@ public:
     unsigned length() const override { return m_tokens.size(); }
     const AtomicString item(unsigned index) const override;
 
-    void add(const Vector<String>&, ExceptionState&) override;
-    void remove(const Vector<String>&, ExceptionState&) override;
-
     const AtomicString& value() const override { return m_value; }
     void setValue(const AtomicString&) override;
 
@@ -80,9 +79,7 @@ protected:
     explicit DOMSettableTokenList(DOMSettableTokenListObserver*);
 
 private:
-    void addInternal(const AtomicString&) override;
     bool containsInternal(const AtomicString&) const override;
-    void removeInternal(const AtomicString&) override;
 
     AtomicString m_value;
     SpaceSplitString m_tokens;

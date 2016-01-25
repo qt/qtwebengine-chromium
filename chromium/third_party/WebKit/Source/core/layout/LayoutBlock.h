@@ -132,6 +132,8 @@ public:
 
     LayoutUnit minLineHeightForReplacedObject(bool isFirstLine, LayoutUnit replacedHeight) const;
 
+    bool createsNewFormattingContext() const;
+
     const LineBoxList& lineBoxes() const { return m_lineBoxes; }
     LineBoxList* lineBoxes() { return &m_lineBoxes; }
 
@@ -213,7 +215,7 @@ public:
     // Helper methods for computing line counts and heights for line counts.
     RootInlineBox* lineAtIndex(int) const;
     int lineCount(const RootInlineBox* = nullptr, bool* = nullptr) const;
-    int heightForLineCount(int);
+    int heightForLineCount(int lineCount);
     void clearTruncation();
 
     LayoutBoxModelObject* virtualContinuation() const final { return continuation(); }
@@ -231,7 +233,8 @@ public:
     int columnGap() const;
 
     // Accessors for logical width/height and margins in the containing block's block-flow direction.
-    LayoutUnit logicalWidthForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size().width() : child.size().height(); }
+    LayoutUnit logicalWidthForChild(const LayoutBox& child) const { return logicalWidthForChildSize(child.size()); }
+    LayoutUnit logicalWidthForChildSize(LayoutSize childSize) const { return isHorizontalWritingMode() ? childSize.width() : childSize.height(); }
     LayoutUnit logicalHeightForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size().height() : child.size().width(); }
     LayoutSize logicalSizeForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size() : child.size().transposedSize(); }
     LayoutUnit logicalTopForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.location().y() : child.location().x(); }
@@ -273,13 +276,29 @@ public:
     bool recalcChildOverflowAfterStyleChange();
     bool recalcOverflowAfterStyleChange();
 
+    // An example explaining layout tree structure about first-line style:
+    // <style>
+    //   #enclosingFirstLineStyleBlock::first-line { ... }
+    // </style>
+    // <div id="enclosingFirstLineStyleBlock">
+    //   <div>
+    //     <div id="nearestInnerBlockWithFirstLine">
+    //       [<span>]first line text[</span>]
+    //     </div>
+    //   </div>
+    // </div>
+
+    // Returns the nearest enclosing block (including this block) that contributes a first-line style to our first line.
+    LayoutBlock* enclosingFirstLineStyleBlock() const;
+    // Returns this block or the nearest inner block containing the actual first line.
+    LayoutBlockFlow* nearestInnerBlockWithFirstLine() const;
+
 protected:
     void willBeDestroyed() override;
 
     void dirtyForLayoutFromPercentageHeightDescendants(SubtreeLayoutScope&);
 
     void layout() override;
-    bool updateImageLoadingPriorities() final;
 
     enum PositionedLayoutBehavior {
         DefaultLayout,
@@ -299,8 +318,8 @@ public:
     virtual void paintObject(const PaintInfo&, const LayoutPoint&) const;
     virtual void paintChildren(const PaintInfo&, const LayoutPoint&) const;
 
-    // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
-    virtual void paintFloats(const PaintInfo&, const LayoutPoint&, bool) const { }
+    // FIXME-BLOCKFLOW: Remove virtualization when all callers have moved to LayoutBlockFlow
+    virtual void paintFloats(const PaintInfo&, const LayoutPoint&) const { }
     virtual void paintSelection(const PaintInfo&, const LayoutPoint&) const { }
 
 protected:
@@ -312,7 +331,12 @@ protected:
 
     int firstLineBoxBaseline() const override;
     int inlineBlockBaseline(LineDirectionMode) const override;
-    int lastLineBoxBaseline(LineDirectionMode) const;
+
+    // This function disables the 'overflow' check in inlineBlockBaseline.
+    // For 'inline-block', CSS says that the baseline is the bottom margin edge
+    // if 'overflow' is not visible. But some descendant classes want to ignore
+    // this condition.
+    virtual bool shouldIgnoreOverflowPropertyForInlineBlockBaseline() const { return false; }
 
     void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
@@ -335,7 +359,7 @@ protected:
     virtual void simplifiedNormalFlowLayout();
 
 public:
-    virtual void computeOverflow(LayoutUnit oldClientAfterEdge);
+    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool = false);
 protected:
     virtual void addOverflowFromChildren();
     void addOverflowFromPositionedObjects();
@@ -348,10 +372,13 @@ protected:
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, LayoutBox&);
 
-    bool isInlineBlockOrInlineTable() const final { return isInline() && isReplaced(); }
+    // TODO(jchaffraix): We should rename this function as inline-flex and inline-grid as also covered.
+    // Alternatively it should be removed as we clarify the meaning of isAtomicInlineLevel to imply
+    // isInline.
+    bool isInlineBlockOrInlineTable() const final { return isInline() && isAtomicInlineLevel(); }
 
     void invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState) override;
-    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
+    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason) const override;
 
 private:
     LayoutObjectChildList* virtualChildren() final { return children(); }
@@ -364,14 +391,13 @@ private:
     virtual void removeLeftoverAnonymousBlock(LayoutBlock* child);
 
     static void collapseAnonymousBlockChild(LayoutBlock* parent, LayoutBlock* child);
+    void makeChildrenInlineIfPossible();
 
     void dirtyLinesFromChangedChild(LayoutObject* child) final { m_lineBoxes.dirtyLinesFromChangedChild(LineLayoutItem(this), LineLayoutItem(child)); }
 
     void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild) override;
 
     bool isSelfCollapsingBlock() const override;
-
-    void removeAnonymousWrappersIfRequired();
 
     void insertIntoTrackedLayoutBoxMaps(LayoutBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
     static void removeFromTrackedLayoutBoxMaps(LayoutBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
@@ -382,17 +408,13 @@ private:
 
     bool avoidsFloats() const override { return true; }
 
-    bool hitTestContents(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
+    bool hitTestChildren(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
     virtual bool hitTestFloats(HitTestResult&, const HitTestLocation&, const LayoutPoint&) { return false; }
 
-    virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset) const;
+    bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset) const;
 
     void computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
-
-    // Obtains the nearest enclosing block (including this block) that contributes a first-line style to our inline
-    // children.
-    LayoutBlock* firstLineBlock() const override;
 
     LayoutObject* hoverAncestor() const final;
     void updateDragState(bool dragOn) final;
@@ -430,6 +452,12 @@ public:
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit) const;
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule) const;
 
+    // Calculate the strut to insert in order fit content of size |contentLogicalHeight|.
+    // |strutToNextPage| is the strut to add to |offset| to merely get to the top of the next page
+    // or column. This is what will be returned if the content can actually fit there. Otherwise,
+    // return the distance to the next fragmentainer that can fit this piece of content.
+    LayoutUnit calculatePaginationStrutToFitContent(LayoutUnit offset, LayoutUnit strutToNextPage, LayoutUnit contentLogicalHeight) const;
+
 protected:
     bool isPageLogicalHeightKnown(LayoutUnit logicalOffset) const { return pageLogicalHeightForOffset(logicalOffset); }
 
@@ -444,15 +472,10 @@ protected:
     // is 800. AssociateWithFormerPage will simply return 800.
     LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule) const;
 
-    bool createsNewFormattingContext() const;
-
-    // A page break is required at some offset due to space shortage in the current fragmentainer.
-    void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage);
-
-    // Update minimum page height required to avoid fragmentation where it shouldn't occur (inside
-    // unbreakable content, between orphans and widows, etc.). This will be used as a hint to the
-    // column balancer to help set a good minimum column height.
-    void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight);
+    // Paginated content inside this block was laid out.
+    // |logicalTopOffsetAfterPagination| is the logical top offset of the child content after
+    // applying any forced or unforced break, if needed.
+    void paginatedContentWasLaidOut(LayoutUnit logicalTopOffsetAfterPagination);
 
     // Adjust from painting offsets to the local coords of this layoutObject
     void offsetForContents(LayoutPoint&) const;

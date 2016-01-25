@@ -10,6 +10,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "ui/base/models/menu_separator_types.h"
@@ -323,9 +324,6 @@ class VIEWS_EXPORT MenuItemView : public View {
   void set_use_right_margin(bool use_right_margin) {
     use_right_margin_ = use_right_margin;
   }
-
-  // Returns a reference to MenuConfig to be used with this menu.
-  const MenuConfig& GetMenuConfig() const;
 
  protected:
   // Creates a MenuItemView. This is used by the various AddXXX methods.

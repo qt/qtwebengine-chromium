@@ -6,11 +6,14 @@
 
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
+#include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <set>
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -275,7 +278,7 @@ void WebPluginDelegateImpl::UpdateGeometryAndContext(
 }
 
 void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
-  gfx::SkiaBitLocker bit_locker(canvas);
+  skia::SkiaBitLocker bit_locker(canvas);
   CGContextRef context = bit_locker.cgContext();
   CGPaint(context, rect);
 }

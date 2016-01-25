@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "cc/output/filter_operations.h"
 #include "skia/ext/refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,6 +44,19 @@ TEST(FilterOperationsTest, GetOutsetsDropShadowReferenceFilter) {
   EXPECT_EQ(9, right);
   EXPECT_EQ(19, bottom);
   EXPECT_EQ(15, left);
+}
+
+TEST(FilterOperationsTest, GetOutsetsNullReferenceFilter) {
+  FilterOperations ops;
+  ops.Append(FilterOperation::CreateReferenceFilter(nullptr));
+
+  int top, right, bottom, left;
+  top = right = bottom = left = 0;
+  ops.GetOutsets(&top, &right, &bottom, &left);
+  EXPECT_EQ(0, top);
+  EXPECT_EQ(0, right);
+  EXPECT_EQ(0, bottom);
+  EXPECT_EQ(0, left);
 }
 
 TEST(FilterOperationsTest, GetOutsetsDropShadow) {

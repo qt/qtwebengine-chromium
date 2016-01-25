@@ -26,14 +26,14 @@
 #define ImageDocument_h
 
 #include "core/html/HTMLDocument.h"
+#include "core/html/HTMLImageElement.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
 class ImageResource;
-class HTMLImageElement;
 
-class ImageDocument final : public HTMLDocument {
+class CORE_EXPORT ImageDocument final : public HTMLDocument {
 public:
     static PassRefPtrWillBeRawPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
     {
@@ -70,6 +70,8 @@ private:
     bool imageFitsInWindow() const;
     bool shouldShrinkToFit() const;
     float scale() const;
+
+    String debugName() const override { return "ImageDocument"; }
 
     RefPtrWillBeMember<HTMLImageElement> m_imageElement;
 

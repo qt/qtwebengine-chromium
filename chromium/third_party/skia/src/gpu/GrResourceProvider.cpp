@@ -19,7 +19,8 @@
 
 GR_DECLARE_STATIC_UNIQUE_KEY(gQuadIndexBufferKey);
 
-GrResourceProvider::GrResourceProvider(GrGpu* gpu, GrResourceCache* cache) : INHERITED(gpu, cache) {
+GrResourceProvider::GrResourceProvider(GrGpu* gpu, GrResourceCache* cache, GrSingleOwner* owner)
+    : INHERITED(gpu, cache, owner) {
     GR_DEFINE_STATIC_UNIQUE_KEY(gQuadIndexBufferKey);
     fQuadIndexBufferKey = gQuadIndexBufferKey;
 }
@@ -146,6 +147,16 @@ GrVertexBuffer* GrResourceProvider::createVertexBuffer(size_t size, BufferUsage 
     return this->gpu()->createVertexBuffer(size, dynamic);
 }
 
+GrTransferBuffer* GrResourceProvider::createTransferBuffer(size_t size, TransferType type,
+                                                           uint32_t flags) {
+    if (this->isAbandoned()) {
+        return nullptr;
+    }
+
+    //bool noPendingIO = SkToBool(flags & kNoPendingIO_Flag);
+    return this->gpu()->createTransferBuffer(size, type);
+}
+
 GrBatchAtlas* GrResourceProvider::createAtlas(GrPixelConfig config,
                                               int width, int height,
                                               int numPlotsX, int numPlotsY,
@@ -158,7 +169,7 @@ GrBatchAtlas* GrResourceProvider::createAtlas(GrPixelConfig config,
 
     // We don't want to flush the context so we claim we're in the middle of flushing so as to
     // guarantee we do not recieve a texture with pending IO
-    // TODO: Determine how to avoid having to do this. (http://skbug.com/4156)
+    // TODO: Determine how to avoid having to do this. (https://bug.skia.org/4156)
     static const uint32_t kFlags = GrResourceProvider::kNoPendingIO_Flag;
     GrTexture* texture = this->createApproxTexture(desc, kFlags);
     if (!texture) {
@@ -202,7 +213,7 @@ GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget*
         if (rt->renderTargetPriv().attachStencilAttachment(stencil)) {
             if (newStencil) {
                 // Right now we're clearing the stencil attachment here after it is
-                // attached to an RT for the first time. When we start matching
+                // attached to a RT for the first time. When we start matching
                 // stencil buffers with smaller color targets this will no longer
                 // be correct because it won't be guaranteed to clear the entire
                 // sb.

@@ -4,8 +4,11 @@
 
 #include "chromecast/browser/cast_browser_process.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "build/build_config.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/browser/cast_browser_context.h"
 #include "chromecast/browser/cast_resource_dispatcher_host_delegate.h"
@@ -69,7 +72,7 @@ void CastBrowserProcess::SetCastService(scoped_ptr<CastService> cast_service) {
 #if defined(USE_AURA)
 void CastBrowserProcess::SetCastScreen(scoped_ptr<CastScreen> cast_screen) {
   DCHECK(!cast_screen_);
-  cast_screen_ = cast_screen.Pass();
+  cast_screen_ = std::move(cast_screen);
 }
 #endif  // defined(USE_AURA)
 

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/WorkerLoaderClientBridge.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -67,8 +66,8 @@ void WorkerLoaderClientBridge::didSendData(unsigned long long bytesSent, unsigne
 static void workerGlobalScopeDidReceiveResponse(PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, unsigned long identifier, PassOwnPtr<CrossThreadResourceResponseData> responseData, PassOwnPtr<WebDataConsumerHandle> handle, ExecutionContext* context)
 {
     ASSERT_UNUSED(context, context->isWorkerGlobalScope());
-    OwnPtr<ResourceResponse> response(ResourceResponse::adopt(responseData));
-    workerClientWrapper->didReceiveResponse(identifier, *response, handle);
+    ResourceResponse response(responseData.get());
+    workerClientWrapper->didReceiveResponse(identifier, response, handle);
 }
 
 void WorkerLoaderClientBridge::didReceiveResponse(unsigned long identifier, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)

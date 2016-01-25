@@ -5,7 +5,9 @@
 #ifndef UI_MESSAGE_CENTER_MESSAGE_CENTER_STYLE_H_
 #define UI_MESSAGE_CENTER_MESSAGE_CENTER_STYLE_H_
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
+#include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/message_center/message_center_export.h"
@@ -101,7 +103,7 @@ extern const size_t kNotificationMaximumItems;     // For list notifications.
 // Timing.
 extern const int kAutocloseDefaultDelaySeconds;
 extern const int kAutocloseHighPriorityDelaySeconds;
-extern const int kAutocloseWebNotificationDelaySeconds;
+extern const int kAutocloseWebPageDelaySeconds;
 
 // Buttons.
 const int kButtonHeight = 38;              // In DIPs.
@@ -118,8 +120,8 @@ const SkColor kHoveredButtonBackgroundColor = SkColorSetRGB(243, 243, 243);
 const int kProgressBarThickness = 5;
 const int kProgressBarTopPadding = 16;
 const int kProgressBarCornerRadius = 3;
-const SkColor kProgressBarBackgroundColor = SkColorSetRGB(216, 216, 216);
-const SkColor kProgressBarSliceColor = SkColorSetRGB(120, 120, 120);
+const SkColor kProgressBarBackgroundColor = SkColorSetARGB(26, 0, 0, 0);
+const SkColor kProgressBarSliceColor = SkColorSetRGB(26, 194, 34);
 
 // Line limits.
 const int kMaxTitleLines = 2;

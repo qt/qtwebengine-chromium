@@ -5,11 +5,12 @@
 #include "ui/native_theme/native_theme_mac.h"
 
 #import <Cocoa/Cocoa.h>
+#include <stddef.h>
 
-#include "base/basictypes.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/sdk_forward_declarations.h"
+#include "base/macros.h"
 #import "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/geometry/rect.h"
@@ -96,7 +97,7 @@ SkColor NSSystemColorToSkColor(NSColor* color) {
   NSColor* device_color =
       [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
   if (device_color)
-    return gfx::NSDeviceColorToSkColor(device_color);
+    return skia::NSDeviceColorToSkColor(device_color);
 
   // Sometimes the conversion is not possible, but we can get an approximation
   // by going through a CGColorRef. Note that simply using NSColor methods for
@@ -107,7 +108,7 @@ SkColor NSSystemColorToSkColor(NSColor* color) {
   CGColorRef cg_color = [color CGColor];
   const size_t component_count = CGColorGetNumberOfComponents(cg_color);
   if (component_count == 4)
-    return gfx::CGColorRefToSkColor(cg_color);
+    return skia::CGColorRefToSkColor(cg_color);
 
   CHECK(component_count == 1 || component_count == 2);
   // 1-2 components means a grayscale channel and maybe an alpha channel, which
@@ -126,7 +127,7 @@ SkColor NSSystemColorToSkColor(NSColor* color) {
 namespace ui {
 
 // static
-NativeTheme* NativeTheme::instance() {
+NativeTheme* NativeTheme::GetInstanceForWeb() {
   return NativeThemeMac::instance();
 }
 
@@ -234,15 +235,9 @@ SkColor NativeThemeMac::GetSystemColor(ColorId color_id) const {
       return SkColorSetRGB(140, 140, 140);
 
     default:
-      break;  // TODO(tapted): Handle all values and remove the default case.
+      // TODO(tapted): Handle all values and remove the default case.
+      return GetAuraColor(color_id, this);
   }
-
-  SkColor color;
-  if (CommonThemeGetSystemColor(color_id, &color))
-    return color;
-
-  NOTIMPLEMENTED() << " Invalid color_id: " << color_id;
-  return FallbackTheme::GetSystemColor(color_id);
 }
 
 void NativeThemeMac::PaintScrollbarTrack(

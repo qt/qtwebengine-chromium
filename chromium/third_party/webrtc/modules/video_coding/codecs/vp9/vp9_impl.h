@@ -9,8 +9,10 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_IMPL_H_
-#define WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_IMPL_H_
+#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_VP9_IMPL_H_
+#define WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_VP9_IMPL_H_
+
+#include <vector>
 
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
 #include "webrtc/modules/video_coding/codecs/vp9/vp9_frame_buffer_pool.h"
@@ -20,6 +22,8 @@
 #include "vpx/vpx_encoder.h"
 
 namespace webrtc {
+
+class ScreenshareLayersVP9;
 
 class VP9EncoderImpl : public VP9Encoder {
  public:
@@ -35,7 +39,7 @@ class VP9EncoderImpl : public VP9Encoder {
 
   int Encode(const VideoFrame& input_image,
              const CodecSpecificInfo* codec_specific_info,
-             const std::vector<VideoFrameType>* frame_types) override;
+             const std::vector<FrameType>* frame_types) override;
 
   int RegisterEncodeCompleteCallback(EncodedImageCallback* callback) override;
 
@@ -44,6 +48,22 @@ class VP9EncoderImpl : public VP9Encoder {
   int SetRates(uint32_t new_bitrate_kbit, uint32_t frame_rate) override;
 
   void OnDroppedFrame() override {}
+
+  const char* ImplementationName() const override;
+
+  struct LayerFrameRefSettings {
+    int8_t upd_buf = -1;   // -1 - no update,    0..7 - update buffer 0..7
+    int8_t ref_buf1 = -1;  // -1 - no reference, 0..7 - reference buffer 0..7
+    int8_t ref_buf2 = -1;  // -1 - no reference, 0..7 - reference buffer 0..7
+    int8_t ref_buf3 = -1;  // -1 - no reference, 0..7 - reference buffer 0..7
+  };
+
+  struct SuperFrameRefSettings {
+    LayerFrameRefSettings layer[kMaxVp9NumberOfSpatialLayers];
+    uint8_t start_layer = 0;  // The first spatial layer to be encoded.
+    uint8_t stop_layer = 0;   // The last spatial layer to be encoded.
+    bool is_keyframe = false;
+  };
 
  private:
   // Determine number of encoder threads to use.
@@ -56,7 +76,17 @@ class VP9EncoderImpl : public VP9Encoder {
                              const vpx_codec_cx_pkt& pkt,
                              uint32_t timestamp);
 
+  bool ExplicitlyConfiguredSpatialLayers() const;
   bool SetSvcRates();
+
+  // Used for flexible mode to set the flags and buffer references used
+  // by the encoder. Also calculates the references used by the RTP
+  // packetizer.
+  //
+  // Has to be called for every frame (keyframes included) to update the
+  // state used to calculate references.
+  vpx_svc_ref_frame_config GenerateRefsAndFlags(
+      const SuperFrameRefSettings& settings);
 
   virtual int GetEncodedLayerFrame(const vpx_codec_cx_pkt* pkt);
 
@@ -88,11 +118,18 @@ class VP9EncoderImpl : public VP9Encoder {
   GofInfoVP9 gof_;       // Contains each frame's temporal information for
                          // non-flexible mode.
   uint8_t tl0_pic_idx_;  // Only used in non-flexible mode.
-  size_t gof_idx_;       // Only used in non-flexible mode.
+  size_t frames_since_kf_;
   uint8_t num_temporal_layers_;
   uint8_t num_spatial_layers_;
-};
 
+  // Used for flexible mode.
+  bool is_flexible_mode_;
+  int64_t buffer_updated_at_frame_[kNumVp9Buffers];
+  int64_t frames_encoded_;
+  uint8_t num_ref_pics_[kMaxVp9NumberOfSpatialLayers];
+  uint8_t p_diff_[kMaxVp9NumberOfSpatialLayers][kMaxVp9RefPics];
+  rtc::scoped_ptr<ScreenshareLayersVP9> spatial_layer_;
+};
 
 class VP9DecoderImpl : public VP9Decoder {
  public:
@@ -114,6 +151,8 @@ class VP9DecoderImpl : public VP9Decoder {
 
   int Reset() override;
 
+  const char* ImplementationName() const override;
+
  private:
   int ReturnFrame(const vpx_image_t* img, uint32_t timeStamp);
 
@@ -127,4 +166,4 @@ class VP9DecoderImpl : public VP9Decoder {
 };
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_IMPL_H_
+#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_VP9_VP9_IMPL_H_

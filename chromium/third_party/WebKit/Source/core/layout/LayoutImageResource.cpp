@@ -25,10 +25,11 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutImageResource.h"
 
+#include "core/dom/Element.h"
 #include "core/layout/LayoutImage.h"
+#include "core/svg/graphics/SVGImageForContainer.h"
 
 namespace blink {
 
@@ -83,26 +84,43 @@ void LayoutImageResource::resetAnimation()
     if (!m_cachedImage)
         return;
 
-    image()->resetAnimation();
+    m_cachedImage->image()->resetAnimation();
 
     m_layoutObject->setShouldDoFullPaintInvalidation();
 }
 
-void LayoutImageResource::setContainerSizeForLayoutObject(const IntSize& imageContainerSize)
-{
-    ASSERT(m_layoutObject);
-    if (m_cachedImage)
-        m_cachedImage->setContainerSizeForLayoutObject(m_layoutObject, imageContainerSize, m_layoutObject->style()->effectiveZoom());
-}
-
-LayoutSize LayoutImageResource::getImageSize(float multiplier, ImageResource::SizeType type) const
+LayoutSize LayoutImageResource::imageSize(float multiplier) const
 {
     if (!m_cachedImage)
         return LayoutSize();
-    LayoutSize size = m_cachedImage->imageSizeForLayoutObject(m_layoutObject, multiplier, type);
+    LayoutSize size = m_cachedImage->imageSize(LayoutObject::shouldRespectImageOrientation(m_layoutObject), multiplier);
     if (m_layoutObject && m_layoutObject->isLayoutImage() && size.width() && size.height())
         size.scale(toLayoutImage(m_layoutObject)->imageDevicePixelRatio());
     return size;
+}
+
+PassRefPtr<Image> LayoutImageResource::image(const IntSize& containerSize, float zoom) const
+{
+    if (!m_cachedImage)
+        return Image::nullImage();
+
+    if (!m_cachedImage->image()->isSVGImage())
+        return m_cachedImage->image();
+
+    KURL url;
+    SVGImage* svgImage = toSVGImage(m_cachedImage->image());
+    Node* node = m_layoutObject->node();
+    if (node && node->isElementNode()) {
+        const AtomicString& urlString = toElement(node)->imageSourceURL();
+        url = node->document().completeURL(urlString);
+    }
+    return SVGImageForContainer::create(svgImage, containerSize, zoom, url);
+}
+
+bool LayoutImageResource::maybeAnimated() const
+{
+    Image* image = m_cachedImage ? m_cachedImage->image() : Image::nullImage();
+    return image->maybeAnimated();
 }
 
 } // namespace blink

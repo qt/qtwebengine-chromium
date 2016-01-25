@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/SVGRootPainter.h"
 
 #include "core/layout/svg/LayoutSVGRoot.h"
@@ -25,7 +24,7 @@ void SVGRootPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintO
         return;
 
     // SVG outlines are painted during PaintPhaseForeground.
-    if (paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline)
+    if (shouldPaintSelfOutline(paintInfo.phase))
         return;
 
     // An empty viewBox also disables rendering.
@@ -48,15 +47,15 @@ void SVGRootPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintO
     Optional<ClipRecorder> clipRecorder;
     if (m_layoutSVGRoot.shouldApplyViewportClip()) {
         // TODO(pdr): Clip the paint info cull rect here.
-        clipRecorder.emplace(*paintInfoBeforeFiltering.context, m_layoutSVGRoot, paintInfoBeforeFiltering.displayItemTypeForClipping(), LayoutRect(pixelSnappedIntRect(m_layoutSVGRoot.overflowClipRect(paintOffset))));
+        clipRecorder.emplace(paintInfoBeforeFiltering.context, m_layoutSVGRoot, paintInfoBeforeFiltering.displayItemTypeForClipping(), LayoutRect(pixelSnappedIntRect(m_layoutSVGRoot.overflowClipRect(paintOffset))));
     }
 
     // Convert from container offsets (html layoutObjects) to a relative transform (svg layoutObjects).
     // Transform from our paint container's coordinate system to our local coords.
     IntPoint adjustedPaintOffset = roundedIntPoint(paintOffset);
     AffineTransform paintOffsetToBorderBox = AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()) * m_layoutSVGRoot.localToBorderBoxTransform();
-    paintInfoBeforeFiltering.updateCullRectForSVGTransform(paintOffsetToBorderBox);
-    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGRoot, paintOffsetToBorderBox);
+    paintInfoBeforeFiltering.updateCullRect(paintOffsetToBorderBox);
+    TransformRecorder transformRecorder(paintInfoBeforeFiltering.context, m_layoutSVGRoot, paintOffsetToBorderBox);
 
     SVGPaintContext paintContext(m_layoutSVGRoot, paintInfoBeforeFiltering);
     if (paintContext.paintInfo().phase == PaintPhaseForeground && !paintContext.applyClipMaskAndFilterIfNecessary())

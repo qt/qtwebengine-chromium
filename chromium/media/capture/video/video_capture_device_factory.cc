@@ -4,7 +4,10 @@
 
 #include "media/capture/video/video_capture_device_factory.h"
 
+#include <utility>
+
 #include "base/command_line.h"
+#include "build/build_config.h"
 #include "media/base/media_switches.h"
 #include "media/capture/video/fake_video_capture_device_factory.h"
 #include "media/capture/video/file_video_capture_device_factory.h"
@@ -48,7 +51,7 @@ void VideoCaptureDeviceFactory::EnumerateDeviceNames(const base::Callback<
   scoped_ptr<VideoCaptureDevice::Names> device_names(
       new VideoCaptureDevice::Names());
   GetDeviceNames(device_names.get());
-  callback.Run(device_names.Pass());
+  callback.Run(std::move(device_names));
 }
 
 #if !defined(OS_MACOSX) && !defined(OS_LINUX) && !defined(OS_ANDROID) && \

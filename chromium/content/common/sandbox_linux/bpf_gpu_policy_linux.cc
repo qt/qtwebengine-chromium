@@ -19,6 +19,7 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "content/common/sandbox_linux/sandbox_bpf_base_policy_linux.h"
@@ -191,7 +192,7 @@ ResultExpr GpuBrokerProcessPolicy::EvaluateSyscall(int sysno) const {
 #endif  // !defined(__aarch64__)
     case __NR_faccessat:
     case __NR_openat:
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(__aarch64__)
     // The broker process needs to able to unlink the temporary
     // files that it may create. This is used by DRI3.
     case __NR_unlink:

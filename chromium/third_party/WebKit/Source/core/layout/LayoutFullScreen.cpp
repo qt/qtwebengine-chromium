@@ -22,7 +22,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/LayoutFullScreen.h"
 
 #include "core/dom/Fullscreen.h"
@@ -59,7 +58,7 @@ LayoutFullScreen::LayoutFullScreen()
     : LayoutFlexibleBox(nullptr)
     , m_placeholder(nullptr)
 {
-    setReplaced(false);
+    setIsAtomicInlineLevel(false);
 }
 
 LayoutFullScreen* LayoutFullScreen::createAnonymous(Document* document)

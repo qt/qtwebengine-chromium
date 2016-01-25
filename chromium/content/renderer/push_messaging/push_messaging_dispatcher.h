@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/macros.h"
 #include "content/public/common/push_messaging_status.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "third_party/WebKit/public/platform/modules/push_messaging/WebPushClient.h"
@@ -53,7 +54,8 @@ class PushMessagingDispatcher : public RenderFrameObserver,
 
   void OnSubscribeFromDocumentSuccess(int32_t request_id,
                                       const GURL& endpoint,
-                                      const std::vector<uint8_t>& curve25519dh);
+                                      const std::vector<uint8_t>& p256dh,
+                                      const std::vector<uint8_t>& auth);
 
   void OnSubscribeFromDocumentError(int32_t request_id,
                                     PushRegistrationStatus status);

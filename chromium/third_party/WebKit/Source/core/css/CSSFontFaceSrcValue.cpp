@@ -23,9 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 
+#include "core/css/CSSMarkup.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
@@ -34,6 +34,7 @@
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/loader/MixedContentChecker.h"
+#include "platform/CrossOriginAttributeValue.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/weborigin/SecurityPolicy.h"
@@ -54,16 +55,17 @@ bool CSSFontFaceSrcValue::isSupportedFormat() const
 String CSSFontFaceSrcValue::customCSSText() const
 {
     StringBuilder result;
-    if (isLocal())
+    if (isLocal()) {
         result.appendLiteral("local(");
-    else
-        result.appendLiteral("url(");
-    result.append(m_resource);
-    result.append(')');
+        result.append(serializeString(m_resource));
+        result.appendLiteral(")");
+    } else {
+        result.append(serializeURI(m_resource));
+    }
     if (!m_format.isEmpty()) {
         result.appendLiteral(" format(");
-        result.append(m_format);
-        result.append(')');
+        result.append(serializeString(m_format));
+        result.appendLiteral(")");
     }
     return result.toString();
 }
@@ -80,13 +82,7 @@ static void setCrossOriginAccessControl(FetchRequest& request, SecurityOrigin* s
     if (request.url().isLocalFile())
         return;
 
-    StoredCredentials allowCredentials = DoNotAllowStoredCredentials;
-    bool sameOriginRequest = securityOrigin->canRequestNoSuborigin(request.url());
-    // Include credentials for same origin requests (and assume that
-    // redirects out of origin will be handled per Fetch spec.)
-    if (sameOriginRequest)
-        allowCredentials = AllowStoredCredentials;
-    request.setCrossOriginAccessControl(securityOrigin, allowCredentials, ClientDidNotRequestCredentials);
+    request.setCrossOriginAccessControl(securityOrigin, CrossOriginAttributeAnonymous);
 }
 
 FontResource* CSSFontFaceSrcValue::fetch(Document* document)

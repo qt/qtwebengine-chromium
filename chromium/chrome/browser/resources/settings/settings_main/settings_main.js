@@ -4,20 +4,20 @@
 
 /**
  * @fileoverview
- * 'cr-settings-main' displays the selected settings page.
+ * 'settings-main' displays the selected settings page.
  *
  * Example:
  *
- *     <cr-settings-main pages="[[pages]]" selected-page-id="{{selectedId}}">
- *     </cr-settings-main>
+ *     <settings-main pages="[[pages]]" selected-page-id="{{selectedId}}">
+ *     </settings-main>
  *
- * See cr-settings-drawer for example of use in 'paper-drawer-panel'.
+ * See settings-drawer for example of use in 'paper-drawer-panel'.
  *
  * @group Chrome Settings Elements
- * @element cr-settings-main
+ * @element settings-main
  */
 Polymer({
-  is: 'cr-settings-main',
+  is: 'settings-main',
 
   properties: {
     /**
@@ -38,6 +38,12 @@ Polymer({
       notify: true,
       observer: 'currentRouteChanged_',
     },
+
+    // If false the 'basic' page should be shown.
+    showAdvancedPage_: {
+      type: Boolean,
+      value: false
+    }
   },
 
   listeners: {
@@ -46,6 +52,8 @@ Polymer({
 
   /** @private */
   currentRouteChanged_: function(newRoute, oldRoute) {
+    this.showAdvancedPage_ = newRoute.page == 'advanced';
+
     var pageContainer = this.$.pageContainer;
     if (!oldRoute) {
       pageContainer.classList.toggle('expanded', newRoute.section);
@@ -68,10 +76,5 @@ Polymer({
       pageContainer.classList.add('expanded');
       pageContainer.scrollTop = 0;
     }
-  },
-
-  /** @private */
-  getSelectedPage_: function(currentRoute) {
-    return currentRoute.page || 'basic';
   },
 });

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/websockets/DOMWebSocket.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -109,7 +108,7 @@ void DOMWebSocket::EventQueue::resume()
     if (m_state != Suspended || m_resumeTimer.isActive())
         return;
 
-    m_resumeTimer.startOneShot(0, FROM_HERE);
+    m_resumeTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void DOMWebSocket::EventQueue::stop()
@@ -662,7 +661,7 @@ void DOMWebSocket::didConsumeBufferedAmount(uint64_t consumed)
         return;
     m_consumedBufferedAmount += consumed;
     if (!m_bufferedAmountConsumeTimer.isActive())
-        m_bufferedAmountConsumeTimer.startOneShot(0, FROM_HERE);
+        m_bufferedAmountConsumeTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void DOMWebSocket::didStartClosingHandshake()

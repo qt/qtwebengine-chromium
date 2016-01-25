@@ -34,6 +34,7 @@
 #ifdef HAVE_WEBRTC_VIDEO
 #include "talk/media/webrtc/webrtcvideoframe.h"
 #include "talk/media/webrtc/webrtcvideoframefactory.h"
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/criticalsection.h"
@@ -43,13 +44,13 @@
 #include "webrtc/base/timeutils.h"
 
 #include "webrtc/base/win32.h"  // Need this to #include the impl files.
-#include "webrtc/modules/video_capture/include/video_capture_factory.h"
-#include "webrtc/system_wrappers/interface/field_trial.h"
+#include "webrtc/modules/video_capture/video_capture_factory.h"
+#include "webrtc/system_wrappers/include/field_trial.h"
 
 namespace cricket {
 
 struct kVideoFourCCEntry {
-  uint32 fourcc;
+  uint32_t fourcc;
   webrtc::RawVideoType webrtc_type;
 };
 
@@ -82,8 +83,8 @@ class WebRtcVcmFactory : public WebRtcVcmFactoryInterface {
 
 static bool CapabilityToFormat(const webrtc::VideoCaptureCapability& cap,
                                VideoFormat* format) {
-  uint32 fourcc = 0;
-  for (size_t i = 0; i < ARRAY_SIZE(kSupportedFourCCs); ++i) {
+  uint32_t fourcc = 0;
+  for (size_t i = 0; i < arraysize(kSupportedFourCCs); ++i) {
     if (kSupportedFourCCs[i].webrtc_type == cap.rawType) {
       fourcc = kSupportedFourCCs[i].fourcc;
       break;
@@ -103,7 +104,7 @@ static bool CapabilityToFormat(const webrtc::VideoCaptureCapability& cap,
 static bool FormatToCapability(const VideoFormat& format,
                                webrtc::VideoCaptureCapability* cap) {
   webrtc::RawVideoType webrtc_type = webrtc::kVideoUnknown;
-  for (size_t i = 0; i < ARRAY_SIZE(kSupportedFourCCs); ++i) {
+  for (size_t i = 0; i < arraysize(kSupportedFourCCs); ++i) {
     if (kSupportedFourCCs[i].fourcc == format.fourcc) {
       webrtc_type = kSupportedFourCCs[i].webrtc_type;
       break;
@@ -171,8 +172,8 @@ bool WebRtcVideoCapturer::Init(const Device& device) {
   bool found = false;
   for (int index = 0; index < num_cams; ++index) {
     char vcm_name[256];
-    if (info->GetDeviceName(index, vcm_name, ARRAY_SIZE(vcm_name),
-                            vcm_id, ARRAY_SIZE(vcm_id)) != -1) {
+    if (info->GetDeviceName(index, vcm_name, arraysize(vcm_name), vcm_id,
+                            arraysize(vcm_id)) != -1) {
       if (device.name == reinterpret_cast<char*>(vcm_name)) {
         found = true;
         break;
@@ -303,7 +304,7 @@ CaptureState WebRtcVideoCapturer::Start(const VideoFormat& capture_format) {
     return CS_FAILED;
   }
 
-  uint32 start = rtc::Time();
+  uint32_t start = rtc::Time();
   module_->RegisterCaptureDataCallback(*this);
   if (module_->StartCapture(cap) != 0) {
     LOG(LS_ERROR) << "Camera '" << GetId() << "' failed to start";
@@ -349,20 +350,20 @@ void WebRtcVideoCapturer::Stop() {
 
   SetCaptureFormat(NULL);
   start_thread_ = nullptr;
+  SetCaptureState(CS_STOPPED);
 }
 
 bool WebRtcVideoCapturer::IsRunning() {
   return (module_ != NULL && module_->CaptureStarted());
 }
 
-bool WebRtcVideoCapturer::GetPreferredFourccs(
-    std::vector<uint32>* fourccs) {
+bool WebRtcVideoCapturer::GetPreferredFourccs(std::vector<uint32_t>* fourccs) {
   if (!fourccs) {
     return false;
   }
 
   fourccs->clear();
-  for (size_t i = 0; i < ARRAY_SIZE(kSupportedFourCCs); ++i) {
+  for (size_t i = 0; i < arraysize(kSupportedFourCCs); ++i) {
     fourccs->push_back(kSupportedFourCCs[i].fourcc);
   }
   return true;
@@ -383,10 +384,12 @@ void WebRtcVideoCapturer::OnIncomingCapturedFrame(
     // consistency with other capturers such as in Chrome, we need to do a
     // thread hop.
     // Note that Stop() can cause the async invoke call to be cancelled.
-    async_invoker_->AsyncInvoke<void>(start_thread_,
-        // Note that this results in a shallow copying of the frame.
-        rtc::Bind(&WebRtcVideoCapturer::SignalFrameCapturedOnStartThread,
-                  this, sample));
+    async_invoker_->AsyncInvoke<void>(
+        start_thread_,
+        // Note that Bind captures by value, so there's an intermediate copy
+        // of sample.
+        rtc::Bind(&WebRtcVideoCapturer::SignalFrameCapturedOnStartThread, this,
+                  sample));
   }
 }
 
@@ -396,7 +399,7 @@ void WebRtcVideoCapturer::OnCaptureDelayChanged(const int32_t id,
 }
 
 void WebRtcVideoCapturer::SignalFrameCapturedOnStartThread(
-    const webrtc::VideoFrame frame) {
+    const webrtc::VideoFrame& frame) {
   // This can only happen between Start() and Stop().
   RTC_DCHECK(start_thread_);
   RTC_DCHECK(start_thread_->IsCurrent());
@@ -435,7 +438,7 @@ WebRtcCapturedFrame::WebRtcCapturedFrame(const webrtc::VideoFrame& sample,
   pixel_height = 1;
   // Convert units from VideoFrame RenderTimeMs to CapturedFrame (nanoseconds).
   time_stamp = sample.render_time_ms() * rtc::kNumNanosecsPerMillisec;
-  data_size = rtc::checked_cast<uint32>(length);
+  data_size = rtc::checked_cast<uint32_t>(length);
   data = buffer;
   rotation = sample.rotation();
 }

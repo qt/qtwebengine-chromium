@@ -23,10 +23,8 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLButtonElement.h"
 
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/events/KeyboardEvent.h"
@@ -93,7 +91,7 @@ bool HTMLButtonElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLFormControlElement::isPresentationAttribute(name);
 }
 
-void HTMLButtonElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLButtonElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == typeAttr) {
         if (equalIgnoringCase(value, "reset"))
@@ -104,7 +102,9 @@ void HTMLButtonElement::parseAttribute(const QualifiedName& name, const AtomicSt
             m_type = SUBMIT;
         setNeedsWillValidateCheck();
     } else {
-        HTMLFormControlElement::parseAttribute(name, value);
+        if (name == formactionAttr)
+            logUpdateAttributeIfIsolatedWorldAndInDocument("button", formactionAttr, oldValue, value);
+        HTMLFormControlElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -214,34 +214,9 @@ bool HTMLButtonElement::supportsAutofocus() const
 
 Node::InsertionNotificationRequest HTMLButtonElement::insertedInto(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("button");
-            argv.append(fastGetAttribute(typeAttr));
-            argv.append(fastGetAttribute(formmethodAttr));
-            argv.append(fastGetAttribute(formactionAttr));
-            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
-        }
-    }
-    return HTMLFormControlElement::insertedInto(insertionPoint);
-}
-
-void HTMLButtonElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
-{
-    if (name == formactionAttr && inDocument()) {
-        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
-        if (activityLogger) {
-            Vector<String> argv;
-            argv.append("button");
-            argv.append(formactionAttr.toString());
-            argv.append(oldValue);
-            argv.append(newValue);
-            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
-        }
-    }
-    HTMLFormControlElement::attributeWillChange(name, oldValue, newValue);
+    InsertionNotificationRequest request = HTMLFormControlElement::insertedInto(insertionPoint);
+    logAddElementIfIsolatedWorldAndInDocument("button", typeAttr, formmethodAttr, formactionAttr);
+    return request;
 }
 
 } // namespace

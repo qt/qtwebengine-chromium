@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLBaseElement.h"
 
 #include "core/HTMLNames.h"
@@ -40,12 +39,12 @@ inline HTMLBaseElement::HTMLBaseElement(Document& document)
 
 DEFINE_NODE_FACTORY(HTMLBaseElement)
 
-void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == hrefAttr || name == targetAttr)
         document().processBaseElement();
     else
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
 }
 
 Node::InsertionNotificationRequest HTMLBaseElement::insertedInto(ContainerNode* insertionPoint)

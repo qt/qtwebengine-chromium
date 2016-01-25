@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/svg/SVGElementRareData.h"
 
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGCursorElement.h"
-#include "platform/transforms/AffineTransform.h"
 
 namespace blink {
 
@@ -70,9 +68,7 @@ void SVGElementRareData::processWeakMembers(Visitor* visitor)
 
 AffineTransform* SVGElementRareData::animateMotionTransform()
 {
-    if (!m_animateMotionTransform)
-        m_animateMotionTransform = adoptPtr(new AffineTransform);
-    return m_animateMotionTransform.get();
+    return &m_animateMotionTransform;
 }
 
 }

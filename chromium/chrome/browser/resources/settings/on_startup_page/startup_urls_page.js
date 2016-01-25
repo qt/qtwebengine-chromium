@@ -3,22 +3,31 @@
 // found in the LICENSE file.
 
 /**
- * @fileoverview 'cr-settings-startup-urls-page' is the settings page
+ * @typedef {{
+ *   'title': string,
+ *   'tooltip': string,
+ *   'url': string
+ * }}
+ */
+var StartupPageInfo;
+
+/**
+ * @fileoverview 'settings-startup-urls-page' is the settings page
  * containing the urls that will be opened when chrome is started.
  *
  * Example:
  *
  *    <neon-animated-pages>
- *      <cr-settings-startup-urls-page prefs="{{prefs}}">
- *      </cr-settings-startup-urls-page>
+ *      <settings-startup-urls-page prefs="{{prefs}}">
+ *      </settings-startup-urls-page>
  *      ... other pages ...
  *    </neon-animated-pages>
  *
  * @group Chrome Settings Elements
- * @element cr-settings-startup-urls-page
+ * @element settings-startup-urls-page
  */
 Polymer({
-  is: 'cr-settings-startup-urls-page',
+  is: 'settings-startup-urls-page',
 
   properties: {
     /**
@@ -33,15 +42,12 @@ Polymer({
       type: String,
     },
 
-    /** @type {!Array<string>} */
-    savedUrlList: {
-      type: Array,
-    },
+    /**
+     * Pages to load upon browser startup.
+     * @private {!Array<!StartupPageInfo>}
+     */
+    startupPages_: Array,
   },
-
-  observers: [
-    'prefsChanged_(prefs.session.startup_urls.value.*)',
-  ],
 
   attached: function() {
     var self = this;
@@ -52,25 +58,17 @@ Polymer({
         },
       };
     });
-  },
-
-
-  /** @private */
-  prefsChanged_: function(change) {
-    if (!this.savedUrlList) {
-      var pref = /** @type {chrome.settingsPrivate.PrefObject} */(
-          this.get('prefs.session.startup_urls'));
-      if (pref)
-        this.savedUrlList = pref.value.slice();
-    }
+    chrome.send('onStartupPrefsPageLoad');
   },
 
   /** @private */
-  updateStartupPages_: function(data) {
-    var urlArray = [];
-    for (var i = 0; i < data.length; ++i)
-      urlArray.push(data[i].url);
-    this.set('prefs.session.startup_urls.value', urlArray);
+  updateStartupPages_: function(startupPages) {
+    this.startupPages_ = startupPages;
+  },
+
+  /** @private */
+  onAddPageTap_: function() {
+    this.$.addUrlDialog.open();
   },
 
   /** @private */
@@ -80,9 +78,7 @@ Polymer({
 
   /** @private */
   onCancelTap_: function() {
-    if (this.savedUrlList !== undefined) {
-      this.set('prefs.session.startup_urls.value', this.savedUrlList.slice());
-    }
+    this.$.addUrlDialog.close();
   },
 
   /** @private */
@@ -90,8 +86,9 @@ Polymer({
     var value = this.newUrl && this.newUrl.trim();
     if (!value)
       return;
-    this.push('prefs.session.startup_urls.value', value);
+    chrome.send('addStartupPage', [value]);
     this.newUrl = '';
+    this.$.addUrlDialog.close();
   },
 
   /**
@@ -99,6 +96,6 @@ Polymer({
    * @private
    */
   onRemoveUrlTap_: function(e) {
-    this.splice('prefs.session.startup_urls.value', e.model.index, 1);
+    chrome.send('removeStartupPage', [e.model.index]);
   },
 });

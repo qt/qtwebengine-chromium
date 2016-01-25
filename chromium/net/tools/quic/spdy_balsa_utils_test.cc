@@ -7,8 +7,6 @@
 #include "net/spdy/spdy_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using net::test::CompareSpdyHeaderBlocks;
-
 namespace net {
 namespace tools {
 namespace test {
@@ -18,8 +16,8 @@ TEST(SpdyBalsaUtilsTest, RequestHeadersToSpdyHeaders) {
   BalsaHeaders request_headers;
   request_headers.SetRequestFirstlineFromStringPieces(
       "GET", "https://www.google.com/foo", "HTTP/1.1");
-  SpdyHeaderBlock spdy_headers = SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
-      request_headers, kSupportedQuicVersions[0]);
+  SpdyHeaderBlock spdy_headers =
+      SpdyBalsaUtils::RequestHeadersToSpdyHeaders(request_headers);
 
   SpdyHeaderBlock expected_headers;
   expected_headers[":authority"] = "www.google.com";
@@ -27,20 +25,20 @@ TEST(SpdyBalsaUtilsTest, RequestHeadersToSpdyHeaders) {
   expected_headers[":scheme"] = "https";
   expected_headers[":method"] = "GET";
 
-  EXPECT_TRUE(CompareSpdyHeaderBlocks(expected_headers, spdy_headers));
+  EXPECT_EQ(expected_headers, spdy_headers);
 }
 
 TEST(SpdyBalsaUtilsTest, ResponseHeadersToSpdyHeaders) {
   BalsaHeaders response_headers;
   response_headers.SetResponseFirstlineFromStringPieces("HTTP/1.1", "200",
                                                         "OK");
-  SpdyHeaderBlock spdy_headers = SpdyBalsaUtils::ResponseHeadersToSpdyHeaders(
-      response_headers, kSupportedQuicVersions[0]);
+  SpdyHeaderBlock spdy_headers =
+      SpdyBalsaUtils::ResponseHeadersToSpdyHeaders(response_headers);
 
   SpdyHeaderBlock expected_headers;
   expected_headers[":status"] = "200";
 
-  EXPECT_TRUE(CompareSpdyHeaderBlocks(expected_headers, spdy_headers));
+  EXPECT_EQ(expected_headers, spdy_headers);
 }
 
 TEST(SpdyBalsaUtilsTest, SpdyHeadersToRequestHeaders) {
@@ -52,8 +50,7 @@ TEST(SpdyBalsaUtilsTest, SpdyHeadersToRequestHeaders) {
   spdy_headers[":method"] = "GET";
 
   BalsaHeaders request_headers;
-  SpdyBalsaUtils::SpdyHeadersToRequestHeaders(spdy_headers, &request_headers,
-                                              kSupportedQuicVersions[0]);
+  SpdyBalsaUtils::SpdyHeadersToRequestHeaders(spdy_headers, &request_headers);
   EXPECT_EQ("GET", request_headers.request_method());
   EXPECT_EQ("HTTP/1.1", request_headers.request_version());
   EXPECT_EQ("/foo", request_headers.request_uri());
@@ -66,8 +63,7 @@ TEST(SpdyBalsaUtilsTest, SpdyHeadersToRequestHeaders) {
   spdy_headers1[":scheme"] = "http";
 
   BalsaHeaders request_headers1;
-  SpdyBalsaUtils::SpdyHeadersToRequestHeaders(spdy_headers1, &request_headers1,
-                                              kSupportedQuicVersions[0]);
+  SpdyBalsaUtils::SpdyHeadersToRequestHeaders(spdy_headers1, &request_headers1);
   EXPECT_EQ("GET", request_headers1.request_method());
   EXPECT_EQ("HTTP/1.1", request_headers1.request_version());
   EXPECT_EQ("/foo", request_headers1.request_uri());
@@ -79,8 +75,7 @@ TEST(SpdyBalsaUtilsTest, SpdyHeadersToResponseHeaders) {
   spdy_headers[":status"] = "200";
 
   BalsaHeaders response_headers;
-  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(spdy_headers, &response_headers,
-                                               kSupportedQuicVersions[0]);
+  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(spdy_headers, &response_headers);
   EXPECT_EQ("200", response_headers.response_code());
 }
 

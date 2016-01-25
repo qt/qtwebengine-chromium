@@ -4,6 +4,10 @@
 
 #include "content/common/gpu/media/vaapi_jpeg_decode_accelerator.h"
 
+#include <stddef.h>
+#include <string.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -21,7 +25,8 @@ namespace {
 // UMA errors that the VaapiJpegDecodeAccelerator class reports.
 enum VAJDADecoderFailure {
   VAAPI_ERROR = 0,
-  VAJDA_DECODER_FAILURES_MAX,
+  // UMA requires that max must be greater than 1.
+  VAJDA_DECODER_FAILURES_MAX = 2,
 };
 
 static void ReportToUMA(VAJDADecoderFailure failure) {
@@ -75,9 +80,8 @@ VaapiJpegDecodeAccelerator::DecodeRequest::DecodeRequest(
     scoped_ptr<base::SharedMemory> shm,
     const scoped_refptr<media::VideoFrame>& video_frame)
     : bitstream_buffer(bitstream_buffer),
-      shm(shm.Pass()),
-      video_frame(video_frame) {
-}
+      shm(std::move(shm)),
+      video_frame(video_frame) {}
 
 VaapiJpegDecodeAccelerator::DecodeRequest::~DecodeRequest() {
 }
@@ -295,7 +299,7 @@ void VaapiJpegDecodeAccelerator::Decode(
   }
 
   scoped_ptr<DecodeRequest> request(
-      new DecodeRequest(bitstream_buffer, shm.Pass(), video_frame));
+      new DecodeRequest(bitstream_buffer, std::move(shm), video_frame));
 
   decoder_task_runner_->PostTask(
       FROM_HERE, base::Bind(&VaapiJpegDecodeAccelerator::DecodeTask,

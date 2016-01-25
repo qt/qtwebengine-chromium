@@ -4,30 +4,41 @@
 
 :host {
   align-items: center;
-  background: rgb(63, 85, 102);
+  background: rgb(52, 73, 94);
   color: white;
   content-sizing: padding-box;
   display: flex;
-  height: 56px;
+  min-height: 56px;
 }
 
 #title h1 {
   -webkit-margin-end: 0;
   -webkit-margin-start: 24px;
-  font-size: 107.7%;
+  font-size: 123.1%;
   font-weight: normal;
   margin-bottom: 0;
   margin-top: 0;
 }
 
 #actions {
+  color: rgb(176, 190, 197);
   display: flex;
   flex: none;
   width: var(--downloads-item-width);
 }
 
+:host-context([loading]) #actions {
+  visibility: hidden;
+}
+
 :host(:not([downloads-showing])) #actions {
   justify-content: center;
+}
+
+#actions paper-button {
+  --paper-button-flat-keyboard-focus: {
+    color: white;
+  };
 }
 
 #actions paper-button:first-of-type {
@@ -40,16 +51,6 @@
 
 #actions paper-button:last-of-type {
   -webkit-margin-end: -0.57em;  /* Matches paper-button padding. */
-}
-
-/* TODO(dbeam): use --paper-button-flat-keyboard-focus when possible.
- * https://github.com/PolymerElements/paper-button/pull/54 */
-#actions paper-button /deep/ .keyboard-focus {
-  color: white;
-}
-
-#actions {
-  color: rgb(192, 199, 205);
 }
 
 #search {
@@ -69,9 +70,9 @@ paper-icon-button {
   --iron-icon-height: 20px;
   --iron-icon-width: 20px;
   --paper-icon-button: {
-    height: 20px;
+    height: 32px;
     padding: 6px;
-    width: 20px;
+    width: 32px;
   };
 }
 

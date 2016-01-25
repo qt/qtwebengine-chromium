@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_RENDERER_IDLE_TIME_ESTIMATOR_H_
 #define COMPONENTS_SCHEDULER_RENDERER_IDLE_TIME_ESTIMATOR_H_
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/tick_clock.h"
 #include "cc/base/rolling_time_delta_history.h"
@@ -13,11 +14,12 @@
 
 namespace scheduler {
 
-// Estimates how much idle time there is available.
+// Estimates how much idle time there is available.  Ignores nested tasks.
 class SCHEDULER_EXPORT IdleTimeEstimator
     : public base::MessageLoop::TaskObserver {
  public:
   IdleTimeEstimator(const scoped_refptr<TaskQueue>& compositor_task_runner,
+                    base::TickClock* time_source,
                     int sample_count,
                     double estimation_percentile);
 
@@ -36,12 +38,10 @@ class SCHEDULER_EXPORT IdleTimeEstimator
   void WillProcessTask(const base::PendingTask& pending_task) override;
   void DidProcessTask(const base::PendingTask& pending_task) override;
 
-  void SetTimeSourceForTesting(scoped_ptr<base::TickClock> time_source);
-
  private:
   scoped_refptr<TaskQueue> compositor_task_runner_;
   cc::RollingTimeDeltaHistory per_frame_compositor_task_runtime_;
-  scoped_ptr<base::TickClock> time_source_;
+  base::TickClock* time_source_;  // NOT OWNED
   double estimation_percentile_;
 
   base::TimeTicks task_start_time_;

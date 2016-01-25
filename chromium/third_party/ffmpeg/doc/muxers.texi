@@ -37,6 +37,41 @@ ID3v2.3 and ID3v2.4) are supported. The default is version 4.
 
 @end table
 
+@anchor{chromaprint}
+@section chromaprint
+
+Chromaprint fingerprinter
+
+This muxer feeds audio data to the Chromaprint library, which generates
+a fingerprint for the provided audio data. It takes a single signed
+native-endian 16-bit raw audio stream.
+
+@subsection Options
+
+@table @option
+@item silence_threshold
+Threshold for detecting silence, ranges from 0 to 32767. -1 for default
+(required for use with the AcoustID service).
+
+@item algorithm
+Algorithm index to fingerprint with.
+
+@item fp_format
+Format to output the fingerprint as. Accepts the following options:
+@table @samp
+@item raw
+Binary raw fingerprint
+
+@item compressed
+Binary compressed fingerprint
+
+@item base64
+Base64 compressed fingerprint
+
+@end table
+
+@end table
+
 @anchor{crc}
 @section crc
 
@@ -823,6 +858,8 @@ Reemit PAT/PMT before writing the next packet.
 Use LATM packetization for AAC.
 @item pat_pmt_at_frames
 Reemit PAT and PMT at each video frame.
+@item system_b
+Conform to System B (DVB) instead of System A (ATSC).
 @end table
 
 @subsection Example
@@ -838,6 +875,21 @@ ffmpeg -i file.mpg -c copy \
      -metadata service_name="Some Channel" \
      -y out.ts
 @end example
+
+@section mxf, mxf_d10
+
+MXF muxer.
+
+@subsection Options
+
+The muxer options are:
+
+@table @option
+@item store_user_comments @var{bool}
+Set if user comments should be stored if available or never.
+IRT D-10 does not allow user comments. The default is thus to write them for
+mxf but not for mxf_d10
+@end table
 
 @section null
 
@@ -1237,7 +1289,8 @@ Several bitstream filters can be specified, separated by ",".
 @item select
 Select the streams that should be mapped to the slave output,
 specified by a stream specifier. If not specified, this defaults to
-all the input streams.
+all the input streams. You may use multiple stream specifiers
+separated by commas (@code{,}) e.g.: @code{a:0,v}
 @end table
 
 @subsection Examples

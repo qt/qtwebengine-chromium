@@ -14,7 +14,7 @@
 #include <cassert>
 
 #include "webrtc/base/logging.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/include/module_common_types.h"
 
 namespace webrtc {
 
@@ -71,8 +71,7 @@ bool InterArrival::ComputeDeltas(uint32_t timestamp,
     current_timestamp_group_.first_timestamp = timestamp;
     current_timestamp_group_.timestamp = timestamp;
     current_timestamp_group_.size = 0;
-  }
-  else {
+  } else {
     current_timestamp_group_.timestamp = LatestTimestamp(
         current_timestamp_group_.timestamp, timestamp);
   }

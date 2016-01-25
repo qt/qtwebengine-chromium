@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/stl_util.h"
 #include "components/webcrypto/algorithm_implementation.h"
 #include "components/webcrypto/algorithms/secret_key_util.h"
@@ -63,6 +65,9 @@ class Pbkdf2Implementation : public AlgorithmImplementation {
 
     const blink::WebCryptoPbkdf2Params* params = algorithm.pbkdf2Params();
 
+    if (params->iterations() == 0)
+      return Status::ErrorPbkdf2Iterations0();
+
     const EVP_MD* digest_algorithm = GetDigest(params->hash());
     if (!digest_algorithm)
       return Status::ErrorUnsupported();
@@ -73,10 +78,9 @@ class Pbkdf2Implementation : public AlgorithmImplementation {
     const std::vector<uint8_t>& password = GetSymmetricKeyData(base_key);
 
     if (!PKCS5_PBKDF2_HMAC(
-            reinterpret_cast<const char*>(vector_as_array(&password)),
-            password.size(), params->salt().data(), params->salt().size(),
-            params->iterations(), digest_algorithm, keylen_bytes,
-            vector_as_array(derived_bytes))) {
+            reinterpret_cast<const char*>(password.data()), password.size(),
+            params->salt().data(), params->salt().size(), params->iterations(),
+            digest_algorithm, keylen_bytes, derived_bytes->data())) {
       return Status::OperationError();
     }
     return Status::Success();

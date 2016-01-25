@@ -8,15 +8,22 @@
 #include <stdint.h>
 
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 
 namespace blink {
 class WebMouseEvent;
 class WebMouseWheelEvent;
+class WebTouchEvent;
 }
 
 namespace gfx {
 class Point;
+}
+
+namespace ui {
+class LatencyInfo;
 }
 
 namespace content {
@@ -38,18 +45,29 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter {
                        blink::WebMouseEvent* event);
   void RouteMouseWheelEvent(RenderWidgetHostViewBase* root_view,
                             blink::WebMouseWheelEvent* event);
+  void RouteTouchEvent(RenderWidgetHostViewBase* root_view,
+                       blink::WebTouchEvent *event,
+                       const ui::LatencyInfo& latency);
 
   void AddSurfaceIdNamespaceOwner(uint32_t id, RenderWidgetHostViewBase* owner);
   void RemoveSurfaceIdNamespaceOwner(uint32_t id);
 
+  bool is_registered(uint32_t id) {
+    return owner_map_.find(id) != owner_map_.end();
+  }
+
  private:
+  using WeakTarget = base::WeakPtr<RenderWidgetHostViewBase>;
+  using SurfaceIdNamespaceOwnerMap =
+      base::hash_map<uint32_t, base::WeakPtr<RenderWidgetHostViewBase>>;
+
   RenderWidgetHostViewBase* FindEventTarget(RenderWidgetHostViewBase* root_view,
                                             const gfx::Point& point,
                                             gfx::Point* transformed_point);
 
-  typedef base::hash_map<uint32_t, RenderWidgetHostViewBase*>
-      SurfaceIdNamespaceOwnerMap;
   SurfaceIdNamespaceOwnerMap owner_map_;
+  WeakTarget current_touch_target_;
+  int active_touches_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostInputEventRouter);
 };

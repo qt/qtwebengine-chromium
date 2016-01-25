@@ -4,10 +4,14 @@
 
 #include "content/child/web_data_consumer_handle_impl.h"
 
+#include <stdint.h>
 #include <limits>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/logging.h"
-#include "third_party/mojo/src/mojo/public/c/system/types.h"
+#include "base/macros.h"
+#include "mojo/public/c/system/types.h"
 
 namespace content {
 
@@ -16,7 +20,7 @@ using Result = blink::WebDataConsumerHandle::Result;
 class WebDataConsumerHandleImpl::Context
     : public base::RefCountedThreadSafe<Context> {
  public:
-  explicit Context(Handle handle) : handle_(handle.Pass()) {}
+  explicit Context(Handle handle) : handle_(std::move(handle)) {}
 
   const Handle& handle() { return handle_; }
 
@@ -31,7 +35,7 @@ class WebDataConsumerHandleImpl::Context
 WebDataConsumerHandleImpl::ReaderImpl::ReaderImpl(
     scoped_refptr<Context> context,
     Client* client)
-    : context_(context), handle_watcher_(14), client_(client) {
+    : context_(context), client_(client) {
   if (client_)
     StartWatching();
 }
@@ -118,8 +122,7 @@ void WebDataConsumerHandleImpl::ReaderImpl::OnHandleGotReadable(MojoResult) {
 }
 
 WebDataConsumerHandleImpl::WebDataConsumerHandleImpl(Handle handle)
-    : context_(new Context(handle.Pass())) {
-}
+    : context_(new Context(std::move(handle))) {}
 
 WebDataConsumerHandleImpl::~WebDataConsumerHandleImpl() {
 }

@@ -23,7 +23,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8MutationCallback.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -41,7 +40,7 @@ V8MutationCallback::V8MutationCallback(v8::Local<v8::Function> callback, v8::Loc
     , m_callback(scriptState->isolate(), callback)
     , m_scriptState(scriptState)
 {
-    V8HiddenValue::setHiddenValue(scriptState->isolate(), owner, V8HiddenValue::callback(scriptState->isolate()), callback);
+    V8HiddenValue::setHiddenValue(scriptState, owner, V8HiddenValue::callback(scriptState->isolate()), callback);
     m_callback.setWeak(this, &setWeakCallback);
 }
 
@@ -78,7 +77,7 @@ void V8MutationCallback::call(const WillBeHeapVector<RefPtrWillBeMember<Mutation
         return;
     v8::Local<v8::Value> argv[] = { v8Mutations, observerHandle };
 
-    v8::TryCatch exceptionCatcher;
+    v8::TryCatch exceptionCatcher(isolate);
     exceptionCatcher.SetVerbose(true);
     ScriptController::callFunction(executionContext(), m_callback.newLocal(isolate), thisObject, WTF_ARRAY_LENGTH(argv), argv, isolate);
 }

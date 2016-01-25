@@ -26,18 +26,25 @@
 #ifndef BaseChooserOnlyDateAndTimeInputType_h
 #define BaseChooserOnlyDateAndTimeInputType_h
 
+#include "wtf/build_config.h"
+
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
 #include "core/html/forms/BaseDateAndTimeInputType.h"
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/html/forms/DateTimeChooserClient.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BaseChooserOnlyDateAndTimeInputType);
+    WILL_BE_USING_PRE_FINALIZER(BaseChooserOnlyDateAndTimeInputType, closeDateTimeChooser);
 protected:
-    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
+    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement&);
     ~BaseChooserOnlyDateAndTimeInputType() override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     void closeDateTimeChooser();
@@ -59,9 +66,10 @@ private:
     void didChooseValue(double) override;
     void didEndChooser() override;
 
-    RefPtr<DateTimeChooser> m_dateTimeChooser;
+    RefPtrWillBeMember<DateTimeChooser> m_dateTimeChooser;
 };
 
-}
-#endif
-#endif
+} // namespace blink
+
+#endif // ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#endif // BaseChooserOnlyDateAndTimeInputType_h

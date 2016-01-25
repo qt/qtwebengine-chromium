@@ -119,7 +119,7 @@ WebInspector.Color.parse = function(text)
                          WebInspector.Color._parseSatLightNumeric(hslString[1]),
                          WebInspector.Color._parseSatLightNumeric(hslString[2]), 1 ];
             var rgba = [];
-            WebInspector.Color._hsl2rgb(hsla, rgba);
+            WebInspector.Color.hsl2rgb(hsla, rgba);
             return new WebInspector.Color(rgba, WebInspector.Color.Format.HSL, text);
         }
 
@@ -146,7 +146,7 @@ WebInspector.Color.parse = function(text)
                          WebInspector.Color._parseSatLightNumeric(hslaString[2]),
                          WebInspector.Color._parseAlphaNumeric(hslaString[3]) ];
             var rgba = [];
-            WebInspector.Color._hsl2rgb(hsla, rgba);
+            WebInspector.Color.hsl2rgb(hsla, rgba);
             return new WebInspector.Color(rgba, WebInspector.Color.Format.HSLA, text);
         }
     }
@@ -212,7 +212,7 @@ WebInspector.Color.prototype = {
         if (l === 0)
             var s = 0;
         else if (l === 1)
-            var s = 1;
+            var s = 0;
         else if (l <= 0.5)
             var s = diff / add;
         else
@@ -482,7 +482,7 @@ WebInspector.Color._hsva2hsla = function(hsva, out_hsla)
  * @param {!Array.<number>} hsl
  * @param {!Array.<number>} out_rgb
  */
-WebInspector.Color._hsl2rgb = function(hsl, out_rgb)
+WebInspector.Color.hsl2rgb = function(hsl, out_rgb)
 {
     var h = hsl[0];
     var s = hsl[1];
@@ -532,7 +532,7 @@ WebInspector.Color._hsl2rgb = function(hsl, out_rgb)
 WebInspector.Color.hsva2rgba = function(hsva, out_rgba)
 {
     WebInspector.Color._hsva2hsla(hsva, WebInspector.Color.hsva2rgba._tmpHSLA);
-    WebInspector.Color._hsl2rgb(WebInspector.Color.hsva2rgba._tmpHSLA, out_rgba);
+    WebInspector.Color.hsl2rgb(WebInspector.Color.hsva2rgba._tmpHSLA, out_rgba);
 
     for (var i = 0; i < WebInspector.Color.hsva2rgba._tmpHSLA.length; i++)
         WebInspector.Color.hsva2rgba._tmpHSLA[i] = 0;
@@ -565,16 +565,16 @@ WebInspector.Color.luminance = function(rgba)
  * Combine the two given color according to alpha blending.
  * @param {!Array<number>} fgRGBA
  * @param {!Array<number>} bgRGBA
- * @param {!Array<number>} out_flattened
+ * @param {!Array<number>} out_blended
  */
-WebInspector.Color.flattenColors = function(fgRGBA, bgRGBA, out_flattened)
+WebInspector.Color.blendColors = function(fgRGBA, bgRGBA, out_blended)
 {
     var alpha = fgRGBA[3];
 
-    out_flattened[0] = ((1 - alpha) * bgRGBA[0]) + (alpha * fgRGBA[0]);
-    out_flattened[1] = ((1 - alpha) * bgRGBA[1]) + (alpha * fgRGBA[1]);
-    out_flattened[2] = ((1 - alpha) * bgRGBA[2]) + (alpha * fgRGBA[2]);
-    out_flattened[3] = alpha + (bgRGBA[3] * (1 - alpha));
+    out_blended[0] = ((1 - alpha) * bgRGBA[0]) + (alpha * fgRGBA[0]);
+    out_blended[1] = ((1 - alpha) * bgRGBA[1]) + (alpha * fgRGBA[1]);
+    out_blended[2] = ((1 - alpha) * bgRGBA[2]) + (alpha * fgRGBA[2]);
+    out_blended[3] = alpha + (bgRGBA[3] * (1 - alpha));
 }
 
 /**
@@ -587,20 +587,49 @@ WebInspector.Color.flattenColors = function(fgRGBA, bgRGBA, out_flattened)
  */
 WebInspector.Color.calculateContrastRatio = function(fgRGBA, bgRGBA)
 {
-    WebInspector.Color.flattenColors(fgRGBA, bgRGBA, WebInspector.Color.calculateContrastRatio._flattenedFg);
+    WebInspector.Color.blendColors(fgRGBA, bgRGBA, WebInspector.Color.calculateContrastRatio._blendedFg);
 
-    var fgLuminance = WebInspector.Color.luminance(WebInspector.Color.calculateContrastRatio._flattenedFg);
+    var fgLuminance = WebInspector.Color.luminance(WebInspector.Color.calculateContrastRatio._blendedFg);
     var bgLuminance = WebInspector.Color.luminance(bgRGBA);
     var contrastRatio = (Math.max(fgLuminance, bgLuminance) + 0.05) /
         (Math.min(fgLuminance, bgLuminance) + 0.05);
 
-    for (var i = 0; i < WebInspector.Color.calculateContrastRatio._flattenedFg.length; i++)
-        WebInspector.Color.calculateContrastRatio._flattenedFg[i] = 0;
+    for (var i = 0; i < WebInspector.Color.calculateContrastRatio._blendedFg.length; i++)
+        WebInspector.Color.calculateContrastRatio._blendedFg[i] = 0;
 
     return contrastRatio;
 }
 
-WebInspector.Color.calculateContrastRatio._flattenedFg = [0, 0, 0, 0];
+WebInspector.Color.calculateContrastRatio._blendedFg = [0, 0, 0, 0];
+
+/**
+ * Compute a desired luminance given a given luminance and a desired contrast
+ * ratio.
+ * @param {number} luminance The given luminance.
+ * @param {number} contrast The desired contrast ratio.
+ * @param {boolean} lighter Whether the desired luminance is lighter or darker
+ * than the given luminance. If no luminance can be found which meets this
+ * requirement, a luminance which meets the inverse requirement will be
+ * returned.
+ * @return {number} The desired luminance.
+ */
+WebInspector.Color.desiredLuminance = function(luminance, contrast, lighter)
+{
+    function computeLuminance()
+    {
+        if (lighter)
+            return (luminance + 0.05) * contrast - 0.05;
+        else
+            return (luminance + 0.05) / contrast - 0.05;
+    }
+    var desiredLuminance = computeLuminance();
+    if (desiredLuminance < 0 || desiredLuminance > 1) {
+        lighter = !lighter;
+        desiredLuminance = computeLuminance();
+    }
+    return desiredLuminance;
+};
+
 
 WebInspector.Color.Nicknames = {
     "aliceblue":          [240,248,255],
@@ -767,4 +796,27 @@ WebInspector.Color.PageHighlight = {
     EventTarget: WebInspector.Color.fromRGBA([255, 196, 196, .66]),
     Shape: WebInspector.Color.fromRGBA([96, 82, 177, 0.8]),
     ShapeMargin: WebInspector.Color.fromRGBA([96, 82, 127, .6])
+}
+
+/**
+ * @param {!WebInspector.Color} color
+ * @return {!WebInspector.Color.Format}
+ */
+WebInspector.Color.detectColorFormat = function(color)
+{
+    const cf = WebInspector.Color.Format;
+    var format;
+    var formatSetting = WebInspector.moduleSetting("colorFormat").get();
+    if (formatSetting === cf.Original)
+        format = cf.Original;
+    else if (formatSetting === cf.RGB)
+        format = (color.hasAlpha() ? cf.RGBA : cf.RGB);
+    else if (formatSetting === cf.HSL)
+        format = (color.hasAlpha() ? cf.HSLA : cf.HSL);
+    else if (!color.hasAlpha())
+        format = (color.canBeShortHex() ? cf.ShortHEX : cf.HEX);
+    else
+        format = cf.RGBA;
+
+    return format;
 }

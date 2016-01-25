@@ -4,6 +4,8 @@
 
 #include "content/browser/background_sync/background_sync_service_impl.h"
 
+#include <utility>
+
 #include "background_sync_registration_handle.h"
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
@@ -41,15 +43,15 @@ SyncRegistrationPtr ToMojoRegistration(
       static_cast<content::BackgroundSyncPowerState>(in.options()->power_state);
   out->network_state = static_cast<content::BackgroundSyncNetworkState>(
       in.options()->network_state);
-  return out.Pass();
+  return out;
 }
 
 }  // namespace
 
 #define COMPILE_ASSERT_MATCHING_ENUM(mojo_name, manager_name) \
-  COMPILE_ASSERT(static_cast<int>(content::mojo_name) ==      \
-                     static_cast<int>(content::manager_name), \
-                 mismatching_enums)
+  static_assert(static_cast<int>(content::mojo_name) ==       \
+                    static_cast<int>(content::manager_name),  \
+                "mojo and manager enums must match")
 
 // TODO(iclelland): Move these tests somewhere else
 COMPILE_ASSERT_MATCHING_ENUM(BACKGROUND_SYNC_ERROR_NONE,
@@ -97,7 +99,7 @@ BackgroundSyncServiceImpl::BackgroundSyncServiceImpl(
     BackgroundSyncContextImpl* background_sync_context,
     mojo::InterfaceRequest<BackgroundSyncService> request)
     : background_sync_context_(background_sync_context),
-      binding_(this, request.Pass()),
+      binding_(this, std::move(request)),
       weak_ptr_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(background_sync_context);
@@ -212,7 +214,7 @@ void BackgroundSyncServiceImpl::DuplicateRegistrationHandle(
   active_handles_.AddWithID(registration_handle.release(),
                             handle_ptr->handle_id());
   SyncRegistrationPtr mojoResult = ToMojoRegistration(*handle_ptr);
-  callback.Run(BACKGROUND_SYNC_ERROR_NONE, mojoResult.Pass());
+  callback.Run(BACKGROUND_SYNC_ERROR_NONE, std::move(mojoResult));
 }
 
 void BackgroundSyncServiceImpl::ReleaseRegistration(
@@ -226,9 +228,9 @@ void BackgroundSyncServiceImpl::ReleaseRegistration(
   active_handles_.Remove(handle_id);
 }
 
-void BackgroundSyncServiceImpl::NotifyWhenDone(
+void BackgroundSyncServiceImpl::NotifyWhenFinished(
     BackgroundSyncRegistrationHandle::HandleId handle_id,
-    const NotifyWhenDoneCallback& callback) {
+    const NotifyWhenFinishedCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BackgroundSyncRegistrationHandle* registration =
       active_handles_.Lookup(handle_id);
@@ -238,8 +240,8 @@ void BackgroundSyncServiceImpl::NotifyWhenDone(
     return;
   }
 
-  registration->NotifyWhenDone(
-      base::Bind(&BackgroundSyncServiceImpl::OnNotifyWhenDoneResult,
+  registration->NotifyWhenFinished(
+      base::Bind(&BackgroundSyncServiceImpl::OnNotifyWhenFinishedResult,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
 
@@ -256,10 +258,11 @@ void BackgroundSyncServiceImpl::OnRegisterResult(
     return;
   }
 
+  DCHECK(result);
   active_handles_.AddWithID(result.release(), result_ptr->handle_id());
   SyncRegistrationPtr mojoResult = ToMojoRegistration(*result_ptr);
   callback.Run(static_cast<content::BackgroundSyncError>(status),
-               mojoResult.Pass());
+               std::move(mojoResult));
 }
 
 void BackgroundSyncServiceImpl::OnUnregisterResult(
@@ -275,6 +278,8 @@ void BackgroundSyncServiceImpl::OnGetRegistrationsResult(
     scoped_ptr<ScopedVector<BackgroundSyncRegistrationHandle>>
         result_registrations) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(result_registrations);
+
   mojo::Array<content::SyncRegistrationPtr> mojo_registrations(0);
   for (BackgroundSyncRegistrationHandle* registration : *result_registrations) {
     active_handles_.AddWithID(registration, registration->handle_id());
@@ -284,11 +289,11 @@ void BackgroundSyncServiceImpl::OnGetRegistrationsResult(
   result_registrations->weak_clear();
 
   callback.Run(static_cast<content::BackgroundSyncError>(status),
-               mojo_registrations.Pass());
+               std::move(mojo_registrations));
 }
 
-void BackgroundSyncServiceImpl::OnNotifyWhenDoneResult(
-    const NotifyWhenDoneCallback& callback,
+void BackgroundSyncServiceImpl::OnNotifyWhenFinishedResult(
+    const NotifyWhenFinishedCallback& callback,
     BackgroundSyncStatus status,
     BackgroundSyncState sync_state) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);

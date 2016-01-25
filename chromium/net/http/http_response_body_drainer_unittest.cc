@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -56,7 +57,7 @@ class CloseResultWaiter {
     result_ = result;
     have_result_ = true;
     if (waiting_for_result_)
-      base::MessageLoop::current()->Quit();
+      base::MessageLoop::current()->QuitWhenIdle();
   }
 
  private:
@@ -126,6 +127,8 @@ class MockHttpStream : public HttpStream {
   }
 
   void Drain(HttpNetworkSession*) override {}
+
+  void PopulateNetErrorDetails(NetErrorDetails* details) override { return; }
 
   void SetPriority(RequestPriority priority) override {}
 
@@ -232,7 +235,7 @@ class HttpResponseBodyDrainerTest : public testing::Test {
   scoped_refptr<SSLConfigService> ssl_config_service_;
   scoped_ptr<HttpServerPropertiesImpl> http_server_properties_;
   scoped_ptr<TransportSecurityState> transport_security_state_;
-  const scoped_refptr<HttpNetworkSession> session_;
+  const scoped_ptr<HttpNetworkSession> session_;
   CloseResultWaiter result_waiter_;
   MockHttpStream* const mock_stream_;  // Owned by |drainer_|.
   HttpResponseBodyDrainer* const drainer_;  // Deletes itself.

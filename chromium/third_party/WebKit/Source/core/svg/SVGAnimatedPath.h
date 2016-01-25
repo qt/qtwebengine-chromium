@@ -31,14 +31,14 @@
 #ifndef SVGAnimatedPath_h
 #define SVGAnimatedPath_h
 
-#include "core/svg/SVGPathSegListTearOff.h"
+#include "core/svg/SVGPath.h"
 #include "core/svg/properties/SVGAnimatedProperty.h"
 
 namespace blink {
 
 class SVGPathElement;
 
-class SVGAnimatedPath : public SVGAnimatedProperty<SVGPathSegList> {
+class SVGAnimatedPath : public SVGAnimatedProperty<SVGPath> {
 public:
     ~SVGAnimatedPath() override;
 

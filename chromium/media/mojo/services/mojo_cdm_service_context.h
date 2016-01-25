@@ -5,6 +5,8 @@
 #ifndef MEDIA_MOJO_SERVICES_MOJO_CDM_SERVICE_CONTEXT_H_
 #define MEDIA_MOJO_SERVICES_MOJO_CDM_SERVICE_CONTEXT_H_
 
+#include <stdint.h>
+
 #include <map>
 
 #include "base/macros.h"
@@ -17,7 +19,7 @@ namespace media {
 class MojoCdmService;
 
 // A class that creates, owns and manages all MojoCdmService instances.
-class MEDIA_EXPORT MojoCdmServiceContext : public CdmContextProvider {
+class MojoCdmServiceContext : public CdmContextProvider {
  public:
   MojoCdmServiceContext();
   ~MojoCdmServiceContext() override;

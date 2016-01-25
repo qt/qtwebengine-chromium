@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/RealtimeAnalyser.h"
-
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioUtilities.h"
 #include "platform/audio/VectorMath.h"
@@ -190,9 +187,7 @@ void RealtimeAnalyser::doFFTAnalysis()
 void RealtimeAnalyser::getFloatFrequencyData(DOMFloat32Array* destinationArray)
 {
     ASSERT(isMainThread());
-
-    if (!destinationArray)
-        return;
+    ASSERT(destinationArray);
 
     doFFTAnalysis();
 
@@ -215,9 +210,7 @@ void RealtimeAnalyser::getFloatFrequencyData(DOMFloat32Array* destinationArray)
 void RealtimeAnalyser::getByteFrequencyData(DOMUint8Array* destinationArray)
 {
     ASSERT(isMainThread());
-
-    if (!destinationArray)
-        return;
+    ASSERT(destinationArray);
 
     doFFTAnalysis();
 
@@ -252,9 +245,7 @@ void RealtimeAnalyser::getByteFrequencyData(DOMUint8Array* destinationArray)
 void RealtimeAnalyser::getFloatTimeDomainData(DOMFloat32Array* destinationArray)
 {
     ASSERT(isMainThread());
-
-    if (!destinationArray)
-        return;
+    ASSERT(destinationArray);
 
     unsigned fftSize = this->fftSize();
     size_t len = std::min(fftSize, destinationArray->length());
@@ -281,9 +272,7 @@ void RealtimeAnalyser::getFloatTimeDomainData(DOMFloat32Array* destinationArray)
 void RealtimeAnalyser::getByteTimeDomainData(DOMUint8Array* destinationArray)
 {
     ASSERT(isMainThread());
-
-    if (!destinationArray)
-        return;
+    ASSERT(destinationArray);
 
     unsigned fftSize = this->fftSize();
     size_t len = std::min(fftSize, destinationArray->length());
@@ -318,4 +307,3 @@ void RealtimeAnalyser::getByteTimeDomainData(DOMUint8Array* destinationArray)
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

@@ -5,11 +5,14 @@
 #ifndef DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_MEDIA_TRANSPORT_CLIENT_H_
 #define DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_MEDIA_TRANSPORT_CLIENT_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <string>
 #include <vector>
 
 #include "base/files/file.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "dbus/object_path.h"

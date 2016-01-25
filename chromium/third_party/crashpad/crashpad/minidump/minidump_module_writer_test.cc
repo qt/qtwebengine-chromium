@@ -14,11 +14,9 @@
 
 #include "minidump/minidump_module_writer.h"
 
-#include <windows.h>
-#include <dbghelp.h>
-#include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
+
+#include <utility>
 
 #include "base/format_macros.h"
 #include "base/strings/stringprintf.h"
@@ -68,7 +66,7 @@ TEST(MinidumpModuleWriter, EmptyModuleList) {
   MinidumpFileWriter minidump_file_writer;
   auto module_list_writer = make_scoped_ptr(new MinidumpModuleListWriter());
 
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -158,8 +156,7 @@ void ExpectMiscellaneousDebugRecord(
                                                                *misc_record);
     ASSERT_TRUE(misc_debug_record);
     EXPECT_EQ(expected_debug_type, misc_debug_record->DataType);
-    EXPECT_EQ(expected_debug_utf16,
-              static_cast<bool>(misc_debug_record->Unicode));
+    EXPECT_EQ(expected_debug_utf16, misc_debug_record->Unicode != 0);
     EXPECT_EQ(0u, misc_debug_record->Reserved[0]);
     EXPECT_EQ(0u, misc_debug_record->Reserved[1]);
     EXPECT_EQ(0u, misc_debug_record->Reserved[2]);
@@ -277,8 +274,8 @@ TEST(MinidumpModuleWriter, EmptyModule) {
   auto module_writer = make_scoped_ptr(new MinidumpModuleWriter());
   module_writer->SetName(kModuleName);
 
-  module_list_writer->AddModule(module_writer.Pass());
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  module_list_writer->AddModule(std::move(module_writer));
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -360,16 +357,16 @@ TEST(MinidumpModuleWriter, OneModule) {
       make_scoped_ptr(new MinidumpModuleCodeViewRecordPDB70Writer());
   codeview_pdb70_writer->SetPDBName(kPDBName);
   codeview_pdb70_writer->SetUUIDAndAge(pdb_uuid, kPDBAge);
-  module_writer->SetCodeViewRecord(codeview_pdb70_writer.Pass());
+  module_writer->SetCodeViewRecord(std::move(codeview_pdb70_writer));
 
   auto misc_debug_writer =
       make_scoped_ptr(new MinidumpModuleMiscDebugRecordWriter());
   misc_debug_writer->SetDataType(kDebugType);
   misc_debug_writer->SetData(kDebugName, kDebugUTF16);
-  module_writer->SetMiscDebugRecord(misc_debug_writer.Pass());
+  module_writer->SetMiscDebugRecord(std::move(misc_debug_writer));
 
-  module_list_writer->AddModule(module_writer.Pass());
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  module_list_writer->AddModule(std::move(module_writer));
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -435,16 +432,16 @@ TEST(MinidumpModuleWriter, OneModule_CodeViewUsesPDB20_MiscUsesUTF16) {
       make_scoped_ptr(new MinidumpModuleCodeViewRecordPDB20Writer());
   codeview_pdb20_writer->SetPDBName(kPDBName);
   codeview_pdb20_writer->SetTimestampAndAge(kPDBTimestamp, kPDBAge);
-  module_writer->SetCodeViewRecord(codeview_pdb20_writer.Pass());
+  module_writer->SetCodeViewRecord(std::move(codeview_pdb20_writer));
 
   auto misc_debug_writer =
       make_scoped_ptr(new MinidumpModuleMiscDebugRecordWriter());
   misc_debug_writer->SetDataType(kDebugType);
   misc_debug_writer->SetData(kDebugName, kDebugUTF16);
-  module_writer->SetMiscDebugRecord(misc_debug_writer.Pass());
+  module_writer->SetMiscDebugRecord(std::move(misc_debug_writer));
 
-  module_list_writer->AddModule(module_writer.Pass());
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  module_list_writer->AddModule(std::move(module_writer));
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -512,16 +509,16 @@ TEST(MinidumpModuleWriter, ThreeModules) {
       make_scoped_ptr(new MinidumpModuleCodeViewRecordPDB70Writer());
   codeview_pdb70_writer_0->SetPDBName(kPDBName0);
   codeview_pdb70_writer_0->SetUUIDAndAge(pdb_uuid_0, kPDBAge0);
-  module_writer_0->SetCodeViewRecord(codeview_pdb70_writer_0.Pass());
+  module_writer_0->SetCodeViewRecord(std::move(codeview_pdb70_writer_0));
 
-  module_list_writer->AddModule(module_writer_0.Pass());
+  module_list_writer->AddModule(std::move(module_writer_0));
 
   auto module_writer_1 = make_scoped_ptr(new MinidumpModuleWriter());
   module_writer_1->SetName(kModuleName1);
   module_writer_1->SetImageBaseAddress(kModuleBase1);
   module_writer_1->SetImageSize(kModuleSize1);
 
-  module_list_writer->AddModule(module_writer_1.Pass());
+  module_list_writer->AddModule(std::move(module_writer_1));
 
   auto module_writer_2 = make_scoped_ptr(new MinidumpModuleWriter());
   module_writer_2->SetName(kModuleName2);
@@ -532,11 +529,11 @@ TEST(MinidumpModuleWriter, ThreeModules) {
       make_scoped_ptr(new MinidumpModuleCodeViewRecordPDB20Writer());
   codeview_pdb70_writer_2->SetPDBName(kPDBName2);
   codeview_pdb70_writer_2->SetTimestampAndAge(kPDBTimestamp2, kPDBAge2);
-  module_writer_2->SetCodeViewRecord(codeview_pdb70_writer_2.Pass());
+  module_writer_2->SetCodeViewRecord(std::move(codeview_pdb70_writer_2));
 
-  module_list_writer->AddModule(module_writer_2.Pass());
+  module_list_writer->AddModule(std::move(module_writer_2));
 
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -615,7 +612,9 @@ void InitializeTestModuleSnapshotFromMinidumpModule(
     TestModuleSnapshot* module_snapshot,
     const MINIDUMP_MODULE& minidump_module,
     const std::string& name,
-    const crashpad::UUID& uuid) {
+    const std::string& pdb_name,
+    const crashpad::UUID& uuid,
+    uint32_t age) {
   module_snapshot->SetName(name);
 
   module_snapshot->SetAddressAndSize(minidump_module.BaseOfImage,
@@ -646,14 +645,17 @@ void InitializeTestModuleSnapshotFromMinidumpModule(
   }
   module_snapshot->SetModuleType(module_type);
 
-  module_snapshot->SetUUID(uuid);
+  module_snapshot->SetUUIDAndAge(uuid, age);
+  module_snapshot->SetDebugFileName(pdb_name);
 }
 
 TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
   MINIDUMP_MODULE expect_modules[3] = {};
   const char* module_paths[arraysize(expect_modules)] = {};
   const char* module_names[arraysize(expect_modules)] = {};
+  const char* module_pdbs[arraysize(expect_modules)] = {};
   UUID uuids[arraysize(expect_modules)] = {};
+  uint32_t ages[arraysize(expect_modules)] = {};
 
   expect_modules[0].BaseOfImage = 0x100101000;
   expect_modules[0].SizeOfImage = 0xf000;
@@ -665,10 +667,12 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
   expect_modules[0].VersionInfo.dwFileType = VFT_APP;
   module_paths[0] = "/usr/bin/true";
   module_names[0] = "true";
+  module_pdbs[0] = "true";
   const uint8_t kUUIDBytes0[16] =
       {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
   uuids[0].InitializeFromBytes(kUUIDBytes0);
+  ages[0] = 10;
 
   expect_modules[1].BaseOfImage = 0x200202000;
   expect_modules[1].SizeOfImage = 0x1e1000;
@@ -680,10 +684,12 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
   expect_modules[1].VersionInfo.dwFileType = VFT_DLL;
   module_paths[1] = "/usr/lib/libSystem.B.dylib";
   module_names[1] = "libSystem.B.dylib";
+  module_pdbs[1] = "libSystem.B.dylib.pdb";
   const uint8_t kUUIDBytes1[16] =
       {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
   uuids[1].InitializeFromBytes(kUUIDBytes1);
+  ages[1] = 20;
 
   expect_modules[2].BaseOfImage = 0x300303000;
   expect_modules[2].SizeOfImage = 0x2d000;
@@ -695,10 +701,12 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
   expect_modules[2].VersionInfo.dwFileType = VFT_UNKNOWN;
   module_paths[2] = "/usr/lib/dyld";
   module_names[2] = "dyld";
+  module_pdbs[2] = "/usr/lib/dyld.pdb";
   const uint8_t kUUIDBytes2[16] =
       {0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8,
        0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0};
   uuids[2].InitializeFromBytes(kUUIDBytes2);
+  ages[2] = 30;
 
   PointerVector<TestModuleSnapshot> module_snapshots_owner;
   std::vector<const ModuleSnapshot*> module_snapshots;
@@ -708,7 +716,9 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
     InitializeTestModuleSnapshotFromMinidumpModule(module_snapshot,
                                                    expect_modules[index],
                                                    module_paths[index],
-                                                   uuids[index]);
+                                                   module_pdbs[index],
+                                                   uuids[index],
+                                                   ages[index]);
     module_snapshots.push_back(module_snapshot);
   }
 
@@ -716,7 +726,7 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
   module_list_writer->InitializeFromSnapshot(module_snapshots);
 
   MinidumpFileWriter minidump_file_writer;
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -733,10 +743,10 @@ TEST(MinidumpModuleWriter, InitializeFromSnapshot) {
                                          &module_list->Modules[index],
                                          string_file.string(),
                                          module_paths[index],
-                                         module_names[index],
+                                         module_pdbs[index],
                                          &uuids[index],
                                          0,
-                                         0,
+                                         ages[index],
                                          nullptr,
                                          0,
                                          false));
@@ -747,8 +757,8 @@ TEST(MinidumpModuleWriterDeathTest, NoModuleName) {
   MinidumpFileWriter minidump_file_writer;
   auto module_list_writer = make_scoped_ptr(new MinidumpModuleListWriter());
   auto module_writer = make_scoped_ptr(new MinidumpModuleWriter());
-  module_list_writer->AddModule(module_writer.Pass());
-  minidump_file_writer.AddStream(module_list_writer.Pass());
+  module_list_writer->AddModule(std::move(module_writer));
+  minidump_file_writer.AddStream(std::move(module_list_writer));
 
   StringFile string_file;
   ASSERT_DEATH_CHECK(minidump_file_writer.WriteEverything(&string_file),

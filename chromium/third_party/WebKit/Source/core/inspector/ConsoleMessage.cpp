@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/inspector/ConsoleMessage.h"
 
 #include "bindings/core/v8/ScriptCallStackFactory.h"
@@ -21,7 +20,7 @@ unsigned nextMessageId()
         unsigned value;
     };
 
-    AtomicallyInitializedStaticReference(WTF::ThreadSpecific<MessageId>, messageId, new WTF::ThreadSpecific<MessageId>);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(WTF::ThreadSpecific<MessageId>, messageId, new WTF::ThreadSpecific<MessageId>);
     return ++messageId->value;
 }
 

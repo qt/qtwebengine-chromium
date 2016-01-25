@@ -53,16 +53,9 @@ public:
 
     virtual void didReceiveResponse(const ResourceResponse&) { }
     virtual void didReceiveData(const char*, int) { }
-    virtual void didFinishLoading() { }
-    virtual void didFailLoading(const ResourceError&) { }
 
     virtual void layoutIfNeeded() { }
     virtual void invalidatePaintIfNeeded() { }
-
-#if ENABLE(OILPAN)
-    virtual LocalFrame* pluginFrame() const { return nullptr; }
-    virtual void shouldDisposePlugin() { }
-#endif
 
 protected:
     PluginView() : Widget() { }

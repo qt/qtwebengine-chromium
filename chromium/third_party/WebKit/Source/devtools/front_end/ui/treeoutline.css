@@ -4,6 +4,16 @@
  * found in the LICENSE file.
  */
 
+:host {
+    flex: 1 1;
+    padding: 2px 0 0 0;
+}
+
+.tree-outline-disclosure:not(.tree-outline-disclosure-hide-overflow) {
+    min-width: 100%;
+    display: inline-block;
+}
+
 .tree-outline {
     padding: 0 0 4px 4px;
     margin: 0;
@@ -21,12 +31,8 @@
 
 .tree-outline li .selection {
     display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 17px;
     z-index: -1;
-    margin-top: -1px;
+    margin-left: -10000px;
 }
 
 .tree-outline li.selected .selection {
@@ -68,9 +74,10 @@ ol.tree-outline,
 .tree-outline li {
     text-overflow: ellipsis;
     white-space: nowrap;
-    overflow: hidden;
-    min-height: 17px;
-    padding-top: 2px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 16px;
 }
 
 ol.tree-outline:focus li.selected {
@@ -82,18 +89,14 @@ ol.tree-outline:focus li.selected * {
 }
 
 .tree-outline li::before {
-    float: left;
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
     -webkit-mask-size: 352px 168px;
-    content: "a";
+    content: "aa";
     color: transparent;
     text-shadow: none;
-    position: relative;
-    margin-right: 1px;
-    top: 1px;
-    width: 10px;
-    height: 10px;
+    margin-right: -2px;
+    height: 12px;
 }
 
 .tree-outline li:not(.parent)::before {

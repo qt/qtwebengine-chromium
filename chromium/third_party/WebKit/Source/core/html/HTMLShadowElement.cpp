@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/HTMLShadowElement.h"
 
 #include "core/HTMLNames.h"
@@ -60,10 +59,10 @@ ShadowRoot* HTMLShadowElement::olderShadowRoot()
     updateDistribution();
 
     ShadowRoot* older = containingRoot->olderShadowRoot();
-    if (!older || !older->isOpen() || older->shadowInsertionPointOfYoungerShadowRoot() != this)
+    if (!older || !older->isOpenOrV0() || older->shadowInsertionPointOfYoungerShadowRoot() != this)
         return nullptr;
 
-    ASSERT(older->isOpen());
+    ASSERT(older->isOpenOrV0());
     return older;
 }
 

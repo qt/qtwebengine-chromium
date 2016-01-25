@@ -28,13 +28,13 @@
     return;                                         \
   }
 
-static const char AES_CM_128_HMAC_SHA1_80[] = "AES_CM_128_HMAC_SHA1_80";
 static const char kIceUfrag1[] = "TESTICEUFRAG0001";
 static const char kIcePwd1[] = "TESTICEPWD00000000000001";
 static const size_t kPacketNumOffset = 8;
 static const size_t kPacketHeaderLen = 12;
+static const int kFakePacketId = 0x1234;
 
-static bool IsRtpLeadByte(uint8 b) {
+static bool IsRtpLeadByte(uint8_t b) {
   return ((b & 0xC0) == 0x80);
 }
 
@@ -48,14 +48,14 @@ class DtlsTestClient : public sigslot::has_slots<> {
       : name_(name),
         packet_size_(0),
         use_dtls_srtp_(false),
-        ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_10),
+        ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_12),
         negotiated_dtls_(false),
         received_dtls_client_hello_(false),
         received_dtls_server_hello_(false) {}
   void CreateCertificate(rtc::KeyType key_type) {
-    certificate_ = rtc::RTCCertificate::Create(
-        rtc::scoped_ptr<rtc::SSLIdentity>(
-            rtc::SSLIdentity::Generate(name_, key_type)).Pass());
+    certificate_ =
+        rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+            rtc::SSLIdentity::Generate(name_, key_type)));
   }
   const rtc::scoped_refptr<rtc::RTCCertificate>& certificate() {
     return certificate_;
@@ -86,6 +86,8 @@ class DtlsTestClient : public sigslot::has_slots<> {
         &DtlsTestClient::OnTransportChannelWritableState);
       channel->SignalReadPacket.connect(this,
         &DtlsTestClient::OnTransportChannelReadPacket);
+      channel->SignalSentPacket.connect(
+          this, &DtlsTestClient::OnTransportChannelSentPacket);
       channels_.push_back(channel);
 
       // Hook the raw packets so that we can verify they are encrypted.
@@ -147,9 +149,9 @@ class DtlsTestClient : public sigslot::has_slots<> {
       // SRTP ciphers will be set only in the beginning.
       for (std::vector<cricket::DtlsTransportChannelWrapper*>::iterator it =
            channels_.begin(); it != channels_.end(); ++it) {
-        std::vector<std::string> ciphers;
-        ciphers.push_back(AES_CM_128_HMAC_SHA1_80);
-        ASSERT_TRUE((*it)->SetSrtpCiphers(ciphers));
+        std::vector<int> ciphers;
+        ciphers.push_back(rtc::SRTP_AES128_CM_SHA1_80);
+        ASSERT_TRUE((*it)->SetSrtpCryptoSuites(ciphers));
       }
     }
 
@@ -212,26 +214,26 @@ class DtlsTestClient : public sigslot::has_slots<> {
     }
   }
 
-  void CheckSrtp(const std::string& expected_cipher) {
+  void CheckSrtp(int expected_crypto_suite) {
     for (std::vector<cricket::DtlsTransportChannelWrapper*>::iterator it =
            channels_.begin(); it != channels_.end(); ++it) {
-      std::string cipher;
+      int crypto_suite;
 
-      bool rv = (*it)->GetSrtpCryptoSuite(&cipher);
-      if (negotiated_dtls_ && !expected_cipher.empty()) {
+      bool rv = (*it)->GetSrtpCryptoSuite(&crypto_suite);
+      if (negotiated_dtls_ && expected_crypto_suite) {
         ASSERT_TRUE(rv);
 
-        ASSERT_EQ(cipher, expected_cipher);
+        ASSERT_EQ(crypto_suite, expected_crypto_suite);
       } else {
         ASSERT_FALSE(rv);
       }
     }
   }
 
-  void CheckSsl(uint16_t expected_cipher) {
+  void CheckSsl(int expected_cipher) {
     for (std::vector<cricket::DtlsTransportChannelWrapper*>::iterator it =
            channels_.begin(); it != channels_.end(); ++it) {
-      uint16_t cipher;
+      int cipher;
 
       bool rv = (*it)->GetSslCipherSuite(&cipher);
       if (negotiated_dtls_ && expected_cipher) {
@@ -254,11 +256,12 @@ class DtlsTestClient : public sigslot::has_slots<> {
       memset(packet.get(), sent & 0xff, size);
       packet[0] = (srtp) ? 0x80 : 0x00;
       rtc::SetBE32(packet.get() + kPacketNumOffset,
-                         static_cast<uint32>(sent));
+                   static_cast<uint32_t>(sent));
 
       // Only set the bypass flag if we've activated DTLS.
       int flags = (certificate_ && srtp) ? cricket::PF_SRTP_BYPASS : 0;
       rtc::PacketOptions packet_options;
+      packet_options.packet_id = kFakePacketId;
       int rv = channels_[channel]->SendPacket(
           packet.get(), size, packet_options, flags);
       ASSERT_GT(rv, 0);
@@ -287,14 +290,14 @@ class DtlsTestClient : public sigslot::has_slots<> {
     return received_.size();
   }
 
-  bool VerifyPacket(const char* data, size_t size, uint32* out_num) {
+  bool VerifyPacket(const char* data, size_t size, uint32_t* out_num) {
     if (size != packet_size_ ||
-        (data[0] != 0 && static_cast<uint8>(data[0]) != 0x80)) {
+        (data[0] != 0 && static_cast<uint8_t>(data[0]) != 0x80)) {
       return false;
     }
-    uint32 packet_num = rtc::GetBE32(data + kPacketNumOffset);
+    uint32_t packet_num = rtc::GetBE32(data + kPacketNumOffset);
     for (size_t i = kPacketHeaderLen; i < size; ++i) {
-      if (static_cast<uint8>(data[i]) != (packet_num & 0xff)) {
+      if (static_cast<uint8_t>(data[i]) != (packet_num & 0xff)) {
         return false;
       }
     }
@@ -309,10 +312,10 @@ class DtlsTestClient : public sigslot::has_slots<> {
     if (size <= packet_size_) {
       return false;
     }
-    uint32 packet_num = rtc::GetBE32(data + kPacketNumOffset);
+    uint32_t packet_num = rtc::GetBE32(data + kPacketNumOffset);
     int num_matches = 0;
     for (size_t i = kPacketNumOffset; i < size; ++i) {
-      if (static_cast<uint8>(data[i]) == (packet_num & 0xff)) {
+      if (static_cast<uint8_t>(data[i]) == (packet_num & 0xff)) {
         ++num_matches;
       }
     }
@@ -329,7 +332,7 @@ class DtlsTestClient : public sigslot::has_slots<> {
                                     const char* data, size_t size,
                                     const rtc::PacketTime& packet_time,
                                     int flags) {
-    uint32 packet_num = 0;
+    uint32_t packet_num = 0;
     ASSERT_TRUE(VerifyPacket(data, size, &packet_num));
     received_.insert(packet_num);
     // Only DTLS-SRTP packets should have the bypass flag set.
@@ -337,6 +340,13 @@ class DtlsTestClient : public sigslot::has_slots<> {
         (certificate_ && IsRtpLeadByte(data[0])) ? cricket::PF_SRTP_BYPASS : 0;
     ASSERT_EQ(expected_flags, flags);
   }
+
+  void OnTransportChannelSentPacket(cricket::TransportChannel* channel,
+                                    const rtc::SentPacket& sent_packet) {
+    sent_packet_ = sent_packet;
+  }
+
+  rtc::SentPacket sent_packet() const { return sent_packet_; }
 
   // Hook into the raw packet stream to make sure DTLS packets are encrypted.
   void OnFakeTransportChannelReadPacket(cricket::TransportChannel* channel,
@@ -378,6 +388,7 @@ class DtlsTestClient : public sigslot::has_slots<> {
   bool negotiated_dtls_;
   bool received_dtls_client_hello_;
   bool received_dtls_server_hello_;
+  rtc::SentPacket sent_packet_;
 };
 
 
@@ -389,7 +400,7 @@ class DtlsTransportChannelTest : public testing::Test {
         channel_ct_(1),
         use_dtls_(false),
         use_dtls_srtp_(false),
-        ssl_expected_version_(rtc::SSL_PROTOCOL_DTLS_10) {}
+        ssl_expected_version_(rtc::SSL_PROTOCOL_DTLS_12) {}
 
   void SetChannelCount(size_t channel_ct) {
     channel_ct_ = static_cast<int>(channel_ct);
@@ -457,11 +468,11 @@ class DtlsTransportChannelTest : public testing::Test {
 
     // Check that we negotiated the right ciphers.
     if (use_dtls_srtp_) {
-      client1_.CheckSrtp(AES_CM_128_HMAC_SHA1_80);
-      client2_.CheckSrtp(AES_CM_128_HMAC_SHA1_80);
+      client1_.CheckSrtp(rtc::SRTP_AES128_CM_SHA1_80);
+      client2_.CheckSrtp(rtc::SRTP_AES128_CM_SHA1_80);
     } else {
-      client1_.CheckSrtp("");
-      client2_.CheckSrtp("");
+      client1_.CheckSrtp(rtc::SRTP_INVALID_CRYPTO_SUITE);
+      client2_.CheckSrtp(rtc::SRTP_INVALID_CRYPTO_SUITE);
     }
     client1_.CheckSsl(rtc::SSLStreamAdapter::GetDefaultSslCipherForTest(
         ssl_expected_version_, rtc::KT_DEFAULT));
@@ -558,6 +569,15 @@ TEST_F(DtlsTransportChannelTest, TestTransfer) {
   TestTransfer(0, 1000, 100, false);
 }
 
+// Connect without DTLS, and transfer some data.
+TEST_F(DtlsTransportChannelTest, TestOnSentPacket) {
+  ASSERT_TRUE(Connect());
+  EXPECT_EQ(client1_.sent_packet().send_time_ms, -1);
+  TestTransfer(0, 1000, 100, false);
+  EXPECT_EQ(kFakePacketId, client1_.sent_packet().packet_id);
+  EXPECT_GE(client1_.sent_packet().send_time_ms, 0);
+}
+
 // Create two channels without DTLS, and transfer some data.
 TEST_F(DtlsTransportChannelTest, TestTransferTwoChannels) {
   SetChannelCount(2);
@@ -580,16 +600,30 @@ TEST_F(DtlsTransportChannelTest, TestTransferSrtpTwoChannels) {
   TestTransfer(1, 1000, 100, true);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtls DISABLED_TestTransferDtls
+#else
+#define MAYBE_TestTransferDtls TestTransferDtls
+#endif
 // Connect with DTLS, and transfer some data.
-TEST_F(DtlsTransportChannelTest, TestTransferDtls) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtls) {
   MAYBE_SKIP_TEST(HaveDtls);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   ASSERT_TRUE(Connect());
   TestTransfer(0, 1000, 100, false);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsTwoChannels DISABLED_TestTransferDtlsTwoChannels
+#else
+#define MAYBE_TestTransferDtlsTwoChannels TestTransferDtlsTwoChannels
+#endif
 // Create two channels with DTLS, and transfer some data.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsTwoChannels) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsTwoChannels) {
   MAYBE_SKIP_TEST(HaveDtls);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -648,8 +682,15 @@ TEST_F(DtlsTransportChannelTest, TestDtls12Client2) {
   ASSERT_TRUE(Connect());
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsSrtp DISABLED_TestTransferDtlsSrtp
+#else
+#define MAYBE_TestTransferDtlsSrtp TestTransferDtlsSrtp
+#endif
 // Connect with DTLS, negotiate DTLS-SRTP, and transfer SRTP using bypass.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtp) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsSrtp) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   PrepareDtlsSrtp(true, true);
@@ -657,9 +698,18 @@ TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtp) {
   TestTransfer(0, 1000, 100, true);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsInvalidSrtpPacket \
+  DISABLED_TestTransferDtlsInvalidSrtpPacket
+#else
+#define MAYBE_TestTransferDtlsInvalidSrtpPacket \
+  TestTransferDtlsInvalidSrtpPacket
+#endif
 // Connect with DTLS-SRTP, transfer an invalid SRTP packet, and expects -1
 // returned.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsInvalidSrtpPacket) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsInvalidSrtpPacket) {
   MAYBE_SKIP_TEST(HaveDtls);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   PrepareDtlsSrtp(true, true);
@@ -668,24 +718,47 @@ TEST_F(DtlsTransportChannelTest, TestTransferDtlsInvalidSrtpPacket) {
   ASSERT_EQ(-1, result);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsSrtpRejected DISABLED_TestTransferDtlsSrtpRejected
+#else
+#define MAYBE_TestTransferDtlsSrtpRejected TestTransferDtlsSrtpRejected
+#endif
 // Connect with DTLS. A does DTLS-SRTP but B does not.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpRejected) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsSrtpRejected) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   PrepareDtlsSrtp(true, false);
   ASSERT_TRUE(Connect());
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsSrtpNotOffered \
+  DISABLED_TestTransferDtlsSrtpNotOffered
+#else
+#define MAYBE_TestTransferDtlsSrtpNotOffered TestTransferDtlsSrtpNotOffered
+#endif
 // Connect with DTLS. B does DTLS-SRTP but A does not.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpNotOffered) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsSrtpNotOffered) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   PrepareDtlsSrtp(false, true);
   ASSERT_TRUE(Connect());
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsSrtpTwoChannels \
+  DISABLED_TestTransferDtlsSrtpTwoChannels
+#else
+#define MAYBE_TestTransferDtlsSrtpTwoChannels TestTransferDtlsSrtpTwoChannels
+#endif
 // Create two channels with DTLS, negotiate DTLS-SRTP, and transfer bypass SRTP.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpTwoChannels) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsSrtpTwoChannels) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -695,8 +768,15 @@ TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpTwoChannels) {
   TestTransfer(1, 1000, 100, true);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsSrtpDemux DISABLED_TestTransferDtlsSrtpDemux
+#else
+#define MAYBE_TestTransferDtlsSrtpDemux TestTransferDtlsSrtpDemux
+#endif
 // Create a single channel with DTLS, and send normal data and SRTP data on it.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpDemux) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsSrtpDemux) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   PrepareDtlsSrtp(true, true);
@@ -705,8 +785,17 @@ TEST_F(DtlsTransportChannelTest, TestTransferDtlsSrtpDemux) {
   TestTransfer(0, 1000, 100, true);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestTransferDtlsAnswererIsPassive \
+  DISABLED_TestTransferDtlsAnswererIsPassive
+#else
+#define MAYBE_TestTransferDtlsAnswererIsPassive \
+  TestTransferDtlsAnswererIsPassive
+#endif
 // Testing when the remote is passive.
-TEST_F(DtlsTransportChannelTest, TestTransferDtlsAnswererIsPassive) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestTransferDtlsAnswererIsPassive) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -731,9 +820,16 @@ TEST_F(DtlsTransportChannelTest, TestDtlsSetupWithLegacyAsAnswerer) {
   EXPECT_EQ(rtc::SSL_CLIENT, channel2_role);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestDtlsReOfferFromOfferer DISABLED_TestDtlsReOfferFromOfferer
+#else
+#define MAYBE_TestDtlsReOfferFromOfferer TestDtlsReOfferFromOfferer
+#endif
 // Testing re offer/answer after the session is estbalished. Roles will be
 // kept same as of the previous negotiation.
-TEST_F(DtlsTransportChannelTest, TestDtlsReOfferFromOfferer) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestDtlsReOfferFromOfferer) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -750,7 +846,14 @@ TEST_F(DtlsTransportChannelTest, TestDtlsReOfferFromOfferer) {
   TestTransfer(1, 1000, 100, true);
 }
 
-TEST_F(DtlsTransportChannelTest, TestDtlsReOfferFromAnswerer) {
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestDtlsReOfferFromAnswerer DISABLED_TestDtlsReOfferFromAnswerer
+#else
+#define MAYBE_TestDtlsReOfferFromAnswerer TestDtlsReOfferFromAnswerer
+#endif
+TEST_F(DtlsTransportChannelTest, MAYBE_TestDtlsReOfferFromAnswerer) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -767,8 +870,15 @@ TEST_F(DtlsTransportChannelTest, TestDtlsReOfferFromAnswerer) {
   TestTransfer(1, 1000, 100, true);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestDtlsRoleReversal DISABLED_TestDtlsRoleReversal
+#else
+#define MAYBE_TestDtlsRoleReversal TestDtlsRoleReversal
+#endif
 // Test that any change in role after the intial setup will result in failure.
-TEST_F(DtlsTransportChannelTest, TestDtlsRoleReversal) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestDtlsRoleReversal) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -782,9 +892,18 @@ TEST_F(DtlsTransportChannelTest, TestDtlsRoleReversal) {
               NF_REOFFER | NF_EXPECT_FAILURE);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestDtlsReOfferWithDifferentSetupAttr \
+  DISABLED_TestDtlsReOfferWithDifferentSetupAttr
+#else
+#define MAYBE_TestDtlsReOfferWithDifferentSetupAttr \
+  TestDtlsReOfferWithDifferentSetupAttr
+#endif
 // Test that using different setup attributes which results in similar ssl
 // role as the initial negotiation will result in success.
-TEST_F(DtlsTransportChannelTest, TestDtlsReOfferWithDifferentSetupAttr) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestDtlsReOfferWithDifferentSetupAttr) {
   MAYBE_SKIP_TEST(HaveDtlsSrtp);
   SetChannelCount(2);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
@@ -844,8 +963,15 @@ TEST_F(DtlsTransportChannelTest, TestCertificatesBeforeConnect) {
   ASSERT_FALSE(remote_cert2 != NULL);
 }
 
+#if defined(MEMORY_SANITIZER)
+// Fails under MemorySanitizer:
+// See https://code.google.com/p/webrtc/issues/detail?id=5381.
+#define MAYBE_TestCertificatesAfterConnect DISABLED_TestCertificatesAfterConnect
+#else
+#define MAYBE_TestCertificatesAfterConnect TestCertificatesAfterConnect
+#endif
 // Test Certificates state after connection.
-TEST_F(DtlsTransportChannelTest, TestCertificatesAfterConnect) {
+TEST_F(DtlsTransportChannelTest, MAYBE_TestCertificatesAfterConnect) {
   MAYBE_SKIP_TEST(HaveDtls);
   PrepareDtls(true, true, rtc::KT_DEFAULT);
   ASSERT_TRUE(Connect());

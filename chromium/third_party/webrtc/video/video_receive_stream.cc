@@ -12,24 +12,33 @@
 
 #include <stdlib.h>
 
+#include <set>
 #include <string>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/call/congestion_controller.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/video/call_stats.h"
 #include "webrtc/video/receive_statistics_proxy.h"
-#include "webrtc/video_encoder.h"
 #include "webrtc/video_receive_stream.h"
 
 namespace webrtc {
+
+static bool UseSendSideBwe(const std::vector<RtpExtension>& extensions) {
+  for (const auto& extension : extensions) {
+    if (extension.name == RtpExtension::kTransportSequenceNumber)
+      return true;
+  }
+  return false;
+}
+
 std::string VideoReceiveStream::Decoder::ToString() const {
   std::stringstream ss;
   ss << "{decoder: " << (decoder != nullptr ? "(VideoDecoder)" : "nullptr");
   ss << ", payload_type: " << payload_type;
   ss << ", payload_name: " << payload_name;
-  ss << ", is_renderer: " << (is_renderer ? "yes" : "no");
-  ss << ", expected_delay_ms: " << expected_delay_ms;
   ss << '}';
 
   return ss.str();
@@ -71,6 +80,7 @@ std::string VideoReceiveStream::Config::Rtp::ToString() const {
      << (rtcp_xr.receiver_reference_time_report ? "on" : "off");
   ss << '}';
   ss << ", remb: " << (remb ? "on" : "off");
+  ss << ", transport_cc: " << (transport_cc ? "on" : "off");
   ss << ", nack: {rtp_history_ms: " << nack.rtp_history_ms << '}';
   ss << ", fec: " << fec.ToString();
   ss << ", rtx: {";
@@ -100,7 +110,7 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
   memset(&codec, 0, sizeof(codec));
 
   codec.plType = decoder.payload_type;
-  strcpy(codec.plName, decoder.payload_name.c_str());
+  strncpy(codec.plName, decoder.payload_name.c_str(), sizeof(codec.plName));
   if (decoder.payload_name == "VP8") {
     codec.codecType = kVideoCodecVP8;
   } else if (decoder.payload_name == "VP9") {
@@ -128,26 +138,41 @@ VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
 }
 }  // namespace
 
-VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
-                                       ChannelGroup* channel_group,
-                                       int channel_id,
-                                       const VideoReceiveStream::Config& config,
-                                       webrtc::VoiceEngine* voice_engine)
+VideoReceiveStream::VideoReceiveStream(
+    int num_cpu_cores,
+    CongestionController* congestion_controller,
+    const VideoReceiveStream::Config& config,
+    webrtc::VoiceEngine* voice_engine,
+    ProcessThread* process_thread,
+    CallStats* call_stats)
     : transport_adapter_(config.rtcp_send_transport),
       encoded_frame_proxy_(config.pre_decode_callback),
       config_(config),
       clock_(Clock::GetRealTimeClock()),
-      channel_group_(channel_group),
-      channel_id_(channel_id) {
-  RTC_CHECK(channel_group_->CreateReceiveChannel(
-      channel_id_, &transport_adapter_, num_cpu_cores, config));
+      congestion_controller_(congestion_controller),
+      call_stats_(call_stats) {
+  LOG(LS_INFO) << "VideoReceiveStream: " << config_.ToString();
 
-  vie_channel_ = channel_group_->GetChannel(channel_id_);
+  bool send_side_bwe =
+      config.rtp.transport_cc && UseSendSideBwe(config_.rtp.extensions);
+
+  RemoteBitrateEstimator* bitrate_estimator =
+      congestion_controller_->GetRemoteBitrateEstimator(send_side_bwe);
+
+  vie_channel_.reset(new ViEChannel(
+      num_cpu_cores, &transport_adapter_, process_thread, nullptr,
+      nullptr, nullptr, bitrate_estimator, call_stats_->rtcp_rtt_stats(),
+      congestion_controller_->pacer(), congestion_controller_->packet_router(),
+      1, false));
+
+  RTC_CHECK(vie_channel_->Init() == 0);
+
+  // Register the channel to receive stats updates.
+  call_stats_->RegisterStatsObserver(vie_channel_->GetStatsObserver());
 
   // TODO(pbos): This is not fine grained enough...
   vie_channel_->SetProtectionMode(config_.rtp.nack.rtp_history_ms > 0, false,
                                   -1, -1);
-  vie_channel_->SetKeyFrameRequestMethod(kKeyFrameReqPliRtcp);
   RTC_DCHECK(config_.rtp.rtcp_mode != RtcpMode::kOff)
       << "A stream should not be configured with RTCP disabled. This value is "
          "reserved for internal usage.";
@@ -168,10 +193,13 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
     vie_channel_->SetRemoteSSRCType(kViEStreamTypeRtx, it->second.ssrc);
     vie_channel_->SetRtxReceivePayloadType(it->second.payload_type, it->first);
   }
+  // TODO(holmer): When Chrome no longer depends on this being false by default,
+  // always use the mapping and remove this whole codepath.
+  vie_channel_->SetUseRtxPayloadMappingOnRestore(
+      config_.rtp.use_rtx_payload_mapping_on_restore);
 
-  // TODO(pbos): Remove channel_group_ usage from VideoReceiveStream. This
-  // should be configured in call.cc.
-  channel_group_->SetChannelRembStatus(false, config_.rtp.remb, vie_channel_);
+  congestion_controller_->SetChannelRembStatus(false, config_.rtp.remb,
+                                               vie_channel_->rtp_rtcp());
 
   for (size_t i = 0; i < config_.rtp.extensions.size(); ++i) {
     const std::string& extension = config_.rtp.extensions[i].name;
@@ -199,7 +227,7 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
     VideoCodec codec;
     memset(&codec, 0, sizeof(codec));
     codec.codecType = kVideoCodecULPFEC;
-    strcpy(codec.plName, "ulpfec");
+    strncpy(codec.plName, "ulpfec", sizeof(codec.plName));
     codec.plType = config_.rtp.fec.ulpfec_payload_type;
     RTC_CHECK_EQ(0, vie_channel_->SetReceiveCodec(codec));
   }
@@ -207,7 +235,7 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
     VideoCodec codec;
     memset(&codec, 0, sizeof(codec));
     codec.codecType = kVideoCodecRED;
-    strcpy(codec.plName, "red");
+    strncpy(codec.plName, "red", sizeof(codec.plName));
     codec.plType = config_.rtp.fec.red_payload_type;
     RTC_CHECK_EQ(0, vie_channel_->SetReceiveCodec(codec));
     if (config_.rtp.fec.red_rtx_payload_type != -1) {
@@ -230,38 +258,48 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
   vie_channel_->RegisterRtcpPacketTypeCounterObserver(stats_proxy_.get());
 
   RTC_DCHECK(!config_.decoders.empty());
+  std::set<int> decoder_payload_types;
   for (size_t i = 0; i < config_.decoders.size(); ++i) {
     const Decoder& decoder = config_.decoders[i];
-    RTC_CHECK_EQ(0,
-                 vie_channel_->RegisterExternalDecoder(
-                     decoder.payload_type, decoder.decoder, decoder.is_renderer,
-                     decoder.is_renderer ? decoder.expected_delay_ms
-                                         : config.render_delay_ms));
+    RTC_CHECK(decoder.decoder);
+    RTC_CHECK(decoder_payload_types.find(decoder.payload_type) ==
+              decoder_payload_types.end())
+        << "Duplicate payload type (" << decoder.payload_type
+        << ") for different decoders.";
+    decoder_payload_types.insert(decoder.payload_type);
+    vie_channel_->RegisterExternalDecoder(decoder.payload_type,
+                                          decoder.decoder);
 
     VideoCodec codec = CreateDecoderVideoCodec(decoder);
 
     RTC_CHECK_EQ(0, vie_channel_->SetReceiveCodec(codec));
   }
 
-  incoming_video_stream_.reset(new IncomingVideoStream(0));
+  incoming_video_stream_.reset(new IncomingVideoStream(
+      0, config.renderer ? config.renderer->SmoothsRenderedFrames() : false));
   incoming_video_stream_->SetExpectedRenderDelay(config.render_delay_ms);
+  vie_channel_->SetExpectedRenderDelay(config.render_delay_ms);
   incoming_video_stream_->SetExternalCallback(this);
   vie_channel_->SetIncomingVideoStream(incoming_video_stream_.get());
 
-  if (config.pre_decode_callback)
-    vie_channel_->RegisterPreDecodeImageCallback(&encoded_frame_proxy_);
+  vie_channel_->RegisterPreDecodeImageCallback(this);
   vie_channel_->RegisterPreRenderCallback(this);
 }
 
 VideoReceiveStream::~VideoReceiveStream() {
+  LOG(LS_INFO) << "~VideoReceiveStream: " << config_.ToString();
   incoming_video_stream_->Stop();
   vie_channel_->RegisterPreRenderCallback(nullptr);
   vie_channel_->RegisterPreDecodeImageCallback(nullptr);
 
-  for (size_t i = 0; i < config_.decoders.size(); ++i)
-    vie_channel_->DeRegisterExternalDecoder(config_.decoders[i].payload_type);
+  call_stats_->DeregisterStatsObserver(vie_channel_->GetStatsObserver());
+  congestion_controller_->SetChannelRembStatus(false, false,
+                                               vie_channel_->rtp_rtcp());
 
-  channel_group_->DeleteChannel(channel_id_);
+  uint32_t remote_ssrc = vie_channel_->GetRemoteSSRC();
+  bool send_side_bwe = UseSendSideBwe(config_.rtp.extensions);
+  congestion_controller_->GetRemoteBitrateEstimator(send_side_bwe)->
+      RemoveStream(remote_ssrc);
 }
 
 void VideoReceiveStream::Start() {
@@ -324,6 +362,21 @@ int VideoReceiveStream::RenderFrame(const uint32_t /*stream_id*/,
 
   stats_proxy_->OnRenderedFrame(video_frame.width(), video_frame.height());
 
+  return 0;
+}
+
+// TODO(asapersson): Consider moving callback from video_encoder.h or
+// creating a different callback.
+int32_t VideoReceiveStream::Encoded(
+    const EncodedImage& encoded_image,
+    const CodecSpecificInfo* codec_specific_info,
+    const RTPFragmentationHeader* fragmentation) {
+  stats_proxy_->OnPreDecode(encoded_image, codec_specific_info);
+  if (config_.pre_decode_callback) {
+    // TODO(asapersson): Remove EncodedFrameCallbackAdapter.
+    encoded_frame_proxy_.Encoded(
+        encoded_image, codec_specific_info, fragmentation);
+  }
   return 0;
 }
 

@@ -31,6 +31,7 @@
 
 #include "talk/app/webrtc/mediastreamprovider.h"
 #include "talk/app/webrtc/sctputils.h"
+#include "talk/media/sctp/sctpdataengine.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/refcount.h"
 
@@ -42,6 +43,42 @@ static size_t kMaxQueuedSendDataBytes = 16 * 1024 * 1024;
 enum {
   MSG_CHANNELREADY,
 };
+
+bool SctpSidAllocator::AllocateSid(rtc::SSLRole role, int* sid) {
+  int potential_sid = (role == rtc::SSL_CLIENT) ? 0 : 1;
+  while (!IsSidAvailable(potential_sid)) {
+    potential_sid += 2;
+    if (potential_sid > static_cast<int>(cricket::kMaxSctpSid)) {
+      return false;
+    }
+  }
+
+  *sid = potential_sid;
+  used_sids_.insert(potential_sid);
+  return true;
+}
+
+bool SctpSidAllocator::ReserveSid(int sid) {
+  if (!IsSidAvailable(sid)) {
+    return false;
+  }
+  used_sids_.insert(sid);
+  return true;
+}
+
+void SctpSidAllocator::ReleaseSid(int sid) {
+  auto it = used_sids_.find(sid);
+  if (it != used_sids_.end()) {
+    used_sids_.erase(it);
+  }
+}
+
+bool SctpSidAllocator::IsSidAvailable(int sid) const {
+  if (sid < 0 || sid > static_cast<int>(cricket::kMaxSctpSid)) {
+    return false;
+  }
+  return used_sids_.find(sid) == used_sids_.end();
+}
 
 DataChannel::PacketQueue::PacketQueue() : byte_count_(0) {}
 
@@ -193,7 +230,7 @@ bool DataChannel::reliable() const {
   }
 }
 
-uint64 DataChannel::buffered_amount() const {
+uint64_t DataChannel::buffered_amount() const {
   return queued_send_data_.byte_count();
 }
 
@@ -239,7 +276,7 @@ bool DataChannel::Send(const DataBuffer& buffer) {
   return true;
 }
 
-void DataChannel::SetReceiveSsrc(uint32 receive_ssrc) {
+void DataChannel::SetReceiveSsrc(uint32_t receive_ssrc) {
   ASSERT(data_channel_type_ == cricket::DCT_RTP);
 
   if (receive_ssrc_set_) {
@@ -257,8 +294,9 @@ void DataChannel::RemotePeerRequestClose() {
 
 void DataChannel::SetSctpSid(int sid) {
   ASSERT(config_.id < 0 && sid >= 0 && data_channel_type_ == cricket::DCT_SCTP);
-  if (config_.id == sid)
+  if (config_.id == sid) {
     return;
+  }
 
   config_.id = sid;
   provider_->AddSctpDataStream(sid);
@@ -276,7 +314,14 @@ void DataChannel::OnTransportChannelCreated() {
   }
 }
 
-void DataChannel::SetSendSsrc(uint32 send_ssrc) {
+// The underlying transport channel was destroyed.
+// This function makes sure the DataChannel is disconnected and changes state to
+// kClosed.
+void DataChannel::OnTransportChannelDestroyed() {
+  DoClose();
+}
+
+void DataChannel::SetSendSsrc(uint32_t send_ssrc) {
   ASSERT(data_channel_type_ == cricket::DCT_RTP);
   if (send_ssrc_set_) {
     return;
@@ -294,17 +339,10 @@ void DataChannel::OnMessage(rtc::Message* msg) {
   }
 }
 
-// The underlaying data engine is closing.
-// This function makes sure the DataChannel is disconnected and changes state to
-// kClosed.
-void DataChannel::OnDataEngineClose() {
-  DoClose();
-}
-
 void DataChannel::OnDataReceived(cricket::DataChannel* channel,
                                  const cricket::ReceiveDataParams& params,
                                  const rtc::Buffer& payload) {
-  uint32 expected_ssrc =
+  uint32_t expected_ssrc =
       (data_channel_type_ == cricket::DCT_RTP) ? receive_ssrc_ : config_.id;
   if (params.ssrc != expected_ssrc) {
     return;
@@ -358,6 +396,12 @@ void DataChannel::OnDataReceived(cricket::DataChannel* channel,
       return;
     }
     queued_received_data_.Push(buffer.release());
+  }
+}
+
+void DataChannel::OnStreamClosedRemotely(uint32_t sid) {
+  if (data_channel_type_ == cricket::DCT_SCTP && sid == config_.id) {
+    Close();
   }
 }
 
@@ -436,12 +480,16 @@ void DataChannel::UpdateState() {
 }
 
 void DataChannel::SetState(DataState state) {
-  if (state_ == state)
+  if (state_ == state) {
     return;
+  }
 
   state_ = state;
   if (observer_) {
     observer_->OnStateChange();
+  }
+  if (state_ == kClosed) {
+    SignalClosed(this);
   }
 }
 
@@ -476,7 +524,7 @@ void DataChannel::SendQueuedDataMessages() {
 
   ASSERT(state_ == kOpen || state_ == kClosing);
 
-  uint64 start_buffered_amount = buffered_amount();
+  uint64_t start_buffered_amount = buffered_amount();
   while (!queued_send_data_.Empty()) {
     DataBuffer* buffer = queued_send_data_.Front();
     if (!SendDataMessage(*buffer, false)) {

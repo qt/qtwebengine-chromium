@@ -5,6 +5,7 @@
 #ifndef MOJO_EDK_SYSTEM_TRANSPORT_DATA_H_
 #define MOJO_EDK_SYSTEM_TRANSPORT_DATA_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
@@ -76,10 +77,6 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
   // The maximum size of a single serialized dispatcher. This must be a multiple
   // of |kMessageAlignment|.
   static const size_t kMaxSerializedDispatcherSize = 10000;
-
-  // The maximum number of platform handles to attach for a single serialized
-  // dispatcher.
-  static const size_t kMaxSerializedDispatcherPlatformHandles = 2;
 
   // The maximum possible size of a valid transport data buffer.
   static size_t GetMaxBufferSize();

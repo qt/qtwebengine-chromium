@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/SVGNumber.h"
 
 #include "core/svg/SVGAnimationElement.h"
@@ -67,11 +66,11 @@ bool SVGNumber::parse(const CharType*& ptr, const CharType* end)
     return true;
 }
 
-void SVGNumber::setValueAsString(const String& string, ExceptionState& exceptionState)
+SVGParsingError SVGNumber::setValueAsString(const String& string)
 {
     if (string.isEmpty()) {
         m_value = 0;
-        return;
+        return NoError;
     }
 
     bool valid = false;
@@ -86,9 +85,10 @@ void SVGNumber::setValueAsString(const String& string, ExceptionState& exception
     }
 
     if (!valid) {
-        exceptionState.throwDOMException(SyntaxError, "The value provided ('" + string + "') is invalid.");
         m_value = 0;
+        return ParsingAttributeFailedError;
     }
+    return NoError;
 }
 
 void SVGNumber::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)
@@ -117,14 +117,13 @@ PassRefPtrWillBeRawPtr<SVGNumber> SVGNumberAcceptPercentage::clone() const
     return create(m_value);
 }
 
-void SVGNumberAcceptPercentage::setValueAsString(const String& string, ExceptionState& exceptionState)
+SVGParsingError SVGNumberAcceptPercentage::setValueAsString(const String& string)
 {
-    bool valid = parseNumberOrPercentage(string, m_value);
+    if (parseNumberOrPercentage(string, m_value))
+        return NoError;
 
-    if (!valid) {
-        exceptionState.throwDOMException(SyntaxError, "The value provided ('" + string + "') is invalid.");
-        m_value = 0;
-    }
+    m_value = 0;
+    return ParsingAttributeFailedError;
 }
 
 SVGNumberAcceptPercentage::SVGNumberAcceptPercentage(float value)

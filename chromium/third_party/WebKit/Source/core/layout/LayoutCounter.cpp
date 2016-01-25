@@ -19,7 +19,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutCounter.h"
 
 #include "core/HTMLNames.h"
@@ -28,8 +27,8 @@
 #include "core/html/HTMLOListElement.h"
 #include "core/layout/CounterNode.h"
 #include "core/layout/LayoutListItem.h"
-#include "core/layout/LayoutListMarker.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/ListMarkerText.h"
 #include "core/style/ComputedStyle.h"
 #include "wtf/StdLibExtras.h"
 
@@ -271,7 +270,8 @@ static bool findPlaceForCounter(LayoutObject& counterOwner, const AtomicString& 
                         previousSiblingProtector = currentCounter;
                         // We are no longer interested in previous siblings of the currentLayoutObject or their children
                         // as counters they may have attached cannot be the previous sibling of the counter we are placing.
-                        currentLayoutObject = parentElement(*currentLayoutObject)->layoutObject();
+                        Element* parent = parentElement(*currentLayoutObject);
+                        currentLayoutObject = parent ? parent->layoutObject() : nullptr;
                         continue;
                     }
                 } else {
@@ -389,13 +389,13 @@ PassRefPtr<StringImpl> LayoutCounter::originalText() const
     CounterNode* child = m_counterNode;
     int value = child->actsAsReset() ? child->value() : child->countInParent();
 
-    String text = listMarkerText(m_counter.listStyle(), value);
+    String text = ListMarkerText::text(m_counter.listStyle(), value);
 
     if (!m_counter.separator().isNull()) {
         if (!child->actsAsReset())
             child = child->parent();
         while (CounterNode* parent = child->parent()) {
-            text = listMarkerText(m_counter.listStyle(), child->countInParent())
+            text = ListMarkerText::text(m_counter.listStyle(), child->countInParent())
                 + m_counter.separator() + text;
             child = parent;
         }

@@ -50,6 +50,7 @@ class Document;
 class DocumentLoader;
 class FetchRequest;
 class HTMLFormElement;
+class HTMLFrameElementBase;
 class HTMLFrameOwnerElement;
 class HTMLMediaElement;
 class HTMLPlugInElement;
@@ -67,6 +68,7 @@ class WebApplicationCacheHostClient;
 class WebCookieJar;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
+class WebMediaSession;
 class WebRTCPeerConnectionHandler;
 class WebServiceWorkerProvider;
 class WebSocketHandle;
@@ -97,7 +99,7 @@ public:
     virtual void dispatchDidFinishLoad() = 0;
     virtual void dispatchDidChangeThemeColor() = 0;
 
-    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
+    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool shouldReplaceCurrentEntry) = 0;
     virtual bool hasPendingNavigation() = 0;
 
     virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
@@ -107,7 +109,7 @@ public:
     virtual void progressEstimateChanged(double progressEstimate) = 0;
     virtual void didStopLoading() = 0;
 
-    virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
+    virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName, bool replacesCurrentHistoryItem) = 0;
 
     virtual bool navigateBackForward(int offset) const = 0;
 
@@ -127,6 +129,13 @@ public:
     virtual void didDetectXSS(const KURL&, bool didBlockEntirePage) = 0;
     virtual void didDispatchPingLoader(const KURL&) = 0;
 
+    // The given main resource displayed content with certificate errors
+    // with the given URL and security info.
+    virtual void didDisplayContentWithCertificateErrors(const KURL&, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) = 0;
+    // The given main resource ran content with certificate errors with
+    // the given URL and security info.
+    virtual void didRunContentWithCertificateErrors(const KURL&, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) = 0;
+
     // Will be called when |PerformanceTiming| events are updated
     virtual void didChangePerformanceTiming() { }
 
@@ -136,7 +145,7 @@ public:
 
     virtual PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) = 0;
 
-    virtual String userAgent(const KURL&) = 0;
+    virtual String userAgent() = 0;
 
     virtual String doNotTrackValue() = 0;
 
@@ -152,6 +161,8 @@ public:
     virtual PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
 
     virtual PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) = 0;
+
+    virtual PassOwnPtr<WebMediaSession> createWebMediaSession() = 0;
 
     virtual ObjectContentType objectContentType(const KURL&, const String& mimeType, bool shouldPreferPlugInsForImages) = 0;
 
@@ -174,7 +185,7 @@ public:
     virtual bool allowPlugins(bool enabledPerSettings) { return enabledPerSettings; }
     virtual bool allowImage(bool enabledPerSettings, const KURL&) { return enabledPerSettings; }
     virtual bool allowMedia(const KURL&) { return true; }
-    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) { return enabledPerSettings; }
+    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, const KURL&) { return enabledPerSettings; }
     virtual bool allowRunningInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) { return enabledPerSettings; }
 
     // This callback notifies the client that the frame was about to run
@@ -186,11 +197,18 @@ public:
     // This callback is similar, but for plugins.
     virtual void didNotAllowPlugins() { }
 
+    // This callback notifies the client that the frame created a Keygen element.
+    virtual void didUseKeygen() { }
+
     virtual WebCookieJar* cookieJar() const = 0;
 
     virtual void didChangeName(const String&) { }
 
+    virtual void didEnforceStrictMixedContentChecking() {}
+
     virtual void didChangeSandboxFlags(Frame* childFrame, SandboxFlags) { }
+
+    virtual void didChangeFrameOwnerProperties(HTMLFrameElementBase*) { }
 
     virtual void dispatchWillOpenWebSocket(WebSocketHandle*) { }
 
@@ -217,8 +235,6 @@ public:
     virtual SharedWorkerRepositoryClient* sharedWorkerRepositoryClient() { return 0; }
 
     virtual PassOwnPtr<WebApplicationCacheHost> createApplicationCacheHost(WebApplicationCacheHostClient*) = 0;
-
-    virtual void didStopAllLoaders() { }
 
     virtual void dispatchDidChangeManifest() { }
 

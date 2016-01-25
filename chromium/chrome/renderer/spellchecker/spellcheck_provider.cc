@@ -163,7 +163,7 @@ void SpellCheckProvider::checkTextOfParagraph(
 
 void SpellCheckProvider::requestCheckingOfText(
     const WebString& text,
-    const WebVector<uint32>& markers,
+    const WebVector<uint32_t>& markers,
     const WebVector<unsigned>& marker_offsets,
     WebTextCheckingCompletion* completion) {
   std::vector<SpellCheckMarker> spellcheck_markers;
@@ -173,16 +173,6 @@ void SpellCheckProvider::requestCheckingOfText(
   }
   RequestTextChecking(text, completion, spellcheck_markers);
   UMA_HISTOGRAM_COUNTS("SpellCheck.api.async", text.length());
-}
-
-WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableSpellingAutoCorrect)) {
-    UMA_HISTOGRAM_COUNTS("SpellCheck.api.autocorrect", word.length());
-    return spellcheck_->GetAutoCorrectionWord(word, routing_id());
-  }
-  return base::string16();
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {
@@ -244,7 +234,7 @@ bool SpellCheckProvider::HasWordCharacters(
   const base::char16* data = text.data();
   int length = text.length();
   while (index < length) {
-    uint32 code = 0;
+    uint32_t code = 0;
     U16_NEXT(data, index, length, code);
     UErrorCode error = U_ZERO_ERROR;
     if (uscript_getScript(code, &error) != USCRIPT_COMMON)

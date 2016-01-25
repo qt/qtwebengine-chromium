@@ -5,14 +5,17 @@
 #ifndef CC_RASTER_ONE_COPY_TILE_TASK_WORKER_POOL_H_
 #define CC_RASTER_ONE_COPY_TILE_TASK_WORKER_POOL_H_
 
+#include <stdint.h>
+
+#include <deque>
 #include <set>
 
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/values.h"
-#include "cc/base/scoped_ptr_deque.h"
 #include "cc/output/context_provider.h"
 #include "cc/raster/tile_task_runner.h"
 #include "cc/raster/tile_task_worker_pool.h"
@@ -48,7 +51,7 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
       ContextProvider* context_provider,
       ResourceProvider* resource_provider,
       int max_copy_texture_chromium_size,
-      bool use_persistent_gpu_memory_buffers,
+      bool use_partial_raster,
       int max_staging_buffer_usage_in_bytes,
       bool use_rgba_4444_texture_format);
 
@@ -56,9 +59,8 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
   TileTaskRunner* AsTileTaskRunner() override;
 
   // Overridden from TileTaskRunner:
-  void SetClient(TileTaskRunnerClient* client) override;
   void Shutdown() override;
-  void ScheduleTasks(TileTaskQueue* queue) override;
+  void ScheduleTasks(TaskGraph* graph) override;
   void CheckForCompletedTasks() override;
   ResourceFormat GetResourceFormat(bool must_support_alpha) const override;
   bool GetResourceRequiresSwizzle(bool must_support_alpha) const override;
@@ -78,7 +80,7 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
   void PlaybackAndCopyOnWorkerThread(
       const Resource* resource,
       const ResourceProvider::ScopedWriteLockGL* resource_lock,
-      const RasterSource* raster_source,
+      const DisplayListRasterSource* raster_source,
       const gfx::Rect& raster_full_rect,
       const gfx::Rect& raster_dirty_rect,
       float scale,
@@ -91,7 +93,7 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
                             TaskGraphRunner* task_graph_runner,
                             ResourceProvider* resource_provider,
                             int max_copy_texture_chromium_size,
-                            bool use_persistent_gpu_memory_buffers,
+                            bool use_partial_raster,
                             int max_staging_buffer_usage_in_bytes,
                             bool use_rgba_4444_texture_format);
 
@@ -127,7 +129,6 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
   void ReduceMemoryUsage();
   void ReleaseBuffersNotUsedSince(base::TimeTicks time);
 
-  void OnTaskSetFinished(TaskSet task_set);
   scoped_refptr<base::trace_event::ConvertableToTraceFormat> StateAsValue()
       const;
   void StagingStateAsValueInto(
@@ -136,23 +137,17 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   TaskGraphRunner* task_graph_runner_;
   const NamespaceToken namespace_token_;
-  TileTaskRunnerClient* client_;
   ResourceProvider* const resource_provider_;
   const int max_bytes_per_copy_operation_;
-  const bool use_persistent_gpu_memory_buffers_;
-  TaskSetCollection tasks_pending_;
-  scoped_refptr<TileTask> task_set_finished_tasks_[kNumberOfTaskSets];
+  const bool use_partial_raster_;
 
-  // Task graph used when scheduling tasks and vector used to gather
-  // completed tasks.
-  TaskGraph graph_;
   Task::Vector completed_tasks_;
 
   mutable base::Lock lock_;
   // |lock_| must be acquired when accessing the following members.
   using StagingBufferSet = std::set<const StagingBuffer*>;
   StagingBufferSet buffers_;
-  using StagingBufferDeque = ScopedPtrDeque<StagingBuffer>;
+  using StagingBufferDeque = std::deque<scoped_ptr<StagingBuffer>>;
   StagingBufferDeque free_buffers_;
   StagingBufferDeque busy_buffers_;
   int bytes_scheduled_since_last_flush_;
@@ -165,10 +160,6 @@ class CC_EXPORT OneCopyTileTaskWorkerPool
   base::Closure reduce_memory_usage_callback_;
 
   base::WeakPtrFactory<OneCopyTileTaskWorkerPool> weak_ptr_factory_;
-  // "raster finished" tasks need their own factory as they need to be
-  // canceled when ScheduleTasks() is called.
-  base::WeakPtrFactory<OneCopyTileTaskWorkerPool>
-      task_set_finished_weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(OneCopyTileTaskWorkerPool);
 };

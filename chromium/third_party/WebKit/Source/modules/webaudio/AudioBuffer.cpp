@@ -26,10 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioBuffer.h"
-
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -208,15 +205,6 @@ void AudioBuffer::copyFromChannel(DOMFloat32Array* destination, long channelNumb
 
 void AudioBuffer::copyFromChannel(DOMFloat32Array* destination, long channelNumber, unsigned long startInChannel, ExceptionState& exceptionState)
 {
-    if (!destination) {
-        exceptionState.throwDOMException(
-            TypeMismatchError,
-            ExceptionMessages::argumentNullOrIncorrectType(
-                1,
-                "Float32Array"));
-        return;
-    }
-
     if (channelNumber < 0 || channelNumber >= static_cast<long>(m_channels.size())) {
         exceptionState.throwDOMException(
             IndexSizeError,
@@ -265,15 +253,6 @@ void AudioBuffer::copyToChannel(DOMFloat32Array* source, long channelNumber, Exc
 
 void AudioBuffer::copyToChannel(DOMFloat32Array* source, long channelNumber, unsigned long startInChannel, ExceptionState& exceptionState)
 {
-    if (!source) {
-        exceptionState.throwDOMException(
-            TypeMismatchError,
-            ExceptionMessages::argumentNullOrIncorrectType(
-                1,
-                "Float32Array"));
-        return;
-    }
-
     if (channelNumber < 0 || channelNumber >= static_cast<long>(m_channels.size())) {
         exceptionState.throwDOMException(
             IndexSizeError,
@@ -327,4 +306,3 @@ void AudioBuffer::zero()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

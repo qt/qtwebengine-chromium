@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROMEOS_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
-#define CHROMEOS_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
+#ifndef DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
+#define DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
+
+#include <stdint.h>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -37,11 +39,11 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothAgentServiceProvider
   virtual void RequestPasskey(const dbus::ObjectPath& device_path,
                               const Delegate::PasskeyCallback& callback);
   virtual void DisplayPasskey(const dbus::ObjectPath& device_path,
-                              uint32 passkey,
-                              int16 entered);
+                              uint32_t passkey,
+                              int16_t entered);
   virtual void RequestConfirmation(
       const dbus::ObjectPath& device_path,
-      uint32 passkey,
+      uint32_t passkey,
       const Delegate::ConfirmationCallback& callback);
   virtual void RequestAuthorization(
       const dbus::ObjectPath& device_path,
@@ -65,4 +67,4 @@ class DEVICE_BLUETOOTH_EXPORT FakeBluetoothAgentServiceProvider
 
 }  // namespace bluez
 
-#endif  // CHROMEOS_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_
+#endif  // DEVICE_BLUETOOTH_DBUS_FAKE_BLUETOOTH_AGENT_SERVICE_PROVIDER_H_

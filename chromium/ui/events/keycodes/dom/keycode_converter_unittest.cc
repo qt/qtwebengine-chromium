@@ -4,9 +4,12 @@
 
 #include "ui/events/keycodes/dom/keycode_converter.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 
-#include "base/basictypes.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/keycodes/dom/dom_key.h"
@@ -16,13 +19,11 @@ using ui::KeycodeConverter;
 namespace {
 
 #if defined(OS_WIN)
-const size_t kExpectedMappedKeyCount = 139;
-#elif defined(OS_LINUX)
-const size_t kExpectedMappedKeyCount = 168;
+const size_t kExpectedMappedKeyCount = 157;
+#elif defined(OS_LINUX) || defined(OS_ANDROID)
+const size_t kExpectedMappedKeyCount = 178;
 #elif defined(OS_MACOSX)
 const size_t kExpectedMappedKeyCount = 118;
-#elif defined(OS_ANDROID)
-const size_t kExpectedMappedKeyCount = 168;
 #else
 const size_t kExpectedMappedKeyCount = 0;
 #endif
@@ -58,13 +59,11 @@ TEST(UsbKeycodeMap, Basic) {
         ui::KeycodeConverter::UsbKeycodeToNativeKeycode(entry->usb_keycode));
 
     // Verify DomCodeToNativeKeycode works correctly.
-    ui::DomCode dom_code =
-        ui::KeycodeConverter::CodeStringToDomCode(entry->code);
-    if (entry->code) {
+    if (entry->code && *entry->code) {
+      ui::DomCode dom_code =
+          ui::KeycodeConverter::CodeStringToDomCode(entry->code);
       EXPECT_EQ(entry->native_keycode,
                 ui::KeycodeConverter::DomCodeToNativeKeycode(dom_code));
-    } else {
-      EXPECT_EQ(ui::DomCode::NONE, dom_code);
     }
 
     // Verify that the USB or native codes aren't duplicated.
@@ -110,8 +109,6 @@ TEST(UsbKeycodeMap, UsBackslashIsNonUsHash) {
 
 TEST(KeycodeConverter, DomCode) {
   // Test invalid and unknown arguments to CodeStringToDomCode()
-  EXPECT_EQ(ui::DomCode::NONE,
-            ui::KeycodeConverter::CodeStringToDomCode(nullptr));
   EXPECT_EQ(ui::DomCode::NONE, ui::KeycodeConverter::CodeStringToDomCode("-"));
   EXPECT_EQ(ui::DomCode::NONE, ui::KeycodeConverter::CodeStringToDomCode(""));
   // Round-trip test DOM Level 3 .code strings.
@@ -121,13 +118,10 @@ TEST(KeycodeConverter, DomCode) {
   for (size_t i = 0; i < numEntries; ++i) {
     SCOPED_TRACE(i);
     const ui::KeycodeMapEntry* entry = &keycode_map[i];
-    ui::DomCode code = ui::KeycodeConverter::CodeStringToDomCode(entry->code);
     if (entry->code) {
+      ui::DomCode code = ui::KeycodeConverter::CodeStringToDomCode(entry->code);
       EXPECT_STREQ(entry->code,
                    ui::KeycodeConverter::DomCodeToCodeString(code));
-    } else {
-      EXPECT_EQ(static_cast<int>(ui::DomCode::NONE),
-                static_cast<int>(code));
     }
   }
 }
@@ -141,7 +135,6 @@ TEST(KeycodeConverter, DomKey) {
     const char* const string;
   } test_cases[] = {
       // Invalid arguments to KeyStringToDomKey().
-      {ui::DomKey::NONE, false, false, false, nullptr},
       {ui::DomKey::NONE, false, false, true, ""},
       {ui::DomKey::NONE, false, false, false, "?!?"},
       {ui::DomKey::NONE, false, false, false, "\x61\xCC\x81"},

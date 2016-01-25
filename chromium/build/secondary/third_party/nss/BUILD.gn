@@ -695,6 +695,8 @@ if (is_linux) {
       "nss/lib/freebl/win_rand.c",
       "nss/lib/nss/nss.h",
       "nss/lib/nss/nssinit.c",
+      "nss/lib/nss/nssoptions.c",
+      "nss/lib/nss/nssoptions.h",
       "nss/lib/nss/nssrenam.h",
       "nss/lib/nss/utilwrap.c",
       "nss/lib/pk11wrap/debug_module.c",
@@ -859,6 +861,7 @@ if (is_linux) {
       "nss/lib/util/utilpars.h",
       "nss/lib/util/utilparst.h",
       "nss/lib/util/utilrename.h",
+      "nss/lib/util/verref.h",
     ]
 
     sources -= [
@@ -1175,8 +1178,8 @@ if (is_linux) {
       # Not Windows.
       sources -= [
         # mpi_x86_asm.c contains MSVC inline assembly code.
-        "nss/lib/freebl/mpi/mpi_x86_asm.c",
         "nss/lib/freebl/intel-aes-x86-masm.asm",
+        "nss/lib/freebl/mpi/mpi_x86_asm.c",
       ]
     }
 
@@ -1184,6 +1187,9 @@ if (is_linux) {
       cflags += [
         # nss doesn"t explicitly cast between different enum types.
         "-Wno-conversion",
+
+        # nss passes "const char*" through "void*".
+        "-Wno-incompatible-pointer-types",
 
         # nss prefers `a && b || c` over `(a && b) || c`.
         "-Wno-logical-op-parentheses",
@@ -1193,6 +1199,9 @@ if (is_linux) {
 
         # nss has some `unsigned < 0` checks.
         "-Wno-tautological-compare",
+
+        # nss-urandom-abort.patch removed the only call to rng_systemFromNoise
+        "-Wno-unused-function",
       ]
     }
 

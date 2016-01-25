@@ -41,6 +41,17 @@
       ]
     },
     {
+      # GN: //third_party/errorprone:javacutil_java
+      'target_name': 'javacutil_jar',
+      'type': 'none',
+      'variables': {
+        'jar_path': 'lib/javacutil-1.8.10.jar',
+      },
+      'includes': [
+        '../../build/host_prebuilt_jar.gypi',
+      ]
+    },
+    {
       # GN: //third_party/errorprone:javac_java
       'target_name': 'javac_jar',
       'type': 'none',
@@ -64,6 +75,7 @@
         'error_prone_annotations_jar',
         'dataflow_jar',
         'javac_jar',
+        'javacutil_jar',
       ],
       'includes': [
         '../../build/host_prebuilt_jar.gypi',
@@ -83,6 +95,8 @@
           'action': [
             'python', '<(DEPTH)/build/android/gyp/create_java_binary_script.py',
             '--output', '<(PRODUCT_DIR)/bin.java/chromium_errorprone',
+            # TODO(mikecase): Remove this extra arg when the bots are on jdk8 or higher.
+            '--bootclasspath', '<(PRODUCT_DIR)/lib.java/javac_jar.jar',
             '--jar-path=<(jar_path)',
             '--classpath=>@(input_jars_paths)',
             '--main-class=com.google.errorprone.ErrorProneCompiler',

@@ -4,10 +4,10 @@
 
 #include "ui/gl/gl_gl_api_implementation.h"
 
-#include <algorithm>
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "ui/gl/gl_context.h"
@@ -334,6 +334,8 @@ const GLVersionInfo* GetGLVersionInfo() {
 }
 
 void InitializeDynamicGLBindingsGL(GLContext* context) {
+  if (g_version_info)
+    return;
   g_real_gl->InitializeFilteredExtensions();
   g_driver_gl.InitializeCustomDynamicBindings(context);
   DCHECK(context && context->IsCurrent(NULL) && !g_version_info);
@@ -489,10 +491,8 @@ void RealGLApi::InitializeFilteredExtensions() {
         const char* gl_extension = reinterpret_cast<const char*>(
             GLApiBase::glGetStringiFn(GL_EXTENSIONS, i));
         DCHECK(gl_extension != NULL);
-        if (std::find(disabled_exts_.begin(), disabled_exts_.end(),
-                      gl_extension) == disabled_exts_.end()) {
+        if (!ContainsValue(disabled_exts_, gl_extension))
           filtered_exts_.push_back(gl_extension);
-        }
       }
       filtered_exts_str_ = base::JoinString(filtered_exts_, " ");
     }
@@ -525,6 +525,8 @@ void VirtualGLApi::Initialize(DriverGL* driver, GLContext* real_context) {
 
   DCHECK(real_context->IsCurrent(NULL));
   extensions_ = real_context->GetExtensions();
+  extensions_vec_ = base::SplitString(extensions_, " ", base::TRIM_WHITESPACE,
+                                      base::SPLIT_WANT_ALL);
 }
 
 bool VirtualGLApi::MakeCurrent(GLContext* virtual_context, GLSurface* surface) {
@@ -598,12 +600,34 @@ void VirtualGLApi::OnReleaseVirtuallyCurrent(GLContext* virtual_context) {
     current_context_ = NULL;
 }
 
+void VirtualGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
+  switch (pname) {
+    case GL_NUM_EXTENSIONS:
+      *params = static_cast<GLint>(extensions_vec_.size());
+      break;
+    default:
+      driver_->fn.glGetIntegervFn(pname, params);
+      break;
+  }
+}
+
 const GLubyte* VirtualGLApi::glGetStringFn(GLenum name) {
   switch (name) {
     case GL_EXTENSIONS:
       return reinterpret_cast<const GLubyte*>(extensions_.c_str());
     default:
       return driver_->fn.glGetStringFn(name);
+  }
+}
+
+const GLubyte* VirtualGLApi::glGetStringiFn(GLenum name, GLuint index) {
+  switch (name) {
+    case GL_EXTENSIONS:
+      if (index >= extensions_vec_.size())
+        return NULL;
+      return reinterpret_cast<const GLubyte*>(extensions_vec_[index].c_str());
+    default:
+      return driver_->fn.glGetStringiFn(name, index);
   }
 }
 

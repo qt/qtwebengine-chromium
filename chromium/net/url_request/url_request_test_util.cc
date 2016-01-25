@@ -4,6 +4,8 @@
 
 #include "net/url_request/url_request_test_util.h"
 
+#include <utility>
+
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -22,6 +24,7 @@
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/static_http_user_agent_settings.h"
+#include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -108,10 +111,11 @@ void TestURLRequestContext::Init() {
     params.network_delegate = network_delegate();
     params.http_server_properties = http_server_properties();
     params.net_log = net_log();
-    context_storage_.set_http_transaction_factory(
-        make_scoped_ptr(new HttpCache(new HttpNetworkSession(params),
-                                      HttpCache::DefaultBackend::InMemory(0)))
-            .Pass());
+    context_storage_.set_http_network_session(
+        make_scoped_ptr(new HttpNetworkSession(params)));
+    context_storage_.set_http_transaction_factory(make_scoped_ptr(
+        new HttpCache(context_storage_.http_network_session(),
+                      HttpCache::DefaultBackend::InMemory(0), false)));
   }
   // In-memory cookie store.
   if (!cookie_store())
@@ -141,7 +145,7 @@ TestURLRequestContextGetter::TestURLRequestContextGetter(
 TestURLRequestContextGetter::TestURLRequestContextGetter(
     const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner,
     scoped_ptr<TestURLRequestContext> context)
-    : network_task_runner_(network_task_runner), context_(context.Pass()) {
+    : network_task_runner_(network_task_runner), context_(std::move(context)) {
   DCHECK(network_task_runner_.get());
 }
 
@@ -200,7 +204,7 @@ void TestDelegate::OnReceivedRedirect(URLRequest* request,
   if (quit_on_redirect_) {
     *defer_redirect = true;
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitClosure());
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
   } else if (cancel_in_rr_) {
     request->Cancel();
   }
@@ -211,7 +215,7 @@ void TestDelegate::OnBeforeNetworkStart(URLRequest* request, bool* defer) {
   if (quit_on_before_network_start_) {
     *defer = true;
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitClosure());
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
   }
 }
 
@@ -220,7 +224,7 @@ void TestDelegate::OnAuthRequired(URLRequest* request,
   auth_required_ = true;
   if (quit_on_auth_required_) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitClosure());
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
     return;
   }
   if (!credentials_.Empty()) {
@@ -275,6 +279,11 @@ void TestDelegate::OnReadCompleted(URLRequest* request, int bytes_read) {
   // It doesn't make sense for the request to have IO pending at this point.
   DCHECK(!request->status().is_io_pending());
 
+  // If the request was cancelled in a redirect, it should not signal
+  // OnReadCompleted. Note that |cancel_in_rs_| may be true due to
+  // https://crbug.com/564848.
+  EXPECT_FALSE(cancel_in_rr_);
+
   if (response_started_count_ == 0)
     received_data_before_response_ = true;
 
@@ -310,7 +319,7 @@ void TestDelegate::OnReadCompleted(URLRequest* request, int bytes_read) {
 void TestDelegate::OnResponseCompleted(URLRequest* request) {
   if (quit_on_complete_)
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::MessageLoop::QuitClosure());
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 
 TestNetworkDelegate::TestNetworkDelegate()
@@ -332,7 +341,7 @@ TestNetworkDelegate::TestNetworkDelegate()
       has_load_timing_info_before_redirect_(false),
       has_load_timing_info_before_auth_(false),
       can_access_files_(true),
-      first_party_only_cookies_enabled_(false),
+      experimental_cookie_features_enabled_(false),
       cancel_request_with_policy_violating_referrer_(false),
       will_be_intercepted_on_next_error_(false) {}
 
@@ -505,15 +514,15 @@ void TestNetworkDelegate::OnResponseStarted(URLRequest* request) {
   }
 }
 
-void TestNetworkDelegate::OnNetworkBytesReceived(const URLRequest& request,
+void TestNetworkDelegate::OnNetworkBytesReceived(URLRequest* request,
                                                  int64_t bytes_received) {
-  event_order_[request.identifier()] += "OnNetworkBytesReceived\n";
+  event_order_[request->identifier()] += "OnNetworkBytesReceived\n";
   total_network_bytes_received_ += bytes_received;
 }
 
-void TestNetworkDelegate::OnNetworkBytesSent(const URLRequest& request,
+void TestNetworkDelegate::OnNetworkBytesSent(URLRequest* request,
                                              int64_t bytes_sent) {
-  event_order_[request.identifier()] += "OnNetworkBytesSent\n";
+  event_order_[request->identifier()] += "OnNetworkBytesSent\n";
   total_network_bytes_sent_ += bytes_sent;
 }
 
@@ -616,8 +625,12 @@ bool TestNetworkDelegate::OnCanAccessFile(const URLRequest& request,
   return can_access_files_;
 }
 
-bool TestNetworkDelegate::OnFirstPartyOnlyCookieExperimentEnabled() const {
-  return first_party_only_cookies_enabled_;
+bool TestNetworkDelegate::OnAreExperimentalCookieFeaturesEnabled() const {
+  return experimental_cookie_features_enabled_;
+}
+
+bool TestNetworkDelegate::OnAreStrictSecureCookiesEnabled() const {
+  return experimental_cookie_features_enabled_;
 }
 
 bool TestNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
@@ -627,19 +640,18 @@ bool TestNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
   return cancel_request_with_policy_violating_referrer_;
 }
 
-TestJobInterceptor::TestJobInterceptor() : main_intercept_job_(NULL) {
-}
+TestJobInterceptor::TestJobInterceptor() {}
+
+TestJobInterceptor::~TestJobInterceptor() {}
 
 URLRequestJob* TestJobInterceptor::MaybeCreateJob(
     URLRequest* request,
     NetworkDelegate* network_delegate) const {
-  URLRequestJob* job = main_intercept_job_;
-  main_intercept_job_ = NULL;
-  return job;
+  return main_intercept_job_.release();
 }
 
-void TestJobInterceptor::set_main_intercept_job(URLRequestJob* job) {
-  main_intercept_job_ = job;
+void TestJobInterceptor::set_main_intercept_job(scoped_ptr<URLRequestJob> job) {
+  main_intercept_job_ = std::move(job);
 }
 
 }  // namespace net

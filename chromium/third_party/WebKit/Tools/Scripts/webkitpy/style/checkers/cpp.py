@@ -112,10 +112,9 @@ for op, inv_replacement in [('==', 'NE'), ('!=', 'EQ'),
 
 # These constants define types of headers for use with
 # _IncludeState.check_next_include_order().
-_CONFIG_HEADER = 0
-_PRIMARY_HEADER = 1
-_OTHER_HEADER = 2
-_MOC_HEADER = 3
+_PRIMARY_HEADER = 0
+_OTHER_HEADER = 1
+_MOC_HEADER = 2
 
 
 # The regexp compilation caching is inlined in all regexp functions for
@@ -299,19 +298,16 @@ class _IncludeState(dict):
     # self._section will move monotonically through this set. If it ever
     # needs to move backwards, check_next_include_order will raise an error.
     _INITIAL_SECTION = 0
-    _CONFIG_SECTION = 1
-    _PRIMARY_SECTION = 2
-    _OTHER_SECTION = 3
+    _PRIMARY_SECTION = 1
+    _OTHER_SECTION = 2
 
     _TYPE_NAMES = {
-        _CONFIG_HEADER: 'WebCore config.h',
         _PRIMARY_HEADER: 'header this file implements',
         _OTHER_HEADER: 'other header',
         _MOC_HEADER: 'moc file',
         }
     _SECTION_NAMES = {
         _INITIAL_SECTION: "... nothing.",
-        _CONFIG_SECTION: "WebCore config.h.",
         _PRIMARY_SECTION: 'a header this file implements.',
         _OTHER_SECTION: 'other header.',
         }
@@ -340,8 +336,6 @@ class _IncludeState(dict):
           error message describing what's wrong.
 
         """
-        if header_type == _CONFIG_HEADER and file_is_header:
-            return 'Header file should not contain WebCore config.h.'
         if header_type == _PRIMARY_HEADER and file_is_header:
             return 'Header file should not contain itself.'
         if header_type == _MOC_HEADER:
@@ -356,15 +350,9 @@ class _IncludeState(dict):
                                 (self._TYPE_NAMES[header_type],
                                  self._SECTION_NAMES[self._section]))
 
-        if header_type == _CONFIG_HEADER:
-            if self._section >= self._CONFIG_SECTION:
-                error_message = after_error_message
-            self._section = self._CONFIG_SECTION
-        elif header_type == _PRIMARY_HEADER:
+        if header_type == _PRIMARY_HEADER:
             if self._section >= self._PRIMARY_SECTION:
                 error_message = after_error_message
-            elif self._section < self._CONFIG_SECTION:
-                error_message = before_error_message
             self._section = self._PRIMARY_SECTION
             self._visited_primary_section = True
         else:
@@ -426,6 +414,7 @@ class SingleLineView(object):
 
         # Create a single line with all of the parameters.
         self.single_line = ' '.join(trimmed_lines)
+        self.single_line = _RE_PATTERN_CLEANSE_MULTIPLE_STRINGS.sub('""', self.single_line)
 
         # Keep the row lengths, so we can calculate the original row number
         # given a column in the single line (adding 1 due to the space added
@@ -713,6 +702,9 @@ _RE_PATTERN_CLEANSE_LINE_ESCAPES = re.compile(
 _RE_PATTERN_CLEANSE_LINE_DOUBLE_QUOTES = re.compile(r'"[^"]*"')
 # Matches characters.  Escape codes should already be removed by ESCAPES.
 _RE_PATTERN_CLEANSE_LINE_SINGLE_QUOTES = re.compile(r"'.'")
+# Matches multiple strings (after the above cleanses) which can be concatenated.
+_RE_PATTERN_CLEANSE_MULTIPLE_STRINGS = re.compile(r'"("\s*")+"')
+
 # Matches multi-line C++ comments.
 # This RE is a little bit more complicated than one might expect, because we
 # have to take care of space removals tools so we can handle comments inside
@@ -847,6 +839,7 @@ class CleansedLines(object):
             elided = _RE_PATTERN_CLEANSE_LINE_ESCAPES.sub('', elided)
             elided = _RE_PATTERN_CLEANSE_LINE_SINGLE_QUOTES.sub("''", elided)
             elided = _RE_PATTERN_CLEANSE_LINE_DOUBLE_QUOTES.sub('""', elided)
+            elided = _RE_PATTERN_CLEANSE_MULTIPLE_STRINGS.sub('""', elided)
         return elided
 
 
@@ -1723,8 +1716,8 @@ def check_function_definition_and_pass_ptr(type_text, row, location_description,
        location_description: Used to indicate where the type is. This is either 'parameter' or 'return'.
        error: The function to call with any errors found.
     """
-    match_ref_or_own_ptr = '(?=\W|^)(Ref|Own)Ptr(?=\W)'
-    exceptions = '(?:&|\*|\*\s*=\s*0)$'
+    match_ref_or_own_ptr = '(?=\W|^)(Ref|Own)Ptr(WillBeRawPtr)?(?=\W)'
+    exceptions = '(?:&|\*|\*\s*=\s*(0|nullptr))$'
     bad_type_usage = search(match_ref_or_own_ptr, type_text)
     exception_usage = search(exceptions, type_text)
     if not bad_type_usage or exception_usage:
@@ -1968,7 +1961,7 @@ def check_spacing(file_extension, clean_lines, line_number, error):
     # Alas, we can't test < or > because they're legitimately used sans spaces
     # (a->b, vector<int> a).  The only time we can tell is a < with no >, and
     # only if it's not template params list spilling into the next line.
-    matched = search(r'[^<>=!\s](==|!=|\+=|-=|\*=|/=|/|\|=|&=|<<=|>>=|<=|>=|\|\||\||&&|<<)[^<>=!\s]', line)
+    matched = search(r'[^<>=!\s](==|!=|\+=|-=|\*=|/=|/|\|=|&=|<<=|>>=|<=|>=|\|\||\||<<)[^<>=!\s]', line)
     if not matched:
         # Note that while it seems that the '<[^<]*' term in the following
         # regexp could be simplified to '<.*', which would indeed match
@@ -3021,8 +3014,6 @@ def _classify_include(filename, include, is_system, include_state):
       One of the _XXX_HEADER constants.
 
     For example:
-      >>> _classify_include('foo.cpp', 'config.h', False)
-      _CONFIG_HEADER
       >>> _classify_include('foo.cpp', 'foo.h', False)
       _PRIMARY_HEADER
       >>> _classify_include('foo.cpp', 'bar.h', False)
@@ -3032,10 +3023,6 @@ def _classify_include(filename, include, is_system, include_state):
     # If it is a system header we know it is classified as _OTHER_HEADER.
     if is_system and not include.startswith('public/'):
         return _OTHER_HEADER
-
-    # If the include is named config.h then this is WebCore/config.h.
-    if include == "config.h":
-        return _CONFIG_HEADER
 
     # There cannot be primary includes in header files themselves. Only an
     # include exactly matches the header filename will be is flagged as
@@ -3149,7 +3136,7 @@ def check_include_line(filename, file_extension, clean_lines, line_number, inclu
         return
 
     # We want to ensure that headers appear in the right order:
-    # 1) for implementation files: config.h, primary header, blank line, alphabetically sorted
+    # 1) for implementation files: primary header, blank line, alphabetically sorted
     # 2) for header files: alphabetically sorted
     # The include_state object keeps track of the last type seen
     # and complains if the header types are out of order or missing.
@@ -3164,7 +3151,7 @@ def check_include_line(filename, file_extension, clean_lines, line_number, inclu
             error(line_number, 'build/include_order', 4,
                   'You should add a blank line after implementation file\'s own header.')
 
-    # Check to make sure all headers besides config.h and the primary header are
+    # Check to make sure all headers besides the primary header are
     # alphabetically sorted. Skip Qt's moc files.
     if not error_message and header_type == _OTHER_HEADER:
          previous_line_number = line_number - 1;
@@ -3191,7 +3178,7 @@ def check_include_line(filename, file_extension, clean_lines, line_number, inclu
                   error_message)
         else:
             error(line_number, 'build/include_order', 4,
-                  '%s Should be: config.h, primary header, blank line, and then alphabetically sorted.' %
+                  '%s Should be: primary header, blank line, and then alphabetically sorted.' %
                   error_message)
 
 

@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -36,6 +35,7 @@
 #include "core/XMLNames.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/AtomicHTMLToken.h"
@@ -788,7 +788,7 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
         || token->name() == keygenTag
         || token->name() == wbrTag) {
         m_tree.reconstructTheActiveFormattingElements();
-        m_tree.insertSelfClosingHTMLElement(token);
+        m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
         m_framesetOk = false;
         return;
     }
@@ -800,8 +800,7 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
         bool disableFrameset = !typeAttribute || !equalIgnoringCase(typeAttribute->value(), "hidden");
 
         m_tree.reconstructTheActiveFormattingElements();
-        // TODO(kouhei): Make it obvious that insertSelfClosingHTMLElement may mutate the token.
-        m_tree.insertSelfClosingHTMLElement(token);
+        m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
 
         if (disableFrameset)
             m_framesetOk = false;
@@ -811,12 +810,12 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
         || token->name() == paramTag
         || token->name() == sourceTag
         || token->name() == trackTag) {
-        m_tree.insertSelfClosingHTMLElement(token);
+        m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
         return;
     }
     if (token->name() == hrTag) {
         processFakePEndTagIfPInButtonScope();
-        m_tree.insertSelfClosingHTMLElement(token);
+        m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
         m_framesetOk = false;
         return;
     }
@@ -1047,7 +1046,7 @@ void HTMLTreeBuilder::processStartTagForInTable(AtomicHTMLToken* token)
         Attribute* typeAttribute = token->getAttributeItem(typeAttr);
         if (typeAttribute && equalIgnoringCase(typeAttribute->value(), "hidden")) {
             parseError(token);
-            m_tree.insertSelfClosingHTMLElement(token);
+            m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
             return;
         }
         // Fall through to "anything else" case.
@@ -1176,7 +1175,7 @@ void HTMLTreeBuilder::processStartTag(AtomicHTMLToken* token)
             return;
         }
         if (token->name() == colTag) {
-            m_tree.insertSelfClosingHTMLElement(token);
+            m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
             return;
         }
         if (token->name() == templateTag) {
@@ -1303,7 +1302,7 @@ void HTMLTreeBuilder::processStartTag(AtomicHTMLToken* token)
             return;
         }
         if (token->name() == frameTag) {
-            m_tree.insertSelfClosingHTMLElement(token);
+            m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
             return;
         }
         if (token->name() == noframesTag) {
@@ -1469,6 +1468,8 @@ bool HTMLTreeBuilder::processBodyEndTagForInBody(AtomicHTMLToken* token)
 void HTMLTreeBuilder::processAnyOtherEndTagForInBody(AtomicHTMLToken* token)
 {
     ASSERT(token->type() == HTMLToken::EndTag);
+    if (token->name() == menuitemTag)
+        UseCounter::count(m_tree.currentNode()->document(), UseCounter::MenuItemCloseTag);
     HTMLElementStack::ElementRecord* record = m_tree.openElements()->topRecord();
     while (1) {
         RefPtrWillBeRawPtr<HTMLStackItem> item = record->stackItem();
@@ -2582,7 +2583,7 @@ bool HTMLTreeBuilder::processStartTagForInHead(AtomicHTMLToken* token)
         || token->name() == commandTag
         || token->name() == linkTag
         || token->name() == metaTag) {
-        m_tree.insertSelfClosingHTMLElement(token);
+        m_tree.insertSelfClosingHTMLElementDestroyingToken(token);
         // Note: The custom processing for the <meta> tag is done in HTMLMetaElement::process().
         return true;
     }

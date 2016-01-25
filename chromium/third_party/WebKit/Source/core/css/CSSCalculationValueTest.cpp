@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSCalculationValue.h"
 
 #include "core/css/CSSPrimitiveValue.h"
@@ -36,9 +35,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/StyleInheritedData.h"
-
-#include <gtest/gtest.h>
-
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 

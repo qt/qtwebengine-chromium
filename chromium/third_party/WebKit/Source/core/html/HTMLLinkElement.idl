@@ -28,10 +28,11 @@ interface HTMLLinkElement : HTMLElement {
     [Reflect, URL] attribute DOMString href;
     [Reflect, ReflectOnly=("anonymous","use-credentials"), ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString? crossOrigin;
     [Reflect] attribute DOMString rel;
-    // FIXME: readonly attribute DOMTokenList relList;
+    [RuntimeEnabled=LinkPreload] readonly attribute DOMTokenList relList;
     [Reflect] attribute DOMString media;
     [Reflect] attribute DOMString hreflang;
     [Reflect] attribute DOMString type;
+    [Reflect, RuntimeEnabled=LinkPreload] attribute DOMString as;
     [PutForwards=value] readonly attribute DOMSettableTokenList sizes;
 
     // obsolete members

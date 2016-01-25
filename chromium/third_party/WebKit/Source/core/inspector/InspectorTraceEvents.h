@@ -13,6 +13,10 @@
 #include "wtf/Forward.h"
 #include "wtf/Functional.h"
 
+namespace WTF {
+class TextPosition;
+}
+
 namespace blink {
 class Animation;
 class CSSStyleSheetResource;
@@ -86,7 +90,7 @@ extern const char PreventStyleSharingForParent[];
 
 PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(Element&, const char* reason);
 PassRefPtr<TraceEvent::ConvertableToTraceFormat> selectorPart(Element&, const char* reason, const InvalidationSet&, const String&);
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> invalidationList(Element&, const WillBeHeapVector<RefPtrWillBeMember<InvalidationSet>>&);
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> invalidationList(Element&, const Vector<RefPtr<InvalidationSet>>&);
 }
 
 #define TRACE_STYLE_INVALIDATOR_INVALIDATION(element, reason) \
@@ -266,7 +270,11 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(LocalFrame*);
 }
 
 namespace InspectorEvaluateScriptEvent {
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(LocalFrame*, const String& url, int lineNumber);
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(LocalFrame*, const String& url, const WTF::TextPosition&);
+}
+
+namespace InspectorCompileScriptEvent {
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const String& url, const WTF::TextPosition&);
 }
 
 namespace InspectorFunctionCallEvent {

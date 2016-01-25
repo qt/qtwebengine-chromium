@@ -7,11 +7,12 @@
 
 #include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/AudioHardware.h>
+#include <stddef.h>
 #include <list>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/audio/mac/audio_device_listener_mac.h"
 
@@ -86,13 +87,18 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   // Returns false if an error occurred. There is no indication if the buffer
   // size was changed or not.
   // |element| is 0 for output streams and 1 for input streams.
-  // TODO(dalecurtis): we could change the the last parameter to an input/output
-  // pointer so it can be updated if the buffer size is not changed.
-  // See http://crbug.com/428706 for details.
   bool MaybeChangeBufferSize(AudioDeviceID device_id,
                              AudioUnit audio_unit,
                              AudioUnitElement element,
-                             size_t desired_buffer_size);
+                             size_t desired_buffer_size,
+                             bool* size_was_changed);
+
+  // Number of constructed output and input streams.
+  size_t output_streams() const { return output_streams_.size(); }
+  size_t low_latency_input_streams() const {
+    return low_latency_input_streams_.size();
+  }
+  size_t basic_input_streams() const { return basic_input_streams_.size(); }
 
  protected:
   ~AudioManagerMac() override;

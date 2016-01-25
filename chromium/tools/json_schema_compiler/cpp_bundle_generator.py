@@ -94,7 +94,7 @@ class CppBundleGenerator(object):
       if platform == Platforms.CHROMEOS:
         ifdefs.append('defined(OS_CHROMEOS)')
       elif platform == Platforms.LINUX:
-        ifdefs.append('defined(OS_LINUX)')
+        ifdefs.append('(defined(OS_LINUX) && !defined(OS_CHROMEOS))')
       elif platform == Platforms.MAC:
         ifdefs.append('defined(OS_MACOSX)')
       elif platform == Platforms.WIN:
@@ -162,8 +162,6 @@ class _APIHGenerator(object):
     c = code.Code()
 
     c.Append('#include <string>')
-    c.Append()
-    c.Append('#include "base/basictypes.h"')
     c.Append()
     c.Append("class ExtensionFunctionRegistry;")
     c.Append()

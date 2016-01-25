@@ -2,23 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "mojo/shell/application_manager.h"
+
+#include <utility>
+
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "mojo/application/public/cpp/application_connection.h"
-#include "mojo/application/public/cpp/application_delegate.h"
-#include "mojo/application/public/cpp/application_impl.h"
-#include "mojo/application/public/cpp/interface_factory.h"
-#include "mojo/application/public/interfaces/service_provider.mojom.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/shell/application_loader.h"
-#include "mojo/shell/application_manager.h"
 #include "mojo/shell/connect_util.h"
 #include "mojo/shell/fetcher.h"
 #include "mojo/shell/package_manager.h"
+#include "mojo/shell/public/cpp/application_connection.h"
+#include "mojo/shell/public/cpp/application_delegate.h"
+#include "mojo/shell/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/interface_factory.h"
+#include "mojo/shell/public/interfaces/service_provider.mojom.h"
 #include "mojo/shell/test.mojom.h"
 #include "mojo/shell/test_package_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -46,7 +49,7 @@ void QuitClosure(bool* value) {
 class TestServiceImpl : public TestService {
  public:
   TestServiceImpl(TestContext* context, InterfaceRequest<TestService> request)
-      : context_(context), binding_(this, request.Pass()) {
+      : context_(context), binding_(this, std::move(request)) {
     ++context_->num_impls;
   }
 
@@ -54,7 +57,7 @@ class TestServiceImpl : public TestService {
     --context_->num_impls;
     if (!base::MessageLoop::current()->is_running())
       return;
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
   }
 
   // TestService implementation:
@@ -72,11 +75,11 @@ class TestServiceImpl : public TestService {
 class TestClient {
  public:
   explicit TestClient(TestServicePtr service)
-      : service_(service.Pass()), quit_after_ack_(false) {}
+      : service_(std::move(service)), quit_after_ack_(false) {}
 
   void AckTest() {
     if (quit_after_ack_)
-      base::MessageLoop::current()->Quit();
+      base::MessageLoop::current()->QuitWhenIdle();
   }
 
   void Test(const std::string& test_string) {
@@ -113,7 +116,7 @@ class TestApplicationLoader : public ApplicationLoader,
   void Load(const GURL& url,
             InterfaceRequest<Application> application_request) override {
     ++num_loads_;
-    test_app_.reset(new ApplicationImpl(this, application_request.Pass()));
+    test_app_.reset(new ApplicationImpl(this, std::move(application_request)));
   }
 
   // ApplicationDelegate implementation.
@@ -126,7 +129,7 @@ class TestApplicationLoader : public ApplicationLoader,
   // InterfaceFactory<TestService> implementation.
   void Create(ApplicationConnection* connection,
               InterfaceRequest<TestService> request) override {
-    new TestServiceImpl(context_, request.Pass());
+    new TestServiceImpl(context_, std::move(request));
   }
 
   scoped_ptr<ApplicationImpl> test_app_;
@@ -245,10 +248,8 @@ class TestAImpl : public TestA {
   TestAImpl(ApplicationImpl* app_impl,
             TesterContext* test_context,
             InterfaceRequest<TestA> request)
-      : test_context_(test_context), binding_(this, request.Pass()) {
-    mojo::URLRequestPtr request2(mojo::URLRequest::New());
-    request2->url = mojo::String::From(kTestBURLString);
-    connection_ = app_impl->ConnectToApplication(request2.Pass());
+      : test_context_(test_context), binding_(this, std::move(request)) {
+    connection_ = app_impl->ConnectToApplication(kTestBURLString);
     connection_->ConnectToService(&b_);
   }
 
@@ -268,7 +269,7 @@ class TestAImpl : public TestA {
   }
 
   void Quit() {
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
     test_context_->set_a_called_quit();
     test_context_->QuitSoon();
   }
@@ -284,14 +285,14 @@ class TestBImpl : public TestB {
   TestBImpl(ApplicationConnection* connection,
             TesterContext* test_context,
             InterfaceRequest<TestB> request)
-      : test_context_(test_context), binding_(this, request.Pass()) {
+      : test_context_(test_context), binding_(this, std::move(request)) {
     connection->ConnectToService(&c_);
   }
 
   ~TestBImpl() override {
     test_context_->IncrementNumBDeletes();
     if (base::MessageLoop::current()->is_running())
-      base::MessageLoop::current()->Quit();
+      base::MessageLoop::current()->QuitWhenIdle();
     test_context_->QuitSoon();
   }
 
@@ -316,7 +317,7 @@ class TestCImpl : public TestC {
   TestCImpl(ApplicationConnection* connection,
             TesterContext* test_context,
             InterfaceRequest<TestC> request)
-      : test_context_(test_context), binding_(this, request.Pass()) {}
+      : test_context_(test_context), binding_(this, std::move(request)) {}
 
   ~TestCImpl() override { test_context_->IncrementNumCDeletes(); }
 
@@ -343,7 +344,7 @@ class Tester : public ApplicationDelegate,
  private:
   void Load(const GURL& url,
             InterfaceRequest<Application> application_request) override {
-    app_.reset(new ApplicationImpl(this, application_request.Pass()));
+    app_.reset(new ApplicationImpl(this, std::move(application_request)));
   }
 
   bool ConfigureIncomingConnection(ApplicationConnection* connection) override {
@@ -351,7 +352,7 @@ class Tester : public ApplicationDelegate,
         requestor_url_ != connection->GetRemoteApplicationURL()) {
       context_->set_tester_called_quit();
       context_->QuitSoon();
-      base::MessageLoop::current()->Quit();
+      base::MessageLoop::current()->QuitWhenIdle();
       return false;
     }
     // If we're coming from A, then add B, otherwise A.
@@ -371,17 +372,18 @@ class Tester : public ApplicationDelegate,
 
   void Create(ApplicationConnection* connection,
               InterfaceRequest<TestA> request) override {
-    a_bindings_.push_back(new TestAImpl(app_.get(), context_, request.Pass()));
+    a_bindings_.push_back(
+        new TestAImpl(app_.get(), context_, std::move(request)));
   }
 
   void Create(ApplicationConnection* connection,
               InterfaceRequest<TestB> request) override {
-    new TestBImpl(connection, context_, request.Pass());
+    new TestBImpl(connection, context_, std::move(request));
   }
 
   void Create(ApplicationConnection* connection,
               InterfaceRequest<TestC> request) override {
-    new TestCImpl(connection, context_, request.Pass());
+    new TestCImpl(connection, context_, std::move(request));
   }
 
   TesterContext* context_;
@@ -407,7 +409,7 @@ class ApplicationManagerTest : public testing::Test {
     TestServicePtr service_proxy;
     ConnectToService(application_manager_.get(), GURL(kTestURLString),
                      &service_proxy);
-    test_client_.reset(new TestClient(service_proxy.Pass()));
+    test_client_.reset(new TestClient(std::move(service_proxy)));
   }
 
   void TearDown() override {
@@ -592,7 +594,7 @@ TEST_F(ApplicationManagerTest, TestEndApplicationClosure) {
   params->SetTargetURL(GURL("test:test"));
   params->set_on_application_end(
       base::Bind(&QuitClosure, base::Unretained(&called)));
-  application_manager_->ConnectToApplication(params.Pass());
+  application_manager_->ConnectToApplication(std::move(params));
   loop_.Run();
   EXPECT_TRUE(called);
 }

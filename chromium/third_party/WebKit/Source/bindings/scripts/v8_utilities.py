@@ -211,20 +211,6 @@ def call_with_arguments(call_with_values):
             if extended_attribute_value_contains(call_with_values, value)]
 
 
-# [Conditional]
-DELIMITER_TO_OPERATOR = {
-    '|': '||',
-    ',': '&&',
-}
-
-
-def conditional_string(definition_or_member):
-    extended_attributes = definition_or_member.extended_attributes
-    if 'Conditional' not in extended_attributes:
-        return None
-    return 'ENABLE(%s)' % extended_attributes['Conditional']
-
-
 # [Constructor], [NamedConstructor]
 def is_constructor_attribute(member):
     # TODO(yukishiino): replace this with [Constructor] and [NamedConstructor] extended attribute
@@ -249,6 +235,7 @@ EXPOSED_EXECUTION_CONTEXT_METHOD = {
     'SharedWorker': 'isSharedWorkerGlobalScope',
     'Window': 'isDocument',
     'Worker': 'isWorkerGlobalScope',
+    'Worklet': 'isWorkletGlobalScope',
 }
 
 
@@ -292,7 +279,7 @@ class ExposureSet:
 
     @staticmethod
     def _code(exposure):
-        exposed = ('context->%s()' %
+        exposed = ('executionContext->%s()' %
                    EXPOSED_EXECUTION_CONTEXT_METHOD[exposure.exposed])
         if exposure.runtime_enabled is not None:
             runtime_enabled = ('RuntimeEnabledFeatures::%sEnabled()' %
@@ -380,6 +367,29 @@ def measure_as(definition_or_member, interface):
     return None
 
 
+def runtime_feature_name(definition_or_member):
+    extended_attributes = definition_or_member.extended_attributes
+    if 'RuntimeEnabled' not in extended_attributes:
+        return None
+    return extended_attributes['RuntimeEnabled']
+
+
+def is_api_experiment_enabled(definition_or_member):
+    return 'APIExperimentEnabled' in definition_or_member.extended_attributes
+
+
+def api_experiment_name(definition_or_member):
+    return definition_or_member.extended_attributes['APIExperimentEnabled'] if is_api_experiment_enabled(definition_or_member) else None
+
+
+def api_experiment_enabled_function(definition_or_member):
+    experiment_name = api_experiment_name(definition_or_member)
+    feature_name = runtime_feature_name(definition_or_member)
+    if not feature_name or not experiment_name:
+        return
+    return 'ExperimentalFeatures::%sEnabled' % uncapitalize(feature_name)
+
+
 # [RuntimeEnabled]
 def runtime_enabled_function_name(definition_or_member):
     """Returns the name of the RuntimeEnabledFeatures function.
@@ -388,10 +398,16 @@ def runtime_enabled_function_name(definition_or_member):
     Given extended attribute RuntimeEnabled=FeatureName, return:
         RuntimeEnabledFeatures::{featureName}Enabled
     """
-    extended_attributes = definition_or_member.extended_attributes
-    if 'RuntimeEnabled' not in extended_attributes:
-        return None
-    feature_name = extended_attributes['RuntimeEnabled']
+    feature_name = runtime_feature_name(definition_or_member)
+
+    # If an API experiment is on the method/attribute, it overrides the runtime
+    # enabled status. For now, we are unconditionally installing experimental
+    # attributes/methods, so we are acting as though the runtime enabled
+    # function doesn't exist. (It is checked in the generated
+    # ExperimentalFeatures function, instead)
+    experiment_name = api_experiment_name(definition_or_member)
+    if not feature_name or experiment_name:
+        return
     return 'RuntimeEnabledFeatures::%sEnabled' % uncapitalize(feature_name)
 
 
@@ -402,14 +418,10 @@ def is_unforgeable(interface, member):
             not member.is_static)
 
 
-# [TypeChecking=Interface] / [LegacyInterfaceTypeChecking]
+# [LegacyInterfaceTypeChecking]
 def is_legacy_interface_type_checking(interface, member):
-    if not ('TypeChecking' in interface.extended_attributes or
-            'TypeChecking' in member.extended_attributes):
-        return True
-    if 'LegacyInterfaceTypeChecking' in member.extended_attributes:
-        return True
-    return False
+    return ('LegacyInterfaceTypeChecking' in interface.extended_attributes or
+            'LegacyInterfaceTypeChecking' in member.extended_attributes)
 
 
 # [Unforgeable], [Global], [PrimaryGlobal]

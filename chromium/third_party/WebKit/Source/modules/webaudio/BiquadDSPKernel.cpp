@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/BiquadDSPKernel.h"
-
 #include "platform/FloatConversion.h"
 #include "wtf/Vector.h"
 #include <limits.h>
@@ -189,4 +186,3 @@ double BiquadDSPKernel::latencyTime() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

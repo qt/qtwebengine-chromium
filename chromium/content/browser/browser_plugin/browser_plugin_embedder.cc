@@ -50,8 +50,8 @@ void BrowserPluginEmbedder::DragLeftGuest(BrowserPluginGuest* guest) {
 bool BrowserPluginEmbedder::NotifyScreenInfoChanged(
     WebContents* guest_web_contents) {
   if (guest_web_contents->GetRenderViewHost()) {
-    auto render_widget_host =
-        RenderWidgetHostImpl::From(guest_web_contents->GetRenderViewHost());
+    auto render_widget_host = RenderWidgetHostImpl::From(
+        guest_web_contents->GetRenderViewHost()->GetWidget());
     render_widget_host->NotifyScreenInfoChanged();
   }
 
@@ -105,8 +105,9 @@ void BrowserPluginEmbedder::ClearGuestDragStateIfApplicable() {
 // static
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
    WebContents* guest_web_contents) {
-  static_cast<RenderViewHostImpl*>(
-      guest_web_contents->GetRenderViewHost())->SendScreenRects();
+  RenderWidgetHostImpl::From(
+      guest_web_contents->GetRenderViewHost()->GetWidget())
+      ->SendScreenRects();
   // Not handled => Iterate over all guests.
   return false;
 }
@@ -236,8 +237,9 @@ bool BrowserPluginEmbedder::FindInGuest(int request_id,
                                         const base::string16& search_text,
                                         const blink::WebFindOptions& options,
                                         WebContents* guest) {
-  if (static_cast<WebContentsImpl*>(guest)->GetBrowserPluginGuest()->Find(
-          request_id, search_text, options)) {
+  if (static_cast<WebContentsImpl*>(guest)
+          ->GetBrowserPluginGuest()
+          ->HandleFindForEmbedder(request_id, search_text, options)) {
     // There can only ever currently be one browser plugin that handles find so
     // we can break the iteration at this point.
     return true;
@@ -248,8 +250,9 @@ bool BrowserPluginEmbedder::FindInGuest(int request_id,
 // static
 bool BrowserPluginEmbedder::StopFindingInGuest(StopFindAction action,
                                                WebContents* guest) {
-  if (static_cast<WebContentsImpl*>(guest)->GetBrowserPluginGuest()
-      ->StopFinding(action)) {
+  if (static_cast<WebContentsImpl*>(guest)
+          ->GetBrowserPluginGuest()
+          ->HandleStopFindingForEmbedder(action)) {
     // There can only ever currently be one browser plugin that handles find so
     // we can break the iteration at this point.
     return true;

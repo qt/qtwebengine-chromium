@@ -6,9 +6,12 @@
 #define WebPassOwnPtr_h
 
 #include "public/platform/WebCommon.h"
+#include <cstddef>
 
 #if INSIDE_BLINK
 #include "wtf/PassOwnPtr.h"
+#else
+#include <base/memory/scoped_ptr.h>
 #endif
 
 namespace blink {
@@ -22,7 +25,7 @@ template <typename T>
 class WebPassOwnPtr final {
 public:
     WebPassOwnPtr() : m_ptr(nullptr) {}
-    WebPassOwnPtr(decltype(nullptr)) : m_ptr(nullptr) {}
+    WebPassOwnPtr(std::nullptr_t) : m_ptr(nullptr) {}
     // We need |const| to bind an rvalue. As a result, |m_ptr| needs to be
     // mutable because we manipulate it.
     template <typename U>
@@ -48,6 +51,13 @@ public:
         T* ptr = m_ptr;
         m_ptr = nullptr;
         return adoptPtr(ptr);
+    }
+#else
+    operator scoped_ptr<T>()
+    {
+        T* ptr = m_ptr;
+        m_ptr = nullptr;
+        return scoped_ptr<T>(ptr);
     }
 #endif // INSIDE_BLINK
 

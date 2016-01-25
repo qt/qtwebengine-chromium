@@ -90,7 +90,7 @@ namespace blink {
         };
 
         struct ResourceInfo {
-            ALLOW_ONLY_INLINE_ALLOCATION();
+            DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
             ResourceInfo(const KURL& resource, bool isMaster, bool isManifest, bool isFallback, bool isForeign, bool isExplicit, long long size)
                 : m_resource(resource)
                 , m_isMaster(isMaster)
@@ -115,7 +115,7 @@ namespace blink {
 
         void willStartLoadingMainResource(ResourceRequest&);
         void didReceiveResponseForMainResource(const ResourceResponse&);
-        void mainResourceDataReceived(const char* data, unsigned length);
+        void mainResourceDataReceived(const char* data, size_t length);
         void finishedLoadingMainResource();
         void failedLoadingMainResource();
 

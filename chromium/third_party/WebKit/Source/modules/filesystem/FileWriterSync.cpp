@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "modules/filesystem/FileWriterSync.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -42,12 +40,9 @@ namespace blink {
 
 void FileWriterSync::write(Blob* data, ExceptionState& exceptionState)
 {
+    ASSERT(data);
     ASSERT(writer());
     ASSERT(m_complete);
-    if (!data) {
-        exceptionState.throwDOMException(TypeMismatchError, FileError::typeMismatchErrorMessage);
-        return;
-    }
 
     prepareForWrite();
     writer()->write(position(), data->uuid());

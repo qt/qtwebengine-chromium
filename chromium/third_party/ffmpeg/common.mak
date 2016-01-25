@@ -18,7 +18,7 @@ ifndef SUBDIR
 ifndef V
 Q      = @
 ECHO   = printf "$(1)\t%s\n" $(2)
-BRIEF  = CC CXX HOSTCC HOSTLD AS YASM AR LD STRIP CP WINDRES
+BRIEF  = CC CXX OBJCC HOSTCC HOSTLD AS YASM AR LD STRIP CP WINDRES
 SILENT = DEPCC DEPHOSTCC DEPAS DEPYASM RANLIB RM
 
 MSG    = $@
@@ -36,6 +36,8 @@ IFLAGS     := -I. -I$(SRC_PATH)/
 CPPFLAGS   := $(IFLAGS) $(CPPFLAGS)
 CFLAGS     += $(ECFLAGS)
 CCFLAGS     = $(CPPFLAGS) $(CFLAGS)
+OBJCFLAGS  += $(EOBJCFLAGS)
+OBJCCFLAGS  = $(CPPFLAGS) $(CFLAGS) $(OBJCFLAGS)
 ASFLAGS    := $(CPPFLAGS) $(ASFLAGS)
 CXXFLAGS   += $(CPPFLAGS) $(CFLAGS)
 YASMFLAGS  += $(IFLAGS:%=%/) -Pconfig.asm
@@ -51,6 +53,7 @@ endef
 COMPILE_C = $(call COMPILE,CC)
 COMPILE_CXX = $(call COMPILE,CXX)
 COMPILE_S = $(call COMPILE,AS)
+COMPILE_M = $(call COMPILE,OBJCC)
 COMPILE_HOSTC = $(call COMPILE,HOSTCC)
 
 %.o: %.c
@@ -60,7 +63,7 @@ COMPILE_HOSTC = $(call COMPILE,HOSTCC)
 	$(COMPILE_CXX)
 
 %.o: %.m
-	$(COMPILE_C)
+	$(COMPILE_M)
 
 %.s: %.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -S -o $@ $<
@@ -81,7 +84,9 @@ COMPILE_HOSTC = $(call COMPILE,HOSTCC)
 	$(Q)echo '#include "$*.h"' >$@
 
 %.ver: %.v
-	$(Q)sed 's/$$MAJOR/$($(basename $(@F))_VERSION_MAJOR)/' $^ > $@
+	$(Q)sed 's/$$MAJOR/$($(basename $(@F))_VERSION_MAJOR)/' $^ | sed -e 's/:/:\
+/' -e 's/; /;\
+/g' > $@
 
 %.c %.h: TAG = GEN
 
@@ -147,7 +152,7 @@ $(TOOLOBJS): | tools
 
 OBJDIRS := $(OBJDIRS) $(dir $(OBJS) $(HOBJS) $(HOSTOBJS) $(SLIBOBJS) $(TESTOBJS))
 
-CLEANSUFFIXES     = *.d *.o *~ *.h.c *.map *.ver *.ho *.gcno *.gcda *$(DEFAULT_YASMD).asm
+CLEANSUFFIXES     = *.d *.o *~ *.h.c *.map *.ver *.ver-sol2 *.ho *.gcno *.gcda *$(DEFAULT_YASMD).asm
 DISTCLEANSUFFIXES = *.pc
 LIBSUFFIXES       = *.a *.lib *.so *.so.* *.dylib *.dll *.def *.dll.a
 

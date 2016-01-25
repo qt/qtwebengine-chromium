@@ -125,12 +125,6 @@ component("base") {
     "dragdrop/os_exchange_data_provider_win.cc",
     "dragdrop/os_exchange_data_provider_win.h",
     "hit_test.h",
-    "idle/idle.cc",
-    "idle/idle.h",
-    "idle/idle_chromeos.cc",
-    "idle/idle_linux.cc",
-    "idle/idle_mac.mm",
-    "idle/idle_win.cc",
     "ios/cru_context_menu_controller.h",
     "ios/cru_context_menu_controller.mm",
     "ios/cru_context_menu_holder.h",
@@ -293,6 +287,13 @@ component("base") {
       "dragdrop/drag_utils.h",
       "dragdrop/file_info.cc",
       "dragdrop/file_info.h",
+      "idle/idle.cc",
+      "idle/idle.h",
+      "idle/idle_android.cc",
+      "idle/idle_chromeos.cc",
+      "idle/idle_linux.cc",
+      "idle/idle_mac.mm",
+      "idle/idle_win.cc",
       "text/bytes_formatting.cc",
       "text/bytes_formatting.h",
     ]
@@ -319,15 +320,15 @@ component("base") {
   public_deps = [
     "//base",
     "//skia",
-    "//ui/events/platform",
     "//ui/events:events_base",
+    "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
   deps = [
-    "//base/third_party/dynamic_annotations",
     "//base:base_static",
     "//base:i18n",
+    "//base/third_party/dynamic_annotations",
     "//net",
     "//third_party/icu",
     "//ui/events",
@@ -408,7 +409,7 @@ component("base") {
     configs += [ "//build/config/linux:glib" ]
   }
 
-  if ((is_linux && !is_chromeos) || is_chromeos) {
+  if (is_linux) {
     if (!toolkit_views && !use_aura) {
       sources -= [
         "dragdrop/drag_utils.cc",
@@ -550,6 +551,9 @@ component("base") {
       "default_theme_provider.cc",
       "dragdrop/drag_utils.cc",
       "dragdrop/drag_utils.h",
+      "idle/idle.cc",
+      "idle/idle.h",
+      "idle/idle_android.cc",
       "l10n/l10n_font_util.cc",
       "models/button_menu_item_model.cc",
       "models/dialog_model.cc",
@@ -570,11 +574,7 @@ component("base") {
   }
 
   if (is_android || is_ios) {
-    sources -= [
-      "device_form_factor_desktop.cc",
-      "idle/idle.cc",
-      "idle/idle.h",
-    ]
+    sources -= [ "device_form_factor_desktop.cc" ]
   }
 }
 
@@ -604,6 +604,13 @@ source_set("test_support") {
       "test/windowed_nsnotification_observer.h",
       "test/windowed_nsnotification_observer.mm",
     ]
+  } else {
+    sources += [
+      "test/ios/keyboard_appearance_listener.h",
+      "test/ios/keyboard_appearance_listener.mm",
+      "test/ios/ui_view_test_utils.h",
+      "test/ios/ui_view_test_utils.mm",
+    ]
   }
 
   public_deps = [
@@ -611,9 +618,11 @@ source_set("test_support") {
   ]
   deps = [
     "//base",
+    "//base/test:test_config",
     "//skia",
     "//testing/gtest",
     "//ui/events:events_base",
+    "//ui/events:test_support",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
@@ -731,7 +740,7 @@ test("ui_base_unittests") {
     sources += [
       "ime/candidate_window_unittest.cc",
       "ime/chromeos/character_composer_unittest.cc",
-      "ime/chromeos/composition_text_chromeos_unittest.cc",
+      "ime/composition_text_unittest.cc",
       "ime/input_method_base_unittest.cc",
       "ime/input_method_chromeos_unittest.cc",
       "ime/remote_input_method_win_unittest.cc",
@@ -740,6 +749,9 @@ test("ui_base_unittests") {
     ]
     if (is_linux && use_aura && !is_chromeos) {
       sources += [ "ime/input_method_auralinux_unittest.cc" ]
+    }
+    if (is_mac) {
+      sources += [ "resource/resource_bundle_mac_unittest.mm" ]
     }
     if (use_x11) {
       sources += [ "ime/composition_text_util_pango_unittest.cc" ]
@@ -805,7 +817,10 @@ test("ui_base_unittests") {
   }
 
   if (is_android) {
-    apk_deps = [ "//chrome:resources" ]
+    deps += [
+      "//chrome:resources",
+      "//ui/android:ui_java",
+    ]
     isolate_file = "ui_base_unittests.isolate"
   }
 

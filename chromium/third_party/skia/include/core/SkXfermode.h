@@ -14,7 +14,6 @@
 #include "SkColor.h"
 
 class GrFragmentProcessor;
-class GrProcessorDataManager;
 class GrTexture;
 class GrXPFactory;
 class SkString;
@@ -71,15 +70,15 @@ public:
         kClear_Mode,    //!< [0, 0]
         kSrc_Mode,      //!< [Sa, Sc]
         kDst_Mode,      //!< [Da, Dc]
-        kSrcOver_Mode,  //!< [Sa + Da - Sa*Da, Rc = Sc + (1 - Sa)*Dc]
-        kDstOver_Mode,  //!< [Sa + Da - Sa*Da, Rc = Dc + (1 - Da)*Sc]
+        kSrcOver_Mode,  //!< [Sa + Da * (1 - Sa), Sc + Dc * (1 - Sa)]
+        kDstOver_Mode,  //!< [Da + Sa * (1 - Da), Dc + Sc * (1 - Da)]
         kSrcIn_Mode,    //!< [Sa * Da, Sc * Da]
-        kDstIn_Mode,    //!< [Sa * Da, Sa * Dc]
+        kDstIn_Mode,    //!< [Da * Sa, Dc * Sa]
         kSrcOut_Mode,   //!< [Sa * (1 - Da), Sc * (1 - Da)]
         kDstOut_Mode,   //!< [Da * (1 - Sa), Dc * (1 - Sa)]
-        kSrcATop_Mode,  //!< [Da, Sc * Da + (1 - Sa) * Dc]
-        kDstATop_Mode,  //!< [Sa, Sa * Dc + Sc * (1 - Da)]
-        kXor_Mode,      //!< [Sa + Da - 2 * Sa * Da, Sc * (1 - Da) + (1 - Sa) * Dc]
+        kSrcATop_Mode,  //!< [Da, Sc * Da + Dc * (1 - Sa)]
+        kDstATop_Mode,  //!< [Sa, Dc * Sa + Sc * (1 - Da)]
+        kXor_Mode,      //!< [Sa + Da - 2 * Sa * Da, Sc * (1 - Da) + Dc * (1 - Sa)]
         kPlus_Mode,     //!< [Sa + Da, Sc + Dc]
         kModulate_Mode, // multiplies all components (= alpha and color)
 
@@ -201,22 +200,30 @@ public:
         It is legal for the function to succeed but return a null output. This indicates that
         the output of the blend is simply the src color.
      */
-    virtual bool asFragmentProcessor(const GrFragmentProcessor** output, GrProcessorDataManager*,
+    virtual bool asFragmentProcessor(const GrFragmentProcessor** output,
                                      const GrFragmentProcessor* dst) const;
 
     /** A subclass may implement this factory function to work with the GPU backend. It is legal
-        to call this with xpf NULL to simply test the return value. If xpf is non-NULL then the
-        xfermode may optionally allocate a factory to return to the caller as *xpf. The caller
-        will install it and own a ref to it. Since the xfermode may or may not assign *xpf, the
-        caller should set *xpf to NULL beforehand. XferProcessors cannot use a background texture.
-     */
+      to call this with xpf NULL to simply test the return value. If xpf is non-NULL then the
+      xfermode may optionally allocate a factory to return to the caller as *xpf. The caller
+      will install it and own a ref to it. Since the xfermode may or may not assign *xpf, the
+      caller should set *xpf to NULL beforehand. XferProcessors cannot use a background texture.
+      */
     virtual bool asXPFactory(GrXPFactory** xpf) const;
 
     /** Returns true if the xfermode can be expressed as an xfer processor factory (xpFactory).
-        This helper calls the asXPFactory() virtual. If the xfermode is NULL, it is treated as
-        kSrcOver_Mode. It is legal to call this with xpf param NULL to simply test the return value.
-     */
-    static bool AsXPFactory(SkXfermode*, GrXPFactory**);
+      This helper calls the asXPFactory() virtual. If the xfermode is NULL, it is treated as
+      kSrcOver_Mode. It is legal to call this with xpf param NULL to simply test the return value.
+      */
+    static inline bool AsXPFactory(SkXfermode* xfermode, GrXPFactory** xpf) {
+        if (nullptr == xfermode) {
+            if (xpf) {
+                *xpf = nullptr;
+            }
+            return true;
+        }
+        return xfermode->asXPFactory(xpf);
+    }
 
     SK_TO_STRING_PUREVIRT()
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()

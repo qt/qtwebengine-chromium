@@ -651,7 +651,7 @@ bool SkXfermode::asMode(Mode* mode) const {
     return false;
 }
 
-bool SkXfermode::asFragmentProcessor(const GrFragmentProcessor**, GrProcessorDataManager*,
+bool SkXfermode::asFragmentProcessor(const GrFragmentProcessor**,
                                      const GrFragmentProcessor*) const {
     return false;
 }
@@ -659,26 +659,6 @@ bool SkXfermode::asFragmentProcessor(const GrFragmentProcessor**, GrProcessorDat
 bool SkXfermode::asXPFactory(GrXPFactory**) const {
     return false;
 }
-
-
-#if SK_SUPPORT_GPU
-#include "effects/GrPorterDuffXferProcessor.h"
-
-bool SkXfermode::AsXPFactory(SkXfermode* xfermode, GrXPFactory** xpf) {
-    if (nullptr == xfermode) {
-        if (xpf) {
-            *xpf = GrPorterDuffXPFactory::Create(kSrcOver_Mode);
-        }
-        return true;
-    } else {
-        return xfermode->asXPFactory(xpf);
-    }
-}
-#else
-bool SkXfermode::AsXPFactory(SkXfermode* xfermode, GrXPFactory** xpf) {
-    return false;
-}
-#endif
 
 SkPMColor SkXfermode::xferColor(SkPMColor src, SkPMColor dst) const{
     // no-op. subclasses should override this
@@ -920,14 +900,13 @@ void SkProcCoeffXfermode::xferA8(SkAlpha* SK_RESTRICT dst,
 
 #if SK_SUPPORT_GPU
 #include "effects/GrCustomXfermode.h"
+#include "effects/GrPorterDuffXferProcessor.h"
 #include "effects/GrXfermodeFragmentProcessor.h"
 
 bool SkProcCoeffXfermode::asFragmentProcessor(const GrFragmentProcessor** fp,
-                                              GrProcessorDataManager* procDataManager,
                                               const GrFragmentProcessor* dst) const {
     if (fp) {
         SkASSERT(dst);
-        SkASSERT(procDataManager);
         *fp = GrXfermodeFragmentProcessor::CreateFromDstProcessor(dst, fMode);
         SkASSERT(*fp || kSrc_Mode == fMode);
     }

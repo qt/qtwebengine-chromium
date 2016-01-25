@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/SVGIntegerOptionalInteger.h"
 
 #include "core/svg/SVGAnimationElement.h"
@@ -77,16 +76,18 @@ String SVGIntegerOptionalInteger::valueAsString() const
     return String::number(m_firstInteger->value()) + " " + String::number(m_secondInteger->value());
 }
 
-void SVGIntegerOptionalInteger::setValueAsString(const String& value, ExceptionState& exceptionState)
+SVGParsingError SVGIntegerOptionalInteger::setValueAsString(const String& value)
 {
     float x, y;
+    SVGParsingError parseStatus = NoError;
     if (!parseNumberOptionalNumber(value, x, y)) {
-        exceptionState.throwDOMException(SyntaxError, "The value provided ('" + value + "') is invalid.");
+        parseStatus = ParsingAttributeFailedError;
         x = y = 0;
     }
 
     m_firstInteger->setValue(x);
     m_secondInteger->setValue(y);
+    return parseStatus;
 }
 
 void SVGIntegerOptionalInteger::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)

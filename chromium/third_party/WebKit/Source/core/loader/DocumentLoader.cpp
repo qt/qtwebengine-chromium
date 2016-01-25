@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/DocumentLoader.h"
 
 #include "core/dom/Document.h"
@@ -37,6 +36,7 @@
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
+#include "core/fetch/FontResource.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
@@ -60,6 +60,7 @@
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
+#include "platform/HTTPNames.h"
 #include "platform/Logging.h"
 #include "platform/ThreadedDataReceiver.h"
 #include "platform/UserGestureIndicator.h"
@@ -161,7 +162,6 @@ const KURL& DocumentLoader::url() const
 
 void DocumentLoader::startPreload(Resource::Type type, FetchRequest& request)
 {
-    ASSERT(type == Resource::Script || type == Resource::CSSStyleSheet || type == Resource::Image || type == Resource::ImportResource);
     ResourcePtr<Resource> resource;
     switch (type) {
     case Resource::Image:
@@ -173,9 +173,23 @@ void DocumentLoader::startPreload(Resource::Type type, FetchRequest& request)
     case Resource::CSSStyleSheet:
         resource = CSSStyleSheetResource::fetch(request, fetcher());
         break;
-    default: // Resource::ImportResource
+    case Resource::Font:
+        resource = FontResource::fetch(request, fetcher());
+        break;
+    case Resource::Media:
+        resource = RawResource::fetchMedia(request, fetcher());
+        break;
+    case Resource::TextTrack:
+        resource = RawResource::fetchTextTrack(request, fetcher());
+        break;
+    case Resource::ImportResource:
         resource = RawResource::fetchImport(request, fetcher());
         break;
+    case Resource::LinkSubresource:
+        resource = RawResource::fetch(request, fetcher());
+        break;
+    default:
+        ASSERT_NOT_REACHED();
     }
 
     if (resource)
@@ -184,8 +198,9 @@ void DocumentLoader::startPreload(Resource::Type type, FetchRequest& request)
 
 void DocumentLoader::didChangePerformanceTiming()
 {
-    if (frameLoader())
+    if (frame() && frame()->isMainFrame() && m_state >= Committed) {
         frameLoader()->client()->didChangePerformanceTiming();
+    }
 }
 
 void DocumentLoader::updateForSameDocumentNavigation(const KURL& newURL, SameDocumentNavigationSource sameDocumentNavigationSource)
@@ -194,7 +209,7 @@ void DocumentLoader::updateForSameDocumentNavigation(const KURL& newURL, SameDoc
     m_originalRequest.setURL(newURL);
     m_request.setURL(newURL);
     if (sameDocumentNavigationSource == SameDocumentNavigationHistoryApi) {
-        m_request.setHTTPMethod("GET");
+        m_request.setHTTPMethod(HTTPNames::GET);
         m_request.setHTTPBody(nullptr);
     }
     clearRedirectChain();
@@ -216,7 +231,6 @@ void DocumentLoader::mainReceivedError(const ResourceError& error)
         m_applicationCacheHost->failedLoadingMainResource();
     if (!frameLoader())
         return;
-    m_mainDocumentError = error;
     m_state = MainResourceDone;
     frameLoader()->receivedMainResourceError(this, error);
     clearMainResourceHandle();
@@ -291,19 +305,10 @@ void DocumentLoader::finishedLoading(double finishTime)
             commitData(0, 0);
     }
 
-    endWriting(m_writer.get());
-
-    if (!m_mainDocumentError.isNull())
-        return;
-    m_state = MainResourceDone;
-
-    // If the document specified an application cache manifest, it violates the author's intent if we store it in the memory cache
-    // and deny the appcache the chance to intercept it in the future, so remove from the memory cache.
-    if (m_frame) {
-        if (m_mainResource && m_frame->document()->hasAppCacheManifest())
-            memoryCache()->remove(m_mainResource.get());
-    }
     m_applicationCacheHost->finishedLoadingMainResource();
+    endWriting(m_writer.get());
+    if (m_state < MainResourceDone)
+        m_state = MainResourceDone;
     clearMainResourceHandle();
 }
 
@@ -311,43 +316,9 @@ bool DocumentLoader::isRedirectAfterPost(const ResourceRequest& newRequest, cons
 {
     int status = redirectResponse.httpStatusCode();
     if (((status >= 301 && status <= 303) || status == 307)
-        && m_originalRequest.httpMethod() == "POST")
+        && m_originalRequest.httpMethod() == HTTPNames::POST)
         return true;
 
-    return false;
-}
-
-bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& request, ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy, NavigationPolicy policy)
-{
-    // Don't ask if we are loading an empty URL.
-    if (request.url().isEmpty() || m_substituteData.isValid())
-        return true;
-
-    // If we're loading content into a subframe, check against the parent's Content Security Policy
-    // and kill the load if that check fails, unless we should bypass the main world's CSP.
-    // FIXME: CSP checks are broken for OOPI. For now, this policy always allows frames with a remote parent...
-    if ((shouldCheckMainWorldContentSecurityPolicy == CheckContentSecurityPolicy) && (m_frame->deprecatedLocalOwner() && !m_frame->deprecatedLocalOwner()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url(), request.followedRedirect() ? ContentSecurityPolicy::DidRedirect : ContentSecurityPolicy::DidNotRedirect))) {
-        // Fire a load event, as timing attacks would otherwise reveal that the
-        // frame was blocked. This way, it looks like every other cross-origin
-        // page load.
-        m_frame->document()->enforceSandboxFlags(SandboxOrigin);
-        m_frame->owner()->dispatchLoad();
-        return false;
-    }
-
-    policy = frameLoader()->client()->decidePolicyForNavigation(request, this, policy);
-    if (policy == NavigationPolicyCurrentTab)
-        return true;
-    if (policy == NavigationPolicyIgnore)
-        return false;
-    if (policy == NavigationPolicyHandledByClient) {
-        // Mark the frame as loading since the embedder is handling the navigation.
-        frameLoader()->progress().progressStarted();
-        return false;
-    }
-    if (!LocalDOMWindow::allowPopUp(*m_frame) && !UserGestureIndicator::processingUserGesture())
-        return false;
-    frameLoader()->client()->loadURLExternally(request, policy);
     return false;
 }
 
@@ -406,7 +377,7 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
 
     appendRedirect(newRequest.url());
     frameLoader()->receivedMainResourceRedirect(m_request.url());
-    if (!shouldContinueForNavigationPolicy(newRequest, CheckContentSecurityPolicy))
+    if (!frameLoader()->shouldContinueForNavigationPolicy(newRequest, SubstituteData(), this, CheckContentSecurityPolicy, m_navigationType, NavigationPolicyCurrentTab, replacesCurrentHistoryItem()))
         cancelMainResourceLoad(ResourceError::cancelledError(m_request.url()));
 }
 
@@ -429,7 +400,7 @@ bool DocumentLoader::shouldContinueForResponse() const
         return false;
     }
 
-    if (contentDispositionType(m_response.httpHeaderField("Content-Disposition")) == ContentDispositionAttachment) {
+    if (contentDispositionType(m_response.httpHeaderField(HTTPNames::Content_Disposition)) == ContentDispositionAttachment) {
         // The server wants us to download instead of replacing the page contents.
         // Downloading is handled by the embedder, but we still get the initial
         // response so that we can ignore it and clean up properly.
@@ -483,11 +454,9 @@ void DocumentLoader::responseReceived(Resource* resource, const ResourceResponse
         return;
     }
 
-    DEFINE_STATIC_LOCAL(AtomicString, xFrameOptionHeader, ("x-frame-options", AtomicString::ConstructFromLiteral));
-
     // 'frame-ancestors' obviates 'x-frame-options': https://w3c.github.io/webappsec/specs/content-security-policy/#frame-ancestors-and-frame-options
     if (!m_contentSecurityPolicy->isFrameAncestorsEnforced()) {
-        HTTPHeaderMap::const_iterator it = response.httpHeaderFields().find(xFrameOptionHeader);
+        HTTPHeaderMap::const_iterator it = response.httpHeaderFields().find(HTTPNames::X_Frame_Options);
         if (it != response.httpHeaderFields().end()) {
             String content = it->value;
             if (frameLoader()->shouldInterruptLoadForXFrameOptions(content, response.url(), mainResourceIdentifier())) {
@@ -549,7 +518,7 @@ void DocumentLoader::ensureWriter(const AtomicString& mimeType, const KURL& over
 
     // Call receivedFirstData() exactly once per load.
     frameLoader()->receivedFirstData();
-    m_frame->document()->maybeHandleHttpRefresh(m_response.httpHeaderField("Refresh"), Document::HttpRefreshFromHeader);
+    m_frame->document()->maybeHandleHttpRefresh(m_response.httpHeaderField(HTTPNames::Refresh), Document::HttpRefreshFromHeader);
 }
 
 void DocumentLoader::commitData(const char* bytes, size_t length)
@@ -570,7 +539,7 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
     m_writer->addData(bytes, length);
 }
 
-void DocumentLoader::dataReceived(Resource* resource, const char* data, unsigned length)
+void DocumentLoader::dataReceived(Resource* resource, const char* data, size_t length)
 {
     ASSERT(data);
     ASSERT(length);
@@ -602,8 +571,8 @@ void DocumentLoader::dataReceived(Resource* resource, const char* data, unsigned
     // invocations of processData() may queue more data in reentrant
     // invocations, so iterate until it's empty.
     const char* segment;
-    unsigned pos = 0;
-    while (unsigned length = m_dataBuffer->getSomeData(segment, pos)) {
+    size_t pos = 0;
+    while (size_t length = m_dataBuffer->getSomeData(segment, pos)) {
         processData(segment, length);
         pos += length;
     }
@@ -611,7 +580,7 @@ void DocumentLoader::dataReceived(Resource* resource, const char* data, unsigned
     m_dataBuffer->clear();
 }
 
-void DocumentLoader::processData(const char* data, unsigned length)
+void DocumentLoader::processData(const char* data, size_t length)
 {
     m_applicationCacheHost->mainResourceDataReceived(data, length);
     m_timeOfLastDataReceived = monotonicallyIncreasingTime();
@@ -764,7 +733,6 @@ bool DocumentLoader::maybeLoadEmpty()
 void DocumentLoader::startLoadingMainResource()
 {
     RefPtrWillBeRawPtr<DocumentLoader> protect(this);
-    m_mainDocumentError = ResourceError();
     timing().markNavigationStart();
     ASSERT(!m_mainResource);
     ASSERT(m_state == NotStarted);

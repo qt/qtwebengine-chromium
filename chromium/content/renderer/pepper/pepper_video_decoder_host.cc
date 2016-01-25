@@ -4,8 +4,11 @@
 
 #include "content/renderer/pepper/pepper_video_decoder_host.h"
 
+#include <stddef.h>
+
 #include "base/bind.h"
 #include "base/memory/shared_memory.h"
+#include "build/build_config.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/pepper_file_util.h"
 #include "content/public/common/content_client.h"
@@ -137,15 +140,6 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
   profile_ = PepperToMediaVideoProfile(profile);
   software_fallback_allowed_ = (acceleration != PP_HARDWAREACCELERATION_ONLY);
 
-  // Check for Dev API use
-  // TODO(lpique): remove check when PPB_VideoDecoder_1_1 reaches beta/stable.
-  // https://crbug.com/520323
-  if (min_picture_count != 0) {
-    ContentRendererClient* client = GetContentClient()->renderer();
-    bool allowed = client->IsPluginAllowedToUseDevChannelAPIs();
-    if (!allowed)
-      return PP_ERROR_NOTSUPPORTED;
-  }
   min_picture_count_ = min_picture_count;
 
   if (acceleration != PP_HARDWAREACCELERATION_NONE) {
@@ -197,7 +191,7 @@ int32_t PepperVideoDecoderHost::OnHostMsgGetShm(
 
   content::RenderThread* render_thread = content::RenderThread::Get();
   scoped_ptr<base::SharedMemory> shm(
-      render_thread->HostAllocateSharedMemoryBuffer(shm_size).Pass());
+      render_thread->HostAllocateSharedMemoryBuffer(shm_size));
   if (!shm || !shm->Map(shm_size))
     return PP_ERROR_FAILED;
 
@@ -351,9 +345,9 @@ int32_t PepperVideoDecoderHost::OnHostMsgReset(
 }
 
 void PepperVideoDecoderHost::ProvidePictureBuffers(
-    uint32 requested_num_of_buffers,
+    uint32_t requested_num_of_buffers,
     const gfx::Size& dimensions,
-    uint32 texture_target) {
+    uint32_t texture_target) {
   RequestTextures(std::max(min_picture_count_, requested_num_of_buffers),
                   dimensions,
                   texture_target,
@@ -376,7 +370,7 @@ void PepperVideoDecoderHost::PictureReady(const media::Picture& picture) {
                                    picture.picture_buffer_id(), visible_rect));
 }
 
-void PepperVideoDecoderHost::DismissPictureBuffer(int32 picture_buffer_id) {
+void PepperVideoDecoderHost::DismissPictureBuffer(int32_t picture_buffer_id) {
   PictureBufferMap::iterator it = picture_buffer_map_.find(picture_buffer_id);
   DCHECK(it != picture_buffer_map_.end());
 
@@ -395,7 +389,7 @@ void PepperVideoDecoderHost::DismissPictureBuffer(int32 picture_buffer_id) {
 }
 
 void PepperVideoDecoderHost::NotifyEndOfBitstreamBuffer(
-    int32 bitstream_buffer_id) {
+    int32_t bitstream_buffer_id) {
   PendingDecodeList::iterator it = GetPendingDecodeById(bitstream_buffer_id);
   if (it == pending_decodes_.end()) {
     NOTREACHED();
@@ -457,9 +451,9 @@ const uint8_t* PepperVideoDecoderHost::DecodeIdToAddress(uint32_t decode_id) {
 }
 
 void PepperVideoDecoderHost::RequestTextures(
-    uint32 requested_num_of_buffers,
+    uint32_t requested_num_of_buffers,
     const gfx::Size& dimensions,
-    uint32 texture_target,
+    uint32_t texture_target,
     const std::vector<gpu::Mailbox>& mailboxes) {
   host()->SendUnsolicitedReply(
       pp_resource(),

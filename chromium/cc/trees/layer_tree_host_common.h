@@ -5,13 +5,15 @@
 #ifndef CC_TREES_LAYER_TREE_HOST_COMMON_H_
 #define CC_TREES_LAYER_TREE_HOST_COMMON_H_
 
+#include <stddef.h>
+
 #include <limits>
 #include <vector>
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/trees/property_tree.h"
 #include "ui/gfx/geometry/rect.h"
@@ -19,6 +21,11 @@
 #include "ui/gfx/transform.h"
 
 namespace cc {
+
+namespace proto {
+class ScrollUpdateInfo;
+class ScrollAndScaleSet;
+}
 
 class LayerImpl;
 class Layer;
@@ -75,6 +82,7 @@ class CC_EXPORT LayerTreeHostCommon {
         bool can_render_to_separate_surface,
         bool can_adjust_raster_scales,
         bool verify_property_trees,
+        bool use_property_trees,
         LayerImplList* render_surface_layer_list,
         int current_render_surface_layer_list_id,
         PropertyTrees* property_trees);
@@ -95,6 +103,7 @@ class CC_EXPORT LayerTreeHostCommon {
     bool can_render_to_separate_surface;
     bool can_adjust_raster_scales;
     bool verify_property_trees;
+    bool use_property_trees;
     LayerImplList* render_surface_layer_list;
     int current_render_surface_layer_list_id;
     PropertyTrees* property_trees;
@@ -105,20 +114,15 @@ class CC_EXPORT LayerTreeHostCommon {
     CalcDrawPropsImplInputsForTesting(LayerImpl* root_layer,
                                       const gfx::Size& device_viewport_size,
                                       const gfx::Transform& device_transform,
-                                      LayerImplList* render_surface_layer_list);
+                                      LayerImplList* render_surface_layer_list,
+                                      int current_render_surface_layer_list_id);
     CalcDrawPropsImplInputsForTesting(LayerImpl* root_layer,
                                       const gfx::Size& device_viewport_size,
-                                      LayerImplList* render_surface_layer_list);
+                                      LayerImplList* render_surface_layer_list,
+                                      int current_render_surface_layer_list_id);
   };
 
-  static void UpdateRenderSurfaces(Layer* root_layer,
-                                   bool can_render_to_separate_surface,
-                                   const gfx::Transform& transform,
-                                   bool preserves_2d_axis_alignment);
-  static void UpdateRenderSurface(Layer* layer,
-                                  bool can_render_to_separate_surface,
-                                  gfx::Transform* transform,
-                                  bool* animation_preserves_axis_alignment);
+  static int CalculateFrameJitter(LayerImpl* scrolling_layer);
   static void CalculateDrawProperties(CalcDrawPropsMainInputs* inputs);
   static void PreCalculateMetaInformation(Layer* root_layer);
   static void PreCalculateMetaInformationForTesting(LayerImpl* root_layer);
@@ -147,7 +151,7 @@ class CC_EXPORT LayerTreeHostCommon {
 
   static LayerImpl* get_layer_as_raw_ptr(const OwnedLayerImplList& layers,
                                          size_t index) {
-    return layers[index];
+    return layers[index].get();
   }
 
   static LayerImpl* get_layer_as_raw_ptr(const LayerImplList& layers,
@@ -155,11 +159,16 @@ class CC_EXPORT LayerTreeHostCommon {
     return layers[index];
   }
 
-  struct ScrollUpdateInfo {
+  struct CC_EXPORT ScrollUpdateInfo {
     int layer_id;
     // TODO(miletus): Use ScrollOffset once LayerTreeHost/Blink fully supports
     // franctional scroll offset.
     gfx::Vector2d scroll_delta;
+
+    bool operator==(const ScrollUpdateInfo& other) const;
+
+    void ToProtobuf(proto::ScrollUpdateInfo* proto) const;
+    void FromProtobuf(const proto::ScrollUpdateInfo& proto);
   };
 };
 
@@ -171,7 +180,14 @@ struct CC_EXPORT ScrollAndScaleSet {
   float page_scale_delta;
   gfx::Vector2dF elastic_overscroll_delta;
   float top_controls_delta;
-  ScopedPtrVector<SwapPromise> swap_promises;
+  std::vector<scoped_ptr<SwapPromise>> swap_promises;
+
+  bool EqualsForTesting(const ScrollAndScaleSet& other) const;
+  void ToProtobuf(proto::ScrollAndScaleSet* proto) const;
+  void FromProtobuf(const proto::ScrollAndScaleSet& proto);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScrollAndScaleSet);
 };
 
 template <typename LayerType>

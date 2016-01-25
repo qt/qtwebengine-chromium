@@ -34,6 +34,8 @@
          disable_discard_framebuffer)                        \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
+  GPU_OP(DISABLE_EXT_SRGB,                                   \
+         disable_ext_srgb)                                   \
   GPU_OP(DISABLE_GL_PATH_RENDERING,                          \
          disable_gl_path_rendering)                          \
   GPU_OP(DISABLE_GL_RGB_FORMAT,                              \
@@ -104,6 +106,8 @@
          needs_glsl_built_in_function_emulation)             \
   GPU_OP(NEEDS_OFFSCREEN_BUFFER_WORKAROUND,                  \
          needs_offscreen_buffer_workaround)                  \
+  GPU_OP(PACK_PARAMETERS_WORKAROUND_WITH_PACK_BUFFER,        \
+         pack_parameters_workaround_with_pack_buffer)        \
   GPU_OP(REGENERATE_STRUCT_NAMES,                            \
          regenerate_struct_names)                            \
   GPU_OP(REMOVE_POW_WITH_CONSTANT_EXPONENT,                  \
@@ -144,6 +148,8 @@
          wake_up_gpu_before_drawing)                         \
   GPU_OP(UNBIND_EGL_CONTEXT_TO_FLUSH_DRIVER_CACHES,          \
          unbind_egl_context_to_flush_driver_caches)          \
+  GPU_OP(SET_ZERO_LEVEL_BEFORE_GENERATING_MIPMAP,            \
+         set_zero_level_before_generating_mipmap)            \
 
 namespace gpu {
 

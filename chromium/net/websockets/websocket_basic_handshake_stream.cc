@@ -4,14 +4,15 @@
 
 #include "net/websockets/websocket_basic_handshake_stream.h"
 
+#include <stddef.h>
 #include <algorithm>
 #include <iterator>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/base64.h"
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
@@ -357,7 +358,7 @@ int WebSocketBasicHandshakeStream::SendRequest(
   scoped_ptr<WebSocketHandshakeRequestInfo> request(
       new WebSocketHandshakeRequestInfo(url_, base::Time::Now()));
   request->headers.CopyFrom(enriched_headers);
-  connect_delegate_->OnStartOpeningHandshake(request.Pass());
+  connect_delegate_->OnStartOpeningHandshake(std::move(request));
 
   return parser()->SendRequest(
       state_.GenerateRequestLine(), enriched_headers, response, callback);
@@ -438,6 +439,11 @@ bool WebSocketBasicHandshakeStream::GetRemoteEndpoint(IPEndPoint* endpoint) {
   return state_.connection()->socket()->GetPeerAddress(endpoint) == OK;
 }
 
+void WebSocketBasicHandshakeStream::PopulateNetErrorDetails(
+    NetErrorDetails* /*details*/) {
+  return;
+}
+
 void WebSocketBasicHandshakeStream::Drain(HttpNetworkSession* session) {
   HttpResponseBodyDrainer* drainer = new HttpResponseBodyDrainer(this);
   drainer->Start(session);
@@ -476,11 +482,11 @@ scoped_ptr<WebSocketStream> WebSocketBasicHandshakeStream::Upgrade() {
         WebSocketDeflater::NUM_CONTEXT_TAKEOVER_MODE_TYPES);
 
     return scoped_ptr<WebSocketStream>(new WebSocketDeflateStream(
-        basic_stream.Pass(), extension_params_->deflate_parameters,
+        std::move(basic_stream), extension_params_->deflate_parameters,
         scoped_ptr<WebSocketDeflatePredictor>(
             new WebSocketDeflatePredictorImpl)));
   } else {
-    return basic_stream.Pass();
+    return basic_stream;
   }
 }
 

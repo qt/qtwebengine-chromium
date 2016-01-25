@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 
 namespace blink {
@@ -31,7 +30,7 @@ void ScriptPromiseResolver::suspend()
 void ScriptPromiseResolver::resume()
 {
     if (m_state == Resolving || m_state == Rejecting)
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void ScriptPromiseResolver::stop()

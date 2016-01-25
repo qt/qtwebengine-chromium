@@ -24,15 +24,16 @@
     pages from the web. It has a memory cache for these objects.
 */
 
-#include "config.h"
 #include "core/fetch/ScriptResource.h"
 
 #include "core/fetch/FetchRequest.h"
+#include "core/fetch/IntegrityMetadata.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/HTTPParsers.h"
+#include "public/platform/WebProcessMemoryDump.h"
 
 namespace blink {
 
@@ -40,7 +41,10 @@ ResourcePtr<ScriptResource> ScriptResource::fetch(FetchRequest& request, Resourc
 {
     ASSERT(request.resourceRequest().frameType() == WebURLRequest::FrameTypeNone);
     request.mutableResourceRequest().setRequestContext(WebURLRequest::RequestContextScript);
-    return toScriptResource(fetcher->requestResource(request, ScriptResourceFactory()));
+    ResourcePtr<ScriptResource> resource = toScriptResource(fetcher->requestResource(request, ScriptResourceFactory()));
+    if (resource && !request.integrityMetadata().isEmpty())
+        resource->setIntegrityMetadata(request.integrityMetadata());
+    return resource;
 }
 
 ScriptResource::ScriptResource(const ResourceRequest& resourceRequest, const String& charset)
@@ -64,7 +68,7 @@ void ScriptResource::didAddClient(ResourceClient* client)
     Resource::didAddClient(client);
 }
 
-void ScriptResource::appendData(const char* data, unsigned length)
+void ScriptResource::appendData(const char* data, size_t length)
 {
     Resource::appendData(data, length);
     ResourceClientWalker<ScriptResourceClient> walker(m_clients);
@@ -72,9 +76,18 @@ void ScriptResource::appendData(const char* data, unsigned length)
         client->notifyAppendData(this);
 }
 
+void ScriptResource::onMemoryDump(WebMemoryDumpLevelOfDetail levelOfDetail, WebProcessMemoryDump* memoryDump) const
+{
+    Resource::onMemoryDump(levelOfDetail, memoryDump);
+    const String name = getMemoryDumpName() + "/decoded_script";
+    auto dump = memoryDump->createMemoryAllocatorDump(name);
+    dump->addScalar("size", "bytes", m_script.string().sizeInBytes());
+    memoryDump->addSuballocation(dump->guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+}
+
 AtomicString ScriptResource::mimeType() const
 {
-    return extractMIMETypeFromMediaType(m_response.httpHeaderField("Content-Type")).lower();
+    return extractMIMETypeFromMediaType(m_response.httpHeaderField(HTTPNames::Content_Type)).lower();
 }
 
 const String& ScriptResource::script()
@@ -95,9 +108,14 @@ const String& ScriptResource::script()
     return m_script.string();
 }
 
+void ScriptResource::destroyDecodedDataForFailedRevalidation()
+{
+    m_script = AtomicString();
+}
+
 bool ScriptResource::mimeTypeAllowedByNosniff() const
 {
-    return parseContentTypeOptionsHeader(m_response.httpHeaderField("X-Content-Type-Options")) != ContentTypeOptionsNosniff || MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType());
+    return parseContentTypeOptionsHeader(m_response.httpHeaderField(HTTPNames::X_Content_Type_Options)) != ContentTypeOptionsNosniff || MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType());
 }
 
 bool ScriptResource::mustRefetchDueToIntegrityMetadata(const FetchRequest& request) const
@@ -105,9 +123,7 @@ bool ScriptResource::mustRefetchDueToIntegrityMetadata(const FetchRequest& reque
     if (request.integrityMetadata().isEmpty())
         return false;
 
-    // TODO(jww) this integrity metadata should actually be
-    // normalized so that order doesn't matter.
-    return m_integrityMetadata != request.integrityMetadata();
+    return !IntegrityMetadata::setsEqual(m_integrityMetadata, request.integrityMetadata());
 }
 
 } // namespace blink

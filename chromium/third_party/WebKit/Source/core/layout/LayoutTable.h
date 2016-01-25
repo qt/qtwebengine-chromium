@@ -189,7 +189,7 @@ public:
     void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
 
     struct ColumnStruct {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         explicit ColumnStruct(unsigned initialSpan = 1)
             : span(initialSpan)
         {
@@ -263,6 +263,14 @@ public:
         return 0;
     }
 
+    // The collapsing border model dissallows paddings on table, which is why we
+    // override those functions.
+    // See http://www.w3.org/TR/CSS2/tables.html#collapsing-borders.
+    LayoutUnit paddingTop() const override;
+    LayoutUnit paddingBottom() const override;
+    LayoutUnit paddingLeft() const override;
+    LayoutUnit paddingRight() const override;
+
     // Override paddingStart/End to return pixel values to match behavor of LayoutTableCell.
     LayoutUnit paddingEnd() const override { return static_cast<int>(LayoutBlock::paddingEnd()); }
     LayoutUnit paddingStart() const override { return static_cast<int>(LayoutBlock::paddingStart()); }
@@ -276,12 +284,29 @@ public:
     // Return the first column or column-group.
     LayoutTableCol* firstColumn() const;
 
-    LayoutTableCol* colElement(unsigned col, bool* startEdge = nullptr, bool* endEdge = nullptr) const
+    struct ColAndColGroup {
+        ColAndColGroup()
+            : col(nullptr)
+            , colgroup(nullptr)
+            , adjoinsStartBorderOfColGroup(false)
+            , adjoinsEndBorderOfColGroup(false)
+        {
+        }
+        LayoutTableCol* col;
+        LayoutTableCol* colgroup;
+        bool adjoinsStartBorderOfColGroup;
+        bool adjoinsEndBorderOfColGroup;
+        LayoutTableCol* innermostColOrColGroup()
+        {
+            return col ? col : colgroup;
+        }
+    };
+    ColAndColGroup colElement(unsigned col) const
     {
         // The common case is to not have columns, make that case fast.
         if (!m_hasColElements)
-            return nullptr;
-        return slowColElement(col, startEdge, endEdge);
+            return ColAndColGroup();
+        return slowColElement(col);
     }
 
     bool needsSectionRecalc() const { return m_needsSectionRecalc; }
@@ -359,7 +384,7 @@ private:
     int firstLineBoxBaseline() const override;
     int inlineBlockBaseline(LineDirectionMode) const override;
 
-    LayoutTableCol* slowColElement(unsigned col, bool* startEdge, bool* endEdge) const;
+    ColAndColGroup slowColElement(unsigned col) const;
 
     void updateColumnCache() const;
     void invalidateCachedColumns();
@@ -434,6 +459,11 @@ private:
     OwnPtr<TableLayoutAlgorithm> m_tableLayout;
 
     // A sorted list of all unique border values that we want to paint.
+    //
+    // Collapsed borders are SUPER EXPENSIVE to compute. The reason is that we
+    // need to compare a cells border against all the adjoining cells, rows,
+    // row groups, column, column groups and table. Thus we cache them in this
+    // field.
     CollapsedBorderValues m_collapsedBorders;
     bool m_collapsedBordersValid : 1;
 

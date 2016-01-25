@@ -10,6 +10,7 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../skia/skia.gyp:skia',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
@@ -21,9 +22,8 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
-        'favicon/core/fallback_icon_client.h',
-        'favicon/core/fallback_icon_service.cc',
-        'favicon/core/fallback_icon_service.h',
+        'favicon/core/fallback_url_util.cc',
+        'favicon/core/fallback_url_util.h',
         'favicon/core/favicon_client.h',
         'favicon/core/favicon_driver.cc',
         'favicon/core/favicon_driver.h',
@@ -43,6 +43,15 @@
       ],
       'include_dirs': [
         '..',
+      ],
+      'conditions': [
+        ['OS!="ios"', {
+          'sources': [
+            'favicon/core/fallback_icon_client.h',
+            'favicon/core/fallback_icon_service.cc',
+            'favicon/core/fallback_icon_service.h',
+          ],
+        }],
       ],
     },
   ],
@@ -70,11 +79,6 @@
           ],
           'include_dirs': [
             '..',
-          ],
-          'sources!': [
-            'favicon/core/fallback_icon_client.h',
-            'favicon/core/fallback_icon_service.cc',
-            'favicon/core/fallback_icon_service.h',
           ],
         },
       ],

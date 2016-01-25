@@ -4,9 +4,13 @@
 
 #include "ui/views/window/dialog_delegate.h"
 
+#include <utility>
+
 #include "base/logging.h"
+#include "build/build_config.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
@@ -199,9 +203,9 @@ NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
   const BubbleBorder::Shadow kShadow = BubbleBorder::SMALL_SHADOW;
 #endif
   scoped_ptr<BubbleBorder> border(
-      new BubbleBorder(BubbleBorder::FLOAT, kShadow, SK_ColorRED));
+      new BubbleBorder(BubbleBorder::FLOAT, kShadow, gfx::kPlaceholderColor));
   border->set_use_theme_background_color(true);
-  frame->SetBubbleBorder(border.Pass());
+  frame->SetBubbleBorder(std::move(border));
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
     View* titlebar_view = delegate->CreateTitlebarExtraView();

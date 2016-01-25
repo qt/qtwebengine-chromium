@@ -4,9 +4,12 @@
 
 #include "components/user_prefs/tracked/pref_hash_filter.h"
 
+#include <stdint.h>
 #include <algorithm>
+#include <utility>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_store.h"
@@ -51,7 +54,7 @@ PrefHashFilter::PrefHashFilter(
     TrackedPreferenceValidationDelegate* delegate,
     size_t reporting_ids_count,
     bool report_super_mac_validity)
-    : pref_hash_store_(pref_hash_store.Pass()),
+    : pref_hash_store_(std::move(pref_hash_store)),
       on_reset_on_load_(on_reset_on_load),
       report_super_mac_validity_(report_super_mac_validity) {
   DCHECK(pref_hash_store_);
@@ -83,8 +86,8 @@ PrefHashFilter::PrefHashFilter(
     }
     DCHECK(tracked_preference);
 
-    bool is_new = tracked_paths_.add(metadata.name,
-                                     tracked_preference.Pass()).second;
+    bool is_new =
+        tracked_paths_.add(metadata.name, std::move(tracked_preference)).second;
     DCHECK(is_new);
   }
 }
@@ -110,11 +113,11 @@ base::Time PrefHashFilter::GetResetTime(PrefService* user_prefs) {
   // order to ensure it remains consistent with the way we store this value
   // (which we do via a PrefStore, preventing us from reusing
   // PrefService::SetInt64).
-  int64 internal_value = base::Time().ToInternalValue();
+  int64_t internal_value = base::Time().ToInternalValue();
   if (!base::StringToInt64(
           user_prefs->GetString(user_prefs::kPreferenceResetTime),
           &internal_value)) {
-    // Somehow the value stored on disk is not a valid int64.
+    // Somehow the value stored on disk is not a valid int64_t.
     NOTREACHED();
     return base::Time();
   }
@@ -226,5 +229,6 @@ void PrefHashFilter::FinalizeFilterOnLoad(
   UMA_HISTOGRAM_TIMES("Settings.FilterOnLoadTime",
                       base::TimeTicks::Now() - checkpoint);
 
-  post_filter_on_load_callback.Run(pref_store_contents.Pass(), prefs_altered);
+  post_filter_on_load_callback.Run(std::move(pref_store_contents),
+                                   prefs_altered);
 }

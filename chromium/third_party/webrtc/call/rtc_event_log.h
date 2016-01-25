@@ -13,6 +13,7 @@
 
 #include <string>
 
+#include "webrtc/base/platform_file.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
@@ -35,11 +36,20 @@ class RtcEventLog {
 
   static rtc::scoped_ptr<RtcEventLog> Create();
 
+  // Sets the time that events are stored in the internal event buffer
+  // before the user calls StartLogging.  The default is 10 000 000 us = 10 s
+  virtual void SetBufferDuration(int64_t buffer_duration_us) = 0;
+
   // Starts logging for the specified duration to the specified file.
   // The logging will stop automatically after the specified duration.
   // If the file already exists it will be overwritten.
   // If the file cannot be opened, the RtcEventLog will not start logging.
   virtual void StartLogging(const std::string& file_name, int duration_ms) = 0;
+
+  // Starts logging until either the 10 minute timer runs out or the StopLogging
+  // function is called. The RtcEventLog takes ownership of the supplied
+  // rtc::PlatformFile.
+  virtual bool StartLogging(rtc::PlatformFile log_file) = 0;
 
   virtual void StopLogging() = 0;
 
@@ -66,6 +76,11 @@ class RtcEventLog {
 
   // Logs an audio playout event
   virtual void LogAudioPlayout(uint32_t ssrc) = 0;
+
+  // Logs a bitrate update from the bandwidth estimator based on packet loss.
+  virtual void LogBwePacketLossEvent(int32_t bitrate,
+                                     uint8_t fraction_loss,
+                                     int32_t total_packets) = 0;
 
   // Reads an RtcEventLog file and returns true when reading was successful.
   // The result is stored in the given EventStream object.

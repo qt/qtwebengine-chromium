@@ -4,6 +4,7 @@
 
 #include "content/browser/loader/mime_type_resource_handler.h"
 
+#include <utility>
 #include <vector>
 
 #include "base/bind.h"
@@ -16,7 +17,6 @@
 #include "components/mime_util/mime_util.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/download/download_stats.h"
-#include "content/browser/loader/certificate_resource_handler.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/loader/stream_resource_handler.h"
@@ -86,7 +86,7 @@ MimeTypeResourceHandler::MimeTypeResourceHandler(
     ResourceDispatcherHostImpl* host,
     PluginService* plugin_service,
     net::URLRequest* request)
-    : LayeredResourceHandler(request, next_handler.Pass()),
+    : LayeredResourceHandler(request, std::move(next_handler)),
       state_(STATE_STARTING),
       host_(host),
       plugin_service_(plugin_service),
@@ -94,8 +94,7 @@ MimeTypeResourceHandler::MimeTypeResourceHandler(
       bytes_read_(0),
       must_download_(false),
       must_download_is_set_(false),
-      weak_ptr_factory_(this) {
-}
+      weak_ptr_factory_(this) {}
 
 MimeTypeResourceHandler::~MimeTypeResourceHandler() {
 }
@@ -329,7 +328,7 @@ bool MimeTypeResourceHandler::SelectPluginHandler(bool* defer,
       plugin_path, request(), response_.get(), &payload));
   if (handler) {
     *handled_by_plugin = true;
-    return UseAlternateNextHandler(handler.Pass(), payload);
+    return UseAlternateNextHandler(std::move(handler), payload);
   }
 #endif
   return true;
@@ -341,12 +340,14 @@ bool MimeTypeResourceHandler::SelectNextHandler(bool* defer) {
   ResourceRequestInfoImpl* info = GetRequestInfo();
   const std::string& mime_type = response_->head.mime_type;
 
-  if (mime_util::IsSupportedCertificateMimeType(mime_type)) {
-    // Install certificate file.
-    info->set_is_download(true);
-    scoped_ptr<ResourceHandler> handler(
-        new CertificateResourceHandler(request()));
-    return UseAlternateNextHandler(handler.Pass(), std::string());
+  // https://crbug.com/568184 - Temporary hack to track servers that aren't
+  // setting Content-Disposition when sending x-x509-user-cert and expecting
+  // the browser to automatically install certificates; this is being
+  // deprecated and will be removed upon full <keygen> removal.
+  if (mime_type == "application/x-x509-user-cert") {
+    UMA_HISTOGRAM_BOOLEAN(
+        "UserCert.ContentDisposition",
+        response_->head.headers->HasHeader("Content-Disposition"));
   }
 
   // Allow requests for object/embed tags to be intercepted as streams.
@@ -391,7 +392,7 @@ bool MimeTypeResourceHandler::SelectNextHandler(bool* defer) {
           DownloadItem::kInvalidId,
           scoped_ptr<DownloadSaveInfo>(new DownloadSaveInfo()),
           DownloadUrlParameters::OnStartedCallback()));
-  return UseAlternateNextHandler(handler.Pass(), std::string());
+  return UseAlternateNextHandler(std::move(handler), std::string());
 }
 
 bool MimeTypeResourceHandler::UseAlternateNextHandler(
@@ -443,7 +444,7 @@ bool MimeTypeResourceHandler::UseAlternateNextHandler(
 
   // This is handled entirely within the new ResourceHandler, so just reset the
   // original ResourceHandler.
-  next_handler_ = new_handler.Pass();
+  next_handler_ = std::move(new_handler);
   next_handler_->SetController(this);
 
   return CopyReadBufferToNextHandler();

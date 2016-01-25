@@ -306,17 +306,6 @@
             'src/common/simple_string_dictionary.cc',
             'src/common/string_conversion.cc',
           ],
-          'conditions': [
-            ['OS=="ios"', {
-              'xcode_settings' : {
-                'WARNING_CFLAGS': [
-                  # MinidumpGenerator uses an API deprecated in iOS 7.
-                  # crbug.com/408562
-                  '-Wno-deprecated-declarations',
-                ],
-              },
-            }],
-          ],
         },
         {
           # GN version: //breakpad:crash_inspector
@@ -595,6 +584,14 @@
                 ],
               },
             }],
+            ['clang==1 and target_arch=="ia32"', {
+              'cflags!': [
+                # Clang's -mstackrealign doesn't work well with
+                # linux_syscall_support.h hand written asm syscalls.
+                # See https://crbug.com/556393
+                '-mstackrealign',
+              ],
+            }],
           ],
 
           'include_dirs': [
@@ -703,6 +700,14 @@
                 'isolate_file': 'breakpad_unittests.isolate',
               },
               'includes': [ '../build/android/test_runner.gypi' ],
+            }],
+            ['clang==1 and target_arch=="ia32"', {
+              'cflags!': [
+                # Clang's -mstackrealign doesn't work well with
+                # linux_syscall_support.h hand written asm syscalls.
+                # See https://crbug.com/556393
+                '-mstackrealign',
+              ],
             }],
           ],
         },

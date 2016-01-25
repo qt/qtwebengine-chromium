@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 
-#include "wtf/TypeTraits.h"
-
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
+#include <type_traits>
 
 namespace blink {
 
@@ -17,13 +15,13 @@ TEST(ResourceLoaderOptionsTest, DeepCopy)
 {
     // Check that the fields of ResourceLoaderOptions are enums,
     // except for initiatorInfo and securityOrigin.
-    static_assert(WTF::IsEnum<DataBufferingPolicy>::value, "DataBufferingPolicy should be an enum");
-    static_assert(WTF::IsEnum<StoredCredentials>::value, "StoredCredentials should be an enum");
-    static_assert(WTF::IsEnum<CredentialRequest>::value, "CredentialRequest should be an enum");
-    static_assert(WTF::IsEnum<ContentSecurityPolicyDisposition>::value, "ContentSecurityPolicyDisposition should be an enum");
-    static_assert(WTF::IsEnum<RequestInitiatorContext>::value, "RequestInitiatorContext should be an enum");
-    static_assert(WTF::IsEnum<SynchronousPolicy>::value, "SynchronousPolicy should be an enum");
-    static_assert(WTF::IsEnum<CORSEnabled>::value, "CORSEnabled should be an enum");
+    static_assert(std::is_enum<DataBufferingPolicy>::value, "DataBufferingPolicy should be an enum");
+    static_assert(std::is_enum<StoredCredentials>::value, "StoredCredentials should be an enum");
+    static_assert(std::is_enum<CredentialRequest>::value, "CredentialRequest should be an enum");
+    static_assert(std::is_enum<ContentSecurityPolicyDisposition>::value, "ContentSecurityPolicyDisposition should be an enum");
+    static_assert(std::is_enum<RequestInitiatorContext>::value, "RequestInitiatorContext should be an enum");
+    static_assert(std::is_enum<SynchronousPolicy>::value, "SynchronousPolicy should be an enum");
+    static_assert(std::is_enum<CORSEnabled>::value, "CORSEnabled should be an enum");
 
     ResourceLoaderOptions original;
     RefPtr<SecurityOrigin> securityOrigin = SecurityOrigin::createFromString("http://www.google.com");

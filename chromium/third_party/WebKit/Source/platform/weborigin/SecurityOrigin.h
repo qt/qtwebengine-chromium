@@ -29,7 +29,9 @@
 #ifndef SecurityOrigin_h
 #define SecurityOrigin_h
 
+#include "base/gtest_prod_util.h"
 #include "platform/PlatformExport.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,6 +41,7 @@ class KURL;
 class SecurityOriginCache;
 
 class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
+    WTF_MAKE_NONCOPYABLE(SecurityOrigin);
 public:
     static PassRefPtr<SecurityOrigin> create(const KURL&);
     static PassRefPtr<SecurityOrigin> createUnique();
@@ -97,6 +100,11 @@ public:
     // familiar with Suborigins, you probably want canAccess() for now.
     // Suborigins is a spec in progress, and where it should be enforced is
     // still in flux. See https://crbug.com/336894 for more details.
+    //
+    // TODO(jww): Once the Suborigin spec has become more settled, and we are
+    // confident in the correctness of our implementation, canAccess should be
+    // made to check the suborigin and this should be turned into
+    // canAccessBypassSuborigin check, which should be the exceptional case.
     bool canAccessCheckSuborigins(const SecurityOrigin*) const;
 
     // Returns true if this SecurityOrigin can read content retrieved from
@@ -110,6 +118,11 @@ public:
     // Suborigins, you probably want canRequest() for now. Suborigins is a spec
     // in progress, and where it should be enforced is still in flux. See
     // https://crbug.com/336894 for more details.
+    //
+    // TODO(jww): Once the Suborigin spec has become more settled, and we are
+    // confident in the correctness of our implementation, canRequest should be
+    // made to check the suborigin and this should be turned into
+    // canRequestBypassSuborigin check, which should be the exceptional case.
     bool canRequestNoSuborigin(const KURL&) const;
 
     // Returns true if drawing an image from this URL taints a canvas from
@@ -127,6 +140,7 @@ public:
     // cryptographically-authenticated origin, as described in
     // https://w3c.github.io/webappsec/specs/powerfulfeatures/#is-origin-trustworthy.
     bool isPotentiallyTrustworthy(String& errorMessage) const;
+    bool isPotentiallyTrustworthy() const;
 
     // Returns true if this SecurityOrigin can load local resources, such
     // as images, iframes, and style sheets, and can link to local URLs.
@@ -150,6 +164,7 @@ public:
     //
     // WARNING: This is an extremely powerful ability. Use with caution!
     void grantUniversalAccess();
+    bool isGrantedUniversalAccess() const { return m_universalAccess; }
 
     bool canAccessDatabase() const { return !isUnique(); }
     bool canAccessLocalStorage() const { return !isUnique(); }
@@ -217,8 +232,6 @@ public:
     bool isSameSchemeHostPort(const SecurityOrigin*) const;
     bool isSameSchemeHostPortAndSuborigin(const SecurityOrigin*) const;
 
-    bool needsDatabaseIdentifierQuirkForFiles() const { return m_needsDatabaseIdentifierQuirkForFiles; }
-
     static const KURL& urlWithUniqueSecurityOrigin();
 
     // Transfer origin privileges from another security origin.
@@ -236,12 +249,10 @@ public:
     void transferPrivilegesFrom(PassOwnPtr<PrivilegeData>);
 
 private:
-    // FIXME: After the merge with the Chromium repo, this should be refactored
-    // to use FRIEND_TEST in base/gtest_prod_util.h.
     friend class SecurityOriginTest;
-    friend class SecurityOriginTest_Suborigins_Test;
-    friend class SecurityOriginTest_SuboriginsParsing_Test;
-    friend class SecurityOriginTest_SuboriginsIsSameSchemeHostPortAndSuborigin_Test;
+    FRIEND_TEST_ALL_PREFIXES(SecurityOriginTest, Suborigins);
+    FRIEND_TEST_ALL_PREFIXES(SecurityOriginTest, SuboriginsParsing);
+    FRIEND_TEST_ALL_PREFIXES(SecurityOriginTest, SuboriginsIsSameSchemeHostPortAndSuborigin);
 
     SecurityOrigin();
     explicit SecurityOrigin(const KURL&);
@@ -264,7 +275,6 @@ private:
     bool m_domainWasSetInDOM;
     bool m_canLoadLocalResources;
     bool m_blockLocalAccessFromLocalOrigin;
-    bool m_needsDatabaseIdentifierQuirkForFiles;
 };
 
 } // namespace blink

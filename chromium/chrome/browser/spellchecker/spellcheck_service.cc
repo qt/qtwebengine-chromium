@@ -10,6 +10,7 @@
 #include "base/strings/string_split.h"
 #include "base/supports_user_data.h"
 #include "base/synchronization/waitable_event.h"
+#include "build/build_config.h"
 #include "chrome/browser/spellchecker/feedback_sender.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
@@ -89,10 +90,6 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   feedback_sender_.reset(new spellcheck::FeedbackSender(
       context->GetRequestContext(), language_code, country_code));
 
-  pref_change_registrar_.Add(
-      prefs::kEnableAutoSpellCorrect,
-      base::Bind(&SpellcheckService::OnEnableAutoSpellCorrectChanged,
-                 base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kSpellCheckDictionaries,
       base::Bind(&SpellcheckService::OnSpellCheckDictionariesChanged,
@@ -199,9 +196,8 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
             : IPC::InvalidPlatformFileForTransit();
   }
 
-  process->Send(new SpellCheckMsg_Init(
-      bdict_languages, custom_dictionary_->GetWords(),
-      prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
+  process->Send(
+      new SpellCheckMsg_Init(bdict_languages, custom_dictionary_->GetWords()));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
 }
@@ -297,17 +293,6 @@ void SpellcheckService::InitForAllRenderers() {
     content::RenderProcessHost* process = i.GetCurrentValue();
     if (process && process->GetHandle())
       InitForRenderer(process);
-  }
-}
-
-void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
-  bool enabled = pref_change_registrar_.prefs()->GetBoolean(
-      prefs::kEnableAutoSpellCorrect);
-  for (content::RenderProcessHost::iterator i(
-           content::RenderProcessHost::AllHostsIterator());
-       !i.IsAtEnd(); i.Advance()) {
-    content::RenderProcessHost* process = i.GetCurrentValue();
-    process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
   }
 }
 

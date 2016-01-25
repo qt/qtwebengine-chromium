@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/HTMLTextFormControlElement.h"
 
 #include "core/dom/Text.h"
@@ -21,8 +20,8 @@
 #include "core/page/SpellCheckerClient.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -47,24 +46,16 @@ private:
     RefPtrWillBePersistent<HTMLInputElement> m_input;
 };
 
-class DummyTextCheckerClient : public EmptyTextCheckerClient {
-public:
-    ~DummyTextCheckerClient() { }
-
-    bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const override { return false; }
-};
-
 class DummySpellCheckerClient : public EmptySpellCheckerClient {
 public:
     virtual ~DummySpellCheckerClient() { }
 
     bool isContinuousSpellCheckingEnabled() override { return true; }
-    bool isGrammarCheckingEnabled() override { return true; }
 
-    TextCheckerClient& textChecker() override { return m_dummyTextCheckerClient; }
+    TextCheckerClient& textChecker() override { return m_emptyTextCheckerClient; }
 
 private:
-    DummyTextCheckerClient m_dummyTextCheckerClient;
+    EmptyTextCheckerClient m_emptyTextCheckerClient;
 };
 
 void HTMLTextFormControlElementTest::SetUp()

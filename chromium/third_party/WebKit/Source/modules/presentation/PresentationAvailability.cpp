@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/presentation/PresentationAvailability.h"
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
@@ -64,12 +63,12 @@ ExecutionContext* PresentationAvailability::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-bool PresentationAvailability::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool capture)
+bool PresentationAvailability::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (eventType == EventTypeNames::change)
         UseCounter::count(executionContext(), UseCounter::PresentationAvailabilityChangeEventListener);
 
-    return EventTarget::addEventListener(eventType, listener, capture);
+    return EventTarget::addEventListenerInternal(eventType, listener, options);
 }
 
 void PresentationAvailability::availabilityChanged(bool value)

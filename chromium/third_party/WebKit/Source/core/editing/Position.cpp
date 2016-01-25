@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/Position.h"
 
 #include "core/dom/shadow/ElementShadow.h"
@@ -64,7 +63,9 @@ PositionTemplate<Strategy> PositionTemplate<Strategy>::editingPositionOf(PassRef
     if (offset == 0)
         return PositionTemplate<Strategy>(anchorNode, PositionAnchorType::BeforeAnchor);
 
-    ASSERT(offset == Strategy::lastOffsetForEditing(anchorNode.get()));
+    // Note: |offset| can be >= 1, if |anchorNode| have child nodes, e.g.
+    // using Node.appendChild() to add a child node TEXTAREA.
+    ASSERT(offset >= 1);
     return PositionTemplate<Strategy>(anchorNode, PositionAnchorType::AfterAnchor);
 }
 
@@ -287,7 +288,9 @@ int comparePositions(const PositionInComposedTree& positionA, const PositionInCo
     ASSERT(positionA.isNotNull());
     ASSERT(positionB.isNotNull());
 
+    positionA.anchorNode()->updateDistribution();
     Node* containerA = positionA.computeContainerNode();
+    positionB.anchorNode()->updateDistribution();
     Node* containerB = positionB.computeContainerNode();
     int offsetA = positionA.computeOffsetInContainerNode();
     int offsetB = positionB.computeOffsetInContainerNode();
@@ -389,7 +392,7 @@ PositionInComposedTree toPositionInComposedTree(const Position& pos)
         Node* anchor = pos.anchorNode();
         if (anchor->offsetInCharacters())
             return PositionInComposedTree(anchor, pos.computeOffsetInContainerNode());
-        ASSERT(!isActiveInsertionPoint(*anchor));
+        ASSERT(!anchor->isSlotOrActiveInsertionPoint());
         int offset = pos.computeOffsetInContainerNode();
         Node* child = NodeTraversal::childAt(*anchor, offset);
         if (!child) {
@@ -398,7 +401,7 @@ PositionInComposedTree toPositionInComposedTree(const Position& pos)
             return PositionInComposedTree(anchor, PositionAnchorType::AfterChildren);
         }
         child->updateDistribution();
-        if (isActiveInsertionPoint(*child)) {
+        if (child->isSlotOrActiveInsertionPoint()) {
             if (anchor->isShadowRoot())
                 return PositionInComposedTree(anchor->shadowHost(), offset);
             return PositionInComposedTree(anchor, offset);

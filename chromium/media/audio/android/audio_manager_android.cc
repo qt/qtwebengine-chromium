@@ -5,6 +5,7 @@
 #include "media/audio/android/audio_manager_android.h"
 
 #include "base/android/build_info.h"
+#include "base/android/context_utils.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
@@ -260,7 +261,9 @@ bool AudioManagerAndroid::RegisterAudioManager(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-void AudioManagerAndroid::SetMute(JNIEnv* env, jobject obj, jboolean muted) {
+void AudioManagerAndroid::SetMute(JNIEnv* env,
+                                  const JavaParamRef<jobject>& obj,
+                                  jboolean muted) {
   GetTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(

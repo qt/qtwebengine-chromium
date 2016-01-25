@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fileapi/Blob.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -69,7 +68,7 @@ URLRegistry& BlobURLRegistry::registry()
     // (This code assumes it is safe to register or unregister URLs on
     // BlobURLRegistry (that is implemented by the embedder) on
     // multiple threads.)
-    AtomicallyInitializedStaticReference(BlobURLRegistry, instance, new BlobURLRegistry());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(BlobURLRegistry, instance, new BlobURLRegistry());
     return instance;
 }
 

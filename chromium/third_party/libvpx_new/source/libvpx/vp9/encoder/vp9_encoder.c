@@ -47,6 +47,7 @@
 #include "vp9/encoder/vp9_ethread.h"
 #include "vp9/encoder/vp9_firstpass.h"
 #include "vp9/encoder/vp9_mbgraph.h"
+#include "vp9/encoder/vp9_noise_estimate.h"
 #include "vp9/encoder/vp9_picklpf.h"
 #include "vp9/encoder/vp9_ratectrl.h"
 #include "vp9/encoder/vp9_rd.h"
@@ -805,6 +806,8 @@ static void init_config(struct VP9_COMP *cpi, VP9EncoderConfig *oxcf) {
   cpi->ref_frame_flags = 0;
 
   init_buffer_indices(cpi);
+
+  vp9_noise_estimate_init(&cpi->noise_estimate, cm->width, cm->height);
 }
 
 static void set_rc_buffer_sizes(RATE_CONTROL *rc,
@@ -1475,7 +1478,11 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
   cpi->td.mb.e_mbd.bd = (int)cm->bit_depth;
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
-  rc->baseline_gf_interval = (MIN_GF_INTERVAL + MAX_GF_INTERVAL) / 2;
+  if ((oxcf->pass == 0) && (oxcf->rc_mode == VPX_Q)) {
+    rc->baseline_gf_interval = FIXED_GF_INTERVAL;
+  } else {
+    rc->baseline_gf_interval = (MIN_GF_INTERVAL + MAX_GF_INTERVAL) / 2;
+  }
 
   cpi->refresh_golden_frame = 0;
   cpi->refresh_last_frame = 1;
@@ -1567,7 +1574,30 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
 #endif
 #define log2f(x) (log (x) / (float) M_LOG2_E)
 
+/***********************************************************************
+ * Read before modifying 'cal_nmvjointsadcost' or 'cal_nmvsadcosts'    *
+ ***********************************************************************
+ * The following 2 functions ('cal_nmvjointsadcost' and                *
+ * 'cal_nmvsadcosts') are used to calculate cost lookup tables         *
+ * used by 'vp9_diamond_search_sad'. The C implementation of the       *
+ * function is generic, but the AVX intrinsics optimised version       *
+ * relies on the following properties of the computed tables:          *
+ * For cal_nmvjointsadcost:                                            *
+ *   - mvjointsadcost[1] == mvjointsadcost[2] == mvjointsadcost[3]     *
+ * For cal_nmvsadcosts:                                                *
+ *   - For all i: mvsadcost[0][i] == mvsadcost[1][i]                   *
+ *         (Equal costs for both components)                           *
+ *   - For all i: mvsadcost[0][i] == mvsadcost[0][-i]                  *
+ *         (Cost function is even)                                     *
+ * If these do not hold, then the AVX optimised version of the         *
+ * 'vp9_diamond_search_sad' function cannot be used as it is, in which *
+ * case you can revert to using the C function instead.                *
+ ***********************************************************************/
+
 static void cal_nmvjointsadcost(int *mvjointsadcost) {
+  /*********************************************************************
+   * Warning: Read the comments above before modifying this function   *
+   *********************************************************************/
   mvjointsadcost[0] = 600;
   mvjointsadcost[1] = 300;
   mvjointsadcost[2] = 300;
@@ -1575,6 +1605,9 @@ static void cal_nmvjointsadcost(int *mvjointsadcost) {
 }
 
 static void cal_nmvsadcosts(int *mvsadcost[2]) {
+  /*********************************************************************
+   * Warning: Read the comments above before modifying this function   *
+   *********************************************************************/
   int i = 1;
 
   mvsadcost[0][0] = 0;
@@ -1736,6 +1769,10 @@ VP9_COMP *vp9_create_compressor(VP9EncoderConfig *oxcf,
 
   cpi->first_time_stamp_ever = INT64_MAX;
 
+  /*********************************************************************
+   * Warning: Read the comments around 'cal_nmvjointsadcost' and       *
+   * 'cal_nmvsadcosts' before modifying how these tables are computed. *
+   *********************************************************************/
   cal_nmvjointsadcost(cpi->td.mb.nmvjointsadcost);
   cpi->td.mb.nmvcost[0] = &cpi->nmvcosts[0][MV_MAX];
   cpi->td.mb.nmvcost[1] = &cpi->nmvcosts[1][MV_MAX];
@@ -2756,14 +2793,32 @@ void vp9_update_reference_frames(VP9_COMP *cpi) {
                                    cpi->common.frame_type,
                                    cpi->refresh_alt_ref_frame,
                                    cpi->refresh_golden_frame,
-                                   cpi->refresh_last_frame);
+                                   cpi->refresh_last_frame,
+                                   cpi->resize_pending);
   }
 #endif
+  if (is_one_pass_cbr_svc(cpi)) {
+    // Keep track of frame index for each reference frame.
+    SVC *const svc = &cpi->svc;
+    if (cm->frame_type == KEY_FRAME) {
+      svc->ref_frame_index[cpi->lst_fb_idx] = svc->current_superframe;
+      svc->ref_frame_index[cpi->gld_fb_idx] = svc->current_superframe;
+      svc->ref_frame_index[cpi->alt_fb_idx] = svc->current_superframe;
+    } else {
+      if (cpi->refresh_last_frame)
+        svc->ref_frame_index[cpi->lst_fb_idx] = svc->current_superframe;
+      if (cpi->refresh_golden_frame)
+        svc->ref_frame_index[cpi->gld_fb_idx] = svc->current_superframe;
+      if (cpi->refresh_alt_ref_frame)
+        svc->ref_frame_index[cpi->alt_fb_idx] = svc->current_superframe;
+    }
+  }
 }
 
 static void loopfilter_frame(VP9_COMP *cpi, VP9_COMMON *cm) {
   MACROBLOCKD *xd = &cpi->td.mb.e_mbd;
   struct loopfilter *lf = &cm->lf;
+
   if (xd->lossless) {
       lf->filter_level = 0;
   } else {
@@ -2780,6 +2835,8 @@ static void loopfilter_frame(VP9_COMP *cpi, VP9_COMMON *cm) {
   }
 
   if (lf->filter_level > 0) {
+    vp9_build_mask_frame(cm, lf->filter_level, 0);
+
     if (cpi->num_workers > 1)
       vp9_loop_filter_frame_mt(cm->frame_to_show, cm, xd->plane,
                                lf->filter_level, 0, 0,
@@ -2958,7 +3015,7 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
   recon_err = vp9_get_y_sse(cpi->Source, get_frame_new_buffer(cm));
 
   if (cpi->twopass.total_left_stats.coded_error != 0.0)
-    fprintf(f, "%10u %dx%d %d %d %10d %10d %10d %10d"
+    fprintf(f, "%10u %dx%d %10d %10d %d %d %10d %10d %10d %10d"
        "%10"PRId64" %10"PRId64" %5d %5d %10"PRId64" "
        "%10"PRId64" %10"PRId64" %10d "
        "%7.2lf %7.2lf %7.2lf %7.2lf %7.2lf"
@@ -2967,6 +3024,8 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
         "%10lf %8u %10"PRId64" %10d %10d %10d\n",
         cpi->common.current_video_frame,
         cm->width, cm->height,
+        cpi->td.rd_counts.m_search_count,
+        cpi->td.rd_counts.ex_search_count,
         cpi->rc.source_alt_ref_pending,
         cpi->rc.source_alt_ref_active,
         cpi->rc.this_frame_target,
@@ -3096,6 +3155,21 @@ static void set_size_dependent_vars(VP9_COMP *cpi, int *q,
 #endif  // CONFIG_VP9_POSTPROC
 }
 
+#if CONFIG_VP9_TEMPORAL_DENOISING
+static void setup_denoiser_buffer(VP9_COMP *cpi) {
+  VP9_COMMON *const cm = &cpi->common;
+  if (cpi->oxcf.noise_sensitivity > 0 &&
+      !cpi->denoiser.frame_buffer_initialized) {
+    vp9_denoiser_alloc(&(cpi->denoiser), cm->width, cm->height,
+                       cm->subsampling_x, cm->subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                       cm->use_highbitdepth,
+#endif
+                       VP9_ENC_BORDER_IN_PIXELS);
+  }
+}
+#endif
+
 static void init_motion_estimation(VP9_COMP *cpi) {
   int y_stride = cpi->scaled_source.y_stride;
 
@@ -3127,26 +3201,31 @@ static void set_frame_size(VP9_COMP *cpi) {
   if (oxcf->pass == 0 &&
       oxcf->rc_mode == VPX_CBR &&
       !cpi->use_svc &&
-      oxcf->resize_mode == RESIZE_DYNAMIC) {
-      if (cpi->resize_pending == 1) {
-        oxcf->scaled_frame_width =
-            (cm->width * cpi->resize_scale_num) / cpi->resize_scale_den;
-        oxcf->scaled_frame_height =
-            (cm->height * cpi->resize_scale_num) /cpi->resize_scale_den;
-      } else if (cpi->resize_pending == -1) {
-        // Go back up to original size.
-        oxcf->scaled_frame_width = oxcf->width;
-        oxcf->scaled_frame_height = oxcf->height;
-      }
-      if (cpi->resize_pending != 0) {
-        // There has been a change in frame size.
-        vp9_set_size_literal(cpi,
-                             oxcf->scaled_frame_width,
-                             oxcf->scaled_frame_height);
+      oxcf->resize_mode == RESIZE_DYNAMIC &&
+      cpi->resize_pending != 0) {
+    oxcf->scaled_frame_width =
+        (oxcf->width * cpi->resize_scale_num) / cpi->resize_scale_den;
+    oxcf->scaled_frame_height =
+        (oxcf->height * cpi->resize_scale_num) /cpi->resize_scale_den;
+    // There has been a change in frame size.
+    vp9_set_size_literal(cpi,
+                         oxcf->scaled_frame_width,
+                         oxcf->scaled_frame_height);
 
-        // TODO(agrange) Scale cpi->max_mv_magnitude if frame-size has changed.
-        set_mv_search_params(cpi);
-      }
+    // TODO(agrange) Scale cpi->max_mv_magnitude if frame-size has changed.
+    set_mv_search_params(cpi);
+
+    vp9_noise_estimate_init(&cpi->noise_estimate, cm->width, cm->height);
+#if CONFIG_VP9_TEMPORAL_DENOISING
+    // Reset the denoiser on the resized frame.
+    if (cpi->oxcf.noise_sensitivity > 0) {
+      vp9_denoiser_free(&(cpi->denoiser));
+      setup_denoiser_buffer(cpi);
+      // Dynamic resize is only triggered for non-SVC, so we can force
+      // golden frame update here as temporary fix to denoiser.
+      cpi->refresh_golden_frame = 1;
+    }
+#endif
   }
 
   if ((oxcf->pass == 2) &&
@@ -3218,14 +3297,18 @@ static void encode_without_recode_loop(VP9_COMP *cpi,
 
   // Avoid scaling last_source unless its needed.
   // Last source is currently only used for screen-content mode,
-  // or if partition_search_type == SOURCE_VAR_BASED_PARTITION.
+  // if partition_search_type == SOURCE_VAR_BASED_PARTITION, or if noise
+  // estimation is enabled.
   if (cpi->unscaled_last_source != NULL &&
       (cpi->oxcf.content == VP9E_CONTENT_SCREEN ||
-      cpi->sf.partition_search_type == SOURCE_VAR_BASED_PARTITION))
+      cpi->sf.partition_search_type == SOURCE_VAR_BASED_PARTITION ||
+      cpi->noise_estimate.enabled))
     cpi->Last_Source = vp9_scale_if_required(cm,
                                              cpi->unscaled_last_source,
                                              &cpi->scaled_last_source,
                                              (cpi->oxcf.pass == 0));
+
+  vp9_update_noise_estimate(cpi);
 
   if (cpi->oxcf.pass == 0 &&
       cpi->oxcf.rc_mode == VPX_CBR &&
@@ -3619,12 +3702,16 @@ YV12_BUFFER_CONFIG *vp9_scale_if_required(VP9_COMMON *cm,
   if (cm->mi_cols * MI_SIZE != unscaled->y_width ||
       cm->mi_rows * MI_SIZE != unscaled->y_height) {
 #if CONFIG_VP9_HIGHBITDEPTH
-    if (use_normative_scaler)
+    if (use_normative_scaler &&
+        unscaled->y_width <= (scaled->y_width << 1) &&
+        unscaled->y_height <= (scaled->y_height << 1))
       scale_and_extend_frame(unscaled, scaled, (int)cm->bit_depth);
     else
       scale_and_extend_frame_nonnormative(unscaled, scaled, (int)cm->bit_depth);
 #else
-    if (use_normative_scaler)
+    if (use_normative_scaler &&
+        unscaled->y_width <= (scaled->y_width << 1) &&
+        unscaled->y_height <= (scaled->y_height << 1))
       scale_and_extend_frame(unscaled, scaled);
     else
       scale_and_extend_frame_nonnormative(unscaled, scaled);
@@ -3767,14 +3854,17 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi,
   }
 
   // For 1 pass CBR, check if we are dropping this frame.
-  // Never drop on key frame.
+  // For spatial layers, for now only check for frame-dropping on first spatial
+  // layer, and if decision is to drop, we drop whole super-frame.
   if (oxcf->pass == 0 &&
       oxcf->rc_mode == VPX_CBR &&
       cm->frame_type != KEY_FRAME) {
-    if (vp9_rc_drop_frame(cpi)) {
+    if (vp9_rc_drop_frame(cpi) ||
+        (is_one_pass_cbr_svc(cpi) && cpi->svc.rc_drop_superframe == 1)) {
       vp9_rc_postencode_update_drop_frame(cpi);
       ++cm->current_video_frame;
       cpi->ext_refresh_frame_flags_pending = 0;
+      cpi->svc.rc_drop_superframe = 1;
       return;
     }
   }
@@ -3986,21 +4076,6 @@ static void check_initial_width(VP9_COMP *cpi,
     cpi->initial_mbs = cm->MBs;
   }
 }
-
-#if CONFIG_VP9_TEMPORAL_DENOISING
-static void setup_denoiser_buffer(VP9_COMP *cpi) {
-  VP9_COMMON *const cm = &cpi->common;
-  if (cpi->oxcf.noise_sensitivity > 0 &&
-      !cpi->denoiser.frame_buffer_initialized) {
-    vp9_denoiser_alloc(&(cpi->denoiser), cm->width, cm->height,
-                       cm->subsampling_x, cm->subsampling_y,
-#if CONFIG_VP9_HIGHBITDEPTH
-                       cm->use_highbitdepth,
-#endif
-                       VP9_ENC_BORDER_IN_PIXELS);
-  }
-}
-#endif
 
 int vp9_receive_raw_frame(VP9_COMP *cpi, unsigned int frame_flags,
                           YV12_BUFFER_CONFIG *sd, int64_t time_stamp,
@@ -4271,7 +4346,8 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
       // non-zero spatial layer, it should not be an intra picture.
       // TODO(Won Kap): this needs to change if per-layer intra frame is
       // allowed.
-      if ((source->flags & VPX_EFLAG_FORCE_KF) && cpi->svc.spatial_layer_id) {
+      if ((source->flags & VPX_EFLAG_FORCE_KF) &&
+          cpi->svc.spatial_layer_id > cpi->svc.first_spatial_layer_to_encode) {
         source->flags &= ~(unsigned int)(VPX_EFLAG_FORCE_KF);
       }
 

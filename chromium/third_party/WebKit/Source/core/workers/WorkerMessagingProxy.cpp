@@ -25,7 +25,6 @@
  *
  */
 
-#include "config.h"
 
 #include "core/workers/WorkerMessagingProxy.h"
 
@@ -74,7 +73,7 @@ void processMessageOnWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message
 
 WorkerMessagingProxy::WorkerMessagingProxy(InProcessWorkerBase* workerObject, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_executionContext(workerObject->executionContext())
-    , m_workerObjectProxy(WorkerObjectProxy::create(m_executionContext.get(), this))
+    , m_workerObjectProxy(WorkerObjectProxy::create(this))
     , m_workerObject(workerObject)
     , m_mayBeDestroyed(false)
     , m_unconfirmedMessageCount(0)
@@ -140,7 +139,7 @@ void WorkerMessagingProxy::postMessageToWorkerGlobalScope(PassRefPtr<SerializedS
     OwnPtr<ExecutionContextTask> task = createCrossThreadTask(&processMessageOnWorkerGlobalScope, message, channels, AllowCrossThreadAccess(&workerObjectProxy()));
     if (m_workerThread) {
         ++m_unconfirmedMessageCount;
-        m_workerThread->postTask(FROM_HERE, task.release());
+        m_workerThread->postTask(BLINK_FROM_HERE, task.release());
     } else {
         m_queuedEarlyTasks.append(task.release());
     }
@@ -152,7 +151,7 @@ bool WorkerMessagingProxy::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionConte
         return false;
 
     ASSERT(m_workerThread);
-    m_workerThread->postTask(FROM_HERE, task);
+    m_workerThread->postTask(BLINK_FROM_HERE, task);
     return true;
 }
 
@@ -160,7 +159,7 @@ void WorkerMessagingProxy::postTaskToLoader(PassOwnPtr<ExecutionContextTask> tas
 {
     // FIXME: In case of nested workers, this should go directly to the root Document context.
     ASSERT(m_executionContext->isDocument());
-    m_executionContext->postTask(FROM_HERE, task);
+    m_executionContext->postTask(BLINK_FROM_HERE, task);
 }
 
 void WorkerMessagingProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId)
@@ -202,7 +201,7 @@ void WorkerMessagingProxy::workerThreadCreated(PassRefPtr<WorkerThread> workerTh
     m_workerThreadHadPendingActivity = true; // Worker initialization means a pending activity.
 
     for (auto& earlyTasks : m_queuedEarlyTasks)
-        m_workerThread->postTask(FROM_HERE, earlyTasks.release());
+        m_workerThread->postTask(BLINK_FROM_HERE, earlyTasks.release());
     m_queuedEarlyTasks.clear();
 }
 
@@ -213,7 +212,7 @@ void WorkerMessagingProxy::workerObjectDestroyed()
     // before this method gets called.
     ASSERT(!m_workerObject);
 
-    m_executionContext->postTask(FROM_HERE, createCrossThreadTask(&WorkerMessagingProxy::workerObjectDestroyedInternal, this));
+    m_executionContext->postTask(BLINK_FROM_HERE, createCrossThreadTask(&WorkerMessagingProxy::workerObjectDestroyedInternal, this));
 }
 
 void WorkerMessagingProxy::workerObjectDestroyedInternal()

@@ -29,13 +29,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/forms/BaseButtonInputType.h"
 
 #include "core/HTMLNames.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutButton.h"
 
 namespace blink {
@@ -45,12 +45,17 @@ using namespace HTMLNames;
 void BaseButtonInputType::createShadowSubtree()
 {
     ASSERT(element().userAgentShadowRoot());
-    element().userAgentShadowRoot()->appendChild(Text::create(element().document(), element().valueWithDefault()));
+    element().userAgentShadowRoot()->appendChild(Text::create(element().document(), displayValue()));
 }
 
 void BaseButtonInputType::valueAttributeChanged()
 {
-    toText(element().userAgentShadowRoot()->firstChild())->setData(element().valueWithDefault());
+    toText(element().userAgentShadowRoot()->firstChild())->setData(displayValue());
+}
+
+String BaseButtonInputType::displayValue() const
+{
+    return element().valueWithDefault().removeCharacters(isHTMLLineBreak);
 }
 
 bool BaseButtonInputType::shouldSaveAndRestoreFormControlState() const

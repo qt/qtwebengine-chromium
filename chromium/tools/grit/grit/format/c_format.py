@@ -45,7 +45,7 @@ def Format(root, lang='en', output_dir='.'):
       if isinstance(item, message.MessageNode):
         yield _FormatMessage(item, lang)
 
-  yield '\n    default:\n      return 0;\n  }\n}'
+  yield '\n    default:\n      return 0;\n  }\n}\n'
 
 
 def _HexToOct(match):

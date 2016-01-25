@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/fetch/TextResource.h"
 
 #include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
@@ -34,9 +34,15 @@ String TextResource::decodedText() const
 {
     ASSERT(m_data);
 
-    String text = m_decoder->decode(m_data->data(), encodedSize());
-    text.append(m_decoder->flush());
-    return text;
+    StringBuilder builder;
+    const char* data;
+    size_t position = 0;
+    while (size_t length = m_data->getSomeData(data, position)) {
+        builder.append(m_decoder->decode(data, length));
+        position += length;
+    }
+    builder.append(m_decoder->flush());
+    return builder.toString();
 }
 
 } // namespace blink

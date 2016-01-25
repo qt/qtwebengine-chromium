@@ -23,7 +23,6 @@
  *
  */
 
-#include "config.h"
 #include "core/style/StyleGridData.h"
 
 #include "core/style/ComputedStyle.h"
@@ -43,6 +42,8 @@ StyleGridData::StyleGridData()
     , m_namedGridArea(ComputedStyle::initialNamedGridArea())
     , m_namedGridAreaRowCount(ComputedStyle::initialNamedGridAreaCount())
     , m_namedGridAreaColumnCount(ComputedStyle::initialNamedGridAreaCount())
+    , m_gridColumnGap(ComputedStyle::initialGridColumnGap())
+    , m_gridRowGap(ComputedStyle::initialGridRowGap())
 {
 }
 
@@ -60,6 +61,8 @@ StyleGridData::StyleGridData(const StyleGridData& o)
     , m_namedGridArea(o.m_namedGridArea)
     , m_namedGridAreaRowCount(o.m_namedGridAreaRowCount)
     , m_namedGridAreaColumnCount(o.m_namedGridAreaColumnCount)
+    , m_gridColumnGap(o.m_gridColumnGap)
+    , m_gridRowGap(o.m_gridRowGap)
 {
 }
 

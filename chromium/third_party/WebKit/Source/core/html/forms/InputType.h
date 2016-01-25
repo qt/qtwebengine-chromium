@@ -54,7 +54,7 @@ class FormData;
 // FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
 class CORE_EXPORT InputType : public InputTypeView {
     WTF_MAKE_NONCOPYABLE(InputType);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InputType);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InputType);
 
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&, const AtomicString&);
@@ -136,6 +136,7 @@ public:
     // Returing the null string means "use the default value."
     // This function must be called only by HTMLInputElement::sanitizeValue().
     virtual String sanitizeValue(const String&) const;
+    virtual String sanitizeUserInputValue(const String&) const;
     virtual void warnIfValueIsInvalid(const String&) const;
     void warnIfValueIsInvalidAndElementIsVisible(const String&) const;
 
@@ -211,6 +212,7 @@ public:
     bool hasCustomFocusLogic() const override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
+    virtual void dispatchSearchEvent();
 
     // For test purpose
     virtual ColorChooserClient* colorChooserClient();

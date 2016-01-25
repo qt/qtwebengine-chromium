@@ -25,8 +25,6 @@
 #ifndef MediaStreamAudioSourceNode_h
 #define MediaStreamAudioSourceNode_h
 
-#if ENABLE(WEB_AUDIO)
-
 #include "modules/mediastream/MediaStream.h"
 #include "modules/webaudio/AudioSourceNode.h"
 #include "platform/audio/AudioSourceProvider.h"
@@ -89,7 +87,5 @@ private:
 };
 
 } // namespace blink
-
-#endif // ENABLE(WEB_AUDIO)
 
 #endif // MediaStreamAudioSourceNode_h

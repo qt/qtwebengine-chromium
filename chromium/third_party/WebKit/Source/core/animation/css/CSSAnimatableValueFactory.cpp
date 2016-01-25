@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 
 #include "core/CSSValueKeywords.h"
@@ -44,6 +43,7 @@
 #include "core/animation/animatable/AnimatableLengthPoint.h"
 #include "core/animation/animatable/AnimatableLengthPoint3D.h"
 #include "core/animation/animatable/AnimatableLengthSize.h"
+#include "core/animation/animatable/AnimatablePath.h"
 #include "core/animation/animatable/AnimatableRepeatable.h"
 #include "core/animation/animatable/AnimatableSVGPaint.h"
 #include "core/animation/animatable/AnimatableShadow.h"
@@ -71,8 +71,6 @@ static PassRefPtr<AnimatableValue> createFromLengthWithZoom(const Length& length
     case Calculated:
         return AnimatableLength::create(length, zoom);
     case Auto:
-    case Intrinsic:
-    case MinIntrinsic:
     case MinContent:
     case MaxContent:
     case FillAvailable:
@@ -249,6 +247,11 @@ inline static PassRefPtr<AnimatableValue> createFromShapeValue(ShapeValue* value
     return AnimatableUnknown::create(CSSValueNone);
 }
 
+static PassRefPtr<AnimatableValue> createFromPath(StylePath* path)
+{
+    return AnimatablePath::create(path);
+}
+
 static double fontStretchToDouble(FontStretch fontStretch)
 {
     return static_cast<unsigned>(fontStretch);
@@ -367,7 +370,7 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return AnimatableShadow::create(style.boxShadow(), style.color());
     case CSSPropertyClip:
         if (style.hasAutoClip())
-            return AnimatableUnknown::create(CSSPrimitiveValue::create(CSSValueAuto));
+            return AnimatableUnknown::create(CSSPrimitiveValue::createIdentifier(CSSValueAuto));
         return createFromLengthBox(style.clip(), style);
     case CSSPropertyColor:
         return createFromColor(property, style);
@@ -575,6 +578,8 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return AnimatableUnknown::create(CSSPrimitiveValue::create(style.verticalAlign()));
     case CSSPropertyVisibility:
         return AnimatableVisibility::create(style.visibility());
+    case CSSPropertyD:
+        return createFromPath(style.svgStyle().d());
     case CSSPropertyCx:
         return createFromLength(style.svgStyle().cx(), style);
     case CSSPropertyCy:

@@ -31,7 +31,10 @@
 #define FontCache_h
 
 #include "platform/PlatformExport.h"
+#include "platform/fonts/FallbackListCompositeKey.h"
+#include "platform/fonts/FontCacheKey.h"
 #include "platform/fonts/FontFaceCreationParams.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
@@ -55,7 +58,9 @@ class FontFaceCreationParams;
 class FontPlatformData;
 class FontDescription;
 class OpenTypeVerticalData;
+class ShapeCache;
 class SimpleFontData;
+class WebProcessMemoryDump;
 
 enum ShouldRetain { Retain, DoNotRetain };
 enum PurgeSeverity { PurgeIfNeeded, ForcePurge };
@@ -63,7 +68,7 @@ enum PurgeSeverity { PurgeIfNeeded, ForcePurge };
 class PLATFORM_EXPORT FontCache {
     friend class FontCachePurgePreventer;
 
-    WTF_MAKE_NONCOPYABLE(FontCache); WTF_MAKE_FAST_ALLOCATED(FontCache);
+    WTF_MAKE_NONCOPYABLE(FontCache); USING_FAST_MALLOC(FontCache);
 public:
     static FontCache* fontCache();
 
@@ -80,6 +85,13 @@ public:
     PassRefPtr<SimpleFontData> getLastResortFallbackFont(const FontDescription&, ShouldRetain = Retain);
     SimpleFontData* getNonRetainedLastResortFallbackFont(const FontDescription&);
     bool isPlatformFontAvailable(const FontDescription&, const AtomicString&);
+
+    // Returns the ShapeCache instance associated with the given cache key.
+    // Creates a new instance as needed and as such is guaranteed not to return
+    // a nullptr. Instances are managed by FontCache and are only guaranteed to
+    // be valid for the duration of the current session, as controlled by
+    // disable/enablePurging.
+    ShapeCache* getShapeCache(const FallbackListCompositeKey&);
 
     void addClient(FontCacheClient*);
 #if !ENABLE(OILPAN)
@@ -129,6 +141,12 @@ public:
 #endif
     PassRefPtr<SimpleFontData> fontDataFromFontPlatformData(const FontPlatformData*, ShouldRetain = Retain);
 
+    void invalidateShapeCache();
+
+    // Memory reporting
+    void dumpFontPlatformDataCache(WebProcessMemoryDump*);
+    void dumpShapeResultCache(WebProcessMemoryDump*);
+
 private:
     FontCache();
     ~FontCache();
@@ -147,7 +165,7 @@ private:
     FontPlatformData* getFontPlatformData(const FontDescription&, const FontFaceCreationParams&, bool checkingAlternateName = false);
 
     // These methods are implemented by each platform.
-    FontPlatformData* createFontPlatformData(const FontDescription&, const FontFaceCreationParams&, float fontSize);
+    PassOwnPtr<FontPlatformData> createFontPlatformData(const FontDescription&, const FontFaceCreationParams&, float fontSize);
 
     // Implemented on skia platforms.
     PassRefPtr<SkTypeface> createTypeface(const FontDescription&, const FontFaceCreationParams&, CString& name);
@@ -178,6 +196,8 @@ private:
 };
 
 class PLATFORM_EXPORT FontCachePurgePreventer {
+    USING_FAST_MALLOC(FontCachePurgePreventer);
+    WTF_MAKE_NONCOPYABLE(FontCachePurgePreventer);
 public:
     FontCachePurgePreventer() { FontCache::fontCache()->disablePurging(); }
     ~FontCachePurgePreventer() { FontCache::fontCache()->enablePurging(); }

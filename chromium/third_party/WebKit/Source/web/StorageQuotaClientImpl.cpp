@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/StorageQuotaClientImpl.h"
 
 #include "bindings/core/v8/ScriptPromise.h"
@@ -69,7 +68,7 @@ void StorageQuotaClientImpl::requestQuota(ExecutionContext* executionContext, We
         webFrame->client()->requestStorageQuota(webFrame, storageType, newQuotaInBytes, callbacks);
     } else {
         // Requesting quota in Worker is not supported.
-        executionContext->postTask(FROM_HERE, StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
+        executionContext->postTask(BLINK_FROM_HERE, StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
     }
 }
 

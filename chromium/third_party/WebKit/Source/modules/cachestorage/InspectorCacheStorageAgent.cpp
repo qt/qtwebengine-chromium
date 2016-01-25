@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/cachestorage/InspectorCacheStorageAgent.h"
 
 #include "core/InspectorBackendDispatcher.h"
@@ -416,8 +415,7 @@ void InspectorCacheStorageAgent::requestCacheNames(ErrorString* errorString, con
     RefPtr<SecurityOrigin> secOrigin = SecurityOrigin::createFromString(securityOrigin);
 
     // Cache Storage API is restricted to trustworthy origins.
-    String ignoredMessage;
-    if (!secOrigin->isPotentiallyTrustworthy(ignoredMessage)) {
+    if (!secOrigin->isPotentiallyTrustworthy()) {
         // Don't treat this as an error, just don't attempt to open and enumerate the caches.
         callback->sendSuccess(Array<TypeBuilder::CacheStorage::Cache>::create());
         return;

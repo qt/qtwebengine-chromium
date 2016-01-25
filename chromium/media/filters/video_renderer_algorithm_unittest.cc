@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <cmath>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "media/base/timestamp_constants.h"
@@ -570,6 +574,7 @@ TEST_F(VideoRendererAlgorithmTest, EffectiveFramesQueuedWithoutCadence) {
   algorithm_.EnqueueFrame(CreateFrame(tg.interval(3)));
   EXPECT_EQ(4u, algorithm_.EffectiveFramesQueued());
   EXPECT_EQ(4u, frames_queued());
+  EXPECT_EQ(384, algorithm_.GetMemoryUsage());
 
   // Issue a render call that should drop the first two frames and mark the 3rd
   // as consumed.
@@ -582,6 +587,7 @@ TEST_F(VideoRendererAlgorithmTest, EffectiveFramesQueuedWithoutCadence) {
   EXPECT_EQ(tg.interval(2), frame->timestamp());
   EXPECT_EQ(1u, algorithm_.EffectiveFramesQueued());
   EXPECT_EQ(2u, frames_queued());
+  EXPECT_EQ(192, algorithm_.GetMemoryUsage());
 
   // Rendering one more frame should return 0 effective frames queued.
   frame = RenderAndStep(&tg, &frames_dropped);
@@ -591,6 +597,7 @@ TEST_F(VideoRendererAlgorithmTest, EffectiveFramesQueuedWithoutCadence) {
   EXPECT_EQ(tg.interval(3), frame->timestamp());
   EXPECT_EQ(0u, algorithm_.EffectiveFramesQueued());
   EXPECT_EQ(1u, frames_queued());
+  EXPECT_EQ(96, algorithm_.GetMemoryUsage());
 }
 
 // The maximum acceptable drift should be updated once we have two frames.
@@ -1136,7 +1143,8 @@ TEST_F(VideoRendererAlgorithmTest, RemoveExpiredFramesCadence) {
   EXPECT_EQ(0u, algorithm_.EffectiveFramesQueued());
 }
 
-TEST_F(VideoRendererAlgorithmTest, CadenceBasedTest) {
+// TODO(crbug.com/570032): Test disabled for being flaky.
+TEST_F(VideoRendererAlgorithmTest, DISABLED_CadenceBasedTest) {
   // Common display rates.
   const double kDisplayRates[] = {
       NTSC(24),
@@ -1177,7 +1185,7 @@ TEST_F(VideoRendererAlgorithmTest, CadenceBasedTest) {
 }
 
 // Rotate through various playback rates and ensure algorithm adapts correctly.
-TEST_F(VideoRendererAlgorithmTest, VariableFrameRateCadence) {
+TEST_F(VideoRendererAlgorithmTest, VariablePlaybackRateCadence) {
   TickGenerator frame_tg(base::TimeTicks(), NTSC(30));
   TickGenerator display_tg(tick_clock_->NowTicks(), 60);
 
@@ -1236,6 +1244,51 @@ TEST_F(VideoRendererAlgorithmTest, UglyTimestampsHaveCadence) {
     if (cadence_detected)
       ASSERT_TRUE(is_using_cadence());
   }
+}
+
+// Ensures media with variable frame rate should not be applied with Cadence.
+TEST_F(VideoRendererAlgorithmTest, VariableFrameRateNoCadence) {
+  TickGenerator display_tg(tick_clock_->NowTicks(), 60);
+  time_source_.StartTicking();
+
+  const int kBadTimestampsMs[] = {200,  200,  200,  200,  200,  1000,
+                                  1000, 1000, 1000, 200,  200,  200,
+                                  200,  200,  1000, 1000, 1000, 1000};
+
+  // Run throught ~10 seconds worth of frames.
+  bool cadence_detected = false;
+  bool cadence_turned_off = false;
+  base::TimeDelta timestamp;
+  for (size_t i = 0; i < arraysize(kBadTimestampsMs);) {
+    while (algorithm_.EffectiveFramesQueued() < 3) {
+      algorithm_.EnqueueFrame(CreateFrame(timestamp));
+      timestamp += base::TimeDelta::FromMilliseconds(
+          kBadTimestampsMs[i % arraysize(kBadTimestampsMs)]);
+      ++i;
+    }
+
+    size_t frames_dropped = 0;
+    RenderAndStep(&display_tg, &frames_dropped);
+    ASSERT_EQ(0u, frames_dropped);
+
+    // Cadence would be detected during the first second, and then
+    // it should be off due to variable FPS detection, and then for this
+    // sample, it should never be on.
+    if (is_using_cadence())
+      cadence_detected = true;
+
+    if (cadence_detected) {
+      if (!is_using_cadence())
+        cadence_turned_off = true;
+    }
+
+    if (cadence_turned_off) {
+      ASSERT_FALSE(is_using_cadence());
+    }
+  }
+
+  // Make sure Cadence is turned off somewhen, not always on.
+  ASSERT_TRUE(cadence_turned_off);
 }
 
 TEST_F(VideoRendererAlgorithmTest, EnqueueFrames) {

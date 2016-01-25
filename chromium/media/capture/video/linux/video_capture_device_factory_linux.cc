@@ -6,16 +6,20 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#if defined(OS_OPENBSD)
-#include <sys/videoio.h>
-#else
-#include <linux/videodev2.h>
-#endif
+#include <stdint.h>
 #include <sys/ioctl.h>
 
 #include "base/files/file_enumerator.h"
 #include "base/files/scoped_file.h"
 #include "base/posix/eintr_wrapper.h"
+#include "build/build_config.h"
+
+#if defined(OS_OPENBSD)
+#include <sys/videoio.h>
+#else
+#include <linux/videodev2.h>
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "media/capture/video/linux/video_capture_device_chromeos.h"
 #endif
@@ -23,7 +27,7 @@
 
 namespace media {
 
-static bool HasUsableFormats(int fd, uint32 capabilities) {
+static bool HasUsableFormats(int fd, uint32_t capabilities) {
   const std::list<uint32_t>& usable_fourccs =
       VideoCaptureDeviceLinux::GetListOfUsableFourCCs(false);
 
@@ -51,9 +55,9 @@ static bool HasUsableFormats(int fd, uint32 capabilities) {
 }
 
 static std::list<float> GetFrameRateList(int fd,
-                                         uint32 fourcc,
-                                         uint32 width,
-                                         uint32 height) {
+                                         uint32_t fourcc,
+                                         uint32_t width,
+                                         uint32_t height) {
   std::list<float> frame_rates;
 
   v4l2_frmivalenum frame_interval = {};

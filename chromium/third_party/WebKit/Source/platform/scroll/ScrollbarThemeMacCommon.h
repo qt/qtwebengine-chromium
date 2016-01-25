@@ -39,16 +39,16 @@ class PLATFORM_EXPORT ScrollbarThemeMacCommon : public ScrollbarTheme {
 public:
     ~ScrollbarThemeMacCommon() override;
 
-    void registerScrollbar(ScrollbarThemeClient*) override;
-    void unregisterScrollbar(ScrollbarThemeClient*) override;
-    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw, bool scrollAnimationEnabled, ScrollbarButtonsPlacement);
+    void registerScrollbar(ScrollbarThemeClient&) override;
+    void unregisterScrollbar(ScrollbarThemeClient&) override;
+    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw, bool scrollAnimationEnabled, WebScrollbarButtonsPlacement);
 
     bool supportsControlTints() const override { return true; }
 
     double initialAutoscrollTimerDelay() override;
     double autoscrollTimerDelay() override;
 
-    void paintTickmarks(GraphicsContext*, const ScrollbarThemeClient*, const IntRect&) override;
+    void paintTickmarks(GraphicsContext&, const ScrollbarThemeClient&, const IntRect&) override;
 
     static NSScrollerStyle recommendedScrollerStyle();
 
@@ -59,12 +59,12 @@ public:
 protected:
     int maxOverlapBetweenPages() override { return 40; }
 
-    bool shouldDragDocumentInsteadOfThumb(const ScrollbarThemeClient*, const PlatformMouseEvent&) override;
+    bool shouldDragDocumentInsteadOfThumb(const ScrollbarThemeClient&, const PlatformMouseEvent&) override;
     int scrollbarPartToHIPressedState(ScrollbarPart);
 
-    virtual void updateButtonPlacement(ScrollbarButtonsPlacement) {}
+    virtual void updateButtonPlacement(WebScrollbarButtonsPlacement) {}
 
-    void paintGivenTickmarks(SkCanvas*, const ScrollbarThemeClient*, const IntRect&, const Vector<IntRect>&);
+    void paintGivenTickmarks(SkCanvas*, const ScrollbarThemeClient&, const IntRect&, const Vector<IntRect>&);
 
     RefPtr<Pattern> m_overhangPattern;
 };

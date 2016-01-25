@@ -4,11 +4,14 @@
 
 #include "content/browser/loader/upload_data_stream_builder.h"
 
+#include <stdint.h>
+
 #include <limits>
 #include <utility>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/fileapi/upload_file_system_file_element_reader.h"
 #include "content/common/resource_request_body.h"
@@ -77,47 +80,46 @@ scoped_ptr<net::UploadDataStream> UploadDataStreamBuilder::Build(
     storage::BlobStorageContext* blob_context,
     storage::FileSystemContext* file_system_context,
     base::SingleThreadTaskRunner* file_task_runner) {
-  ScopedVector<net::UploadElementReader> element_readers;
+  std::vector<scoped_ptr<net::UploadElementReader>> element_readers;
   for (const auto& element : *body->elements()) {
     switch (element.type()) {
       case ResourceRequestBody::Element::TYPE_BYTES:
-        element_readers.push_back(new BytesElementReader(body, element));
+        element_readers.push_back(
+            make_scoped_ptr(new BytesElementReader(body, element)));
         break;
       case ResourceRequestBody::Element::TYPE_FILE:
-        element_readers.push_back(
-            new FileElementReader(body, file_task_runner, element));
+        element_readers.push_back(make_scoped_ptr(
+            new FileElementReader(body, file_task_runner, element)));
         break;
       case ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM:
         // If |body| contains any filesystem URLs, the caller should have
         // supplied a FileSystemContext.
         DCHECK(file_system_context);
         element_readers.push_back(
-            new content::UploadFileSystemFileElementReader(
-                file_system_context,
-                element.filesystem_url(),
-                element.offset(),
-                element.length(),
-                element.expected_modification_time()));
+            make_scoped_ptr(new content::UploadFileSystemFileElementReader(
+                file_system_context, element.filesystem_url(), element.offset(),
+                element.length(), element.expected_modification_time())));
         break;
       case ResourceRequestBody::Element::TYPE_BLOB: {
         DCHECK_EQ(std::numeric_limits<uint64_t>::max(), element.length());
         DCHECK_EQ(0ul, element.offset());
         scoped_ptr<storage::BlobDataHandle> handle =
             blob_context->GetBlobDataFromUUID(element.blob_uuid());
-        element_readers.push_back(new storage::UploadBlobElementReader(
-            handle.Pass(), file_system_context, file_task_runner));
+        element_readers.push_back(
+            make_scoped_ptr(new storage::UploadBlobElementReader(
+                std::move(handle), file_system_context, file_task_runner)));
         break;
       }
       case ResourceRequestBody::Element::TYPE_DISK_CACHE_ENTRY:
+      case ResourceRequestBody::Element::TYPE_BYTES_DESCRIPTION:
       case ResourceRequestBody::Element::TYPE_UNKNOWN:
         NOTREACHED();
         break;
     }
   }
 
-  return make_scoped_ptr(
-      new net::ElementsUploadDataStream(element_readers.Pass(),
-                                        body->identifier()));
+  return make_scoped_ptr(new net::ElementsUploadDataStream(
+      std::move(element_readers), body->identifier()));
 }
 
 }  // namespace content

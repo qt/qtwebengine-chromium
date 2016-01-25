@@ -5,6 +5,7 @@
 #ifndef NET_SSL_THREADED_SSL_PRIVATE_KEY_H_
 #define NET_SSL_THREADED_SSL_PRIVATE_KEY_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
@@ -38,7 +39,7 @@ class ThreadedSSLPrivateKey : public SSLPrivateKey {
     virtual std::vector<SSLPrivateKey::Hash> GetDigestPreferences() = 0;
     virtual size_t GetMaxSignatureLengthInBytes() = 0;
 
-    // Signs |input| as a digest of type |hash|. On sucess it returns OK and
+    // Signs |input| as a digest of type |hash|. On success it returns OK and
     // sets |signature| to the resulting signature. Otherwise it returns a net
     // error code. It will only be called on the task runner passed to the
     // owning ThreadedSSLPrivateKey.
@@ -52,7 +53,6 @@ class ThreadedSSLPrivateKey : public SSLPrivateKey {
 
   ThreadedSSLPrivateKey(scoped_ptr<Delegate> delegate,
                         scoped_refptr<base::TaskRunner> task_runner);
-  ~ThreadedSSLPrivateKey() override;
 
   // SSLPrivateKey implementation.
   Type GetType() override;
@@ -63,6 +63,7 @@ class ThreadedSSLPrivateKey : public SSLPrivateKey {
                   const SignCallback& callback) override;
 
  private:
+  ~ThreadedSSLPrivateKey() override;
   class Core;
 
   scoped_refptr<Core> core_;

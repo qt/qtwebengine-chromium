@@ -5,9 +5,12 @@
 #include "ui/base/ime/remote_input_method_win.h"
 
 #include <InputScope.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/scoped_observer.h"
 #include "base/strings/string16.h"
@@ -79,8 +82,8 @@ class MockTextInputClient : public DummyTextInputClient {
   void SetCompositionText(const ui::CompositionText& composition) override {
     ++call_count_set_composition_text_;
   }
-  void InsertChar(base::char16 ch, int flags) override {
-    inserted_text_.append(1, ch);
+  void InsertChar(const ui::KeyEvent& event) override {
+    inserted_text_.append(1, event.GetCharacter());
     ++call_count_insert_char_;
   }
   void InsertText(const base::string16& text) override {
@@ -94,7 +97,7 @@ class MockTextInputClient : public DummyTextInputClient {
     return text_input_mode_;
   }
   gfx::Rect GetCaretBounds() const override { return caret_bounds_; }
-  bool GetCompositionCharacterBounds(uint32 index,
+  bool GetCompositionCharacterBounds(uint32_t index,
                                      gfx::Rect* rect) const override {
     // Emulate the situation of crbug.com/328237.
     if (emulate_pepper_flash_)
@@ -164,9 +167,7 @@ class MockRemoteInputMethodDelegateWin
   bool text_input_client_updated_called() const {
     return text_input_client_updated_called_;
   }
-  const std::vector<int32>& input_scopes() const {
-    return input_scopes_;
-  }
+  const std::vector<int32_t>& input_scopes() const { return input_scopes_; }
   const std::vector<gfx::Rect>& composition_character_bounds() const {
     return composition_character_bounds_;
   }
@@ -181,7 +182,7 @@ class MockRemoteInputMethodDelegateWin
   void CancelComposition() override { cancel_composition_called_ = true; }
 
   void OnTextInputClientUpdated(
-      const std::vector<int32>& input_scopes,
+      const std::vector<int32_t>& input_scopes,
       const std::vector<gfx::Rect>& composition_character_bounds) override {
     text_input_client_updated_called_ = true;
     input_scopes_ = input_scopes;
@@ -190,7 +191,7 @@ class MockRemoteInputMethodDelegateWin
 
   bool cancel_composition_called_;
   bool text_input_client_updated_called_;
-  std::vector<int32> input_scopes_;
+  std::vector<int32_t> input_scopes_;
   std::vector<gfx::Rect> composition_character_bounds_;
   DISALLOW_COPY_AND_ASSIGN(MockRemoteInputMethodDelegateWin);
 };
@@ -335,10 +336,10 @@ TEST(RemoteInputMethodWinTest, SetFocusedTextInputClient) {
 
   // Initial state must be synced.
   EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
-  ASSERT_EQ(1, mock_remote_delegate.composition_character_bounds().size());
+  ASSERT_EQ(1u, mock_remote_delegate.composition_character_bounds().size());
   EXPECT_EQ(gfx::Rect(10, 0, 10, 20),
             mock_remote_delegate.composition_character_bounds()[0]);
-  ASSERT_EQ(1, mock_remote_delegate.input_scopes().size());
+  ASSERT_EQ(1u, mock_remote_delegate.input_scopes().size());
   EXPECT_EQ(IS_URL, mock_remote_delegate.input_scopes()[0]);
 
   // State must be cleared by SetFocusedTextInputClient(NULL).
@@ -366,10 +367,10 @@ TEST(RemoteInputMethodWinTest, DetachTextInputClient) {
 
   // Initial state must be synced.
   EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
-  ASSERT_EQ(1, mock_remote_delegate.composition_character_bounds().size());
+  ASSERT_EQ(1u, mock_remote_delegate.composition_character_bounds().size());
   EXPECT_EQ(gfx::Rect(10, 0, 10, 20),
     mock_remote_delegate.composition_character_bounds()[0]);
-  ASSERT_EQ(1, mock_remote_delegate.input_scopes().size());
+  ASSERT_EQ(1u, mock_remote_delegate.input_scopes().size());
   EXPECT_EQ(IS_URL, mock_remote_delegate.input_scopes()[0]);
 
   // State must be cleared by DetachTextInputClient
@@ -399,7 +400,7 @@ TEST(RemoteInputMethodWinTest, OnCaretBoundsChanged) {
 
   // Initial state must be synced.
   EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
-  ASSERT_EQ(1, mock_remote_delegate.composition_character_bounds().size());
+  ASSERT_EQ(1u, mock_remote_delegate.composition_character_bounds().size());
   EXPECT_EQ(gfx::Rect(10, 0, 10, 20),
       mock_remote_delegate.composition_character_bounds()[0]);
 
@@ -414,7 +415,7 @@ TEST(RemoteInputMethodWinTest, OnCaretBoundsChanged) {
   mock_text_input_client.set_caret_bounds(gfx::Rect(10, 20, 30, 40));
   input_method->OnCaretBoundsChanged(&mock_text_input_client);
   EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
-  ASSERT_EQ(1, mock_remote_delegate.composition_character_bounds().size());
+  ASSERT_EQ(1u, mock_remote_delegate.composition_character_bounds().size());
   EXPECT_EQ(gfx::Rect(10, 20, 30, 40),
       mock_remote_delegate.composition_character_bounds()[0]);
 
@@ -484,7 +485,7 @@ TEST(RemoteInputMethodWinTest, OnTextInputTypeChanged) {
 
   // Initial state must be synced.
   EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
-  ASSERT_EQ(1, mock_remote_delegate.input_scopes().size());
+  ASSERT_EQ(1u, mock_remote_delegate.input_scopes().size());
   EXPECT_EQ(IS_URL, mock_remote_delegate.input_scopes()[0]);
 
   // Check TEXT_INPUT_TYPE_NONE is handled.
@@ -616,7 +617,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_FabricatedKeyDown) {
   input_method->DispatchKeyEvent(&fabricated_keydown);
   EXPECT_TRUE(fabricated_keydown.handled());
   EXPECT_TRUE(mock_text_input_client.inserted_text().empty());
-  ASSERT_EQ(1, delegate_.fabricated_key_events().size());
+  ASSERT_EQ(1u, delegate_.fabricated_key_events().size());
   EXPECT_EQ(L'A', delegate_.fabricated_key_events()[0]);
   delegate_.Reset();
   mock_text_input_client.Reset();
@@ -632,7 +633,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_FabricatedKeyDown) {
   input_method->DispatchKeyEvent(&fabricated_keydown);
   EXPECT_TRUE(fabricated_keydown.handled());
   EXPECT_TRUE(mock_text_input_client.inserted_text().empty());
-  ASSERT_EQ(1, delegate_.fabricated_key_events().size());
+  ASSERT_EQ(1u, delegate_.fabricated_key_events().size());
   EXPECT_EQ(L'A', delegate_.fabricated_key_events()[0]);
   delegate_.Reset();
   mock_text_input_client.Reset();
@@ -643,7 +644,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_FabricatedKeyDown) {
   input_method->DispatchKeyEvent(&fabricated_keydown);
   EXPECT_TRUE(fabricated_keydown.handled());
   EXPECT_TRUE(mock_text_input_client.inserted_text().empty());
-  ASSERT_EQ(1, delegate_.fabricated_key_events().size());
+  ASSERT_EQ(1u, delegate_.fabricated_key_events().size());
   EXPECT_EQ(L'A', delegate_.fabricated_key_events()[0]);
   delegate_.Reset();
   mock_text_input_client.Reset();
@@ -718,7 +719,7 @@ TEST(RemoteInputMethodWinTest, OnCompositionChanged) {
   // TextInputClient is not focused yet here.
 
   private_ptr->OnCompositionChanged(composition_text);
-  EXPECT_EQ(0, mock_text_input_client.call_count_set_composition_text());
+  EXPECT_EQ(0u, mock_text_input_client.call_count_set_composition_text());
   delegate_.Reset();
   mock_text_input_client.Reset();
 
@@ -727,7 +728,7 @@ TEST(RemoteInputMethodWinTest, OnCompositionChanged) {
   // TextInputClient is now focused here.
 
   private_ptr->OnCompositionChanged(composition_text);
-  EXPECT_EQ(1, mock_text_input_client.call_count_set_composition_text());
+  EXPECT_EQ(1u, mock_text_input_client.call_count_set_composition_text());
   delegate_.Reset();
   mock_text_input_client.Reset();
 }
@@ -749,8 +750,8 @@ TEST(RemoteInputMethodWinTest, OnTextCommitted) {
 
   mock_text_input_client.set_text_input_type(TEXT_INPUT_TYPE_TEXT);
   private_ptr->OnTextCommitted(committed_text);
-  EXPECT_EQ(0, mock_text_input_client.call_count_insert_char());
-  EXPECT_EQ(0, mock_text_input_client.call_count_insert_text());
+  EXPECT_EQ(0u, mock_text_input_client.call_count_insert_char());
+  EXPECT_EQ(0u, mock_text_input_client.call_count_insert_text());
   EXPECT_EQ(L"", mock_text_input_client.inserted_text());
   delegate_.Reset();
   mock_text_input_client.Reset();
@@ -761,8 +762,8 @@ TEST(RemoteInputMethodWinTest, OnTextCommitted) {
 
   mock_text_input_client.set_text_input_type(TEXT_INPUT_TYPE_TEXT);
   private_ptr->OnTextCommitted(committed_text);
-  EXPECT_EQ(0, mock_text_input_client.call_count_insert_char());
-  EXPECT_EQ(1, mock_text_input_client.call_count_insert_text());
+  EXPECT_EQ(0u, mock_text_input_client.call_count_insert_char());
+  EXPECT_EQ(1u, mock_text_input_client.call_count_insert_text());
   EXPECT_EQ(committed_text, mock_text_input_client.inserted_text());
   delegate_.Reset();
   mock_text_input_client.Reset();
@@ -773,7 +774,7 @@ TEST(RemoteInputMethodWinTest, OnTextCommitted) {
   private_ptr->OnTextCommitted(committed_text);
   EXPECT_EQ(committed_text.size(),
             mock_text_input_client.call_count_insert_char());
-  EXPECT_EQ(0, mock_text_input_client.call_count_insert_text());
+  EXPECT_EQ(0u, mock_text_input_client.call_count_insert_text());
   EXPECT_EQ(committed_text, mock_text_input_client.inserted_text());
   delegate_.Reset();
   mock_text_input_client.Reset();

@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/CrossfadeGeneratedImage.h"
 
 #include "platform/geometry/FloatRect.h"
@@ -31,7 +30,7 @@
 
 namespace blink {
 
-CrossfadeGeneratedImage::CrossfadeGeneratedImage(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
+CrossfadeGeneratedImage::CrossfadeGeneratedImage(PassRefPtr<Image> fromImage, PassRefPtr<Image> toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
     : GeneratedImage(size)
     , m_fromImage(fromImage)
     , m_toImage(toImage)
@@ -42,9 +41,9 @@ CrossfadeGeneratedImage::CrossfadeGeneratedImage(Image* fromImage, Image* toImag
 
 void CrossfadeGeneratedImage::drawCrossfade(SkCanvas* canvas, const SkPaint& paint, ImageClampingMode clampMode)
 {
-    FloatRect fromImageRect(FloatPoint(), m_fromImage->size());
-    FloatRect toImageRect(FloatPoint(), m_toImage->size());
-    FloatRect destRect(FloatPoint(), m_crossfadeSize);
+    FloatRect fromImageRect(FloatPoint(), FloatSize(m_fromImage->size()));
+    FloatRect toImageRect(FloatPoint(), FloatSize(m_toImage->size()));
+    FloatRect destRect((FloatPoint()), FloatSize(m_crossfadeSize));
 
     // TODO(junov): The various effects encoded into paint should probably be applied here
     // instead of inside the layer.  This probably faulty behavior was maintained in order
@@ -87,18 +86,18 @@ void CrossfadeGeneratedImage::draw(SkCanvas* canvas, const SkPaint& paint, const
     canvas->restore();
 }
 
-void CrossfadeGeneratedImage::drawTile(GraphicsContext* context, const FloatRect& srcRect)
+void CrossfadeGeneratedImage::drawTile(GraphicsContext& context, const FloatRect& srcRect)
 {
     // Draw nothing if either of the images hasn't loaded yet.
     if (m_fromImage == Image::nullImage() || m_toImage == Image::nullImage())
         return;
 
-    SkPaint paint = context->fillPaint();
+    SkPaint paint = context.fillPaint();
     paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
-    paint.setAntiAlias(context->shouldAntialias());
-    FloatRect destRect(FloatPoint(), m_crossfadeSize);
-    paint.setFilterQuality(context->computeFilterQuality(this, destRect, srcRect));
-    drawCrossfade(context->canvas(), paint, ClampImageToSourceRect);
+    paint.setAntiAlias(context.shouldAntialias());
+    FloatRect destRect((FloatPoint()), FloatSize(m_crossfadeSize));
+    paint.setFilterQuality(context.computeFilterQuality(this, destRect, srcRect));
+    drawCrossfade(context.canvas(), paint, ClampImageToSourceRect);
 }
 
 } // namespace blink

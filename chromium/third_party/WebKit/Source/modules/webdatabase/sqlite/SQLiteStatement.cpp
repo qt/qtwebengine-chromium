@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/webdatabase/sqlite/SQLiteStatement.h"
 
 #include "modules/webdatabase/sqlite/SQLValue.h"
@@ -107,7 +106,7 @@ int SQLiteStatement::prepare()
     *statement = nullptr;
     int error;
     {
-        SafePointScope scope(ThreadState::HeapPointersOnStack);
+        SafePointScope scope(BlinkGC::HeapPointersOnStack);
 
         WTF_LOG(SQLDatabase, "SQL - prepare - %s", query.data());
 
@@ -132,7 +131,7 @@ int SQLiteStatement::prepare()
 
 int SQLiteStatement::step()
 {
-    SafePointScope scope(ThreadState::HeapPointersOnStack);
+    SafePointScope scope(BlinkGC::HeapPointersOnStack);
     //ASSERT(m_isPrepared);
 
     if (!m_statement)

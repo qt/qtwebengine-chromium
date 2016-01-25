@@ -13,14 +13,15 @@
 #include "GrInvariantOutput.h"
 #include "GrProcessor.h"
 #include "GrTexture.h"
-#include "gl/GrGLCaps.h"
-#include "gl/GrGLFragmentProcessor.h"
-#include "gl/GrGLProgramDataManager.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLUniformHandler.h"
+#include "glsl/GrGLSLXferProcessor.h"
 
 static const bool gUseUnpremul = false;
 
-static void add_arithmetic_code(GrGLFragmentBuilder* fsBuilder,
+static void add_arithmetic_code(GrGLSLFragmentBuilder* fragBuilder,
                                 const char* srcColor,
                                 const char* dstColor,
                                 const char* outputColor,
@@ -28,47 +29,52 @@ static void add_arithmetic_code(GrGLFragmentBuilder* fsBuilder,
                                 bool enforcePMColor) {
     // We don't try to optimize for this case at all
     if (nullptr == srcColor) {
-        fsBuilder->codeAppend("const vec4 src = vec4(1);");
+        fragBuilder->codeAppend("const vec4 src = vec4(1);");
     } else {
-        fsBuilder->codeAppendf("vec4 src = %s;", srcColor);
+        fragBuilder->codeAppendf("vec4 src = %s;", srcColor);
         if (gUseUnpremul) {
-            fsBuilder->codeAppend("src.rgb = clamp(src.rgb / src.a, 0.0, 1.0);");
+            fragBuilder->codeAppend("src.rgb = clamp(src.rgb / src.a, 0.0, 1.0);");
         }
     }
 
-    fsBuilder->codeAppendf("vec4 dst = %s;", dstColor);
+    fragBuilder->codeAppendf("vec4 dst = %s;", dstColor);
     if (gUseUnpremul) {
-        fsBuilder->codeAppend("dst.rgb = clamp(dst.rgb / dst.a, 0.0, 1.0);");
+        fragBuilder->codeAppend("dst.rgb = clamp(dst.rgb / dst.a, 0.0, 1.0);");
     }
 
-    fsBuilder->codeAppendf("%s = %s.x * src * dst + %s.y * src + %s.z * dst + %s.w;",
-                           outputColor, kUni, kUni, kUni, kUni);
-    fsBuilder->codeAppendf("%s = clamp(%s, 0.0, 1.0);\n", outputColor, outputColor);
+    fragBuilder->codeAppendf("%s = %s.x * src * dst + %s.y * src + %s.z * dst + %s.w;",
+                             outputColor, kUni, kUni, kUni, kUni);
+    fragBuilder->codeAppendf("%s = clamp(%s, 0.0, 1.0);\n", outputColor, outputColor);
     if (gUseUnpremul) {
-        fsBuilder->codeAppendf("%s.rgb *= %s.a;", outputColor, outputColor);
+        fragBuilder->codeAppendf("%s.rgb *= %s.a;", outputColor, outputColor);
     } else if (enforcePMColor) {
-        fsBuilder->codeAppendf("%s.rgb = min(%s.rgb, %s.a);",
-                               outputColor, outputColor, outputColor);
+        fragBuilder->codeAppendf("%s.rgb = min(%s.rgb, %s.a);",
+                                 outputColor, outputColor, outputColor);
     }
 }
 
-class GLArithmeticFP : public GrGLFragmentProcessor {
+class GLArithmeticFP : public GrGLSLFragmentProcessor {
 public:
-    GLArithmeticFP(const GrProcessor&) : fEnforcePMColor(true) {}
+    GLArithmeticFP(const GrArithmeticFP& arithmeticFP)
+        : fEnforcePMColor(arithmeticFP.enforcePMColor()) {}
 
     ~GLArithmeticFP() override {}
 
     void emitCode(EmitArgs& args) override {
-        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+        GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
         SkString dstColor("dstColor");
         this->emitChild(0, nullptr, &dstColor, args);
 
-        fKUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                          kVec4f_GrSLType, kDefault_GrSLPrecision,
-                                          "k");
-        const char* kUni = args.fBuilder->getUniformCStr(fKUni);
+        fKUni = args.fUniformHandler->addUniform(GrGLSLUniformHandler::kFragment_Visibility,
+                                                 kVec4f_GrSLType, kDefault_GrSLPrecision,
+                                                 "k");
+        const char* kUni = args.fUniformHandler->getUniformCStr(fKUni);
 
-        add_arithmetic_code(fsBuilder, args.fInputColor, dstColor.c_str(), args.fOutputColor, kUni,
+        add_arithmetic_code(fragBuilder,
+                            args.fInputColor,
+                            dstColor.c_str(),
+                            args.fOutputColor,
+                            kUni,
                             fEnforcePMColor);
     }
 
@@ -79,23 +85,23 @@ public:
     }
 
 protected:
-    void onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& proc) override {
+    void onSetData(const GrGLSLProgramDataManager& pdman, const GrProcessor& proc) override {
         const GrArithmeticFP& arith = proc.cast<GrArithmeticFP>();
         pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
         fEnforcePMColor = arith.enforcePMColor();
     }
 
 private:
-    GrGLProgramDataManager::UniformHandle fKUni;
+    GrGLSLProgramDataManager::UniformHandle fKUni;
     bool fEnforcePMColor;
 
-    typedef GrGLFragmentProcessor INHERITED;
+    typedef GrGLSLFragmentProcessor INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrArithmeticFP::GrArithmeticFP(GrProcessorDataManager*, float k1, float k2, float k3, float k4,
-                               bool enforcePMColor, const GrFragmentProcessor* dst)
+GrArithmeticFP::GrArithmeticFP(float k1, float k2, float k3, float k4, bool enforcePMColor,
+                               const GrFragmentProcessor* dst)
   : fK1(k1), fK2(k2), fK3(k3), fK4(k4), fEnforcePMColor(enforcePMColor) {
     this->initClassID<GrArithmeticFP>();
 
@@ -104,11 +110,11 @@ GrArithmeticFP::GrArithmeticFP(GrProcessorDataManager*, float k1, float k2, floa
     SkASSERT(0 == dstIndex);
 }
 
-void GrArithmeticFP::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void GrArithmeticFP::onGetGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GLArithmeticFP::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* GrArithmeticFP::onCreateGLInstance() const {
+GrGLSLFragmentProcessor* GrArithmeticFP::onCreateGLSLInstance() const {
     return new GLArithmeticFP(*this);
 }
 
@@ -136,7 +142,7 @@ const GrFragmentProcessor* GrArithmeticFP::TestCreate(GrProcessorTestData* d) {
     bool enforcePMColor = d->fRandom->nextBool();
 
     SkAutoTUnref<const GrFragmentProcessor> dst(GrProcessorUnitTest::CreateChildFP(d));
-    return new GrArithmeticFP(d->fProcDataManager, k1, k2, k3, k4, enforcePMColor, dst);
+    return new GrArithmeticFP(k1, k2, k3, k4, enforcePMColor, dst);
 }
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrArithmeticFP);
@@ -152,7 +158,7 @@ public:
 
     const char* name() const override { return "Arithmetic"; }
 
-    GrGLXferProcessor* createGLInstance() const override;
+    GrGLSLXferProcessor* createGLSLInstance() const override;
 
     float k1() const { return fK1; }
     float k2() const { return fK2; }
@@ -161,13 +167,12 @@ public:
     bool enforcePMColor() const { return fEnforcePMColor; }
 
 private:
-    GrXferProcessor::OptFlags onGetOptimizations(const GrProcOptInfo& colorPOI,
-                                                 const GrProcOptInfo& coveragePOI,
+    GrXferProcessor::OptFlags onGetOptimizations(const GrPipelineOptimizations& optimizations,
                                                  bool doesStencilWrite,
                                                  GrColor* overrideColor,
-                                                 const GrCaps& caps) override;
+                                                 const GrCaps& caps) const override;
 
-    void onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
+    void onGetGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
     bool onIsEqual(const GrXferProcessor& xpBase) const override {
         const ArithmeticXP& xp = xpBase.cast<ArithmeticXP>();
@@ -189,10 +194,10 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class GLArithmeticXP : public GrGLXferProcessor {
+class GLArithmeticXP : public GrGLSLXferProcessor {
 public:
-    GLArithmeticXP(const GrProcessor&)
-        : fEnforcePMColor(true) {
+    GLArithmeticXP(const ArithmeticXP& arithmeticXP)
+        : fEnforcePMColor(arithmeticXP.enforcePMColor()) {
     }
 
     ~GLArithmeticXP() override {}
@@ -205,29 +210,46 @@ public:
     }
 
 private:
-    void emitBlendCodeForDstRead(GrGLXPBuilder* pb, const char* srcColor, const char* dstColor,
-                                 const char* outColor, const GrXferProcessor& proc) override {
-        GrGLXPFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
+    void emitBlendCodeForDstRead(GrGLSLXPFragmentBuilder* fragBuilder,
+                                 GrGLSLUniformHandler* uniformHandler,
+                                 const char* srcColor,
+                                 const char* srcCoverage,
+                                 const char* dstColor,
+                                 const char* outColor,
+                                 const char* outColorSecondary,
+                                 const GrXferProcessor& proc) override {
+        fKUni = uniformHandler->addUniform(GrGLSLUniformHandler::kFragment_Visibility,
+                                           kVec4f_GrSLType, kDefault_GrSLPrecision,
+                                           "k");
+        const char* kUni = uniformHandler->getUniformCStr(fKUni);
 
-        fKUni = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                               kVec4f_GrSLType, kDefault_GrSLPrecision,
-                               "k");
-        const char* kUni = pb->getUniformCStr(fKUni);
+        add_arithmetic_code(fragBuilder, srcColor, dstColor, outColor, kUni, fEnforcePMColor);
 
-        add_arithmetic_code(fsBuilder, srcColor, dstColor, outColor, kUni, fEnforcePMColor);
+        // Apply coverage.
+        if (proc.dstReadUsesMixedSamples()) {
+            if (srcCoverage) {
+                fragBuilder->codeAppendf("%s *= %s;", outColor, srcCoverage);
+                fragBuilder->codeAppendf("%s = %s;", outColorSecondary, srcCoverage);
+            } else {
+                fragBuilder->codeAppendf("%s = vec4(1.0);", outColorSecondary);
+            }
+        } else if (srcCoverage) {
+            fragBuilder->codeAppendf("%s = %s * %s + (vec4(1.0) - %s) * %s;",
+                                     outColor, srcCoverage, outColor, srcCoverage, dstColor);
+        }
     }
 
-    void onSetData(const GrGLProgramDataManager& pdman,
+    void onSetData(const GrGLSLProgramDataManager& pdman,
                    const GrXferProcessor& processor) override {
         const ArithmeticXP& arith = processor.cast<ArithmeticXP>();
         pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
         fEnforcePMColor = arith.enforcePMColor();
     };
 
-    GrGLProgramDataManager::UniformHandle fKUni;
+    GrGLSLProgramDataManager::UniformHandle fKUni;
     bool fEnforcePMColor;
 
-    typedef GrGLXferProcessor INHERITED;
+    typedef GrGLSLXferProcessor INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -243,32 +265,31 @@ ArithmeticXP::ArithmeticXP(const DstTexture* dstTexture, bool hasMixedSamples,
     this->initClassID<ArithmeticXP>();
 }
 
-void ArithmeticXP::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void ArithmeticXP::onGetGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GLArithmeticXP::GenKey(*this, caps, b);
 }
 
-GrGLXferProcessor* ArithmeticXP::createGLInstance() const { return new GLArithmeticXP(*this); }
+GrGLSLXferProcessor* ArithmeticXP::createGLSLInstance() const { return new GLArithmeticXP(*this); }
 
-GrXferProcessor::OptFlags ArithmeticXP::onGetOptimizations(const GrProcOptInfo& colorPOI,
-                                                           const GrProcOptInfo& coveragePOI,
-                                                           bool doesStencilWrite,
-                                                           GrColor* overrideColor,
-                                                           const GrCaps& caps) {
+GrXferProcessor::OptFlags ArithmeticXP::onGetOptimizations(
+                                                       const GrPipelineOptimizations& optimizations,
+                                                       bool doesStencilWrite,
+                                                       GrColor* overrideColor,
+                                                       const GrCaps& caps) const {
    return GrXferProcessor::kNone_OptFlags;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrArithmeticXPFactory::GrArithmeticXPFactory(float k1, float k2, float k3, float k4,
-                                             bool enforcePMColor) 
+                                             bool enforcePMColor)
     : fK1(k1), fK2(k2), fK3(k3), fK4(k4), fEnforcePMColor(enforcePMColor) {
     this->initClassID<GrArithmeticXPFactory>();
 }
 
 GrXferProcessor*
 GrArithmeticXPFactory::onCreateXferProcessor(const GrCaps& caps,
-                                             const GrProcOptInfo& colorPOI,
-                                             const GrProcOptInfo& coveragePOI,
+                                             const GrPipelineOptimizations& optimizations,
                                              bool hasMixedSamples,
                                              const DstTexture* dstTexture) const {
     return new ArithmeticXP(dstTexture, hasMixedSamples, fK1, fK2, fK3, fK4, fEnforcePMColor);

@@ -6,6 +6,9 @@
 #define GPU_COMMAND_BUFFER_CLIENT_QUERY_TRACKER_H_
 
 #include <GLES2/gl2.h>
+#include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <bitset>
 #include <deque>
@@ -13,6 +16,7 @@
 
 #include "base/atomicops.h"
 #include "base/containers/hash_tables.h"
+#include "base/macros.h"
 #include "gles2_impl_export.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 
@@ -31,20 +35,16 @@ class GLES2_IMPL_EXPORT QuerySyncManager {
   static const size_t kSyncsPerBucket = 256;
 
   struct Bucket {
-    Bucket(QuerySync* sync_mem, int32 shm_id, uint32 shm_offset);
+    Bucket(QuerySync* sync_mem, int32_t shm_id, uint32_t shm_offset);
     ~Bucket();
     QuerySync* syncs;
-    int32 shm_id;
-    uint32 base_shm_offset;
+    int32_t shm_id;
+    uint32_t base_shm_offset;
     std::bitset<kSyncsPerBucket> in_use_queries;
   };
   struct QueryInfo {
-    QueryInfo(Bucket* bucket, int32 id, uint32 offset, QuerySync* sync_mem)
-        : bucket(bucket),
-          shm_id(id),
-          shm_offset(offset),
-          sync(sync_mem) {
-    }
+    QueryInfo(Bucket* bucket, int32_t id, uint32_t offset, QuerySync* sync_mem)
+        : bucket(bucket), shm_id(id), shm_offset(offset), sync(sync_mem) {}
 
     QueryInfo()
         : bucket(NULL),
@@ -54,8 +54,8 @@ class GLES2_IMPL_EXPORT QuerySyncManager {
     }
 
     Bucket* bucket;
-    int32 shm_id;
-    uint32 shm_offset;
+    int32_t shm_id;
+    uint32_t shm_offset;
     QuerySync* sync;
   };
 
@@ -95,13 +95,9 @@ class GLES2_IMPL_EXPORT QueryTracker {
       return id_;
     }
 
-    int32 shm_id() const {
-      return info_.shm_id;
-    }
+    int32_t shm_id() const { return info_.shm_id; }
 
-    uint32 shm_offset() const {
-      return info_.shm_offset;
-    }
+    uint32_t shm_offset() const { return info_.shm_offset; }
 
     void MarkAsActive() {
       state_ = kActive;
@@ -110,16 +106,14 @@ class GLES2_IMPL_EXPORT QueryTracker {
         submit_count_ = 1;
     }
 
-    void MarkAsPending(int32 token) {
+    void MarkAsPending(int32_t token) {
       token_ = token;
       state_ = kPending;
     }
 
     base::subtle::Atomic32 submit_count() const { return submit_count_; }
 
-    int32 token() const {
-      return token_;
-    }
+    int32_t token() const { return token_; }
 
     bool NeverUsed() const {
       return state_ == kUninitialized;
@@ -135,7 +129,7 @@ class GLES2_IMPL_EXPORT QueryTracker {
 
     bool CheckResultsAvailable(CommandBufferHelper* helper);
 
-    uint64 GetResult() const;
+    uint64_t GetResult() const;
 
    private:
     friend class QueryTracker;
@@ -150,10 +144,10 @@ class GLES2_IMPL_EXPORT QueryTracker {
     QuerySyncManager::QueryInfo info_;
     State state_;
     base::subtle::Atomic32 submit_count_;
-    int32 token_;
-    uint32 flush_count_;
-    uint64 client_begin_time_us_; // Only used for latency query target.
-    uint64 result_;
+    int32_t token_;
+    uint32_t flush_count_;
+    uint64_t client_begin_time_us_;  // Only used for latency query target.
+    uint64_t result_;
   };
 
   QueryTracker(MappedMemoryManager* manager);

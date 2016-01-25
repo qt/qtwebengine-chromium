@@ -22,7 +22,6 @@
  *
  */
 
-#include "config.h"
 #include "core/html/HTMLFormControlElement.h"
 
 #include "core/dom/ElementTraversal.h"
@@ -49,13 +48,10 @@ using namespace HTMLNames;
 
 HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : LabelableElement(tagName, document)
-    , m_disabled(false)
-    , m_isAutofilled(false)
-    , m_isReadOnly(false)
-    , m_isRequired(false)
-    , m_hasValidationMessage(false)
     , m_ancestorDisabledState(AncestorDisabledStateUnknown)
     , m_dataListAncestorState(Unknown)
+    , m_isAutofilled(false)
+    , m_hasValidationMessage(false)
     , m_willValidateInitialized(false)
     , m_willValidate(true)
     , m_isValid(true)
@@ -157,36 +153,31 @@ void HTMLFormControlElement::reset()
     resetImpl();
 }
 
-void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == formAttr) {
         formAttributeChanged();
         UseCounter::count(document(), UseCounter::FormAttribute);
     } else if (name == disabledAttr) {
-        bool oldDisabled = m_disabled;
-        m_disabled = !value.isNull();
-        if (oldDisabled != m_disabled)
+        if (oldValue.isNull() != value.isNull())
             disabledAttributeChanged();
     } else if (name == readonlyAttr) {
-        bool wasReadOnly = m_isReadOnly;
-        m_isReadOnly = !value.isNull();
-        if (wasReadOnly != m_isReadOnly) {
+        if (oldValue.isNull() != value.isNull()) {
             setNeedsWillValidateCheck();
-            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(name));
+            pseudoStateChanged(CSSSelector::PseudoReadOnly);
+            pseudoStateChanged(CSSSelector::PseudoReadWrite);
             if (layoutObject())
                 LayoutTheme::theme().controlStateChanged(*layoutObject(), ReadOnlyControlState);
         }
     } else if (name == requiredAttr) {
-        bool wasRequired = m_isRequired;
-        m_isRequired = !value.isNull();
-        if (wasRequired != m_isRequired)
+        if (oldValue.isNull() != value.isNull())
             requiredAttributeChanged();
         UseCounter::count(document(), UseCounter::RequiredAttribute);
     } else if (name == autofocusAttr) {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
         UseCounter::count(document(), UseCounter::AutoFocusAttribute);
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -209,6 +200,16 @@ void HTMLFormControlElement::requiredAttributeChanged()
     setNeedsValidityCheck();
     pseudoStateChanged(CSSSelector::PseudoRequired);
     pseudoStateChanged(CSSSelector::PseudoOptional);
+}
+
+bool HTMLFormControlElement::isReadOnly() const
+{
+    return fastHasAttribute(HTMLNames::readonlyAttr);
+}
+
+bool HTMLFormControlElement::isDisabledOrReadOnly() const
+{
+    return isDisabledFormControl() || isReadOnly();
 }
 
 bool HTMLFormControlElement::supportsAutofocus() const
@@ -355,7 +356,7 @@ HTMLFormElement* HTMLFormControlElement::formOwner() const
 
 bool HTMLFormControlElement::isDisabledFormControl() const
 {
-    if (m_disabled)
+    if (fastHasAttribute(disabledAttr))
         return true;
 
     if (m_ancestorDisabledState == AncestorDisabledStateUnknown)
@@ -365,7 +366,7 @@ bool HTMLFormControlElement::isDisabledFormControl() const
 
 bool HTMLFormControlElement::isRequired() const
 {
-    return m_isRequired;
+    return fastHasAttribute(requiredAttr);
 }
 
 String HTMLFormControlElement::resultForDialogSubmit()

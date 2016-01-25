@@ -23,11 +23,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/DOMError.h"
 
 
 namespace blink {
+
+DOMError::~DOMError()
+{
+}
 
 DOMError::DOMError(const String& name)
     : m_name(name)

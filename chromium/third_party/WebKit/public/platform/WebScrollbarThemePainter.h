@@ -38,7 +38,7 @@ struct WebRect;
 
 class WebScrollbarThemePainter {
 public:
-    WebScrollbarThemePainter() : m_theme(0) { }
+    WebScrollbarThemePainter() : m_theme(0), m_deviceScaleFactor(1.0) { }
     WebScrollbarThemePainter(const WebScrollbarThemePainter& painter) { assign(painter); }
     virtual ~WebScrollbarThemePainter()
     {
@@ -64,8 +64,14 @@ public:
     BLINK_PLATFORM_EXPORT void paintTickmarks(WebCanvas*, const WebRect&);
     BLINK_PLATFORM_EXPORT void paintThumb(WebCanvas*, const WebRect&);
 
+    // This opacity is applied on top of the content that is painted for the thumb.
+    BLINK_PLATFORM_EXPORT float thumbOpacity() const;
+
+    BLINK_PLATFORM_EXPORT bool trackNeedsRepaint() const;
+    BLINK_PLATFORM_EXPORT bool thumbNeedsRepaint() const;
+
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebScrollbarThemePainter(ScrollbarTheme*, Scrollbar*);
+    BLINK_PLATFORM_EXPORT WebScrollbarThemePainter(ScrollbarTheme&, Scrollbar&, float deviceScaleFactor);
 #endif
 
 private:
@@ -80,6 +86,8 @@ private:
     // scrollbar (and not a WebScrollbar wrapper) due to static_casts for
     // LayoutScrollbar and pointer-based HashMap lookups for Lion scrollbars.
     WebPrivatePtr<Scrollbar> m_scrollbar;
+
+    float m_deviceScaleFactor;
 };
 
 } // namespace blink

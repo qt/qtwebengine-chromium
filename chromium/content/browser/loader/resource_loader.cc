@@ -4,6 +4,8 @@
 
 #include "content/browser/loader/resource_loader.h"
 
+#include <utility>
+
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
@@ -35,6 +37,8 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
+#include "net/ssl/ssl_platform_key.h"
+#include "net/ssl/ssl_private_key.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_status.h"
 
@@ -94,6 +98,10 @@ void PopulateResourceResponse(ResourceRequestInfoImpl* info,
   response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
   response->head.proxy_server = response_info.proxy_server;
   response->head.socket_address = request->GetSocketAddress();
+  const content::ResourceRequestInfo* request_info =
+      content::ResourceRequestInfo::ForRequest(request);
+  if (request_info)
+    response->head.is_using_lofi = request_info->IsUsingLoFi();
   if (ServiceWorkerRequestHandler* handler =
           ServiceWorkerRequestHandler::GetHandler(request)) {
     handler->GetExtraResponseInfo(&response->head);
@@ -109,6 +117,9 @@ void PopulateResourceResponse(ResourceRequestInfoImpl* info,
     GetSSLStatusForRequest(request->url(), request->ssl_info(),
                            info->GetChildID(), &ssl_status);
     response->head.security_info = SerializeSecurityInfo(ssl_status);
+    response->head.has_major_certificate_errors =
+        net::IsCertStatusError(ssl_status.cert_status) &&
+        !net::IsCertStatusMinorError(ssl_status.cert_status);
   } else {
     // We should not have any SSL state.
     DCHECK(!request->ssl_info().cert_status);
@@ -124,8 +135,8 @@ ResourceLoader::ResourceLoader(scoped_ptr<net::URLRequest> request,
                                scoped_ptr<ResourceHandler> handler,
                                ResourceLoaderDelegate* delegate)
     : deferred_stage_(DEFERRED_NONE),
-      request_(request.Pass()),
-      handler_(handler.Pass()),
+      request_(std::move(request)),
+      handler_(std::move(handler)),
       delegate_(delegate),
       is_transferring_(false),
       times_cancelled_before_request_start_(0),
@@ -306,19 +317,9 @@ void ResourceLoader::OnSSLCertificateError(net::URLRequest* request,
                                            bool fatal) {
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
-  int render_process_id;
-  int render_frame_id;
-  if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_id))
-    NOTREACHED();
-
   SSLManager::OnSSLCertificateError(
-      weak_ptr_factory_.GetWeakPtr(),
-      info->GetResourceType(),
-      request_->url(),
-      render_process_id,
-      render_frame_id,
-      ssl_info,
-      fatal);
+      weak_ptr_factory_.GetWeakPtr(), info->GetResourceType(), request_->url(),
+      info->GetWebContentsGetterForRequest(), ssl_info, fatal);
 }
 
 void ResourceLoader::OnBeforeNetworkStart(net::URLRequest* unused,
@@ -419,7 +420,13 @@ void ResourceLoader::ContinueSSLRequest() {
 void ResourceLoader::ContinueWithCertificate(net::X509Certificate* cert) {
   DCHECK(ssl_client_auth_handler_);
   ssl_client_auth_handler_.reset();
-  request_->ContinueWithCertificate(cert);
+  if (!cert) {
+    request_->ContinueWithCertificate(nullptr, nullptr);
+    return;
+  }
+  scoped_refptr<net::SSLPrivateKey> private_key =
+      net::FetchClientCertPrivateKey(cert);
+  request_->ContinueWithCertificate(cert, private_key.get());
 }
 
 void ResourceLoader::CancelCertificateSelection() {
@@ -671,6 +678,12 @@ void ResourceLoader::CallDidFinishLoading() {
 }
 
 void ResourceLoader::RecordHistograms() {
+  if (request_->response_info().network_accessed) {
+    UMA_HISTOGRAM_ENUMERATION("Net.HttpResponseInfo.ConnectionInfo",
+                              request_->response_info().connection_info,
+                              net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS);
+  }
+
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   if (info->GetResourceType() == RESOURCE_TYPE_PREFETCH) {

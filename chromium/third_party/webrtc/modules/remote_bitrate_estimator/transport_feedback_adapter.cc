@@ -8,14 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "webrtc/modules/remote_bitrate_estimator/transport_feedback_adapter.h"
+
 #include <limits>
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/remote_bitrate_estimator/remote_bitrate_estimator_abs_send_time.h"
-#include "webrtc/modules/remote_bitrate_estimator/transport_feedback_adapter.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/utility/interface/process_thread.h"
+#include "webrtc/modules/utility/include/process_thread.h"
 
 namespace webrtc {
 
@@ -29,7 +30,7 @@ TransportFeedbackAdapter::TransportFeedbackAdapter(
     RtcpBandwidthObserver* bandwidth_observer,
     Clock* clock,
     ProcessThread* process_thread)
-    : send_time_history_(kSendTimeHistoryWindowMs),
+    : send_time_history_(clock, kSendTimeHistoryWindowMs),
       rtcp_bandwidth_observer_(bandwidth_observer),
       process_thread_(process_thread),
       clock_(clock),
@@ -49,9 +50,17 @@ void TransportFeedbackAdapter::SetBitrateEstimator(
   }
 }
 
-void TransportFeedbackAdapter::OnPacketSent(const PacketInfo& info) {
+void TransportFeedbackAdapter::AddPacket(uint16_t sequence_number,
+                                         size_t length,
+                                         bool was_paced) {
   rtc::CritScope cs(&lock_);
-  send_time_history_.AddAndRemoveOld(info);
+  send_time_history_.AddAndRemoveOld(sequence_number, length, was_paced);
+}
+
+void TransportFeedbackAdapter::OnSentPacket(uint16_t sequence_number,
+                                            int64_t send_time_ms) {
+  rtc::CritScope cs(&lock_);
+  send_time_history_.OnSentPacket(sequence_number, send_time_ms);
 }
 
 void TransportFeedbackAdapter::OnTransportFeedback(
@@ -91,8 +100,8 @@ void TransportFeedbackAdapter::OnTransportFeedback(
         RTC_DCHECK(delta_it != delta_vec.end());
         offset_us += *(delta_it++);
         int64_t timestamp_ms = current_offset_ms_ + (offset_us / 1000);
-        PacketInfo info = {timestamp_ms, 0, sequence_number, 0, false};
-        if (send_time_history_.GetInfo(&info, true)) {
+        PacketInfo info(timestamp_ms, sequence_number);
+        if (send_time_history_.GetInfo(&info, true) && info.send_time_ms >= 0) {
           packet_feedback_vector.push_back(info);
         } else {
           ++failed_lookups;

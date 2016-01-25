@@ -5,11 +5,12 @@
 #ifndef CONTENT_BROWSER_BROWSER_MAIN_LOOP_H_
 #define CONTENT_BROWSER_BROWSER_MAIN_LOOP_H_
 
-#include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "content/browser/browser_process_sub_thread.h"
 #include "content/public/browser/browser_main_runner.h"
 
@@ -22,7 +23,6 @@ class PowerMonitor;
 class SystemMonitor;
 class MemoryPressureMonitor;
 namespace trace_event {
-class TraceMemoryController;
 class TraceEventSystemStatsMonitor;
 }  // namespace trace_event
 }  // namespace base
@@ -52,7 +52,6 @@ class ClientNativePixmapFactory;
 namespace content {
 class BrowserMainParts;
 class BrowserOnlineStateObserver;
-class BrowserShutdownImpl;
 class BrowserThreadImpl;
 class MediaStreamManager;
 class MojoShellContext;
@@ -138,8 +137,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 
  private:
   class MemoryObserver;
-  // For ShutdownThreadsAndCleanUp.
-  friend class BrowserShutdownImpl;
 
   void InitializeMainThread();
 
@@ -210,7 +207,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 #endif
 
   scoped_ptr<MemoryObserver> memory_observer_;
-  scoped_ptr<base::trace_event::TraceMemoryController> trace_memory_controller_;
 
   // Members initialized in |InitStartupTracingForDuration()| ------------------
   base::FilePath startup_trace_file_;

@@ -32,8 +32,7 @@ QuicPacketReader::QuicPacketReader(DatagramClientSocket* socket,
       net_log_(net_log),
       weak_factory_(this) {}
 
-QuicPacketReader::~QuicPacketReader() {
-}
+QuicPacketReader::~QuicPacketReader() {}
 
 void QuicPacketReader::StartReading() {
   if (read_pending_)
@@ -73,7 +72,7 @@ void QuicPacketReader::OnReadComplete(int result) {
     result = ERR_CONNECTION_CLOSED;
 
   if (result < 0) {
-    visitor_->OnReadError(result);
+    visitor_->OnReadError(result, socket_);
     return;
   }
 

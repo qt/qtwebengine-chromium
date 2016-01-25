@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/serviceworkers/ServiceWorkerClients.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -14,6 +13,7 @@
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "modules/serviceworkers/ServiceWorkerWindowClient.h"
+#include "modules/serviceworkers/ServiceWorkerWindowClientCallback.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerClientQueryOptions.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
 #include "wtf/OwnPtr.h"
@@ -117,7 +117,7 @@ ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const S
     }
 
     if (!context->securityOrigin()->canDisplay(parsedUrl)) {
-        resolver->reject(DOMException::create(SecurityError, "'" + parsedUrl.elidedString() + "' cannot be opened."));
+        resolver->reject(V8ThrowException::createTypeError(scriptState->isolate(), "'" + parsedUrl.elidedString() + "' cannot be opened."));
         return promise;
     }
 
@@ -127,7 +127,7 @@ ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const S
     }
     context->consumeWindowInteraction();
 
-    ServiceWorkerGlobalScopeClient::from(context)->openWindow(parsedUrl, new CallbackPromiseAdapter<ServiceWorkerWindowClient, ServiceWorkerError>(resolver));
+    ServiceWorkerGlobalScopeClient::from(context)->openWindow(parsedUrl, new NavigateClientCallback(resolver));
     return promise;
 }
 

@@ -5,11 +5,14 @@
 #ifndef MEDIA_FILTERS_FILE_DATA_SOURCE_H_
 #define MEDIA_FILTERS_FILE_DATA_SOURCE_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/memory_mapped_file.h"
+#include "base/macros.h"
 #include "media/base/data_source.h"
 
 namespace media {
@@ -26,11 +29,11 @@ class MEDIA_EXPORT FileDataSource : public DataSource {
 
   // Implementation of DataSource.
   void Stop() override;
-  void Read(int64 position,
+  void Read(int64_t position,
             int size,
-            uint8* data,
+            uint8_t* data,
             const DataSource::ReadCB& read_cb) override;
-  bool GetSize(int64* size_out) override;
+  bool GetSize(int64_t* size_out) override;
   bool IsStreaming() override;
   void SetBitrate(int bitrate) override;
 

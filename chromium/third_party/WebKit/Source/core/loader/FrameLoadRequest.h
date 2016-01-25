@@ -89,6 +89,9 @@ public:
     ShouldSendReferrer shouldSendReferrer() const { return m_shouldSendReferrer; }
     void setShouldSendReferrer(ShouldSendReferrer shouldSendReferrer) { m_shouldSendReferrer = shouldSendReferrer; }
 
+    ShouldSetOpener shouldSetOpener() const { return m_shouldSetOpener; }
+    void setShouldSetOpener(ShouldSetOpener shouldSetOpener) { m_shouldSetOpener = shouldSetOpener; }
+
     ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy() const { return m_shouldCheckMainWorldContentSecurityPolicy; }
 
 private:
@@ -100,6 +103,7 @@ private:
         , m_replacesCurrentItem(false)
         , m_clientRedirect(NotClientRedirect)
         , m_shouldSendReferrer(MaybeSendReferrer)
+        , m_shouldSetOpener(MaybeSetOpener)
         , m_shouldCheckMainWorldContentSecurityPolicy(shouldCheckMainWorldContentSecurityPolicy)
     {
         initializeFetchFlags();
@@ -109,7 +113,7 @@ private:
     void initializeFetchFlags()
     {
         // These flags are passed to a service worker which controls the page.
-        m_resourceRequest.setFetchRequestMode(WebURLRequest::FetchRequestModeSameOrigin);
+        m_resourceRequest.setFetchRequestMode(WebURLRequest::FetchRequestModeNavigate);
         m_resourceRequest.setFetchCredentialsMode(WebURLRequest::FetchCredentialsModeInclude);
         m_resourceRequest.setFetchRedirectMode(WebURLRequest::FetchRedirectModeManual);
     }
@@ -122,6 +126,7 @@ private:
     RefPtrWillBeMember<Event> m_triggeringEvent;
     RefPtrWillBeMember<HTMLFormElement> m_form;
     ShouldSendReferrer m_shouldSendReferrer;
+    ShouldSetOpener m_shouldSetOpener;
     ContentSecurityPolicyDisposition m_shouldCheckMainWorldContentSecurityPolicy;
 };
 

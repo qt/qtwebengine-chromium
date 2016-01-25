@@ -20,6 +20,7 @@
 #include <map>
 #include <string>
 
+#include "base/macros.h"
 #include "util/win/exception_handler_server.h"
 
 namespace crashpad {
@@ -60,7 +61,8 @@ class CrashReportExceptionHandler : public ExceptionHandlerServer::Delegate {
   void ExceptionHandlerServerStarted() override;
   unsigned int ExceptionHandlerServerException(
       HANDLE process,
-      WinVMAddress exception_information_address) override;
+      WinVMAddress exception_information_address,
+      WinVMAddress debug_critical_section_address) override;
 
  private:
   CrashReportDatabase* database_;  // weak

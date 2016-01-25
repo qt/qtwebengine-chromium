@@ -2,10 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/animation/InterpolableValue.h"
 
 namespace blink {
+
+bool InterpolableNumber::equals(const InterpolableValue& other) const
+{
+    return m_value == toInterpolableNumber(other).m_value;
+}
+
+bool InterpolableList::equals(const InterpolableValue& other) const
+{
+    const InterpolableList& otherList = toInterpolableList(other);
+    if (m_size != otherList.m_size)
+        return false;
+    for (size_t i = 0; i < m_size; i++) {
+        if (!m_values[i]->equals(*otherList.m_values[i]))
+            return false;
+    }
+    return true;
+}
 
 void InterpolableNumber::interpolate(const InterpolableValue &to, const double progress, InterpolableValue& result) const
 {
@@ -44,6 +60,25 @@ void InterpolableList::interpolate(const InterpolableValue& to, const double pro
         ASSERT(toList.m_values[i]);
         m_values[i]->interpolate(*(toList.m_values[i]), progress, *(resultList.m_values[i]));
     }
+}
+
+PassOwnPtr<InterpolableValue> InterpolableList::cloneAndZero() const
+{
+    OwnPtr<InterpolableList> result = InterpolableList::create(m_size);
+    for (size_t i = 0; i < m_size; i++)
+        result->set(i, m_values[i]->cloneAndZero());
+    return result.release();
+}
+
+void InterpolableNumber::scale(double scale)
+{
+    m_value = m_value * scale;
+}
+
+void InterpolableList::scale(double scale)
+{
+    for (size_t i = 0; i < m_size; i++)
+        m_values[i]->scale(scale);
 }
 
 void InterpolableNumber::scaleAndAdd(double scale, const InterpolableValue& other)

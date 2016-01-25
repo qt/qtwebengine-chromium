@@ -25,7 +25,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/DocumentOrderedList.h"
 
 #include "core/dom/Node.h"
@@ -56,12 +55,6 @@ void DocumentOrderedList::add(Node* node)
     } while (it != begin);
 
     m_nodes.insertBefore(followingNode, node);
-}
-
-void DocumentOrderedList::parserAdd(Node* node)
-{
-    ASSERT(m_nodes.isEmpty() || m_nodes.last()->compareDocumentPosition(node, Node::TreatShadowTreesAsComposed) & Node::DOCUMENT_POSITION_FOLLOWING);
-    m_nodes.add(node);
 }
 
 void DocumentOrderedList::remove(const Node* node)

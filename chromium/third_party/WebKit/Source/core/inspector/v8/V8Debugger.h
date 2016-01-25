@@ -7,7 +7,7 @@
 
 #include "core/CoreExport.h"
 #include "core/InspectorTypeBuilder.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -21,7 +21,7 @@ class V8DebuggerClient;
 struct ScriptBreakpoint;
 
 class CORE_EXPORT V8Debugger {
-    WTF_MAKE_FAST_ALLOCATED(V8Debugger);
+    USING_FAST_MALLOC(V8Debugger);
 public:
     static PassOwnPtr<V8Debugger> create(v8::Isolate*, V8DebuggerClient*);
     virtual ~V8Debugger() { }
@@ -32,6 +32,8 @@ public:
     // V8DebuggerAgent to notify about events in the context.
     // |contextGroupId| must be non-0.
     static void setContextDebugData(v8::Local<v8::Context>, const String& type, int contextGroupId);
+
+    static int contextId(v8::Local<v8::Context>);
 
     enum PauseOnExceptionsState {
         DontPauseOnExceptions,

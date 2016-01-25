@@ -48,8 +48,6 @@ public:
     PassRefPtrWillBeRawPtr<SVGMatrixTearOff> getCTMFromJavascript();
     PassRefPtrWillBeRawPtr<SVGMatrixTearOff> getScreenCTMFromJavascript();
 
-    PassRefPtrWillBeRawPtr<SVGMatrixTearOff> getTransformToElement(SVGElement*, ExceptionState&);
-
     SVGElement* nearestViewportElement() const;
     SVGElement* farthestViewportElement() const;
 
@@ -61,7 +59,7 @@ public:
     virtual FloatRect getBBox();
     PassRefPtrWillBeRawPtr<SVGRectTearOff> getBBoxFromJavascript();
 
-    bool isValid() const final { return SVGTests::isValid(document()); }
+    bool isValid() const final { return SVGTests::isValid(); }
 
     SVGAnimatedTransformList* transform() { return m_transform.get(); }
     const SVGAnimatedTransformList* transform() const { return m_transform.get(); }

@@ -27,6 +27,7 @@
 #define ScriptResource_h
 
 #include "core/CoreExport.h"
+#include "core/fetch/IntegrityMetadata.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/TextResource.h"
 
@@ -46,7 +47,7 @@ public:
 
 class CORE_EXPORT ScriptResource final : public TextResource {
 public:
-    typedef ScriptResourceClient ClientType;
+    using ClientType = ScriptResourceClient;
     static ResourcePtr<ScriptResource> fetch(FetchRequest&, ResourceFetcher*);
 
     // Public for testing
@@ -55,7 +56,11 @@ public:
     ~ScriptResource() override;
 
     void didAddClient(ResourceClient*) override;
-    void appendData(const char*, unsigned) override;
+    void appendData(const char*, size_t) override;
+
+    void onMemoryDump(WebMemoryDumpLevelOfDetail, WebProcessMemoryDump*) const override;
+
+    void destroyDecodedDataForFailedRevalidation() override;
 
     const String& script();
 
@@ -63,8 +68,8 @@ public:
 
     bool mimeTypeAllowedByNosniff() const;
 
-    void setIntegrityMetadata(const String& metadata) { m_integrityMetadata = metadata; }
-    String integrityMetadata() const { return m_integrityMetadata; }
+    void setIntegrityMetadata(const IntegrityMetadataSet& metadata) { m_integrityMetadata = metadata; }
+    const IntegrityMetadataSet& integrityMetadata() const { return m_integrityMetadata; }
     void setIntegrityAlreadyChecked(bool checked) { m_integrityChecked = checked; }
     bool integrityAlreadyChecked() { return m_integrityChecked; }
     bool mustRefetchDueToIntegrityMetadata(const FetchRequest&) const override;
@@ -82,7 +87,7 @@ private:
     };
 
     bool m_integrityChecked;
-    String m_integrityMetadata;
+    IntegrityMetadataSet m_integrityMetadata;
 
     AtomicString m_script;
 };

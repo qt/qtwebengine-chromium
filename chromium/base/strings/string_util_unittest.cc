@@ -6,10 +6,12 @@
 
 #include <math.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <algorithm>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -250,7 +252,7 @@ TEST(StringUtilTest, TrimWhitespace) {
   for (size_t i = 0; i < arraysize(trim_cases_ascii); ++i) {
     const trim_case_ascii& value = trim_cases_ascii[i];
     EXPECT_EQ(value.return_value,
-              TrimWhitespace(value.input, value.positions, &output_ascii));
+              TrimWhitespaceASCII(value.input, value.positions, &output_ascii));
     EXPECT_EQ(value.output, output_ascii);
   }
 }
@@ -549,7 +551,7 @@ TEST(StringUtilTest, LowerCaseEqualsASCII) {
 
 TEST(StringUtilTest, FormatBytesUnlocalized) {
   static const struct {
-    int64 bytes;
+    int64_t bytes;
     const char* expected;
   } cases[] = {
     // Expected behavior: we show one post-decimal digit when we have
@@ -1078,6 +1080,26 @@ TEST(StringUtilTest, EqualsCaseInsensitiveASCII) {
   EXPECT_TRUE(EqualsCaseInsensitiveASCII("Asdf", "aSDF"));
   EXPECT_FALSE(EqualsCaseInsensitiveASCII("bsdf", "aSDF"));
   EXPECT_FALSE(EqualsCaseInsensitiveASCII("Asdf", "aSDFz"));
+}
+
+TEST(StringUtilTest, IsUnicodeWhitespace) {
+  // NOT unicode white space.
+  EXPECT_FALSE(IsUnicodeWhitespace(L'\0'));
+  EXPECT_FALSE(IsUnicodeWhitespace(L'A'));
+  EXPECT_FALSE(IsUnicodeWhitespace(L'0'));
+  EXPECT_FALSE(IsUnicodeWhitespace(L'.'));
+  EXPECT_FALSE(IsUnicodeWhitespace(L';'));
+  EXPECT_FALSE(IsUnicodeWhitespace(L'\x4100'));
+
+  // Actual unicode whitespace.
+  EXPECT_TRUE(IsUnicodeWhitespace(L' '));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\xa0'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\x3000'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\t'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\r'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\v'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\f'));
+  EXPECT_TRUE(IsUnicodeWhitespace(L'\n'));
 }
 
 class WriteIntoTest : public testing::Test {

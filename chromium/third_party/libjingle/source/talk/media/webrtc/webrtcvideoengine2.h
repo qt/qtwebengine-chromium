@@ -112,14 +112,11 @@ class WebRtcVideoEngine2 {
   // Basic video engine implementation.
   void Init();
 
-  bool SetDefaultEncoderConfig(const VideoEncoderConfig& config);
-
   WebRtcVideoChannel2* CreateChannel(webrtc::Call* call,
                                      const VideoOptions& options);
 
   const std::vector<VideoCodec>& codecs() const;
-  const std::vector<RtpHeaderExtension>& rtp_header_extensions() const;
-  void SetLogging(int min_sev, const char* filter);
+  RtpCapabilities GetCapabilities() const;
 
   // Set a WebRtcVideoDecoderFactory for external decoding. Video engine does
   // not take the ownership of |decoder_factory|. The caller needs to make sure
@@ -134,9 +131,6 @@ class WebRtcVideoEngine2 {
   bool EnableTimedRender();
 
   bool FindCodec(const VideoCodec& in);
-  bool CanSendCodec(const VideoCodec& in,
-                    const VideoCodec& current,
-                    VideoCodec* out);
   // Check whether the supplied trace should be ignored.
   bool ShouldIgnoreTrace(const std::string& trace);
 
@@ -144,7 +138,6 @@ class WebRtcVideoEngine2 {
   std::vector<VideoCodec> GetSupportedCodecs() const;
 
   std::vector<VideoCodec> video_codecs_;
-  std::vector<RtpHeaderExtension> rtp_header_extensions_;
 
   bool initialized_;
 
@@ -169,18 +162,19 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
   bool SetSendParameters(const VideoSendParameters& params) override;
   bool SetRecvParameters(const VideoRecvParameters& params) override;
   bool GetSendCodec(VideoCodec* send_codec) override;
-  bool SetSendStreamFormat(uint32 ssrc, const VideoFormat& format) override;
+  bool SetSendStreamFormat(uint32_t ssrc, const VideoFormat& format) override;
   bool SetSend(bool send) override;
-  bool SetVideoSend(uint32 ssrc, bool mute,
+  bool SetVideoSend(uint32_t ssrc,
+                    bool mute,
                     const VideoOptions* options) override;
   bool AddSendStream(const StreamParams& sp) override;
-  bool RemoveSendStream(uint32 ssrc) override;
+  bool RemoveSendStream(uint32_t ssrc) override;
   bool AddRecvStream(const StreamParams& sp) override;
   bool AddRecvStream(const StreamParams& sp, bool default_stream);
-  bool RemoveRecvStream(uint32 ssrc) override;
-  bool SetRenderer(uint32 ssrc, VideoRenderer* renderer) override;
+  bool RemoveRecvStream(uint32_t ssrc) override;
+  bool SetRenderer(uint32_t ssrc, VideoRenderer* renderer) override;
   bool GetStats(VideoMediaInfo* info) override;
-  bool SetCapturer(uint32 ssrc, VideoCapturer* capturer) override;
+  bool SetCapturer(uint32_t ssrc, VideoCapturer* capturer) override;
   bool SendIntraFrame() override;
   bool RequestIntraFrame() override;
 
@@ -198,11 +192,11 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
 
   // Implemented for VideoMediaChannelTest.
   bool sending() const { return sending_; }
-  uint32 GetDefaultSendChannelSsrc() { return default_send_ssrc_; }
-  bool GetRenderer(uint32 ssrc, VideoRenderer** renderer);
+  uint32_t GetDefaultSendChannelSsrc() { return default_send_ssrc_; }
+  bool GetRenderer(uint32_t ssrc, VideoRenderer** renderer);
 
  private:
-  bool MuteStream(uint32 ssrc, bool mute);
+  bool MuteStream(uint32_t ssrc, bool mute);
   class WebRtcVideoReceiveStream;
 
   bool SetSendCodecs(const std::vector<VideoCodec>& codecs);
@@ -249,14 +243,18 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
         WebRtcVideoEncoderFactory* external_encoder_factory,
         const VideoOptions& options,
         int max_bitrate_bps,
-        const Settable<VideoCodecSettings>& codec_settings,
-        const std::vector<webrtc::RtpExtension>& rtp_extensions);
+        const rtc::Optional<VideoCodecSettings>& codec_settings,
+        const std::vector<webrtc::RtpExtension>& rtp_extensions,
+        const VideoSendParameters& send_params);
     ~WebRtcVideoSendStream();
 
     void SetOptions(const VideoOptions& options);
     void SetCodec(const VideoCodecSettings& codec);
     void SetRtpExtensions(
         const std::vector<webrtc::RtpExtension>& rtp_extensions);
+    // TODO(deadbeef): Move logic from SetCodec/SetRtpExtensions/etc.
+    // into this method. Currently this method only sets the RTCP mode.
+    void SetSendParameters(const VideoSendParameters& send_params);
 
     void InputFrame(VideoCapturer* capturer, const VideoFrame* frame);
     bool SetCapturer(VideoCapturer* capturer);
@@ -269,7 +267,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     void Start();
     void Stop();
 
-    const std::vector<uint32>& GetSsrcs() const;
+    const std::vector<uint32_t>& GetSsrcs() const;
     VideoSenderInfo GetVideoSenderInfo();
     void FillBandwidthEstimationInfo(BandwidthEstimationInfo* bwe_info);
 
@@ -285,11 +283,11 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
           const webrtc::VideoSendStream::Config& config,
           const VideoOptions& options,
           int max_bitrate_bps,
-          const Settable<VideoCodecSettings>& codec_settings);
+          const rtc::Optional<VideoCodecSettings>& codec_settings);
       webrtc::VideoSendStream::Config config;
       VideoOptions options;
       int max_bitrate_bps;
-      Settable<VideoCodecSettings> codec_settings;
+      rtc::Optional<VideoCodecSettings> codec_settings;
       // Sent resolutions + bitrates etc. by the underlying VideoSendStream,
       // typically changes when setting a new resolution or reconfiguring
       // bitrates.
@@ -355,7 +353,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     void SetDimensions(int width, int height, bool is_screencast)
         EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-    const std::vector<uint32> ssrcs_;
+    const std::vector<uint32_t> ssrcs_;
     const std::vector<SsrcGroup> ssrc_groups_;
     webrtc::Call* const call_;
     WebRtcVideoEncoderFactory* const external_encoder_factory_
@@ -394,19 +392,26 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
         const webrtc::VideoReceiveStream::Config& config,
         WebRtcVideoDecoderFactory* external_decoder_factory,
         bool default_stream,
-        const std::vector<VideoCodecSettings>& recv_codecs);
+        const std::vector<VideoCodecSettings>& recv_codecs,
+        bool disable_prerenderer_smoothing);
     ~WebRtcVideoReceiveStream();
 
-    const std::vector<uint32>& GetSsrcs() const;
+    const std::vector<uint32_t>& GetSsrcs() const;
 
     void SetLocalSsrc(uint32_t local_ssrc);
-    void SetNackAndRemb(bool nack_enabled, bool remb_enabled);
+    void SetFeedbackParameters(bool nack_enabled,
+                               bool remb_enabled,
+                               bool transport_cc_enabled);
     void SetRecvCodecs(const std::vector<VideoCodecSettings>& recv_codecs);
     void SetRtpExtensions(const std::vector<webrtc::RtpExtension>& extensions);
+    // TODO(deadbeef): Move logic from SetRecvCodecs/SetRtpExtensions/etc.
+    // into this method. Currently this method only sets the RTCP mode.
+    void SetRecvParameters(const VideoRecvParameters& recv_params);
 
     void RenderFrame(const webrtc::VideoFrame& frame,
                      int time_to_render_ms) override;
     bool IsTextureSupported() const override;
+    bool SmoothsRenderedFrames() const override;
     bool IsDefaultStream() const;
 
     void SetRenderer(cricket::VideoRenderer* renderer);
@@ -437,7 +442,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     std::string GetCodecNameFromPayloadType(int payload_type);
 
     webrtc::Call* const call_;
-    const std::vector<uint32> ssrcs_;
+    const std::vector<uint32_t> ssrcs_;
     const std::vector<SsrcGroup> ssrc_groups_;
 
     webrtc::VideoReceiveStream* stream_;
@@ -446,6 +451,8 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
 
     WebRtcVideoDecoderFactory* const external_decoder_factory_;
     std::vector<AllocatedDecoder> allocated_decoders_;
+
+    const bool disable_prerenderer_smoothing_;
 
     rtc::CriticalSection renderer_lock_;
     cricket::VideoRenderer* renderer_ GUARDED_BY(renderer_lock_);
@@ -500,18 +507,18 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
   // lock-order inversions.
   rtc::CriticalSection capturer_crit_;
   bool signal_cpu_adaptation_ GUARDED_BY(capturer_crit_);
-  std::map<uint32, VideoCapturer*> capturers_ GUARDED_BY(capturer_crit_);
+  std::map<uint32_t, VideoCapturer*> capturers_ GUARDED_BY(capturer_crit_);
 
   rtc::CriticalSection stream_crit_;
   // Using primary-ssrc (first ssrc) as key.
-  std::map<uint32, WebRtcVideoSendStream*> send_streams_
+  std::map<uint32_t, WebRtcVideoSendStream*> send_streams_
       GUARDED_BY(stream_crit_);
-  std::map<uint32, WebRtcVideoReceiveStream*> receive_streams_
+  std::map<uint32_t, WebRtcVideoReceiveStream*> receive_streams_
       GUARDED_BY(stream_crit_);
-  std::set<uint32> send_ssrcs_ GUARDED_BY(stream_crit_);
-  std::set<uint32> receive_ssrcs_ GUARDED_BY(stream_crit_);
+  std::set<uint32_t> send_ssrcs_ GUARDED_BY(stream_crit_);
+  std::set<uint32_t> receive_ssrcs_ GUARDED_BY(stream_crit_);
 
-  Settable<VideoCodecSettings> send_codec_;
+  rtc::Optional<VideoCodecSettings> send_codec_;
   std::vector<webrtc::RtpExtension> send_rtp_extensions_;
 
   WebRtcVideoEncoderFactory* const external_encoder_factory_;
@@ -520,6 +527,10 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
   std::vector<webrtc::RtpExtension> recv_rtp_extensions_;
   webrtc::Call::Config::BitrateConfig bitrate_config_;
   VideoOptions options_;
+  // TODO(deadbeef): Don't duplicate information between
+  // send_params/recv_params, rtp_extensions, options, etc.
+  VideoSendParameters send_params_;
+  VideoRecvParameters recv_params_;
 };
 
 }  // namespace cricket

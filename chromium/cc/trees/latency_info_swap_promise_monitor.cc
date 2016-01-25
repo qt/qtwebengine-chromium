@@ -4,6 +4,8 @@
 
 #include "cc/trees/latency_info_swap_promise_monitor.h"
 
+#include <stdint.h>
+
 #include "base/threading/platform_thread.h"
 #include "cc/output/latency_info_swap_promise.h"
 #include "cc/trees/layer_tree_host.h"
@@ -52,7 +54,7 @@ LatencyInfoSwapPromiseMonitor::~LatencyInfoSwapPromiseMonitor() {
 void LatencyInfoSwapPromiseMonitor::OnSetNeedsCommitOnMain() {
   if (AddRenderingScheduledComponent(latency_, true /* on_main */)) {
     scoped_ptr<SwapPromise> swap_promise(new LatencyInfoSwapPromise(*latency_));
-    layer_tree_host_->QueueSwapPromise(swap_promise.Pass());
+    layer_tree_host_->QueueSwapPromise(std::move(swap_promise));
   }
 }
 
@@ -64,20 +66,20 @@ void LatencyInfoSwapPromiseMonitor::OnSetNeedsRedrawOnImpl() {
     // promise is pinned so that it is not interrupted by new incoming
     // activations (which would otherwise break the swap promise).
     layer_tree_host_impl_->active_tree()->QueuePinnedSwapPromise(
-        swap_promise.Pass());
+        std::move(swap_promise));
   }
 }
 
 void LatencyInfoSwapPromiseMonitor::OnForwardScrollUpdateToMainThreadOnImpl() {
   if (AddForwardingScrollUpdateToMainComponent(latency_)) {
-    int64 new_sequence_number = 0;
+    int64_t new_sequence_number = 0;
     for (ui::LatencyInfo::LatencyMap::const_iterator it =
              latency_->latency_components().begin();
          it != latency_->latency_components().end(); ++it) {
       if (it->first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT) {
         new_sequence_number =
-            ((static_cast<int64>(base::PlatformThread::CurrentId()) << 32) ^
-             (reinterpret_cast<uint64>(this) << 32)) |
+            ((static_cast<int64_t>(base::PlatformThread::CurrentId()) << 32) ^
+             (reinterpret_cast<uint64_t>(this) << 32)) |
             (it->second.sequence_number & 0xffffffff);
         if (new_sequence_number == it->second.sequence_number)
           return;
@@ -96,7 +98,7 @@ void LatencyInfoSwapPromiseMonitor::OnForwardScrollUpdateToMainThreadOnImpl() {
     scoped_ptr<SwapPromise> swap_promise(
         new LatencyInfoSwapPromise(new_latency));
     layer_tree_host_impl_->QueueSwapPromiseForMainThreadScrollUpdate(
-        swap_promise.Pass());
+        std::move(swap_promise));
   }
 }
 

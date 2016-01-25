@@ -43,6 +43,7 @@
 #include "platform/SharedBuffer.h"
 #include "platform/image-decoders/FastSharedBufferReader.h"
 #include "platform/image-decoders/gif/GIFImageDecoder.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -82,8 +83,9 @@ enum GIFState {
 struct GIFFrameContext;
 
 // LZW decoder state machine.
-class GIFLZWContext {
-    WTF_MAKE_FAST_ALLOCATED(GIFLZWContext);
+class GIFLZWContext final {
+    USING_FAST_MALLOC(GIFLZWContext);
+    WTF_MAKE_NONCOPYABLE(GIFLZWContext);
 public:
     GIFLZWContext(blink::GIFImageDecoder* client, const GIFFrameContext* frameContext)
         : codesize(0)
@@ -134,7 +136,7 @@ private:
 
 // Data structure for one LZW block.
 struct GIFLZWBlock {
-    WTF_MAKE_FAST_ALLOCATED(GIFLZWBlock);
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     GIFLZWBlock(size_t position, size_t size)
         : blockPosition(position)
@@ -146,8 +148,8 @@ public:
     size_t blockSize;
 };
 
-class GIFColorMap {
-    WTF_MAKE_FAST_ALLOCATED(GIFColorMap);
+class GIFColorMap final {
+    DISALLOW_NEW();
 public:
     typedef Vector<blink::ImageFrame::PixelData> Table;
 
@@ -180,7 +182,7 @@ private:
 
 // LocalFrame output state machine.
 struct GIFFrameContext {
-    WTF_MAKE_FAST_ALLOCATED(GIFFrameContext); WTF_MAKE_NONCOPYABLE(GIFFrameContext);
+    USING_FAST_MALLOC(GIFFrameContext); WTF_MAKE_NONCOPYABLE(GIFFrameContext);
 public:
     GIFFrameContext(int id)
         : m_frameId(id)
@@ -276,8 +278,8 @@ private:
     bool m_isDataSizeDefined;
 };
 
-class PLATFORM_EXPORT GIFImageReader {
-    WTF_MAKE_FAST_ALLOCATED(GIFImageReader); WTF_MAKE_NONCOPYABLE(GIFImageReader);
+class PLATFORM_EXPORT GIFImageReader final {
+    USING_FAST_MALLOC(GIFImageReader); WTF_MAKE_NONCOPYABLE(GIFImageReader);
 public:
     GIFImageReader(blink::GIFImageDecoder* client = 0)
         : m_client(client)

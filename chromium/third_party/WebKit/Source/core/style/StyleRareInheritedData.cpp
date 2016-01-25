@@ -19,7 +19,6 @@
  *
  */
 
-#include "config.h"
 #include "core/style/StyleRareInheritedData.h"
 
 #include "core/style/AppliedTextDecoration.h"
@@ -39,7 +38,7 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     float firstFloat;
     Color colors[5];
     void* ownPtrs[1];
-    AtomicString atomicStrings[4];
+    AtomicString atomicStrings[3];
 #if ENABLE(OILPAN)
     void* refPtrs[1];
     Persistent<void*> persistentHandles[2];
@@ -54,6 +53,7 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
 
     Color touchColors;
     TabSize tabSize;
+    void* variables[1];
 };
 
 static_assert(sizeof(StyleRareInheritedData) <= sizeof(SameSizeAsStyleRareInheritedData), "StyleRareInheritedData should stay small");
@@ -85,7 +85,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisPosition(TextEmphasisPositionOver)
     , m_textAlignLast(ComputedStyle::initialTextAlignLast())
     , m_textJustify(ComputedStyle::initialTextJustify())
-    , m_textOrientation(TextOrientationVerticalRight)
+    , m_textOrientation(TextOrientationMixed)
     , m_textCombine(ComputedStyle::initialTextCombine())
     , m_textIndentLine(ComputedStyle::initialTextIndentLine())
     , m_textIndentType(ComputedStyle::initialTextIndentLine())
@@ -154,11 +154,11 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
     , hyphenationLimitLines(o.hyphenationLimitLines)
-    , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
     , tapHighlightColor(o.tapHighlightColor)
     , appliedTextDecorations(o.appliedTextDecorations)
     , m_tabSize(o.m_tabSize)
+    , variables(o.variables)
 {
 }
 
@@ -214,7 +214,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_selfOrAncestorHasDirAutoAttribute == o.m_selfOrAncestorHasDirAutoAttribute
         && m_respectImageOrientation == o.m_respectImageOrientation
         && hyphenationString == o.hyphenationString
-        && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
         && quotesDataEquivalent(o)
         && m_tabSize == o.m_tabSize
@@ -222,7 +221,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
         && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
-        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
+        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations)
+        && dataEquivalent(variables, o.variables);
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

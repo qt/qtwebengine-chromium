@@ -5,11 +5,12 @@
 #ifndef UI_OZONE_DEMO_SURFACELESS_GL_RENDERER_H_
 #define UI_OZONE_DEMO_SURFACELESS_GL_RENDERER_H_
 
+#include "base/macros.h"
 #include "ui/ozone/demo/gl_renderer.h"
 
-namespace gfx {
+namespace gl {
 class GLImage;
-}  // namespace gfx
+}
 
 namespace ui {
 
@@ -33,7 +34,7 @@ class SurfacelessGlRenderer : public GlRenderer {
     BufferWrapper();
     ~BufferWrapper();
 
-    gfx::GLImage* image() const { return image_.get(); }
+    gl::GLImage* image() const { return image_.get(); }
 
     bool Initialize(gfx::AcceleratedWidget widget, const gfx::Size& size);
     void BindFramebuffer();
@@ -42,7 +43,7 @@ class SurfacelessGlRenderer : public GlRenderer {
     gfx::AcceleratedWidget widget_ = gfx::kNullAcceleratedWidget;
     gfx::Size size_;
 
-    scoped_refptr<gfx::GLImage> image_;
+    scoped_refptr<gl::GLImage> image_;
     unsigned int gl_fb_ = 0;
     unsigned int gl_tex_ = 0;
   };

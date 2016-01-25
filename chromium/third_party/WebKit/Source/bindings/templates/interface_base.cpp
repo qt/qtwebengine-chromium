@@ -1,6 +1,4 @@
 {% include 'copyright_block.txt' %}
-#include "config.h"
-{% filter conditional(conditional_string) %}
 #include "{{v8_class_or_partial}}.h"
 
 {% for filename in cpp_includes if filename != '%s.h' % cpp_class_or_partial %}
@@ -63,7 +61,7 @@ static bool {{cpp_class}}CreateDataProperty(v8::Local<v8::Name> name, v8::Local<
     {{cpp_class}}* impl = {{v8_class}}::toImpl(info.Holder());
     v8::String::Utf8Value attributeName(name);
     ExceptionState exceptionState(ExceptionState::SetterContext, *attributeName, "{{interface_name}}", info.Holder(), info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
         exceptionState.throwIfNeeded();
         return false;
     }
@@ -128,16 +126,11 @@ static void {{cpp_class}}ConstructorAttributeSetterCallback(v8::Local<v8::Name>,
 {##############################################################################}
 {% block security_check_functions %}
 {% if has_access_check_callbacks %}
-bool indexedSecurityCheck(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value>)
+bool securityCheck(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject)
 {
-    {{cpp_class}}* impl = {{v8_class}}::toImpl(host);
-    return BindingSecurity::shouldAllowAccessToFrame(v8::Isolate::GetCurrent(), impl->frame(), DoNotReportSecurityError);
-}
-
-bool namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value>)
-{
-    {{cpp_class}}* impl = {{v8_class}}::toImpl(host);
-    return BindingSecurity::shouldAllowAccessToFrame(v8::Isolate::GetCurrent(), impl->frame(), DoNotReportSecurityError);
+    // TODO(jochen): Take accessingContext into account.
+    {{cpp_class}}* impl = {{v8_class}}::toImpl(accessedObject);
+    return BindingSecurity::shouldAllowAccessTo(v8::Isolate::GetCurrent(), callingDOMWindow(v8::Isolate::GetCurrent()), impl, DoNotReportSecurityError);
 }
 
 {% endif %}
@@ -231,9 +224,7 @@ const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[] = {
                attribute.runtime_enabled_function) and
           attribute.is_data_type_property and
           attribute.should_be_exposed_to_script %}
-    {% filter conditional(attribute.conditional_string) %}
     {{attribute_configuration(attribute)}},
-    {% endfilter %}
     {% endfor %}
 };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
@@ -252,9 +243,7 @@ const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] = {
                attribute.runtime_enabled_function) and
           not attribute.is_data_type_property and
           attribute.should_be_exposed_to_script %}
-    {% filter conditional(attribute.conditional_string) %}
     {{attribute_configuration(attribute)}},
-    {% endfilter %}
     {% endfor %}
 };
 
@@ -266,9 +255,7 @@ const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] = {
 {% if method_configuration_methods %}
 const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
     {% for method in method_configuration_methods %}
-    {% filter conditional(method.conditional_string) %}
     {{method_configuration(method)}},
-    {% endfilter %}
     {% endfor %}
 };
 
@@ -298,6 +285,8 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
 
     v8::Local<v8::Signature> defaultSignature;
     {% set parent_template =
+           '%s::domTemplateForNamedPropertiesObject(isolate)' % v8_class
+           if has_named_properties_object else
            'V8%s::domTemplate(isolate)' % parent_interface
            if parent_interface else 'v8::Local<v8::FunctionTemplate>()' %}
     {% if runtime_enabled_function %}
@@ -344,85 +333,53 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     ALLOW_UNUSED_LOCAL(context);
     {% endif %}
     {% if has_access_check_callbacks %}
-    instanceTemplate->SetAccessCheckCallbacks({{cpp_class}}V8Internal::namedSecurityCheck, {{cpp_class}}V8Internal::indexedSecurityCheck, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&{{v8_class}}::wrapperTypeInfo)));
+    instanceTemplate->SetAccessCheckCallback({{cpp_class}}V8Internal::securityCheck, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&{{v8_class}}::wrapperTypeInfo)));
     {% endif %}
+    {% if has_array_iterator %}
+    {% filter runtime_enabled('RuntimeEnabledFeatures::iterableCollectionsEnabled') %}
+    {% if is_global %}
+    instanceTemplate->SetIntrinsicDataProperty(v8::Symbol::GetIterator(isolate), v8::kArrayProto_values, v8::DontEnum);
+    {% else %}
+    prototypeTemplate->SetIntrinsicDataProperty(v8::Symbol::GetIterator(isolate), v8::kArrayProto_values, v8::DontEnum);
+    {% endif %}
+    {% endfilter %}{# runtime_enabled() #}
+    {% endif %}
+    {% set runtime_enabled_features = dict() %}
     {% for attribute in attributes
        if attribute.runtime_enabled_function and
           not attribute.exposed_test %}
-    {% filter conditional(attribute.conditional_string) %}
-    if ({{attribute.runtime_enabled_function}}()) {
-        {% if attribute.is_data_type_property %}
-        const V8DOMConfiguration::AttributeConfiguration attributeConfiguration = \
-        {{attribute_configuration(attribute)}};
-        V8DOMConfiguration::installAttribute(isolate, instanceTemplate, prototypeTemplate, attributeConfiguration);
-        {% else %}
-        const V8DOMConfiguration::AccessorConfiguration accessorConfiguration = \
-        {{attribute_configuration(attribute)}};
-        V8DOMConfiguration::installAccessor(isolate, instanceTemplate, prototypeTemplate, functionTemplate, defaultSignature, accessorConfiguration);
+        {% if attribute.runtime_enabled_function not in runtime_enabled_features %}
+            {% set unused = runtime_enabled_features.update({attribute.runtime_enabled_function: []}) %}
         {% endif %}
+        {% set unused = runtime_enabled_features.get(attribute.runtime_enabled_function).append(attribute) %}
+    {% endfor %}
+    {% for runtime_enabled_feature in runtime_enabled_features | sort %}
+    if ({{runtime_enabled_feature}}()) {
+        {% set distinct_attributes = [] %}
+        {% for attribute in runtime_enabled_features.get(runtime_enabled_feature) | sort
+           if attribute.name not in distinct_attributes %}
+        {% set unused = distinct_attributes.append(attribute.name) %}
+        {% if attribute.is_data_type_property %}
+        const V8DOMConfiguration::AttributeConfiguration attribute{{attribute.name}}Configuration = \
+        {{attribute_configuration(attribute)}};
+        V8DOMConfiguration::installAttribute(isolate, instanceTemplate, prototypeTemplate, attribute{{attribute.name}}Configuration);
+        {% else %}
+        const V8DOMConfiguration::AccessorConfiguration accessor{{attribute.name}}Configuration = \
+        {{attribute_configuration(attribute)}};
+        V8DOMConfiguration::installAccessor(isolate, instanceTemplate, prototypeTemplate, functionTemplate, defaultSignature, accessor{{attribute.name}}Configuration);
+        {% endif %}
+        {% endfor %}
     }
-    {% endfilter %}
     {% endfor %}
     {% if constants %}
     {{install_constants() | indent}}
     {% endif %}
     {# Special operations #}
-    {# V8 has access-check callback API and it\'s used on Window instead of
-       deleters or enumerators; see ObjectTemplate::SetAccessCheckCallbacks.
-       In addition, the getter should be set on the prototype template, to get
-       the implementation straight out of the Window prototype, regardless of
-       what prototype is actually set on the object. #}
-    {% set set_on_template = 'PrototypeTemplate' if interface_name == 'Window'
-                        else 'InstanceTemplate' %}
     {% if indexed_property_getter %}
-    {# if have indexed properties, MUST have an indexed property getter #}
-    {% set indexed_property_getter_callback =
-           '%sV8Internal::indexedPropertyGetterCallback' % cpp_class %}
-    {% set indexed_property_setter_callback =
-           '%sV8Internal::indexedPropertySetterCallback' % cpp_class
-           if indexed_property_setter else '0' %}
-    {% set indexed_property_query_callback = '0' %}{# Unused #}
-    {% set indexed_property_deleter_callback =
-           '%sV8Internal::indexedPropertyDeleterCallback' % cpp_class
-           if indexed_property_deleter else '0' %}
-    {% set indexed_property_enumerator_callback =
-           'indexedPropertyEnumerator<%s>' % cpp_class
-           if indexed_property_getter.is_enumerable else '0' %}
-    {
-        v8::IndexedPropertyHandlerConfiguration config({{indexed_property_getter_callback}}, {{indexed_property_setter_callback}}, {{indexed_property_query_callback}}, {{indexed_property_deleter_callback}}, {{indexed_property_enumerator_callback}});
-        {% if indexed_property_getter.do_not_check_security %}
-        config.flags = v8::PropertyHandlerFlags::kAllCanRead;
-        {% endif %}
-        functionTemplate->{{set_on_template}}()->SetHandler(config);
-    }
+    {{install_indexed_property_handler('instanceTemplate') | indent}}
     {% endif %}
-    {% if named_property_getter %}
-    {# if have named properties, MUST have a named property getter #}
-    {% set named_property_getter_callback =
-           '%sV8Internal::namedPropertyGetterCallback' % cpp_class %}
-    {% set named_property_setter_callback =
-           '%sV8Internal::namedPropertySetterCallback' % cpp_class
-           if named_property_setter else '0' %}
-    {% set named_property_query_callback =
-           '%sV8Internal::namedPropertyQueryCallback' % cpp_class
-           if named_property_getter.is_enumerable else '0' %}
-    {% set named_property_deleter_callback =
-           '%sV8Internal::namedPropertyDeleterCallback' % cpp_class
-           if named_property_deleter else '0' %}
-    {% set named_property_enumerator_callback =
-           '%sV8Internal::namedPropertyEnumeratorCallback' % cpp_class
-           if named_property_getter.is_enumerable else '0' %}
-    {
-        int flags = static_cast<int>(v8::PropertyHandlerFlags::kOnlyInterceptStrings);
-        {% if named_property_getter.do_not_check_security %}
-        flags |= static_cast<int>(v8::PropertyHandlerFlags::kAllCanRead);
-        {% endif %}
-        {% if not is_override_builtins %}
-        flags |= static_cast<int>(v8::PropertyHandlerFlags::kNonMasking);
-        {% endif %}
-        v8::NamedPropertyHandlerConfiguration config({{named_property_getter_callback}}, {{named_property_setter_callback}}, {{named_property_query_callback}}, {{named_property_deleter_callback}}, {{named_property_enumerator_callback}}, v8::Handle<v8::Value>(), static_cast<v8::PropertyHandlerFlags>(flags));
-        functionTemplate->{{set_on_template}}()->SetHandler(config);
-    }
+    {% if named_property_getter and not has_named_properties_object %}
+    {{install_named_property_handler('instanceTemplate') | indent}}
     {% endif %}
     {% if iterator_method %}
     {% filter exposed(iterator_method.exposed_test) %}
@@ -442,7 +399,6 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     {% endif %}
     {% for method in custom_registration_methods %}
     {# install_custom_signature #}
-    {% filter conditional(method.conditional_string) %}
     {% filter exposed(method.overloads.exposed_test_all
                       if method.overloads else
                       method.exposed_test) %}
@@ -457,23 +413,17 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     {% endif %}{# is_do_not_check_security #}
     {% endfilter %}{# runtime_enabled() #}
     {% endfilter %}{# exposed() #}
-    {% endfilter %}{# conditional() #}
     {% endfor %}
     {# Special interfaces #}
     {% if not is_partial %}
     {% if interface_name == 'Window' %}
 
-    prototypeTemplate->SetInternalFieldCount(V8Window::internalFieldCount);
-    functionTemplate->SetHiddenPrototype(true);
     instanceTemplate->SetInternalFieldCount(V8Window::internalFieldCount);
-    {% elif interface_name in [
-           'HTMLDocument', 'DedicatedWorkerGlobalScope', 'CompositorWorkerGlobalScope',
-           'SharedWorkerGlobalScope', 'ServiceWorkerGlobalScope'] %}
+    prototypeTemplate->SetInternalFieldCount(V8Window::internalFieldCount);
+    {% endif %}
+    {% if is_global or interface_name == 'HTMLDocument' %}
     functionTemplate->SetHiddenPrototype(true);
     {% endif %}
-
-    // Custom toString template
-    functionTemplate->Set(v8AtomicString(isolate, "toString"), V8PerIsolateData::from(isolate)->toStringTemplate());
     {% endif %}
 }
 
@@ -481,6 +431,7 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
 {% endblock %}
 {##############################################################################}
 {% block get_dom_template %}{% endblock %}
+{% block get_dom_template_for_named_properties_object %}{% endblock %}
 {% block has_instance %}{% endblock %}
 {% block to_impl %}{% endblock %}
 {% block to_impl_with_type_check %}{% endblock %}
@@ -501,4 +452,3 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
 {% endfor %}
 {% block partial_interface %}{% endblock %}
 } // namespace blink
-{% endfilter %}

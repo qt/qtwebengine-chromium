@@ -23,10 +23,9 @@
  * SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeEditElement.h"
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
@@ -517,13 +516,13 @@ PassRefPtr<ComputedStyle> DateTimeEditElement::customStyleForLayoutObject()
             continue;
         Element* childElement = toElement(child);
         if (childElement->isDateTimeFieldElement()) {
-            // We need to pass the Font of this element because child elements
-            // can't resolve inherited style at this timing.
-            width += static_cast<DateTimeFieldElement*>(childElement)->maximumWidth(style->font());
+            // We need to pass the ComputedStyle of this element because child
+            // elements can't resolve inherited style at this timing.
+            width += static_cast<DateTimeFieldElement*>(childElement)->maximumWidth(*style);
         } else {
             // ::-webkit-datetime-edit-text case. It has no
             // border/padding/margin in html.css.
-            width += style->font().width(childElement->textContent());
+            width += DateTimeFieldElement::computeTextWidth(*style, childElement->textContent());
         }
     }
     style->setWidth(Length(ceilf(width), Fixed));

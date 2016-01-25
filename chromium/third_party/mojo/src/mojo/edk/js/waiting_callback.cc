@@ -14,8 +14,9 @@ namespace js {
 
 namespace {
 
-v8::Handle<v8::String> GetHiddenPropertyName(v8::Isolate* isolate) {
-  return gin::StringToSymbol(isolate, "::mojo::js::WaitingCallback");
+v8::Handle<v8::Private> GetHiddenPropertyName(v8::Isolate* isolate) {
+  return v8::Private::ForApi(
+      isolate, gin::StringToV8(isolate, "::mojo::js::WaitingCallback"));
 }
 
 }  // namespace
@@ -31,8 +32,11 @@ gin::Handle<WaitingCallback> WaitingCallback::Create(
   gin::Handle<WaitingCallback> waiting_callback = gin::CreateHandle(
       isolate, new WaitingCallback(isolate, callback, handle_wrapper));
   waiting_callback->wait_id_ = Environment::GetDefaultAsyncWaiter()->AsyncWait(
-      3, handle_wrapper->get().value(), signals, MOJO_DEADLINE_INDEFINITE,
-      &WaitingCallback::CallOnHandleReady, waiting_callback.get());
+      handle_wrapper->get().value(),
+      signals,
+      MOJO_DEADLINE_INDEFINITE,
+      &WaitingCallback::CallOnHandleReady,
+      waiting_callback.get());
   return waiting_callback;
 }
 
@@ -53,7 +57,9 @@ WaitingCallback::WaitingCallback(v8::Isolate* isolate,
   handle_wrapper_->AddCloseObserver(this);
   v8::Handle<v8::Context> context = isolate->GetCurrentContext();
   runner_ = gin::PerContextData::From(context)->runner()->GetWeakPtr();
-  GetWrapper(isolate)->SetHiddenValue(GetHiddenPropertyName(isolate), callback);
+  GetWrapper(isolate)
+      ->SetPrivate(context, GetHiddenPropertyName(isolate), callback)
+      .FromJust();
 }
 
 WaitingCallback::~WaitingCallback() {
@@ -88,7 +94,10 @@ void WaitingCallback::CallCallback(MojoResult result) {
   v8::Isolate* isolate = runner_->GetContextHolder()->isolate();
 
   v8::Handle<v8::Value> hidden_value =
-      GetWrapper(isolate)->GetHiddenValue(GetHiddenPropertyName(isolate));
+      GetWrapper(isolate)
+          ->GetPrivate(runner_->GetContextHolder()->context(),
+                       GetHiddenPropertyName(isolate))
+          .ToLocalChecked();
   v8::Handle<v8::Function> callback;
   CHECK(gin::ConvertFromV8(isolate, hidden_value, &callback));
 

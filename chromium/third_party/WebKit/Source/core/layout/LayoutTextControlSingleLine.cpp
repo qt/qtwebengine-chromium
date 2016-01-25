@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 
 #include "core/CSSValueKeywords.h"
@@ -74,8 +73,8 @@ void LayoutTextControlSingleLine::paint(const PaintInfo& paintInfo, const Layout
 {
     LayoutTextControl::paint(paintInfo, paintOffset);
 
-    if (paintInfo.phase == PaintPhaseBlockBackground && m_shouldDrawCapsLockIndicator) {
-        if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, *this, paintInfo.phase, paintOffset))
+    if (shouldPaintSelfBlockBackground(paintInfo.phase) && m_shouldDrawCapsLockIndicator) {
+        if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, *this, paintInfo.phase, paintOffset))
             return;
 
         LayoutRect contentsRect = contentBoxRect();
@@ -89,7 +88,7 @@ void LayoutTextControlSingleLine::paint(const PaintInfo& paintInfo, const Layout
         // Convert the rect into the coords used for painting the content
         contentsRect.moveBy(paintOffset + location());
         IntRect snappedRect = pixelSnappedIntRect(contentsRect);
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, *this, paintInfo.phase, snappedRect, paintOffset);
+        LayoutObjectDrawingRecorder recorder(paintInfo.context, *this, paintInfo.phase, snappedRect, paintOffset);
         LayoutTheme::theme().painter().paintCapsLockIndicator(*this, paintInfo, snappedRect);
     }
 }
@@ -121,19 +120,26 @@ void LayoutTextControlSingleLine::layout()
     LayoutBox* viewPortLayoutObject = editingViewPortElement() ? editingViewPortElement()->layoutBox() : 0;
 
     // To ensure consistency between layouts, we need to reset any conditionally overriden height.
-    if (innerEditorLayoutObject && !innerEditorLayoutObject->styleRef().logicalHeight().isAuto()) {
-        innerEditorLayoutObject->mutableStyleRef().setLogicalHeight(Length(Auto));
+    if (innerEditorLayoutObject) {
+        innerEditorLayoutObject->clearOverrideLogicalContentHeight();
+        // TODO(jchaffraix): We could probably skip some of these due to
+        // forcing children relayout below but keeping them for safety for now.
         layoutScope.setNeedsLayout(innerEditorLayoutObject, LayoutInvalidationReason::TextControlChanged);
         HTMLElement* placeholderElement = inputElement()->placeholderElement();
         if (LayoutBox* placeholderBox = placeholderElement ? placeholderElement->layoutBox() : 0)
             layoutScope.setNeedsLayout(placeholderBox, LayoutInvalidationReason::TextControlChanged);
     }
+    // TODO(jchaffraix): This logic is not correct and will yield to bugs such
+    // as crbug.com/529252. The fix is similar to what is done with
+    // innerEditorLayoutObject above.
     if (viewPortLayoutObject && !viewPortLayoutObject->styleRef().logicalHeight().isAuto()) {
         viewPortLayoutObject->mutableStyleRef().setLogicalHeight(Length(Auto));
         layoutScope.setNeedsLayout(viewPortLayoutObject, LayoutInvalidationReason::TextControlChanged);
     }
 
-    LayoutBlockFlow::layoutBlock(false);
+    // This is the measuring phase. Thus we force children to be relayout so
+    // that the checks below are executed consistently.
+    LayoutBlockFlow::layoutBlock(true);
 
     Element* container = containerElement();
     LayoutBox* containerLayoutObject = container ? container->layoutBox() : 0;
@@ -147,7 +153,7 @@ void LayoutTextControlSingleLine::layout()
 
         m_desiredInnerEditorLogicalHeight = desiredLogicalHeight;
 
-        innerEditorLayoutObject->mutableStyleRef().setLogicalHeight(Length(desiredLogicalHeight, Fixed));
+        innerEditorLayoutObject->setOverrideLogicalContentHeight(desiredLogicalHeight);
         layoutScope.setNeedsLayout(innerEditorLayoutObject, LayoutInvalidationReason::TextControlChanged);
         if (viewPortLayoutObject) {
             viewPortLayoutObject->mutableStyleRef().setLogicalHeight(Length(desiredLogicalHeight, Fixed));
@@ -252,9 +258,6 @@ void LayoutTextControlSingleLine::styleDidChange(StyleDifference diff, const Com
         containerLayoutObject->mutableStyleRef().setHeight(Length());
         containerLayoutObject->mutableStyleRef().setWidth(Length());
     }
-    LayoutObject* innerEditorLayoutObject = innerEditorElement()->layoutObject();
-    if (innerEditorLayoutObject && diff.needsFullLayout())
-        innerEditorLayoutObject->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::StyleChange);
     if (HTMLElement* placeholder = inputElement()->placeholderElement())
         placeholder->setInlineStyleProperty(CSSPropertyTextOverflow, textShouldBeTruncated() ? CSSValueEllipsis : CSSValueClip);
     setHasOverflowClip(false);
@@ -359,14 +362,12 @@ PassRefPtr<ComputedStyle> LayoutTextControlSingleLine::createInnerEditorStyle(co
 
     textBlockStyle->setWhiteSpace(PRE);
     textBlockStyle->setOverflowWrap(NormalOverflowWrap);
-    textBlockStyle->setOverflowX(OHIDDEN);
-    textBlockStyle->setOverflowY(OHIDDEN);
     textBlockStyle->setTextOverflow(textShouldBeTruncated() ? TextOverflowEllipsis : TextOverflowClip);
 
     if (m_desiredInnerEditorLogicalHeight >= 0)
         textBlockStyle->setLogicalHeight(Length(m_desiredInnerEditorLogicalHeight, Fixed));
     // Do not allow line-height to be smaller than our default.
-    if (textBlockStyle->fontMetrics().lineSpacing() > lineHeight(true, HorizontalLine, PositionOfInteriorLineBoxes))
+    if (textBlockStyle->fontSize() >= lineHeight(true, HorizontalLine, PositionOfInteriorLineBoxes))
         textBlockStyle->setLineHeight(ComputedStyle::initialLineHeight());
 
     textBlockStyle->setDisplay(BLOCK);
@@ -374,6 +375,14 @@ PassRefPtr<ComputedStyle> LayoutTextControlSingleLine::createInnerEditorStyle(co
 
     if (inputElement()->shouldRevealPassword())
         textBlockStyle->setTextSecurity(TSNONE);
+
+    textBlockStyle->setOverflowX(OSCROLL);
+    textBlockStyle->setOverflowY(OSCROLL);
+    RefPtr<ComputedStyle> noScrollbarStyle = ComputedStyle::create();
+    noScrollbarStyle->setStyleType(SCROLLBAR);
+    noScrollbarStyle->setDisplay(NONE);
+    textBlockStyle->addCachedPseudoStyle(noScrollbarStyle);
+    textBlockStyle->setHasPseudoStyle(SCROLLBAR);
 
     return textBlockStyle.release();
 }

@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/core/v8/V8Binding.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ToV8.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Vector.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 

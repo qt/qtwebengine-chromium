@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -24,15 +25,15 @@ class AXTreeSnapshotWaiter {
     loop_runner_->Run();
   }
 
-  const SimpleAXTreeUpdate& snapshot() const { return snapshot_; }
+  const ui::AXTreeUpdate& snapshot() const { return snapshot_; }
 
-  void ReceiveSnapshot(const SimpleAXTreeUpdate& snapshot) {
+  void ReceiveSnapshot(const ui::AXTreeUpdate& snapshot) {
     snapshot_ = snapshot;
     loop_runner_->Quit();
   }
 
  private:
-  SimpleAXTreeUpdate snapshot_;
+  ui::AXTreeUpdate snapshot_;
   scoped_refptr<MessageLoopRunner> loop_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(AXTreeSnapshotWaiter);

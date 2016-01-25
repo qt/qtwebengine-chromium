@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -11,9 +10,8 @@
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/V8File.h"
 #include "core/fileapi/File.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebUnitTestSupport.h"
-#include <gtest/gtest.h>
+#include "platform/testing/UnitTestHelpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -33,7 +31,7 @@ protected:
 
 TEST_F(SerializedScriptValueTest, UserSelectedFile)
 {
-    String filePath = Platform::current()->unitTestSupport()->webKitRootDir();
+    String filePath = testing::blinkRootDir();
     filePath.append("/Source/bindings/core/v8/SerializedScriptValueTest.cpp");
     File* originalFile = File::create(filePath);
     ASSERT_TRUE(originalFile->hasBackingFile());
@@ -42,7 +40,7 @@ TEST_F(SerializedScriptValueTest, UserSelectedFile)
 
     v8::Local<v8::Value> v8OriginalFile = toV8(originalFile, creationContext(), isolate());
     RefPtr<SerializedScriptValue> serializedScriptValue =
-    SerializedScriptValueFactory::instance().create(isolate(), v8OriginalFile, nullptr, nullptr, ASSERT_NO_EXCEPTION);
+    SerializedScriptValueFactory::instance().create(isolate(), v8OriginalFile, nullptr, nullptr, nullptr, ASSERT_NO_EXCEPTION);
     v8::Local<v8::Value> v8File = serializedScriptValue->deserialize(isolate());
 
     ASSERT_TRUE(V8File::hasInstance(v8File, isolate()));
@@ -62,7 +60,7 @@ TEST_F(SerializedScriptValueTest, FileConstructorFile)
 
     v8::Local<v8::Value> v8OriginalFile = toV8(originalFile, creationContext(), isolate());
     RefPtr<SerializedScriptValue> serializedScriptValue =
-    SerializedScriptValueFactory::instance().create(isolate(), v8OriginalFile, nullptr, nullptr, ASSERT_NO_EXCEPTION);
+    SerializedScriptValueFactory::instance().create(isolate(), v8OriginalFile, nullptr, nullptr, nullptr, ASSERT_NO_EXCEPTION);
     v8::Local<v8::Value> v8File = serializedScriptValue->deserialize(isolate());
 
     ASSERT_TRUE(V8File::hasInstance(v8File, isolate()));

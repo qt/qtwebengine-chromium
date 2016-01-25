@@ -6,6 +6,8 @@
 #define MEDIA_MIDI_MIDI_INPUT_PORT_ANDROID_H_
 
 #include <jni.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "base/android/scoped_java_ref.h"
 #include "base/time/time.h"
@@ -19,7 +21,7 @@ class MidiInputPortAndroid final {
    public:
     virtual ~Delegate() {}
     virtual void OnReceivedData(MidiInputPortAndroid* port,
-                                const uint8* data,
+                                const uint8_t* data,
                                 size_t size,
                                 base::TimeTicks time) = 0;
   };
@@ -32,8 +34,8 @@ class MidiInputPortAndroid final {
 
   // Called by the Java world.
   void OnData(JNIEnv* env,
-              jobject caller,
-              jbyteArray data,
+              const base::android::JavaParamRef<jobject>& caller,
+              const base::android::JavaParamRef<jbyteArray>& data,
               jint offset,
               jint size,
               jlong timestamp);

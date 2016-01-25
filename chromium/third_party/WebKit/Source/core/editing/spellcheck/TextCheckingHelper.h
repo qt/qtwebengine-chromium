@@ -89,7 +89,7 @@ public:
     ~TextCheckingHelper();
 
     String findFirstMisspelling(int& firstMisspellingOffset, bool markAll);
-    String findFirstMisspellingOrBadGrammar(bool checkGrammar, bool& outIsSpelling, int& outFirstFoundOffset, GrammarDetail& outGrammarDetail);
+    String findFirstMisspellingOrBadGrammar(bool& outIsSpelling, int& outFirstFoundOffset, GrammarDetail& outGrammarDetail);
     String findFirstBadGrammar(GrammarDetail& outGrammarDetail, int& outGrammarPhraseOffset, bool markAll);
     bool markAllMisspellings();
     void markAllBadGrammar();
@@ -104,7 +104,6 @@ private:
 };
 
 void checkTextOfParagraph(TextCheckerClient&, const String&, TextCheckingTypeMask, Vector<TextCheckingResult>&);
-EphemeralRange expandRangeToSentenceBoundary(const EphemeralRange&);
 bool unifiedTextCheckerEnabled(const LocalFrame*);
 
 } // namespace blink

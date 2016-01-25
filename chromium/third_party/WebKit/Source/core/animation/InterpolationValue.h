@@ -5,29 +5,19 @@
 #ifndef InterpolationValue_h
 #define InterpolationValue_h
 
-#include "core/animation/InterpolableValue.h"
-#include "core/animation/NonInterpolableValue.h"
-#include "platform/heap/Handle.h"
+#include "core/animation/InterpolationComponent.h"
 
 namespace blink {
 
 class InterpolationType;
 
-struct InterpolationComponentValue {
-    ALLOW_ONLY_INLINE_ALLOCATION();
-
-    InterpolationComponentValue(PassOwnPtr<InterpolableValue> interpolableValue = nullptr, PassRefPtrWillBeRawPtr<NonInterpolableValue> nonInterpolableValue = nullptr)
-        : interpolableValue(interpolableValue)
-        , nonInterpolableValue(nonInterpolableValue)
-    { }
-
-    OwnPtr<InterpolableValue> interpolableValue;
-    RefPtrWillBePersistent<NonInterpolableValue> nonInterpolableValue;
-};
-
 class InterpolationValue {
 public:
-    static PassOwnPtr<InterpolationValue> create(const InterpolationType& type, PassOwnPtr<InterpolableValue> interpolableValue, PassRefPtrWillBeRawPtr<NonInterpolableValue> nonInterpolableValue = nullptr)
+    static PassOwnPtr<InterpolationValue> create(const InterpolationType& type, InterpolationComponent& component)
+    {
+        return adoptPtr(new InterpolationValue(type, component.interpolableValue.release(), component.nonInterpolableValue.release()));
+    }
+    static PassOwnPtr<InterpolationValue> create(const InterpolationType& type, PassOwnPtr<InterpolableValue> interpolableValue, PassRefPtr<NonInterpolableValue> nonInterpolableValue = nullptr)
     {
         return adoptPtr(new InterpolationValue(type, interpolableValue, nonInterpolableValue));
     }
@@ -40,12 +30,12 @@ public:
     const InterpolationType& type() const { return m_type; }
     const InterpolableValue& interpolableValue() const { return *m_component.interpolableValue; }
     const NonInterpolableValue* nonInterpolableValue() const { return m_component.nonInterpolableValue.get(); }
+    const InterpolationComponent& component() const { return m_component; }
 
-    InterpolationComponentValue& mutableComponent() { return m_component; }
-
+    InterpolationComponent& mutableComponent() { return m_component; }
 
 private:
-    InterpolationValue(const InterpolationType& type, PassOwnPtr<InterpolableValue> interpolableValue, PassRefPtrWillBeRawPtr<NonInterpolableValue> nonInterpolableValue)
+    InterpolationValue(const InterpolationType& type, PassOwnPtr<InterpolableValue> interpolableValue, PassRefPtr<NonInterpolableValue> nonInterpolableValue)
         : m_type(type)
         , m_component(interpolableValue, nonInterpolableValue)
     {
@@ -53,7 +43,7 @@ private:
     }
 
     const InterpolationType& m_type;
-    InterpolationComponentValue m_component;
+    InterpolationComponent m_component;
 };
 
 } // namespace blink

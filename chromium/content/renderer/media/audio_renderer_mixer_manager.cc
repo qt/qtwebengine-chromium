@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "build/build_config.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
@@ -23,11 +24,6 @@ AudioRendererMixerManager::~AudioRendererMixerManager() {
   // References to AudioRendererMixers may be owned by garbage collected
   // objects.  During process shutdown they may be leaked, so, transitively,
   // |mixers_| may leak (i.e., may be non-empty at this time) as well.
-}
-
-media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
-    int source_render_frame_id) {
-  return CreateInput(source_render_frame_id, std::string(), url::Origin());
 }
 
 media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
@@ -88,21 +84,29 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
   media::AudioParameters hardware_params =
       sink->GetOutputDevice()->GetOutputParameters();
 
-// On ChromeOS we can rely on the playback device to handle resampling, so
-// don't waste cycles on it here.
-#if defined(OS_CHROMEOS)
+// On ChromeOS and Android we can rely on the playback device to handle
+// resampling, so don't waste cycles on it here.
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   int sample_rate = params.sample_rate();
 #else
-  int sample_rate = hardware_params.sample_rate();
+  int sample_rate =
+      hardware_params.format() != media::AudioParameters::AUDIO_FAKE
+          ? hardware_params.sample_rate()
+          : params.sample_rate();
 #endif
+
+  int buffer_size =
+      hardware_params.format() != media::AudioParameters::AUDIO_FAKE
+          ? media::AudioHardwareConfig::GetHighLatencyBufferSize(
+                hardware_params)
+          : params.frames_per_buffer();
 
   // Create output parameters based on the audio hardware configuration for
   // passing on to the output sink.  Force to 16-bit output for now since we
   // know that works everywhere; ChromeOS does not support other bit depths.
   media::AudioParameters output_params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY, params.channel_layout(),
-      sample_rate, 16,
-      media::AudioHardwareConfig::GetHighLatencyBufferSize(hardware_params));
+      sample_rate, 16, buffer_size);
 
   // If we've created invalid output parameters, simply pass on the input
   // params and let the browser side handle automatic fallback.
@@ -110,7 +114,7 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
     output_params = params;
 
   media::AudioRendererMixer* mixer =
-      new media::AudioRendererMixer(params, output_params, sink);
+      new media::AudioRendererMixer(output_params, sink);
   AudioRendererMixerReference mixer_reference = { mixer, 1 };
   mixers_[key] = mixer_reference;
   return mixer;

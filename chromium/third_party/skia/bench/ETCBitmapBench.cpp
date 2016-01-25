@@ -81,7 +81,7 @@ class ETCBitmapBenchBase : public Benchmark {
 public:
     ETCBitmapBenchBase() : fPKMData(loadPKM()) {
         if (nullptr == fPKMData) {
-            SkDebugf("Could not load PKM data!");
+            SkDebugf("Could not load PKM data!\n");
         }
     }
 
@@ -123,7 +123,7 @@ public:
         : fDecompress(decompress), fBackend(backend) { }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == this->fBackend;
+        return SkToBool(fImage) && backend == this->fBackend;
     }
 
 protected:

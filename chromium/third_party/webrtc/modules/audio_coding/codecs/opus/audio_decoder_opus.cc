@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/opus/interface/audio_decoder_opus.h"
+#include "webrtc/modules/audio_coding/codecs/opus/audio_decoder_opus.h"
 
 #include "webrtc/base/checks.h"
 
@@ -17,7 +17,7 @@ namespace webrtc {
 AudioDecoderOpus::AudioDecoderOpus(size_t num_channels)
     : channels_(num_channels) {
   RTC_DCHECK(num_channels == 1 || num_channels == 2);
-  WebRtcOpus_DecoderCreate(&dec_state_, static_cast<int>(channels_));
+  WebRtcOpus_DecoderCreate(&dec_state_, channels_);
   WebRtcOpus_DecoderInit(dec_state_);
 }
 

@@ -32,6 +32,7 @@
 
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
 #include "talk/session/media/channelmanager.h"
+#include "webrtc/base/arraysize.h"
 
 using cricket::CaptureState;
 using webrtc::MediaConstraintsInterface;
@@ -250,10 +251,10 @@ const cricket::VideoFormat& GetBestCaptureFormat(
   std::vector<cricket::VideoFormat>::const_iterator it = formats.begin();
   std::vector<cricket::VideoFormat>::const_iterator best_it = formats.begin();
   int best_diff_area = std::abs(default_area - it->width * it->height);
-  int64 best_diff_interval = kDefaultFormat.interval;
+  int64_t best_diff_interval = kDefaultFormat.interval;
   for (; it != formats.end(); ++it) {
     int diff_area = std::abs(default_area - it->width * it->height);
-    int64 diff_interval = std::abs(kDefaultFormat.interval - it->interval);
+    int64_t diff_interval = std::abs(kDefaultFormat.interval - it->interval);
     if (diff_area < best_diff_area ||
         (diff_area == best_diff_area && diff_interval < best_diff_interval)) {
       best_diff_area = diff_area;
@@ -267,11 +268,12 @@ const cricket::VideoFormat& GetBestCaptureFormat(
 // Set |option| to the highest-priority value of |key| in the constraints.
 // Return false if the key is mandatory, and the value is invalid.
 bool ExtractOption(const MediaConstraintsInterface* all_constraints,
-    const std::string& key, cricket::Settable<bool>* option) {
+                   const std::string& key,
+                   rtc::Optional<bool>* option) {
   size_t mandatory = 0;
   bool value;
   if (FindConstraint(all_constraints, key, &value, &mandatory)) {
-    option->Set(value);
+    *option = rtc::Optional<bool>(value);
     return true;
   }
 
@@ -302,8 +304,6 @@ class FrameInputWrapper : public cricket::VideoRenderer {
   virtual ~FrameInputWrapper() {}
 
   // VideoRenderer implementation.
-  bool SetSize(int width, int height, int reserved) override { return true; }
-
   bool RenderFrame(const cricket::VideoFrame* frame) override {
     if (!capturer_->IsRunning()) {
       return true;
@@ -329,21 +329,23 @@ namespace webrtc {
 rtc::scoped_refptr<VideoSource> VideoSource::Create(
     cricket::ChannelManager* channel_manager,
     cricket::VideoCapturer* capturer,
-    const webrtc::MediaConstraintsInterface* constraints) {
+    const webrtc::MediaConstraintsInterface* constraints,
+    bool remote) {
   ASSERT(channel_manager != NULL);
   ASSERT(capturer != NULL);
-  rtc::scoped_refptr<VideoSource> source(
-      new rtc::RefCountedObject<VideoSource>(channel_manager,
-                                                   capturer));
+  rtc::scoped_refptr<VideoSource> source(new rtc::RefCountedObject<VideoSource>(
+      channel_manager, capturer, remote));
   source->Initialize(constraints);
   return source;
 }
 
 VideoSource::VideoSource(cricket::ChannelManager* channel_manager,
-                         cricket::VideoCapturer* capturer)
+                         cricket::VideoCapturer* capturer,
+                         bool remote)
     : channel_manager_(channel_manager),
       video_capturer_(capturer),
-      state_(kInitializing) {
+      state_(kInitializing),
+      remote_(remote) {
   channel_manager_->SignalVideoCaptureStateChange.connect(
       this, &VideoSource::OnStateChange);
 }
@@ -368,7 +370,7 @@ void VideoSource::Initialize(
     } else {
       // The VideoCapturer implementation doesn't support capability
       // enumeration. We need to guess what the camera supports.
-      for (int i = 0; i < ARRAY_SIZE(kVideoFormats); ++i) {
+      for (int i = 0; i < arraysize(kVideoFormats); ++i) {
         formats.push_back(cricket::VideoFormat(kVideoFormats[i]));
       }
     }
@@ -460,7 +462,9 @@ void VideoSource::OnStateChange(cricket::VideoCapturer* capturer,
 }
 
 void VideoSource::SetState(SourceState new_state) {
-  if (VERIFY(state_ != new_state)) {
+  // TODO(hbos): Temporarily disabled VERIFY due to webrtc:4776.
+  // if (VERIFY(state_ != new_state)) {
+  if (state_ != new_state) {
     state_ = new_state;
     FireOnChanged();
   }

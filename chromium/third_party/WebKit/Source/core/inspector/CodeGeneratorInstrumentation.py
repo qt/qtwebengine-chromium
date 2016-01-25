@@ -80,8 +80,6 @@ inline ${return_type} ${name}(${params_public})
 
 template_cpp = string.Template("""// Code generated from InspectorInstrumentation.idl
 
-#include "config.h"
-
 ${includes}
 
 namespace blink {
@@ -111,7 +109,7 @@ template_instrumenting_agents_h = string.Template("""// Code generated from Insp
 
 #include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -122,7 +120,7 @@ ${forward_list}
 
 class CORE_EXPORT InstrumentingAgents : public RefCountedWillBeGarbageCollectedFinalized<InstrumentingAgents> {
     WTF_MAKE_NONCOPYABLE(InstrumentingAgents);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InstrumentingAgents);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InstrumentingAgents);
 public:
     static PassRefPtrWillBeRawPtr<InstrumentingAgents> create()
     {

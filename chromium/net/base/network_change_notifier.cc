@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
@@ -56,6 +57,9 @@ class MockNetworkChangeNotifier : public NetworkChangeNotifier {
 
 // static
 bool NetworkChangeNotifier::test_notifications_only_ = false;
+// static
+const NetworkChangeNotifier::NetworkHandle
+    NetworkChangeNotifier::kInvalidNetworkHandle = -1;
 
 // The main observer class that records UMAs for network events.
 class HistogramWatcher
@@ -631,6 +635,43 @@ double NetworkChangeNotifier::GetMaxBandwidthForConnectionSubtype(
 }
 
 // static
+bool NetworkChangeNotifier::AreNetworkHandlesSupported() {
+  if (g_network_change_notifier) {
+    return g_network_change_notifier->AreNetworkHandlesCurrentlySupported();
+  }
+  return false;
+}
+
+// static
+void NetworkChangeNotifier::GetConnectedNetworks(NetworkList* network_list) {
+  DCHECK(AreNetworkHandlesSupported());
+  if (g_network_change_notifier) {
+    g_network_change_notifier->GetCurrentConnectedNetworks(network_list);
+  } else {
+    network_list->clear();
+  }
+}
+
+// static
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifier::GetNetworkConnectionType(NetworkHandle network) {
+  DCHECK(AreNetworkHandlesSupported());
+  return g_network_change_notifier
+             ? g_network_change_notifier->GetCurrentNetworkConnectionType(
+                   network)
+             : CONNECTION_UNKNOWN;
+}
+
+// static
+NetworkChangeNotifier::NetworkHandle
+NetworkChangeNotifier::GetDefaultNetwork() {
+  DCHECK(AreNetworkHandlesSupported());
+  return g_network_change_notifier
+             ? g_network_change_notifier->GetCurrentDefaultNetwork()
+             : kInvalidNetworkHandle;
+}
+
+// static
 void NetworkChangeNotifier::GetDnsConfig(DnsConfig* config) {
   if (!g_network_change_notifier) {
     *config = DnsConfig();
@@ -808,6 +849,13 @@ void NetworkChangeNotifier::AddMaxBandwidthObserver(
   }
 }
 
+void NetworkChangeNotifier::AddNetworkObserver(NetworkObserver* observer) {
+  DCHECK(AreNetworkHandlesSupported());
+  if (g_network_change_notifier) {
+    g_network_change_notifier->network_observer_list_->AddObserver(observer);
+  }
+}
+
 void NetworkChangeNotifier::RemoveIPAddressObserver(
     IPAddressObserver* observer) {
   if (g_network_change_notifier) {
@@ -844,6 +892,13 @@ void NetworkChangeNotifier::RemoveMaxBandwidthObserver(
   if (g_network_change_notifier) {
     g_network_change_notifier->max_bandwidth_observer_list_->RemoveObserver(
         observer);
+  }
+}
+
+void NetworkChangeNotifier::RemoveNetworkObserver(NetworkObserver* observer) {
+  DCHECK(AreNetworkHandlesSupported());
+  if (g_network_change_notifier) {
+    g_network_change_notifier->network_observer_list_->RemoveObserver(observer);
   }
 }
 
@@ -908,6 +963,8 @@ NetworkChangeNotifier::NetworkChangeNotifier(
       max_bandwidth_observer_list_(new base::ObserverListThreadSafe<
                                    MaxBandwidthObserver>(
           base::ObserverListBase<MaxBandwidthObserver>::NOTIFY_EXISTING_ONLY)),
+      network_observer_list_(new base::ObserverListThreadSafe<NetworkObserver>(
+          base::ObserverListBase<NetworkObserver>::NOTIFY_EXISTING_ONLY)),
       network_state_(new NetworkState()),
       network_change_calculator_(new NetworkChangeCalculator(params)) {
   DCHECK(!g_network_change_notifier);
@@ -933,6 +990,26 @@ void NetworkChangeNotifier::GetCurrentMaxBandwidthAndConnectionType(
       *connection_type == CONNECTION_NONE
           ? GetMaxBandwidthForConnectionSubtype(SUBTYPE_NONE)
           : GetMaxBandwidthForConnectionSubtype(SUBTYPE_UNKNOWN);
+}
+
+bool NetworkChangeNotifier::AreNetworkHandlesCurrentlySupported() const {
+  return false;
+}
+
+void NetworkChangeNotifier::GetCurrentConnectedNetworks(
+    NetworkList* network_list) const {
+  network_list->clear();
+}
+
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifier::GetCurrentNetworkConnectionType(
+    NetworkHandle network) const {
+  return CONNECTION_UNKNOWN;
+}
+
+NetworkChangeNotifier::NetworkHandle
+NetworkChangeNotifier::GetCurrentDefaultNetwork() const {
+  return kInvalidNetworkHandle;
 }
 
 // static
@@ -985,6 +1062,17 @@ void NetworkChangeNotifier::NotifyObserversOfInitialDNSConfigRead() {
   if (g_network_change_notifier &&
       !NetworkChangeNotifier::test_notifications_only_) {
     g_network_change_notifier->NotifyObserversOfInitialDNSConfigReadImpl();
+  }
+}
+
+// static
+void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
+    NetworkChangeType type,
+    NetworkHandle network) {
+  if (g_network_change_notifier &&
+      !NetworkChangeNotifier::test_notifications_only_) {
+    g_network_change_notifier->NotifyObserversOfSpecificNetworkChangeImpl(
+        type, network);
   }
 }
 
@@ -1042,6 +1130,29 @@ void NetworkChangeNotifier::NotifyObserversOfMaxBandwidthChangeImpl(
   max_bandwidth_observer_list_->Notify(
       FROM_HERE, &MaxBandwidthObserver::OnMaxBandwidthChanged,
       max_bandwidth_mbps, type);
+}
+
+void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChangeImpl(
+    NetworkChangeType type,
+    NetworkHandle network) {
+  switch (type) {
+    case CONNECTED:
+      network_observer_list_->Notify(
+          FROM_HERE, &NetworkObserver::OnNetworkConnected, network);
+      break;
+    case DISCONNECTED:
+      network_observer_list_->Notify(
+          FROM_HERE, &NetworkObserver::OnNetworkDisconnected, network);
+      break;
+    case SOON_TO_DISCONNECT:
+      network_observer_list_->Notify(
+          FROM_HERE, &NetworkObserver::OnNetworkSoonToDisconnect, network);
+      break;
+    case MADE_DEFAULT:
+      network_observer_list_->Notify(
+          FROM_HERE, &NetworkObserver::OnNetworkMadeDefault, network);
+      break;
+  }
 }
 
 NetworkChangeNotifier::DisableForTest::DisableForTest()

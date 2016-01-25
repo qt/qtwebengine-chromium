@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/MediaElementAudioSourceNode.h"
-
 #include "core/dom/CrossThreadTask.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/html/HTMLMediaElement.h"
@@ -181,7 +178,7 @@ void MediaElementAudioSourceHandler::process(size_t numberOfFrames)
                 // element source, and only if we have a document to print to.
                 m_maybePrintCORSMessage = false;
                 if (context()->executionContext()) {
-                    context()->executionContext()->postTask(FROM_HERE,
+                    context()->executionContext()->postTask(BLINK_FROM_HERE,
                         createCrossThreadTask(&MediaElementAudioSourceHandler::printCORSMessage,
                             this,
                             m_currentSrcString));
@@ -256,4 +253,3 @@ void MediaElementAudioSourceNode::unlock()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

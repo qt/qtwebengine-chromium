@@ -74,7 +74,6 @@ TEST_P(BweSimulation, Verizon4gDownlinkTest) {
 }
 
 TEST_P(BweSimulation, Choke1000kbps500kbps1000kbpsBiDirectional) {
-
   const int kFlowIds[] = {0, 1};
   const size_t kNumFlows = sizeof(kFlowIds) / sizeof(kFlowIds[0]);
 
@@ -106,7 +105,6 @@ TEST_P(BweSimulation, Choke1000kbps500kbps1000kbpsBiDirectional) {
 }
 
 TEST_P(BweSimulation, Choke1000kbps500kbps1000kbps) {
-
   AdaptiveVideoSource source(0, 30, 300, 0, 0);
   VideoSender sender(&uplink_, &source, GetParam());
   ChokeFilter choke(&uplink_, 0);
@@ -243,7 +241,7 @@ TEST_P(BweSimulation, PacerGoogleWifiTrace3Mbps) {
 }
 
 TEST_P(BweSimulation, SelfFairnessTest) {
-  srand(Clock::GetRealTimeClock()->TimeInMicroseconds());
+  Random prng(Clock::GetRealTimeClock()->TimeInMicroseconds());
   const int kAllFlowIds[] = {0, 1, 2, 3};
   const size_t kNumFlows = sizeof(kAllFlowIds) / sizeof(kAllFlowIds[0]);
   rtc::scoped_ptr<VideoSource> sources[kNumFlows];
@@ -252,7 +250,7 @@ TEST_P(BweSimulation, SelfFairnessTest) {
     // Streams started 20 seconds apart to give them different advantage when
     // competing for the bandwidth.
     sources[i].reset(new AdaptiveVideoSource(kAllFlowIds[i], 30, 300, 0,
-                                             i * (rand() % 40000)));
+                                             i * prng.Rand(39999)));
     senders[i].reset(new VideoSender(&uplink_, sources[i].get(), GetParam()));
   }
 
@@ -283,9 +281,9 @@ TEST_P(BweSimulation, PacedSelfFairness50msTest) {
   const int64_t kAverageOffsetMs = 20 * 1000;
   const int kNumRmcatFlows = 4;
   int64_t offsets_ms[kNumRmcatFlows];
-  offsets_ms[0] = random_.Rand(0, 2 * kAverageOffsetMs);
+  offsets_ms[0] = random_.Rand(2 * kAverageOffsetMs);
   for (int i = 1; i < kNumRmcatFlows; ++i) {
-    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(0, 2 * kAverageOffsetMs);
+    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(2 * kAverageOffsetMs);
   }
   RunFairnessTest(GetParam(), kNumRmcatFlows, 0, 1000, 3000, 50, 50, 0,
                   offsets_ms);
@@ -295,9 +293,9 @@ TEST_P(BweSimulation, PacedSelfFairness500msTest) {
   const int64_t kAverageOffsetMs = 20 * 1000;
   const int kNumRmcatFlows = 4;
   int64_t offsets_ms[kNumRmcatFlows];
-  offsets_ms[0] = random_.Rand(0, 2 * kAverageOffsetMs);
+  offsets_ms[0] = random_.Rand(2 * kAverageOffsetMs);
   for (int i = 1; i < kNumRmcatFlows; ++i) {
-    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(0, 2 * kAverageOffsetMs);
+    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(2 * kAverageOffsetMs);
   }
   RunFairnessTest(GetParam(), kNumRmcatFlows, 0, 1000, 3000, 500, 50, 0,
                   offsets_ms);
@@ -307,28 +305,28 @@ TEST_P(BweSimulation, PacedSelfFairness1000msTest) {
   const int64_t kAverageOffsetMs = 20 * 1000;
   const int kNumRmcatFlows = 4;
   int64_t offsets_ms[kNumRmcatFlows];
-  offsets_ms[0] = random_.Rand(0, 2 * kAverageOffsetMs);
+  offsets_ms[0] = random_.Rand(2 * kAverageOffsetMs);
   for (int i = 1; i < kNumRmcatFlows; ++i) {
-    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(0, 2 * kAverageOffsetMs);
+    offsets_ms[i] = offsets_ms[i - 1] + random_.Rand(2 * kAverageOffsetMs);
   }
   RunFairnessTest(GetParam(), 4, 0, 1000, 3000, 1000, 50, 0, offsets_ms);
 }
 
 TEST_P(BweSimulation, TcpFairness50msTest) {
   const int64_t kAverageOffsetMs = 20 * 1000;
-  int64_t offset_ms[] = {random_.Rand(0, 2 * kAverageOffsetMs), 0};
+  int64_t offset_ms[] = {random_.Rand(2 * kAverageOffsetMs), 0};
   RunFairnessTest(GetParam(), 1, 1, 1000, 2000, 50, 50, 0, offset_ms);
 }
 
 TEST_P(BweSimulation, TcpFairness500msTest) {
   const int64_t kAverageOffsetMs = 20 * 1000;
-  int64_t offset_ms[] = {random_.Rand(0, 2 * kAverageOffsetMs), 0};
+  int64_t offset_ms[] = {random_.Rand(2 * kAverageOffsetMs), 0};
   RunFairnessTest(GetParam(), 1, 1, 1000, 2000, 500, 50, 0, offset_ms);
 }
 
 TEST_P(BweSimulation, TcpFairness1000msTest) {
   const int kAverageOffsetMs = 20 * 1000;
-  int64_t offset_ms[] = {random_.Rand(0, 2 * kAverageOffsetMs), 0};
+  int64_t offset_ms[] = {random_.Rand(2 * kAverageOffsetMs), 0};
   RunFairnessTest(GetParam(), 1, 1, 1000, 2000, 1000, 50, 0, offset_ms);
 }
 

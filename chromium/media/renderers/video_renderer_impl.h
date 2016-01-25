@@ -5,8 +5,12 @@
 #ifndef MEDIA_RENDERERS_VIDEO_RENDERER_IMPL_H_
 #define MEDIA_RENDERERS_VIDEO_RENDERER_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <deque>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -55,14 +59,14 @@ class MEDIA_EXPORT VideoRendererImpl
       VideoRendererSink* sink,
       ScopedVector<VideoDecoder> decoders,
       bool drop_frames,
-      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+      GpuVideoAcceleratorFactories* gpu_factories,
       const scoped_refptr<MediaLog>& media_log);
   ~VideoRendererImpl() override;
 
   // VideoRenderer implementation.
   void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& init_cb,
-                  const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                  const SetCdmReadyCB& set_cdm_ready_cb,
                   const StatisticsCB& statistics_cb,
                   const BufferingStateCB& buffering_state_cb,
                   const base::Closure& ended_cb,
@@ -147,6 +151,10 @@ class MEDIA_EXPORT VideoRendererImpl
 
   // Helper method for converting a single media timestamp to wall clock time.
   base::TimeTicks ConvertMediaTimestamp(base::TimeDelta media_timestamp);
+
+  // Helper method for checking if a frame timestamp plus the frame's expected
+  // duration is before |start_timestamp_|.
+  bool IsBeforeStartTime(base::TimeDelta timestamp);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
@@ -255,6 +263,10 @@ class MEDIA_EXPORT VideoRendererImpl
   // to avoid repeated task posts.
   bool render_first_frame_and_stop_;
   bool posted_maybe_stop_after_first_paint_;
+
+  // Memory usage of |algorithm_| recorded during the last UpdateStats_Locked()
+  // call.
+  int64_t last_video_memory_usage_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<VideoRendererImpl> weak_factory_;

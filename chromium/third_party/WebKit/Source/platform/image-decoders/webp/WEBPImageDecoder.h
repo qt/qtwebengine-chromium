@@ -30,13 +30,12 @@
 #define WEBPImageDecoder_h
 
 #include "platform/image-decoders/ImageDecoder.h"
-
 #include "webp/decode.h"
 #include "webp/demux.h"
 
 namespace blink {
 
-class PLATFORM_EXPORT WEBPImageDecoder : public ImageDecoder {
+class PLATFORM_EXPORT WEBPImageDecoder final : public ImageDecoder {
     WTF_MAKE_NONCOPYABLE(WEBPImageDecoder);
 public:
     WEBPImageDecoder(AlphaOption, GammaAndColorProfileOption, size_t maxDecodedBytes);

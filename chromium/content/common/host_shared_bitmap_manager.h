@@ -5,12 +5,14 @@
 #ifndef CONTENT_COMMON_HOST_SHARED_BITMAP_MANAGER_H_
 #define CONTENT_COMMON_HOST_SHARED_BITMAP_MANAGER_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <set>
 
-#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/hash.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
@@ -51,6 +53,9 @@ class CONTENT_EXPORT HostSharedBitmapManagerClient {
 
  private:
   HostSharedBitmapManager* manager_;
+
+  // Lock must be held around access to owned_bitmaps_.
+  base::Lock lock_;
   base::hash_set<cc::SharedBitmapId> owned_bitmaps_;
 
   DISALLOW_COPY_AND_ASSIGN(HostSharedBitmapManagerClient);
@@ -88,7 +93,7 @@ class CONTENT_EXPORT HostSharedBitmapManager
       size_t buffer_size,
       const cc::SharedBitmapId& id,
       base::SharedMemoryHandle* shared_memory_handle);
-  void ChildAllocatedSharedBitmap(size_t buffer_size,
+  bool ChildAllocatedSharedBitmap(size_t buffer_size,
                                   const base::SharedMemoryHandle& handle,
                                   base::ProcessHandle process_handle,
                                   const cc::SharedBitmapId& id);

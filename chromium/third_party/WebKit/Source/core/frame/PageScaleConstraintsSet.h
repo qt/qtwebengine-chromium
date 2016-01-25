@@ -36,7 +36,7 @@
 #include "core/frame/PageScaleConstraints.h"
 #include "platform/Length.h"
 #include "platform/geometry/IntSize.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -44,7 +44,7 @@ namespace blink {
 // This class harmonizes the viewport (particularly page scale) constraints from
 // the meta viewport tag and other sources.
 class CORE_EXPORT PageScaleConstraintsSet {
-    WTF_MAKE_FAST_ALLOCATED(PageScaleConstraintsSet);
+    USING_FAST_MALLOC(PageScaleConstraintsSet);
 public:
     static PassOwnPtr<PageScaleConstraintsSet> create()
     {

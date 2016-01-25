@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/AudioBasicProcessorHandler.h"
-
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/audio/AudioBus.h"
@@ -150,4 +147,3 @@ double AudioBasicProcessorHandler::latencyTime() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

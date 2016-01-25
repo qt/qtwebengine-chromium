@@ -31,7 +31,7 @@
 #ifndef ScopedPersistent_h
 #define ScopedPersistent_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include <v8.h>
 
@@ -39,7 +39,7 @@ namespace blink {
 
 template<typename T>
 class ScopedPersistent {
-    WTF_MAKE_FAST_ALLOCATED(ScopedPersistent);
+    USING_FAST_MALLOC(ScopedPersistent);
     WTF_MAKE_NONCOPYABLE(ScopedPersistent);
 public:
     ScopedPersistent() { }
@@ -70,6 +70,11 @@ public:
     void setWeak(P* parameters, void (*callback)(const v8::WeakCallbackInfo<P>&), v8::WeakCallbackType type = v8::WeakCallbackType::kParameter)
     {
         m_handle.SetWeak(parameters, callback, type);
+    }
+
+    void clearWeak()
+    {
+        m_handle.template ClearWeak<void>();
     }
 
     bool isEmpty() const { return m_handle.IsEmpty(); }

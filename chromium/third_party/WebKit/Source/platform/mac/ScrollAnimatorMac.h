@@ -30,12 +30,13 @@
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntRect.h"
-#include "platform/scroll/ScrollAnimator.h"
+#include "platform/heap/Handle.h"
+#include "platform/scroll/ScrollAnimatorBase.h"
 #include "wtf/RetainPtr.h"
 
-OBJC_CLASS WebScrollAnimationHelperDelegate;
-OBJC_CLASS WebScrollbarPainterControllerDelegate;
-OBJC_CLASS WebScrollbarPainterDelegate;
+OBJC_CLASS BlinkScrollAnimationHelperDelegate;
+OBJC_CLASS BlinkScrollbarPainterControllerDelegate;
+OBJC_CLASS BlinkScrollbarPainterDelegate;
 
 typedef id ScrollbarPainterController;
 
@@ -43,11 +44,13 @@ namespace blink {
 
 class Scrollbar;
 
-class PLATFORM_EXPORT ScrollAnimatorMac : public ScrollAnimator {
-
+class PLATFORM_EXPORT ScrollAnimatorMac : public ScrollAnimatorBase {
+    WILL_BE_USING_PRE_FINALIZER(ScrollAnimatorMac, dispose);
 public:
     ScrollAnimatorMac(ScrollableArea*);
     ~ScrollAnimatorMac() override;
+
+    void dispose() override;
 
     void immediateScrollToPointForScrollAnimation(const FloatPoint& newPosition);
     bool haveScrolledSincePageLoad() const { return m_haveScrolledSincePageLoad; }
@@ -64,14 +67,19 @@ public:
 
     static bool canUseCoordinatedScrollbar();
 
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        ScrollAnimatorBase::trace(visitor);
+    }
+
 private:
     RetainPtr<id> m_scrollAnimationHelper;
-    RetainPtr<WebScrollAnimationHelperDelegate> m_scrollAnimationHelperDelegate;
+    RetainPtr<BlinkScrollAnimationHelperDelegate> m_scrollAnimationHelperDelegate;
 
     RetainPtr<ScrollbarPainterController> m_scrollbarPainterController;
-    RetainPtr<WebScrollbarPainterControllerDelegate> m_scrollbarPainterControllerDelegate;
-    RetainPtr<WebScrollbarPainterDelegate> m_horizontalScrollbarPainterDelegate;
-    RetainPtr<WebScrollbarPainterDelegate> m_verticalScrollbarPainterDelegate;
+    RetainPtr<BlinkScrollbarPainterControllerDelegate> m_scrollbarPainterControllerDelegate;
+    RetainPtr<BlinkScrollbarPainterDelegate> m_horizontalScrollbarPainterDelegate;
+    RetainPtr<BlinkScrollbarPainterDelegate> m_verticalScrollbarPainterDelegate;
 
     void initialScrollbarPaintTimerFired(Timer<ScrollAnimatorMac>*);
     Timer<ScrollAnimatorMac> m_initialScrollbarPaintTimer;
@@ -85,15 +93,15 @@ private:
 
     void handleWheelEventPhase(PlatformWheelEventPhase) override;
 
-    void cancelAnimations() override;
+    void cancelAnimation() override;
     void setIsActive() override;
 
     void contentAreaWillPaint() const override;
     void mouseEnteredContentArea() const override;
     void mouseExitedContentArea() const override;
     void mouseMovedInContentArea() const override;
-    void mouseEnteredScrollbar(Scrollbar*) const override;
-    void mouseExitedScrollbar(Scrollbar*) const override;
+    void mouseEnteredScrollbar(Scrollbar&) const override;
+    void mouseExitedScrollbar(Scrollbar&) const override;
     void willStartLiveResize() override;
     void contentsResized() const override;
     void willEndLiveResize() override;
@@ -105,12 +113,12 @@ private:
 
     void finishCurrentScrollAnimations() override;
 
-    void didAddVerticalScrollbar(Scrollbar*) override;
-    void willRemoveVerticalScrollbar(Scrollbar*) override;
-    void didAddHorizontalScrollbar(Scrollbar*) override;
-    void willRemoveHorizontalScrollbar(Scrollbar*) override;
+    void didAddVerticalScrollbar(Scrollbar&) override;
+    void willRemoveVerticalScrollbar(Scrollbar&) override;
+    void didAddHorizontalScrollbar(Scrollbar&) override;
+    void willRemoveHorizontalScrollbar(Scrollbar&) override;
 
-    bool shouldScrollbarParticipateInHitTesting(Scrollbar*) override;
+    bool shouldScrollbarParticipateInHitTesting(Scrollbar&) override;
 
     void notifyContentAreaScrolled(const FloatSize& delta) override;
 

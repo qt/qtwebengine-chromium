@@ -7,8 +7,11 @@
       'target_name': 'prefs',
       'variables': {
         'depends': [
+          '../../../../../third_party/closure_compiler/externs/settings_private_interface.js',
           '../../../../../ui/webui/resources/js/compiled_resources.gyp:assert',
           '../../../../../ui/webui/resources/js/compiled_resources.gyp:cr',
+          'pref_util.js',
+          'prefs_behavior.js',
           'prefs_types.js',
         ],
         'externs': [

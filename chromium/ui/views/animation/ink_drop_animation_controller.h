@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_ANIMATION_INK_DROP_ANIMATION_CONTROLLER_H_
 #define UI_VIEWS_ANIMATION_INK_DROP_ANIMATION_CONTROLLER_H_
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "ui/compositor/layer_tree_owner.h"
@@ -29,8 +30,8 @@ class VIEWS_EXPORT InkDropAnimationController {
   // Gets the current state of the ink drop.
   virtual InkDropState GetInkDropState() const = 0;
 
-  // Animates from the current InkDropState to |state|.
-  virtual void AnimateToState(InkDropState state) = 0;
+  // Animates from the current InkDropState to |ink_drop_state|.
+  virtual void AnimateToState(InkDropState ink_drop_state) = 0;
 
   virtual gfx::Size GetInkDropLargeSize() const = 0;
 

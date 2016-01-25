@@ -41,23 +41,10 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/stringutils.h"
 #include "webrtc/config.h"
+#include "webrtc/modules/audio_coding/acm2/rent_a_codec.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 
 namespace cricket {
-
-// Function returning stats will return these values
-// for all values based on type.
-const int kIntStatValue = 123;
-const float kFractionLostStatValue = 0.5;
-
-static const char kFakeDefaultDeviceName[] = "Fake Default";
-static const int kFakeDefaultDeviceId = -1;
-static const char kFakeDeviceName[] = "Fake Device";
-#ifdef WIN32
-static const int kFakeDeviceId = 0;
-#else
-static const int kFakeDeviceId = 1;
-#endif
 
 static const int kOpusBandwidthNb = 4000;
 static const int kOpusBandwidthMb = 6000;
@@ -65,39 +52,8 @@ static const int kOpusBandwidthWb = 8000;
 static const int kOpusBandwidthSwb = 12000;
 static const int kOpusBandwidthFb = 20000;
 
-static const webrtc::NetworkStatistics kNetStats = {
-    1,  // uint16_t currentBufferSize;
-    2,  // uint16_t preferredBufferSize;
-    true,  // bool jitterPeaksFound;
-    1234,  // uint16_t currentPacketLossRate;
-    567,   // uint16_t currentDiscardRate;
-    8901,  // uint16_t currentExpandRate;
-    234,  // uint16_t currentSpeechExpandRate;
-    5678, // uint16_t currentPreemptiveRate;
-    9012, // uint16_t currentAccelerateRate;
-    3456, // uint16_t currentSecondaryDecodedRate;
-    7890, // int32_t clockDriftPPM;
-    54,  // meanWaitingTimeMs;
-    32,  // int medianWaitingTimeMs;
-    1,  // int minWaitingTimeMs;
-    98, // int maxWaitingTimeMs;
-    7654,  // int addedSamples;
-};  // These random but non-trivial numbers are used for testing.
-
 #define WEBRTC_CHECK_CHANNEL(channel) \
   if (channels_.find(channel) == channels_.end()) return -1;
-
-#define WEBRTC_ASSERT_CHANNEL(channel) \
-  RTC_DCHECK(channels_.find(channel) != channels_.end());
-
-// Verify the header extension ID, if enabled, is within the bounds specified in
-// [RFC5285]: 1-14 inclusive.
-#define WEBRTC_CHECK_HEADER_EXTENSION_ID(enable, id) \
-  do { \
-    if (enable && (id < 1 || id > 14)) { \
-      return -1; \
-    } \
-  } while (0);
 
 class FakeAudioProcessing : public webrtc::AudioProcessing {
  public:
@@ -118,11 +74,13 @@ class FakeAudioProcessing : public webrtc::AudioProcessing {
     experimental_ns_enabled_ = config.Get<webrtc::ExperimentalNs>().enabled;
   }
 
+  WEBRTC_STUB_CONST(input_sample_rate_hz, ());
   WEBRTC_STUB_CONST(proc_sample_rate_hz, ());
   WEBRTC_STUB_CONST(proc_split_sample_rate_hz, ());
-  WEBRTC_STUB_CONST(num_input_channels, ());
-  WEBRTC_STUB_CONST(num_output_channels, ());
-  WEBRTC_STUB_CONST(num_reverse_channels, ());
+  size_t num_input_channels() const override { return 0; }
+  size_t num_proc_channels() const override { return 0; }
+  size_t num_output_channels() const override { return 0; }
+  size_t num_reverse_channels() const override { return 0; }
   WEBRTC_VOID_STUB(set_output_will_be_muted, (bool muted));
   WEBRTC_STUB(ProcessStream, (webrtc::AudioFrame* frame));
   WEBRTC_STUB(ProcessStream, (
@@ -180,79 +138,50 @@ class FakeAudioProcessing : public webrtc::AudioProcessing {
 
 class FakeWebRtcVoiceEngine
     : public webrtc::VoEAudioProcessing,
-      public webrtc::VoEBase, public webrtc::VoECodec, public webrtc::VoEDtmf,
-      public webrtc::VoEHardware, public webrtc::VoENetEqStats,
+      public webrtc::VoEBase, public webrtc::VoECodec,
+      public webrtc::VoEHardware,
       public webrtc::VoENetwork, public webrtc::VoERTP_RTCP,
-      public webrtc::VoEVideoSync, public webrtc::VoEVolumeControl {
+      public webrtc::VoEVolumeControl {
  public:
-  struct DtmfInfo {
-    DtmfInfo()
-      : dtmf_event_code(-1),
-        dtmf_out_of_band(false),
-        dtmf_length_ms(-1) {}
-    int dtmf_event_code;
-    bool dtmf_out_of_band;
-    int dtmf_length_ms;
-  };
   struct Channel {
     explicit Channel()
         : external_transport(false),
           send(false),
           playout(false),
           volume_scale(1.0),
-          volume_pan_left(1.0),
-          volume_pan_right(1.0),
           vad(false),
           codec_fec(false),
           max_encoding_bandwidth(0),
           opus_dtx(false),
           red(false),
           nack(false),
-          rx_agc_enabled(false),
-          rx_agc_mode(webrtc::kAgcDefault),
           cn8_type(13),
           cn16_type(105),
-          dtmf_type(106),
           red_type(117),
           nack_max_packets(0),
           send_ssrc(0),
-          send_audio_level_ext_(-1),
-          receive_audio_level_ext_(-1),
-          send_absolute_sender_time_ext_(-1),
-          receive_absolute_sender_time_ext_(-1),
           associate_send_channel(-1),
+          recv_codecs(),
           neteq_capacity(-1),
           neteq_fast_accelerate(false) {
       memset(&send_codec, 0, sizeof(send_codec));
-      memset(&rx_agc_config, 0, sizeof(rx_agc_config));
     }
     bool external_transport;
     bool send;
     bool playout;
     float volume_scale;
-    float volume_pan_left;
-    float volume_pan_right;
     bool vad;
     bool codec_fec;
     int max_encoding_bandwidth;
     bool opus_dtx;
     bool red;
     bool nack;
-    bool rx_agc_enabled;
-    webrtc::AgcModes rx_agc_mode;
-    webrtc::AgcConfig rx_agc_config;
     int cn8_type;
     int cn16_type;
-    int dtmf_type;
     int red_type;
     int nack_max_packets;
-    uint32 send_ssrc;
-    int send_audio_level_ext_;
-    int receive_audio_level_ext_;
-    int send_absolute_sender_time_ext_;
-    int receive_absolute_sender_time_ext_;
+    uint32_t send_ssrc;
     int associate_send_channel;
-    DtmfInfo dtmf_info;
     std::vector<webrtc::CodecInst> recv_codecs;
     webrtc::CodecInst send_codec;
     webrtc::PacketTime last_rtp_packet_time;
@@ -261,13 +190,10 @@ class FakeWebRtcVoiceEngine
     bool neteq_fast_accelerate;
   };
 
-  FakeWebRtcVoiceEngine(const cricket::AudioCodec* const* codecs,
-                        int num_codecs)
+  FakeWebRtcVoiceEngine()
       : inited_(false),
         last_channel_(-1),
         fail_create_channel_(false),
-        codecs_(codecs),
-        num_codecs_(num_codecs),
         num_set_send_codecs_(0),
         ec_enabled_(false),
         ec_metrics_enabled_(false),
@@ -289,25 +215,17 @@ class FakeWebRtcVoiceEngine
     memset(&agc_config_, 0, sizeof(agc_config_));
   }
   ~FakeWebRtcVoiceEngine() {
-    // Ought to have all been deleted by the WebRtcVoiceMediaChannel
-    // destructors, but just in case ...
-    for (std::map<int, Channel*>::const_iterator i = channels_.begin();
-         i != channels_.end(); ++i) {
-      delete i->second;
-    }
+    RTC_CHECK(channels_.empty());
   }
+
+  bool ec_metrics_enabled() const { return ec_metrics_enabled_; }
 
   bool IsInited() const { return inited_; }
   int GetLastChannel() const { return last_channel_; }
-  int GetChannelFromLocalSsrc(uint32 local_ssrc) const {
-    for (std::map<int, Channel*>::const_iterator iter = channels_.begin();
-         iter != channels_.end(); ++iter) {
-      if (local_ssrc == iter->second->send_ssrc)
-        return iter->first;
-    }
-    return -1;
-  }
   int GetNumChannels() const { return static_cast<int>(channels_.size()); }
+  uint32_t GetLocalSSRC(int channel) {
+    return channels_[channel]->send_ssrc;
+  }
   bool GetPlayout(int channel) {
     return channels_[channel]->playout;
   }
@@ -336,16 +254,13 @@ class FakeWebRtcVoiceEngine
     return channels_[channel]->nack_max_packets;
   }
   const webrtc::PacketTime& GetLastRtpPacketTime(int channel) {
-    WEBRTC_ASSERT_CHANNEL(channel);
+    RTC_DCHECK(channels_.find(channel) != channels_.end());
     return channels_[channel]->last_rtp_packet_time;
   }
   int GetSendCNPayloadType(int channel, bool wideband) {
     return (wideband) ?
         channels_[channel]->cn16_type :
         channels_[channel]->cn8_type;
-  }
-  int GetSendTelephoneEventPayloadType(int channel) {
-    return channels_[channel]->dtmf_type;
   }
   int GetSendREDPayloadType(int channel) {
     return channels_[channel]->red_type;
@@ -380,11 +295,8 @@ class FakeWebRtcVoiceEngine
       return -1;
     }
     Channel* ch = new Channel();
-    for (int i = 0; i < NumOfCodecs(); ++i) {
-      webrtc::CodecInst codec;
-      GetCodec(i, codec);
-      ch->recv_codecs.push_back(codec);
-    }
+    auto db = webrtc::acm2::RentACodec::Database();
+    ch->recv_codecs.assign(db.begin(), db.end());
     if (config.Get<webrtc::NetEqCapacityConfig>().enabled) {
       ch->neteq_capacity = config.Get<webrtc::NetEqCapacityConfig>().capacity;
     }
@@ -392,24 +304,6 @@ class FakeWebRtcVoiceEngine
         config.Get<webrtc::NetEqFastAccelerate>().enabled;
     channels_[++last_channel_] = ch;
     return last_channel_;
-  }
-  int GetSendRtpExtensionId(int channel, const std::string& extension) {
-    WEBRTC_ASSERT_CHANNEL(channel);
-    if (extension == kRtpAudioLevelHeaderExtension) {
-      return channels_[channel]->send_audio_level_ext_;
-    } else if (extension == kRtpAbsoluteSenderTimeHeaderExtension) {
-      return channels_[channel]->send_absolute_sender_time_ext_;
-    }
-    return -1;
-  }
-  int GetReceiveRtpExtensionId(int channel, const std::string& extension) {
-    WEBRTC_ASSERT_CHANNEL(channel);
-    if (extension == kRtpAudioLevelHeaderExtension) {
-      return channels_[channel]->receive_audio_level_ext_;
-    } else if (extension == kRtpAbsoluteSenderTimeHeaderExtension) {
-      return channels_[channel]->receive_absolute_sender_time_ext_;
-    }
-    return -1;
   }
 
   int GetNumSetSendCodecs() const { return num_set_send_codecs_; }
@@ -502,22 +396,8 @@ class FakeWebRtcVoiceEngine
   webrtc::RtcEventLog* GetEventLog() { return nullptr; }
 
   // webrtc::VoECodec
-  WEBRTC_FUNC(NumOfCodecs, ()) {
-    return num_codecs_;
-  }
-  WEBRTC_FUNC(GetCodec, (int index, webrtc::CodecInst& codec)) {
-    if (index < 0 || index >= NumOfCodecs()) {
-      return -1;
-    }
-    const cricket::AudioCodec& c(*codecs_[index]);
-    codec.pltype = c.id;
-    rtc::strcpyn(codec.plname, sizeof(codec.plname), c.name.c_str());
-    codec.plfreq = c.clockrate;
-    codec.pacsize = 0;
-    codec.channels = c.channels;
-    codec.rate = c.bitrate;
-    return 0;
-  }
+  WEBRTC_STUB(NumOfCodecs, ());
+  WEBRTC_STUB(GetCodec, (int index, webrtc::CodecInst& codec));
   WEBRTC_FUNC(SetSendCodec, (int channel, const webrtc::CodecInst& codec)) {
     WEBRTC_CHECK_CHANNEL(channel);
     // To match the behavior of the real implementation.
@@ -537,26 +417,7 @@ class FakeWebRtcVoiceEngine
     return 0;
   }
   WEBRTC_STUB(SetBitRate, (int channel, int bitrate_bps));
-  WEBRTC_FUNC(GetRecCodec, (int channel, webrtc::CodecInst& codec)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    const Channel* c = channels_[channel];
-    for (std::list<std::string>::const_iterator it_packet = c->packets.begin();
-        it_packet != c->packets.end(); ++it_packet) {
-      int pltype;
-      if (!GetRtpPayloadType(it_packet->data(), it_packet->length(), &pltype)) {
-        continue;
-      }
-      for (std::vector<webrtc::CodecInst>::const_iterator it_codec =
-          c->recv_codecs.begin(); it_codec != c->recv_codecs.end();
-          ++it_codec) {
-        if (it_codec->pltype == pltype) {
-          codec = *it_codec;
-          return 0;
-        }
-      }
-    }
-    return -1;
-  }
+  WEBRTC_STUB(GetRecCodec, (int channel, webrtc::CodecInst& codec));
   WEBRTC_FUNC(SetRecPayloadType, (int channel,
                                   const webrtc::CodecInst& codec)) {
     WEBRTC_CHECK_CHANNEL(channel);
@@ -574,16 +435,17 @@ class FakeWebRtcVoiceEngine
       }
     }
     // Otherwise try to find this codec and update its payload type.
+    int result = -1;  // not found
     for (std::vector<webrtc::CodecInst>::iterator it = ch->recv_codecs.begin();
          it != ch->recv_codecs.end(); ++it) {
       if (strcmp(it->plname, codec.plname) == 0 &&
-          it->plfreq == codec.plfreq) {
+          it->plfreq == codec.plfreq &&
+          it->channels == codec.channels) {
         it->pltype = codec.pltype;
-        it->channels = codec.channels;
-        return 0;
+        result = 0;
       }
     }
-    return -1;  // not found
+    return result;
   }
   WEBRTC_FUNC(SetSendCNPayloadType, (int channel, int type,
                                      webrtc::PayloadFrequencies frequency)) {
@@ -668,46 +530,11 @@ class FakeWebRtcVoiceEngine
     return 0;
   }
 
-  // webrtc::VoEDtmf
-  WEBRTC_FUNC(SendTelephoneEvent, (int channel, int event_code,
-      bool out_of_band = true, int length_ms = 160, int attenuation_db = 10)) {
-    channels_[channel]->dtmf_info.dtmf_event_code = event_code;
-    channels_[channel]->dtmf_info.dtmf_out_of_band = out_of_band;
-    channels_[channel]->dtmf_info.dtmf_length_ms = length_ms;
-    return 0;
-  }
-
-  WEBRTC_FUNC(SetSendTelephoneEventPayloadType,
-      (int channel, unsigned char type)) {
-    channels_[channel]->dtmf_type = type;
-    return 0;
-  };
-  WEBRTC_STUB(GetSendTelephoneEventPayloadType,
-      (int channel, unsigned char& type));
-
-  WEBRTC_STUB(SetDtmfFeedbackStatus, (bool enable, bool directFeedback));
-  WEBRTC_STUB(GetDtmfFeedbackStatus, (bool& enabled, bool& directFeedback));
-
-  WEBRTC_FUNC(PlayDtmfTone,
-      (int event_code, int length_ms = 200, int attenuation_db = 10)) {
-    dtmf_info_.dtmf_event_code = event_code;
-    dtmf_info_.dtmf_length_ms = length_ms;
-    return 0;
-  }
-
   // webrtc::VoEHardware
-  WEBRTC_FUNC(GetNumOfRecordingDevices, (int& num)) {
-    return GetNumDevices(num);
-  }
-  WEBRTC_FUNC(GetNumOfPlayoutDevices, (int& num)) {
-    return GetNumDevices(num);
-  }
-  WEBRTC_FUNC(GetRecordingDeviceName, (int i, char* name, char* guid)) {
-    return GetDeviceName(i, name, guid);
-  }
-  WEBRTC_FUNC(GetPlayoutDeviceName, (int i, char* name, char* guid)) {
-    return GetDeviceName(i, name, guid);
-  }
+  WEBRTC_STUB(GetNumOfRecordingDevices, (int& num));
+  WEBRTC_STUB(GetNumOfPlayoutDevices, (int& num));
+  WEBRTC_STUB(GetRecordingDeviceName, (int i, char* name, char* guid));
+  WEBRTC_STUB(GetPlayoutDeviceName, (int i, char* name, char* guid));
   WEBRTC_STUB(SetRecordingDevice, (int, webrtc::StereoChannel));
   WEBRTC_STUB(SetPlayoutDevice, (int));
   WEBRTC_STUB(SetAudioDeviceLayer, (webrtc::AudioLayers));
@@ -734,20 +561,6 @@ class FakeWebRtcVoiceEngine
   virtual bool BuiltInAGCIsAvailable() const { return false; }
   WEBRTC_STUB(EnableBuiltInNS, (bool enable));
   virtual bool BuiltInNSIsAvailable() const { return false; }
-
-  // webrtc::VoENetEqStats
-  WEBRTC_FUNC(GetNetworkStatistics, (int channel,
-                                     webrtc::NetworkStatistics& ns)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    memcpy(&ns, &kNetStats, sizeof(webrtc::NetworkStatistics));
-    return 0;
-  }
-
-  WEBRTC_FUNC_CONST(GetDecodingCallStatistics, (int channel,
-      webrtc::AudioDecodingCallStats*)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    return 0;
-  }
 
   // webrtc::VoENetwork
   WEBRTC_FUNC(RegisterExternalTransport, (int channel,
@@ -789,41 +602,16 @@ class FakeWebRtcVoiceEngine
     channels_[channel]->send_ssrc = ssrc;
     return 0;
   }
-  WEBRTC_FUNC(GetLocalSSRC, (int channel, unsigned int& ssrc)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    ssrc = channels_[channel]->send_ssrc;
-    return 0;
-  }
+  WEBRTC_STUB(GetLocalSSRC, (int channel, unsigned int& ssrc));
   WEBRTC_STUB(GetRemoteSSRC, (int channel, unsigned int& ssrc));
-  WEBRTC_FUNC(SetSendAudioLevelIndicationStatus, (int channel, bool enable,
-      unsigned char id)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    WEBRTC_CHECK_HEADER_EXTENSION_ID(enable, id);
-    channels_[channel]->send_audio_level_ext_ = (enable) ? id : -1;
-    return 0;
-  }
-  WEBRTC_FUNC(SetReceiveAudioLevelIndicationStatus, (int channel, bool enable,
-      unsigned char id)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    WEBRTC_CHECK_HEADER_EXTENSION_ID(enable, id);
-    channels_[channel]->receive_audio_level_ext_ = (enable) ? id : -1;
-   return 0;
-  }
-  WEBRTC_FUNC(SetSendAbsoluteSenderTimeStatus, (int channel, bool enable,
-      unsigned char id)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    WEBRTC_CHECK_HEADER_EXTENSION_ID(enable, id);
-    channels_[channel]->send_absolute_sender_time_ext_ = (enable) ? id : -1;
-    return 0;
-  }
-  WEBRTC_FUNC(SetReceiveAbsoluteSenderTimeStatus, (int channel, bool enable,
-      unsigned char id)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    WEBRTC_CHECK_HEADER_EXTENSION_ID(enable, id);
-    channels_[channel]->receive_absolute_sender_time_ext_ = (enable) ? id : -1;
-    return 0;
-  }
-
+  WEBRTC_STUB(SetSendAudioLevelIndicationStatus, (int channel, bool enable,
+      unsigned char id));
+  WEBRTC_STUB(SetReceiveAudioLevelIndicationStatus, (int channel, bool enable,
+      unsigned char id));
+  WEBRTC_STUB(SetSendAbsoluteSenderTimeStatus, (int channel, bool enable,
+      unsigned char id));
+  WEBRTC_STUB(SetReceiveAbsoluteSenderTimeStatus, (int channel, bool enable,
+      unsigned char id));
   WEBRTC_STUB(SetRTCPStatus, (int channel, bool enable));
   WEBRTC_STUB(GetRTCPStatus, (int channel, bool& enabled));
   WEBRTC_STUB(SetRTCP_CNAME, (int channel, const char cname[256]));
@@ -835,56 +623,19 @@ class FakeWebRtcVoiceEngine
                                   unsigned int& playoutTimestamp,
                                   unsigned int* jitter,
                                   unsigned short* fractionLost));
-  WEBRTC_FUNC(GetRemoteRTCPReportBlocks,
-              (int channel, std::vector<webrtc::ReportBlock>* receive_blocks)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    webrtc::ReportBlock block;
-    block.source_SSRC = channels_[channel]->send_ssrc;
-    webrtc::CodecInst send_codec = channels_[channel]->send_codec;
-    if (send_codec.pltype >= 0) {
-      block.fraction_lost = (unsigned char)(kFractionLostStatValue * 256);
-      if (send_codec.plfreq / 1000 > 0) {
-        block.interarrival_jitter = kIntStatValue * (send_codec.plfreq / 1000);
-      }
-      block.cumulative_num_packets_lost = kIntStatValue;
-      block.extended_highest_sequence_number = kIntStatValue;
-      receive_blocks->push_back(block);
-    }
-    return 0;
-  }
+  WEBRTC_STUB(GetRemoteRTCPReportBlocks,
+              (int channel, std::vector<webrtc::ReportBlock>* receive_blocks));
   WEBRTC_STUB(GetRTPStatistics, (int channel, unsigned int& averageJitterMs,
                                  unsigned int& maxJitterMs,
                                  unsigned int& discardedPackets));
-  WEBRTC_FUNC(GetRTCPStatistics, (int channel, webrtc::CallStatistics& stats)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    stats.fractionLost = static_cast<int16>(kIntStatValue);
-    stats.cumulativeLost = kIntStatValue;
-    stats.extendedMax = kIntStatValue;
-    stats.jitterSamples = kIntStatValue;
-    stats.rttMs = kIntStatValue;
-    stats.bytesSent = kIntStatValue;
-    stats.packetsSent = kIntStatValue;
-    stats.bytesReceived = kIntStatValue;
-    stats.packetsReceived = kIntStatValue;
-    return 0;
-  }
+  WEBRTC_STUB(GetRTCPStatistics, (int channel, webrtc::CallStatistics& stats));
   WEBRTC_FUNC(SetREDStatus, (int channel, bool enable, int redPayloadtype)) {
-    return SetFECStatus(channel, enable, redPayloadtype);
-  }
-  // TODO(minyue): remove the below function when transition to SetREDStatus
-  //               is finished.
-  WEBRTC_FUNC(SetFECStatus, (int channel, bool enable, int redPayloadtype)) {
     WEBRTC_CHECK_CHANNEL(channel);
     channels_[channel]->red = enable;
     channels_[channel]->red_type = redPayloadtype;
     return 0;
   }
   WEBRTC_FUNC(GetREDStatus, (int channel, bool& enable, int& redPayloadtype)) {
-    return GetFECStatus(channel, enable, redPayloadtype);
-  }
-  // TODO(minyue): remove the below function when transition to GetREDStatus
-  //               is finished.
-  WEBRTC_FUNC(GetFECStatus, (int channel, bool& enable, int& redPayloadtype)) {
     WEBRTC_CHECK_CHANNEL(channel);
     enable = channels_[channel]->red;
     redPayloadtype = channels_[channel]->red_type;
@@ -896,18 +647,6 @@ class FakeWebRtcVoiceEngine
     channels_[channel]->nack_max_packets = maxNoPackets;
     return 0;
   }
-
-  // webrtc::VoEVideoSync
-  WEBRTC_STUB(GetPlayoutBufferSize, (int& bufferMs));
-  WEBRTC_STUB(GetPlayoutTimestamp, (int channel, unsigned int& timestamp));
-  WEBRTC_STUB(GetRtpRtcp, (int, webrtc::RtpRtcp**, webrtc::RtpReceiver**));
-  WEBRTC_STUB(SetInitTimestamp, (int channel, unsigned int timestamp));
-  WEBRTC_STUB(SetInitSequenceNumber, (int channel, short sequenceNumber));
-  WEBRTC_STUB(SetMinimumPlayoutDelay, (int channel, int delayMs));
-  WEBRTC_STUB(SetInitialPlayoutDelay, (int channel, int delay_ms));
-  WEBRTC_STUB(GetDelayEstimate, (int channel, int* jitter_buffer_delay_ms,
-                                 int* playout_buffer_delay_ms));
-  WEBRTC_STUB_CONST(GetLeastRequiredDelayMs, (int channel));
 
   // webrtc::VoEVolumeControl
   WEBRTC_STUB(SetSpeakerVolume, (unsigned int));
@@ -930,18 +669,8 @@ class FakeWebRtcVoiceEngine
     scale = channels_[channel]->volume_scale;
     return 0;
   }
-  WEBRTC_FUNC(SetOutputVolumePan, (int channel, float left, float right)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    channels_[channel]->volume_pan_left = left;
-    channels_[channel]->volume_pan_right = right;
-    return 0;
-  }
-  WEBRTC_FUNC(GetOutputVolumePan, (int channel, float& left, float& right)) {
-    WEBRTC_CHECK_CHANNEL(channel);
-    left = channels_[channel]->volume_pan_left;
-    right = channels_[channel]->volume_pan_right;
-    return 0;
-  }
+  WEBRTC_STUB(SetOutputVolumePan, (int channel, float left, float right));
+  WEBRTC_STUB(GetOutputVolumePan, (int channel, float& left, float& right));
 
   // webrtc::VoEAudioProcessing
   WEBRTC_FUNC(SetNsStatus, (bool enable, webrtc::NsModes mode)) {
@@ -1001,27 +730,12 @@ class FakeWebRtcVoiceEngine
   WEBRTC_STUB(SetRxNsStatus, (int channel, bool enable, webrtc::NsModes mode));
   WEBRTC_STUB(GetRxNsStatus, (int channel, bool& enabled,
                               webrtc::NsModes& mode));
-  WEBRTC_FUNC(SetRxAgcStatus, (int channel, bool enable,
-                               webrtc::AgcModes mode)) {
-    channels_[channel]->rx_agc_enabled = enable;
-    channels_[channel]->rx_agc_mode = mode;
-    return 0;
-  }
-  WEBRTC_FUNC(GetRxAgcStatus, (int channel, bool& enabled,
-                               webrtc::AgcModes& mode)) {
-    enabled = channels_[channel]->rx_agc_enabled;
-    mode = channels_[channel]->rx_agc_mode;
-    return 0;
-  }
-
-  WEBRTC_FUNC(SetRxAgcConfig, (int channel, webrtc::AgcConfig config)) {
-    channels_[channel]->rx_agc_config = config;
-    return 0;
-  }
-  WEBRTC_FUNC(GetRxAgcConfig, (int channel, webrtc::AgcConfig& config)) {
-    config = channels_[channel]->rx_agc_config;
-    return 0;
-  }
+  WEBRTC_STUB(SetRxAgcStatus, (int channel, bool enable,
+                               webrtc::AgcModes mode));
+  WEBRTC_STUB(GetRxAgcStatus, (int channel, bool& enabled,
+                               webrtc::AgcModes& mode));
+  WEBRTC_STUB(SetRxAgcConfig, (int channel, webrtc::AgcConfig config));
+  WEBRTC_STUB(GetRxAgcConfig, (int channel, webrtc::AgcConfig& config));
 
   WEBRTC_STUB(RegisterRxVadObserver, (int, webrtc::VoERxVadCallback&));
   WEBRTC_STUB(DeRegisterRxVadObserver, (int channel));
@@ -1030,10 +744,7 @@ class FakeWebRtcVoiceEngine
     ec_metrics_enabled_ = enable;
     return 0;
   }
-  WEBRTC_FUNC(GetEcMetricsStatus, (bool& enabled)) {
-    enabled = ec_metrics_enabled_;
-    return 0;
-  }
+  WEBRTC_STUB(GetEcMetricsStatus, (bool& enabled));
   WEBRTC_STUB(GetEchoMetrics, (int& ERL, int& ERLE, int& RERL, int& A_NLP));
   WEBRTC_STUB(GetEcDelayMetrics, (int& delay_median, int& delay_std,
       float& fraction_poor_delays));
@@ -1070,15 +781,6 @@ class FakeWebRtcVoiceEngine
   void EnableStereoChannelSwapping(bool enable) {
     stereo_swapping_enabled_ = enable;
   }
-  bool WasSendTelephoneEventCalled(int channel, int event_code, int length_ms) {
-    return (channels_[channel]->dtmf_info.dtmf_event_code == event_code &&
-            channels_[channel]->dtmf_info.dtmf_out_of_band == true &&
-            channels_[channel]->dtmf_info.dtmf_length_ms == length_ms);
-  }
-  bool WasPlayDtmfToneCalled(int event_code, int length_ms) {
-    return (dtmf_info_.dtmf_event_code == event_code &&
-            dtmf_info_.dtmf_length_ms == length_ms);
-  }
   int GetNetEqCapacity() const {
     auto ch = channels_.find(last_channel_);
     ASSERT(ch != channels_.end());
@@ -1091,47 +793,10 @@ class FakeWebRtcVoiceEngine
   }
 
  private:
-  int GetNumDevices(int& num) {
-#ifdef WIN32
-    num = 1;
-#else
-    // On non-Windows platforms VE adds a special entry for the default device,
-    // so if there is one physical device then there are two entries in the
-    // list.
-    num = 2;
-#endif
-    return 0;
-  }
-
-  int GetDeviceName(int i, char* name, char* guid) {
-    const char *s;
-#ifdef WIN32
-    if (0 == i) {
-      s = kFakeDeviceName;
-    } else {
-      return -1;
-    }
-#else
-    // See comment above.
-    if (0 == i) {
-      s = kFakeDefaultDeviceName;
-    } else if (1 == i) {
-      s = kFakeDeviceName;
-    } else {
-      return -1;
-    }
-#endif
-    strcpy(name, s);
-    guid[0] = '\0';
-    return 0;
-  }
-
   bool inited_;
   int last_channel_;
   std::map<int, Channel*> channels_;
   bool fail_create_channel_;
-  const cricket::AudioCodec* const* codecs_;
-  int num_codecs_;
   int num_set_send_codecs_;  // how many times we call SetSendCodec().
   bool ec_enabled_;
   bool ec_metrics_enabled_;
@@ -1151,11 +816,8 @@ class FakeWebRtcVoiceEngine
   int send_fail_channel_;
   int recording_sample_rate_;
   int playout_sample_rate_;
-  DtmfInfo dtmf_info_;
   FakeAudioProcessing audio_processing_;
 };
-
-#undef WEBRTC_CHECK_HEADER_EXTENSION_ID
 
 }  // namespace cricket
 

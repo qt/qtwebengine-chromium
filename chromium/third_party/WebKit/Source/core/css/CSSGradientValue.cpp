@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSGradientValue.h"
 
 #include "core/CSSValueKeywords.h"
@@ -41,6 +40,7 @@
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
+#include <algorithm>
 #include <utility>
 
 namespace blink {
@@ -192,9 +192,9 @@ static void replaceColorHintsWithColorStops(Vector<GradientStop>& stops, const W
     }
 }
 
-static Color resolveStopColor(CSSPrimitiveValue* stopColor, const LayoutObject& object)
+static Color resolveStopColor(const CSSValue& stopColor, const LayoutObject& object)
 {
-    return object.document().textLinkColors().colorFromPrimitiveValue(stopColor, object.resolveColor(CSSPropertyColor));
+    return object.document().textLinkColors().colorFromCSSValue(stopColor, object.resolveColor(CSSPropertyColor));
 }
 
 void CSSGradientValue::addDeprecatedStops(Gradient* gradient, const LayoutObject& object)
@@ -214,7 +214,7 @@ void CSSGradientValue::addDeprecatedStops(Gradient* gradient, const LayoutObject
         else
             offset = stop.m_position->getFloatValue();
 
-        gradient->addColorStop(offset, resolveStopColor(stop.m_color.get(), object));
+        gradient->addColorStop(offset, resolveStopColor(*stop.m_color, object));
     }
 }
 
@@ -376,7 +376,7 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
         if (stop.isHint())
             hasHints = true;
         else
-            stops[i].color = resolveStopColor(stop.m_color.get(), object);
+            stops[i].color = resolveStopColor(*stop.m_color, object);
 
         if (stop.m_position) {
             if (stop.m_position->isPercentage())
@@ -549,7 +549,7 @@ bool CSSGradientValue::isCacheable() const
     for (size_t i = 0; i < m_stops.size(); ++i) {
         const CSSGradientColorStop& stop = m_stops[i];
 
-        if (!stop.isHint() && stop.m_color->colorIsDerivedFromElement())
+        if (!stop.isHint() && stop.m_color->isPrimitiveValue() && toCSSPrimitiveValue(*stop.m_color).colorIsDerivedFromElement())
             return false;
 
         if (!stop.m_position)
@@ -566,10 +566,20 @@ bool CSSGradientValue::knownToBeOpaque(const LayoutObject* object) const
 {
     ASSERT(object);
     for (auto& stop : m_stops) {
-        if (!stop.isHint() && resolveStopColor(stop.m_color.get(), *object).hasAlpha())
+        if (!stop.isHint() && resolveStopColor(*stop.m_color, *object).hasAlpha())
             return false;
     }
     return true;
+}
+
+void CSSGradientValue::getStopColors(WillBeHeapVector<Color>& stopColors, const LayoutObject* object) const
+{
+    ASSERT(object);
+    for (auto& stop : m_stops) {
+        if (!stop.isHint())
+            stopColors.append(resolveStopColor(*stop.m_color, *object));
+    }
+
 }
 
 DEFINE_TRACE_AFTER_DISPATCH(CSSGradientValue)
@@ -1122,22 +1132,23 @@ PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthCon
             ? CircleEndShape
             : EllipseEndShape;
 
+        FloatSize floatSize(size);
         switch (m_sizingBehavior ? m_sizingBehavior->getValueID() : 0) {
         case CSSValueContain:
         case CSSValueClosestSide:
-            secondRadius = radiusToSide(secondPoint, size, shape,
+            secondRadius = radiusToSide(secondPoint, floatSize, shape,
                 [] (float a, float b) { return a < b; });
             break;
         case CSSValueFarthestSide:
-            secondRadius = radiusToSide(secondPoint, size, shape,
+            secondRadius = radiusToSide(secondPoint, floatSize, shape,
                 [] (float a, float b) { return a > b; });
             break;
         case CSSValueClosestCorner:
-            secondRadius = radiusToCorner(secondPoint, size, shape,
+            secondRadius = radiusToCorner(secondPoint, floatSize, shape,
                 [] (float a, float b) { return a < b; });
             break;
         default:
-            secondRadius = radiusToCorner(secondPoint, size, shape,
+            secondRadius = radiusToCorner(secondPoint, floatSize, shape,
                 [] (float a, float b) { return a > b; });
             break;
         }

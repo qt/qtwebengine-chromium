@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGAnimateMotionElement.h"
 
 #include "core/SVGNames.h"
@@ -87,7 +86,7 @@ bool SVGAnimateMotionElement::hasValidAttributeName()
     return true;
 }
 
-void SVGAnimateMotionElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGAnimateMotionElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == SVGNames::pathAttr) {
         m_path = Path();
@@ -96,7 +95,7 @@ void SVGAnimateMotionElement::parseAttribute(const QualifiedName& name, const At
         return;
     }
 
-    SVGAnimationElement::parseAttribute(name, value);
+    SVGAnimationElement::parseAttribute(name, oldValue, value);
 }
 
 SVGAnimateMotionElement::RotateMode SVGAnimateMotionElement::rotateMode() const
@@ -253,15 +252,12 @@ void SVGAnimateMotionElement::calculateAnimatedValue(float percentage, unsigned 
     float positionOnPath = m_animationPath.length() * percentage;
     FloatPoint position;
     float angle;
-    bool ok = m_animationPath.pointAndNormalAtLength(positionOnPath, position, angle);
-    if (!ok)
-        return;
+    m_animationPath.pointAndNormalAtLength(positionOnPath, position, angle);
 
     // Handle accumulate="sum".
     if (isAccumulated() && repeatCount) {
-        FloatPoint positionAtEndOfDuration = m_animationPath.pointAtLength(m_animationPath.length(), ok);
-        if (ok)
-            position.move(positionAtEndOfDuration.x() * repeatCount, positionAtEndOfDuration.y() * repeatCount);
+        FloatPoint positionAtEndOfDuration = m_animationPath.pointAtLength(m_animationPath.length());
+        position.move(positionAtEndOfDuration.x() * repeatCount, positionAtEndOfDuration.y() * repeatCount);
     }
 
     transform->translate(position.x(), position.y());

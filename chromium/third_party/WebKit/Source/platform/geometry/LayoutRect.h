@@ -34,6 +34,7 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/geometry/LayoutRectOutsets.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 #include <iosfwd>
 
@@ -43,6 +44,7 @@ class FloatRect;
 class DoubleRect;
 
 class PLATFORM_EXPORT LayoutRect {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     LayoutRect() { }
     LayoutRect(const LayoutPoint& location, const LayoutSize& size)
@@ -76,12 +78,8 @@ public:
     LayoutUnit width() const { return m_size.width(); }
     LayoutUnit height() const { return m_size.height(); }
 
-    int pixelSnappedX() const { return x().round(); }
-    int pixelSnappedY() const { return y().round(); }
     int pixelSnappedWidth() const { return snapSizeToPixel(width(), x()); }
     int pixelSnappedHeight() const { return snapSizeToPixel(height(), y()); }
-    int pixelSnappedMaxX() const { return (m_location.x() + m_size.width()).round(); }
-    int pixelSnappedMaxY() const { return (m_location.y() + m_size.height()).round(); }
 
     void setX(LayoutUnit x) { m_location.setX(x); }
     void setY(LayoutUnit y) { m_location.setY(y); }
@@ -180,18 +178,10 @@ public:
 
     LayoutRect transposedRect() const { return LayoutRect(m_location.transposedPoint(), m_size.transposedSize()); }
 
-    static LayoutRect infiniteRect()
-    {
-        // Return a rect that is slightly smaller than the true max rect to allow pixelSnapping to round up to the nearest IntRect without overflowing.
-        // FIXME(crbug.com/440143): Remove this hack.
-        static LayoutRect infiniteRect(LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMax(), LayoutUnit::nearlyMax());
-        return infiniteRect;
-    }
-
     static IntRect infiniteIntRect()
     {
-        // Due to saturated arithemetic this value is not the same as LayoutRect(IntRect(INT_MIN/2, INT_MIN/2, INT_MAX/2, INT_MAX/2)).
-        static IntRect infiniteIntRect(infiniteRect());
+        // Due to saturated arithemetic this value is not the same as LayoutRect(IntRect(INT_MIN/2, INT_MIN/2, INT_MAX, INT_MAX)).
+        static IntRect infiniteIntRect(LayoutRect(LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMax(), LayoutUnit::nearlyMax()));
         return infiniteIntRect;
     }
 

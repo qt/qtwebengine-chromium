@@ -36,6 +36,7 @@
 #include "platform/graphics/Pattern.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/effects/SkDashPathEffect.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -43,7 +44,8 @@ namespace blink {
 
 // Encapsulates stroke geometry information.
 // It is pulled out of GraphicsContextState to enable other methods to use it.
-class PLATFORM_EXPORT StrokeData {
+class PLATFORM_EXPORT StrokeData final {
+    DISALLOW_NEW();
 public:
     StrokeData()
         : m_style(SolidStroke)
@@ -88,7 +90,7 @@ private:
     SkPaint::Cap m_lineCap;
     SkPaint::Join m_lineJoin;
     float m_miterLimit;
-    RefPtr<SkDashPathEffect> m_dash;
+    RefPtr<SkPathEffect> m_dash;
 };
 
 } // namespace blink

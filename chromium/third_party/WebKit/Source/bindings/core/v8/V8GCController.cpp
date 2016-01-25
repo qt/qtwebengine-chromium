@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8GCController.h"
 
 #include "bindings/core/v8/RetainedDOMInfo.h"
@@ -77,7 +76,6 @@ Node* V8GCController::opaqueRootForGC(v8::Isolate*, Node* node)
 {
     ASSERT(node);
     // FIXME: Remove the special handling for image elements.
-    // The same special handling is in V8GCController::gcTree().
     // Maybe should image elements be active DOM nodes?
     // See https://code.google.com/p/chromium/issues/detail?id=164882
     if (node->inDocument() || (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity())) {
@@ -100,143 +98,61 @@ Node* V8GCController::opaqueRootForGC(v8::Isolate*, Node* node)
     return node;
 }
 
-// Regarding a minor GC algorithm for DOM nodes, see this document:
-// https://docs.google.com/a/google.com/presentation/d/1uifwVYGNYTZDoGLyCb7sXa7g49mWNMW2gaWvMN5NLk8/edit#slide=id.p
-class MinorGCWrapperVisitor : public v8::PersistentHandleVisitor {
+class MinorGCUnmodifiedWrapperVisitor : public v8::PersistentHandleVisitor {
 public:
-    explicit MinorGCWrapperVisitor(v8::Isolate* isolate)
+    explicit MinorGCUnmodifiedWrapperVisitor(v8::Isolate* isolate)
         : m_isolate(isolate)
     { }
 
     void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
     {
-        // A minor DOM GC can collect only Nodes.
-        if (classId != WrapperTypeInfo::NodeClassId)
-            return;
 
-        // To make minor GC cycle time bounded, we limit the number of wrappers handled
-        // by each minor GC cycle to 10000. This value was selected so that the minor
-        // GC cycle time is bounded to 20 ms in a case where the new space size
-        // is 16 MB and it is full of wrappers (which is almost the worst case).
-        // Practically speaking, as far as I crawled real web applications,
-        // the number of wrappers handled by each minor GC cycle is at most 3000.
-        // So this limit is mainly for pathological micro benchmarks.
-        const unsigned wrappersHandledByEachMinorGC = 10000;
-        if (m_nodesInNewSpace.size() >= wrappersHandledByEachMinorGC)
+        if (classId != WrapperTypeInfo::NodeClassId && classId != WrapperTypeInfo::ObjectClassId) {
             return;
+        }
+
+        // MinorGC does not collect objects because it may be expensive to
+        // update references during minorGC
+        if (classId == WrapperTypeInfo::ObjectClassId) {
+            v8::Persistent<v8::Object>::Cast(*value).MarkActive();
+            return;
+        }
 
         v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
         ASSERT(V8DOMWrapper::hasInternalFieldsSet(wrapper));
-        ASSERT(V8Node::hasInstance(wrapper, m_isolate));
-        Node* node = V8Node::toImpl(wrapper);
-        // A minor DOM GC can handle only node wrappers in the main world.
-        // Note that node->wrapper().IsEmpty() returns true for nodes that
-        // do not have wrappers in the main world.
-        if (node->containsWrapper()) {
-            const WrapperTypeInfo* type = toWrapperTypeInfo(wrapper);
-            ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(wrapper);
-            if (activeDOMObject && activeDOMObject->hasPendingActivity())
+        const WrapperTypeInfo* type = toWrapperTypeInfo(wrapper);
+        ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(wrapper);
+        if (activeDOMObject && activeDOMObject->hasPendingActivity()) {
+            v8::Persistent<v8::Object>::Cast(*value).MarkActive();
+            return;
+        }
+
+        if (classId == WrapperTypeInfo::NodeClassId) {
+            ASSERT(V8Node::hasInstance(wrapper, m_isolate));
+            Node* node = V8Node::toImpl(wrapper);
+            if (node->hasEventListeners()) {
+                v8::Persistent<v8::Object>::Cast(*value).MarkActive();
                 return;
+            }
             // FIXME: Remove the special handling for image elements.
             // The same special handling is in V8GCController::opaqueRootForGC().
             // Maybe should image elements be active DOM nodes?
             // See https://code.google.com/p/chromium/issues/detail?id=164882
-            if (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity())
+            if (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity()) {
+                v8::Persistent<v8::Object>::Cast(*value).MarkActive();
                 return;
+            }
             // FIXME: Remove the special handling for SVG elements.
             // We currently can't collect SVG Elements from minor gc, as we have
             // strong references from SVG property tear-offs keeping context SVG element alive.
-            if (node->isSVGElement())
+            if (node->isSVGElement()) {
+                v8::Persistent<v8::Object>::Cast(*value).MarkActive();
                 return;
-
-            m_nodesInNewSpace.append(node);
-            node->markV8CollectableDuringMinorGC();
-        }
-    }
-
-    void notifyFinished()
-    {
-        for (size_t i = 0; i < m_nodesInNewSpace.size(); i++) {
-            Node* node = m_nodesInNewSpace[i];
-            ASSERT(node->containsWrapper());
-            if (node->isV8CollectableDuringMinorGC()) { // This branch is just for performance.
-                gcTree(m_isolate, node);
-                node->clearV8CollectableDuringMinorGC();
             }
         }
     }
 
 private:
-    bool traverseTree(Node* rootNode, WillBeHeapVector<RawPtrWillBeMember<Node>, initialNodeVectorSize>* partiallyDependentNodes)
-    {
-        // To make each minor GC time bounded, we might need to give up
-        // traversing at some point for a large DOM tree. That being said,
-        // I could not observe the need even in pathological test cases.
-        for (Node& node : NodeTraversal::startsAt(rootNode)) {
-            if (node.containsWrapper()) {
-                if (!node.isV8CollectableDuringMinorGC()) {
-                    // This node is not in the new space of V8. This indicates that
-                    // the minor GC cannot anyway judge reachability of this DOM tree.
-                    // Thus we give up traversing the DOM tree.
-                    return false;
-                }
-                node.clearV8CollectableDuringMinorGC();
-                partiallyDependentNodes->append(&node);
-            }
-            if (ShadowRoot* shadowRoot = node.youngestShadowRoot()) {
-                if (!traverseTree(shadowRoot, partiallyDependentNodes))
-                    return false;
-            } else if (node.isShadowRoot()) {
-                if (ShadowRoot* shadowRoot = toShadowRoot(node).olderShadowRoot()) {
-                    if (!traverseTree(shadowRoot, partiallyDependentNodes))
-                        return false;
-                }
-            }
-            // <template> has a |content| property holding a DOM fragment which we must traverse,
-            // just like we do for the shadow trees above.
-            if (isHTMLTemplateElement(node)) {
-                if (!traverseTree(toHTMLTemplateElement(node).content(), partiallyDependentNodes))
-                    return false;
-            }
-
-            // Document maintains the list of imported documents through HTMLImportsController.
-            if (node.isDocumentNode()) {
-                Document& document = toDocument(node);
-                HTMLImportsController* controller = document.importsController();
-                if (controller && document == controller->master()) {
-                    for (unsigned i = 0; i < controller->loaderCount(); ++i) {
-                        if (!traverseTree(controller->loaderDocumentAt(i), partiallyDependentNodes))
-                            return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
-    void gcTree(v8::Isolate* isolate, Node* startNode)
-    {
-        WillBeHeapVector<RawPtrWillBeMember<Node>, initialNodeVectorSize> partiallyDependentNodes;
-
-        Node* node = startNode;
-        while (Node* parent = node->parentOrShadowHostOrTemplateHostNode())
-            node = parent;
-
-        if (!traverseTree(node, &partiallyDependentNodes))
-            return;
-
-        // We completed the DOM tree traversal. All wrappers in the DOM tree are
-        // stored in partiallyDependentNodes and are expected to exist in the new space of V8.
-        // We report those wrappers to V8 as an object group.
-        if (!partiallyDependentNodes.size())
-            return;
-        Node* groupRoot = partiallyDependentNodes[0];
-        for (size_t i = 0; i < partiallyDependentNodes.size(); i++) {
-            partiallyDependentNodes[i]->markAsDependentGroup(groupRoot, isolate);
-        }
-    }
-
-    WillBePersistentHeapVector<RawPtrWillBeMember<Node>> m_nodesInNewSpace;
     v8::Isolate* m_isolate;
 };
 
@@ -318,7 +234,10 @@ private:
     }
 
     v8::Isolate* m_isolate;
-    WillBePersistentHeapVector<RawPtrWillBeMember<Node>> m_groupsWhichNeedRetainerInfo;
+    // v8 guarantees that Blink will not regain control while a v8 GC runs
+    // (=> no Oilpan GCs will be triggered), hence raw, untraced members
+    // can safely be kept here.
+    Vector<RawPtrWillBeUntracedMember<Node>> m_groupsWhichNeedRetainerInfo;
     int m_domObjectsWithPendingActivity;
     bool m_liveRootGroupIdSet;
     bool m_constructRetainedObjectInfos;
@@ -333,18 +252,16 @@ static unsigned long long usedHeapSize(v8::Isolate* isolate)
 
 namespace {
 
-void objectGroupingForMinorGC(v8::Isolate* isolate)
+void visitWeakHandlesForMinorGC(v8::Isolate* isolate)
 {
-    ASSERT(isMainThread());
-    MinorGCWrapperVisitor visitor(isolate);
-    v8::V8::VisitHandlesForPartialDependence(isolate, &visitor);
-    visitor.notifyFinished();
+    MinorGCUnmodifiedWrapperVisitor visitor(isolate);
+    isolate->VisitWeakHandles(&visitor);
 }
 
 void objectGroupingForMajorGC(v8::Isolate* isolate, bool constructRetainedObjectInfos)
 {
     MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
-    v8::V8::VisitHandlesWithClassIds(isolate, &visitor);
+    isolate->VisitHandlesWithClassIds(&visitor);
     visitor.notifyFinished();
 }
 
@@ -364,34 +281,28 @@ void gcPrologueForMajorGC(v8::Isolate* isolate, bool constructRetainedObjectInfo
 
 }
 
-void V8GCController::gcPrologue(v8::GCType type, v8::GCCallbackFlags flags)
+void V8GCController::gcPrologue(v8::Isolate* isolate, v8::GCType type, v8::GCCallbackFlags flags)
 {
-    // Finish Oilpan's complete sweeping before running a V8 GC.
-    // This will let the GC collect more V8 objects.
-    //
-    // TODO(haraken): It's a bit too late for a major GC to schedule
-    // completeSweep() here, because gcPrologue for a major GC is called
-    // not at the point where the major GC started but at the point where
-    // the major GC requests object grouping.
-    if (ThreadState::current())
-        ThreadState::current()->completeSweep();
-
-    if (isMainThread()) {
+    if (isMainThread())
         ScriptForbiddenScope::enter();
-    }
 
-    // TODO(haraken): It would be nice if the GC callbacks passed the Isolate
-    // directly.
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    // TODO(haraken): A GC callback is not allowed to re-enter V8. This means
+    // that it's unsafe to run Oilpan's GC in the GC callback because it may
+    // run finalizers that call into V8. To avoid the risk, we should post
+    // a task to schedule the Oilpan's GC.
+    // (In practice, there is no finalizer that calls into V8 and thus is safe.)
+    if (ThreadState::current())
+        ThreadState::current()->willStartV8GC();
+
     v8::HandleScope scope(isolate);
     switch (type) {
     case v8::kGCTypeScavenge:
         TRACE_EVENT_BEGIN1("devtools.timeline,v8", "MinorGC", "usedHeapSizeBefore", usedHeapSize(isolate));
         if (isMainThread()) {
-            {
-                TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMMinorGC");
-                objectGroupingForMinorGC(isolate);
-            }
+            TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMMinorGC");
+        }
+        visitWeakHandlesForMinorGC(isolate);
+        if (isMainThread()) {
             V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
             TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8MinorGC");
         }
@@ -416,19 +327,17 @@ void V8GCController::gcPrologue(v8::GCType type, v8::GCCallbackFlags flags)
     }
 }
 
-void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
+void V8GCController::gcEpilogue(v8::Isolate* isolate, v8::GCType type, v8::GCCallbackFlags flags)
 {
-    // TODO(haraken): It would be nice if the GC callbacks passed the Isolate
-    // directly.
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     switch (type) {
     case v8::kGCTypeScavenge:
         TRACE_EVENT_END1("devtools.timeline,v8", "MinorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
         if (isMainThread()) {
             TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
         }
+        // TODO(haraken): Remove this. See the comment in gcPrologue.
         if (ThreadState::current())
-            ThreadState::current()->scheduleV8FollowupGCIfNeeded(ThreadState::V8MinorGC);
+            ThreadState::current()->scheduleV8FollowupGCIfNeeded(BlinkGC::V8MinorGC);
         break;
     case v8::kGCTypeMarkSweepCompact:
         TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
@@ -447,8 +356,9 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
         if (isMainThread()) {
             TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
         }
+        // TODO(haraken): Remove this. See the comment in gcPrologue.
         if (ThreadState::current())
-            ThreadState::current()->scheduleV8FollowupGCIfNeeded(ThreadState::V8MajorGC);
+            ThreadState::current()->scheduleV8FollowupGCIfNeeded(BlinkGC::V8MajorGC);
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -472,11 +382,16 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
         // to collect all garbage, you need to wait until the next event loop.
         // Regarding (2), it would be OK in practice to trigger only one GC per gcEpilogue, because
         // GCController.collectAll() forces 7 V8's GC.
-        Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
+        Heap::collectGarbage(BlinkGC::HeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
 
         // Forces a precise GC at the end of the current event loop.
-        if (ThreadState::current())
+        if (ThreadState::current()) {
+            // Temporary asserts to diagnose crbug.com/571207's failure to transition
+            // to FullGCScheduled.
+            RELEASE_ASSERT(!ThreadState::current()->isSweepingInProgress());
+            RELEASE_ASSERT(!ThreadState::current()->isInGC());
             ThreadState::current()->setGCState(ThreadState::FullGCScheduled);
+        }
     }
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
@@ -499,6 +414,10 @@ void V8GCController::collectAllGarbageForTesting(v8::Isolate* isolate)
 
 void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
 {
+    // TODO(haraken): Oilpan should report the amount of memory used
+    // by DOM nodes as well. Currently Partitions::currentDOMMemoryUsage()
+    // just returns 0.
+#if !ENABLE(OILPAN)
     if (!isMainThread())
         return;
 
@@ -509,6 +428,7 @@ void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
     isolate->AdjustAmountOfExternalAllocatedMemory(diff);
 
     lastUsageReportedToV8 = currentUsage;
+#endif
 }
 
 class DOMWrapperTracer : public v8::PersistentHandleVisitor {
@@ -536,7 +456,7 @@ private:
 void V8GCController::traceDOMWrappers(v8::Isolate* isolate, Visitor* visitor)
 {
     DOMWrapperTracer tracer(visitor);
-    v8::V8::VisitHandlesWithClassIds(isolate, &tracer);
+    isolate->VisitHandlesWithClassIds(&tracer);
 }
 
 } // namespace blink

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/webgl/WebGL2RenderingContext.h"
 
 #include "core/frame/LocalFrame.h"
@@ -10,6 +9,8 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "modules/webgl/CHROMIUMSubscribeUniform.h"
+#include "modules/webgl/EXTColorBufferFloat.h"
+#include "modules/webgl/EXTDisjointTimerQuery.h"
 #include "modules/webgl/EXTTextureFilterAnisotropic.h"
 #include "modules/webgl/OESTextureFloatLinear.h"
 #include "modules/webgl/WebGLCompressedTextureASTC.h"
@@ -78,6 +79,8 @@ void WebGL2RenderingContext::registerContextExtensions()
 {
     // Register extensions.
     registerExtension<CHROMIUMSubscribeUniform>(m_chromiumSubscribeUniform);
+    registerExtension<EXTColorBufferFloat>(m_extColorBufferFloat, DraftExtension);
+    registerExtension<EXTDisjointTimerQuery>(m_extDisjointTimerQuery);
     registerExtension<EXTTextureFilterAnisotropic>(m_extTextureFilterAnisotropic);
     registerExtension<OESTextureFloatLinear>(m_oesTextureFloatLinear);
     registerExtension<WebGLCompressedTextureASTC>(m_webglCompressedTextureASTC);
@@ -93,6 +96,8 @@ void WebGL2RenderingContext::registerContextExtensions()
 DEFINE_TRACE(WebGL2RenderingContext)
 {
     visitor->trace(m_chromiumSubscribeUniform);
+    visitor->trace(m_extColorBufferFloat);
+    visitor->trace(m_extDisjointTimerQuery);
     visitor->trace(m_extTextureFilterAnisotropic);
     visitor->trace(m_oesTextureFloatLinear);
     visitor->trace(m_webglCompressedTextureASTC);

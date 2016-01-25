@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSFontSelector.h"
 
 #include "core/css/CSSFontSelectorClient.h"
@@ -146,6 +145,13 @@ void CSSFontSelector::willUseFontData(const FontDescription& fontDescription, co
     CSSSegmentedFontFace* face = m_fontFaceCache.get(fontDescription, family);
     if (face)
         face->willUseFontData(fontDescription, character);
+}
+
+void CSSFontSelector::willUseRange(const FontDescription& fontDescription, const AtomicString& family, const FontDataRange& range)
+{
+    CSSSegmentedFontFace* face = m_fontFaceCache.get(fontDescription, family);
+    if (face)
+        face->willUseRange(fontDescription, range);
 }
 
 bool CSSFontSelector::isPlatformFontAvailable(const FontDescription& fontDescription, const AtomicString& passedFamily)

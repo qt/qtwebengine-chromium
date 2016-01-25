@@ -34,6 +34,7 @@ InspectorFrontendHostAPI.Events = {
     ContextMenuItemSelected: "contextMenuItemSelected",
     DeviceCountUpdated: "deviceCountUpdated",
     DevicesDiscoveryConfigChanged: "devicesDiscoveryConfigChanged",
+    DevicesPortForwardingStatusChanged: "devicesPortForwardingStatusChanged",
     DevicesUpdated: "devicesUpdated",
     DispatchMessage: "dispatchMessage",
     DispatchMessageChunk: "dispatchMessageChunk",
@@ -42,6 +43,7 @@ InspectorFrontendHostAPI.Events = {
     FileSystemsLoaded: "fileSystemsLoaded",
     FileSystemRemoved: "fileSystemRemoved",
     FileSystemAdded: "fileSystemAdded",
+    FileSystemFilesChanged: "fileSystemFilesChanged",
     FrontendAPIAttached: "frontendAPIAttached",
     FrontendAPIDetached: "frontendAPIDetached",
     IndexingTotalWorkCalculated: "indexingTotalWorkCalculated",
@@ -54,7 +56,7 @@ InspectorFrontendHostAPI.Events = {
     SearchCompleted: "searchCompleted",
     SetInspectedTabId: "setInspectedTabId",
     SetUseSoftMenu: "setUseSoftMenu",
-    ShowConsole: "showConsole"
+    ShowPanel: "showPanel"
 }
 
 InspectorFrontendHostAPI.EventDescriptors = [
@@ -65,6 +67,7 @@ InspectorFrontendHostAPI.EventDescriptors = [
     [InspectorFrontendHostAPI.Events.ContextMenuItemSelected, ["id"]],
     [InspectorFrontendHostAPI.Events.DeviceCountUpdated, ["count"]],
     [InspectorFrontendHostAPI.Events.DevicesDiscoveryConfigChanged, ["discoverUsbDevices", "portForwardingEnabled", "portForwardingConfig"]],
+    [InspectorFrontendHostAPI.Events.DevicesPortForwardingStatusChanged, ["status"]],
     [InspectorFrontendHostAPI.Events.DevicesUpdated, ["devices"]],
     [InspectorFrontendHostAPI.Events.DispatchMessage, ["messageObject"]],
     [InspectorFrontendHostAPI.Events.DispatchMessageChunk, ["messageChunk", "messageSize"]],
@@ -73,6 +76,7 @@ InspectorFrontendHostAPI.EventDescriptors = [
     [InspectorFrontendHostAPI.Events.FileSystemsLoaded, ["fileSystems"]],
     [InspectorFrontendHostAPI.Events.FileSystemRemoved, ["fileSystemPath"]],
     [InspectorFrontendHostAPI.Events.FileSystemAdded, ["errorMessage", "fileSystem"]],
+    [InspectorFrontendHostAPI.Events.FileSystemFilesChanged, ["paths"]],
     [InspectorFrontendHostAPI.Events.FrontendAPIAttached, ["frontendAPIAttached"]],
     [InspectorFrontendHostAPI.Events.FrontendAPIDetached, ["frontendAPIDetached"]],
     [InspectorFrontendHostAPI.Events.IndexingTotalWorkCalculated, ["requestId", "fileSystemPath", "totalWork"]],
@@ -85,11 +89,14 @@ InspectorFrontendHostAPI.EventDescriptors = [
     [InspectorFrontendHostAPI.Events.SearchCompleted, ["requestId", "fileSystemPath", "files"]],
     [InspectorFrontendHostAPI.Events.SetInspectedTabId, ["tabId"]],
     [InspectorFrontendHostAPI.Events.SetUseSoftMenu, ["useSoftMenu"]],
-    [InspectorFrontendHostAPI.Events.ShowConsole, []]
+    [InspectorFrontendHostAPI.Events.ShowPanel, ["panelName"]]
 ];
 
 InspectorFrontendHostAPI.prototype = {
-    addFileSystem: function() { },
+    /**
+     * @param {string=} fileSystemPath
+     */
+    addFileSystem: function(fileSystemPath) { },
 
     /**
      * @param {string} url
@@ -242,6 +249,12 @@ InspectorFrontendHostAPI.prototype = {
      * @param {string} action
      */
     performActionOnRemotePage: function(pageId, action) { },
+
+    /**
+     * @param {string} browserId
+     * @param {string} url
+     */
+    openRemotePage: function(browserId, url) { },
 
     /**
      * @param {string} origin

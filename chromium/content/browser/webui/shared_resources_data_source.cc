@@ -4,6 +4,8 @@
 
 #include "content/browser/webui/shared_resources_data_source.h"
 
+#include <stddef.h>
+
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
@@ -89,6 +91,9 @@ void SharedResourcesDataSource::StartDataRequest(
 
   if (idr == IDR_WEBUI_CSS_TEXT_DEFAULTS) {
     std::string css = webui::GetWebUiCssTextDefaults();
+    bytes = base::RefCountedString::TakeString(&css);
+  } else if (idr == IDR_WEBUI_CSS_TEXT_DEFAULTS_MD) {
+    std::string css = webui::GetWebUiCssTextDefaultsMd();
     bytes = base::RefCountedString::TakeString(&css);
   } else {
     bytes = GetContentClient()->GetDataResourceBytes(idr);

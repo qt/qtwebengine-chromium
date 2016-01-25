@@ -8,14 +8,13 @@
 #include "base/bind.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/message_loop/message_loop.h"
-#include "media/cast/logging/logging_impl.h"
 
 namespace media {
 namespace cast {
 
 namespace {
 
-static const int64 kPacingIntervalMs = 10;
+static const int64_t kPacingIntervalMs = 10;
 // Each frame will be split into no more than kPacingMaxBurstsPerFrame
 // bursts of packets.
 static const size_t kPacingMaxBurstsPerFrame = 3;
@@ -32,10 +31,12 @@ static const size_t kRidiculousNumberOfPackets =
 DedupInfo::DedupInfo() : last_byte_acked_for_audio(0) {}
 
 // static
-PacketKey PacedPacketSender::MakePacketKey(const base::TimeTicks& ticks,
-                                           uint32 ssrc,
-                                           uint16 packet_id) {
-  return std::make_pair(ticks, std::make_pair(ssrc, packet_id));
+PacketKey PacedPacketSender::MakePacketKey(base::TimeTicks capture_time,
+                                           uint32_t ssrc,
+                                           uint32_t frame_id,
+                                           uint16_t packet_id) {
+  PacketKey key{capture_time, ssrc, frame_id, packet_id};
+  return key;
 }
 
 PacedSender::PacketSendRecord::PacketSendRecord()
@@ -45,11 +46,11 @@ PacedSender::PacedSender(
     size_t target_burst_size,
     size_t max_burst_size,
     base::TickClock* clock,
-    LoggingImpl* logging,
+    std::vector<PacketEvent>* recent_packet_events,
     PacketSender* transport,
     const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner)
     : clock_(clock),
-      logging_(logging),
+      recent_packet_events_(recent_packet_events),
       transport_(transport),
       transport_task_runner_(transport_task_runner),
       audio_ssrc_(0),
@@ -62,32 +63,31 @@ PacedSender::PacedSender(
       current_burst_size_(0),
       state_(State_Unblocked),
       has_reached_upper_bound_once_(false),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 PacedSender::~PacedSender() {}
 
-void PacedSender::RegisterAudioSsrc(uint32 audio_ssrc) {
+void PacedSender::RegisterAudioSsrc(uint32_t audio_ssrc) {
   audio_ssrc_ = audio_ssrc;
 }
 
-void PacedSender::RegisterVideoSsrc(uint32 video_ssrc) {
+void PacedSender::RegisterVideoSsrc(uint32_t video_ssrc) {
   video_ssrc_ = video_ssrc;
 }
 
-void PacedSender::RegisterPrioritySsrc(uint32 ssrc) {
+void PacedSender::RegisterPrioritySsrc(uint32_t ssrc) {
   priority_ssrcs_.push_back(ssrc);
 }
 
-int64 PacedSender::GetLastByteSentForPacket(const PacketKey& packet_key) {
+int64_t PacedSender::GetLastByteSentForPacket(const PacketKey& packet_key) {
   PacketSendHistory::const_iterator it = send_history_.find(packet_key);
   if (it == send_history_.end())
     return 0;
   return it->second.last_byte_sent;
 }
 
-int64 PacedSender::GetLastByteSentForSsrc(uint32 ssrc) {
-  std::map<uint32, int64>::const_iterator it = last_byte_sent_.find(ssrc);
+int64_t PacedSender::GetLastByteSentForSsrc(uint32_t ssrc) {
+  std::map<uint32_t, int64_t>::const_iterator it = last_byte_sent_.find(ssrc);
   if (it == last_byte_sent_.end())
     return 0;
   return it->second;
@@ -127,7 +127,7 @@ bool PacedSender::ShouldResend(const PacketKey& packet_key,
   // packet Y sent just before X. Reject retransmission of X if ACK for
   // Y has not been received.
   // Only do this for video packets.
-  if (packet_key.second.first == video_ssrc_) {
+  if (packet_key.ssrc == video_ssrc_) {
     if (dedup_info.last_byte_acked_for_audio &&
         it->second.last_byte_sent_for_audio &&
         dedup_info.last_byte_acked_for_audio <
@@ -169,11 +169,11 @@ bool PacedSender::ResendPackets(const SendPacketVector& packets,
   return true;
 }
 
-bool PacedSender::SendRtcpPacket(uint32 ssrc, PacketRef packet) {
+bool PacedSender::SendRtcpPacket(uint32_t ssrc, PacketRef packet) {
   if (state_ == State_TransportBlocked) {
-    priority_packet_list_[
-        PacedPacketSender::MakePacketKey(base::TimeTicks(), ssrc, 0)] =
-        make_pair(PacketType_RTCP, packet);
+    PacketKey key =
+        PacedPacketSender::MakePacketKey(base::TimeTicks(), ssrc, 0, 0);
+    priority_packet_list_[key] = make_pair(PacketType_RTCP, packet);
   } else {
     // We pass the RTCP packets straight through.
     if (!transport_->SendPacket(
@@ -206,7 +206,7 @@ PacketRef PacedSender::PopNextPacket(PacketType* packet_type,
 
 bool PacedSender::IsHighPriority(const PacketKey& packet_key) const {
   return std::find(priority_ssrcs_.begin(), priority_ssrcs_.end(),
-                   packet_key.second.first) != priority_ssrcs_.end();
+                   packet_key.ssrc) != priority_ssrcs_.end();
 }
 
 bool PacedSender::empty() const {
@@ -300,7 +300,7 @@ void PacedSender::SendStoredPackets() {
     send_record.last_byte_sent_for_audio = GetLastByteSentForSsrc(audio_ssrc_);
     send_history_[packet_key] = send_record;
     send_history_buffer_[packet_key] = send_record;
-    last_byte_sent_[packet_key.second.first] = send_record.last_byte_sent;
+    last_byte_sent_[packet_key.ssrc] = send_record.last_byte_sent;
 
     if (socket_blocked) {
       state_ = State_TransportBlocked;
@@ -320,27 +320,42 @@ void PacedSender::SendStoredPackets() {
   state_ = State_Unblocked;
 }
 
-void PacedSender::LogPacketEvent(const Packet& packet, CastLoggingEvent event) {
-  // Get SSRC from packet and compare with the audio_ssrc / video_ssrc to see
-  // if the packet is audio or video.
-  DCHECK_GE(packet.size(), 12u);
-  base::BigEndianReader reader(reinterpret_cast<const char*>(&packet[8]), 4);
-  uint32 ssrc;
-  bool success = reader.ReadU32(&ssrc);
-  DCHECK(success);
-  bool is_audio;
+void PacedSender::LogPacketEvent(const Packet& packet, CastLoggingEvent type) {
+  if (!recent_packet_events_)
+    return;
+
+  recent_packet_events_->push_back(PacketEvent());
+  PacketEvent& event = recent_packet_events_->back();
+
+  // Populate the new PacketEvent by parsing the wire-format |packet|.
+  //
+  // TODO(miu): This parsing logic belongs in RtpParser.
+  event.timestamp = clock_->NowTicks();
+  event.type = type;
+  base::BigEndianReader reader(reinterpret_cast<const char*>(&packet[0]),
+                               packet.size());
+  bool success = reader.Skip(4);
+  uint32_t truncated_rtp_timestamp;
+  success &= reader.ReadU32(&truncated_rtp_timestamp);
+  uint32_t ssrc;
+  success &= reader.ReadU32(&ssrc);
   if (ssrc == audio_ssrc_) {
-    is_audio = true;
+    event.rtp_timestamp = last_logged_audio_rtp_timestamp_ =
+        last_logged_audio_rtp_timestamp_.Expand(truncated_rtp_timestamp);
+    event.media_type = AUDIO_EVENT;
   } else if (ssrc == video_ssrc_) {
-    is_audio = false;
+    event.rtp_timestamp = last_logged_video_rtp_timestamp_ =
+        last_logged_video_rtp_timestamp_.Expand(truncated_rtp_timestamp);
+    event.media_type = VIDEO_EVENT;
   } else {
     DVLOG(3) << "Got unknown ssrc " << ssrc << " when logging packet event";
     return;
   }
-
-  EventMediaType media_type = is_audio ? AUDIO_EVENT : VIDEO_EVENT;
-  logging_->InsertSinglePacketEvent(clock_->NowTicks(), event, media_type,
-      packet);
+  success &= reader.Skip(2);
+  success &= reader.ReadU16(&event.packet_id);
+  success &= reader.ReadU16(&event.max_packet_id);
+  event.size = packet.size();
+  DCHECK(success);
 }
 
 }  // namespace cast

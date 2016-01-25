@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/track/vtt/VTTRegion.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -450,7 +449,7 @@ void VTTRegion::startTimer()
         return;
 
     double duration = isScrollingRegion() ? scrollTime : 0;
-    m_scrollTimer.startOneShot(duration, FROM_HERE);
+    m_scrollTimer.startOneShot(duration, BLINK_FROM_HERE);
 }
 
 void VTTRegion::stopTimer()

@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -215,10 +216,6 @@ class NET_EXPORT SdchManager {
 
   // Support SDCH compression, by advertising in headers.
   static bool g_sdch_enabled_;
-
-  // A simple implementation of a RFC 3548 "URL safe" base64 encoder.
-  static void UrlSafeBase64Encode(const std::string& input,
-                                  std::string* output);
 
   DictionaryMap dictionaries_;
 

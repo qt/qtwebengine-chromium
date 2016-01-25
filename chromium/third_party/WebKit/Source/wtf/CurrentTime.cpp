@@ -28,14 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "wtf/CurrentTime.h"
 
 namespace WTF {
 
 static TimeFunction currentTimeFunction;
 static TimeFunction monotonicallyIncreasingTimeFunction;
-static TimeFunction systemTraceTimeFunction;
 
 void setCurrentTimeFunction(TimeFunction func)
 {
@@ -47,11 +45,6 @@ void setMonotonicallyIncreasingTimeFunction(TimeFunction func)
     monotonicallyIncreasingTimeFunction = func;
 }
 
-void setSystemTraceTimeFunction(TimeFunction func)
-{
-    systemTraceTimeFunction = func;
-}
-
 double currentTime()
 {
     return (*currentTimeFunction)();
@@ -60,11 +53,6 @@ double currentTime()
 double monotonicallyIncreasingTime()
 {
     return (*monotonicallyIncreasingTimeFunction)();
-}
-
-double systemTraceTime()
-{
-    return (*systemTraceTimeFunction)();
 }
 
 } // namespace WTF

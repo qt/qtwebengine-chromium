@@ -21,18 +21,23 @@
 #ifndef AtomicString_h
 #define AtomicString_h
 
+#include "wtf/Allocator.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
+#include "wtf/testing/WTFUnitTestHelpersExport.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
+#include <iosfwd>
 
 namespace WTF {
 
 struct AtomicStringHash;
 
 class WTF_EXPORT AtomicString {
+    USING_FAST_MALLOC(AtomicString);
 public:
     static void init();
+    static void reserveTableCapacity(size_t);
 
     AtomicString() { }
     AtomicString(const LChar* s) : m_string(add(s)) { }
@@ -116,6 +121,7 @@ public:
         { return m_string.endsWith<matchLength>(prefix, caseSensitivity); }
 
     AtomicString lower() const;
+    AtomicString lowerASCII() const;
     AtomicString upper() const { return AtomicString(impl()->upper()); }
 
     int toInt(bool* ok = 0) const { return m_string.toInt(ok); }
@@ -136,9 +142,6 @@ public:
 
     static void remove(StringImpl*);
 
-#if USE(CF)
-    AtomicString(CFStringRef s) :  m_string(add(s)) { }
-#endif
 #ifdef __OBJC__
     AtomicString(NSString* s) : m_string(add((CFStringRef)s)) { }
     operator NSString*() const { return m_string; }
@@ -175,7 +178,7 @@ private:
     }
     static PassRefPtr<StringImpl> addFromLiteralData(const char* characters, unsigned length);
     static PassRefPtr<StringImpl> addSlowCase(StringImpl*);
-#if USE(CF)
+#if OS(MACOSX)
     static PassRefPtr<StringImpl> add(CFStringRef);
 #endif
 
@@ -242,6 +245,9 @@ template<typename T> struct DefaultHash;
 template<> struct DefaultHash<AtomicString> {
     typedef AtomicStringHash Hash;
 };
+
+// Pretty printer for gtest.
+WTF_UNITTEST_HELPERS_EXPORT std::ostream& operator<<(std::ostream&, const AtomicString&);
 
 } // namespace WTF
 

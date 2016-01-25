@@ -22,15 +22,13 @@ enum GrDistanceFieldEffectFlags {
     kUseLCD_DistanceFieldEffectFlag     = 0x04,   // use lcd text
     kBGR_DistanceFieldEffectFlag        = 0x08,   // lcd display has bgr order
     kPortrait_DistanceFieldEffectFlag   = 0x10,   // lcd display is in portrait mode (not used yet)
-    kColorAttr_DistanceFieldEffectFlag  = 0x20,   // color vertex attribute
 
     kInvalid_DistanceFieldEffectFlag    = 0x80,   // invalid state (for initialization)
     
     kUniformScale_DistanceFieldEffectMask = kSimilarity_DistanceFieldEffectFlag |
                                             kRectToRect_DistanceFieldEffectFlag,
     // The subset of the flags relevant to GrDistanceFieldA8TextGeoProc
-    kNonLCD_DistanceFieldEffectMask       = kSimilarity_DistanceFieldEffectFlag |
-                                            kColorAttr_DistanceFieldEffectFlag,
+    kNonLCD_DistanceFieldEffectMask       = kSimilarity_DistanceFieldEffectFlag,
     // The subset of the flags relevant to GrDistanceFieldLCDTextGeoProc
     kLCD_DistanceFieldEffectMask          = kSimilarity_DistanceFieldEffectFlag |
                                             kRectToRect_DistanceFieldEffectFlag |
@@ -71,7 +69,6 @@ public:
     const Attribute* inTextureCoords() const { return fInTextureCoords; }
     GrColor color() const { return fColor; }
     bool colorIgnored() const { return GrColor_ILLEGAL == fColor; }
-    bool hasVertexColor() const { return SkToBool(fInColor); }
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 #ifdef SK_GAMMA_APPLY_TO_A8
@@ -79,9 +76,9 @@ public:
 #endif
     uint32_t getFlags() const { return fFlags; }
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
-    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override;
+    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override;
 
 private:
     GrDistanceFieldA8TextGeoProc(GrColor, const SkMatrix& viewMatrix,
@@ -133,14 +130,13 @@ public:
     const Attribute* inTextureCoords() const { return fInTextureCoords; }
     GrColor color() const { return fColor; }
     bool colorIgnored() const { return GrColor_ILLEGAL == fColor; }
-    bool hasVertexColor() const { return SkToBool(fInColor); }
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
     uint32_t getFlags() const { return fFlags; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
-    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override;
+    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override;
 
 private:
     GrDistanceFieldPathGeoProc(GrColor, const SkMatrix& viewMatrix, GrTexture* texture,
@@ -197,6 +193,7 @@ public:
     const char* name() const override { return "DistanceFieldLCDTexture"; }
 
     const Attribute* inPosition() const { return fInPosition; }
+    const Attribute* inColor() const { return fInColor; }
     const Attribute* inTextureCoords() const { return fInTextureCoords; }
     DistanceAdjust getDistanceAdjust() const { return fDistanceAdjust; }
     GrColor color() const { return fColor; }
@@ -205,9 +202,9 @@ public:
     uint32_t getFlags() const { return fFlags; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 
-    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
+    void getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
-    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override;
+    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override;
 
 private:
     GrDistanceFieldLCDTextGeoProc(GrColor, const SkMatrix& viewMatrix,
@@ -221,6 +218,7 @@ private:
     DistanceAdjust   fDistanceAdjust;
     uint32_t         fFlags;
     const Attribute* fInPosition;
+    const Attribute* fInColor;
     const Attribute* fInTextureCoords;
     bool             fUsesLocalCoords;
 

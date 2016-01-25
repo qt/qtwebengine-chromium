@@ -4,7 +4,10 @@
 
 #include "ui/ozone/platform/drm/gpu/hardware_display_plane_manager.h"
 
+#include <drm_fourcc.h>
+
 #include <set>
+#include <utility>
 
 #include "base/logging.h"
 #include "ui/gfx/geometry/rect.h"
@@ -106,7 +109,7 @@ bool HardwareDisplayPlaneManager::Initialize(DrmDevice* drm) {
       // plane is updated via cursor specific DRM API. Hence, we dont keep
       // track of Cursor plane here to avoid re-using it for any other purpose.
       if (plane->type() != HardwareDisplayPlane::kCursor)
-        planes_.push_back(plane.Pass());
+        planes_.push_back(std::move(plane));
     }
   }
 
@@ -121,16 +124,19 @@ bool HardwareDisplayPlaneManager::Initialize(DrmDevice* drm) {
             CreatePlane(resources->crtcs[i] - 1, (1 << i)));
         if (dummy_plane->Initialize(drm, std::vector<uint32_t>(), true,
                                     false)) {
-          planes_.push_back(dummy_plane.Pass());
+          planes_.push_back(std::move(dummy_plane));
         }
       }
     }
   }
 
   std::sort(planes_.begin(), planes_.end(),
-            [](HardwareDisplayPlane* l, HardwareDisplayPlane* r) {
+            [](const scoped_ptr<HardwareDisplayPlane>& l,
+               const scoped_ptr<HardwareDisplayPlane>& r) {
               return l->plane_id() < r->plane_id();
             });
+
+  PopulateSupportedFormats();
   return true;
 }
 
@@ -146,7 +152,7 @@ HardwareDisplayPlane* HardwareDisplayPlaneManager::FindNextUnusedPlane(
     uint32_t crtc_index,
     const OverlayPlane& overlay) const {
   for (size_t i = *index; i < planes_.size(); ++i) {
-    auto plane = planes_[i];
+    auto plane = planes_[i].get();
     if (!plane->in_use() && IsCompatible(plane, overlay, crtc_index)) {
       *index = i + 1;
       return plane;
@@ -178,6 +184,32 @@ bool HardwareDisplayPlaneManager::IsCompatible(HardwareDisplayPlane* plane,
   return true;
 }
 
+void HardwareDisplayPlaneManager::PopulateSupportedFormats() {
+  std::set<uint32_t> supported_formats;
+
+  for (const auto& plane : planes_) {
+    const std::vector<uint32_t>& formats = plane->supported_formats();
+    supported_formats.insert(formats.begin(), formats.end());
+  }
+
+  supported_formats_.reserve(supported_formats.size());
+  supported_formats_.assign(supported_formats.begin(), supported_formats.end());
+}
+
+void HardwareDisplayPlaneManager::ResetCurrentPlaneList(
+    HardwareDisplayPlaneList* plane_list) const {
+  for (auto* hardware_plane : plane_list->plane_list) {
+    hardware_plane->set_in_use(false);
+    hardware_plane->set_owning_crtc(0);
+  }
+
+  plane_list->plane_list.clear();
+  plane_list->legacy_page_flips.clear();
+#if defined(USE_DRM_ATOMIC)
+  plane_list->atomic_property_set.reset(drmModeAtomicAlloc());
+#endif
+}
+
 void HardwareDisplayPlaneManager::BeginFrame(
     HardwareDisplayPlaneList* plane_list) {
   for (auto* plane : plane_list->old_plane_list) {
@@ -197,18 +229,24 @@ bool HardwareDisplayPlaneManager::AssignOverlayPlanes(
   }
 
   size_t plane_idx = 0;
+  HardwareDisplayPlane* primary_plane = nullptr;
+  gfx::Rect primary_display_bounds;
+  gfx::Rect primary_src_rect;
+  uint32_t primary_format;
   for (const auto& plane : overlay_list) {
     HardwareDisplayPlane* hw_plane =
         FindNextUnusedPlane(&plane_idx, crtc_index, plane);
     if (!hw_plane) {
       LOG(ERROR) << "Failed to find a free plane for crtc " << crtc_id;
+      ResetCurrentPlaneList(plane_list);
       return false;
     }
 
     gfx::Rect fixed_point_rect;
+    uint32_t fourcc_format = plane.buffer->GetFramebufferPixelFormat();
     if (hw_plane->type() != HardwareDisplayPlane::kDummy) {
       const gfx::Size& size = plane.buffer->GetSize();
-      gfx::RectF crop_rect = gfx::RectF(plane.crop_rect);
+      gfx::RectF crop_rect = plane.crop_rect;
       crop_rect.Scale(size.width(), size.height());
 
       // This returns a number in 16.16 fixed point, required by the DRM overlay
@@ -221,35 +259,77 @@ bool HardwareDisplayPlaneManager::AssignOverlayPlanes(
                                    to_fixed_point(crop_rect.height()));
     }
 
-    plane_list->plane_list.push_back(hw_plane);
-    hw_plane->set_owning_crtc(crtc_id);
-    if (SetPlaneData(plane_list, hw_plane, plane, crtc_id, fixed_point_rect,
-                     crtc)) {
-      hw_plane->set_in_use(true);
+    // If Overlay completely covers primary and isn't transparent, than use
+    // it as primary. This reduces the no of planes which need to be read in
+    // display controller side.
+    if (primary_plane) {
+      bool needs_blending = true;
+      if (fourcc_format == DRM_FORMAT_XRGB8888)
+        needs_blending = false;
+      // TODO(kalyank): Check if we can move this optimization to
+      // DrmOverlayCandidatesHost.
+      if (!needs_blending && primary_format == fourcc_format &&
+          primary_display_bounds == plane.display_bounds &&
+          fixed_point_rect == primary_src_rect) {
+        ResetCurrentPlaneList(plane_list);
+        hw_plane = primary_plane;
+      }
     } else {
+      primary_plane = hw_plane;
+      primary_display_bounds = plane.display_bounds;
+      primary_src_rect = fixed_point_rect;
+      primary_format = fourcc_format;
+    }
+
+    if (!SetPlaneData(plane_list, hw_plane, plane, crtc_id, fixed_point_rect,
+                      crtc)) {
+      ResetCurrentPlaneList(plane_list);
       return false;
     }
+
+    plane_list->plane_list.push_back(hw_plane);
+    hw_plane->set_owning_crtc(crtc_id);
+    hw_plane->set_in_use(true);
   }
   return true;
 }
 
-std::vector<uint32_t>
-HardwareDisplayPlaneManager::GetCompatibleHardwarePlaneIds(
-    const OverlayPlane& plane,
-    uint32_t crtc_id) const {
+const std::vector<uint32_t>& HardwareDisplayPlaneManager::GetSupportedFormats()
+    const {
+  return supported_formats_;
+}
+
+bool HardwareDisplayPlaneManager::IsFormatSupported(uint32_t fourcc_format,
+                                                    uint32_t z_order,
+                                                    uint32_t crtc_id) const {
+  bool format_supported = false;
   int crtc_index = LookupCrtcIndex(crtc_id);
   if (crtc_index < 0) {
     LOG(ERROR) << "Cannot find crtc " << crtc_id;
-    return std::vector<uint32_t>();
+    return format_supported;
   }
 
-  std::vector<uint32_t> plane_ids;
-  for (auto* hardware_plane : planes_) {
-    if (IsCompatible(hardware_plane, plane, crtc_index))
-      plane_ids.push_back(hardware_plane->plane_id());
+  // We dont have a way to query z_order of a plane. This is a temporary
+  // solution till driver exposes z_order property.
+  uint32_t plane_z_order = 0;
+  for (const auto& hardware_plane : planes_) {
+    if (plane_z_order > z_order)
+      break;
+
+    if (!hardware_plane->CanUseForCrtc(crtc_index))
+      continue;
+
+    if (plane_z_order == z_order) {
+      if (hardware_plane->IsSupportedFormat(fourcc_format))
+        format_supported = true;
+
+      break;
+    } else {
+      plane_z_order++;
+    }
   }
 
-  return plane_ids;
+  return format_supported;
 }
 
 }  // namespace ui

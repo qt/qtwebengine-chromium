@@ -4,14 +4,18 @@
 
 #include "content/browser/gpu/compositor_util.h"
 
+#include <stddef.h>
+
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 #include "cc/base/switches.h"
+#include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
@@ -208,12 +212,41 @@ bool IsZeroCopyUploadEnabled() {
 #endif
 }
 
-bool IsPersistentGpuMemoryBufferEnabled() {
-  // Zero copy currently doesn't take advantage of persistent buffers.
+bool IsPartialRasterEnabled() {
+  // Zero copy currently doesn't take advantage of partial raster.
   if (IsZeroCopyUploadEnabled())
     return false;
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(switches::kEnablePersistentGpuMemoryBuffer);
+  return command_line.HasSwitch(switches::kEnablePartialRaster);
+}
+
+bool IsGpuMemoryBufferCompositorResourcesEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(
+          switches::kEnableGpuMemoryBufferCompositorResources)) {
+    return true;
+  }
+  if (command_line.HasSwitch(
+          switches::kDisableGpuMemoryBufferCompositorResources)) {
+    return false;
+  }
+
+  // Native GPU memory buffers are required.
+  if (!BrowserGpuMemoryBufferManager::IsNativeGpuMemoryBuffersEnabled())
+    return false;
+
+  // GPU rasterization does not support GL_TEXTURE_RECTANGLE_ARB, which is
+  // required by GpuMemoryBuffers on Mac.
+  // http://crbug.com/551072
+  if (IsForceGpuRasterizationEnabled() || IsGpuRasterizationEnabled())
+    return false;
+
+#if defined(OS_MACOSX)
+  return true;
+#else
+  return false;
+#endif
 }
 
 bool IsGpuRasterizationEnabled() {

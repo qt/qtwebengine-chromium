@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/transforms/TransformationMatrix.h"
 
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -17,11 +16,11 @@ TEST(TransformationMatrixTest, NonInvertableBlendTest)
 
     result = to;
     result.blend(from, 0.25);
-    EXPECT_TRUE(result == from);
+    EXPECT_EQ(result, from);
 
     result = to;
     result.blend(from, 0.75);
-    EXPECT_TRUE(result == to);
+    EXPECT_EQ(result, to);
 }
 
 TEST(TransformationMatrixTest, IsIdentityOr2DTranslation)

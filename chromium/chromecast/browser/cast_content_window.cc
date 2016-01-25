@@ -4,11 +4,13 @@
 
 #include "chromecast/browser/cast_content_window.h"
 
+#include "base/macros.h"
 #include "base/threading/thread_restrictions.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/browser/cast_browser_process.h"
 #include "chromecast/media/base/video_plane_controller.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
@@ -77,7 +79,7 @@ void CastContentWindow::CreateWindowTree(
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, cast_screen);
   if (cast_screen->GetPrimaryDisplay().size() != initial_size)
     cast_screen->UpdateDisplaySize(initial_size);
-  media::VideoPlaneController::GetInstance()->OnGraphicsPlaneResolutionChanged(
+  media::VideoPlaneController::GetInstance()->SetGraphicsPlaneResolution(
       Size(initial_size.width(), initial_size.height()));
 
   CHECK(aura::Env::GetInstance());
@@ -121,17 +123,18 @@ void CastContentWindow::DidFirstVisuallyNonEmptyPaint() {
   metrics::CastMetricsHelper::GetInstance()->LogTimeToFirstPaint();
 }
 
-void CastContentWindow::MediaPaused() {
+void CastContentWindow::MediaStoppedPlaying(const MediaPlayerId& id) {
   metrics::CastMetricsHelper::GetInstance()->LogMediaPause();
 }
 
-void CastContentWindow::MediaStartedPlaying() {
+void CastContentWindow::MediaStartedPlaying(const MediaPlayerId& id) {
   metrics::CastMetricsHelper::GetInstance()->LogMediaPlay();
 }
 
 void CastContentWindow::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
-  content::RenderWidgetHostView* view = render_view_host->GetView();
+  content::RenderWidgetHostView* view =
+      render_view_host->GetWidget()->GetView();
   if (view)
     view->SetBackgroundColor(transparent_ ? SK_ColorTRANSPARENT
                                           : SK_ColorBLACK);

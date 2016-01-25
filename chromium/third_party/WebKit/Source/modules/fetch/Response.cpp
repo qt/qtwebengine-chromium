@@ -2,18 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/Response.h"
 
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ReadableStreamOperations.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/V8ArrayBuffer.h"
+#include "bindings/core/v8/V8ArrayBufferView.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8Blob.h"
+#include "bindings/core/v8/V8FormData.h"
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/fileapi/Blob.h"
 #include "core/html/FormData.h"
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
+#include "modules/fetch/FetchFormDataConsumerHandle.h"
+#include "modules/fetch/ReadableStreamDataConsumerHandle.h"
 #include "modules/fetch/ResponseInit.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/network/EncodedFormData.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
@@ -94,92 +103,65 @@ bool isValidReasonPhrase(const String& statusText)
 
 }
 
-Response* Response::create(ExecutionContext* context, ExceptionState& exceptionState)
+Response* Response::create(ScriptState* scriptState, ExceptionState& exceptionState)
 {
-    return create(context, nullptr, ResponseInit(), exceptionState);
+    return create(scriptState->executionContext(), nullptr, String(), ResponseInit(), exceptionState);
 }
 
-Response* Response::create(ExecutionContext* context, const BodyInit& body, const Dictionary& responseInit, ExceptionState& exceptionState)
+Response* Response::create(ScriptState* scriptState, ScriptValue bodyValue, const Dictionary& init, ExceptionState& exceptionState)
 {
-    ASSERT(!body.isNull());
-    if (body.isBlob())
-        return create(context, body.getAsBlob(), ResponseInit(responseInit, exceptionState), exceptionState);
-    if (body.isUSVString()) {
-        OwnPtr<BlobData> blobData = BlobData::create();
-        blobData->appendText(body.getAsUSVString(), false);
-        // "Set |Content-Type| to `text/plain;charset=UTF-8`."
-        blobData->setContentType("text/plain;charset=UTF-8");
-        const long long length = blobData->length();
-        Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
-        return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
+    v8::Local<v8::Value> body = bodyValue.v8Value();
+    v8::Isolate* isolate = scriptState->isolate();
+    ExecutionContext* executionContext = scriptState->executionContext();
+
+    OwnPtr<FetchDataConsumerHandle> bodyHandle;
+    String contentType;
+    if (bodyValue.isUndefined() || bodyValue.isNull()) {
+        // Note: The IDL processor cannot handle this situation. See
+        // https://crbug.com/335871.
+    } else if (V8Blob::hasInstance(body, isolate)) {
+        Blob* blob = V8Blob::toImpl(body.As<v8::Object>());
+        bodyHandle = FetchBlobDataConsumerHandle::create(executionContext, blob->blobDataHandle());
+        contentType = blob->type();
+    } else if (V8ArrayBuffer::hasInstance(body, isolate)) {
+        bodyHandle = FetchFormDataConsumerHandle::create(V8ArrayBuffer::toImpl(body.As<v8::Object>()));
+    } else if (V8ArrayBufferView::hasInstance(body, isolate)) {
+        bodyHandle = FetchFormDataConsumerHandle::create(V8ArrayBufferView::toImpl(body.As<v8::Object>()));
+    } else if (V8FormData::hasInstance(body, isolate)) {
+        RefPtr<EncodedFormData> formData = V8FormData::toImpl(body.As<v8::Object>())->encodeMultiPartFormData();
+        // Here we handle formData->boundary() as a C-style string. See
+        // FormDataEncoder::generateUniqueBoundaryString.
+        contentType = AtomicString("multipart/form-data; boundary=", AtomicString::ConstructFromLiteral) + formData->boundary().data();
+        bodyHandle = FetchFormDataConsumerHandle::create(executionContext, formData.release());
+    } else if (RuntimeEnabledFeatures::responseConstructedWithReadableStreamEnabled() && ReadableStreamOperations::isReadableStream(scriptState, body)) {
+        bodyHandle = ReadableStreamDataConsumerHandle::create(scriptState, body);
+    } else {
+        String string = toUSVString(isolate, body, exceptionState);
+        if (exceptionState.hadException())
+            return nullptr;
+        bodyHandle = FetchFormDataConsumerHandle::create(string);
+        contentType = "text/plain;charset=UTF-8";
     }
-    if (body.isArrayBuffer()) {
-        RefPtr<DOMArrayBuffer> arrayBuffer = body.getAsArrayBuffer();
-        OwnPtr<BlobData> blobData = BlobData::create();
-        blobData->appendBytes(arrayBuffer->data(), arrayBuffer->byteLength());
-        const long long length = blobData->length();
-        Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
-        return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
-    }
-    if (body.isArrayBufferView()) {
-        RefPtr<DOMArrayBufferView> arrayBufferView = body.getAsArrayBufferView();
-        OwnPtr<BlobData> blobData = BlobData::create();
-        blobData->appendBytes(arrayBufferView->baseAddress(), arrayBufferView->byteLength());
-        const long long length = blobData->length();
-        Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
-        return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
-    }
-    if (body.isFormData()) {
-        FormData* domFormData = body.getAsFormData();
-        OwnPtr<BlobData> blobData = BlobData::create();
-        // FIXME: the same code exist in RequestInit::RequestInit().
-        RefPtr<EncodedFormData> httpBody = domFormData->encodeMultiPartFormData();
-        for (size_t i = 0; i < httpBody->elements().size(); ++i) {
-            const FormDataElement& element = httpBody->elements()[i];
-            switch (element.m_type) {
-            case FormDataElement::data: {
-                blobData->appendBytes(element.m_data.data(), element.m_data.size());
-                break;
-            }
-            case FormDataElement::encodedFile:
-                blobData->appendFile(element.m_filename, element.m_fileStart, element.m_fileLength, element.m_expectedFileModificationTime);
-                break;
-            case FormDataElement::encodedBlob:
-                if (element.m_optionalBlobDataHandle)
-                    blobData->appendBlob(element.m_optionalBlobDataHandle, 0, element.m_optionalBlobDataHandle->size());
-                break;
-            case FormDataElement::encodedFileSystemURL:
-                blobData->appendFileSystemURL(element.m_fileSystemURL, element.m_fileStart, element.m_fileLength, element.m_expectedFileModificationTime);
-                break;
-            default:
-                ASSERT_NOT_REACHED();
-            }
-        }
-        blobData->setContentType(AtomicString("multipart/form-data; boundary=", AtomicString::ConstructFromLiteral) + httpBody->boundary().data());
-        const long long length = blobData->length();
-        Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
-        return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
-    }
-    ASSERT_NOT_REACHED();
-    return nullptr;
+    // TODO(yhirano): Add the URLSearchParams case.
+    return create(executionContext, bodyHandle.release(), contentType, ResponseInit(init, exceptionState), exceptionState);
 }
 
-Response* Response::create(ExecutionContext* context, Blob* body, const ResponseInit& responseInit, ExceptionState& exceptionState)
+Response* Response::create(ExecutionContext* context, PassOwnPtr<FetchDataConsumerHandle> bodyHandle, const String& contentType, const ResponseInit& init, ExceptionState& exceptionState)
 {
-    unsigned short status = responseInit.status;
+    unsigned short status = init.status;
 
     // "1. If |init|'s status member is not in the range 200 to 599, inclusive, throw a
     // RangeError."
     if (status < 200 || 599 < status) {
         exceptionState.throwRangeError(ExceptionMessages::indexOutsideRange<unsigned>("status", status, 200, ExceptionMessages::InclusiveBound, 599, ExceptionMessages::InclusiveBound));
-        return 0;
+        return nullptr;
     }
 
     // "2. If |init|'s statusText member does not match the Reason-Phrase
     // token production, throw a TypeError."
-    if (!isValidReasonPhrase(responseInit.statusText)) {
+    if (!isValidReasonPhrase(init.statusText)) {
         exceptionState.throwTypeError("Invalid statusText");
-        return 0;
+        return nullptr;
     }
 
     // "3. Let |r| be a new Response object, associated with a new response,
@@ -187,33 +169,35 @@ Response* Response::create(ExecutionContext* context, Blob* body, const Response
     Response* r = new Response(context);
 
     // "4. Set |r|'s response's status to |init|'s status member."
-    r->m_response->setStatus(responseInit.status);
+    r->m_response->setStatus(init.status);
 
     // "5. Set |r|'s response's status message to |init|'s statusText member."
-    r->m_response->setStatusMessage(AtomicString(responseInit.statusText));
+    r->m_response->setStatusMessage(AtomicString(init.statusText));
 
     // "6. If |init|'s headers member is present, run these substeps:"
-    if (responseInit.headers) {
+    if (init.headers) {
         // "1. Empty |r|'s response's header list."
         r->m_response->headerList()->clearList();
         // "2. Fill |r|'s Headers object with |init|'s headers member. Rethrow
         // any exceptions."
-        r->m_headers->fillWith(responseInit.headers.get(), exceptionState);
+        r->m_headers->fillWith(init.headers.get(), exceptionState);
         if (exceptionState.hadException())
-            return 0;
-    } else if (!responseInit.headersDictionary.isUndefinedOrNull()) {
+            return nullptr;
+    } else if (!init.headersDictionary.isUndefinedOrNull()) {
         // "1. Empty |r|'s response's header list."
         r->m_response->headerList()->clearList();
         // "2. Fill |r|'s Headers object with |init|'s headers member. Rethrow
         // any exceptions."
-        r->m_headers->fillWith(responseInit.headersDictionary, exceptionState);
+        r->m_headers->fillWith(init.headersDictionary, exceptionState);
         if (exceptionState.hadException())
-            return 0;
+            return nullptr;
     }
     // "7. If body is given, run these substeps:"
-    if (body) {
-        // "1. If |init|'s status member is a null body status, throw a TypeError."
-        // "2. Let |stream| and |Content-Type| be the result of extracting body."
+    if (bodyHandle) {
+        // "1. If |init|'s status member is a null body status, throw a
+        //     TypeError."
+        // "2. Let |stream| and |Content-Type| be the result of extracting
+        //     body."
         // "3. Set |r|'s response's body to |stream|."
         // "4. If |Content-Type| is non-null and |r|'s response's header list
         // contains no header named `Content-Type`, append `Content-Type`/
@@ -224,11 +208,11 @@ Response* Response::create(ExecutionContext* context, Blob* body, const Response
         // Content-Type to its value."
         if (isNullBodyStatus(status)) {
             exceptionState.throwTypeError("Response with null body status cannot have body");
-            return 0;
+            return nullptr;
         }
-        r->m_response->replaceBodyStreamBuffer(new BodyStreamBuffer(FetchBlobDataConsumerHandle::create(context, body->blobDataHandle())));
-        if (!body->type().isEmpty() && !r->m_response->headerList()->has("Content-Type"))
-            r->m_response->headerList()->append("Content-Type", body->type());
+        r->m_response->replaceBodyStreamBuffer(new BodyStreamBuffer(bodyHandle));
+        if (!contentType.isEmpty() && !r->m_response->headerList()->has("Content-Type"))
+            r->m_response->headerList()->append("Content-Type", contentType);
     }
 
     // "8. Set |r|'s MIME type to the result of extracting a MIME type
@@ -339,7 +323,7 @@ Headers* Response::headers() const
 
 Response* Response::clone(ExceptionState& exceptionState)
 {
-    if (bodyUsed()) {
+    if (isBodyLocked() || bodyUsed()) {
         exceptionState.throwTypeError("Response body is already used");
         return nullptr;
     }
@@ -359,6 +343,12 @@ bool Response::hasPendingActivity() const
     if (internalBodyBuffer()->hasPendingActivity())
         return true;
     return Body::hasPendingActivity();
+}
+
+void Response::stop()
+{
+    if (m_response->internalBuffer())
+        m_response->internalBuffer()->stop();
 }
 
 void Response::populateWebServiceWorkerResponse(WebServiceWorkerResponse& response)
@@ -388,6 +378,11 @@ Response::Response(ExecutionContext* context, FetchResponseData* response, Heade
 bool Response::hasBody() const
 {
     return m_response->internalBuffer();
+}
+
+bool Response::bodyUsed()
+{
+    return internalBodyBuffer() && internalBodyBuffer()->stream()->isDisturbed();
 }
 
 String Response::mimeType() const

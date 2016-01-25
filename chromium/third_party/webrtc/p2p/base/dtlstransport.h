@@ -35,7 +35,7 @@ class DtlsTransport : public Base {
       : Base(name, allocator),
         certificate_(certificate),
         secure_role_(rtc::SSL_CLIENT),
-        ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_10) {}
+        ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_12) {}
 
   ~DtlsTransport() {
     Base::DestroyAllChannels();
@@ -229,10 +229,10 @@ class DtlsTransport : public Base {
                                      error_desc);
     }
     // Apply remote fingerprint.
-    if (!channel->SetRemoteFingerprint(
-            remote_fingerprint_->algorithm,
-            reinterpret_cast<const uint8*>(remote_fingerprint_->digest.data()),
-            remote_fingerprint_->digest.size())) {
+    if (!channel->SetRemoteFingerprint(remote_fingerprint_->algorithm,
+                                       reinterpret_cast<const uint8_t*>(
+                                           remote_fingerprint_->digest.data()),
+                                       remote_fingerprint_->digest.size())) {
       return BadTransportDescription("Failed to apply remote fingerprint.",
                                      error_desc);
     }

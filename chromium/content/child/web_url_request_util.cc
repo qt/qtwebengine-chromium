@@ -4,6 +4,11 @@
 
 #include "content/child/web_url_request_util.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <limits>
+
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "net/base/load_flags.h"
@@ -87,6 +92,10 @@ ResourceType WebURLRequestToResourceType(const WebURLRequest& request) {
   }
 
   switch (requestContext) {
+    // CSP report
+    case WebURLRequest::RequestContextCSPReport:
+      return RESOURCE_TYPE_CSP_REPORT;
+
     // Favicon
     case WebURLRequest::RequestContextFavicon:
       return RESOURCE_TYPE_FAVICON;
@@ -112,9 +121,12 @@ ResourceType WebURLRequestToResourceType(const WebURLRequest& request) {
 
     // Ping
     case WebURLRequest::RequestContextBeacon:
-    case WebURLRequest::RequestContextCSPReport:
     case WebURLRequest::RequestContextPing:
       return RESOURCE_TYPE_PING;
+
+    // Subresource of plugins
+    case WebURLRequest::RequestContextPlugin:
+      return RESOURCE_TYPE_PLUGIN_RESOURCE;
 
     // Prefetch
     case WebURLRequest::RequestContextPrefetch:
@@ -134,7 +146,6 @@ ResourceType WebURLRequestToResourceType(const WebURLRequest& request) {
     case WebURLRequest::RequestContextDownload:
     case WebURLRequest::RequestContextManifest:
     case WebURLRequest::RequestContextSubresource:
-    case WebURLRequest::RequestContextPlugin:
       return RESOURCE_TYPE_SUB_RESOURCE;
 
     // TextTrack
@@ -245,13 +256,13 @@ scoped_refptr<ResourceRequestBody> GetRequestBodyForWebURLRequest(
       case WebHTTPBody::Element::TypeFile:
         if (element.fileLength == -1) {
           request_body->AppendFileRange(
-              base::FilePath::FromUTF16Unsafe(element.filePath),
-              0, kuint64max, base::Time());
+              base::FilePath::FromUTF16Unsafe(element.filePath), 0,
+              std::numeric_limits<uint64_t>::max(), base::Time());
         } else {
           request_body->AppendFileRange(
               base::FilePath::FromUTF16Unsafe(element.filePath),
-              static_cast<uint64>(element.fileStart),
-              static_cast<uint64>(element.fileLength),
+              static_cast<uint64_t>(element.fileStart),
+              static_cast<uint64_t>(element.fileLength),
               base::Time::FromDoubleT(element.modificationTime));
         }
         break;
@@ -259,9 +270,8 @@ scoped_refptr<ResourceRequestBody> GetRequestBodyForWebURLRequest(
         GURL file_system_url = element.fileSystemURL;
         DCHECK(file_system_url.SchemeIsFileSystem());
         request_body->AppendFileSystemFileRange(
-            file_system_url,
-            static_cast<uint64>(element.fileStart),
-            static_cast<uint64>(element.fileLength),
+            file_system_url, static_cast<uint64_t>(element.fileStart),
+            static_cast<uint64_t>(element.fileLength),
             base::Time::FromDoubleT(element.modificationTime));
         break;
       }
@@ -290,6 +300,8 @@ STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_CORS,
 STATIC_ASSERT_MATCHING_ENUMS(
     FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT,
     WebURLRequest::FetchRequestModeCORSWithForcedPreflight);
+STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_NAVIGATE,
+                             WebURLRequest::FetchRequestModeNavigate);
 
 FetchRequestMode GetFetchRequestModeForWebURLRequest(
     const blink::WebURLRequest& request) {

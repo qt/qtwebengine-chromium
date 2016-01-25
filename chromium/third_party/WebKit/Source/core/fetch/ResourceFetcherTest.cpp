@@ -28,10 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/ResourceFetcher.h"
 
 #include "core/fetch/FetchInitiatorInfo.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceLoader.h"
@@ -44,7 +44,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -108,7 +108,7 @@ TEST_F(ResourceFetcherTest, UseExistingResource)
     ResourceResponse response;
     response.setURL(url);
     response.setHTTPStatusCode(200);
-    response.setHTTPHeaderField("Cache-Control", "max-age=3600");
+    response.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
     resource->responseReceived(response, nullptr);
     resource->finish();
 
@@ -126,8 +126,8 @@ TEST_F(ResourceFetcherTest, Vary)
     ResourceResponse response;
     response.setURL(url);
     response.setHTTPStatusCode(200);
-    response.setHTTPHeaderField("Cache-Control", "max-age=3600");
-    response.setHTTPHeaderField("Vary", "*");
+    response.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
+    response.setHTTPHeaderField(HTTPNames::Vary, "*");
     resource->responseReceived(response, nullptr);
     resource->finish();
     ASSERT_TRUE(resource->hasVaryHeader());
@@ -156,8 +156,8 @@ TEST_F(ResourceFetcherTest, VaryOnBack)
     ResourceResponse response;
     response.setURL(url);
     response.setHTTPStatusCode(200);
-    response.setHTTPHeaderField("Cache-Control", "max-age=3600");
-    response.setHTTPHeaderField("Vary", "*");
+    response.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
+    response.setHTTPHeaderField(HTTPNames::Vary, "*");
     resource->responseReceived(response, nullptr);
     resource->finish();
     ASSERT_TRUE(resource->hasVaryHeader());
@@ -177,8 +177,8 @@ TEST_F(ResourceFetcherTest, VaryImage)
     ResourceResponse response;
     response.setURL(url);
     response.setHTTPStatusCode(200);
-    response.setHTTPHeaderField("Cache-Control", "max-age=3600");
-    response.setHTTPHeaderField("Vary", "*");
+    response.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
+    response.setHTTPHeaderField(HTTPNames::Vary, "*");
     URLTestHelpers::registerMockedURLLoadWithCustomResponse(url, "white-1x1.png", WebString::fromUTF8(""), WrappedResourceResponse(response));
 
     FetchRequest fetchRequestOriginal = FetchRequest(url, FetchInitiatorInfo());
@@ -202,14 +202,14 @@ TEST_F(ResourceFetcherTest, RevalidateWhileLoading)
 
     ResourceFetcher* fetcher1 = ResourceFetcher::create(ResourceFetcherTestMockFetchContext::create());
     ResourceRequest request1(url);
-    request1.setHTTPHeaderField("Cache-control", "no-cache");
+    request1.setHTTPHeaderField(HTTPNames::Cache_Control, "no-cache");
     FetchRequest fetchRequest1 = FetchRequest(request1, FetchInitiatorInfo());
     ResourcePtr<Resource> resource1 = fetcher1->requestResource(fetchRequest1, TestResourceFactory(Resource::Image));
     ResourceResponse response;
     response.setURL(url);
     response.setHTTPStatusCode(200);
-    response.setHTTPHeaderField("Cache-Control", "max-age=3600");
-    response.setHTTPHeaderField("etag", "1234567890");
+    response.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
+    response.setHTTPHeaderField(HTTPNames::ETag, "1234567890");
     resource1->responseReceived(response, nullptr);
     resource1->finish();
 
@@ -223,6 +223,19 @@ TEST_F(ResourceFetcherTest, RevalidateWhileLoading)
     // Tidily(?) shut down the ResourceLoader.
     resource1->loader()->cancel();
     Platform::current()->unitTestSupport()->unregisterMockedURL(url);
+}
+
+TEST_F(ResourceFetcherTest, DontReuseMediaDataUrl)
+{
+    ResourceFetcher* fetcher = ResourceFetcher::create(ResourceFetcherTestMockFetchContext::create());
+    ResourceRequest request(KURL(ParsedURLString, "data:text/html,foo"));
+    ResourceLoaderOptions options;
+    options.dataBufferingPolicy = DoNotBufferData;
+    FetchRequest fetchRequest = FetchRequest(request, FetchInitiatorTypeNames::internal, options);
+    ResourcePtr<Resource> resource1 = fetcher->requestResource(fetchRequest, TestResourceFactory(Resource::Media));
+    ResourcePtr<Resource> resource2 = fetcher->requestResource(fetchRequest, TestResourceFactory(Resource::Media));
+    EXPECT_NE(resource1.get(), resource2.get());
+    memoryCache()->remove(resource2.get());
 }
 
 } // namespace blink

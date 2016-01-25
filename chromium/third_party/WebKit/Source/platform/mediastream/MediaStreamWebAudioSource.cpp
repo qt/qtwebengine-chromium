@@ -28,17 +28,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "platform/mediastream/MediaStreamWebAudioSource.h"
-
 #include "platform/audio/AudioBus.h"
 #include "public/platform/WebAudioSourceProvider.h"
 
 namespace blink {
 
 MediaStreamWebAudioSource::MediaStreamWebAudioSource(PassOwnPtr<WebAudioSourceProvider> provider)
-    : m_webAudioSourceProvider(provider)
+    : m_webAudioSourceProvider(std::move(provider))
 {
 }
 
@@ -68,4 +65,3 @@ void MediaStreamWebAudioSource::provideInput(AudioBus* bus, size_t framesToProce
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

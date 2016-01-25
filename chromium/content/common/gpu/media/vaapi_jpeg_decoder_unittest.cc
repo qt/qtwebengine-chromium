@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+#include <string.h>
+
 #include <string>
 
 // This has to be included first.
@@ -46,13 +49,13 @@ class VaapiJpegDecoderTest : public ::testing::Test {
         << "failed to read input data from " << input_file.value();
   }
 
-  void TearDown() override { wrapper_.reset(); }
+  void TearDown() override { wrapper_ = nullptr; }
 
   bool VerifyDecode(const media::JpegParseResult& parse_result,
                     const std::string& md5sum);
 
  protected:
-  scoped_ptr<VaapiWrapper> wrapper_;
+  scoped_refptr<VaapiWrapper> wrapper_;
   std::string jpeg_data_;
 };
 

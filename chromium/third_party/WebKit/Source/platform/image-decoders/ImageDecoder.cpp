@@ -18,7 +18,6 @@
  *
  */
 
-#include "config.h"
 #include "platform/image-decoders/ImageDecoder.h"
 
 #include "platform/PlatformInstrumentation.h"
@@ -33,12 +32,12 @@
 
 namespace blink {
 
-static unsigned copyFromSharedBuffer(char* buffer, unsigned bufferLength, const SharedBuffer& sharedBuffer, unsigned offset)
+static size_t copyFromSharedBuffer(char* buffer, size_t bufferLength, const SharedBuffer& sharedBuffer, size_t offset)
 {
-    unsigned bytesExtracted = 0;
+    size_t bytesExtracted = 0;
     const char* moreData;
-    while (unsigned moreDataLength = sharedBuffer.getSomeData(moreData, offset)) {
-        unsigned bytesToCopy = std::min(bufferLength - bytesExtracted, moreDataLength);
+    while (size_t moreDataLength = sharedBuffer.getSomeData(moreData, offset)) {
+        size_t bytesToCopy = std::min(bufferLength - bytesExtracted, moreDataLength);
         memcpy(buffer + bytesExtracted, moreData, bytesToCopy);
         bytesExtracted += bytesToCopy;
         if (bytesExtracted == bufferLength)
@@ -85,7 +84,7 @@ inline bool matchesBMPSignature(char* contents)
 
 PassOwnPtr<ImageDecoder> ImageDecoder::create(const SharedBuffer& data, AlphaOption alphaOption, GammaAndColorProfileOption colorOptions)
 {
-    const unsigned longestSignatureLength = sizeof("RIFF????WEBPVP") - 1;
+    const size_t longestSignatureLength = sizeof("RIFF????WEBPVP") - 1;
     ASSERT(longestSignatureLength == 14);
 
     size_t maxDecodedBytes = Platform::current() ? Platform::current()->maxDecodedImageBytes() : noDecodedImageByteLimit;
@@ -160,7 +159,18 @@ size_t ImageDecoder::frameBytesAtIndex(size_t index) const
 {
     if (index >= m_frameBufferCache.size() || m_frameBufferCache[index].status() == ImageFrame::FrameEmpty)
         return 0;
-    return frameSizeAtIndex(index).area() * sizeof(ImageFrame::PixelData);
+
+    struct ImageSize {
+
+        explicit ImageSize(IntSize size)
+        {
+            area = static_cast<uint64_t>(size.width()) * size.height();
+        }
+
+        uint64_t area;
+    };
+
+    return ImageSize(frameSizeAtIndex(index)).area * sizeof(ImageFrame::PixelData);
 }
 
 bool ImageDecoder::deferredImageDecodingEnabled()

@@ -24,64 +24,67 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/CSSSelectorList.h"
 
 #include "core/css/parser/CSSParserSelector.h"
+#include "wtf/Partitions.h"
 #include "wtf/text/StringBuilder.h"
+
+namespace {
+    // CSSSelector is one of the top types that consume renderer memory,
+    // so instead of using the |WTF_HEAP_PROFILER_TYPE_NAME| macro in the
+    // allocations below, pass this type name constant to allow profiling
+    // in official builds.
+    const char kCSSSelectorTypeName[] = "blink::CSSSelector";
+}
 
 namespace blink {
 
-CSSSelectorList::~CSSSelectorList()
+CSSSelectorList CSSSelectorList::copy() const
 {
-    deleteSelectors();
+    CSSSelectorList list;
+
+    unsigned length = this->length();
+    list.m_selectorArray = reinterpret_cast<CSSSelector*>(WTF::Partitions::fastMalloc(sizeof(CSSSelector) * length, kCSSSelectorTypeName));
+    for (unsigned i = 0; i < length; ++i)
+        new (&list.m_selectorArray[i]) CSSSelector(m_selectorArray[i]);
+
+    return list;
 }
 
-CSSSelectorList::CSSSelectorList(const CSSSelectorList& other)
+CSSSelectorList CSSSelectorList::adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector)
 {
-    unsigned otherLength = other.length();
-    m_selectorArray = reinterpret_cast<CSSSelector*>(fastMalloc(sizeof(CSSSelector) * otherLength));
-    for (unsigned i = 0; i < otherLength; ++i)
-        new (&m_selectorArray[i]) CSSSelector(other.m_selectorArray[i]);
-}
-
-void CSSSelectorList::adopt(CSSSelectorList& list)
-{
-    deleteSelectors();
-    m_selectorArray = list.m_selectorArray;
-    list.m_selectorArray = 0;
-}
-
-void CSSSelectorList::adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector)
-{
-    deleteSelectors();
     size_t flattenedSize = 0;
     for (size_t i = 0; i < selectorVector.size(); ++i) {
         for (CSSParserSelector* selector = selectorVector[i].get(); selector; selector = selector->tagHistory())
             ++flattenedSize;
     }
     ASSERT(flattenedSize);
-    m_selectorArray = reinterpret_cast<CSSSelector*>(fastMalloc(sizeof(CSSSelector) * flattenedSize));
+
+    CSSSelectorList list;
+    list.m_selectorArray = reinterpret_cast<CSSSelector*>(WTF::Partitions::fastMalloc(sizeof(CSSSelector) * flattenedSize, kCSSSelectorTypeName));
     size_t arrayIndex = 0;
     for (size_t i = 0; i < selectorVector.size(); ++i) {
         CSSParserSelector* current = selectorVector[i].get();
         while (current) {
             // Move item from the parser selector vector into m_selectorArray without invoking destructor (Ugh.)
             CSSSelector* currentSelector = current->releaseSelector().leakPtr();
-            memcpy(&m_selectorArray[arrayIndex], currentSelector, sizeof(CSSSelector));
-            fastFree(currentSelector);
+            memcpy(&list.m_selectorArray[arrayIndex], currentSelector, sizeof(CSSSelector));
+            WTF::Partitions::fastFree(currentSelector);
 
             current = current->tagHistory();
-            ASSERT(!m_selectorArray[arrayIndex].isLastInSelectorList());
+            ASSERT(!list.m_selectorArray[arrayIndex].isLastInSelectorList());
             if (current)
-                m_selectorArray[arrayIndex].setNotLastInTagHistory();
+                list.m_selectorArray[arrayIndex].setNotLastInTagHistory();
             ++arrayIndex;
         }
-        ASSERT(m_selectorArray[arrayIndex - 1].isLastInTagHistory());
+        ASSERT(list.m_selectorArray[arrayIndex - 1].isLastInTagHistory());
     }
     ASSERT(flattenedSize == arrayIndex);
-    m_selectorArray[arrayIndex - 1].setLastInSelectorList();
+    list.m_selectorArray[arrayIndex - 1].setLastInSelectorList();
     selectorVector.clear();
+
+    return list;
 }
 
 unsigned CSSSelectorList::length() const
@@ -96,8 +99,7 @@ unsigned CSSSelectorList::length() const
 
 void CSSSelectorList::deleteSelectors()
 {
-    if (!m_selectorArray)
-        return;
+    ASSERT(m_selectorArray);
 
     bool finished = false;
     for (CSSSelector* s = m_selectorArray; !finished; ++s) {
@@ -105,7 +107,7 @@ void CSSSelectorList::deleteSelectors()
         s->~CSSSelector();
     }
 
-    fastFree(m_selectorArray);
+    WTF::Partitions::fastFree(m_selectorArray);
 }
 
 String CSSSelectorList::selectorsText() const
@@ -122,7 +124,7 @@ String CSSSelectorList::selectorsText() const
 }
 
 template <typename Functor>
-static bool forEachTagSelector(Functor& functor, const CSSSelector& selector)
+static bool forEachTagSelector(const Functor& functor, const CSSSelector& selector)
 {
     for (const CSSSelector* current = &selector; current; current = current->tagHistory()) {
         if (functor(*current))
@@ -139,7 +141,7 @@ static bool forEachTagSelector(Functor& functor, const CSSSelector& selector)
 }
 
 template <typename Functor>
-static bool forEachSelector(Functor& functor, const CSSSelectorList* selectorList)
+static bool forEachSelector(const Functor& functor, const CSSSelectorList* selectorList)
 {
     for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(*selector)) {
         if (forEachTagSelector(functor, *selector))
@@ -149,63 +151,35 @@ static bool forEachSelector(Functor& functor, const CSSSelectorList* selectorLis
     return false;
 }
 
-class SelectorNeedsNamespaceResolutionFunctor {
-public:
-    bool operator()(const CSSSelector& selector)
-    {
+bool CSSSelectorList::selectorsNeedNamespaceResolution()
+{
+    return forEachSelector([](const CSSSelector& selector) -> bool {
         if (selector.match() != CSSSelector::Tag && !selector.isAttributeSelector())
             return false;
         const AtomicString& prefix = selector.isAttributeSelector() ? selector.attribute().prefix() : selector.tagQName().prefix();
         return prefix != nullAtom && prefix != emptyAtom && prefix != starAtom;
-    }
-};
-
-bool CSSSelectorList::selectorsNeedNamespaceResolution()
-{
-    SelectorNeedsNamespaceResolutionFunctor functor;
-    return forEachSelector(functor, this);
+    }, this);
 }
 
-class SelectorHasShadowDistributed {
-public:
-    bool operator()(const CSSSelector& selector)
-    {
+bool CSSSelectorList::selectorHasShadowDistributed(size_t index) const
+{
+    return forEachTagSelector([](const CSSSelector& selector) -> bool {
         return selector.relationIsAffectedByPseudoContent();
-    }
-};
-
-bool CSSSelectorList::hasShadowDistributedAt(size_t index) const
-{
-    SelectorHasShadowDistributed functor;
-    return forEachTagSelector(functor, selectorAt(index));
+    }, selectorAt(index));
 }
 
-class SelectorCrossesTreeScopes {
-public:
-    bool operator()(const CSSSelector& selector)
-    {
+bool CSSSelectorList::selectorUsesDeepCombinatorOrShadowPseudo(size_t index) const
+{
+    return forEachTagSelector([](const CSSSelector& selector) -> bool {
         return selector.relation() == CSSSelector::ShadowDeep || selector.pseudoType() == CSSSelector::PseudoShadow;
-    }
-};
-
-bool CSSSelectorList::selectorCrossesTreeScopes(size_t index) const
-{
-    SelectorCrossesTreeScopes functor;
-    return forEachTagSelector(functor, selectorAt(index));
+    }, selectorAt(index));
 }
-
-class SelectorNeedsUpdatedDistribution {
-public:
-    bool operator()(const CSSSelector& selector)
-    {
-        return selector.relationIsAffectedByPseudoContent() || selector.pseudoType() == CSSSelector::PseudoHostContext;
-    }
-};
 
 bool CSSSelectorList::selectorNeedsUpdatedDistribution(size_t index) const
 {
-    SelectorNeedsUpdatedDistribution functor;
-    return forEachTagSelector(functor, selectorAt(index));
+    return forEachTagSelector([](const CSSSelector& selector) -> bool {
+        return selector.relationIsAffectedByPseudoContent() || selector.pseudoType() == CSSSelector::PseudoHostContext;
+    }, selectorAt(index));
 }
 
 } // namespace blink

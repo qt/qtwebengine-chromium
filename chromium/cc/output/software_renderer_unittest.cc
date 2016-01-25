@@ -4,6 +4,8 @@
 
 #include "cc/output/software_renderer.h"
 
+#include <stdint.h>
+
 #include "base/run_loop.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
@@ -31,8 +33,8 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
  public:
   void InitializeRenderer(
       scoped_ptr<SoftwareOutputDevice> software_output_device) {
-    output_surface_ = FakeOutputSurface::CreateSoftware(
-        software_output_device.Pass());
+    output_surface_ =
+        FakeOutputSurface::CreateSoftware(std::move(software_output_device));
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
@@ -69,7 +71,7 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
                           device_viewport_rect,
                           false);
     loop.Run();
-    return bitmap_result.Pass();
+    return bitmap_result;
   }
 
   static void SaveBitmapResult(scoped_ptr<SkBitmap>* bitmap_result,
@@ -123,7 +125,7 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
       shared_quad_state, outer_rect, outer_rect, SK_ColorYELLOW, false);
 
   RenderPassList list;
-  list.push_back(root_render_pass.Pass());
+  list.push_back(std::move(root_render_pass));
 
   float device_scale_factor = 1.f;
   gfx::Rect device_viewport_rect(outer_size);
@@ -149,11 +151,9 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   ResourceId resource_yellow = resource_provider()->CreateResource(
-      outer_size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
-      RGBA_8888);
+      outer_size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
   ResourceId resource_cyan = resource_provider()->CreateResource(
-      inner_size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
-      RGBA_8888);
+      inner_size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
 
   SkBitmap yellow_tile;
   yellow_tile.allocN32Pixels(outer_size.width(), outer_size.height());
@@ -197,7 +197,7 @@ TEST_F(SoftwareRendererTest, TileQuad) {
                      outer_size, false, false);
 
   RenderPassList list;
-  list.push_back(root_render_pass.Pass());
+  list.push_back(std::move(root_render_pass));
 
   float device_scale_factor = 1.f;
   gfx::Rect device_viewport_rect(outer_size);
@@ -222,8 +222,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   ResourceId resource_cyan = resource_provider()->CreateResource(
-      tile_size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
-      RGBA_8888);
+      tile_size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
 
   SkBitmap cyan_tile;  // The lowest five rows are yellow.
   cyan_tile.allocN32Pixels(tile_size.width(), tile_size.height());
@@ -260,7 +259,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   quad->visible_rect = visible_rect;
 
   RenderPassList list;
-  list.push_back(root_render_pass.Pass());
+  list.push_back(std::move(root_render_pass));
 
   float device_scale_factor = 1.f;
   gfx::Rect device_viewport_rect(tile_size);

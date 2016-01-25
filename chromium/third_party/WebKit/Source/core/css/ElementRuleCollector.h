@@ -44,7 +44,7 @@ using CascadeOrder = unsigned;
 const CascadeOrder ignoreCascadeOrder = 0;
 
 class MatchedRule {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     MatchedRule(const RuleData* ruleData, unsigned specificity, CascadeOrder cascadeOrder, unsigned styleSheetIndex, const CSSStyleSheet* parentStyleSheet)
         : m_ruleData(ruleData)
@@ -114,8 +114,6 @@ public:
     void setSameOriginOnly(bool f) { m_sameOriginOnly = f; }
 
     void setMatchingUARules(bool matchingUARules) { m_matchingUARules = matchingUARules; }
-    void setScopeContainsLastMatchedElement(bool scopeContainsLastMatchedElement) { m_scopeContainsLastMatchedElement = scopeContainsLastMatchedElement; }
-    bool scopeContainsLastMatchedElement() const { return m_scopeContainsLastMatchedElement; }
     bool hasAnyMatchingRules(RuleSet*);
 
     const MatchResult& matchedResult() const;
@@ -123,12 +121,14 @@ public:
     PassRefPtrWillBeRawPtr<CSSRuleList> matchedCSSRuleList();
 
     void collectMatchingRules(const MatchRequest&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
-    void collectMatchingShadowHostRules(const MatchRequest&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
+    void collectMatchingShadowHostRules(const MatchRequest&, CascadeOrder = ignoreCascadeOrder);
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
     void finishAddingUARules() { m_result.finishAddingUARules(); }
     void finishAddingAuthorRulesForTreeScope() { m_result.finishAddingAuthorRulesForTreeScope(); }
+    void setIncludeEmptyRules(bool include) { m_includeEmptyRules = include; }
+    bool includeEmptyRules() const { return m_includeEmptyRules; }
 
 private:
     template<typename RuleDataListType>
@@ -155,7 +155,7 @@ private:
     bool m_canUseFastReject;
     bool m_sameOriginOnly;
     bool m_matchingUARules;
-    bool m_scopeContainsLastMatchedElement;
+    bool m_includeEmptyRules;
 
     WillBeHeapVector<MatchedRule, 32> m_matchedRules;
 

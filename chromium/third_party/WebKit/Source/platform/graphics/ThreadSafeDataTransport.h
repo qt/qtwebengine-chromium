@@ -27,9 +27,12 @@
 #define ThreadSafeDataTransport_h
 
 #include "platform/PlatformExport.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/Vector.h"
 
@@ -43,7 +46,9 @@ class SharedBuffer;
 //
 // This class is designed such that there is only one producer and
 // one consumer.
-class PLATFORM_EXPORT ThreadSafeDataTransport {
+
+class PLATFORM_EXPORT ThreadSafeDataTransport final : public ThreadSafeRefCounted<ThreadSafeDataTransport> {
+    WTF_MAKE_NONCOPYABLE(ThreadSafeDataTransport);
 public:
     ThreadSafeDataTransport();
     ~ThreadSafeDataTransport();

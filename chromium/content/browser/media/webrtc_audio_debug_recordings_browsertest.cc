@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "content/browser/media/webrtc_internals.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/test/browser_test_utils.h"
@@ -65,7 +68,10 @@ namespace content {
 
 class WebRtcAudioDebugRecordingsBrowserTest : public WebRtcContentBrowserTest {
  public:
-  WebRtcAudioDebugRecordingsBrowserTest() {}
+  WebRtcAudioDebugRecordingsBrowserTest() {
+    // Automatically grant device permission.
+    AppendUseFakeUIForMediaStreamFlag();
+  }
   ~WebRtcAudioDebugRecordingsBrowserTest() override {}
 };
 
@@ -74,6 +80,9 @@ class WebRtcAudioDebugRecordingsBrowserTest : public WebRtcContentBrowserTest {
 #define MAYBE_CallWithAudioDebugRecordings DISABLED_CallWithAudioDebugRecordings
 #elif defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
 // Renderer crashes under Android ASAN: https://crbug.com/408496.
+#define MAYBE_CallWithAudioDebugRecordings DISABLED_CallWithAudioDebugRecordings
+#elif defined(OS_ANDROID)
+// Renderer crashes on Android M. https://crbug.com/535728.
 #define MAYBE_CallWithAudioDebugRecordings DISABLED_CallWithAudioDebugRecordings
 #else
 #define MAYBE_CallWithAudioDebugRecordings CallWithAudioDebugRecordings
@@ -92,7 +101,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcAudioDebugRecordingsBrowserTest,
     return;
   }
 
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
   // We must navigate somewhere first so that the render process is created.
   NavigateToURL(shell(), GURL(""));
@@ -118,7 +127,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcAudioDebugRecordingsBrowserTest,
                                                             render_process_id);
 
   EXPECT_TRUE(base::PathExists(aec_dump_file));
-  int64 file_size = 0;
+  int64_t file_size = 0;
   EXPECT_TRUE(base::GetFileSize(aec_dump_file, &file_size));
   EXPECT_GT(file_size, 0);
 
@@ -158,7 +167,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcAudioDebugRecordingsBrowserTest,
     return;
   }
 
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
   // We must navigate somewhere first so that the render process is created.
   NavigateToURL(shell(), GURL(""));
@@ -205,7 +214,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcAudioDebugRecordingsBrowserTest,
     return;
   }
 
-  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ASSERT_TRUE(embedded_test_server()->Start());
 
   // We must navigate somewhere first so that the render process is created.
   NavigateToURL(shell(), GURL(""));
@@ -249,7 +258,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcAudioDebugRecordingsBrowserTest,
         GetExpectedAecDumpFileName(base_file, render_process_id);
 
     EXPECT_TRUE(base::PathExists(aec_dump_file));
-    int64 file_size = 0;
+    int64_t file_size = 0;
     EXPECT_TRUE(base::GetFileSize(aec_dump_file, &file_size));
     EXPECT_GT(file_size, 0);
 

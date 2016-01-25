@@ -24,7 +24,7 @@
 #include "webrtc/modules/audio_processing/vad/common.h"
 #include "webrtc/modules/audio_processing/vad/pitch_based_vad.h"
 #include "webrtc/modules/audio_processing/vad/standalone_vad.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/include/module_common_types.h"
 
 static const int kAgcAnalWindowSamples = 100;
 static const double kDefaultActivityThreshold = 0.3;
@@ -56,7 +56,7 @@ namespace webrtc {
 // silence frame. Otherwise true VAD would drift with respect to the audio.
 // We only consider mono inputs.
 static void DitherSilence(AudioFrame* frame) {
-  ASSERT_EQ(1, frame->num_channels_);
+  ASSERT_EQ(1u, frame->num_channels_);
   const double kRmsSilence = 5;
   const double sum_squared_silence = kRmsSilence * kRmsSilence *
       frame->samples_per_channel_;
@@ -65,7 +65,7 @@ static void DitherSilence(AudioFrame* frame) {
     sum_squared += frame->data_[n] * frame->data_[n];
   if (sum_squared <= sum_squared_silence) {
     for (size_t n = 0; n < frame->samples_per_channel_; n++)
-      frame->data_[n] = (rand() & 0xF) - 8;
+      frame->data_[n] = (rand() & 0xF) - 8;  // NOLINT: ignore non-threadsafe.
   }
 }
 

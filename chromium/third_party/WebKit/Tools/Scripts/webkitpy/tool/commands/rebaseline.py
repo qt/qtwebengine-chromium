@@ -678,6 +678,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             self.no_optimize_option,
             # FIXME: Remove this option.
             self.results_directory_option,
+            optparse.make_option("--auth-refresh-token-json", help="Rietveld auth refresh JSON token."),
             ])
 
     def bot_revision_data(self):
@@ -714,7 +715,20 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 
             has_any_needs_rebaseline_lines = True
 
-            parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line_without_comments)
+            pattern = re.compile(r"""
+                ^(\S*)      # Commit hash
+                [^(]* \(    # Whitespace and open paranthesis
+                <           # Email address is surrounded by <>
+                (
+                    [^@]+   # Username preceding @
+                    @
+                    [^@>]+  # Domain terminated by @ or >, some lines have an additional @ fragment after the email.
+                )
+                .*?([^ ]*)  # Test file name
+                \ \[        # Single space followed by opening [ for expectation specifier
+                [^[]*$      # Prevents matching previous [ for version specifiers instead of expectation specifiers
+            """, re.VERBOSE)
+            parsed_line = pattern.match(line_without_comments)
 
             commit_hash = parsed_line.group(1)
             commit_position = tool.scm().commit_position_from_git_commit(commit_hash)
@@ -782,6 +796,9 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
         subprocess_command = ['git', 'cl'] + command
         if options.verbose:
             subprocess_command.append('--verbose')
+        if options.auth_refresh_token_json:
+            subprocess_command.append('--auth-refresh-token-json')
+            subprocess_command.append(options.auth_refresh_token_json)
 
         process = self._tool.executive.popen(subprocess_command, stdout=self._tool.executive.PIPE, stderr=self._tool.executive.STDOUT)
         last_output_time = time.time()

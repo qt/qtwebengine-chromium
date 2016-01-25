@@ -63,7 +63,7 @@ struct IsGarbageCollectedType {
         char dummy[2];
     };
 
-    using NonConstType = typename WTF::RemoveConst<T>::Type;
+    using NonConstType = typename std::remove_const<T>::type;
     using GarbageCollectedSubclass = WTF::IsSubclassOfTemplate<NonConstType, GarbageCollected>;
     using GarbageCollectedMixinSubclass = IsGarbageCollectedMixin<NonConstType>;
     using HeapHashSetSubclass = WTF::IsSubclassOfTemplate<NonConstType, HeapHashSet>;
@@ -120,6 +120,7 @@ struct IsGarbageCollectedType {
 // Note that this is only enabled for Member<B>. For Member<A> which we can
 // compute the object header addr statically, this dynamic dispatch is not used.
 class PLATFORM_EXPORT GarbageCollectedMixin {
+    IS_GARBAGE_COLLECTED_TYPE();
 public:
     typedef int IsGarbageCollectedMixinMarker;
     virtual void adjustAndMark(Visitor*) const = 0;
@@ -133,7 +134,7 @@ public:
     public:                                                             \
     void adjustAndMark(VISITOR visitor) const override                  \
     {                                                                   \
-        typedef WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<TYPE>::Type, blink::GarbageCollected> IsSubclassOfGarbageCollected; \
+        typedef WTF::IsSubclassOfTemplate<typename std::remove_const<TYPE>::type, blink::GarbageCollected> IsSubclassOfGarbageCollected; \
         static_assert(IsSubclassOfGarbageCollected::value, "only garbage collected objects can have garbage collected mixins"); \
         if (TraceEagerlyTrait<TYPE>::value) {                           \
             if (visitor->ensureMarked(static_cast<const TYPE*>(this)))  \
@@ -357,7 +358,7 @@ private:
     Persistent<T>* m_keepAlive;
 };
 
-template<typename T, bool = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, GarbageCollected>::value> class NeedsAdjustAndMark;
+template<typename T, bool = WTF::IsSubclassOfTemplate<typename std::remove_const<T>::type, GarbageCollected>::value> class NeedsAdjustAndMark;
 
 template<typename T>
 class NeedsAdjustAndMark<T, true> {
@@ -371,7 +372,7 @@ template<typename T>
 class NeedsAdjustAndMark<T, false> {
     static_assert(sizeof(T), "T must be fully defined");
 public:
-    static const bool value = IsGarbageCollectedMixin<typename WTF::RemoveConst<T>::Type>::value;
+    static const bool value = IsGarbageCollectedMixin<typename std::remove_const<T>::type>::value;
 };
 template <typename T> const bool NeedsAdjustAndMark<T, false>::value;
 

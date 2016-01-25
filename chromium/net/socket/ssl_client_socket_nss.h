@@ -9,6 +9,7 @@
 #include <keyt.h>
 #include <nspr.h>
 #include <nss.h>
+#include <stdint.h>
 
 #include <string>
 #include <vector>
@@ -33,7 +34,7 @@
 namespace net {
 
 class BoundNetLog;
-class CertPolicyEnforcer;
+class CTPolicyEnforcer;
 class CertVerifier;
 class ChannelIDService;
 class CTVerifier;
@@ -84,6 +85,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
   void ClearConnectionAttempts() override {}
   void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
+  int64_t GetTotalReceivedBytes() const override;
 
   // Socket implementation.
   int Read(IOBuffer* buf,
@@ -92,8 +94,8 @@ class SSLClientSocketNSS : public SSLClientSocket {
   int Write(IOBuffer* buf,
             int buf_len,
             const CompletionCallback& callback) override;
-  int SetReceiveBufferSize(int32 size) override;
-  int SetSendBufferSize(int32 size) override;
+  int SetReceiveBufferSize(int32_t size) override;
+  int SetSendBufferSize(int32_t size) override;
 
   // SSLClientSocket implementation.
   ChannelIDService* GetChannelIDService() const override;
@@ -144,6 +146,12 @@ class SSLClientSocketNSS : public SSLClientSocket {
   // the |ssl_info|.signed_certificate_timestamps list.
   void AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const;
 
+  // Move last protocol to first place: SSLConfig::next_protos has protocols in
+  // decreasing order of preference with NPN fallback protocol at the end, but
+  // NSS moves the first one to the last place before sending them in ALPN, and
+  // uses the first one as a fallback for NPN.
+  static void ReorderNextProtos(NextProtoVector* next_protos);
+
   scoped_ptr<ClientSocketHandle> transport_;
   HostPortPair host_and_port_;
   SSLConfig ssl_config_;
@@ -188,7 +196,7 @@ class SSLClientSocketNSS : public SSLClientSocket {
 
   TransportSecurityState* transport_security_state_;
 
-  CertPolicyEnforcer* const policy_enforcer_;
+  CTPolicyEnforcer* const policy_enforcer_;
 
   // pinning_failure_log contains a message produced by
   // TransportSecurityState::CheckPublicKeyPins in the event of a

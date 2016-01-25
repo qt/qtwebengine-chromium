@@ -4,9 +4,12 @@
 
 // Unit test for VideoCaptureManager.
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
@@ -21,7 +24,9 @@
 
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::DoAll;
 using ::testing::InSequence;
+using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 using ::testing::SaveArg;
 
@@ -72,6 +77,8 @@ class VideoCaptureManagerTest : public testing::Test {
   void SetUp() override {
     listener_.reset(new MockMediaStreamProviderListener());
     message_loop_.reset(new base::MessageLoopForIO);
+    ui_thread_.reset(new BrowserThreadImpl(BrowserThread::UI,
+                                           message_loop_.get()));
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
     vcm_ = new VideoCaptureManager(scoped_ptr<media::VideoCaptureDeviceFactory>(
@@ -79,7 +86,7 @@ class VideoCaptureManagerTest : public testing::Test {
     video_capture_device_factory_ =
         static_cast<media::FakeVideoCaptureDeviceFactory*>(
             vcm_->video_capture_device_factory());
-    const int32 kNumberOfFakeDevices = 2;
+    const int32_t kNumberOfFakeDevices = 2;
     video_capture_device_factory_->set_number_of_devices(kNumberOfFakeDevices);
     vcm_->Register(listener_.get(), message_loop_->task_runner().get());
     frame_observer_.reset(new MockFrameObserver());
@@ -156,6 +163,7 @@ class VideoCaptureManagerTest : public testing::Test {
   scoped_refptr<VideoCaptureManager> vcm_;
   scoped_ptr<MockMediaStreamProviderListener> listener_;
   scoped_ptr<base::MessageLoop> message_loop_;
+  scoped_ptr<BrowserThreadImpl> ui_thread_;
   scoped_ptr<BrowserThreadImpl> io_thread_;
   scoped_ptr<MockFrameObserver> frame_observer_;
   media::FakeVideoCaptureDeviceFactory* video_capture_device_factory_;
@@ -465,8 +473,8 @@ TEST_F(VideoCaptureManagerTest, OpenNotExisting) {
   InSequence s;
   EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
       .WillOnce(SaveArg<1>(&devices));
-  EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _));
   EXPECT_CALL(*frame_observer_, OnError(_));
+  EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _));
   EXPECT_CALL(*listener_, Closed(MEDIA_DEVICE_VIDEO_CAPTURE, _));
 
   vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
@@ -503,18 +511,21 @@ TEST_F(VideoCaptureManagerTest, StartInvalidSession) {
 // Open and start a device, close it before calling Stop.
 TEST_F(VideoCaptureManagerTest, CloseWithoutStop) {
   StreamDeviceInfoArray devices;
+  base::RunLoop run_loop;
 
   InSequence s;
   EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
-      .WillOnce(SaveArg<1>(&devices));
+      .WillOnce(
+          DoAll(SaveArg<1>(&devices),
+                InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit)));
   EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, _));
   EXPECT_CALL(*listener_, Closed(MEDIA_DEVICE_VIDEO_CAPTURE, _));
 
   vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
 
   // Wait to get device callback.
-  message_loop_->RunUntilIdle();
-
+  run_loop.Run();
+  ASSERT_FALSE(devices.empty());
   int video_session_id = vcm_->Open(devices.front());
 
   VideoCaptureControllerID client_id = StartClient(video_session_id, true);

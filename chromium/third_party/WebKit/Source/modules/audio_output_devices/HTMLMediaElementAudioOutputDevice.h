@@ -9,6 +9,7 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
+#include "modules/ModulesExport.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
@@ -17,8 +18,9 @@ namespace blink {
 class HTMLMediaElement;
 class ScriptState;
 
-class HTMLMediaElementAudioOutputDevice final : public NoBaseWillBeGarbageCollectedFinalized<HTMLMediaElementAudioOutputDevice>, public WillBeHeapSupplement<HTMLMediaElement> {
+class MODULES_EXPORT HTMLMediaElementAudioOutputDevice final : public NoBaseWillBeGarbageCollectedFinalized<HTMLMediaElementAudioOutputDevice>, public WillBeHeapSupplement<HTMLMediaElement> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLMediaElementAudioOutputDevice);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLMediaElementAudioOutputDevice);
 public:
     DECLARE_VIRTUAL_TRACE();
     static String sinkId(HTMLMediaElement&);

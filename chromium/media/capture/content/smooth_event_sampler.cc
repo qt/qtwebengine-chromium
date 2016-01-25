@@ -4,20 +4,13 @@
 
 #include "media/capture/content/smooth_event_sampler.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 
 #include "base/trace_event/trace_event.h"
 
 namespace media {
-
-namespace {
-
-// The maximum amount of time that can elapse before considering unchanged
-// content as dirty for the purposes of timer-based overdue sampling.  This is
-// the same value found in cc::FrameRateCounter.
-const int kOverdueDirtyThresholdMillis = 250;  // 4 FPS
-
-}  // anonymous namespace
 
 SmoothEventSampler::SmoothEventSampler(base::TimeDelta min_capture_period,
                                        int redundant_capture_goal)
@@ -50,7 +43,7 @@ void SmoothEventSampler::ConsiderPresentationEvent(base::TimeTicks event_time) {
         token_bucket_ = token_bucket_capacity_;
     }
     TRACE_COUNTER1("gpu.capture", "MirroringTokenBucketUsec",
-                   std::max<int64>(0, token_bucket_.InMicroseconds()));
+                   std::max<int64_t>(0, token_bucket_.InMicroseconds()));
   }
   current_event_ = event_time;
 }
@@ -64,7 +57,7 @@ void SmoothEventSampler::RecordSample() {
   if (token_bucket_ < base::TimeDelta())
     token_bucket_ = base::TimeDelta();
   TRACE_COUNTER1("gpu.capture", "MirroringTokenBucketUsec",
-                 std::max<int64>(0, token_bucket_.InMicroseconds()));
+                 std::max<int64_t>(0, token_bucket_.InMicroseconds()));
 
   if (HasUnrecordedEvent()) {
     last_sample_ = current_event_;
@@ -88,7 +81,7 @@ bool SmoothEventSampler::IsOverdueForSamplingAt(
   // won't request a sample just yet.
   base::TimeDelta dirty_interval = event_time - last_sample_;
   return dirty_interval >=
-         base::TimeDelta::FromMilliseconds(kOverdueDirtyThresholdMillis);
+         base::TimeDelta::FromMilliseconds(OVERDUE_DIRTY_THRESHOLD_MILLIS);
 }
 
 bool SmoothEventSampler::HasUnrecordedEvent() const {

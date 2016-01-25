@@ -1,6 +1,5 @@
-{% from 'conversions.cpp' import declare_enum_validation_variable %}
+{% from 'utilities.cpp' import declare_enum_validation_variable %}
 {% include 'copyright_block.txt' %}
-#include "config.h"
 #include "{{v8_original_class}}.h"
 
 {% for filename in cpp_includes if filename != '%s.h' % v8_class %}
@@ -9,7 +8,7 @@
 
 namespace blink {
 
-{% from 'conversions.cpp' import v8_value_to_local_cpp_value %}
+{% from 'utilities.cpp' import v8_value_to_local_cpp_value %}
 void {{v8_class}}::toImpl(v8::Isolate* isolate, v8::Local<v8::Value> v8Value, {{cpp_class}}& impl, ExceptionState& exceptionState)
 {
     if (isUndefinedOrNull(v8Value))
@@ -32,7 +31,7 @@ void {{v8_class}}::toImpl(v8::Isolate* isolate, v8::Local<v8::Value> v8Value, {{
     {% endif %}
     {# Declare local variables only when the dictionary has members to avoid unused variable warnings. #}
     {% if members %}
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     v8::Local<v8::Object> v8Object;
     if (!v8Call(v8Value->ToObject(isolate->GetCurrentContext()), v8Object, block)) {
         exceptionState.rethrowV8Exception(block.Exception());
@@ -40,7 +39,11 @@ void {{v8_class}}::toImpl(v8::Isolate* isolate, v8::Local<v8::Value> v8Value, {{
     }
     {% endif %}
     {% for member in members %}
+    {% if member.runtime_enabled_function %}
+    if ({{member.runtime_enabled_function}}()) {
+    {% else %}
     {
+    {% endif %}
         v8::Local<v8::Value> {{member.name}}Value;
         if (!v8Object->Get(isolate->GetCurrentContext(), v8String(isolate, "{{member.name}}")).ToLocal(&{{member.name}}Value)) {
             exceptionState.rethrowV8Exception(block.Exception());
@@ -59,7 +62,7 @@ void {{v8_class}}::toImpl(v8::Isolate* isolate, v8::Local<v8::Value> v8Value, {{
         {% endif %}
         } else {
             {% if member.deprecate_as %}
-            UseCounter::countDeprecationIfNotPrivateScript(isolate, callingExecutionContext(isolate), UseCounter::{{member.deprecate_as}});
+            UseCounter::countDeprecationIfNotPrivateScript(isolate, currentExecutionContext(isolate), UseCounter::{{member.deprecate_as}});
             {% endif %}
             {{v8_value_to_local_cpp_value(member) | indent(12)}}
             {% if member.is_interface_type %}

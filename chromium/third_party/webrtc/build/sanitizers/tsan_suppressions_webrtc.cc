@@ -42,6 +42,10 @@ char kTSanDefaultSuppressions[] =
 "race:webrtc/modules/audio_processing/aec/aec_core.c\n"
 "race:webrtc/modules/audio_processing/aec/aec_rdft.c\n"
 
+// Race in pulse initialization.
+// https://code.google.com/p/webrtc/issues/detail?id=5152
+"race:webrtc::AudioDeviceLinuxPulse::Init\n"
+
 // rtc_unittest
 // https://code.google.com/p/webrtc/issues/detail?id=3911 for details.
 "race:rtc::AsyncInvoker::OnMessage\n"
@@ -68,6 +72,9 @@ char kTSanDefaultSuppressions[] =
 // TODO(jiayl): https://code.google.com/p/webrtc/issues/detail?id=3492
 "race:user_sctp_timer_iterate\n"
 
+// https://code.google.com/p/webrtc/issues/detail?id=5151
+"race:sctp_close\n"
+
 // Potential deadlocks detected after roll in r6516.
 // https://code.google.com/p/webrtc/issues/detail?id=3509
 "deadlock:webrtc::RTCPReceiver::SetSsrcs\n"
@@ -82,6 +89,11 @@ char kTSanDefaultSuppressions[] =
 // https://code.google.com/p/webrtc/issues/detail?id=4719
 "race:webrtc::voe::TransmitMixer::PrepareDemux\n"
 "race:webrtc::voe::TransmitMixer::EnableStereoChannelSwapping\n"
+
+// Race between InitCpuFlags and TestCpuFlag in libyuv.
+// https://code.google.com/p/libyuv/issues/detail?id=508
+"race:InitCpuFlags\n"
+
 // End of suppressions.
 ;  // Please keep this semicolon.
 

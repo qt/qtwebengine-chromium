@@ -4,6 +4,8 @@
 
 #include "media/audio/cras/audio_manager_cras.h"
 
+#include <stddef.h>
+
 #include <algorithm>
 
 #include "base/command_line.h"
@@ -135,7 +137,6 @@ bool AudioManagerCras::HasAudioInputDevices() {
 
 AudioManagerCras::AudioManagerCras(AudioLogFactory* audio_log_factory)
     : AudioManagerBase(audio_log_factory),
-      has_keyboard_mic_(false),
       beamforming_on_device_id_(nullptr),
       beamforming_off_device_id_(nullptr) {
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
@@ -181,7 +182,7 @@ AudioParameters AudioManagerCras::GetInputStreamParameters(
   AudioParameters params(AudioParameters::AUDIO_PCM_LOW_LATENCY,
                          CHANNEL_LAYOUT_STEREO, kDefaultSampleRate, 16,
                          buffer_size);
-  if (has_keyboard_mic_)
+  if (chromeos::CrasAudioHandler::Get()->HasKeyboardMic())
     params.set_effects(AudioParameters::KEYBOARD_MIC);
 
   if (mic_positions_.size() > 1) {
@@ -210,11 +211,6 @@ AudioParameters AudioManagerCras::GetInputStreamParameters(
     }
   }
   return params;
-}
-
-void AudioManagerCras::SetHasKeyboardMic() {
-  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-  has_keyboard_mic_ = true;
 }
 
 AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(

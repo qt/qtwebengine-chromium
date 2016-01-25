@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/RemoteFontFaceSource.h"
 
 #include "core/css/CSSCustomFontData.h"
 #include "core/css/CSSFontFace.h"
 #include "core/css/FontLoader.h"
+#include "core/page/NetworkStateNotifier.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/SimpleFontData.h"
@@ -16,14 +17,36 @@
 
 namespace blink {
 
-RemoteFontFaceSource::RemoteFontFaceSource(FontResource* font, PassRefPtrWillBeRawPtr<FontLoader> fontLoader)
+RemoteFontFaceSource::RemoteFontFaceSource(FontResource* font, PassRefPtrWillBeRawPtr<FontLoader> fontLoader, FontDisplay display)
     : m_font(font)
     , m_fontLoader(fontLoader)
+    , m_display(display)
+    , m_period(display == FontDisplaySwap ? SwapPeriod : BlockPeriod)
+    , m_isInterventionTriggered(false)
 {
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
     m_font->addClient(this);
+
+    if (RuntimeEnabledFeatures::webFontsInterventionEnabled()) {
+        // TODO(crbug.com/515343): Consider to use better signals.
+        if (networkStateNotifier().connectionType() == WebConnectionTypeCellular2G && display == FontDisplayAuto) {
+
+            m_isInterventionTriggered = true;
+            m_period = SwapPeriod;
+        }
+    }
 }
 
 RemoteFontFaceSource::~RemoteFontFaceSource()
+{
+#if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+void RemoteFontFaceSource::dispose()
 {
     m_font->removeClient(this);
     pruneTable();
@@ -68,6 +91,7 @@ void RemoteFontFaceSource::didStartFontLoad(FontResource*)
 void RemoteFontFaceSource::fontLoaded(FontResource*)
 {
     m_histograms.recordRemoteFont(m_font.get());
+    m_histograms.fontLoaded(m_isInterventionTriggered);
 
     m_font->ensureCustomFontData();
     if (m_font->status() == Resource::DecodeError)
@@ -78,17 +102,48 @@ void RemoteFontFaceSource::fontLoaded(FontResource*)
         m_fontLoader->fontFaceInvalidated();
         m_face->fontLoaded(this);
     }
+    // Should not do anything after this line since the m_face->fontLoaded()
+    // above may trigger deleting this object.
 }
 
-void RemoteFontFaceSource::fontLoadWaitLimitExceeded(FontResource*)
+void RemoteFontFaceSource::fontLoadShortLimitExceeded(FontResource*)
 {
+    if (m_display == FontDisplayFallback)
+        switchToSwapPeriod();
+    else if (m_display == FontDisplayOptional)
+        switchToFailurePeriod();
+}
+
+void RemoteFontFaceSource::fontLoadLongLimitExceeded(FontResource*)
+{
+    if (m_display == FontDisplayBlock || (!m_isInterventionTriggered && m_display == FontDisplayAuto))
+        switchToSwapPeriod();
+    else if (m_display == FontDisplayFallback)
+        switchToFailurePeriod();
+
+    m_histograms.longLimitExceeded(m_isInterventionTriggered);
+}
+
+void RemoteFontFaceSource::switchToSwapPeriod()
+{
+    ASSERT(m_period == BlockPeriod);
+    m_period = SwapPeriod;
+
     pruneTable();
     if (m_face) {
         m_fontLoader->fontFaceInvalidated();
-        m_face->fontLoadWaitLimitExceeded(this);
+        m_face->didBecomeVisibleFallback(this);
     }
 
     m_histograms.recordFallbackTime(m_font.get());
+}
+
+void RemoteFontFaceSource::switchToFailurePeriod()
+{
+    if (m_period == BlockPeriod)
+        switchToSwapPeriod();
+    ASSERT(m_period == SwapPeriod);
+    m_period = FailurePeriod;
 }
 
 PassRefPtr<SimpleFontData> RemoteFontFaceSource::createFontData(const FontDescription& fontDescription)
@@ -96,8 +151,7 @@ PassRefPtr<SimpleFontData> RemoteFontFaceSource::createFontData(const FontDescri
     if (!isLoaded())
         return createLoadingFallbackFontData(fontDescription);
 
-    // Create new FontPlatformData from our CGFontRef, point size and ATSFontRef.
-    if (!m_font->ensureCustomFontData())
+    if (!m_font->ensureCustomFontData() || m_period == FailurePeriod)
         return nullptr;
 
     m_histograms.recordFallbackTime(m_font.get());
@@ -117,7 +171,7 @@ PassRefPtr<SimpleFontData> RemoteFontFaceSource::createLoadingFallbackFontData(c
         ASSERT_NOT_REACHED();
         return nullptr;
     }
-    RefPtr<CSSCustomFontData> cssFontData = CSSCustomFontData::create(this, m_font->exceedsFontLoadWaitLimit() ? CSSCustomFontData::VisibleFallback : CSSCustomFontData::InvisibleFallback);
+    RefPtr<CSSCustomFontData> cssFontData = CSSCustomFontData::create(this, m_period == BlockPeriod ? CSSCustomFontData::InvisibleFallback : CSSCustomFontData::VisibleFallback);
     return SimpleFontData::create(temporaryFont->platformData(), cssFontData);
 }
 
@@ -146,6 +200,18 @@ void RemoteFontFaceSource::FontLoadHistograms::fallbackFontPainted()
 {
     if (!m_fallbackPaintTime)
         m_fallbackPaintTime = currentTimeMS();
+}
+
+void RemoteFontFaceSource::FontLoadHistograms::fontLoaded(bool isInterventionTriggered)
+{
+    if (!m_isLongLimitExceeded)
+        recordInterventionResult(isInterventionTriggered);
+}
+
+void RemoteFontFaceSource::FontLoadHistograms::longLimitExceeded(bool isInterventionTriggered)
+{
+    m_isLongLimitExceeded = true;
+    recordInterventionResult(isInterventionTriggered);
 }
 
 void RemoteFontFaceSource::FontLoadHistograms::recordFallbackTime(const FontResource* font)
@@ -191,6 +257,20 @@ const char* RemoteFontFaceSource::FontLoadHistograms::histogramName(const FontRe
     if (size < 1024 * 1024)
         return "WebFont.DownloadTime.3.100KBTo1MB";
     return "WebFont.DownloadTime.4.Over1MB";
+}
+
+void RemoteFontFaceSource::FontLoadHistograms::recordInterventionResult(bool triggered)
+{
+    if (!RuntimeEnabledFeatures::webFontsInterventionEnabled())
+        return;
+    // interventionResult takes 0-3 values.
+    int interventionResult = 0;
+    if (m_isLongLimitExceeded)
+        interventionResult |= 1 << 0;
+    if (triggered)
+        interventionResult |= 1 << 1;
+    const int boundary = 1 << 2;
+    Platform::current()->histogramEnumeration("WebFont.InterventionResult", interventionResult, boundary);
 }
 
 } // namespace blink

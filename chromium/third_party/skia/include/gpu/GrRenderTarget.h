@@ -11,6 +11,7 @@
 #include "GrSurface.h"
 #include "SkRect.h"
 
+class GrDrawTarget;
 class GrStencilAttachment;
 class GrRenderTargetPriv;
 
@@ -151,14 +152,20 @@ public:
     GrRenderTargetPriv renderTargetPriv();
     const GrRenderTargetPriv renderTargetPriv() const;
 
+    void setLastDrawTarget(GrDrawTarget* dt);
+    GrDrawTarget* getLastDrawTarget() { return fLastDrawTarget; }
+
 protected:
     GrRenderTarget(GrGpu* gpu, LifeCycle lifeCycle, const GrSurfaceDesc& desc,
                    SampleConfig sampleConfig, GrStencilAttachment* stencil = nullptr)
         : INHERITED(gpu, lifeCycle, desc)
         , fStencilAttachment(stencil)
-        , fSampleConfig(sampleConfig) {
+        , fSampleConfig(sampleConfig)
+        , fLastDrawTarget(nullptr) {
         fResolveRect.setLargestInverted();
     }
+
+    ~GrRenderTarget() override;
 
     // override of GrResource
     void onAbandon() override;
@@ -177,6 +184,14 @@ private:
     SampleConfig          fSampleConfig;
 
     SkIRect               fResolveRect;
+
+    // The last drawTarget that wrote to or is currently going to write to this renderTarget
+    // The drawTarget can be closed (e.g., no draw context is currently bound
+    // to this renderTarget).
+    // This back-pointer is required so that we can add a dependancy between
+    // the drawTarget used to create the current contents of this renderTarget
+    // and the drawTarget of a destination renderTarget to which this one is being drawn.
+    GrDrawTarget* fLastDrawTarget;
 
     typedef GrSurface INHERITED;
 };

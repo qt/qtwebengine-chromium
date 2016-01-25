@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013 Google Inc
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -34,12 +34,12 @@ class SctpUtilsTest : public testing::Test {
   void VerifyOpenMessageFormat(const rtc::Buffer& packet,
                                const std::string& label,
                                const webrtc::DataChannelInit& config) {
-    uint8 message_type;
-    uint8 channel_type;
-    uint32 reliability;
-    uint16 priority;
-    uint16 label_length;
-    uint16 protocol_length;
+    uint8_t message_type;
+    uint8_t channel_type;
+    uint32_t reliability;
+    uint16_t priority;
+    uint16_t label_length;
+    uint16_t protocol_length;
 
     rtc::ByteBuffer buffer(packet.data(), packet.length());
     ASSERT_TRUE(buffer.ReadUInt8(&message_type));
@@ -152,10 +152,27 @@ TEST_F(SctpUtilsTest, WriteParseAckMessage) {
   rtc::Buffer packet;
   webrtc::WriteDataChannelOpenAckMessage(&packet);
 
-  uint8 message_type;
+  uint8_t message_type;
   rtc::ByteBuffer buffer(packet.data(), packet.length());
   ASSERT_TRUE(buffer.ReadUInt8(&message_type));
   EXPECT_EQ(0x02, message_type);
 
   EXPECT_TRUE(webrtc::ParseDataChannelOpenAckMessage(packet));
+}
+
+TEST_F(SctpUtilsTest, TestIsOpenMessage) {
+  rtc::ByteBuffer open;
+  open.WriteUInt8(0x03);
+  EXPECT_TRUE(webrtc::IsOpenMessage(open));
+
+  rtc::ByteBuffer openAck;
+  openAck.WriteUInt8(0x02);
+  EXPECT_FALSE(webrtc::IsOpenMessage(open));
+
+  rtc::ByteBuffer invalid;
+  openAck.WriteUInt8(0x01);
+  EXPECT_FALSE(webrtc::IsOpenMessage(invalid));
+
+  rtc::ByteBuffer empty;
+  EXPECT_FALSE(webrtc::IsOpenMessage(empty));
 }

@@ -30,7 +30,9 @@
 
 .overrides-view fieldset {
     border: none;
-    padding: 0 0 5px 15px;
+    flex: 0 0 auto;
+    padding: 0;
+    margin: 0;
 }
 
 .overrides-view fieldset p {
@@ -40,7 +42,7 @@
     border: 0;
 }
 
-.overrides-view fieldset p label {
+.overrides-device-model-settings p label {
     display: inline-block;
 }
 
@@ -56,38 +58,12 @@
     overflow: hidden;
 }
 
-/* Network tab */
-
-.overrides-network fieldset {
-    padding-top: 5px;
-}
-
-.overrides-network fieldset p {
-    width: 100%;
-    margin-left: 2px;
-}
-
-.overrides-network fieldset select {
-    margin: 5px 0;
-}
-
-.overrides-network fieldset p label {
-    cursor: default;
-    margin-right: 5px;
-}
-
-.overrides-network fieldset input[type='text'] {
-    display: block;
-    width: 100%;
-    max-width: 400px;
-    min-width: 176px;
-    margin: 5px 0;
-}
-
 /* Device tab */
 
 .overrides-device {
-    width: 100%;
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 12px;
 }
 
 .overrides-device input.numeric {
@@ -102,10 +78,6 @@
     display: block;
     margin-bottom: 7px;
     white-space: nowrap;
-}
-
-.overrides-device button {
-    margin: 0 3px;
 }
 
 .overrides-device label {
@@ -137,12 +109,11 @@
 }
 
 .overrides-device .overrides-device-model-section {
-    margin-bottom: 15px;
     white-space: nowrap;
 }
 
 .overrides-device .overrides-device-model-section > span {
-    padding: 0 10px 0 3px;
+    padding-right: 10px;
 }
 
 .overrides-device .overrides-device-model-section select {
@@ -159,38 +130,17 @@
     width: 140px;
 }
 
-/* Media tab */
-
-.overrides-media > label {
-    margin-bottom: 4px;
+.overrides-device .overrides-device-model-section .mode-container label {
+    margin: 0;
+    display: inline-block;
 }
 
-/* Sensors tab */
-
-.overrides-sensors > label {
-    margin-bottom: 10px;
+fieldset.overrides-device-model-settings {
+    padding: 16px;
 }
 
-.overrides-device, .overrides-media, .overrides-network, .overrides-sensors {
-    flex: none !important;
-}
-
-.overrides-sensors input {
-    text-align: right;
-}
-
-.tabbed-pane-header-tab.overrides-activate {
-    opacity: 0.8;
-}
-
-.tabbed-pane-header-tab.overrides-activate .tabbed-pane-header-tab-title::after {
-    padding-left: 3px;
-    content: "\2713";
-    color: rgb(25, 100, 228);
-}
-
-.tabbed-pane-header-tab.overrides-activate.selected {
-    opacity: 1;
+.overrides-device-model-settings > fieldset {
+    margin-left: 16px;
 }
 
 .overrides-view input[type=text]:enabled:focus,
@@ -221,8 +171,8 @@
 }
 
 .overrides-view .overrides-footer {
-    flex: none;
-    padding: 0 0 1px 3px;
+    flex: 0 0 auto;
+    padding: 5px 8px;
     border-top: 1px solid rgb(203,203,203);
     background-color: #eee;
 }
@@ -251,8 +201,8 @@
 }
 
 .overrides-splash-screen {
-    padding: 10px 10px;
     flex: auto;
+    padding: 12px;
 }
 
 .overrides-splash-screen .toolbar {
@@ -262,13 +212,6 @@
     top: 8px;
 }
 
-#overrides-reset-button,
 #overrides-disable-button {
-    margin: 9px 0 0 17px;
-    display: block;
-    width: 60px;
-}
-
-.overrides-enable-button {
-    margin: 4px !important;
+    margin-bottom: 12px;
 }

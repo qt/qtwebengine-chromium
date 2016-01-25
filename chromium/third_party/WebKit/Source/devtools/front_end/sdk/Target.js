@@ -7,15 +7,16 @@
 /**
  * @constructor
  * @extends {Protocol.Agents}
+ * @param {!WebInspector.TargetManager} targetManager
  * @param {string} name
  * @param {number} type
  * @param {!InspectorBackendClass.Connection} connection
  * @param {?WebInspector.Target} parentTarget
- * @param {function(?WebInspector.Target)=} callback
  */
-WebInspector.Target = function(name, type, connection, parentTarget, callback)
+WebInspector.Target = function(targetManager, name, type, connection, parentTarget)
 {
     Protocol.Agents.call(this, connection.agentsMap());
+    this._targetManager = targetManager;
     this._name = name;
     this._type = type;
     this._connection = connection;
@@ -26,16 +27,36 @@ WebInspector.Target = function(name, type, connection, parentTarget, callback)
     /** @type {!Map.<!Function, !WebInspector.SDKModel>} */
     this._modelByConstructor = new Map();
 
-    /** @type {!Object.<string, boolean>} */
-    this._capabilities = {};
-    this.pageAgent().canScreencast(this._initializeCapability.bind(this, WebInspector.Target.Capabilities.CanScreencast, this._loadedWithCapabilities.bind(this, callback)));
-}
+    /** @type {!WebInspector.ConsoleModel} */
+    this.consoleModel = new WebInspector.ConsoleModel(this);
+    /** @type {!WebInspector.NetworkManager} */
+    this.networkManager = new WebInspector.NetworkManager(this);
+    /** @type {!WebInspector.ResourceTreeModel} */
+    this.resourceTreeModel = new WebInspector.ResourceTreeModel(this);
+    /** @type {!WebInspector.NetworkLog} */
+    this.networkLog = new WebInspector.NetworkLog(this);
 
-/**
- * @enum {string}
- */
-WebInspector.Target.Capabilities = {
-    CanScreencast: "CanScreencast"
+    /** @type {!WebInspector.RuntimeModel} */
+    this.runtimeModel = new WebInspector.RuntimeModel(this);
+    if (this.hasJSContext())
+        new WebInspector.DebuggerModel(this);
+
+    if (this._type === WebInspector.Target.Type.Page) {
+        new WebInspector.DOMModel(this);
+        new WebInspector.CSSStyleModel(this);
+    }
+
+    /** @type {?WebInspector.WorkerManager} */
+    this.workerManager = !this.isDedicatedWorker() ? new WebInspector.WorkerManager(this) : null;
+    /** @type {!WebInspector.CPUProfilerModel} */
+    this.cpuProfilerModel = new WebInspector.CPUProfilerModel(this);
+    /** @type {!WebInspector.HeapProfilerModel} */
+    this.heapProfilerModel = new WebInspector.HeapProfilerModel(this);
+
+    this.tracingManager = new WebInspector.TracingManager(this);
+
+    if (this.isPage())
+        this.serviceWorkerManager = new WebInspector.ServiceWorkerManager(this);
 }
 
 /**
@@ -68,82 +89,21 @@ WebInspector.Target.prototype = {
     },
 
     /**
+     *
+     * @return {!WebInspector.TargetManager}
+     */
+    targetManager: function()
+    {
+        return this._targetManager;
+    },
+
+    /**
      * @param {string} label
      * @return {string}
      */
     decorateLabel: function(label)
     {
         return this.isWorker() ? "\u2699 " + label : label;
-    },
-
-    /**
-     * @param {string} name
-     * @param {function()|null} callback
-     * @param {?Protocol.Error} error
-     * @param {boolean} result
-     */
-    _initializeCapability: function(name, callback, error, result)
-    {
-        this._capabilities[name] = result;
-        if (callback)
-            callback();
-    },
-
-    /**
-     * @param {string} capability
-     * @return {boolean}
-     */
-    hasCapability: function(capability)
-    {
-        return !!this._capabilities[capability];
-    },
-
-    /**
-     * @param {function(?WebInspector.Target)=} callback
-     */
-    _loadedWithCapabilities: function(callback)
-    {
-        if (this._connection.isClosed()) {
-            callback(null);
-            return;
-        }
-
-        /** @type {!WebInspector.ConsoleModel} */
-        this.consoleModel = new WebInspector.ConsoleModel(this);
-        /** @type {!WebInspector.NetworkManager} */
-        this.networkManager = new WebInspector.NetworkManager(this);
-        /** @type {!WebInspector.ResourceTreeModel} */
-        this.resourceTreeModel = new WebInspector.ResourceTreeModel(this);
-        /** @type {!WebInspector.NetworkLog} */
-        this.networkLog = new WebInspector.NetworkLog(this);
-
-        if (this.hasJSContext())
-            new WebInspector.DebuggerModel(this);
-
-        /** @type {!WebInspector.RuntimeModel} */
-        this.runtimeModel = new WebInspector.RuntimeModel(this);
-
-        if (this._type === WebInspector.Target.Type.Page) {
-            new WebInspector.DOMModel(this);
-            new WebInspector.CSSStyleModel(this);
-        }
-
-        /** @type {?WebInspector.WorkerManager} */
-        this.workerManager = !this.isDedicatedWorker() ? new WebInspector.WorkerManager(this) : null;
-        /** @type {!WebInspector.CPUProfilerModel} */
-        this.cpuProfilerModel = new WebInspector.CPUProfilerModel(this);
-        /** @type {!WebInspector.HeapProfilerModel} */
-        this.heapProfilerModel = new WebInspector.HeapProfilerModel(this);
-        /** @type {!WebInspector.LayerTreeModel} */
-        this.layerTreeModel = new WebInspector.LayerTreeModel(this);
-
-        this.tracingManager = new WebInspector.TracingManager(this);
-
-        if (this.isPage())
-            this.serviceWorkerManager = new WebInspector.ServiceWorkerManager(this);
-
-        if (callback)
-            callback(this);
     },
 
     /**
@@ -206,13 +166,13 @@ WebInspector.Target.prototype = {
 
     _onDisconnect: function()
     {
-        WebInspector.targetManager.removeTarget(this);
+        this._targetManager.removeTarget(this);
         this._dispose();
     },
 
     _dispose: function()
     {
-        WebInspector.targetManager.dispatchEventToListeners(WebInspector.TargetManager.Events.TargetDisposed, this);
+        this._targetManager.dispatchEventToListeners(WebInspector.TargetManager.Events.TargetDisposed, this);
         this.networkManager.dispose();
         this.cpuProfilerModel.dispose();
         WebInspector.ServiceWorkerCacheModel.fromTarget(this).dispose();
@@ -276,6 +236,22 @@ WebInspector.SDKModel = function(modelClass, target)
 }
 
 WebInspector.SDKModel.prototype = {
+    /**
+     * @return {!Promise}
+     */
+    suspendModel: function()
+    {
+        return Promise.resolve();
+    },
+
+    /**
+     * @return {!Promise}
+     */
+    resumeModel: function()
+    {
+        return Promise.resolve();
+    },
+
     __proto__: WebInspector.SDKObject.prototype
 }
 
@@ -293,8 +269,7 @@ WebInspector.TargetManager = function()
     this._observerTypeSymbol = Symbol("observerType");
     /** @type {!Object.<string, !Array.<{modelClass: !Function, thisObject: (!Object|undefined), listener: function(!WebInspector.Event)}>>} */
     this._modelListeners = {};
-    /** @type {number} */
-    this._suspendCount = 0;
+    this._isSuspended = false;
 }
 
 WebInspector.TargetManager.Events = {
@@ -303,24 +278,46 @@ WebInspector.TargetManager.Events = {
     Load: "Load",
     PageReloadRequested: "PageReloadRequested",
     WillReloadPage: "WillReloadPage",
-    SuspendStateChanged: "SuspendStateChanged",
-    TargetDisposed: "TargetDisposed"
+    TargetDisposed: "TargetDisposed",
+    SuspendStateChanged: "SuspendStateChanged"
 }
 
 WebInspector.TargetManager.prototype = {
     suspendAllTargets: function()
     {
-        if (this._suspendCount++)
+        if (this._isSuspended)
             return;
+        this._isSuspended = true;
         this.dispatchEventToListeners(WebInspector.TargetManager.Events.SuspendStateChanged);
+
+        for (var i = 0; i < this._targets.length; ++i) {
+            for (var model of this._targets[i]._modelByConstructor.values())
+                model.suspendModel();
+        }
     },
 
+    /**
+     * @return {!Promise}
+     */
     resumeAllTargets: function()
     {
-        console.assert(this._suspendCount > 0);
-        if (--this._suspendCount)
-            return;
+        if (!this._isSuspended)
+            throw new Error("Not suspended");
+        this._isSuspended = false;
         this.dispatchEventToListeners(WebInspector.TargetManager.Events.SuspendStateChanged);
+
+        var promises = [];
+        for (var i = 0; i < this._targets.length; ++i) {
+            for (var model of this._targets[i]._modelByConstructor.values())
+                promises.push(model.resumeModel());
+        }
+        return Promise.all(promises);
+    },
+
+    suspendAndResumeAllTargets: function()
+    {
+        this.suspendAllTargets();
+        this.resumeAllTargets();
     },
 
     /**
@@ -328,7 +325,7 @@ WebInspector.TargetManager.prototype = {
      */
     allTargetsSuspended: function()
     {
-        return !!this._suspendCount;
+        return this._isSuspended;
     },
 
     /**
@@ -442,23 +439,13 @@ WebInspector.TargetManager.prototype = {
      * @param {number} type
      * @param {!InspectorBackendClass.Connection} connection
      * @param {?WebInspector.Target} parentTarget
-     * @param {function(?WebInspector.Target)=} callback
+     * @return {!WebInspector.Target}
      */
-    createTarget: function(name, type, connection, parentTarget, callback)
+    createTarget: function(name, type, connection, parentTarget)
     {
-        new WebInspector.Target(name, type, connection, parentTarget, callbackWrapper.bind(this));
-
-        /**
-         * @this {WebInspector.TargetManager}
-         * @param {?WebInspector.Target} newTarget
-         */
-        function callbackWrapper(newTarget)
-        {
-            if (newTarget)
-                this.addTarget(newTarget);
-            if (callback)
-                callback(newTarget);
-        }
+        var target = new WebInspector.Target(this, name, type, connection, parentTarget);
+        this.addTarget(target);
+        return target;
     },
 
     /**

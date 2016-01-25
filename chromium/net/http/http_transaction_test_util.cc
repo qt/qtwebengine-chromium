@@ -5,6 +5,7 @@
 #include "net/http/http_transaction_test_util.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
@@ -207,7 +208,7 @@ void TestTransactionConsumer::DidFinish(int result) {
   state_ = DONE;
   error_ = result;
   if (--quit_counter_ == 0)
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
 }
 
 void TestTransactionConsumer::Read() {
@@ -244,6 +245,7 @@ MockNetworkTransaction::MockNetworkTransaction(RequestPriority priority,
       received_bytes_(0),
       sent_bytes_(0),
       socket_log_id_(NetLog::Source::kInvalidId),
+      done_reading_called_(false),
       weak_factory_(this) {}
 
 MockNetworkTransaction::~MockNetworkTransaction() {}
@@ -265,6 +267,7 @@ int MockNetworkTransaction::RestartIgnoringLastError(
 
 int MockNetworkTransaction::RestartWithCertificate(
     X509Certificate* client_cert,
+    SSLPrivateKey* client_private_key,
     const CompletionCallback& callback) {
   return ERR_FAILED;
 }
@@ -284,6 +287,11 @@ int MockNetworkTransaction::RestartWithAuth(
   return StartInternal(&auth_request_info, callback, BoundNetLog());
 }
 
+void MockNetworkTransaction::PopulateNetErrorDetails(
+    NetErrorDetails* /*details*/) const {
+  NOTIMPLEMENTED();
+}
+
 bool MockNetworkTransaction::IsReadyToRestartForAuth() {
   if (!request_)
     return false;
@@ -300,6 +308,7 @@ bool MockNetworkTransaction::IsReadyToRestartForAuth() {
 int MockNetworkTransaction::Read(IOBuffer* buf,
                                  int buf_len,
                                  const CompletionCallback& callback) {
+  CHECK(!done_reading_called_);
   int data_len = static_cast<int>(data_.size());
   int num = std::min(buf_len, data_len - data_cursor_);
   if (test_mode_ & TEST_MODE_SLOW_READ)
@@ -334,6 +343,8 @@ int64_t MockNetworkTransaction::GetTotalSentBytes() const {
 }
 
 void MockNetworkTransaction::DoneReading() {
+  CHECK(!done_reading_called_);
+  done_reading_called_ = true;
   if (transaction_factory_.get())
     transaction_factory_->TransactionDoneReading();
 }
@@ -505,6 +516,7 @@ MockNetworkLayer::MockNetworkLayer()
 MockNetworkLayer::~MockNetworkLayer() {}
 
 void MockNetworkLayer::TransactionDoneReading() {
+  CHECK(!done_reading_called_);
   done_reading_called_ = true;
 }
 
@@ -519,7 +531,7 @@ int MockNetworkLayer::CreateTransaction(RequestPriority priority,
   scoped_ptr<MockNetworkTransaction> mock_transaction(
       new MockNetworkTransaction(priority, this));
   last_transaction_ = mock_transaction->AsWeakPtr();
-  *trans = mock_transaction.Pass();
+  *trans = std::move(mock_transaction);
   return OK;
 }
 

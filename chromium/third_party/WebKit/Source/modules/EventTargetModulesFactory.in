@@ -2,6 +2,7 @@ namespace="EventTarget"
 suffix="Modules"
 
 modules/battery/BatteryManager
+modules/bluetooth/BluetoothGATTCharacteristic
 modules/compositorworker/CompositorWorker
 modules/compositorworker/CompositorWorkerGlobalScope
 modules/encryptedmedia/MediaKeySession
@@ -23,9 +24,9 @@ modules/navigatorconnect/ServicePortCollection
 modules/netinfo/NetworkInformation
 modules/notifications/Notification
 modules/permissions/PermissionStatus
-modules/presentation/Presentation
 modules/presentation/PresentationAvailability
 modules/presentation/PresentationConnection
+modules/presentation/PresentationReceiver
 modules/presentation/PresentationRequest
 modules/screen_orientation/ScreenOrientation
 modules/serviceworkers/ServiceWorker
@@ -35,8 +36,8 @@ modules/serviceworkers/ServiceWorkerRegistration
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesis
 modules/speech/SpeechSynthesisUtterance
-modules/webaudio/AudioContext Conditional=WEB_AUDIO
-modules/webaudio/AudioNode Conditional=WEB_AUDIO
+modules/webaudio/AudioContext
+modules/webaudio/AudioNode
 modules/webmidi/MIDIAccess
 modules/webmidi/MIDIInput
 modules/webmidi/MIDIPort

@@ -26,7 +26,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/ElementRuleCollector.h"
 
 #include "core/css/CSSImportRule.h"
@@ -42,6 +41,7 @@
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/style/StyleInheritedData.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -55,7 +55,7 @@ ElementRuleCollector::ElementRuleCollector(const ElementResolveContext& context,
     , m_canUseFastReject(m_selectorFilter.parentStackIsConsistent(context.parentNode()))
     , m_sameOriginOnly(false)
     , m_matchingUARules(false)
-    , m_scopeContainsLastMatchedElement(false)
+    , m_includeEmptyRules(false)
 { }
 
 ElementRuleCollector::~ElementRuleCollector()
@@ -113,19 +113,10 @@ void ElementRuleCollector::addElementStyleProperties(const StylePropertySet* pro
         m_result.setIsCacheable(false);
 }
 
-static bool rulesApplicableInCurrentTreeScope(const Element* element, const ContainerNode* scopingNode, bool matchingTreeBoundaryRules)
+static bool rulesApplicableInCurrentTreeScope(const Element* element, const ContainerNode* scopingNode)
 {
-    // [skipped, because already checked] a) it's a UA rule
-    // b) We're mathcing tree boundary rules.
-    if (matchingTreeBoundaryRules)
-        return true;
-    // c) the rules comes from a scoped style sheet within the same tree scope
-    if (!scopingNode || element->treeScope() == scopingNode->treeScope())
-        return true;
-    // d) the rules comes from a scoped style sheet within an active shadow root whose host is the given element
-    if (element == scopingNode->shadowHost())
-        return true;
-    return false;
+    // Check if the rules come from a shadow style sheet in the same tree scope.
+    return !scopingNode || element->treeScope() == scopingNode->treeScope();
 }
 
 template<typename RuleDataListType>
@@ -142,7 +133,6 @@ void ElementRuleCollector::collectMatchingRulesForList(const RuleDataListType* r
     checkerContext.scrollbar = m_pseudoStyleRequest.scrollbar;
     checkerContext.scrollbarPart = m_pseudoStyleRequest.scrollbarPart;
     checkerContext.isUARule = m_matchingUARules;
-    checkerContext.scopeContainsLastMatchedElement = m_scopeContainsLastMatchedElement;
 
     unsigned rejected = 0;
     unsigned fastRejected = 0;
@@ -162,7 +152,7 @@ void ElementRuleCollector::collectMatchingRulesForList(const RuleDataListType* r
 
         // If the rule has no properties to apply, then ignore it in the non-debug mode.
         const StylePropertySet& properties = rule->properties();
-        if (properties.isEmpty() && !matchRequest.includeEmptyRules)
+        if (properties.isEmpty() && !m_includeEmptyRules)
             continue;
 
         SelectorChecker::MatchResult result;
@@ -202,12 +192,11 @@ void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest
     if (element.isVTTElement())
         collectMatchingRulesForList(matchRequest.ruleSet->cuePseudoRules(), cascadeOrder, matchRequest);
     // Check whether other types of rules are applicable in the current tree scope. Criteria for this:
-    // a) it's a UA rule
-    // b) the rules comes from a scoped style sheet within the same tree scope
-    // c) the rules comes from a scoped style sheet within an active shadow root whose host is the given element
-    // d) the rules can cross boundaries
-    // b)-e) is checked in rulesApplicableInCurrentTreeScope.
-    if (!m_matchingUARules && !rulesApplicableInCurrentTreeScope(&element, matchRequest.scope, matchingTreeBoundaryRules))
+    // a) the rules are UA rules.
+    // b) matching tree boundary crossing rules.
+    // c) the rules come from a shadow style sheet in the same tree scope as the given element.
+    // c) is checked in rulesApplicableInCurrentTreeScope.
+    if (!m_matchingUARules && !matchingTreeBoundaryRules && !rulesApplicableInCurrentTreeScope(&element, matchRequest.scope))
         return;
 
     // We need to collect the rules for id, class, tag, and everything else into a buffer and
@@ -227,7 +216,7 @@ void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest
     collectMatchingRulesForList(matchRequest.ruleSet->universalRules(), cascadeOrder, matchRequest);
 }
 
-void ElementRuleCollector::collectMatchingShadowHostRules(const MatchRequest& matchRequest, CascadeOrder cascadeOrder, bool matchingTreeBoundaryRules)
+void ElementRuleCollector::collectMatchingShadowHostRules(const MatchRequest& matchRequest, CascadeOrder cascadeOrder)
 {
     collectMatchingRulesForList(matchRequest.ruleSet->shadowHostRules(), cascadeOrder, matchRequest);
 }

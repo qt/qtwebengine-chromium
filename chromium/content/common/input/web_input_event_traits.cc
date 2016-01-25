@@ -93,7 +93,8 @@ void ApppendEventDetails(const WebGestureEvent& event, std::string* result) {
 void ApppendTouchPointDetails(const WebTouchPoint& point, std::string* result) {
   StringAppendF(result,
                  "  (ID: %d, State: %d, ScreenPos: (%f, %f), Pos: (%f, %f),"
-                     " Radius: (%f, %f), Rot: %f, Force: %f),\n",
+                     " Radius: (%f, %f), Rot: %f, Force: %f,"
+                     " Tilt: (%d, %d)),\n",
   point.id,
   point.state,
   point.screenPosition.x,
@@ -103,7 +104,9 @@ void ApppendTouchPointDetails(const WebTouchPoint& point, std::string* result) {
   point.radiusX,
   point.radiusY,
   point.rotationAngle,
-  point.force);
+  point.force,
+  point.tiltX,
+  point.tiltY);
 }
 
 void ApppendEventDetails(const WebTouchEvent& event, std::string* result) {
@@ -436,7 +439,7 @@ size_t WebInputEventTraits::GetSize(WebInputEvent::Type type) {
 ScopedWebInputEvent WebInputEventTraits::Clone(const WebInputEvent& event) {
   ScopedWebInputEvent scoped_event;
   Apply(WebInputEventClone(), event.type, event, &scoped_event);
-  return scoped_event.Pass();
+  return scoped_event;
 }
 
 void WebInputEventTraits::Delete(WebInputEvent* event) {
@@ -489,7 +492,8 @@ bool WebInputEventTraits::WillReceiveAckFromRenderer(
   }
 }
 
-uint32 WebInputEventTraits::GetUniqueTouchEventId(const WebInputEvent& event) {
+uint32_t WebInputEventTraits::GetUniqueTouchEventId(
+    const WebInputEvent& event) {
   if (WebInputEvent::isTouchEventType(event.type)) {
     return static_cast<const WebTouchEvent&>(event).uniqueTouchEventId;
   }

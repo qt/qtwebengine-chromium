@@ -31,8 +31,7 @@
 #ifndef SVGInteger_h
 #define SVGInteger_h
 
-#include "bindings/core/v8/ExceptionMessages.h"
-#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyHelper.h"
 
 namespace blink {
@@ -53,7 +52,7 @@ public:
     void setValue(int value) { m_value = value; }
 
     String valueAsString() const override;
-    virtual void setValueAsString(const String&, ExceptionState&);
+    SVGParsingError setValueAsString(const String&);
 
     void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
     void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
@@ -67,12 +66,7 @@ protected:
     int m_value;
 };
 
-inline PassRefPtrWillBeRawPtr<SVGInteger> toSVGInteger(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)
-{
-    RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;
-    ASSERT(base->type() == SVGInteger::classType());
-    return static_pointer_cast<SVGInteger>(base.release());
-}
+DEFINE_SVG_PROPERTY_TYPE_CASTS(SVGInteger);
 
 } // namespace blink
 

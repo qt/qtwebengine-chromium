@@ -125,10 +125,16 @@ component("gfx") {
     "image/image_util_ios.mm",
     "interpolated_transform.cc",
     "interpolated_transform.h",
+    "ios/NSString+CrStringDrawing.h",
+    "ios/NSString+CrStringDrawing.mm",
+    "ios/uikit_util.h",
+    "ios/uikit_util.mm",
     "linux_font_delegate.cc",
     "linux_font_delegate.h",
     "mac/coordinate_conversion.h",
     "mac/coordinate_conversion.mm",
+    "mac/io_surface.cc",
+    "mac/io_surface.h",
     "mac/nswindow_frame_controls.h",
     "mac/nswindow_frame_controls.mm",
     "mac/scoped_cocoa_disable_screen_updates.h",
@@ -210,8 +216,6 @@ component("gfx") {
     "win/dpi.h",
     "win/hwnd_util.cc",
     "win/hwnd_util.h",
-    "win/metro_mode.cc",
-    "win/metro_mode.h",
     "win/scoped_set_map_mode.h",
     "win/singleton_hwnd.cc",
     "win/singleton_hwnd.h",
@@ -254,8 +258,8 @@ component("gfx") {
   deps = [
     ":gfx_export",
     "//base",
-    "//base:i18n",
     "//base:base_static",
+    "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//skia",
     "//third_party/harfbuzz-ng",
@@ -277,8 +281,8 @@ component("gfx") {
       "harfbuzz_font_skia.h",
       "render_text_harfbuzz.cc",
       "render_text_harfbuzz.h",
-      "render_text_mac.cc",
       "render_text_mac.h",
+      "render_text_mac.mm",
       "text_utils_skia.cc",
     ]
 
@@ -389,6 +393,10 @@ component("gfx") {
     deps += [ "//third_party/libjpeg" ]
   }
 
+  if (is_mac) {
+    libs = [ "IOSurface.framework" ]
+  }
+
   if (!use_aura) {
     sources -= [ "screen_aura.cc" ]
     if (!toolkit_views) {
@@ -418,8 +426,9 @@ component("gfx") {
 # GYP version: ui/gfx/gfx.gyp:aggregate_vector_icons
 action("aggregate_vector_icons") {
   script = "vector_icons/aggregate_vector_icons.py"
+
+  # TODO(estade): move all platform-specific icons into their own directories.
   sources = [
-    "vector_icon_types.h",
     "vector_icons/account_box.icon",
     "vector_icons/account_child_invert.icon",
     "vector_icons/apps.icon",
@@ -428,11 +437,16 @@ action("aggregate_vector_icons") {
     "vector_icons/bar_close.1x.icon",
     "vector_icons/bar_close.icon",
     "vector_icons/blocked_badge.icon",
+    "vector_icons/browser_tools.1x.icon",
+    "vector_icons/browser_tools.icon",
+    "vector_icons/business.icon",
     "vector_icons/check_circle.icon",
     "vector_icons/chrome_product.icon",
     "vector_icons/code.icon",
     "vector_icons/cookie.icon",
     "vector_icons/crashed_tab.icon",
+    "vector_icons/credit_card.1x.icon",
+    "vector_icons/credit_card.icon",
     "vector_icons/error_circle.icon",
     "vector_icons/extension.icon",
     "vector_icons/extension_crashed.icon",
@@ -454,21 +468,63 @@ action("aggregate_vector_icons") {
     "vector_icons/globe.icon",
     "vector_icons/help_outline.icon",
     "vector_icons/image.icon",
+    "vector_icons/incognito.1x.icon",
+    "vector_icons/incognito.icon",
+    "vector_icons/keyword_search.1x.icon",
+    "vector_icons/keyword_search.icon",
     "vector_icons/laptop.icon",
+    "vector_icons/location_bar_http.1x.icon",
+    "vector_icons/location_bar_http.icon",
+    "vector_icons/location_bar_https_invalid.1x.icon",
+    "vector_icons/location_bar_https_invalid.icon",
+    "vector_icons/location_bar_https_invalid_invert.1x.icon",
+    "vector_icons/location_bar_https_invalid_invert.icon",
+    "vector_icons/location_bar_https_valid.1x.icon",
+    "vector_icons/location_bar_https_valid.icon",
+    "vector_icons/location_bar_https_valid_in_chip.1x.icon",
+    "vector_icons/location_bar_https_valid_in_chip.icon",
+    "vector_icons/location_bar_https_valid_invert.1x.icon",
+    "vector_icons/location_bar_https_valid_invert.icon",
+    "vector_icons/location_bar_star.icon",
+    "vector_icons/location_bar_star_active.icon",
     "vector_icons/location_on.icon",
+    "vector_icons/menu_check.1x.icon",
+    "vector_icons/menu_check.icon",
     "vector_icons/midi.icon",
     "vector_icons/mixed_content.icon",
     "vector_icons/mode_edit.icon",
     "vector_icons/my_location.icon",
+    "vector_icons/navigate_back.1x.icon",
+    "vector_icons/navigate_back.icon",
+    "vector_icons/navigate_forward.1x.icon",
+    "vector_icons/navigate_forward.icon",
+    "vector_icons/navigate_home.1x.icon",
+    "vector_icons/navigate_home.icon",
+    "vector_icons/navigate_reload.1x.icon",
+    "vector_icons/navigate_reload.icon",
+    "vector_icons/navigate_stop.1x.icon",
+    "vector_icons/navigate_stop.icon",
     "vector_icons/notifications.icon",
+    "vector_icons/omnibox_calculator.1x.icon",
+    "vector_icons/omnibox_calculator.icon",
+    "vector_icons/omnibox_extension_app.1x.icon",
+    "vector_icons/omnibox_extension_app.icon",
+    "vector_icons/omnibox_http.icon",
+    "vector_icons/omnibox_keyword_search.icon",
+    "vector_icons/omnibox_search.icon",
+    "vector_icons/omnibox_star.1x.icon",
+    "vector_icons/omnibox_star.icon",
+    "vector_icons/overflow_chevron.1x.icon",
+    "vector_icons/overflow_chevron.icon",
     "vector_icons/paintbrush.icon",
     "vector_icons/photo_camera.icon",
     "vector_icons/protocol_handler.icon",
     "vector_icons/remove_box.icon",
+    "vector_icons/remove_circle.icon",
     "vector_icons/sad_tab.icon",
     "vector_icons/smartphone.icon",
-    "vector_icons/star.icon",
-    "vector_icons/star_border.icon",
+    "vector_icons/submenu_arrow.1x.icon",
+    "vector_icons/submenu_arrow.icon",
     "vector_icons/supervisor_account.icon",
     "vector_icons/tab.icon",
     "vector_icons/tab_audio.1x.icon",
@@ -479,12 +535,30 @@ action("aggregate_vector_icons") {
     "vector_icons/tab_close_hovered_pressed.icon",
     "vector_icons/tab_close_normal.1x.icon",
     "vector_icons/tab_close_normal.icon",
+    "vector_icons/tab_media_capturing.icon",
+    "vector_icons/tab_media_recording.icon",
     "vector_icons/tablet.icon",
     "vector_icons/translate.icon",
     "vector_icons/warning.icon",
     "vector_icons/warning_badge.icon",
     "vector_icons/web.icon",
+    "vector_icons/window_control_back.1x.icon",
+    "vector_icons/window_control_back.icon",
+    "vector_icons/window_control_close.1x.icon",
+    "vector_icons/window_control_close.icon",
+    "vector_icons/window_control_left_snapped.1x.icon",
+    "vector_icons/window_control_maximize.1x.icon",
+    "vector_icons/window_control_maximize.icon",
+    "vector_icons/window_control_minimize.1x.icon",
+    "vector_icons/window_control_minimize.icon",
+    "vector_icons/window_control_restore.1x.icon",
+    "vector_icons/window_control_restore.icon",
+    "vector_icons/window_control_right_snapped.1x.icon",
+    "vector_icons/window_control_right_snapped.icon",
+    "vector_icons/zoom_minus.icon",
+    "vector_icons/zoom_plus.icon",
   ]
+
   outputs = [
     vector_icons_cc_file,
     vector_icons_h_file,
@@ -557,6 +631,8 @@ test("gfx_unittests") {
     "image/image_ios_unittest.mm",
     "image/image_skia_unittest.cc",
     "image/image_unittest.cc",
+    "ios/NSString+CrStringDrawing_unittest.mm",
+    "ios/uikit_util_unittest.mm",
     "platform_font_linux_unittest.cc",
     "screen_unittest.cc",
     "test/run_all_unittests.cc",
@@ -632,10 +708,10 @@ test("gfx_unittests") {
     "//base",
     "//base/test:test_support",
     "//skia",
+    "//testing/gtest",
     "//third_party/icu:icuuc",
     "//third_party/libpng",
     "//third_party/zlib",
-    "//testing/gtest",
     "//ui/base",
     "//ui/gfx/geometry",
     "//ui/resources:ui_test_pak",
@@ -653,6 +729,8 @@ test("gfx_unittests") {
   }
 
   if (is_android) {
+    deps += [ "//ui/android:ui_java" ]
+
     sources -= [
       # Do not run display_change_notifier_unittest.cc on Android because it
       # does not compile display_observer.cc

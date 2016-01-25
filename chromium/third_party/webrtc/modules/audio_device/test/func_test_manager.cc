@@ -21,7 +21,7 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_device/test/func_test_manager.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 #include "webrtc/modules/audio_device/audio_device_config.h"
@@ -194,7 +194,7 @@ int32_t AudioTransportImpl::RecordedDataIsAvailable(
     const void* audioSamples,
     const size_t nSamples,
     const size_t nBytesPerSample,
-    const uint8_t nChannels,
+    const size_t nChannels,
     const uint32_t samplesPerSec,
     const uint32_t totalDelayMS,
     const int32_t clockDrift,
@@ -339,7 +339,7 @@ int32_t AudioTransportImpl::RecordedDataIsAvailable(
 int32_t AudioTransportImpl::NeedMorePlayData(
     const size_t nSamples,
     const size_t nBytesPerSample,
-    const uint8_t nChannels,
+    const size_t nChannels,
     const uint32_t samplesPerSec,
     void* audioSamples,
     size_t& nSamplesOut,
@@ -365,7 +365,7 @@ int32_t AudioTransportImpl::NeedMorePlayData(
                 int16_t* ptr16Out = NULL;
 
                 const size_t nSamplesIn = packet->nSamples;
-                const uint8_t nChannelsIn = packet->nChannels;
+                const size_t nChannelsIn = packet->nChannels;
                 const uint32_t samplesPerSecIn = packet->samplesPerSec;
                 const size_t nBytesPerSampleIn = packet->nBytesPerSample;
 
@@ -573,32 +573,6 @@ int32_t AudioTransportImpl::NeedMorePlayData(
     return 0;
 }
 
-int AudioTransportImpl::OnDataAvailable(const int voe_channels[],
-                                        int number_of_voe_channels,
-                                        const int16_t* audio_data,
-                                        int sample_rate,
-                                        int number_of_channels,
-                                        size_t number_of_frames,
-                                        int audio_delay_milliseconds,
-                                        int current_volume,
-                                        bool key_pressed,
-                                        bool need_audio_processing) {
-  return 0;
-}
-
-void AudioTransportImpl::PushCaptureData(int voe_channel,
-                                         const void* audio_data,
-                                         int bits_per_sample, int sample_rate,
-                                         int number_of_channels,
-                                         size_t number_of_frames) {}
-
-void AudioTransportImpl::PullRenderData(int bits_per_sample, int sample_rate,
-                                        int number_of_channels,
-                                        size_t number_of_frames,
-                                        void* audio_data,
-                                        int64_t* elapsed_time_ms,
-                                        int64_t* ntp_time_ms) {}
-
 FuncTestManager::FuncTestManager() :
     _audioDevice(NULL),
     _audioEventObserver(NULL),
@@ -686,7 +660,7 @@ int32_t FuncTestManager::Close()
         _audioDevice = NULL;
     }
 
-    // return the ThreadWrapper (singleton)
+    // return the PlatformThread (singleton)
     Trace::ReturnTrace();
 
     // PRINT_TEST_RESULTS;

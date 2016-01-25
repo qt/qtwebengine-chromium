@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
 #include "core/svg/SVGElement.h"
@@ -42,7 +41,7 @@ void SVGPropertyTearOffBase::commitChange()
         return;
     ASSERT(m_attributeName != QualifiedName::null());
     contextElement()->invalidateSVGAttributes();
-    contextElement()->svgAttributeChanged(m_attributeName);
+    contextElement()->svgAttributeBaseValChanged(m_attributeName);
 }
 
 } // namespace blink

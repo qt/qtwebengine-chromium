@@ -33,8 +33,8 @@ public:
         kPMConversionCnt
     };
 
-    static const GrFragmentProcessor* Create(GrProcessorDataManager*, GrTexture*,
-                                             bool swapRedAndBlue, PMConversion, const SkMatrix&);
+    static const GrFragmentProcessor* Create(GrTexture*, bool swapRedAndBlue, PMConversion,
+                                             const SkMatrix&);
 
     const char* name() const override { return "Config Conversion"; }
 
@@ -51,15 +51,14 @@ public:
                                                PMConversion* UPMToPMRule);
 
 private:
-    GrConfigConversionEffect(GrProcessorDataManager*,
-                             GrTexture*,
+    GrConfigConversionEffect(GrTexture*,
                              bool swapRedAndBlue,
                              PMConversion pmConversion,
                              const SkMatrix& matrix);
 
-    GrGLFragmentProcessor* onCreateGLInstance() const override;
+    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
-    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
+    void onGetGLSLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

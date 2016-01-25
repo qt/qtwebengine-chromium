@@ -5,6 +5,7 @@
 #ifndef IPC_ATTACHMENT_BROKER_PRIVILEGED_WIN_H_
 #define IPC_ATTACHMENT_BROKER_PRIVILEGED_WIN_H_
 
+#include "base/macros.h"
 #include "ipc/attachment_broker_privileged.h"
 #include "ipc/handle_attachment_win.h"
 #include "ipc/ipc_export.h"
@@ -20,8 +21,9 @@ class IPC_EXPORT AttachmentBrokerPrivilegedWin
   ~AttachmentBrokerPrivilegedWin() override;
 
   // IPC::AttachmentBroker overrides.
-  bool SendAttachmentToProcess(const BrokerableAttachment* attachment,
-                               base::ProcessId destination_process) override;
+  bool SendAttachmentToProcess(
+      const scoped_refptr<IPC::BrokerableAttachment>& attachment,
+      base::ProcessId destination_process) override;
 
   // IPC::Listener overrides.
   bool OnMessageReceived(const Message& message) override;
@@ -32,7 +34,7 @@ class IPC_EXPORT AttachmentBrokerPrivilegedWin
   void OnDuplicateWinHandle(const Message& message);
 
   // Duplicates |wire_Format| from |source_process| into its destination
-  // process.
+  // process. Closes the original HANDLE.
   HandleWireFormat DuplicateWinHandle(const HandleWireFormat& wire_format,
                                       base::ProcessId source_process);
 

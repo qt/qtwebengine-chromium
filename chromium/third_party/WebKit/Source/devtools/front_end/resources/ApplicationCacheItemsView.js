@@ -191,7 +191,7 @@ WebInspector.ApplicationCacheItemsView.prototype = {
             {title: WebInspector.UIString("Size"), align: WebInspector.DataGrid.Align.Right, sortable: true}
         ];
         this._dataGrid = new WebInspector.DataGrid(columns);
-        this._dataGrid.show(this.element);
+        this._dataGrid.asWidget().show(this.element);
         this._dataGrid.addEventListener(WebInspector.DataGrid.Events.SortingChanged, this._populateDataGrid, this);
     },
 

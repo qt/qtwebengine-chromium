@@ -1,6 +1,4 @@
-
-
-  /**
+/**
    * Use `Polymer.IronCheckedElementBehavior` to implement a custom element
    * that has a `checked` property, which can be used for validation if the
    * element is also `required`. Element instances implementing this behavior
@@ -42,7 +40,8 @@
       /* Overriden from Polymer.IronFormElementBehavior */
       value: {
         type: String,
-        value: ''
+        value: 'on',
+        observer: '_valueChanged'
       }
     },
 
@@ -50,8 +49,16 @@
       '_requiredChanged(required)'
     ],
 
+    created: function() {
+      // Used by `iron-form` to handle the case that an element with this behavior
+      // doesn't have a role of 'checkbox' or 'radio', but should still only be
+      // included when the form is serialized if `this.checked === true`.
+      this._hasIronCheckedElementBehavior = true;
+    },
+
     /**
      * Returns false if the element is required and not checked, and true otherwise.
+     * @param {*=} _value Ignored.
      * @return {boolean} true if `required` is false, or if `required` and `checked` are both true.
      */
     _getValidity: function(_value) {
@@ -70,15 +77,20 @@
     },
 
     /**
-     * Update the element's value when checked.
+     * Fire `iron-changed` when the checked state changes.
      */
     _checkedChanged: function() {
       this.active = this.checked;
-      // Unless the user has specified a value, a checked element has the
-      // default value "on" when checked.
-      if (this.value === '')
-        this.value = this.checked ? 'on' : '';
       this.fire('iron-change');
+    },
+
+    /**
+     * Reset value to 'on' if it is set to `undefined`.
+     */
+    _valueChanged: function() {
+      if (this.value === undefined || this.value === null) {
+        this.value = 'on';
+      }
     }
   };
 
@@ -88,4 +100,3 @@
     Polymer.IronValidatableBehavior,
     Polymer.IronCheckedElementBehaviorImpl
   ];
-

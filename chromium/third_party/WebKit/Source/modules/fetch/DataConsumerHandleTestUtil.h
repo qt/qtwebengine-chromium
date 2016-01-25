@@ -34,8 +34,10 @@
 namespace blink {
 
 class DataConsumerHandleTestUtil {
+    STATIC_ONLY(DataConsumerHandleTestUtil);
 public:
     class NoopClient final : public WebDataConsumerHandle::Client {
+        DISALLOW_NEW();
     public:
         void didGetReadable() override { }
     };
@@ -44,6 +46,7 @@ public:
     // additional objects based on the given policy. The constructor and the
     // destructor blocks during the setup and the teardown.
     class Thread final {
+        USING_FAST_MALLOC(Thread);
     public:
         // Initialization policy of a thread.
         enum InitializationPolicy {
@@ -154,6 +157,7 @@ public:
 
         // The reading/updating threads are alive while ThreadHolder is alive.
         class ThreadHolder {
+            DISALLOW_NEW();
         public:
             ThreadHolder(ThreadingTestBase* test)
                 : m_context(test->m_context)
@@ -177,6 +181,7 @@ public:
         };
 
         class ReaderImpl final : public WebDataConsumerHandle::Reader {
+            USING_FAST_MALLOC(ReaderImpl);
         public:
             ReaderImpl(const String& name, PassRefPtr<Context> context) : m_name(name.isolatedCopy()), m_context(context)
             {
@@ -186,7 +191,6 @@ public:
 
             using Result = WebDataConsumerHandle::Result;
             using Flags = WebDataConsumerHandle::Flags;
-            Result read(void*, size_t, Flags, size_t*) override { return WebDataConsumerHandle::ShouldWait; }
             Result beginRead(const void**, Flags, size_t*) override { return WebDataConsumerHandle::ShouldWait; }
             Result endRead(size_t) override { return WebDataConsumerHandle::UnexpectedError; }
 
@@ -195,6 +199,7 @@ public:
             RefPtr<Context> m_context;
         };
         class DataConsumerHandle final : public WebDataConsumerHandle {
+            USING_FAST_MALLOC(DataConsumerHandle);
         public:
             static PassOwnPtr<WebDataConsumerHandle> create(const String& name, PassRefPtr<Context> context)
             {
@@ -253,7 +258,7 @@ public:
             m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
             m_handle = handle;
 
-            postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
         }
 
     private:
@@ -264,8 +269,8 @@ public:
         }
         void didGetReadable() override
         {
-            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
+            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         }
 
         OwnPtr<WebDataConsumerHandle> m_handle;
@@ -282,7 +287,7 @@ public:
             m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
             m_handle = handle;
 
-            postTaskToReadingThreadAndWait(FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
         }
 
     private:
@@ -291,7 +296,7 @@ public:
         {
             m_reader = m_handle->obtainReader(this);
             m_reader = nullptr;
-            postTaskToReadingThread(FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
         }
         void didGetReadable() override
         {
@@ -356,6 +361,7 @@ public:
     };
 
     class Command final {
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         enum Name {
             Data,
@@ -381,6 +387,7 @@ public:
 
     // ReplayingHandle stores commands via |add| and replays the stored commends when read.
     class ReplayingHandle final : public WebDataConsumerHandle {
+        USING_FAST_MALLOC(ReplayingHandle);
     public:
         static PassOwnPtr<ReplayingHandle> create() { return adoptPtr(new ReplayingHandle()); }
         ~ReplayingHandle();
@@ -435,6 +442,7 @@ public:
     };
 
     class HandleReadResult final {
+        USING_FAST_MALLOC(HandleReadResult);
     public:
         HandleReadResult(WebDataConsumerHandle::Result result, const Vector<char>& data) : m_result(result), m_data(data) { }
         WebDataConsumerHandle::Result result() const { return m_result; }
@@ -449,6 +457,7 @@ public:
     // Reader::read on the thread on which it is created. When reading is done
     // or failed, it calls the given callback with the result.
     class HandleReader final : public WebDataConsumerHandle::Client {
+        USING_FAST_MALLOC(HandleReader);
     public:
         using OnFinishedReading = WTF::Function<void(PassOwnPtr<HandleReadResult>)>;
 
@@ -466,6 +475,7 @@ public:
     // HandleTwoPhaseReader does the same as HandleReader, but it uses
     // |beginRead| / |endRead| instead of |read|.
     class HandleTwoPhaseReader final : public WebDataConsumerHandle::Client {
+        USING_FAST_MALLOC(HandleTwoPhaseReader);
     public:
         using OnFinishedReading = WTF::Function<void(PassOwnPtr<HandleReadResult>)>;
 
@@ -484,13 +494,14 @@ public:
     // where T is one of HandleReader and HandleTwophaseReader.
     template <typename T>
     class HandleReaderRunner final {
+        STACK_ALLOCATED();
     public:
         explicit HandleReaderRunner(PassOwnPtr<WebDataConsumerHandle> handle)
             : m_thread(adoptPtr(new Thread("reading thread")))
             , m_event(adoptPtr(Platform::current()->createWaitableEvent()))
             , m_isDone(false)
         {
-            m_thread->thread()->postTask(FROM_HERE, new Task(threadSafeBind(&HandleReaderRunner::start, AllowCrossThreadAccess(this), handle)));
+            m_thread->thread()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&HandleReaderRunner::start, AllowCrossThreadAccess(this), handle)));
         }
         ~HandleReaderRunner()
         {

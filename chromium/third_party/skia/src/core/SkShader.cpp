@@ -119,15 +119,6 @@ SkShader::Context::ShadeProc SkShader::Context::asAShadeProc(void** ctx) {
 
 #include "SkColorPriv.h"
 
-void SkShader::Context::shadeSpan16(int x, int y, uint16_t span16[], int count) {
-    SkASSERT(span16);
-    SkASSERT(count > 0);
-    SkASSERT(this->canCallShadeSpan16());
-
-    // basically, if we get here, the subclass screwed up
-    SkDEBUGFAIL("kHasSpan16 flag is set, but shadeSpan16() not implemented");
-}
-
 #define kTempColorQuadCount 6   // balance between speed (larger) and saving stack-space
 #define kTempColorCount     (kTempColorQuadCount << 2)
 
@@ -211,8 +202,7 @@ SkShader::GradientType SkShader::asAGradient(GradientInfo* info) const {
 }
 
 const GrFragmentProcessor* SkShader::asFragmentProcessor(GrContext*, const SkMatrix&,
-                                                         const SkMatrix*, SkFilterQuality,
-                                                         GrProcessorDataManager*)  const {
+                                                         const SkMatrix*, SkFilterQuality)  const {
     return nullptr;
 }
 
@@ -267,10 +257,6 @@ uint32_t SkColorShader::ColorShaderContext::getFlags() const {
     return fFlags;
 }
 
-uint8_t SkColorShader::ColorShaderContext::getSpan16Alpha() const {
-    return SkGetPackedA32(fPMColor);
-}
-
 SkShader::Context* SkColorShader::onCreateContext(const ContextRec& rec, void* storage) const {
     return new (storage) ColorShaderContext(*this, rec);
 }
@@ -286,9 +272,6 @@ SkColorShader::ColorShaderContext::ColorShaderContext(const SkColorShader& shade
     unsigned g = SkColorGetG(color);
     unsigned b = SkColorGetB(color);
 
-    // we want this before we apply any alpha
-    fColor16 = SkPack888ToRGB16(r, g, b);
-
     if (a != 255) {
         r = SkMulDiv255Round(r, a);
         g = SkMulDiv255Round(g, a);
@@ -299,18 +282,11 @@ SkColorShader::ColorShaderContext::ColorShaderContext(const SkColorShader& shade
     fFlags = kConstInY32_Flag;
     if (255 == a) {
         fFlags |= kOpaqueAlpha_Flag;
-        if (rec.fPaint->isDither() == false) {
-            fFlags |= kHasSpan16_Flag;
-        }
     }
 }
 
 void SkColorShader::ColorShaderContext::shadeSpan(int x, int y, SkPMColor span[], int count) {
     sk_memset32(span, fPMColor, count);
-}
-
-void SkColorShader::ColorShaderContext::shadeSpan16(int x, int y, uint16_t span[], int count) {
-    sk_memset16(span, fColor16, count);
 }
 
 void SkColorShader::ColorShaderContext::shadeSpanAlpha(int x, int y, uint8_t alpha[], int count) {
@@ -333,8 +309,8 @@ SkShader::GradientType SkColorShader::asAGradient(GradientInfo* info) const {
 #include "SkGr.h"
 #include "effects/GrConstColorProcessor.h"
 const GrFragmentProcessor* SkColorShader::asFragmentProcessor(GrContext*, const SkMatrix&,
-                                                              const SkMatrix*, SkFilterQuality,
-                                                              GrProcessorDataManager*) const {
+                                                              const SkMatrix*,
+                                                              SkFilterQuality) const {
     GrColor color = SkColorToPremulGrColor(fColor);
     return GrConstColorProcessor::Create(color, GrConstColorProcessor::kModulateA_InputMode);
 }

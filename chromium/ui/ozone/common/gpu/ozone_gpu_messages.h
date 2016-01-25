@@ -5,6 +5,8 @@
 // Multiply-included message file, hence no include guard here, but see below
 // for a much smaller-than-usual include guard section.
 
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/file_descriptor_posix.h"
@@ -18,10 +20,10 @@
 #include "ui/gfx/ipc/gfx_param_traits_macros.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/common/gpu/ozone_gpu_message_params.h"
-#include "ui/ozone/ozone_export.h"
+#include "ui/ozone/ozone_base_export.h"
 
 #undef IPC_MESSAGE_EXPORT
-#define IPC_MESSAGE_EXPORT OZONE_EXPORT
+#define IPC_MESSAGE_EXPORT OZONE_BASE_EXPORT
 
 #define IPC_MESSAGE_START OzoneGpuMsgStart
 
@@ -47,6 +49,7 @@ IPC_STRUCT_TRAITS_BEGIN(ui::DisplaySnapshot_Params)
   IPC_STRUCT_TRAITS_MEMBER(is_aspect_preserving_scaling)
   IPC_STRUCT_TRAITS_MEMBER(has_overscan)
   IPC_STRUCT_TRAITS_MEMBER(display_name)
+  IPC_STRUCT_TRAITS_MEMBER(sys_path)
   IPC_STRUCT_TRAITS_MEMBER(modes)
   IPC_STRUCT_TRAITS_MEMBER(has_current_mode)
   IPC_STRUCT_TRAITS_MEMBER(current_mode)
@@ -69,8 +72,7 @@ IPC_STRUCT_TRAITS_BEGIN(ui::OverlayCheck_Params)
   IPC_STRUCT_TRAITS_MEMBER(display_rect)
   IPC_STRUCT_TRAITS_MEMBER(crop_rect)
   IPC_STRUCT_TRAITS_MEMBER(plane_z_order)
-  IPC_STRUCT_TRAITS_MEMBER(weight)
-  IPC_STRUCT_TRAITS_MEMBER(plane_ids)
+  IPC_STRUCT_TRAITS_MEMBER(is_overlay_candidate)
 IPC_STRUCT_TRAITS_END()
 
 // clang-format on
@@ -117,6 +119,8 @@ IPC_MESSAGE_CONTROL3(OzoneGpuMsg_ConfigureNativeDisplay,
 IPC_MESSAGE_CONTROL1(OzoneGpuMsg_DisableNativeDisplay,
                      int64_t)  // display ID
 
+// |device_path| is inside of the /sys filesystem, since UDL display/input
+// association logic needs to access the path components.
 IPC_MESSAGE_CONTROL2(OzoneGpuMsg_AddGraphicsDevice,
                      base::FilePath /* device_path */,
                      base::FileDescriptor /* device_fd */)

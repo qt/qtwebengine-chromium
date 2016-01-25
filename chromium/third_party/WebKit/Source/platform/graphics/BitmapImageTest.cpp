@@ -28,16 +28,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/graphics/BitmapImage.h"
 
 #include "platform/SharedBuffer.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/graphics/ImageObserver.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebUnitTestSupport.h"
-
-#include <gtest/gtest.h>
+#include "platform/testing/UnitTestHelpers.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -65,9 +62,9 @@ public:
 
     static PassRefPtr<SharedBuffer> readFile(const char* fileName)
     {
-        String filePath = Platform::current()->unitTestSupport()->webKitRootDir();
+        String filePath = testing::blinkRootDir();
         filePath.append(fileName);
-        return Platform::current()->unitTestSupport()->readFromFile(filePath);
+        return testing::readFromFile(filePath);
     }
 
     // Accessors to BitmapImage's protected methods.

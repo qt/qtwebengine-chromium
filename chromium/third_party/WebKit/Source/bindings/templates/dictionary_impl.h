@@ -10,9 +10,10 @@ namespace blink {
 
 {# FIXME: Add "final" if this class doesn't have subclasses #}
 class {{exported}}{{cpp_class}}{% if parent_cpp_class %} : public {{parent_cpp_class}}{% endif %} {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     {{cpp_class}}();
+    virtual ~{{cpp_class}}();
 
     {% for member in members %}
     bool {{member.has_method_name}}() const { return {{member.has_method_expression}}; }

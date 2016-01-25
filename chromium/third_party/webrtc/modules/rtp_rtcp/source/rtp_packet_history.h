@@ -10,14 +10,14 @@
  *  Class for storing RTP packets.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_RTP_PACKET_HISTORY_H_
-#define WEBRTC_MODULES_RTP_RTCP_RTP_PACKET_HISTORY_H_
+#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_PACKET_HISTORY_H_
+#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_PACKET_HISTORY_H_
 
 #include <vector>
 
 #include "webrtc/base/thread_annotations.h"
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -29,7 +29,7 @@ static const size_t kMaxHistoryCapacity = 9600;
 
 class RTPPacketHistory {
  public:
-  RTPPacketHistory(Clock* clock);
+  explicit RTPPacketHistory(Clock* clock);
   ~RTPPacketHistory();
 
   void SetStorePacketsStatus(bool enable, uint16_t number_to_store);
@@ -46,13 +46,12 @@ class RTPPacketHistory {
   // The packet is copied to the buffer pointed to by ptr_rtp_packet.
   // The rtp_packet_length should show the available buffer size.
   // Returns true if packet is found.
-  // rtp_packet_length: returns the copied packet length on success.
+  // packet_length: returns the copied packet length on success.
   // min_elapsed_time_ms: the minimum time that must have elapsed since the last
   // time the packet was resent (parameter is ignored if set to zero).
-  // If the packet is found but the minimum time has not elaped, no bytes are
+  // If the packet is found but the minimum time has not elapsed, no bytes are
   // copied.
   // stored_time_ms: returns the time when the packet was stored.
-  // type: returns the storage type set in PutRTPPacket.
   bool GetPacketAndSetSendTime(uint16_t sequence_number,
                                int64_t min_elapsed_time_ms,
                                bool retransmit,
@@ -93,7 +92,8 @@ class RTPPacketHistory {
     uint16_t sequence_number = 0;
     int64_t time_ms = 0;
     int64_t send_time = 0;
-    StorageType storage_type = kDontStore;
+    StorageType storage_type = kDontRetransmit;
+    bool has_been_retransmitted = false;
 
     uint8_t data[IP_PACKET_SIZE];
     size_t length = 0;
@@ -101,4 +101,4 @@ class RTPPacketHistory {
   std::vector<StoredPacket> stored_packets_ GUARDED_BY(critsect_);
 };
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_RTP_PACKET_HISTORY_H_
+#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTP_PACKET_HISTORY_H_

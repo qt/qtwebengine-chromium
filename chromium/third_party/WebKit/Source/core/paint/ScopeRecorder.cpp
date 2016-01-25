@@ -2,25 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/ScopeRecorder.h"
 
 #include "core/layout/LayoutObject.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
 ScopeRecorder::ScopeRecorder(GraphicsContext& context)
-    : m_displayItemList(context.displayItemList())
+    : m_paintController(context.paintController())
 {
-    ASSERT(m_displayItemList);
-    m_displayItemList->beginScope();
+    m_paintController.beginScope();
 }
 
 ScopeRecorder::~ScopeRecorder()
 {
-    m_displayItemList->endScope();
+    m_paintController.endScope();
 }
 
 } // namespace blink

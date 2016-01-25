@@ -34,7 +34,11 @@ ContextState::EnableFlags::EnableFlags()
       rasterizer_discard(false),
       cached_rasterizer_discard(false),
       primitive_restart_fixed_index(false),
-      cached_primitive_restart_fixed_index(false) {}
+      cached_primitive_restart_fixed_index(false),
+      multisample_ext(true),
+      cached_multisample_ext(true),
+      sample_alpha_to_one_ext(false),
+      cached_sample_alpha_to_one_ext(false) {}
 
 void ContextState::Initialize() {
   blend_color_red = 0.0f;
@@ -61,6 +65,7 @@ void ContextState::Initialize() {
   cached_color_mask_blue = true;
   color_mask_alpha = true;
   cached_color_mask_alpha = true;
+  coverage_modulation = GL_NONE;
   cull_mode = GL_BACK;
   depth_func = GL_LESS;
   depth_mask = true;
@@ -108,6 +113,14 @@ void ContextState::Initialize() {
   stencil_path_mask = 0xFFFFFFFFU;
   pack_alignment = 4;
   unpack_alignment = 4;
+  pack_row_length = 0;
+  pack_skip_pixels = 0;
+  pack_skip_rows = 0;
+  unpack_row_length = 0;
+  unpack_image_height = 0;
+  unpack_skip_pixels = 0;
+  unpack_skip_rows = 0;
+  unpack_skip_images = 0;
   polygon_offset_factor = 0.0f;
   polygon_offset_units = 0.0f;
   sample_coverage_value = 1.0f;
@@ -176,6 +189,19 @@ void ContextState::InitCapabilities(const ContextState* prev_state) const {
         enable_flags.cached_stencil_test) {
       EnableDisable(GL_STENCIL_TEST, enable_flags.cached_stencil_test);
     }
+    if (feature_info_->feature_flags().ext_multisample_compatibility) {
+      if (prev_state->enable_flags.cached_multisample_ext !=
+          enable_flags.cached_multisample_ext) {
+        EnableDisable(GL_MULTISAMPLE_EXT, enable_flags.cached_multisample_ext);
+      }
+    }
+    if (feature_info_->feature_flags().ext_multisample_compatibility) {
+      if (prev_state->enable_flags.cached_sample_alpha_to_one_ext !=
+          enable_flags.cached_sample_alpha_to_one_ext) {
+        EnableDisable(GL_SAMPLE_ALPHA_TO_ONE_EXT,
+                      enable_flags.cached_sample_alpha_to_one_ext);
+      }
+    }
     if (feature_info_->IsES3Capable()) {
       if (prev_state->enable_flags.cached_rasterizer_discard !=
           enable_flags.cached_rasterizer_discard) {
@@ -200,6 +226,13 @@ void ContextState::InitCapabilities(const ContextState* prev_state) const {
     EnableDisable(GL_SAMPLE_COVERAGE, enable_flags.cached_sample_coverage);
     EnableDisable(GL_SCISSOR_TEST, enable_flags.cached_scissor_test);
     EnableDisable(GL_STENCIL_TEST, enable_flags.cached_stencil_test);
+    if (feature_info_->feature_flags().ext_multisample_compatibility) {
+      EnableDisable(GL_MULTISAMPLE_EXT, enable_flags.cached_multisample_ext);
+    }
+    if (feature_info_->feature_flags().ext_multisample_compatibility) {
+      EnableDisable(GL_SAMPLE_ALPHA_TO_ONE_EXT,
+                    enable_flags.cached_sample_alpha_to_one_ext);
+    }
     if (feature_info_->IsES3Capable()) {
       EnableDisable(GL_RASTERIZER_DISCARD,
                     enable_flags.cached_rasterizer_discard);
@@ -242,6 +275,9 @@ void ContextState::InitState(const ContextState* prev_state) const {
         (cached_color_mask_alpha != prev_state->cached_color_mask_alpha))
       glColorMask(cached_color_mask_red, cached_color_mask_green,
                   cached_color_mask_blue, cached_color_mask_alpha);
+    if (feature_info_->feature_flags().chromium_framebuffer_mixed_samples)
+      if ((coverage_modulation != prev_state->coverage_modulation))
+        glCoverageModulationNV(coverage_modulation);
     if ((cull_mode != prev_state->cull_mode))
       glCullFace(cull_mode);
     if ((depth_func != prev_state->depth_func))
@@ -344,6 +380,8 @@ void ContextState::InitState(const ContextState* prev_state) const {
     glClearStencil(stencil_clear);
     glColorMask(cached_color_mask_red, cached_color_mask_green,
                 cached_color_mask_blue, cached_color_mask_alpha);
+    if (feature_info_->feature_flags().chromium_framebuffer_mixed_samples)
+      glCoverageModulationNV(coverage_modulation);
     glCullFace(cull_mode);
     glDepthFunc(depth_func);
     glDepthMask(cached_depth_mask);
@@ -383,6 +421,7 @@ void ContextState::InitState(const ContextState* prev_state) const {
                         stencil_back_z_pass_op);
     glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
   }
+  InitStateManual(prev_state);
 }
 bool ContextState::GetEnabled(GLenum cap) const {
   switch (cap) {
@@ -408,6 +447,10 @@ bool ContextState::GetEnabled(GLenum cap) const {
       return enable_flags.rasterizer_discard;
     case GL_PRIMITIVE_RESTART_FIXED_INDEX:
       return enable_flags.primitive_restart_fixed_index;
+    case GL_MULTISAMPLE_EXT:
+      return enable_flags.multisample_ext;
+    case GL_SAMPLE_ALPHA_TO_ONE_EXT:
+      return enable_flags.sample_alpha_to_one_ext;
     default:
       NOTREACHED();
       return false;
@@ -491,6 +534,12 @@ bool ContextState::GetStateAsGLint(GLenum pname,
         params[1] = static_cast<GLint>(color_mask_green);
         params[2] = static_cast<GLint>(color_mask_blue);
         params[3] = static_cast<GLint>(color_mask_alpha);
+      }
+      return true;
+    case GL_COVERAGE_MODULATION_CHROMIUM:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(coverage_modulation);
       }
       return true;
     case GL_CULL_FACE_MODE:
@@ -586,6 +635,54 @@ bool ContextState::GetStateAsGLint(GLenum pname,
       *num_written = 1;
       if (params) {
         params[0] = static_cast<GLint>(unpack_alignment);
+      }
+      return true;
+    case GL_PACK_ROW_LENGTH:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(pack_row_length);
+      }
+      return true;
+    case GL_PACK_SKIP_PIXELS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(pack_skip_pixels);
+      }
+      return true;
+    case GL_PACK_SKIP_ROWS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(pack_skip_rows);
+      }
+      return true;
+    case GL_UNPACK_ROW_LENGTH:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(unpack_row_length);
+      }
+      return true;
+    case GL_UNPACK_IMAGE_HEIGHT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(unpack_image_height);
+      }
+      return true;
+    case GL_UNPACK_SKIP_PIXELS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(unpack_skip_pixels);
+      }
+      return true;
+    case GL_UNPACK_SKIP_ROWS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(unpack_skip_rows);
+      }
+      return true;
+    case GL_UNPACK_SKIP_IMAGES:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(unpack_skip_images);
       }
       return true;
     case GL_POLYGON_OFFSET_FACTOR:
@@ -781,6 +878,18 @@ bool ContextState::GetStateAsGLint(GLenum pname,
             static_cast<GLint>(enable_flags.primitive_restart_fixed_index);
       }
       return true;
+    case GL_MULTISAMPLE_EXT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(enable_flags.multisample_ext);
+      }
+      return true;
+    case GL_SAMPLE_ALPHA_TO_ONE_EXT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLint>(enable_flags.sample_alpha_to_one_ext);
+      }
+      return true;
     default:
       return false;
   }
@@ -863,6 +972,12 @@ bool ContextState::GetStateAsGLfloat(GLenum pname,
         params[1] = static_cast<GLfloat>(color_mask_green);
         params[2] = static_cast<GLfloat>(color_mask_blue);
         params[3] = static_cast<GLfloat>(color_mask_alpha);
+      }
+      return true;
+    case GL_COVERAGE_MODULATION_CHROMIUM:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(coverage_modulation);
       }
       return true;
     case GL_CULL_FACE_MODE:
@@ -954,6 +1069,54 @@ bool ContextState::GetStateAsGLfloat(GLenum pname,
       *num_written = 1;
       if (params) {
         params[0] = static_cast<GLfloat>(unpack_alignment);
+      }
+      return true;
+    case GL_PACK_ROW_LENGTH:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(pack_row_length);
+      }
+      return true;
+    case GL_PACK_SKIP_PIXELS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(pack_skip_pixels);
+      }
+      return true;
+    case GL_PACK_SKIP_ROWS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(pack_skip_rows);
+      }
+      return true;
+    case GL_UNPACK_ROW_LENGTH:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(unpack_row_length);
+      }
+      return true;
+    case GL_UNPACK_IMAGE_HEIGHT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(unpack_image_height);
+      }
+      return true;
+    case GL_UNPACK_SKIP_PIXELS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(unpack_skip_pixels);
+      }
+      return true;
+    case GL_UNPACK_SKIP_ROWS:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(unpack_skip_rows);
+      }
+      return true;
+    case GL_UNPACK_SKIP_IMAGES:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(unpack_skip_images);
       }
       return true;
     case GL_POLYGON_OFFSET_FACTOR:
@@ -1147,6 +1310,18 @@ bool ContextState::GetStateAsGLfloat(GLenum pname,
       if (params) {
         params[0] =
             static_cast<GLfloat>(enable_flags.primitive_restart_fixed_index);
+      }
+      return true;
+    case GL_MULTISAMPLE_EXT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(enable_flags.multisample_ext);
+      }
+      return true;
+    case GL_SAMPLE_ALPHA_TO_ONE_EXT:
+      *num_written = 1;
+      if (params) {
+        params[0] = static_cast<GLfloat>(enable_flags.sample_alpha_to_one_ext);
       }
       return true;
     default:

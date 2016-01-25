@@ -7,14 +7,26 @@
 
 #include <windows.h>
 
+#include <string>
+
 #include "ipc/ipc_export.h"
-#include "ipc/ipc_message_macros.h"
+#include "ipc/ipc_param_traits.h"
+
+namespace base {
+class PickleIterator;
+}  // namespace base
 
 namespace IPC {
+
+class Message;
 
 // HandleWin is a wrapper around a Windows HANDLE that can be transported
 // across Chrome IPC channels that support attachment brokering. The HANDLE will
 // be duplicated into the destination process.
+//
+// The ownership semantics for the underlying |handle_| are complex. See
+// ipc/mach_port_mac.h (the OSX analog of this class) for an extensive
+// discussion.
 class IPC_EXPORT HandleWin {
  public:
   enum Permissions {

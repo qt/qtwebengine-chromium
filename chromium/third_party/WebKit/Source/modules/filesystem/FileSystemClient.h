@@ -33,6 +33,7 @@
 
 #include "modules/ModulesExport.h"
 #include "platform/FileSystemType.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -44,6 +45,7 @@ class ContentSettingCallbacks;
 class WorkerClients;
 
 class FileSystemClient {
+    USING_FAST_MALLOC(FileSystemClient);
     WTF_MAKE_NONCOPYABLE(FileSystemClient);
 public:
     FileSystemClient() { }

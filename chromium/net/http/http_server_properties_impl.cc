@@ -5,11 +5,13 @@
 #include "net/http/http_server_properties_impl.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -21,7 +23,7 @@ namespace net {
 
 namespace {
 
-const uint64 kBrokenAlternativeProtocolDelaySecs = 300;
+const uint64_t kBrokenAlternativeProtocolDelaySecs = 300;
 
 }  // namespace
 
@@ -31,6 +33,8 @@ HttpServerPropertiesImpl::HttpServerPropertiesImpl()
       spdy_settings_map_(SpdySettingsMap::NO_AUTO_EVICT),
       server_network_stats_map_(ServerNetworkStatsMap::NO_AUTO_EVICT),
       alternative_service_probability_threshold_(1.0),
+      quic_server_info_map_(QuicServerInfoMap::NO_AUTO_EVICT),
+      max_server_configs_stored_in_properties_(kMaxQuicServersToPersist),
       weak_ptr_factory_(this) {
   canonical_suffixes_.push_back(".c.youtube.com");
   canonical_suffixes_.push_back(".googlevideo.com");
@@ -46,62 +50,63 @@ void HttpServerPropertiesImpl::InitializeSpdyServers(
   DCHECK(CalledOnValidThread());
   if (!spdy_servers)
     return;
+
   // Add the entries from persisted data.
+  SpdyServerHostPortMap spdy_servers_map(SpdyServerHostPortMap::NO_AUTO_EVICT);
   for (std::vector<std::string>::reverse_iterator it = spdy_servers->rbegin();
        it != spdy_servers->rend(); ++it) {
-    spdy_servers_map_.Put(*it, support_spdy);
+    spdy_servers_map.Put(*it, support_spdy);
+  }
+
+  // |spdy_servers_map| will have the memory cache.
+  spdy_servers_map_.Swap(spdy_servers_map);
+
+  // Add the entries from the memory cache.
+  for (SpdyServerHostPortMap::reverse_iterator it = spdy_servers_map.rbegin();
+       it != spdy_servers_map.rend(); ++it) {
+    // Add the entry if it is not in the cache, otherwise move it to the front
+    // of recency list.
+    if (spdy_servers_map_.Get(it->first) == spdy_servers_map_.end())
+      spdy_servers_map_.Put(it->first, it->second);
   }
 }
 
 void HttpServerPropertiesImpl::InitializeAlternativeServiceServers(
     AlternativeServiceMap* alternative_service_map) {
-  for (AlternativeServiceMap::iterator map_it =
-           alternative_service_map_.begin();
-       map_it != alternative_service_map_.end();) {
-    for (AlternativeServiceInfoVector::iterator it = map_it->second.begin();
-         it != map_it->second.end();) {
-      // Keep all the broken ones since those do not get persisted.
-      AlternativeService alternative_service(it->alternative_service);
-      if (alternative_service.host.empty()) {
-        alternative_service.host = map_it->first.host();
-      }
-      if (IsAlternativeServiceBroken(alternative_service)) {
-        ++it;
-        continue;
-      }
-      it = map_it->second.erase(it);
-    }
-    if (map_it->second.empty()) {
-      RemoveCanonicalHost(map_it->first);
-      map_it = alternative_service_map_.Erase(map_it);
-      continue;
-    }
-    ++map_it;
+  int32_t size_diff =
+      alternative_service_map->size() - alternative_service_map_.size();
+  if (size_diff > 0) {
+    UMA_HISTOGRAM_COUNTS("Net.AlternativeServiceServers.MorePrefsEntries",
+                         size_diff);
+  } else {
+    UMA_HISTOGRAM_COUNTS(
+        "Net.AlternativeServiceServers.MoreOrEqualCacheEntries", -size_diff);
   }
 
+  AlternativeServiceMap new_alternative_service_map(
+      AlternativeServiceMap::NO_AUTO_EVICT);
   // Add the entries from persisted data.
   for (AlternativeServiceMap::reverse_iterator input_it =
            alternative_service_map->rbegin();
        input_it != alternative_service_map->rend(); ++input_it) {
     DCHECK(!input_it->second.empty());
-    AlternativeServiceMap::iterator output_it =
-        alternative_service_map_.Peek(input_it->first);
-    if (output_it == alternative_service_map_.end()) {
-      // There is no value in alternative_service_map_ for input_it->first:
-      // inserting in AlternativeServiceVectorInfo.
+    new_alternative_service_map.Put(input_it->first, input_it->second);
+  }
+
+  alternative_service_map_.Swap(new_alternative_service_map);
+
+  // Add the entries from the memory cache.
+  for (AlternativeServiceMap::reverse_iterator input_it =
+           new_alternative_service_map.rbegin();
+       input_it != new_alternative_service_map.rend(); ++input_it) {
+    if (alternative_service_map_.Get(input_it->first) ==
+        alternative_service_map_.end()) {
       alternative_service_map_.Put(input_it->first, input_it->second);
-      continue;
-    }
-    // There are some broken alternative services in alternative_service_map_
-    // for input_it->first: appending AlternativeServiceInfo one by one.
-    for (const AlternativeServiceInfo& alternative_service_info :
-         input_it->second) {
-      output_it->second.push_back(alternative_service_info);
     }
   }
 
   // Attempt to find canonical servers.
-  uint16 canonical_ports[] = { 80, 443 };
+  uint16_t canonical_ports[] = {80, 443};
   for (size_t i = 0; i < canonical_suffixes_.size(); ++i) {
     std::string canonical_suffix = canonical_suffixes_[i];
     for (size_t j = 0; j < arraysize(canonical_ports); ++j) {
@@ -130,9 +135,20 @@ void HttpServerPropertiesImpl::InitializeAlternativeServiceServers(
 
 void HttpServerPropertiesImpl::InitializeSpdySettingsServers(
     SpdySettingsMap* spdy_settings_map) {
+  // Add the entries from persisted data.
+  SpdySettingsMap new_spdy_settings_map(SpdySettingsMap::NO_AUTO_EVICT);
   for (SpdySettingsMap::reverse_iterator it = spdy_settings_map->rbegin();
        it != spdy_settings_map->rend(); ++it) {
-    spdy_settings_map_.Put(it->first, it->second);
+    new_spdy_settings_map.Put(it->first, it->second);
+  }
+
+  spdy_settings_map_.Swap(new_spdy_settings_map);
+
+  // Add the entries from the memory cache.
+  for (SpdySettingsMap::reverse_iterator it = new_spdy_settings_map.rbegin();
+       it != new_spdy_settings_map.rend(); ++it) {
+    if (spdy_settings_map_.Get(it->first) == spdy_settings_map_.end())
+      spdy_settings_map_.Put(it->first, it->second);
   }
 }
 
@@ -144,10 +160,45 @@ void HttpServerPropertiesImpl::InitializeSupportsQuic(
 
 void HttpServerPropertiesImpl::InitializeServerNetworkStats(
     ServerNetworkStatsMap* server_network_stats_map) {
+  // Add the entries from persisted data.
+  ServerNetworkStatsMap new_server_network_stats_map(
+      ServerNetworkStatsMap::NO_AUTO_EVICT);
   for (ServerNetworkStatsMap::reverse_iterator it =
            server_network_stats_map->rbegin();
        it != server_network_stats_map->rend(); ++it) {
-    server_network_stats_map_.Put(it->first, it->second);
+    new_server_network_stats_map.Put(it->first, it->second);
+  }
+
+  server_network_stats_map_.Swap(new_server_network_stats_map);
+
+  // Add the entries from the memory cache.
+  for (ServerNetworkStatsMap::reverse_iterator it =
+           new_server_network_stats_map.rbegin();
+       it != new_server_network_stats_map.rend(); ++it) {
+    if (server_network_stats_map_.Get(it->first) ==
+        server_network_stats_map_.end()) {
+      server_network_stats_map_.Put(it->first, it->second);
+    }
+  }
+}
+
+void HttpServerPropertiesImpl::InitializeQuicServerInfoMap(
+    QuicServerInfoMap* quic_server_info_map) {
+  // Add the entries from persisted data.
+  QuicServerInfoMap temp_map(QuicServerInfoMap::NO_AUTO_EVICT);
+  for (QuicServerInfoMap::reverse_iterator it = quic_server_info_map->rbegin();
+       it != quic_server_info_map->rend(); ++it) {
+    temp_map.Put(it->first, it->second);
+  }
+
+  quic_server_info_map_.Swap(temp_map);
+
+  // Add the entries from the memory cache.
+  for (QuicServerInfoMap::reverse_iterator it = temp_map.rbegin();
+       it != temp_map.rend(); ++it) {
+    if (quic_server_info_map_.Get(it->first) == quic_server_info_map_.end()) {
+      quic_server_info_map_.Put(it->first, it->second);
+    }
   }
 }
 
@@ -181,6 +232,7 @@ void HttpServerPropertiesImpl::Clear() {
   spdy_settings_map_.Clear();
   last_quic_address_.clear();
   server_network_stats_map_.Clear();
+  quic_server_info_map_.Clear();
 }
 
 bool HttpServerPropertiesImpl::SupportsRequestPriority(
@@ -284,7 +336,8 @@ AlternativeServiceVector HttpServerPropertiesImpl::GetAlternativeServices(
         it = map_it->second.erase(it);
         continue;
       }
-      if (it->probability < alternative_service_probability_threshold_) {
+      if (it->probability == 0 ||
+          it->probability < alternative_service_probability_threshold_) {
         ++it;
         continue;
       }
@@ -509,10 +562,10 @@ HttpServerPropertiesImpl::GetAlternativeServiceInfoAsValue()
     scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     dict->SetString("host_port_pair", host_port_pair.ToString());
     dict->Set("alternative_service",
-              scoped_ptr<base::Value>(alternative_service_list.Pass()));
-    dict_list->Append(dict.Pass());
+              scoped_ptr<base::Value>(std::move(alternative_service_list)));
+    dict_list->Append(std::move(dict));
   }
-  return dict_list.Pass();
+  return std::move(dict_list);
 }
 
 const SettingsMap& HttpServerPropertiesImpl::GetSpdySettings(
@@ -529,7 +582,7 @@ bool HttpServerPropertiesImpl::SetSpdySetting(
     const HostPortPair& host_port_pair,
     SpdySettingsIds id,
     SpdySettingsFlags flags,
-    uint32 value) {
+    uint32_t value) {
   if (!(flags & SETTINGS_FLAG_PLEASE_PERSIST))
       return false;
 
@@ -599,6 +652,51 @@ const ServerNetworkStats* HttpServerPropertiesImpl::GetServerNetworkStats(
 const ServerNetworkStatsMap&
 HttpServerPropertiesImpl::server_network_stats_map() const {
   return server_network_stats_map_;
+}
+
+bool HttpServerPropertiesImpl::SetQuicServerInfo(
+    const QuicServerId& server_id,
+    const std::string& server_info) {
+  QuicServerInfoMap::iterator it = quic_server_info_map_.Peek(server_id);
+  bool changed =
+      (it == quic_server_info_map_.end() || it->second != server_info);
+  quic_server_info_map_.Put(server_id, server_info);
+  return changed;
+}
+
+const std::string* HttpServerPropertiesImpl::GetQuicServerInfo(
+    const QuicServerId& server_id) {
+  QuicServerInfoMap::iterator it = quic_server_info_map_.Get(server_id);
+  if (it == quic_server_info_map_.end())
+    return nullptr;
+  return &it->second;
+}
+
+const QuicServerInfoMap& HttpServerPropertiesImpl::quic_server_info_map()
+    const {
+  return quic_server_info_map_;
+}
+
+size_t HttpServerPropertiesImpl::max_server_configs_stored_in_properties()
+    const {
+  return max_server_configs_stored_in_properties_;
+}
+
+void HttpServerPropertiesImpl::SetMaxServerConfigsStoredInProperties(
+    size_t max_server_configs_stored_in_properties) {
+  max_server_configs_stored_in_properties_ =
+      max_server_configs_stored_in_properties;
+
+  // MRUCache doesn't allow the size of the cache to be changed. Thus create a
+  // new map with the new size and add current elements and swap the new map.
+  quic_server_info_map_.ShrinkToSize(max_server_configs_stored_in_properties_);
+  QuicServerInfoMap temp_map(max_server_configs_stored_in_properties_);
+  for (QuicServerInfoMap::reverse_iterator it = quic_server_info_map_.rbegin();
+       it != quic_server_info_map_.rend(); ++it) {
+    temp_map.Put(it->first, it->second);
+  }
+
+  quic_server_info_map_.Swap(temp_map);
 }
 
 void HttpServerPropertiesImpl::SetAlternativeServiceProbabilityThreshold(

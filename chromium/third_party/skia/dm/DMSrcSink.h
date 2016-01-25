@@ -12,10 +12,9 @@
 #include "SkBBHFactory.h"
 #include "SkBBoxHierarchy.h"
 #include "SkBitmap.h"
-#include "SkBitmapRegionDecoderInterface.h"
+#include "SkBitmapRegionDecoder.h"
 #include "SkCanvas.h"
 #include "SkData.h"
-#include "SkGPipe.h"
 #include "SkPicture.h"
 #include "gm.h"
 
@@ -104,10 +103,12 @@ private:
 class CodecSrc : public Src {
 public:
     enum Mode {
-        kScaledCodec_Mode,
         kCodec_Mode,
+        // We choose to test only one mode with zero initialized memory.
+        // This will exercise all of the interesting cases in SkSwizzler
+        // without doubling the size of our test suite.
+        kCodecZeroInit_Mode,
         kScanline_Mode,
-        kScanline_Subset_Mode,
         kStripe_Mode, // Tests the skipping of scanlines
         kSubset_Mode, // For codecs that support subsets directly.
     };
@@ -129,6 +130,28 @@ private:
     float                   fScale;
 };
 
+class AndroidCodecSrc : public Src {
+public:
+    enum Mode {
+        kFullImage_Mode,
+        // Splits the image into multiple subsets using a divisor and decodes the subsets
+        // separately.
+        kDivisor_Mode,
+    };
+
+    AndroidCodecSrc(Path, Mode, CodecSrc::DstColorType, int sampleSize);
+
+    Error draw(SkCanvas*) const override;
+    SkISize size() const override;
+    Name name() const override;
+    bool veto(SinkFlags) const override;
+private:
+    Path                    fPath;
+    Mode                    fMode;
+    CodecSrc::DstColorType  fDstColorType;
+    int                     fSampleSize;
+};
+
 // Allows for testing of various implementations of Android's BitmapRegionDecoder
 class BRDSrc : public Src {
 public:
@@ -142,7 +165,7 @@ public:
         kDivisor_Mode,
     };
 
-    BRDSrc(Path, SkBitmapRegionDecoderInterface::Strategy, Mode, CodecSrc::DstColorType, uint32_t);
+    BRDSrc(Path, SkBitmapRegionDecoder::Strategy, Mode, CodecSrc::DstColorType, uint32_t);
 
     Error draw(SkCanvas*) const override;
     SkISize size() const override;
@@ -150,7 +173,7 @@ public:
     bool veto(SinkFlags) const override;
 private:
     Path                                     fPath;
-    SkBitmapRegionDecoderInterface::Strategy fStrategy;
+    SkBitmapRegionDecoder::Strategy          fStrategy;
     Mode                                     fMode;
     CodecSrc::DstColorType                   fDstColorType;
     uint32_t                                 fSampleSize;
@@ -158,9 +181,7 @@ private:
 
 class ImageSrc : public Src {
 public:
-    // divisor == 0 means decode the whole image
-    // divisor > 0 means decode in subsets, dividing into a divisor x divisor grid.
-    explicit ImageSrc(Path path, int divisor = 0);
+    explicit ImageSrc(Path path);
 
     Error draw(SkCanvas*) const override;
     SkISize size() const override;
@@ -168,7 +189,6 @@ public:
     bool veto(SinkFlags) const override;
 private:
     Path fPath;
-    const int  fDivisor;
 };
 
 class SKPSrc : public Src {
@@ -197,18 +217,19 @@ public:
 
 class GPUSink : public Sink {
 public:
-    GPUSink(GrContextFactory::GLContextType, GrGLStandard, int samples, bool diText, bool threaded);
+    GPUSink(GrContextFactory::GLContextType, GrContextFactory::GLContextOptions,
+            int samples, bool diText, bool threaded);
 
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     int enclave() const override;
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kGPU, SinkFlags::kDirect }; }
 private:
-    GrContextFactory::GLContextType fContextType;
-    GrGLStandard                    fGpuAPI;
-    int                             fSampleCount;
-    bool                            fUseDIText;
-    bool                            fThreaded;
+    GrContextFactory::GLContextType    fContextType;
+    GrContextFactory::GLContextOptions fContextOptions;
+    int                                fSampleCount;
+    bool                               fUseDIText;
+    bool                               fThreaded;
 };
 
 class PDFSink : public Sink {
@@ -298,21 +319,23 @@ private:
     const SkMatrix fMatrix;
 };
 
-class ViaPipe : public Via {
+class ViaRemote : public Via {
 public:
-    explicit ViaPipe(Sink* sink) : Via(sink) {}
+    ViaRemote(bool cache, Sink* sink) : Via(sink), fCache(cache) {}
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-};
-
-class ViaDeferred : public Via {
-public:
-    explicit ViaDeferred(Sink* sink) : Via(sink) {}
-    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+private:
+    bool fCache;
 };
 
 class ViaSerialization : public Via {
 public:
     explicit ViaSerialization(Sink* sink) : Via(sink) {}
+    Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+};
+
+class ViaPicture : public Via {
+public:
+    explicit ViaPicture(Sink* sink) : Via(sink) {}
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
 };
 

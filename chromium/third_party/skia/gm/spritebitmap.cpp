@@ -22,8 +22,8 @@ static void make_bm(SkBitmap* bm) {
     canvas.drawCircle(50, 50, 50, paint);
 }
 
-static void draw_2_bitmaps(SkCanvas* canvas, const SkBitmap& bm, bool doClip,
-                           int dx, int dy, SkImageFilter* filter = nullptr) {
+static void draw_1_bitmap(SkCanvas* canvas, const SkBitmap& bm, bool doClip,
+                         int dx, int dy, SkImageFilter* filter = nullptr) {
     SkAutoCanvasRestore acr(canvas, true);
     SkPaint paint;
 
@@ -34,15 +34,6 @@ static void draw_2_bitmaps(SkCanvas* canvas, const SkBitmap& bm, bool doClip,
 
     paint.setImageFilter(filter);
     clipR.inset(5, 5);
-
-    if (doClip) {
-        canvas->save();
-        canvas->clipRect(clipR);
-    }
-    canvas->drawSprite(bm, dx, dy, &paint);
-    if (doClip) {
-        canvas->restore();
-    }
 
     canvas->translate(SkIntToScalar(bm.width() + 20), 0);
 
@@ -83,17 +74,16 @@ protected:
         SkScalar sigma = 8;
         SkAutoTUnref<SkImageFilter> filter(SkBlurImageFilter::Create(sigma, sigma));
 
-        draw_2_bitmaps(canvas, bm, false, dx, dy);
+        draw_1_bitmap(canvas, bm, false, dx, dy);
         dy += bm.height() + 20;
-        draw_2_bitmaps(canvas, bm, false, dx, dy, filter);
+        draw_1_bitmap(canvas, bm, false, dx, dy, filter);
         dy += bm.height() + 20;
-        draw_2_bitmaps(canvas, bm, true, dx, dy);
+        draw_1_bitmap(canvas, bm, true, dx, dy);
         dy += bm.height() + 20;
-        draw_2_bitmaps(canvas, bm, true, dx, dy, filter);
+        draw_1_bitmap(canvas, bm, true, dx, dy, filter);
     }
 
 private:
     typedef GM INHERITED;
 };
 DEF_GM( return new SpriteBitmapGM; )
-

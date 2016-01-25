@@ -18,8 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGFEColorMatrixElement.h"
 
 #include "core/SVGNames.h"
@@ -93,9 +91,7 @@ void SVGFEColorMatrixElement::svgAttributeChanged(const QualifiedName& attrName)
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
-
-    if (!input1)
-        return nullptr;
+    ASSERT(input1);
 
     ColorMatrixType filterType = m_type->currentValue()->enumValue();
     Vector<float> filterValues = m_values->currentValue()->toFloatVector();

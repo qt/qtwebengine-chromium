@@ -4,17 +4,19 @@
 
 #include "components/user_prefs/tracked/pref_hash_filter.h"
 
+#include <stddef.h>
+
 #include <map>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_base.h"
@@ -386,7 +388,7 @@ class PrefHashFilterTest
         new MockPrefHashStore);
     mock_pref_hash_store_ = temp_mock_pref_hash_store.get();
     pref_hash_filter_.reset(new PrefHashFilter(
-        temp_mock_pref_hash_store.Pass(), configuration,
+        std::move(temp_mock_pref_hash_store), configuration,
         base::Bind(&PrefHashFilterTest::RecordReset, base::Unretained(this)),
         &mock_validation_delegate_, arraysize(kTestTrackedPrefs), true));
   }
@@ -408,7 +410,7 @@ class PrefHashFilterTest
     pref_hash_filter_->FilterOnLoad(
         base::Bind(&PrefHashFilterTest::GetPrefsBack, base::Unretained(this),
                    expect_prefs_modifications),
-        pref_store_contents_.Pass());
+        std::move(pref_store_contents_));
   }
 
   MockPrefHashStore* mock_pref_hash_store_;
@@ -422,7 +424,7 @@ class PrefHashFilterTest
   void GetPrefsBack(bool expected_schedule_write,
                     scoped_ptr<base::DictionaryValue> prefs,
                     bool schedule_write) {
-    pref_store_contents_ = prefs.Pass();
+    pref_store_contents_ = std::move(prefs);
     EXPECT_TRUE(pref_store_contents_);
     EXPECT_EQ(expected_schedule_write, schedule_write);
   }

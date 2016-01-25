@@ -4,9 +4,12 @@
 
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
 
+#include <stdint.h>
+
 #include "base/base_paths.h"
 #include "base/files/file.h"
 #include "base/message_loop/message_loop.h"
+#include "build/build_config.h"
 #include "ipc/ipc_test_base.h"
 
 #if defined(OS_POSIX)
@@ -24,7 +27,7 @@ class TestingDelegate : public IPC::MojoBootstrap::Delegate {
   TestingDelegate() : passed_(false) {}
 
   void OnPipeAvailable(mojo::embedder::ScopedPlatformHandle handle,
-                       int32 peer_pid) override;
+                       int32_t peer_pid) override;
   void OnBootstrapError() override;
 
   bool passed() const { return passed_; }
@@ -35,13 +38,13 @@ class TestingDelegate : public IPC::MojoBootstrap::Delegate {
 
 void TestingDelegate::OnPipeAvailable(
     mojo::embedder::ScopedPlatformHandle handle,
-    int32 peer_pid) {
+    int32_t peer_pid) {
   passed_ = true;
-  base::MessageLoop::current()->Quit();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 void TestingDelegate::OnBootstrapError() {
-  base::MessageLoop::current()->Quit();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 // Times out on Android; see http://crbug.com/502290

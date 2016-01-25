@@ -47,12 +47,11 @@ public:
     ~WorkerRuntimeAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
-    // Protocol commands.
-    void enable(ErrorString*) override;
+    void enable(ErrorString*) final;
 
 private:
     WorkerRuntimeAgent(InjectedScriptManager*, V8Debugger*, WorkerGlobalScope*, InspectorRuntimeAgent::Client*);
-    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    ScriptState* defaultScriptState() override;
     void muteConsole() override;
     void unmuteConsole() override;
     RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;

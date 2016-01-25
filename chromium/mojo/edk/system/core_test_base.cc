@@ -4,6 +4,9 @@
 
 #include "mojo/edk/system/core_test_base.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
 #include "base/logging.h"
@@ -128,7 +131,7 @@ class MockDispatcher : public Dispatcher {
 
   MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                    MojoHandleSignals /*signals*/,
-                                   uint32_t /*context*/,
+                                   uintptr_t /*context*/,
                                    HandleSignalsState* signals_state) override {
     info_->IncrementAddAwakableCallCount();
     lock().AssertAcquired();
@@ -178,6 +181,10 @@ CoreTestBase::~CoreTestBase() {
 MojoHandle CoreTestBase::CreateMockHandle(CoreTestBase::MockHandleInfo* info) {
   scoped_refptr<MockDispatcher> dispatcher = MockDispatcher::Create(info);
   return core()->AddDispatcher(dispatcher);
+}
+
+Core* CoreTestBase::core() {
+  return mojo::edk::internal::GetCore();
 }
 
 // CoreTestBase_MockHandleInfo -------------------------------------------------

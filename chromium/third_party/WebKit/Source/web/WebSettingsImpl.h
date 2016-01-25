@@ -31,6 +31,7 @@
 #ifndef WebSettingsImpl_h
 #define WebSettingsImpl_h
 
+#include "platform/heap/Handle.h"
 #include "public/web/WebSettings.h"
 
 namespace blink {
@@ -62,7 +63,6 @@ public:
     void setAllowUniversalAccessFromFileURLs(bool) override;
     void setAntialiased2dCanvasEnabled(bool) override;
     void setAntialiasedClips2dCanvasEnabled(bool) override;
-    void setAsynchronousSpellCheckingEnabled(bool) override;
     void setAutoplayExperimentMode(const WebString&) override;
     void setAutoZoomFocusedNodeToLegibleScale(bool) override;
     void setCaretBrowsingEnabled(bool) override;
@@ -71,6 +71,7 @@ public:
     void setNavigateOnDragDrop(bool) override;
     void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     void setDNSPrefetchingEnabled(bool) override;
+    void setDataSaverEnabled(bool) override;
     void setDOMPasteAllowed(bool) override;
     void setDefaultFixedFontSize(int) override;
     void setDefaultFontSize(int) override;
@@ -96,14 +97,11 @@ public:
     void setReportWheelOverscroll(bool) override;
     void setForceZeroLayoutHeight(bool) override;
     void setFullscreenSupported(bool) override;
-    void setHidePinchScrollbarsNearMinScale(bool) override;
     void setHyperlinkAuditingEnabled(bool) override;
     void setIgnoreMainFrameOverflowHiddenQuirk(bool) override;
     void setImageAnimationPolicy(ImageAnimationPolicy) override;
     void setImagesEnabled(bool) override;
     void setInlineTextBoxAccessibilityEnabled(bool) override;
-    void setInertVisualViewport(bool) override;
-    void setInvertViewportScrollOrder(bool) override;
     void setJavaScriptCanAccessClipboard(bool) override;
     void setJavaScriptCanOpenWindowsAutomatically(bool) override;
     void setJavaScriptEnabled(bool) override;
@@ -171,7 +169,6 @@ public:
     void setTextTrackTextSize(const WebString&) override;
     void setThreadedScrollingEnabled(bool) override;
     void setTouchDragDropEnabled(bool) override;
-    void setTouchEditingEnabled(bool) override;
     void setUnifiedTextCheckerEnabled(bool) override;
     void setUnsafePluginPastingEnabled(bool) override;
     void setUsesEncodingDetector(bool) override;
@@ -210,7 +207,7 @@ public:
 
 private:
     Settings* m_settings;
-    DevToolsEmulator* m_devToolsEmulator;
+    RawPtrWillBeUntracedMember<DevToolsEmulator> m_devToolsEmulator;
     bool m_showFPSCounter;
     bool m_showPaintRects;
     bool m_renderVSyncNotificationEnabled;

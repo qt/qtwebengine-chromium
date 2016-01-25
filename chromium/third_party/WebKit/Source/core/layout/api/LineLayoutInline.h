@@ -28,6 +28,8 @@ public:
         ASSERT(!item || item.isLayoutInline());
     }
 
+    explicit LineLayoutInline(std::nullptr_t) : LineLayoutBoxModel(nullptr) { }
+
     LineLayoutInline() { }
 
     LineLayoutItem firstChild() const
@@ -83,6 +85,21 @@ public:
     InlineBox* firstLineBoxIncludingCulling() const
     {
         return toInline()->firstLineBoxIncludingCulling();
+    }
+
+    LineBoxList* lineBoxes()
+    {
+        return toInline()->lineBoxes();
+    }
+
+    bool hitTestCulledInline(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset)
+    {
+        return toInline()->hitTestCulledInline(result, locationInContainer, accumulatedOffset);
+    }
+
+    LayoutBoxModelObject* continuation() const
+    {
+        return toInline()->continuation();
     }
 
 protected:

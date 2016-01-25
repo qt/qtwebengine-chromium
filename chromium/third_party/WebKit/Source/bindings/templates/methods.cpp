@@ -1,9 +1,7 @@
-{% from 'conversions.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value %}
-
+{% from 'utilities.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value, check_api_experiment %}
 
 {##############################################################################}
 {% macro generate_method(method, world_suffix) %}
-{% filter conditional(method.conditional_string) %}
 {% if method.returns_promise and method.has_exception_state %}
 static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}Promise(const v8::FunctionCallbackInfo<v8::Value>& info, ExceptionState& exceptionState)
 {% else %}
@@ -27,23 +25,36 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
     CustomElementProcessingStack::CallbackDeliveryScope deliveryScope;
     {% endif %}
     {# Security checks #}
-    {% if method.is_check_security_for_window %}
+    {% if method.is_check_security_for_receiver %}
+    {% if interface_name == 'EventTarget' %}
+    // Performance hack for EventTarget.  Checking whether it's a Window or not
+    // prior to the call to BindingSecurity::shouldAllowAccessTo increases 30%
+    // of speed performance on Android Nexus 7 as of Dec 2016.  ALWAYS_INLINE
+    // didn't work in this case.
     if (LocalDOMWindow* window = impl->toDOMWindow()) {
-        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), window->frame(), exceptionState)) {
-            {{propagate_error_with_exception_state(method) | indent(12)}}
-        }
-        if (!window->document())
+        if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), window, exceptionState)) {
+            {% if not method.returns_promise %}
+            exceptionState.throwIfNeeded();
+            {% endif %}
             return;
+        }
     }
-    {% elif method.is_check_security_for_frame %}
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
-        {{propagate_error_with_exception_state(method) | indent(8)}}
+    {% else %}{# interface_name == 'EventTarget' #}
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, exceptionState)) {
+        {% if not method.returns_promise %}
+        exceptionState.throwIfNeeded();
+        {% endif %}
+        return;
     }
+    {% endif %}{# interface_name == 'EventTarget' #}
     {% endif %}
-    {% if method.is_check_security_for_node %}
-    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), impl->{{method.name}}(exceptionState), exceptionState)) {
+    {% if method.is_check_security_for_return_value %}
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), {{method.cpp_value}}, exceptionState)) {
         v8SetReturnValueNull(info);
-        {{propagate_error_with_exception_state(method) | indent(8)}}
+        {% if not method.returns_promise %}
+        exceptionState.throwIfNeeded();
+        {% endif %}
+        return;
     }
     {% endif %}
     {# Call method #}
@@ -66,7 +77,6 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
         v8SetReturnValue(info, exceptionState.reject(ScriptState::current(info.GetIsolate())).v8Value());
 }
 {% endif %}
-{% endfilter %}
 {% endmacro %}
 
 
@@ -76,6 +86,17 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
 {{generate_argument_var_declaration(argument)}};
 {% endfor %}
 {
+    {% if method.has_optional_argument_without_default_value %}
+    {# Count the effective number of arguments.  (arg1, arg2, undefined) is
+       interpreted as two arguments are passed and (arg1, undefined, arg3) is
+       interpreted as three arguments are passed. #}
+    int numArgsPassed = info.Length();
+    while (numArgsPassed > 0) {
+        if (!info[numArgsPassed - 1]->IsUndefined())
+            break;
+        --numArgsPassed;
+    }
+    {% endif %}
     {% for argument in method.arguments %}
     {% if argument.set_default_value %}
     if (!info[{{argument.index}}]->IsUndefined()) {
@@ -104,13 +125,11 @@ RefPtrWillBeRawPtr<{{argument.idl_type}}> {{argument.name}}
 
 {######################################}
 {% macro generate_argument(method, argument, world_suffix) %}
-{% if argument.is_optional and not argument.has_default and
-      not argument.is_dictionary and
-      not argument.is_callback_interface %}
+{% if argument.is_optional_without_default_value %}
 {# Optional arguments without a default value generate an early call with
    fewer arguments if they are omitted.
    Optional Dictionary arguments default to empty dictionary. #}
-if (UNLIKELY(info.Length() <= {{argument.index}})) {
+if (UNLIKELY(numArgsPassed <= {{argument.index}})) {
     {% if world_suffix %}
     {{cpp_method_call(method, argument.v8_set_return_value_for_main_world, argument.cpp_value) | indent}}
     {% else %}
@@ -378,10 +397,10 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{overloads.name}}", "{{interface_name}}", info.Holder(), info.GetIsolate());
     {% if overloads.measure_all_as %}
-    UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.measure_all_as}});
+    UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{overloads.measure_all_as}});
     {% endif %}
     {% if overloads.deprecate_all_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
+    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
     {% endif %}
     {# First resolve by length #}
     {# 2. Initialize argcount to be min(maxarg, n). #}
@@ -397,10 +416,10 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
                                   method.runtime_enabled_function) %}
         if ({{test}}) {
             {% if method.measure_as and not overloads.measure_all_as %}
-            UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
+            UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
             {% endif %}
             {% if method.deprecate_as and not overloads.deprecate_all_as %}
-            UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+            UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
             {% endif %}
             {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
             return;
@@ -458,14 +477,15 @@ void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, const v
     }
     OwnPtrWillBeRawPtr<MessagePortArray> ports = adoptPtrWillBeNoop(new MessagePortArray);
     ArrayBufferArray arrayBuffers;
+    ImageBitmapArray imageBitmaps;
     if (info.Length() > 1) {
         const int transferablesArgIndex = 1;
-        if (!SerializedScriptValue::extractTransferables(info.GetIsolate(), info[transferablesArgIndex], transferablesArgIndex, *ports, arrayBuffers, exceptionState)) {
+        if (!SerializedScriptValue::extractTransferables(info.GetIsolate(), info[transferablesArgIndex], transferablesArgIndex, *ports, arrayBuffers, imageBitmaps, exceptionState)) {
             exceptionState.throwIfNeeded();
             return;
         }
     }
-    RefPtr<SerializedScriptValue> message = SerializedScriptValueFactory::instance().create(info.GetIsolate(), info[0], ports.get(), &arrayBuffers, exceptionState);
+    RefPtr<SerializedScriptValue> message = SerializedScriptValueFactory::instance().create(info.GetIsolate(), info[0], ports.get(), &arrayBuffers, &imageBitmaps, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
     // FIXME: Only pass context/exceptionState if instance really requires it.
@@ -477,16 +497,18 @@ void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, const v
 
 {##############################################################################}
 {% macro method_callback(method, world_suffix) %}
-{% filter conditional(method.conditional_string) %}
 static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMethod");
     {% if not method.overloads %}{# Overloaded methods are measured in overload_resolution_method() #}
     {% if method.measure_as %}
-    UseCounter::countIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
+    UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
     {% endif %}
     {% if method.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+    {% endif %}
+    {% if method.is_api_experiment_enabled %}
+    {{check_api_experiment(method) | indent}}
     {% endif %}
     {% endif %}{# not method.overloads #}
     {% if world_suffix in method.activity_logging_world_list %}
@@ -511,7 +533,6 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
     {% endif %}
     TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
-{% endfilter %}
 {% endmacro %}
 
 
@@ -535,13 +556,13 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
         return;
     }
     {{cpp_class}}* impl = {{v8_class}}::toImpl(holder);
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), DoNotReportSecurityError)) {
+    if (!BindingSecurity::shouldAllowAccessTo(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl, DoNotReportSecurityError)) {
         v8SetReturnValue(info, domTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
         return;
     }
 
     {# The findInstanceInPrototypeChain() call above only returns a non-empty handle if info.This() is an Object. #}
-    v8::Local<v8::Value> hiddenValue = v8::Local<v8::Object>::Cast(info.This())->GetHiddenValue(v8AtomicString(info.GetIsolate(), "{{method.name}}"));
+    v8::Local<v8::Value> hiddenValue = V8HiddenValue::getHiddenValue(ScriptState::current(info.GetIsolate()), v8::Local<v8::Object>::Cast(info.This()), v8AtomicString(info.GetIsolate(), "{{method.name}}"));
     if (!hiddenValue.IsEmpty()) {
         v8SetReturnValue(info, hiddenValue);
         return;
@@ -568,10 +589,10 @@ bool {{v8_class}}::PrivateScript::{{method.name}}Method({{method.argument_declar
     v8::HandleScope handleScope(toIsolate(frame));
     ScriptForbiddenScope::AllowUserAgentScript script;
     ScriptState* scriptState = ScriptState::forWorld(frame, DOMWrapperWorld::privateScriptIsolatedWorld());
-    if (!scriptState->contextIsValid())
+    if (!scriptState)
         return false;
     ScriptState* scriptStateInUserScript = ScriptState::forMainWorld(frame);
-    if (!scriptState->contextIsValid())
+    if (!scriptStateInUserScript)
         return false;
 
     ScriptState::Scope scope(scriptState);
@@ -650,7 +671,7 @@ v8SetReturnValue(info, wrapper);
 
 {##############################################################################}
 {% macro method_configuration(method) %}
-{% from 'conversions.cpp' import property_location %}
+{% from 'utilities.cpp' import property_location %}
 {% set method_callback =
        '%sV8Internal::%sMethodCallback' % (cpp_class_or_partial, method.name) %}
 {% set method_callback_for_main_world =
@@ -675,8 +696,8 @@ V8DOMConfiguration::installMethod(isolate, {{instance_template}}, {{prototype_te
 {% if conditionally_enabled_methods %}
 {# Define operations with limited exposure #}
 v8::Local<v8::Signature> defaultSignature = v8::Signature::New(isolate, domTemplate(isolate));
-ExecutionContext* context = toExecutionContext(prototypeObject->CreationContext());
-ASSERT(context);
+ExecutionContext* executionContext = toExecutionContext(prototypeObject->CreationContext());
+ASSERT(executionContext);
 {% for method in conditionally_enabled_methods %}
 {% filter exposed(method.overloads.exposed_test_all
                   if method.overloads else

@@ -48,7 +48,7 @@ WebInspector.ScreencastView._bordersSize = 44;
 
 WebInspector.ScreencastView._navBarHeight = 29;
 
-WebInspector.ScreencastView._HttpRegex = /^https?:\/\/(.+)/;
+WebInspector.ScreencastView._HttpRegex = /^http:\/\/(.+)/;
 
 WebInspector.ScreencastView._SchemeRegex = /^(https?|about|chrome):/;
 
@@ -131,6 +131,7 @@ WebInspector.ScreencastView.prototype = {
         dimensions.width *= window.devicePixelRatio;
         dimensions.height *= window.devicePixelRatio;
         this._target.pageAgent().startScreencast("jpeg", 80, Math.min(maxImageDimension, dimensions.width), Math.min(maxImageDimension, dimensions.height));
+        this._target.emulationAgent().setTouchEmulationEnabled(true);
         this._domModel.setHighlighter(this);
     },
 
@@ -140,6 +141,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         this._isCasting = false;
         this._target.pageAgent().stopScreencast();
+        this._target.emulationAgent().setTouchEmulationEnabled(false);
         this._domModel.setHighlighter(null);
     },
 
@@ -155,9 +157,6 @@ WebInspector.ScreencastView.prototype = {
         this._screenOffsetTop = metadata.offsetTop;
         this._scrollOffsetX = metadata.scrollOffsetX;
         this._scrollOffsetY = metadata.scrollOffsetY;
-
-        if (event.data.frameNumber)
-            this._target.pageAgent().screencastFrameAck(event.data.frameNumber);
 
         var deviceSizeRatio = metadata.deviceHeight / metadata.deviceWidth;
         var dimensionsCSS = this._viewportDimensions();
@@ -245,10 +244,12 @@ WebInspector.ScreencastView.prototype = {
         {
             if (!node)
                 return;
-            if (event.type === "mousemove")
+            if (event.type === "mousemove") {
                 this.highlightDOMNode(node, this._inspectModeConfig);
-            else if (event.type === "click")
+                this._domModel.nodeHighlightRequested(node.id);
+            } else if (event.type === "click") {
                 WebInspector.Revealer.reveal(node);
+            }
         }
     },
 
@@ -513,21 +514,6 @@ WebInspector.ScreencastView.prototype = {
 
     },
 
-
-    /**
-     * @param {!DOMAgent.Quad} quad1
-     * @param {!DOMAgent.Quad} quad2
-     * @return {boolean}
-     */
-    _quadsAreEqual: function(quad1, quad2)
-    {
-        for (var i = 0; i < quad1.length; ++i) {
-            if (quad1[i] !== quad2[i])
-                return false;
-        }
-        return true;
-    },
-
     /**
      * @param {!DOMAgent.RGBA} color
      * @return {string}
@@ -719,7 +705,7 @@ WebInspector.ScreencastView.prototype = {
 
     _createNavigationBar: function()
     {
-        this._navigationBar = this.element.createChild("div", "toolbar-background toolbar-colors screencast-navigation");
+        this._navigationBar = this.element.createChild("div", "toolbar-background screencast-navigation");
         if (Runtime.queryParam("hideNavigation"))
             this._navigationBar.classList.add("hidden");
 

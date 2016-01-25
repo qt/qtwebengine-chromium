@@ -21,6 +21,9 @@ class LayerTreeHost;
 }
 
 namespace blimp {
+namespace client {
+
+class RenderWidgetFeature;
 
 // An Android specific version of the BlimpCompositor.  This class builds a
 // gfx::AcceleratedWidget out of an Android SurfaceView's surface.
@@ -31,15 +34,13 @@ class BlimpCompositorAndroid : public BlimpCompositor {
   // area not including system decorations (see android.view.Display.getSize()).
   // |dp_to_px| is the scale factor that is required to convert from dp device
   // pixels) to px.
-  static scoped_ptr<BlimpCompositorAndroid> Create(const gfx::Size& real_size,
-                                                   const gfx::Size& size,
-                                                   float dp_to_px);
+  static scoped_ptr<BlimpCompositorAndroid> Create(
+      const gfx::Size& real_size,
+      const gfx::Size& size,
+      float dp_to_px,
+      RenderWidgetFeature* render_widget_feature);
 
   ~BlimpCompositorAndroid() override;
-
-  // Takes a reference to the ANativeWindow backing |jsurface|, to use to render
-  // to, and releases any previously-held reference.
-  void SetSurface(JNIEnv* env, jobject jsurface);
 
  protected:
   // |size| is the size of the display.  |real_size_supported| determines
@@ -48,10 +49,10 @@ class BlimpCompositorAndroid : public BlimpCompositor {
   // is required to convert from dp (device pixels) to px.
   BlimpCompositorAndroid(const gfx::Size& size,
                          bool real_size_supported,
-                         float dp_to_px);
+                         float dp_to_px,
+                         RenderWidgetFeature* render_widget_feature);
 
   // BlimpCompositor implementation.
-  gfx::AcceleratedWidget GetWindow() override;
   void GenerateLayerTreeSettings(cc::LayerTreeSettings* settings);
 
  private:
@@ -65,11 +66,10 @@ class BlimpCompositorAndroid : public BlimpCompositor {
   // physical dimensions, including any area occupied by system decorations.
   bool real_size_supported_;
 
-  gfx::AcceleratedWidget window_;
-
   DISALLOW_COPY_AND_ASSIGN(BlimpCompositorAndroid);
 };
 
+}  // namespace client
 }  // namespace blimp
 
 #endif  // BLIMP_CLIENT_COMPOSITOR_BLIMP_COMPOSITOR_ANDROID_H_

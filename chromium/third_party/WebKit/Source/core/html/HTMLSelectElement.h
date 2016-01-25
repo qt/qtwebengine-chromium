@@ -42,7 +42,7 @@ class HTMLOptionElementOrHTMLOptGroupElement;
 class HTMLElementOrLong;
 class PopupMenu;
 
-class CORE_EXPORT HTMLSelectElement final : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+class CORE_EXPORT HTMLSelectElement final : public HTMLFormControlElementWithState, private TypeAheadDataSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&);
@@ -63,9 +63,12 @@ public:
     void resetImpl() override;
 
     unsigned length() const;
+    void setLength(unsigned, ExceptionState&);
 
     unsigned size() const { return m_size; }
+    void setSize(unsigned);
     bool multiple() const { return m_multiple; }
+    void setMultiple(bool);
 
     bool usesMenuList() const;
 
@@ -88,17 +91,13 @@ public:
     void invalidateSelectedItems();
     void updateListItemSelectedStates();
 
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& listItems() const;
+    using ListItems = WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>;
+    const ListItems& listItems() const;
 
     void accessKeyAction(bool sendMouseEvents) override;
     void accessKeySetSelectedIndex(int);
 
-    void setMultiple(bool);
-
-    void setSize(unsigned);
-
     void setOption(unsigned index, HTMLOptionElement*, ExceptionState&);
-    void setLength(unsigned, ExceptionState&);
 
     Element* namedItem(const AtomicString& name);
     HTMLOptionElement* item(unsigned index);
@@ -180,7 +179,7 @@ private:
     FormControlState saveFormControlState() const override;
     void restoreFormControlState(const FormControlState&) override;
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
 
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
@@ -200,8 +199,6 @@ private:
     // Returns the first selected OPTION, or nullptr.
     HTMLOptionElement* selectedOption() const;
 
-    InsertionNotificationRequest insertedInto(ContainerNode*) override;
-
     bool isOptionalFormControl() const override { return !isRequiredFormControl(); }
     bool isRequiredFormControl() const override;
 
@@ -210,7 +207,7 @@ private:
     enum SelectOptionFlag {
         DeselectOtherOptions = 1 << 0,
         DispatchInputAndChangeEvent = 1 << 1,
-        UserDriven = 1 << 2,
+        MakeOptionDirty = 1 << 2,
     };
     typedef unsigned SelectOptionFlags;
     void selectOption(int optionIndex, SelectOptionFlags = 0);
@@ -240,6 +237,7 @@ private:
     int nextSelectableListIndexPageAway(int startIndex, SkipDirection) const;
     int listIndexForEventTargetOption(const Event&);
     AutoscrollController* autoscrollController() const;
+    void scrollToIndexTask();
 
     void childrenChanged(const ChildrenChange&) override;
     bool areAuthorShadowsAllowed() const override { return false; }
@@ -250,8 +248,9 @@ private:
     int optionCount() const override;
     String optionAtIndex(int index) const override;
 
-    // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
-    mutable WillBeHeapVector<RawPtrWillBeMember<HTMLElement>> m_listItems;
+    // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and
+    // HTMLHRElement objects.
+    mutable ListItems m_listItems;
     Vector<bool> m_lastOnChangeSelection;
     Vector<bool> m_cachedStateForActiveSelection;
     TypeAhead m_typeAhead;
@@ -259,7 +258,7 @@ private:
     RefPtrWillBeMember<HTMLOptionElement> m_lastOnChangeOption;
     int m_activeSelectionAnchorIndex;
     int m_activeSelectionEndIndex;
-    bool m_isProcessingUserDrivenChange;
+    RefPtrWillBeMember<HTMLOptionElement> m_optionToScrollTo;
     bool m_multiple;
     bool m_activeSelectionState;
     mutable bool m_shouldRecalcListItems;

@@ -4,6 +4,8 @@
 
 #include "base/trace_event/memory_allocator_dump.h"
 
+#include <stdint.h>
+
 #include "base/format_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/memory_allocator_dump_guid.h"
@@ -12,6 +14,7 @@
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -82,7 +85,7 @@ void CheckString(const MemoryAllocatorDump* dump,
 void CheckScalar(const MemoryAllocatorDump* dump,
                  const std::string& name,
                  const char* expected_units,
-                 uint64 expected_value) {
+                 uint64_t expected_value) {
   CheckString(dump, name, MemoryAllocatorDump::kTypeScalar, expected_units,
               StringPrintf("%" PRIx64, expected_value));
 }
@@ -125,7 +128,7 @@ TEST(MemoryAllocatorDumpTest, GuidGeneration) {
 
 TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
   FakeMemoryAllocatorDumpProvider fmadp;
-  ProcessMemoryDump pmd(make_scoped_refptr(new MemoryDumpSessionState()));
+  ProcessMemoryDump pmd(new MemoryDumpSessionState(nullptr, nullptr));
   MemoryDumpArgs dump_args = {MemoryDumpLevelOfDetail::DETAILED};
 
   fmadp.OnMemoryDump(dump_args, &pmd);
@@ -172,7 +175,7 @@ TEST(MemoryAllocatorDumpTest, DumpIntoProcessMemoryDump) {
 #if !defined(NDEBUG) && !defined(OS_ANDROID) && !defined(OS_IOS)
 TEST(MemoryAllocatorDumpTest, ForbidDuplicatesDeathTest) {
   FakeMemoryAllocatorDumpProvider fmadp;
-  ProcessMemoryDump pmd(make_scoped_refptr(new MemoryDumpSessionState()));
+  ProcessMemoryDump pmd(new MemoryDumpSessionState(nullptr, nullptr));
   pmd.CreateAllocatorDump("foo_allocator");
   pmd.CreateAllocatorDump("bar_allocator/heap");
   ASSERT_DEATH(pmd.CreateAllocatorDump("foo_allocator"), "");

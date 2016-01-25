@@ -10,6 +10,7 @@
 #include "SkBitmap.h"
 #include "SkPDFGraphicState.h"
 #include "SkPDFShader.h"
+#include "SkPixelSerializer.h"
 #include "SkTDArray.h"
 #include "SkTHash.h"
 
@@ -78,6 +79,10 @@ public:
     void addPDFBitmap(uint32_t imageUniqueID, SkPDFObject*);
     const SkImage* bitmapToImage(const SkBitmap&);
 
+    SkTHashMap<uint32_t, bool> fCanEmbedTypeface;
+
+    SkAutoTUnref<SkPixelSerializer> fPixelSerializer;
+
 private:
     struct FontRec {
         SkPDFFont* fFont;
@@ -100,10 +105,12 @@ private:
             SkASSERT(rhs.fPtr);
             return *fPtr == *rhs.fPtr;
         }
-        static uint32_t Hash(const WrapGS& w) {
-            SkASSERT(w.fPtr);
-            return w.fPtr->hash();
-        }
+        struct Hash {
+            uint32_t operator()(const WrapGS& w) const {
+                SkASSERT(w.fPtr);
+                return w.fPtr->hash();
+            }
+        };
     };
     SkTHashSet<WrapGS, WrapGS::Hash> fGraphicStateRecords;
 

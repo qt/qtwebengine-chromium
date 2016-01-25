@@ -28,12 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/Character.h"
 
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 #include <algorithm>
+#include <unicode/uscript.h>
 
 using namespace WTF;
 using namespace Unicode;
@@ -342,16 +342,6 @@ bool Character::isCJKIdeographOrSymbol(UChar32 c)
     if (c < 0x2C7)
         return false;
 
-    // Hash lookup for isolated symbols (those not part of a contiguous range)
-    static HashSet<UChar32>* cjkIsolatedSymbols = 0;
-    if (!cjkIsolatedSymbols) {
-        cjkIsolatedSymbols = new HashSet<UChar32>();
-        for (size_t i = 0; i < WTF_ARRAY_LENGTH(cjkIsolatedSymbolsArray); ++i)
-            cjkIsolatedSymbols->add(cjkIsolatedSymbolsArray[i]);
-    }
-    if (cjkIsolatedSymbols->contains(c))
-        return true;
-
     if (isCJKIdeograph(c))
         return true;
 
@@ -367,6 +357,11 @@ bool Character::isCJKIdeographOrSymbol(UChar32 c)
         0x2600, 0x2603,
         0x2660, 0x266F,
         0x2672, 0x267D,
+        // Emoji HEAVY HEART EXCLAMATION MARK ORNAMENT..HEAVY BLACK HEART
+        // Needed in order not to break Emoji heart-kiss sequences in
+        // CachingWordShapeIterator.
+        // cmp. http://www.unicode.org/emoji/charts/emoji-zwj-sequences.html
+        0x2763, 0x2764,
         0x2776, 0x277F,
         // Ideographic Description Characters, with CJK Symbols and Punctuation, excluding 0x3030.
         // Then Hiragana 0x3040 .. 0x309F, Katakana 0x30A0 .. 0x30FF, Bopomofo 0x3100 .. 0x312F
@@ -393,7 +388,23 @@ bool Character::isCJKIdeographOrSymbol(UChar32 c)
         0x1F200, 0x1F6FF
     };
 
-    return valueInIntervalList(cjkSymbolRanges, c);
+    if (c >= cjkSymbolRanges[0]
+        && c <= cjkSymbolRanges[WTF_ARRAY_LENGTH(cjkSymbolRanges) - 1]
+        && valueInIntervalList(cjkSymbolRanges, c)) {
+        return true;
+    }
+
+    if (c < 0x2020 && c > 0x2D9)
+        return false;
+
+    // Hash lookup for isolated symbols (those not part of a contiguous range)
+    static HashSet<UChar32>* cjkIsolatedSymbols = 0;
+    if (!cjkIsolatedSymbols) {
+        cjkIsolatedSymbols = new HashSet<UChar32>();
+        for (size_t i = 0; i < WTF_ARRAY_LENGTH(cjkIsolatedSymbolsArray); ++i)
+            cjkIsolatedSymbols->add(cjkIsolatedSymbolsArray[i]);
+    }
+    return cjkIsolatedSymbols->contains(c);
 }
 
 unsigned Character::expansionOpportunityCount(const LChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion, const TextJustify textJustify)
@@ -510,6 +521,13 @@ String Character::normalizeSpaces(const LChar* characters, unsigned length)
 String Character::normalizeSpaces(const UChar* characters, unsigned length)
 {
     return normalizeSpacesInternal(characters, length);
+}
+
+bool Character::isCommonOrInheritedScript(UChar32 character)
+{
+    UErrorCode status = U_ZERO_ERROR;
+    UScriptCode script = uscript_getScript(character, &status);
+    return U_SUCCESS(status) && (script == USCRIPT_COMMON || script == USCRIPT_INHERITED);
 }
 
 } // namespace blink

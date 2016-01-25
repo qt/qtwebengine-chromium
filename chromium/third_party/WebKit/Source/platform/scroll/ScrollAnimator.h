@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, Google Inc. All rights reserved.
+ * Copyright (c) 2011, Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,84 +31,54 @@
 #ifndef ScrollAnimator_h
 #define ScrollAnimator_h
 
-#include "platform/PlatformExport.h"
-#include "platform/PlatformWheelEvent.h"
-#include "platform/geometry/FloatSize.h"
-#include "platform/scroll/ScrollTypes.h"
-#include "wtf/Forward.h"
+#include "platform/Timer.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/scroll/ScrollAnimatorBase.h"
+#include "public/platform/WebCompositorAnimationDelegate.h"
+#include "public/platform/WebCompositorAnimationPlayerClient.h"
+#include "public/platform/WebScrollOffsetAnimationCurve.h"
 
 namespace blink {
 
-class FloatPoint;
-class ScrollableArea;
-class Scrollbar;
+class ScrollAnimatorTest;
+class WebCompositorAnimationTimeline;
 
-class PLATFORM_EXPORT ScrollAnimator {
+class PLATFORM_EXPORT ScrollAnimator final : public ScrollAnimatorBase {
 public:
-    static PassOwnPtr<ScrollAnimator> create(ScrollableArea*);
+    explicit ScrollAnimator(ScrollableArea*, WTF::TimeFunction = WTF::monotonicallyIncreasingTime);
+    ~ScrollAnimator() override;
 
-    virtual ~ScrollAnimator();
+    bool hasRunningAnimation() const;
+    float computeDeltaToConsume(ScrollbarOrientation, float pixelDelta) const override;
 
-    // Computes a scroll destination for the given parameters.  The returned
-    // ScrollResultOneDimensional will have didScroll set to false if already at
-    // the destination.  Otherwise, starts scrolling towards the destination and
-    // didScroll is true.  Scrolling may be immediate or animated. The base
-    // class implementation always scrolls immediately, never animates.
-    virtual ScrollResultOneDimensional userScroll(ScrollbarOrientation, ScrollGranularity, float step, float delta);
+    ScrollResultOneDimensional userScroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
+    void scrollToOffsetWithoutAnimation(const FloatPoint&) override;
+    FloatPoint desiredTargetPosition() const override;
 
-    virtual void scrollToOffsetWithoutAnimation(const FloatPoint&);
+    // ScrollAnimatorCompositorCoordinator implementation.
+    void tickAnimation(double monotonicTime) override;
+    void cancelAnimation() override;
+    void resetAnimationState() override;
+    void updateCompositorAnimations() override;
+    void notifyCompositorAnimationFinished(int groupId) override;
+    void notifyCompositorAnimationAborted(int groupId) override;
+    void layerForCompositedScrollingDidChange(WebCompositorAnimationTimeline*) override;
 
-    ScrollableArea* scrollableArea() const { return m_scrollableArea; }
+    DECLARE_VIRTUAL_TRACE();
 
-    virtual void setIsActive() { }
-
-#if OS(MACOSX)
-    virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
-#endif
-
-    void setCurrentPosition(const FloatPoint&);
-    FloatPoint currentPosition() const;
-
-    virtual void cancelAnimations() { }
-    virtual void serviceScrollAnimations() { }
-    virtual bool hasRunningAnimation() const { return false; }
-
-    virtual void contentAreaWillPaint() const { }
-    virtual void mouseEnteredContentArea() const { }
-    virtual void mouseExitedContentArea() const { }
-    virtual void mouseMovedInContentArea() const { }
-    virtual void mouseEnteredScrollbar(Scrollbar*) const { }
-    virtual void mouseExitedScrollbar(Scrollbar*) const { }
-    virtual void willStartLiveResize() { }
-    virtual void updateAfterLayout() { }
-    virtual void contentsResized() const { }
-    virtual void willEndLiveResize() { }
-    virtual void contentAreaDidShow() const { }
-    virtual void contentAreaDidHide() const { }
-
-    virtual void finishCurrentScrollAnimations() { }
-
-    virtual void didAddVerticalScrollbar(Scrollbar*) { }
-    virtual void willRemoveVerticalScrollbar(Scrollbar*) { }
-    virtual void didAddHorizontalScrollbar(Scrollbar*) { }
-    virtual void willRemoveHorizontalScrollbar(Scrollbar*) { }
-
-    virtual bool shouldScrollbarParticipateInHitTesting(Scrollbar*) { return true; }
-
-    virtual void notifyContentAreaScrolled(const FloatSize&) { }
-
-    virtual bool setScrollbarsVisibleForTesting(bool) { return false; }
 protected:
-    explicit ScrollAnimator(ScrollableArea*);
-
-    virtual void notifyPositionChanged();
-
-    ScrollableArea* m_scrollableArea;
-    float m_currentPosX; // We avoid using a FloatPoint in order to reduce
-    float m_currentPosY; // subclass code complexity.
+    OwnPtr<WebScrollOffsetAnimationCurve> m_animationCurve;
+    double m_startTime;
+    WTF::TimeFunction m_timeFunction;
 
 private:
-    float clampScrollPosition(ScrollbarOrientation, float);
+    // Returns true if the animation was scheduled successfully. If animation
+    // could not be scheduled (e.g. because the frame is detached), scrolls
+    // immediately to the target and returns false.
+    bool registerAndScheduleAnimation();
+
+    FloatPoint m_targetOffset;
+    ScrollGranularity m_lastGranularity;
 };
 
 } // namespace blink

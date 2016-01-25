@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/animation/KeyframeEffect.h"
 
 #include "bindings/core/v8/Dictionary.h"
@@ -98,6 +97,8 @@ void KeyframeEffect::attach(Animation* animation)
     if (m_target) {
         m_target->ensureElementAnimations().animations().add(animation);
         m_target->setNeedsAnimationStyleRecalc();
+        if (RuntimeEnabledFeatures::webAnimationsSVGEnabled() && m_target->isSVGElement())
+            toSVGElement(m_target)->setWebAnimationsPending();
     }
     AnimationEffect::attach(animation);
 }
@@ -122,7 +123,7 @@ void KeyframeEffect::specifiedTimingChanged()
 
 static AnimationStack& ensureAnimationStack(Element* element)
 {
-    return element->ensureElementAnimations().defaultStack();
+    return element->ensureElementAnimations().animationStack();
 }
 
 bool KeyframeEffect::hasMultipleTransformProperties() const
@@ -176,24 +177,28 @@ void KeyframeEffect::applyEffects()
 
     double iteration = currentIteration();
     ASSERT(iteration >= 0);
-    OwnPtr<Vector<RefPtr<Interpolation>>> interpolations = m_sampledEffect ? m_sampledEffect->mutableInterpolations() : nullptr;
-    bool changed = m_model->sample(clampTo<int>(iteration, 0), timeFraction(), iterationDuration(), interpolations);
+    bool changed = false;
     if (m_sampledEffect) {
-        m_sampledEffect->setInterpolations(interpolations.release());
-    } else if (interpolations && !interpolations->isEmpty()) {
-        SampledEffect* sampledEffect = SampledEffect::create(this, interpolations.release());
-        m_sampledEffect = sampledEffect;
-        ensureAnimationStack(m_target).add(sampledEffect);
-        changed = true;
+        changed = m_model->sample(clampTo<int>(iteration, 0), timeFraction(), iterationDuration(), m_sampledEffect->mutableInterpolations());
     } else {
-        return;
+        Vector<RefPtr<Interpolation>> interpolations;
+        m_model->sample(clampTo<int>(iteration, 0), timeFraction(), iterationDuration(), interpolations);
+        if (!interpolations.isEmpty()) {
+            SampledEffect* sampledEffect = SampledEffect::create(this);
+            sampledEffect->mutableInterpolations().swap(interpolations);
+            m_sampledEffect = sampledEffect;
+            ensureAnimationStack(m_target).add(sampledEffect);
+            changed = true;
+        } else {
+            return;
+        }
     }
 
-    if (changed)
+    if (changed) {
         m_target->setNeedsAnimationStyleRecalc();
-
-    if (m_target->isSVGElement())
-        m_sampledEffect->applySVGUpdate(toSVGElement(*m_target));
+        if (RuntimeEnabledFeatures::webAnimationsSVGEnabled() && m_target->isSVGElement())
+            toSVGElement(*m_target).setWebAnimationsPending();
+    }
 }
 
 void KeyframeEffect::clearEffects()
@@ -205,6 +210,8 @@ void KeyframeEffect::clearEffects()
     m_sampledEffect = nullptr;
     restartAnimationOnCompositor();
     m_target->setNeedsAnimationStyleRecalc();
+    if (RuntimeEnabledFeatures::webAnimationsSVGEnabled() && m_target->isSVGElement())
+        toSVGElement(*m_target).clearWebAnimatedAttributes();
     invalidate();
 }
 
@@ -220,7 +227,7 @@ void KeyframeEffect::updateChildrenAndEffects() const
 
 double KeyframeEffect::calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const
 {
-    const double start = startTimeInternal() + specifiedTiming().startDelay;
+    const double start = specifiedTiming().startDelay;
     const double end = start + activeDurationInternal();
 
     switch (phase()) {

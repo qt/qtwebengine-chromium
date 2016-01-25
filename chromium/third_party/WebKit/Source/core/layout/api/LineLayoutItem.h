@@ -25,7 +25,7 @@ class LineLayoutPaintShim;
 enum HitTestFilter;
 
 class LineLayoutItem {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     explicit LineLayoutItem(LayoutObject* layoutObject)
         : m_layoutObject(layoutObject)
@@ -43,6 +43,16 @@ public:
     // switching all of core/layout/line to using the API.
     // https://crbug.com/499321
     operator LayoutObject*() const { return m_layoutObject; }
+
+    bool isEqual(const LayoutObject* layoutObject) const
+    {
+        return m_layoutObject == layoutObject;
+    }
+
+    String debugName() const
+    {
+        return m_layoutObject->debugName();
+    }
 
     bool needsLayout() const
     {
@@ -209,6 +219,11 @@ public:
         return m_layoutObject->isInlineBlockOrInlineTable();
     }
 
+    bool isInlineElementContinuation() const
+    {
+        return m_layoutObject->isInlineElementContinuation();
+    }
+
     bool isLayoutBlock() const
     {
         return m_layoutObject->isLayoutBlock();
@@ -229,9 +244,9 @@ public:
         return m_layoutObject->isListMarker();
     }
 
-    bool isReplaced() const
+    bool isAtomicInlineLevel() const
     {
-        return m_layoutObject->isReplaced();
+        return m_layoutObject->isAtomicInlineLevel();
     }
 
     bool isRubyRun() const
@@ -299,9 +314,19 @@ public:
         return m_layoutObject->hitTest(result, locationInContainer, accumulatedOffset, filter);
     }
 
+    SelectionState selectionState() const
+    {
+        return m_layoutObject->selectionState();
+    }
+
     Color selectionBackgroundColor() const
     {
         return m_layoutObject->selectionBackgroundColor();
+    }
+
+    bool isInFlowPositioned() const
+    {
+        return m_layoutObject->isInFlowPositioned();
     }
 
     PositionWithAffinity positionForPoint(const LayoutPoint& point)
@@ -312,6 +337,26 @@ public:
     PositionWithAffinity createPositionWithAffinity(int offset, TextAffinity affinity)
     {
         return m_layoutObject->createPositionWithAffinity(offset, affinity);
+    }
+
+    LineLayoutItem previousInPreOrder(const LayoutObject* stayWithin) const
+    {
+        return LineLayoutItem(m_layoutObject->previousInPreOrder(stayWithin));
+    }
+
+    FloatQuad localToAbsoluteQuad(const FloatQuad& quad, MapCoordinatesFlags mode = 0, bool* wasFixed = nullptr) const
+    {
+        return m_layoutObject->localToAbsoluteQuad(quad, mode, wasFixed);
+    }
+
+    int previousOffset(int current) const
+    {
+        return m_layoutObject->previousOffset(current);
+    }
+
+    int nextOffset(int current) const
+    {
+        return m_layoutObject->nextOffset(current);
     }
 
 #ifndef NDEBUG

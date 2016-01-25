@@ -27,7 +27,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "config.h"
 #include "bindings/core/v8/custom/V8CustomXPathNSResolver.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -66,15 +65,14 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
         lookupNamespaceURIFunc = v8::Local<v8::Function>::Cast(lookupNamespaceURI);
 
     if (lookupNamespaceURIFunc.IsEmpty() && !m_resolver->IsFunction()) {
-        // TODO(bashi): Probably we should use toDOMWindow(m_scriptState->context()).
-        LocalFrame* frame = callingDOMWindow(isolate)->frame();
+        LocalFrame* frame = toLocalDOMWindow(toDOMWindow(m_scriptState->context()))->frame();
         if (frame && frame->host())
             frame->console().addMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method."));
         return nullAtom;
     }
 
     // Catch exceptions from calling the namespace resolver.
-    v8::TryCatch tryCatch;
+    v8::TryCatch tryCatch(isolate);
     tryCatch.SetVerbose(true); // Print exceptions to console.
 
     const int argc = 1;
@@ -83,8 +81,7 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
 
     v8::Local<v8::Value> retval;
     // Eat exceptions from namespace resolver and return an empty string. This will most likely cause NamespaceError.
-    // TODO(bashi): Probably we should use toExecutionContext(m_scriptState->context()).
-    if (!ScriptController::callFunction(callingExecutionContext(isolate), function, m_resolver, argc, argv, isolate).ToLocal(&retval))
+    if (!ScriptController::callFunction(toExecutionContext(m_scriptState->context()), function, m_resolver, argc, argv, isolate).ToLocal(&retval))
         return nullAtom;
 
     TOSTRING_DEFAULT(V8StringResource<TreatNullAsNullString>, returnString, retval, nullAtom);

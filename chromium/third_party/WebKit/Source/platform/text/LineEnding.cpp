@@ -29,16 +29,20 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/LineEnding.h"
 
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
 namespace {
 
 class OutputBuffer {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(OutputBuffer);
 public:
+    OutputBuffer() { }
     virtual char* allocate(size_t) = 0;
     virtual void copy(const CString&) = 0;
     virtual ~OutputBuffer() { }

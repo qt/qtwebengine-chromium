@@ -9,7 +9,6 @@
   'defines': [
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=<(skia_static_initializers)',
     'SK_SUPPORT_GPU=<(skia_gpu)',
-    'SK_SUPPORT_OPENCL=<(skia_opencl)',
     'SK_FORCE_DISTANCE_FIELD_TEXT=<(skia_force_distance_field_text)',
   ],
   'conditions' : [
@@ -123,13 +122,13 @@
         'conditions' : [
           # Gyp's ninja generator depends on these specially named
           # configurations to build 64-bit on Windows.
-          # See http://skbug.com/2348
+          # See https://bug.skia.org/2348
           #
           # We handle the 64- vs 32-bit variations elsewhere, so I think it's
           # OK for us to just make these inherit non-archwidth-specific
           # configurations without modification.
           #
-          # See http://skbug.com/2442 : These targets cause problems in the
+          # See https://bug.skia.org/2442 : These targets cause problems in the
           # MSVS build, so only include them if gyp is generating a ninja build.
           [ '"ninja" in "<!(echo %GYP_GENERATORS%)"', {
             'configurations': {
@@ -389,6 +388,16 @@
       ],
     }],
 
+    [ 'skia_use_sdl == 1',
+      {
+        'defines': [ 'SK_USE_SDL' ],
+    }],
+
+    [ 'skia_dump_stats == 1',
+      {
+        'defines': [ 'SK_DUMP_STATS'],
+    }],
+
     [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]',
       {
         'defines': [
@@ -425,18 +434,17 @@
           }],
           # Enable asan, tsan, etc.
           [ 'skia_sanitizer', {
+            'cflags_cc!': [ '-fno-rtti' ],                        # vptr needs rtti
             'cflags': [
-              '-fsanitize=<(skia_sanitizer)',
+              '-fsanitize=<(skia_sanitizer)',                     # Turn on sanitizers.
+              '-fno-sanitize-recover=<(skia_sanitizer)',          # Make any failure fatal.
+              '-fsanitize-blacklist=<(skia_sanitizer_blacklist)', # Compile in our blacklist.
+              '-include <(skia_sanitizer_blacklist)',             # Make every .cpp depend on it.
             ],
-            'ldflags': [
-              '-fsanitize=<(skia_sanitizer)',
-            ],
+            'ldflags': [ '-fsanitize=<(skia_sanitizer)' ],
             'conditions' : [
               [ 'skia_sanitizer == "thread"', {
                 'defines': [ 'THREAD_SANITIZER' ],
-              }],
-              [ 'skia_sanitizer == "undefined"', {
-                'cflags_cc!': ['-fno-rtti'],
               }],
             ],
           }],
@@ -464,6 +472,10 @@
     [ 'skia_os == "mac"',
       {
         'defines': [ 'SK_BUILD_FOR_MAC' ],
+        'conditions': [
+            # ANGLE for mac hits -Wunneeded-internal-declaration if this isn't set.
+            [ 'skia_angle', { 'defines': [ 'YY_NO_INPUT' ], } ],
+        ],
         'configurations': {
           'Coverage': {
             'xcode_settings': {
@@ -487,11 +499,27 @@
             [ 'skia_arch_type == "x86"', { 'ARCHS': ['i386']   }],
             [ 'skia_arch_type == "x86_64"', { 'ARCHS': ['x86_64'] }],
             [ 'skia_osx_deployment_target==""', {
-              'MACOSX_DEPLOYMENT_TARGET': '10.6', # -mmacos-version-min, passed in env to ld.
+              'MACOSX_DEPLOYMENT_TARGET': '10.7', # -mmacos-version-min, passed in env to ld.
             }, {
               'MACOSX_DEPLOYMENT_TARGET': '<(skia_osx_deployment_target)',
             }],
+            [ 'skia_sanitizer', {
+              'GCC_ENABLE_CPP_RTTI': 'YES',                         # vptr needs rtti
+              'OTHER_CFLAGS': [
+                '-fsanitize=<(skia_sanitizer)',                     # Turn on sanitizers.
+                '-fno-sanitize-recover=<(skia_sanitizer)',          # Make any failure fatal.
+                '-fsanitize-blacklist=<(skia_sanitizer_blacklist)', # Compile in our blacklist.
+                '-include <(skia_sanitizer_blacklist)',             # Make every .cpp depend on it.
+              ],
+              # We want to pass -fsanitize=... to our final link call,
+              # but not to libtool. OTHER_LDFLAGS is passed to both.
+              # To trick GYP into doing what we want, we'll piggyback on
+              # LIBRARY_SEARCH_PATHS, producing "-L/usr/lib -fsanitize=...".
+              # The -L/usr/lib is redundant but innocuous: it's a default path.
+              'LIBRARY_SEARCH_PATHS': [ '/usr/lib -fsanitize=<(skia_sanitizer)'],
+            }],
           ],
+          'CLANG_CXX_LIBRARY':                         'libc++',
           'CLANG_CXX_LANGUAGE_STANDARD':               'c++11',
           'GCC_ENABLE_CPP_EXCEPTIONS':                 'NO',   # -fno-exceptions
           'GCC_ENABLE_CPP_RTTI':                       'NO',   # -fno-rtti
@@ -544,16 +572,19 @@
         'xcode_settings': {
           'ARCHS': ['armv7'],
           'CODE_SIGNING_REQUIRED': 'NO',
-          'CODE_SIGN_IDENTITY[sdk=iphoneos*]': 'iPhone Developer: Google Development (3F4Y5873JF)',
           'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_sdk_version)',
           'SDKROOT': 'iphoneos',
           'TARGETED_DEVICE_FAMILY': '1,2',
-          'OTHER_CPLUSPLUSFLAGS': [
-            '-std=c++0x',
-            '-fvisibility=hidden',
-            '-fvisibility-inlines-hidden',
-          ],
-          'GCC_THUMB_SUPPORT': 'NO',
+
+          'CLANG_CXX_LIBRARY':              'libc++',
+          'CLANG_CXX_LANGUAGE_STANDARD':    'c++11',
+          'GCC_ENABLE_CPP_EXCEPTIONS':      'NO',   # -fno-exceptions
+          'GCC_ENABLE_CPP_RTTI':            'NO',   # -fno-rtti
+          'GCC_THREADSAFE_STATICS':         'NO',   # -fno-threadsafe-statics
+          'GCC_SYMBOLS_PRIVATE_EXTERN':     'NO',   # -fvisibility=hidden
+          'GCC_INLINES_ARE_PRIVATE_EXTERN': 'NO',   # -fvisibility-inlines-hidden
+
+          'GCC_THUMB_SUPPORT': 'NO',  # TODO(mtklein): why would we not want thumb?
         },
       },
     ],
@@ -601,7 +632,7 @@
             'defines': [
               'SKIA_DLL',
               'SKIA_IMPLEMENTATION=1',
-              # Needed until we fix skbug.com/2440.
+              # Needed until we fix https://bug.skia.org/2440 .
               'SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG',
             ],
           }],
@@ -616,6 +647,18 @@
       'defines': [
         # add flags here (e.g. SK_SUPPORT_LEGACY_...) needed by moz2d
       ],
+    }],
+
+    [ 'skia_command_buffer and skia_os == "linux"', {
+      'ldflags': [
+          '-Wl,-rpath,\$$ORIGIN/lib',
+      ],
+    }],
+
+    [ 'skia_command_buffer and skia_os == "mac"', {
+      'xcode_settings': {
+          'LD_RUNPATH_SEARCH_PATHS': ['@executable_path/.'],
+      },
     }],
 
   ], # end 'conditions'

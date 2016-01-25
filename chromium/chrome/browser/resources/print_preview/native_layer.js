@@ -67,8 +67,8 @@ cr.define('print_preview', function() {
         this.onEnableManipulateSettingsForTest_.bind(this);
     global.printPresetOptionsFromDocument =
         this.onPrintPresetOptionsFromDocument_.bind(this);
-   global.detectDistillablePage =
-        this.detectDistillablePage_.bind(this);
+   global.allowDistillPage =
+        this.allowDistillPage_.bind(this);
     global.onProvisionalPrinterResolved =
         this.onProvisionalDestinationResolved_.bind(this);
     global.failedToResolveProvisionalPrinter =
@@ -357,6 +357,7 @@ cr.define('print_preview', function() {
         'landscape': printTicketStore.landscape.getValue(),
         'color': this.getNativeColorModel_(destination, printTicketStore.color),
         'headerFooterEnabled': printTicketStore.headerFooter.getValue(),
+        'distillPage': printTicketStore.distillPage.getValue(),
         'marginsType': printTicketStore.marginsType.getValue(),
         'generateDraftData': true, // TODO(rltoscano): What should this be?
         'duplex': printTicketStore.duplex.getValue() ?
@@ -489,7 +490,8 @@ cr.define('print_preview', function() {
           initialSettings['documentHasSelection'] || false,
           initialSettings['shouldPrintSelectionOnly'] || false,
           initialSettings['printerName'] || null,
-          initialSettings['appState'] || null);
+          initialSettings['appState'] || null,
+          initialSettings['defaultDestinationSelectionRules'] || null);
 
       var initialSettingsSetEvent = new Event(
           NativeLayer.EventType.INITIAL_SETTINGS_SET);
@@ -740,13 +742,10 @@ cr.define('print_preview', function() {
     },
 
     /**
-      * Updates the interface to show the "Distill Page" option
-      * when PrintPreviewHandler::HandleIsPageDistillableResult
-      * determines that this page can be distilled with the
-      * DOM Distiller.
+      * Updates the interface to show the "Simplify Page" option.
       * @private
       */
-     detectDistillablePage_: function() {
+     allowDistillPage_: function() {
        var allowDistillPageEvent = new Event(
            NativeLayer.EventType.ALLOW_DISTILL_PAGE);
        this.dispatchEvent(allowDistillPageEvent);
@@ -932,6 +931,8 @@ cr.define('print_preview', function() {
    * @param {?string} systemDefaultDestinationId ID of the system default
    *     destination.
    * @param {?string} serializedAppStateStr Serialized app state.
+   * @param {?string} serializedDefaultDestinationSelectionRulesStr Serialized
+   *     default destination selection rules.
    * @constructor
    */
   function NativeInitialSettings(
@@ -946,7 +947,8 @@ cr.define('print_preview', function() {
       documentHasSelection,
       selectionOnly,
       systemDefaultDestinationId,
-      serializedAppStateStr) {
+      serializedAppStateStr,
+      serializedDefaultDestinationSelectionRulesStr) {
 
     /**
      * Whether the print preview should be in auto-print mode.
@@ -1031,6 +1033,14 @@ cr.define('print_preview', function() {
      * @private
      */
     this.serializedAppStateStr_ = serializedAppStateStr;
+
+    /**
+     * Serialized default destination selection rules.
+     * @type {?string}
+     * @private
+     */
+    this.serializedDefaultDestinationSelectionRulesStr_ =
+        serializedDefaultDestinationSelectionRulesStr;
   };
 
   NativeInitialSettings.prototype = {
@@ -1103,6 +1113,11 @@ cr.define('print_preview', function() {
     /** @return {?string} Serialized app state. */
     get serializedAppStateStr() {
       return this.serializedAppStateStr_;
+    },
+
+    /** @return {?string} Serialized default destination selection rules. */
+    get serializedDefaultDestinationSelectionRulesStr() {
+      return this.serializedDefaultDestinationSelectionRulesStr_;
     }
   };
 

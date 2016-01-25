@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorResourceAgent.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -50,7 +49,7 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorPageAgent.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/NetworkResourcesData.h"
@@ -67,6 +66,7 @@
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceLoadPriority.h"
+#include "platform/network/ResourceLoadTiming.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
@@ -367,11 +367,11 @@ static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse
             protocol = "spdy";
         } else if (response.isHTTP()) {
             protocol = "http";
-            if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTP_0_9)
+            if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTPVersion_0_9)
                 protocol = "http/0.9";
-            else if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTP_1_0)
+            else if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTPVersion_1_0)
                 protocol = "http/1.0";
-            else if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTP_1_1)
+            else if (response.httpVersion() == ResourceResponse::HTTPVersion::HTTPVersion_1_1)
                 protocol = "http/1.1";
         } else {
             protocol = response.url().protocol();
@@ -411,7 +411,8 @@ InspectorResourceAgent::~InspectorResourceAgent()
 
 DEFINE_TRACE(InspectorResourceAgent)
 {
-    visitor->trace(m_pageAgent);
+    visitor->trace(m_inspectedFrames);
+    visitor->trace(m_resourcesData);
     visitor->trace(m_replayXHRs);
     visitor->trace(m_replayXHRsToBeDeleted);
     visitor->trace(m_pendingXHRReplayData);
@@ -498,10 +499,10 @@ void InspectorResourceAgent::willSendRequest(LocalFrame* frame, unsigned long id
         request.setShouldResetAppCache(true);
     }
 
+    willSendRequestInternal(frame, identifier, loader, request, redirectResponse, initiatorInfo);
+
     if (!m_hostId.isEmpty())
         request.addHTTPHeaderField(kDevToolsEmulateNetworkConditionsClientId, AtomicString(m_hostId));
-
-    willSendRequestInternal(frame, identifier, loader, request, redirectResponse, initiatorInfo);
 }
 
 void InspectorResourceAgent::markResourceAsCached(unsigned long identifier)
@@ -650,7 +651,7 @@ void InspectorResourceAgent::delayedRemoveReplayXHR(XMLHttpRequest* xhr)
 
     m_replayXHRsToBeDeleted.add(xhr);
     m_replayXHRs.remove(xhr);
-    m_removeFinishedReplayXHRTimer.startOneShot(0, FROM_HERE);
+    m_removeFinishedReplayXHRTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 void InspectorResourceAgent::didFailXHRLoading(ExecutionContext* context, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url)
@@ -680,7 +681,7 @@ void InspectorResourceAgent::didFinishXHRInternal(ExecutionContext* context, XML
         String message = (success ? "XHR finished loading: " : "XHR failed loading: ") + method + " \"" + url + "\".";
         RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(NetworkMessageSource, DebugMessageLevel, message);
         consoleMessage->setRequestIdentifier(it->value);
-        m_pageAgent->frameHost()->consoleMessageStorage().reportMessage(context, consoleMessage.release());
+        m_inspectedFrames->root()->host()->consoleMessageStorage().reportMessage(context, consoleMessage.release());
     }
     m_knownRequestIdMap.remove(client);
 }
@@ -707,7 +708,7 @@ void InspectorResourceAgent::didFinishFetch(ExecutionContext* context, Threadabl
         String message = "Fetch complete: " + method + " \"" + url + "\".";
         RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(NetworkMessageSource, DebugMessageLevel, message);
         consoleMessage->setRequestIdentifier(it->value);
-        m_pageAgent->frameHost()->consoleMessageStorage().reportMessage(context, consoleMessage.release());
+        m_inspectedFrames->root()->host()->consoleMessageStorage().reportMessage(context, consoleMessage.release());
     }
     m_knownRequestIdMap.remove(client);
 }
@@ -735,16 +736,14 @@ void InspectorResourceAgent::didFinishEventSourceRequest(ThreadableLoaderClient*
 
 void InspectorResourceAgent::willDestroyResource(Resource* cachedResource)
 {
-    Vector<String> requestIds = m_resourcesData->removeResource(cachedResource);
-    if (!requestIds.size())
-        return;
-
     String content;
     bool base64Encoded;
-    if (!InspectorPageAgent::cachedResourceContent(cachedResource, &content, &base64Encoded))
-        return;
-    for (auto& request : requestIds)
-        m_resourcesData->setResourceContent(request, content, base64Encoded);
+    bool hasContent = InspectorPageAgent::cachedResourceContent(cachedResource, &content, &base64Encoded);
+    Vector<String> requestIds = m_resourcesData->removeResource(cachedResource);
+    if (hasContent) {
+        for (auto& request : requestIds)
+            m_resourcesData->setResourceContent(request, content, base64Encoded);
+    }
 }
 
 void InspectorResourceAgent::applyUserAgentOverride(String* userAgent)
@@ -904,7 +903,7 @@ bool InspectorResourceAgent::getResponseBodyBlob(const String& requestId, PassRe
     if (!resourceData)
         return false;
     if (BlobDataHandle* blob = resourceData->downloadedFileBlob()) {
-        if (LocalFrame* frame = IdentifiersFactory::frameById(m_pageAgent->inspectedFrame(), resourceData->frameId())) {
+        if (LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, resourceData->frameId())) {
             if (Document* document = frame->document()) {
                 InspectorFileReaderLoaderClient* client = new InspectorFileReaderLoaderClient(blob, InspectorPageAgent::createResourceTextDecoder(resourceData->mimeType(), resourceData->textEncodingName()), callback);
                 client->start(document);
@@ -1024,10 +1023,6 @@ void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
     m_state->setBoolean(ResourceAgentState::cacheDisabled, cacheDisabled);
     if (cacheDisabled)
         memoryCache()->evictResources();
-    for (Frame* frame = m_pageAgent->inspectedFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (frame->isLocalFrame())
-            toLocalFrame(frame)->document()->fetcher()->garbageCollectDocumentResources();
-    }
 }
 
 void InspectorResourceAgent::emulateNetworkConditions(ErrorString*, bool, double, double, double)
@@ -1041,7 +1036,7 @@ void InspectorResourceAgent::setDataSizeLimitsForTest(ErrorString*, int maxTotal
 
 void InspectorResourceAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
-    if (loader->frame() != m_pageAgent->inspectedFrame())
+    if (loader->frame() != m_inspectedFrames->root())
         return;
 
     if (m_state->getBoolean(ResourceAgentState::cacheDisabled))
@@ -1091,10 +1086,10 @@ void InspectorResourceAgent::removeFinishedReplayXHRFired(Timer<InspectorResourc
     m_replayXHRsToBeDeleted.clear();
 }
 
-InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
+InspectorResourceAgent::InspectorResourceAgent(InspectedFrames* inspectedFrames)
     : InspectorBaseAgent<InspectorResourceAgent, InspectorFrontend::Network>("Network")
-    , m_pageAgent(pageAgent)
-    , m_resourcesData(adoptPtr(new NetworkResourcesData()))
+    , m_inspectedFrames(inspectedFrames)
+    , m_resourcesData(NetworkResourcesData::create())
     , m_pendingRequest(nullptr)
     , m_isRecalculatingStyle(false)
     , m_removeFinishedReplayXHRTimer(this, &InspectorResourceAgent::removeFinishedReplayXHRFired)

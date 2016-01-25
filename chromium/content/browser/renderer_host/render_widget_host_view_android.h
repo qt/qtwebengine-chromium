@@ -5,12 +5,16 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_ANDROID_H_
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_ANDROID_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 #include <queue>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
@@ -26,8 +30,8 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/readback_types.h"
 #include "gpu/command_buffer/common/mailbox.h"
-#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/android/window_android_observer.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
 #include "ui/gfx/geometry/size.h"
@@ -57,6 +61,7 @@ class ContentViewCoreImpl;
 class OverscrollControllerAndroid;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
+class SynchronousCompositorBase;
 struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
 
@@ -131,7 +136,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) override;
+      const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
   bool CanCopyToVideoFrame() const override;
   void GetScreenInfo(blink::WebScreenInfo* results) override;
   bool GetScreenColorProfile(std::vector<char>* color_profile) override;
@@ -147,7 +152,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       BrowserAccessibilityDelegate* delegate) override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  void OnSwapCompositorFrame(uint32 output_surface_id,
+  void OnSwapCompositorFrame(uint32_t output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
   void ClearCompositorFrame() override;
   void DidOverscroll(const DidOverscrollParams& params) override;
@@ -168,6 +173,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // cc::SurfaceFactoryClient implementation.
   void ReturnResources(const cc::ReturnedResourceArray& resources) override;
+  void SetBeginFrameSource(cc::SurfaceId surface_id,
+                           cc::BeginFrameSource* begin_frame_source) override;
 
   // ui::GestureProviderClient implementation.
   void OnGestureEvent(const ui::GestureEventData& gesture) override;
@@ -210,7 +217,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
-  void OnStartContentIntent(const GURL& content_url);
+  void OnStartContentIntent(const GURL& content_url, bool is_main_frame);
   void OnSetNeedsBeginFrames(bool enabled);
   void OnSmartClipDataExtracted(const base::string16& text,
                                 const base::string16& html,
@@ -241,6 +248,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnShowingPastePopup(const gfx::PointF& point);
   void OnShowUnhandledTapUIIfNeeded(int x_dip, int y_dip);
 
+  SynchronousCompositorBase* GetSynchronousCompositor();
   void SynchronousFrameMetadata(
       const cc::CompositorFrameMetadata& frame_metadata);
 
@@ -258,18 +266,18 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void RunAckCallbacks(cc::SurfaceDrawStatus status);
 
   void DestroyDelegatedContent();
-  void CheckOutputSurfaceChanged(uint32 output_surface_id);
+  void CheckOutputSurfaceChanged(uint32_t output_surface_id);
   void SubmitCompositorFrame(scoped_ptr<cc::CompositorFrame> frame_data);
-  void SwapDelegatedFrame(uint32 output_surface_id,
+  void SwapDelegatedFrame(uint32_t output_surface_id,
                           scoped_ptr<cc::CompositorFrame> frame_data);
-  void SendDelegatedFrameAck(uint32 output_surface_id);
-  void SendReturnedDelegatedResources(uint32 output_surface_id);
+  void SendDelegatedFrameAck(uint32_t output_surface_id);
+  void SendReturnedDelegatedResources(uint32_t output_surface_id);
 
   void OnFrameMetadataUpdated(
       const cc::CompositorFrameMetadata& frame_metadata);
 
   void ShowInternal();
-  void HideInternal(bool hide_frontbuffer, bool stop_observing_root_window);
+  void HideInternal();
   void AttachLayers();
   void RemoveLayers();
 
@@ -304,10 +312,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // Drop any incoming frames from the renderer when there are locks on the
   // current frame.
-  void RetainFrame(uint32 output_surface_id,
+  void RetainFrame(uint32_t output_surface_id,
                    scoped_ptr<cc::CompositorFrame> frame);
 
-  void InternalSwapCompositorFrame(uint32 output_surface_id,
+  void InternalSwapCompositorFrame(uint32_t output_surface_id,
                                    scoped_ptr<cc::CompositorFrame> frame);
   void OnLostResources();
 
@@ -316,12 +324,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
     BEGIN_FRAME = 1 << 1,
     PERSISTENT_BEGIN_FRAME = 1 << 2
   };
-  void RequestVSyncUpdate(uint32 requests);
+  void RequestVSyncUpdate(uint32_t requests);
   void StartObservingRootWindow();
   void StopObservingRootWindow();
   void SendBeginFrame(base::TimeTicks frame_time, base::TimeDelta vsync_period);
   bool Animate(base::TimeTicks frame_time);
   void RequestDisallowInterceptTouchEvent();
+
+  bool SyncCompositorOnMessageReceived(const IPC::Message& message);
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -329,9 +339,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool use_surfaces_;
 
   // Used to control action dispatch at the next |OnVSync()| call.
-  uint32 outstanding_vsync_requests_;
+  uint32_t outstanding_vsync_requests_;
 
   bool is_showing_;
+
+  // Window-specific bits that affect widget visibility.
+  bool is_window_visible_;
+  bool is_window_activity_started_;
 
   // ContentViewCoreImpl is our interface to the view system.
   ContentViewCoreImpl* content_view_core_;
@@ -387,6 +401,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   gfx::Size default_size_;
 
   const bool using_browser_compositor_;
+  scoped_ptr<SynchronousCompositorBase> sync_compositor_;
 
   scoped_ptr<DelegatedFrameEvictor> frame_evictor_;
 
@@ -394,10 +409,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool observing_root_window_;
 
   struct LastFrameInfo {
-    LastFrameInfo(uint32 output_id,
+    LastFrameInfo(uint32_t output_id,
                   scoped_ptr<cc::CompositorFrame> output_frame);
     ~LastFrameInfo();
-    uint32 output_surface_id;
+    uint32_t output_surface_id;
     scoped_ptr<cc::CompositorFrame> frame;
   };
 

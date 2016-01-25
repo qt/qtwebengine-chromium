@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 {
   'targets': [
+    # GN: //android_webview/test:android_webview_apk
     {
       'target_name': 'android_webview_apk',
       'type': 'none',
@@ -11,6 +12,8 @@
         'android_webview_java',
         'android_webview_pak',
         'libdrawgl',
+        '../base/base.gyp:base_java_test_support',
+        '../components/components.gyp:policy_java_test_support'
       ],
       'variables': {
         'apk_name': 'AndroidWebView',
@@ -34,6 +37,7 @@
           '<(asset_location)/video.mp4',
           '<(asset_location)/visual_state_during_fullscreen_test.html',
           '<(asset_location)/visual_state_waits_for_js_test.html',
+          '<(asset_location)/visual_state_waits_for_js_detached_test.html',
           '<(asset_location)/visual_state_on_page_commit_visible_test.html',
           '<@(snapshot_additional_input_paths)',
         ],
@@ -61,6 +65,7 @@
             '<(java_in_dir)/assets/video.mp4',
             '<(java_in_dir)/assets/visual_state_during_fullscreen_test.html',
             '<(java_in_dir)/assets/visual_state_waits_for_js_test.html',
+            '<(java_in_dir)/assets/visual_state_waits_for_js_detached_test.html',
             '<(java_in_dir)/assets/visual_state_on_page_commit_visible_test.html',
             '<@(snapshot_copy_files)',
           ],
@@ -89,11 +94,13 @@
       ],
       'includes': [ '../build/apk_fake_jar.gypi' ],
     },
+    # GN: //android_webview/test:android_webview_test_apk
     {
       'target_name': 'android_webview_test_apk',
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_java_test_support',
+        '../components/components.gyp:policy_java_test_support',
         '../content/content_shell_and_tests.gyp:content_java_test_support',
         '../net/net.gyp:net_java_test_support',
         '../testing/android/on_device_instrumentation.gyp:broker_java',
@@ -112,6 +119,7 @@
         '../build/android/test_runner.gypi',
       ],
     },
+    # GN: //android_webview/test:android_webview_unittests
     {
       'target_name': 'android_webview_unittests',
       'type': '<(gtest_target_type)',
@@ -152,6 +160,7 @@
         'native/state_serializer_unittest.cc',
       ],
     },
+    # GN: //android_webview/test:android_webview_unittest_java
     {
       'target_name': 'android_webview_unittest_java',
       'type': 'none',
@@ -165,6 +174,7 @@
       },
       'includes': [ '../build/java.gypi' ],
     },
+    # GN: //android_webview/test:android_webview_unittests_jni
     {
       'target_name': 'android_webview_unittests_jni',
       'type': 'none',
@@ -177,6 +187,7 @@
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },
+    # GN: //android_webview/test:android_webview_unittests_apk
     {
       'target_name': 'android_webview_unittests_apk',
       'type': 'none',
@@ -200,6 +211,7 @@
       ],
       'includes': [ '../build/apk_test.gypi' ],
     },
+    # GN: //android_webview/test:libdrawgl
     {
       'target_name': 'libdrawgl',
       'type': 'shared_library',
@@ -217,6 +229,7 @@
           '../android_webview/test/shell/src/draw_gl/draw_gl.cc',
       ],
     },
+    # GN: //android_webview/test:libstandalonelibwebviewchromium
     {
       'target_name': 'libstandalonelibwebviewchromium',
       'includes': [

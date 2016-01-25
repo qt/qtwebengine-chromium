@@ -24,7 +24,7 @@ extern "C" {
 
 /* Authenticated Encryption with Additional Data.
  *
- * AEAD couples confidentiality and integrity in a single primtive. AEAD
+ * AEAD couples confidentiality and integrity in a single primitive. AEAD
  * algorithms take a key and then can seal and open individual messages. Each
  * message has a unique, per-message nonce and, optionally, additional data
  * which is authenticated but not included in the ciphertext.
@@ -98,8 +98,14 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm(void);
 /* EVP_aead_aes_256_gcm is AES-256 in Galois Counter Mode. */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm(void);
 
-/* EVP_aead_chacha20_poly1305 is an AEAD built from ChaCha20 and Poly1305. */
+/* EVP_aead_chacha20_poly1305 is the AEAD built from ChaCha20 and
+ * Poly1305 as described in RFC 7539. */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_chacha20_poly1305(void);
+
+/* EVP_aead_chacha20_poly1305_old is an AEAD built from ChaCha20 and
+ * Poly1305 that is used in the experimental ChaCha20-Poly1305 TLS cipher
+ * suites. */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_chacha20_poly1305_old(void);
 
 /* EVP_aead_aes_128_key_wrap is AES-128 Key Wrap mode. This should never be
  * used except to interoperate with existing systems that use this mode.
@@ -120,7 +126,7 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_key_wrap(void);
  * block counter, thus the maximum plaintext size is 64GB. */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_ctr_hmac_sha256(void);
 
-/* EVP_aead_aes_128_ctr_hmac_sha256 is AES-256 in CTR mode with HMAC-SHA256 for
+/* EVP_aead_aes_256_ctr_hmac_sha256 is AES-256 in CTR mode with HMAC-SHA256 for
  * authentication. See |EVP_aead_aes_128_ctr_hmac_sha256| for details. */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_ctr_hmac_sha256(void);
 
@@ -315,6 +321,22 @@ OPENSSL_EXPORT int EVP_AEAD_CTX_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
  * It returns one on success or zero if |ctx| doesn't have an RC4 key. */
 OPENSSL_EXPORT int EVP_AEAD_CTX_get_rc4_state(const EVP_AEAD_CTX *ctx,
                                               const RC4_KEY **out_key);
+
+/* EVP_AEAD_CTX_get_iv sets |*out_len| to the length of the IV for |ctx| and
+ * sets |*out_iv| to point to that many bytes of the current IV. This is only
+ * meaningful for AEADs with implicit IVs (i.e. CBC mode in SSLv3 and TLS 1.0).
+ *
+ * It returns one on success or zero on error. */
+OPENSSL_EXPORT int EVP_AEAD_CTX_get_iv(const EVP_AEAD_CTX *ctx,
+                                       const uint8_t **out_iv, size_t *out_len);
+
+
+/* Deprecated functions. */
+
+/* EVP_aead_chacha20_poly1305_rfc7539 calls |EVP_aead_chacha20_poly1305|.
+ *
+ * TODO(davidben): Remove this. */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_chacha20_poly1305_rfc7539(void);
 
 
 #if defined(__cplusplus)

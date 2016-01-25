@@ -41,7 +41,7 @@ class Element;
 class HTMLScriptRunnerHost;
 
 class HTMLScriptRunner final : public NoBaseWillBeGarbageCollectedFinalized<HTMLScriptRunner>, private ScriptResourceClient {
-    WTF_MAKE_NONCOPYABLE(HTMLScriptRunner); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLScriptRunner);
+    WTF_MAKE_NONCOPYABLE(HTMLScriptRunner); USING_FAST_MALLOC_WILL_BE_REMOVED(HTMLScriptRunner);
 public:
     static PassOwnPtrWillBeRawPtr<HTMLScriptRunner> create(Document* document, HTMLScriptRunnerHost* host)
     {
@@ -64,6 +64,7 @@ public:
 
     // ResourceClient
     void notifyFinished(Resource*) override;
+    String debugName() const override { return "HTMLScriptRunner"; }
 
     DECLARE_TRACE();
 

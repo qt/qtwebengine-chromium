@@ -5,7 +5,7 @@
 #ifndef CONTENT_PUBLIC_COMMON_BROWSER_PLUGIN_GUEST_MODE_H_
 #define CONTENT_PUBLIC_COMMON_BROWSER_PLUGIN_GUEST_MODE_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -13,8 +13,7 @@ namespace content {
 class CONTENT_EXPORT BrowserPluginGuestMode {
  public:
   // Returns true if inner WebContents should be implemented in terms of cross-
-  // process iframes. TODO(lazyboy, nick): This should probably be a command
-  // line flag separate from full site isolation (--site-per-process).
+  // process iframes.
   static bool UseCrossProcessFramesForGuests();
 
  private:

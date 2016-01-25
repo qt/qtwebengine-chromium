@@ -33,6 +33,7 @@
 
 namespace blink {
 
+class Color;
 class FloatPoint;
 class Gradient;
 
@@ -51,12 +52,14 @@ enum CSSGradientRepeat { NonRepeating, Repeating };
 // stack scanning. When allocated as part of Vectors in heap-allocated
 // objects its members are visited via the containing object's
 // (CSSGradientValue) traceAfterDispatch method.
+//
+// http://www.w3.org/TR/css3-images/#color-stop-syntax
 struct CSSGradientColorStop {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     CSSGradientColorStop() : m_colorIsDerivedFromElement(false) { }
     RefPtrWillBeMember<CSSPrimitiveValue> m_position; // percentage or length
-    RefPtrWillBeMember<CSSPrimitiveValue> m_color;
+    RefPtrWillBeMember<CSSValue> m_color;
     bool m_colorIsDerivedFromElement;
     bool operator==(const CSSGradientColorStop& other) const
     {
@@ -108,6 +111,8 @@ public:
 
     void loadSubimages(Document*) { }
 
+    void getStopColors(WillBeHeapVector<Color>& stopColors, const LayoutObject*) const;
+
     DECLARE_TRACE_AFTER_DISPATCH();
 
 protected:
@@ -116,19 +121,6 @@ protected:
         , m_stopsSorted(false)
         , m_gradientType(gradientType)
         , m_repeating(repeat == Repeating)
-    {
-    }
-
-    CSSGradientValue(const CSSGradientValue& other, ClassType classType, CSSGradientType gradientType)
-        : CSSImageGeneratorValue(classType)
-        , m_firstX(other.m_firstX)
-        , m_firstY(other.m_firstY)
-        , m_secondX(other.m_secondX)
-        , m_secondY(other.m_secondY)
-        , m_stops(other.m_stops)
-        , m_stopsSorted(other.m_stopsSorted)
-        , m_gradientType(gradientType)
-        , m_repeating(other.isRepeating() ? Repeating : NonRepeating)
     {
     }
 
@@ -171,11 +163,6 @@ public:
     // Create the gradient for a given size.
     PassRefPtr<Gradient> createGradient(const CSSToLengthConversionData&, const IntSize&, const LayoutObject&);
 
-    PassRefPtrWillBeRawPtr<CSSLinearGradientValue> clone() const
-    {
-        return adoptRefWillBeNoop(new CSSLinearGradientValue(*this));
-    }
-
     bool equals(const CSSLinearGradientValue&) const;
 
     DECLARE_TRACE_AFTER_DISPATCH();
@@ -183,12 +170,6 @@ public:
 private:
     CSSLinearGradientValue(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSLinearGradient)
         : CSSGradientValue(LinearGradientClass, repeat, gradientType)
-    {
-    }
-
-    explicit CSSLinearGradientValue(const CSSLinearGradientValue& other)
-        : CSSGradientValue(other, LinearGradientClass, other.gradientType())
-        , m_angle(other.m_angle)
     {
     }
 
@@ -202,11 +183,6 @@ public:
     static PassRefPtrWillBeRawPtr<CSSRadialGradientValue> create(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSRadialGradient)
     {
         return adoptRefWillBeNoop(new CSSRadialGradientValue(repeat, gradientType));
-    }
-
-    PassRefPtrWillBeRawPtr<CSSRadialGradientValue> clone() const
-    {
-        return adoptRefWillBeNoop(new CSSRadialGradientValue(*this));
     }
 
     String customCSSText() const;
@@ -232,18 +208,6 @@ private:
         : CSSGradientValue(RadialGradientClass, repeat, gradientType)
     {
     }
-
-    explicit CSSRadialGradientValue(const CSSRadialGradientValue& other)
-        : CSSGradientValue(other, RadialGradientClass, other.gradientType())
-        , m_firstRadius(other.m_firstRadius)
-        , m_secondRadius(other.m_secondRadius)
-        , m_shape(other.m_shape)
-        , m_sizingBehavior(other.m_sizingBehavior)
-        , m_endHorizontalSize(other.m_endHorizontalSize)
-        , m_endVerticalSize(other.m_endVerticalSize)
-    {
-    }
-
 
     // Resolve points/radii to front end values.
     float resolveRadius(CSSPrimitiveValue*, const CSSToLengthConversionData&, float* widthOrHeight = 0);

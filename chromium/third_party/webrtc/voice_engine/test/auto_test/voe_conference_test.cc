@@ -13,7 +13,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/format_macros.h"
 #include "webrtc/base/timeutils.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
+#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/voice_engine/test/auto_test/fakes/conference_transport.h"
 
@@ -72,7 +72,7 @@ TEST(VoeConferenceTest, RttAndStartNtpTime) {
   const int kStatsRequestIntervalMs = 1000;
   const int kStatsBufferSize = 3;
 
-  uint32 deadline = rtc::TimeAfter(kMaxRunTimeMs);
+  uint32_t deadline = rtc::TimeAfter(kMaxRunTimeMs);
   // Run the following up to |kMaxRunTimeMs| milliseconds.
   int successive_pass = 0;
   webrtc::CallStatistics stats_1;

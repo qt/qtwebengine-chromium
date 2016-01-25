@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLFrameSetElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
@@ -69,7 +68,7 @@ void HTMLFrameSetElement::collectStyleForPresentationAttribute(const QualifiedNa
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
-void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == rowsAttr) {
         if (!value.isNull()) {
@@ -145,7 +144,7 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
     } else if (name == onlanguagechangeAttr) {
         document().setWindowAttributeEventListener(EventTypeNames::languagechange, createAttributeEventListener(document().frame(), name, value, eventParameterName()));
     } else {
-        HTMLElement::parseAttribute(name, value);
+        HTMLElement::parseAttribute(name, oldValue, value);
     }
 }
 

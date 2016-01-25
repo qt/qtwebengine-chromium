@@ -9,6 +9,7 @@
     'webrtc_xmpp': "../webrtc/libjingle/xmpp",
   },
   'sources': [
+    'overrides/field_trial.cc',
     '<(webrtc_p2p)/base/asyncstuntcpsocket.cc',
     '<(webrtc_p2p)/base/asyncstuntcpsocket.h',
     '<(webrtc_p2p)/base/basicpacketsocketfactory.cc',
@@ -101,7 +102,6 @@
     }, {
       'sources/': [
         ['exclude', '/win[a-z0-9]+\\.(h|cc)$'],
-        ['exclude', '/schanneladapter\\.(h|cc)$'],
       ],
     }],
     ['os_posix!=1 and nacl_untrusted_build==0', {

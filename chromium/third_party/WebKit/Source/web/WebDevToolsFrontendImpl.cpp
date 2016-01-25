@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/WebDevToolsFrontendImpl.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -44,17 +43,8 @@
 namespace blink {
 
 WebDevToolsFrontend* WebDevToolsFrontend::create(
-    WebView* view,
-    WebDevToolsFrontendClient* client,
-    const WebString& applicationLocale)
-{
-    return new WebDevToolsFrontendImpl(toWebLocalFrameImpl(view->mainFrame()), client);
-}
-
-WebDevToolsFrontend* WebDevToolsFrontend::create(
     WebLocalFrame* frame,
-    WebDevToolsFrontendClient* client,
-    const WebString& applicationLocale)
+    WebDevToolsFrontendClient* client)
 {
     return new WebDevToolsFrontendImpl(toWebLocalFrameImpl(frame), client);
 }
@@ -70,6 +60,8 @@ WebDevToolsFrontendImpl::WebDevToolsFrontendImpl(
 
 WebDevToolsFrontendImpl::~WebDevToolsFrontendImpl()
 {
+    if (m_devtoolsHost)
+        m_devtoolsHost->disconnectClient();
 }
 
 void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)
@@ -77,6 +69,7 @@ void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)
     if (m_webFrame == frame) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
         ScriptState* scriptState = ScriptState::forMainWorld(m_webFrame->frame());
+        ASSERT(scriptState);
         ScriptState::Scope scope(scriptState);
 
         if (m_devtoolsHost)
@@ -102,12 +95,6 @@ void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)
     scriptWithId.appendNumber(++s_lastScriptId);
     scriptWithId.append(')');
     frame->frame()->script().executeScriptInMainWorld(scriptWithId.toString());
-}
-
-void WebDevToolsFrontendImpl::sendMessageToBackend(const String& message)
-{
-    if (m_client)
-        m_client->sendMessageToBackend(message);
 }
 
 void WebDevToolsFrontendImpl::sendMessageToEmbedder(const String& message)

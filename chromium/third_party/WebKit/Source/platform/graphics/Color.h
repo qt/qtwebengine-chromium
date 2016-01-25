@@ -27,7 +27,7 @@
 #define Color_h
 
 #include "platform/animation/AnimationUtilities.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/text/Unicode.h"
 
@@ -52,6 +52,7 @@ inline int blueChannel(RGBA32 color) { return color & 0xFF; }
 inline int alphaChannel(RGBA32 color) { return (color >> 24) & 0xFF; }
 
 struct NamedColor {
+    DISALLOW_NEW();
     const char* name;
     unsigned ARGBValue;
 };
@@ -59,7 +60,7 @@ struct NamedColor {
 PLATFORM_EXPORT const NamedColor* findColor(register const char* str, register unsigned len);
 
 class PLATFORM_EXPORT Color {
-    WTF_MAKE_FAST_ALLOCATED(Color);
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     Color() : m_color(Color::transparent) { }
     Color(RGBA32 color) : m_color(color) { }

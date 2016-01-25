@@ -4,6 +4,8 @@
 
 #include "ui/ozone/platform/drm/gpu/hardware_display_plane_manager_legacy.h"
 
+#include <errno.h>
+
 #include "base/bind.h"
 #include "ui/ozone/platform/drm/gpu/crtc_controller.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
@@ -46,7 +48,7 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
         PLOG(ERROR) << "Cannot display plane on overlay: crtc=" << flip.crtc
                     << " plane=" << plane.plane;
         ret = false;
-        flip.crtc->PageFlipFailed();
+        flip.crtc->SignalPageFlipRequest(gfx::SwapResult::SWAP_FAILED);
         break;
       }
     }
@@ -66,7 +68,8 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
                     << " framebuffer=" << flip.framebuffer;
         ret = false;
       }
-      flip.crtc->PageFlipFailed();
+      flip.crtc->SignalPageFlipRequest(ret ? gfx::SwapResult::SWAP_ACK
+                                           : gfx::SwapResult::SWAP_FAILED);
     }
   }
   // For each element in |old_plane_list|, if it hasn't been reclaimed (by
@@ -83,9 +86,15 @@ bool HardwareDisplayPlaneManagerLegacy::Commit(
       }
     }
   }
-  plane_list->plane_list.swap(plane_list->old_plane_list);
-  plane_list->plane_list.clear();
-  plane_list->legacy_page_flips.clear();
+
+  if (ret) {
+    plane_list->plane_list.swap(plane_list->old_plane_list);
+    plane_list->plane_list.clear();
+    plane_list->legacy_page_flips.clear();
+  } else {
+    ResetCurrentPlaneList(plane_list);
+  }
+
   return ret;
 }
 

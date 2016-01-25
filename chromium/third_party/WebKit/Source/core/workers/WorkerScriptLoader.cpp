@@ -25,13 +25,13 @@
  *
  */
 
-#include "config.h"
 #include "core/workers/WorkerScriptLoader.h"
 
 #include "core/dom/ExecutionContext.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/WorkerThreadableLoader.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "platform/HTTPNames.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 #include "platform/network/ResourceResponse.h"
 #include "public/platform/WebURLRequest.h"
@@ -66,10 +66,7 @@ void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, c
 {
     m_url = url;
 
-    OwnPtr<ResourceRequest> request(createResourceRequest());
-    if (!request)
-        return;
-
+    ResourceRequest request(createResourceRequest());
     ASSERT_WITH_SECURITY_IMPLICATION(executionContext.isWorkerGlobalScope());
 
     ThreadableLoaderOptions options;
@@ -80,7 +77,7 @@ void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, c
     ResourceLoaderOptions resourceLoaderOptions;
     resourceLoaderOptions.allowCredentials = AllowStoredCredentials;
 
-    WorkerThreadableLoader::loadResourceSynchronously(toWorkerGlobalScope(executionContext), *request, *this, options, resourceLoaderOptions);
+    WorkerThreadableLoader::loadResourceSynchronously(toWorkerGlobalScope(executionContext), request, *this, options, resourceLoaderOptions);
 }
 
 void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, PassOwnPtr<Closure> responseCallback, PassOwnPtr<Closure> finishedCallback)
@@ -90,10 +87,7 @@ void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, 
     m_finishedCallback = finishedCallback;
     m_url = url;
 
-    OwnPtr<ResourceRequest> request(createResourceRequest());
-    if (!request)
-        return;
-
+    ResourceRequest request(createResourceRequest());
     ThreadableLoaderOptions options;
     options.crossOriginRequestPolicy = crossOriginRequestPolicy;
 
@@ -106,7 +100,7 @@ void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, 
     // (E.g. see crbug.com/524694 for why we can't easily remove this protect)
     RefPtr<WorkerScriptLoader> protect(this);
     m_needToCancel = true;
-    m_threadableLoader = ThreadableLoader::create(executionContext, this, *request, options, resourceLoaderOptions);
+    m_threadableLoader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
     if (m_failed)
         notifyFinished();
 }
@@ -117,12 +111,12 @@ const KURL& WorkerScriptLoader::responseURL() const
     return m_responseURL;
 }
 
-PassOwnPtr<ResourceRequest> WorkerScriptLoader::createResourceRequest()
+ResourceRequest WorkerScriptLoader::createResourceRequest()
 {
-    OwnPtr<ResourceRequest> request = adoptPtr(new ResourceRequest(m_url));
-    request->setHTTPMethod("GET");
-    request->setRequestContext(m_requestContext);
-    return request.release();
+    ResourceRequest request(m_url);
+    request.setHTTPMethod(HTTPNames::GET);
+    request.setRequestContext(m_requestContext);
+    return request;
 }
 
 void WorkerScriptLoader::didReceiveResponse(unsigned long identifier, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)

@@ -4,6 +4,7 @@
 
 #include "ui/views/controls/button/label_button.h"
 
+#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/accessibility/ax_view_state.h"
@@ -72,7 +73,6 @@ TEST_F(LabelButtonTest, Init) {
   EXPECT_EQ(ui::AX_ROLE_BUTTON, accessible_state.role);
   EXPECT_EQ(text, accessible_state.name);
 
-  EXPECT_EQ(gfx::ALIGN_LEFT, button.GetHorizontalAlignment());
   EXPECT_FALSE(button.is_default());
   EXPECT_EQ(button.style(), Button::STYLE_TEXTBUTTON);
   EXPECT_EQ(Button::STATE_NORMAL, button.state());
@@ -193,17 +193,20 @@ TEST_F(LabelButtonTest, LabelAndImage) {
 
   // Layout and ensure the image is left of the label except for ALIGN_RIGHT.
   // (A proper parent view or layout manager would Layout on its invalidations).
-  button_->SetSize(button_->GetPreferredSize());
+  // Also make sure CENTER alignment moves the label compared to LEFT alignment.
+  gfx::Size button_size = button_->GetPreferredSize();
+  button_size.Enlarge(50, 0);
+  button_->SetSize(button_size);
   button_->Layout();
-  EXPECT_EQ(gfx::ALIGN_LEFT, button_->GetHorizontalAlignment());
   EXPECT_LT(button_->image_->bounds().right(), button_->label_->bounds().x());
+  int left_align_label_midpoint = button_->label_->bounds().CenterPoint().x();
   button_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
   button_->Layout();
-  EXPECT_EQ(gfx::ALIGN_CENTER, button_->GetHorizontalAlignment());
   EXPECT_LT(button_->image_->bounds().right(), button_->label_->bounds().x());
+  int center_align_label_midpoint = button_->label_->bounds().CenterPoint().x();
+  EXPECT_LT(left_align_label_midpoint, center_align_label_midpoint);
   button_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
   button_->Layout();
-  EXPECT_EQ(gfx::ALIGN_RIGHT, button_->GetHorizontalAlignment());
   EXPECT_LT(button_->label_->bounds().right(), button_->image_->bounds().x());
 
   button_->SetText(base::string16());
@@ -279,6 +282,23 @@ TEST_F(LabelButtonTest, ChangeLabelImageSpacing) {
   button_->SetMinSize(gfx::Size());
   button_->SetImageLabelSpacing(kOriginalSpacing);
   EXPECT_EQ(original_width, button_->GetPreferredSize().width());
+}
+
+// Make sure the label gets the width it asks for and bolding it (via
+// SetDefault) causes the size to update. Regression test for crbug.com/578722
+TEST_F(LabelButtonTest, ButtonStyleIsDefaultSize) {
+  LabelButton* button = new LabelButton(nullptr, base::ASCIIToUTF16("Save"));
+  button->SetStyle(CustomButton::STYLE_BUTTON);
+  button_->GetWidget()->GetContentsView()->AddChildView(button);
+  button->SizeToPreferredSize();
+  button->Layout();
+  gfx::Size non_default_size = button->label_->size();
+  EXPECT_EQ(button->label_->GetPreferredSize().width(),
+            non_default_size.width());
+  button->SetIsDefault(true);
+  button->SizeToPreferredSize();
+  button->Layout();
+  EXPECT_NE(non_default_size, button->label_->size());
 }
 
 }  // namespace views

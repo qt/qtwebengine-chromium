@@ -145,13 +145,6 @@ int NV12ToRGB565(const uint8* src_y, int src_stride_y,
                  uint8* dst_rgb565, int dst_stride_rgb565,
                  int width, int height);
 
-// Convert NV21 to RGB565.
-LIBYUV_API
-int NV21ToRGB565(const uint8* src_y, int src_stride_y,
-                 const uint8* src_uv, int src_stride_uv,
-                 uint8* dst_rgb565, int dst_stride_rgb565,
-                 int width, int height);
-
 // I422ToARGB is in convert_argb.h
 // Convert I422 to BGRA.
 LIBYUV_API
@@ -175,6 +168,14 @@ int I422ToRGBA(const uint8* src_y, int src_stride_y,
                const uint8* src_u, int src_stride_u,
                const uint8* src_v, int src_stride_v,
                uint8* dst_rgba, int dst_stride_rgba,
+               int width, int height);
+
+// Alias
+#define RGB24ToRAW RAWToRGB24
+
+LIBYUV_API
+int RAWToRGB24(const uint8* src_raw, int src_stride_raw,
+               uint8* dst_rgb24, int dst_stride_rgb24,
                int width, int height);
 
 // Draw a rectangle into I420.
@@ -301,11 +302,37 @@ LIBYUV_API
 ARGBBlendRow GetARGBBlend();
 
 // Alpha Blend ARGB images and store to destination.
+// Source is pre-multiplied by alpha using ARGBAttenuate.
 // Alpha of destination is set to 255.
 LIBYUV_API
 int ARGBBlend(const uint8* src_argb0, int src_stride_argb0,
               const uint8* src_argb1, int src_stride_argb1,
               uint8* dst_argb, int dst_stride_argb,
+              int width, int height);
+
+// Alpha Blend plane and store to destination.
+// Source is not pre-multiplied by alpha.
+LIBYUV_API
+int BlendPlane(const uint8* src_y0, int src_stride_y0,
+               const uint8* src_y1, int src_stride_y1,
+               const uint8* alpha, int alpha_stride,
+               uint8* dst_y, int dst_stride_y,
+               int width, int height);
+
+// Alpha Blend YUV images and store to destination.
+// Source is not pre-multiplied by alpha.
+// Alpha is full width x height and subsampled to half size to apply to UV.
+LIBYUV_API
+int I420Blend(const uint8* src_y0, int src_stride_y0,
+              const uint8* src_u0, int src_stride_u0,
+              const uint8* src_v0, int src_stride_v0,
+              const uint8* src_y1, int src_stride_y1,
+              const uint8* src_u1, int src_stride_u1,
+              const uint8* src_v1, int src_stride_v1,
+              const uint8* alpha, int alpha_stride,
+              uint8* dst_y, int dst_stride_y,
+              uint8* dst_u, int dst_stride_u,
+              uint8* dst_v, int dst_stride_v,
               int width, int height);
 
 // Multiply ARGB image by ARGB image. Shifted down by 8. Saturates to 255.
@@ -389,16 +416,37 @@ int ARGBShade(const uint8* src_argb, int src_stride_argb,
               uint8* dst_argb, int dst_stride_argb,
               int width, int height, uint32 value);
 
-// Interpolate between two ARGB images using specified amount of interpolation
+// Interpolate between two images using specified amount of interpolation
 // (0 to 255) and store to destination.
-// 'interpolation' is specified as 8 bit fraction where 0 means 100% src_argb0
-// and 255 means 1% src_argb0 and 99% src_argb1.
-// Internally uses ARGBScale bilinear filtering.
-// Caveat: This function will write up to 16 bytes beyond the end of dst_argb.
+// 'interpolation' is specified as 8 bit fraction where 0 means 100% src0
+// and 255 means 1% src0 and 99% src1.
+LIBYUV_API
+int InterpolatePlane(const uint8* src0, int src_stride0,
+                     const uint8* src1, int src_stride1,
+                     uint8* dst, int dst_stride,
+                     int width, int height, int interpolation);
+
+// Interpolate between two ARGB images using specified amount of interpolation
+// Internally calls InterpolatePlane with width * 4 (bpp).
 LIBYUV_API
 int ARGBInterpolate(const uint8* src_argb0, int src_stride_argb0,
                     const uint8* src_argb1, int src_stride_argb1,
                     uint8* dst_argb, int dst_stride_argb,
+                    int width, int height, int interpolation);
+
+// Interpolate between two YUV images using specified amount of interpolation
+// Internally calls InterpolatePlane on each plane where the U and V planes
+// are half width and half height.
+LIBYUV_API
+int I420Interpolate(const uint8* src0_y, int src0_stride_y,
+                    const uint8* src0_u, int src0_stride_u,
+                    const uint8* src0_v, int src0_stride_v,
+                    const uint8* src1_y, int src1_stride_y,
+                    const uint8* src1_u, int src1_stride_u,
+                    const uint8* src1_v, int src1_stride_v,
+                    uint8* dst_y, int dst_stride_y,
+                    uint8* dst_u, int dst_stride_u,
+                    uint8* dst_v, int dst_stride_v,
                     int width, int height, int interpolation);
 
 #if defined(__pnacl__) || defined(__CLR_VER) || \

@@ -4,8 +4,10 @@
 
 #include "third_party/mojo/src/mojo/edk/system/core.h"
 
+#include <utility>
 #include <vector>
 
+#include "base/containers/stack_container.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "mojo/public/c/system/macros.h"
@@ -23,6 +25,7 @@
 #include "third_party/mojo/src/mojo/edk/system/message_pipe.h"
 #include "third_party/mojo/src/mojo/edk/system/message_pipe_dispatcher.h"
 #include "third_party/mojo/src/mojo/edk/system/shared_buffer_dispatcher.h"
+#include "third_party/mojo/src/mojo/edk/system/wait_set_dispatcher.h"
 #include "third_party/mojo/src/mojo/edk/system/waiter.h"
 
 namespace mojo {
@@ -96,15 +99,6 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
 
   MutexLocker locker(&handle_table_mutex_);
   return handle_table_.GetDispatcher(handle);
-}
-
-MojoResult Core::GetAndRemoveDispatcher(MojoHandle handle,
-                                        scoped_refptr<Dispatcher>* dispatcher) {
-  if (handle == MOJO_HANDLE_INVALID)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
-  MutexLocker locker(&handle_table_mutex_);
-  return handle_table_.GetAndRemoveDispatcher(handle, dispatcher);
 }
 
 MojoResult Core::AsyncWait(MojoHandle handle,
@@ -192,6 +186,80 @@ MojoResult Core::WaitMany(UserPointer<const MojoHandle> handles,
   if (index != static_cast<uint32_t>(-1) && !result_index.IsNull())
     result_index.Put(index);
   return rv;
+}
+
+MojoResult Core::CreateWaitSet(UserPointer<MojoHandle> wait_set_handle) {
+  if (wait_set_handle.IsNull())
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<WaitSetDispatcher> dispatcher = new WaitSetDispatcher();
+  MojoHandle h = AddDispatcher(dispatcher);
+  if (h == MOJO_HANDLE_INVALID) {
+    LOG(ERROR) << "Handle table full";
+    dispatcher->Close();
+    return MOJO_RESULT_RESOURCE_EXHAUSTED;
+  }
+
+  wait_set_handle.Put(h);
+  return MOJO_RESULT_OK;
+}
+
+MojoResult Core::AddHandle(MojoHandle wait_set_handle,
+                           MojoHandle handle,
+                           MojoHandleSignals signals) {
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return wait_set_dispatcher->AddWaitingDispatcher(dispatcher, signals, handle);
+}
+
+MojoResult Core::RemoveHandle(MojoHandle wait_set_handle,
+                              MojoHandle handle) {
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> dispatcher(GetDispatcher(handle));
+  if (!dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  return wait_set_dispatcher->RemoveWaitingDispatcher(dispatcher);
+}
+
+MojoResult Core::GetReadyHandles(
+    MojoHandle wait_set_handle,
+    UserPointer<uint32_t> count,
+    UserPointer<MojoHandle> handles,
+    UserPointer<MojoResult> results,
+    UserPointer<MojoHandleSignalsState> signals_states) {
+  if (count.IsNull() || !count.Get() || handles.IsNull() || results.IsNull())
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  scoped_refptr<Dispatcher> wait_set_dispatcher(GetDispatcher(wait_set_handle));
+  if (!wait_set_dispatcher)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  const uint32_t in_count = count.Get();
+  DispatcherVector awoken_dispatchers;
+  base::StackVector<uintptr_t, 16> contexts;
+  contexts->assign(in_count, MOJO_HANDLE_INVALID);
+
+  MojoResult result = wait_set_dispatcher->GetReadyDispatchers(
+      count, &awoken_dispatchers, results, MakeUserPointer(contexts->data()));
+
+  const uint32_t out_count = count.Get();
+  for (uint32_t i = 0; i < out_count; i++) {
+    handles.At(i).Put(static_cast<MojoHandle>(contexts[i]));
+    if (!signals_states.IsNull())
+      signals_states.At(i).Put(awoken_dispatchers[i]->GetHandleSignalsState());
+  }
+
+  return result;
 }
 
 MojoResult Core::CreateMessagePipe(
@@ -540,7 +608,7 @@ MojoResult Core::MapBuffer(MojoHandle buffer_handle,
   void* address = mapping->GetBase();
   {
     MutexLocker locker(&mapping_table_mutex_);
-    result = mapping_table_.AddMapping(mapping.Pass());
+    result = mapping_table_.AddMapping(std::move(mapping));
   }
   if (result != MOJO_RESULT_OK)
     return result;
@@ -594,10 +662,13 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   }
   uint32_t num_added = i;
 
-  if (rv == MOJO_RESULT_ALREADY_EXISTS)
+  if (rv == MOJO_RESULT_ALREADY_EXISTS) {
     rv = MOJO_RESULT_OK;  // The i-th one is already "triggered".
-  else if (rv == MOJO_RESULT_OK)
-    rv = waiter.Wait(deadline, result_index);
+  } else if (rv == MOJO_RESULT_OK) {
+    uintptr_t uintptr_result = *result_index;
+    rv = waiter.Wait(deadline, &uintptr_result);
+    *result_index = static_cast<uint32_t>(uintptr_result);
+  }
 
   // Make sure no other dispatchers try to wake |waiter| for the current
   // |Wait()|/|WaitMany()| call. (Only after doing this can |waiter| be

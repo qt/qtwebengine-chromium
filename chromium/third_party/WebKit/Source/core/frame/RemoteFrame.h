@@ -8,11 +8,13 @@
 #include "core/CoreExport.h"
 #include "core/dom/RemoteSecurityContext.h"
 #include "core/frame/Frame.h"
+#include "public/platform/WebFocusType.h"
 
 namespace blink {
 
 class Event;
 class IntRect;
+class LocalFrame;
 class RemoteDOMWindow;
 class RemoteFrameClient;
 class RemoteFrameView;
@@ -47,8 +49,12 @@ public:
 
     void frameRectsChanged(const IntRect& frameRect);
 
+    void visibilityChanged(bool visible);
+
     void setRemotePlatformLayer(WebLayer*);
     WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
+
+    void advanceFocus(WebFocusType, LocalFrame* source);
 
     void setView(PassRefPtrWillBeRawPtr<RemoteFrameView>);
     void createView();

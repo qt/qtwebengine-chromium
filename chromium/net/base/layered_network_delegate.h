@@ -64,12 +64,11 @@ class NET_EXPORT LayeredNetworkDelegate : public NetworkDelegate {
       GURL* allowed_unsafe_redirect_url) final;
   void OnBeforeRedirect(URLRequest* request, const GURL& new_location) final;
   void OnResponseStarted(URLRequest* request) final;
-  void OnNetworkBytesReceived(const URLRequest& request,
+  void OnNetworkBytesReceived(URLRequest* request,
                               int64_t bytes_received) final;
-  void OnNetworkBytesSent(const URLRequest& request, int64_t bytes_sent) final;
+  void OnNetworkBytesSent(URLRequest* request, int64_t bytes_sent) final;
   void OnCompleted(URLRequest* request, bool started) final;
   void OnURLRequestDestroyed(URLRequest* request) final;
-  void OnURLRequestJobOrphaned(URLRequest* request) final;
   void OnPACScriptError(int line_number, const base::string16& error) final;
   AuthRequiredResponse OnAuthRequired(URLRequest* request,
                                       const AuthChallengeInfo& auth_info,
@@ -84,7 +83,8 @@ class NET_EXPORT LayeredNetworkDelegate : public NetworkDelegate {
                        const base::FilePath& path) const final;
   bool OnCanEnablePrivacyMode(const GURL& url,
                               const GURL& first_party_for_cookies) const final;
-  bool OnFirstPartyOnlyCookieExperimentEnabled() const final;
+  bool OnAreExperimentalCookieFeaturesEnabled() const final;
+  bool OnAreStrictSecureCookiesEnabled() const final;
   bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
       const GURL& target_url,
@@ -126,10 +126,10 @@ class NET_EXPORT LayeredNetworkDelegate : public NetworkDelegate {
 
   virtual void OnResponseStartedInternal(URLRequest* request);
 
-  virtual void OnNetworkBytesReceivedInternal(const URLRequest& request,
+  virtual void OnNetworkBytesReceivedInternal(URLRequest* request,
                                               int64_t bytes_received);
 
-  virtual void OnNetworkBytesSentInternal(const URLRequest& request,
+  virtual void OnNetworkBytesSentInternal(URLRequest* request,
                                           int64_t bytes_sent);
 
   virtual void OnCompletedInternal(URLRequest* request, bool started);
@@ -158,7 +158,8 @@ class NET_EXPORT LayeredNetworkDelegate : public NetworkDelegate {
       const GURL& url,
       const GURL& first_party_for_cookies) const;
 
-  virtual void OnFirstPartyOnlyCookieExperimentEnabledInternal() const;
+  virtual void OnAreExperimentalCookieFeaturesEnabledInternal() const;
+  virtual void OnAreStrictSecureCookiesEnabledInternal() const;
 
   virtual void OnCancelURLRequestWithPolicyViolatingReferrerHeaderInternal(
       const URLRequest& request,

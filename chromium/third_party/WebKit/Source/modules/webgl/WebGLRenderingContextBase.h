@@ -70,6 +70,7 @@ class EXTTextureFilterAnisotropic;
 class ExceptionState;
 class HTMLImageElement;
 class HTMLVideoElement;
+class ImageBitmap;
 class ImageBuffer;
 class ImageData;
 class IntSize;
@@ -170,12 +171,12 @@ public:
     int drawingBufferHeight() const;
 
     void activeTexture(GLenum texture);
-    void attachShader(WebGLProgram*, WebGLShader*);
+    void attachShader(ScriptState*, WebGLProgram*, WebGLShader*);
     void bindAttribLocation(WebGLProgram*, GLuint index, const String& name);
-    void bindBuffer(GLenum target, WebGLBuffer*);
-    virtual void bindFramebuffer(GLenum target, WebGLFramebuffer*);
-    void bindRenderbuffer(GLenum target, WebGLRenderbuffer*);
-    void bindTexture(GLenum target, WebGLTexture*);
+    void bindBuffer(ScriptState*, GLenum target, WebGLBuffer*);
+    virtual void bindFramebuffer(ScriptState*, GLenum target, WebGLFramebuffer*);
+    void bindRenderbuffer(ScriptState*, GLenum target, WebGLRenderbuffer*);
+    void bindTexture(ScriptState*, GLenum target, WebGLTexture*);
     void blendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
     void blendEquation(GLenum mode);
     void blendEquationSeparate(GLenum modeRGB, GLenum modeAlpha);
@@ -221,7 +222,7 @@ public:
     void depthFunc(GLenum);
     void depthMask(GLboolean);
     void depthRange(GLfloat zNear, GLfloat zFar);
-    void detachShader(WebGLProgram*, WebGLShader*);
+    void detachShader(ScriptState*, WebGLProgram*, WebGLShader*);
     void disable(GLenum cap);
     void disableVertexAttribArray(GLuint index);
     void drawArrays(GLenum mode, GLint first, GLsizei count);
@@ -234,8 +235,8 @@ public:
     void enableVertexAttribArray(GLuint index);
     void finish();
     void flush();
-    void framebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, WebGLRenderbuffer*);
-    void framebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, WebGLTexture*, GLint level);
+    void framebufferRenderbuffer(ScriptState*, GLenum target, GLenum attachment, GLenum renderbuffertarget, WebGLRenderbuffer*);
+    void framebufferTexture2D(ScriptState*, GLenum target, GLenum attachment, GLenum textarget, WebGLTexture*, GLint level);
     void frontFace(GLenum mode);
     void generateMipmap(GLenum target);
 
@@ -276,7 +277,7 @@ public:
 
     void lineWidth(GLfloat);
     void linkProgram(WebGLProgram*);
-    void pixelStorei(GLenum pname, GLint param);
+    virtual void pixelStorei(GLenum pname, GLint param);
     void polygonOffset(GLfloat factor, GLfloat units);
     virtual void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels);
     void renderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
@@ -290,17 +291,19 @@ public:
     void stencilOp(GLenum fail, GLenum zfail, GLenum zpass);
     void stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum zpass);
 
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
         GLsizei width, GLsizei height, GLint border,
         GLenum format, GLenum type, DOMArrayBufferView*);
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
         GLenum format, GLenum type, ImageData*);
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
         GLenum format, GLenum type, HTMLImageElement*, ExceptionState&);
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
         GLenum format, GLenum type, HTMLCanvasElement*, ExceptionState&);
-    void texImage2D(GLenum target, GLint level, GLenum internalformat,
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
         GLenum format, GLenum type, HTMLVideoElement*, ExceptionState&);
+    void texImage2D(GLenum target, GLint level, GLint internalformat,
+        GLenum format, GLenum type, PassRefPtrWillBeRawPtr<ImageBitmap>, ExceptionState&);
 
     void texParameterf(GLenum target, GLenum pname, GLfloat param);
     void texParameteri(GLenum target, GLenum pname, GLint param);
@@ -316,6 +319,8 @@ public:
         GLenum format, GLenum type, HTMLCanvasElement*, ExceptionState&);
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
         GLenum format, GLenum type, HTMLVideoElement*, ExceptionState&);
+    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
+        GLenum format, GLenum type, PassRefPtrWillBeRawPtr<ImageBitmap>, ExceptionState&);
 
     void uniform1f(const WebGLUniformLocation*, GLfloat x);
     void uniform1fv(const WebGLUniformLocation*, const FlexibleFloat32ArrayView&);
@@ -348,7 +353,7 @@ public:
     void uniformMatrix4fv(const WebGLUniformLocation*, GLboolean transpose, DOMFloat32Array* value);
     void uniformMatrix4fv(const WebGLUniformLocation*, GLboolean transpose, Vector<GLfloat>& value);
 
-    void useProgram(WebGLProgram*);
+    void useProgram(ScriptState*, WebGLProgram*);
     void validateProgram(WebGLProgram*);
 
     void vertexAttrib1f(GLuint index, GLfloat x);
@@ -363,7 +368,7 @@ public:
     void vertexAttrib4f(GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w);
     void vertexAttrib4fv(GLuint index, const DOMFloat32Array* values);
     void vertexAttrib4fv(GLuint index, const Vector<GLfloat>& values);
-    void vertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized,
+    void vertexAttribPointer(ScriptState*, GLuint index, GLint size, GLenum type, GLboolean normalized,
         GLsizei stride, long long offset);
 
     void vertexAttribDivisorANGLE(GLuint index, GLuint divisor);
@@ -419,7 +424,7 @@ public:
     int externallyAllocatedBytesPerPixel() override;
 
     class TextureUnitState {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         Member<WebGLTexture> m_texture2DBinding;
         Member<WebGLTexture> m_textureCubeMapBinding;
@@ -476,7 +481,7 @@ protected:
 
     // Helper to return the size in bytes of OpenGL data types
     // like GL_FLOAT, GL_INT, etc.
-    unsigned sizeInBytes(GLenum type);
+    unsigned sizeInBytes(GLenum type) const;
 
     // Check if each enabled vertex attribute is bound to a buffer.
     bool validateRenderingState(const char*);
@@ -487,11 +492,18 @@ protected:
     void addCompressedTextureFormat(GLenum);
     void removeAllCompressedTextureFormats();
 
+    // Set UNPACK_ALIGNMENT to 1, all other parameters to 0.
+    virtual void resetUnpackParameters();
+    // Restore the client unpack parameters.
+    virtual void restoreUnpackParameters();
+
     PassRefPtr<Image> drawImageIntoBuffer(PassRefPtr<Image>, int width, int height, const char* functionName);
 
     PassRefPtr<Image> videoFrameToImage(HTMLVideoElement*);
 
     WebGLRenderbuffer* ensureEmulatedStencilBuffer(GLenum target, WebGLRenderbuffer*);
+
+    virtual const WebGLSamplerState* getTextureUnitSamplerState(GLenum target, GLuint unit) const;
 
     // Structure for rendering to a DrawingBuffer, instead of directly
     // to the back-buffer of m_context.
@@ -519,8 +531,8 @@ protected:
     // weakly kept. Each WebGLContextObject is responsible for detaching
     // itself upon finalization if the WebGLRenderingContextBase hasn't been
     // finalized already and detached them via detachAndRemoveAllObjects().
-    GC_PLUGIN_IGNORE("534524")
-    HashSet<WebGLContextObject*> m_contextObjects;
+    // See http://crbug.com/534524 for the details.
+    HashSet<UntracedMember<WebGLContextObject>> m_contextObjects;
 #endif
 
     PersistentWillBeMember<WebGLRenderingContextLostCallback> m_contextLostCallbackAdapter;
@@ -531,13 +543,8 @@ protected:
 
     PersistentWillBeMember<WebGLVertexArrayObjectBase> m_defaultVertexArrayObject;
     PersistentWillBeMember<WebGLVertexArrayObjectBase> m_boundVertexArrayObject;
-    void setBoundVertexArrayObject(WebGLVertexArrayObjectBase* arrayObject)
-    {
-        if (arrayObject)
-            m_boundVertexArrayObject = arrayObject;
-        else
-            m_boundVertexArrayObject = m_defaultVertexArrayObject;
-    }
+    bool m_preservedDefaultVAOObjectWrapper;
+    void setBoundVertexArrayObject(ScriptState*, WebGLVertexArrayObjectBase*);
 
     enum VertexAttribValueType {
         Float32ArrayType,
@@ -545,36 +552,9 @@ protected:
         Uint32ArrayType,
     };
 
-    class VertexAttribValue {
-    public:
-        VertexAttribValue()
-            : type(Float32ArrayType)
-        {
-            initValue();
-        }
-
-        void initValue()
-        {
-            value.floatValue[0] = 0.0f;
-            value.floatValue[1] = 0.0f;
-            value.floatValue[2] = 0.0f;
-            value.floatValue[3] = 1.0f;
-        }
-
-        VertexAttribValueType type;
-        union {
-            GLfloat floatValue[4];
-            GLint intValue[4];
-            GLuint uintValue[4];
-        } value;
-    };
-    Vector<VertexAttribValue> m_vertexAttribValue;
+    Vector<VertexAttribValueType> m_vertexAttribType;
     unsigned m_maxVertexAttribs;
-    PersistentWillBeMember<WebGLBuffer> m_vertexAttrib0Buffer;
-    long m_vertexAttrib0BufferSize;
-    GLfloat m_vertexAttrib0BufferValue[4];
-    bool m_forceAttrib0BufferRefill;
-    bool m_vertexAttrib0UsedBefore;
+    void setVertexAttribType(GLuint index, VertexAttribValueType);
 
     PersistentWillBeMember<WebGLProgram> m_currentProgram;
     PersistentWillBeMember<WebGLFramebuffer> m_framebufferBinding;
@@ -604,10 +584,12 @@ protected:
 
     GLint m_maxTextureSize;
     GLint m_maxCubeMapTextureSize;
+    GLint m_max3DTextureSize;
     GLint m_maxRenderbufferSize;
     GLint m_maxViewportDims[2];
     GLint m_maxTextureLevel;
     GLint m_maxCubeMapTextureLevel;
+    GLint m_max3DTextureLevel;
 
     GLint m_maxDrawBuffers;
     GLint m_maxColorAttachments;
@@ -786,12 +768,14 @@ protected:
     Vector<GLenum> m_lostContextErrors;
 
     bool m_isWebGL2FormatsTypesAdded;
+    bool m_isWebGL2InternalFormatsCopyTexImageAdded;
     bool m_isOESTextureFloatFormatsTypesAdded;
     bool m_isOESTextureHalfFloatFormatsTypesAdded;
     bool m_isWebGLDepthTextureFormatsTypesAdded;
     bool m_isEXTsRGBFormatsTypesAdded;
 
     std::set<GLenum> m_supportedInternalFormats;
+    std::set<GLenum> m_supportedInternalFormatsCopyTexImage;
     std::set<GLenum> m_supportedFormats;
     std::set<GLenum> m_supportedTypes;
     std::set<FormatType, FormatTypeCompare> m_supportedFormatTypeCombinations;
@@ -826,21 +810,32 @@ protected:
     // Convert texture internal format.
     GLenum convertTexInternalFormat(GLenum internalformat, GLenum type);
 
-    void texImage2DBase(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels);
-    void texImage2DImpl(GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type, Image*, WebGLImageConversion::ImageHtmlDomSource, bool flipY, bool premultiplyAlpha);
+    void texImage2DBase(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels);
+    void texImage2DImpl(GLenum target, GLint level, GLint internalformat, GLenum format, GLenum type, Image*, WebGLImageConversion::ImageHtmlDomSource, bool flipY, bool premultiplyAlpha);
     void texSubImage2DBase(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void* pixels);
     void texSubImage2DImpl(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLenum format, GLenum type, Image*, WebGLImageConversion::ImageHtmlDomSource, bool flipY, bool premultiplyAlpha);
 
     enum TexImageFunctionType {
-        NotTexSubImage2D,
-        TexSubImage2D,
+        TexImage,
+        TexSubImage,
+        CopyTexImage,
+        CompressedTexImage
+    };
+    enum TexImageByGPUType {
+        TexImage2DByGPU,
+        TexSubImage2DByGPU,
+        TexSubImage3DByGPU
     };
     // Copy from the canvas element directly to the texture via the GPU, without a read-back to system memory.
-    void texImage2DCanvasByGPU(TexImageFunctionType, WebGLTexture*, GLenum target, GLint level,
-        GLenum internalformat, GLenum type, GLint xoffset, GLint yoffset, HTMLCanvasElement*);
+    void texImageCanvasByGPU(TexImageByGPUType, WebGLTexture*, GLenum target, GLint level,
+        GLint internalformat, GLenum type, GLint xoffset, GLint yoffset, GLint zoffset, HTMLCanvasElement*);
+    bool canUseTexImageCanvasByGPU(GLint internalformat, GLenum type);
 
     void handleTextureCompleteness(const char*, bool);
     void createFallbackBlackTextures1x1();
+
+    virtual WebGLImageConversion::PixelStoreParams getPackPixelStoreParams();
+    virtual WebGLImageConversion::PixelStoreParams getUnpackPixelStoreParams();
 
     // Helper function for copyTex{Sub}Image, check whether the internalformat
     // and the color buffer format of the current bound framebuffer combination
@@ -869,7 +864,7 @@ protected:
 
     // Helper function to check input internalformat/format/type for functions {copy}Tex{Sub}Image.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncFormatAndType(const char* functionName, GLenum internalformat, GLenum format, GLenum type, GLint level);
+    bool validateTexFuncFormatAndType(const char* functionName, TexImageFunctionType, GLenum internalformat, GLenum format, GLenum type, GLint level);
 
     // Helper function to check readbuffer validity for readPixels and copyTex{Sub}Image.
     // If yes, obtains the readbuffer's format, type, the bound read framebuffer, returns true.
@@ -908,20 +903,21 @@ protected:
         SourceHTMLImageElement,
         SourceHTMLCanvasElement,
         SourceHTMLVideoElement,
+        SourceImageBitmap,
     };
 
-    // Helper function for tex{Sub}Image2D to check if the input format/type/level/target/width/height/border/xoffset/yoffset are valid.
+    // Helper function for tex{Sub}Image{2|3}D to check if the input format/type/level/target/width/height/depth/border/xoffset/yoffset/zoffset are valid.
     // Otherwise, it would return quickly without doing other work.
     bool validateTexFunc(const char* functionName, TexImageFunctionType, TexFuncValidationSourceType, GLenum target, GLint level, GLenum internalformat, GLsizei width,
-        GLsizei height, GLint border, GLenum format, GLenum type, GLint xoffset, GLint yoffset);
+        GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, GLint xoffset, GLint yoffset, GLint zoffset);
 
     // Helper function to check input width and height for functions {copy, compressed}Tex{Sub}Image.
     // Generates GL error and returns false if width or height is invalid.
-    bool validateTexFuncDimensions(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLsizei width, GLsizei height);
+    bool validateTexFuncDimensions(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLsizei width, GLsizei height, GLsizei depth);
 
     // Helper function to check input parameters for functions {copy}Tex{Sub}Image.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncParameters(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type);
+    bool validateTexFuncParameters(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type);
 
     enum NullDisposition {
         NullAllowed,
@@ -931,7 +927,7 @@ protected:
     // Helper function to validate that the given ArrayBufferView
     // is of the correct type and contains enough data for the texImage call.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncData(const char* functionName, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels, NullDisposition);
+    bool validateTexFuncData(const char* functionName, GLint level, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, DOMArrayBufferView* pixels, NullDisposition);
 
     // Helper function to validate that a copyTexSubImage call is valid.
     bool validateCopyTexSubImage(const char* functionName, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height);
@@ -942,23 +938,23 @@ protected:
     // Generates GL error and returns false if the format is not settable.
     bool validateSettableTexFormat(const char* functionName, GLenum format);
 
+    // Helper function to validate format for CopyTexImage.
+    bool validateCopyTexFormat(const char* functionName, GLenum format);
+
     // Helper function to validate compressed texture data is correct size
     // for the given format and dimensions.
-    bool validateCompressedTexFuncData(const char* functionName, GLsizei width, GLsizei height, GLenum format, DOMArrayBufferView* pixels);
+    bool validateCompressedTexFuncData(const char* functionName, GLsizei width, GLsizei height, GLsizei depth, GLenum format, DOMArrayBufferView* pixels);
 
     // Helper function for validating compressed texture formats.
-    bool validateCompressedTexFormat(GLenum format);
+    bool validateCompressedTexFormat(const char* functionName, GLenum format);
 
     // Helper function to validate compressed texture dimensions are valid for
     // the given format.
-    bool validateCompressedTexDimensions(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLsizei width, GLsizei height, GLenum format);
+    bool validateCompressedTexDimensions(const char* functionName, TexImageFunctionType, GLenum target, GLint level, GLsizei width, GLsizei height, GLsizei depth, GLenum format);
 
     // Helper function to validate compressed texture dimensions are valid for
     // the given format.
-    bool validateCompressedTexSubDimensions(const char* functionName, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, WebGLTexture*);
-
-    // Helper function to validate mode for draw{Arrays/Elements}.
-    bool validateDrawMode(const char* functionName, GLenum);
+    bool validateCompressedTexSubDimensions(const char* functionName, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, WebGLTexture*);
 
     // Helper function to validate if front/back stencilMask and stencilFunc settings are the same.
     bool validateStencilSettings(const char* functionName);
@@ -1034,19 +1030,14 @@ protected:
     // Helper function for tex{Sub}Image2D to make sure video is ready wouldn't taint Origin.
     bool validateHTMLVideoElement(const char* functionName, HTMLVideoElement*, ExceptionState&);
 
+    // Helper function for tex{Sub}Image2D to make sure imagebitmap is ready and wouldn't taint Origin.
+    bool validateImageBitmap(const char* functionName, ImageBitmap*, ExceptionState&);
+
     // Helper function to validate drawArrays(Instanced) calls
     bool validateDrawArrays(const char* functionName, GLenum mode, GLint first, GLsizei count);
 
     // Helper function to validate drawElements(Instanced) calls
     bool validateDrawElements(const char* functionName, GLenum mode, GLsizei count, GLenum type, long long offset);
-
-    // Helper function to validate draw*Instanced calls
-    bool validateDrawInstanced(const char* functionName, GLsizei primcount);
-
-    // Helper functions for vertexAttribNf{v}.
-    void vertexAttribfImpl(const char* functionName, GLuint index, GLsizei expectedSize, GLfloat, GLfloat, GLfloat, GLfloat);
-    void vertexAttribfvImpl(const char* functionName, GLuint index, const DOMFloat32Array*, GLsizei expectedSize);
-    void vertexAttribfvImpl(const char* functionName, GLuint index, const GLfloat*, GLsizei, GLsizei expectedSize);
 
     // Helper functions to bufferData() and bufferSubData().
     void bufferDataImpl(GLenum target, long long size, const void* data, GLenum usage);
@@ -1104,11 +1095,21 @@ protected:
 
     virtual void renderbufferStorageImpl(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, const char* functionName);
 
+    // Ensures that the JavaScript wrappers for objects that are
+    // latched into the context's state, or which are implicitly
+    // linked together (like programs and their attached shaders), are
+    // not garbage collected before they should be.
+    static void preserveObjectWrapper(ScriptState*, ScriptWrappable* sourceObject, const char* baseName, unsigned long index, ScriptWrappable* targetObject);
+    // Called to lazily instantiate the wrapper for the default VAO
+    // during calls to bindBuffer and vertexAttribPointer (from
+    // JavaScript).
+    void maybePreserveDefaultVAOObjectWrapper(ScriptState*);
+
+    virtual bool transformFeedbackActive() const { return false; }
+    virtual bool transformFeedbackPaused() const { return false; }
+
     friend class WebGLStateRestorer;
     friend class WebGLRenderingContextEvictionManager;
-
-    static Vector<WebGLRenderingContextBase*>& activeContexts();
-    static Vector<WebGLRenderingContextBase*>& forciblyEvictedContexts();
 
     static void activateContext(WebGLRenderingContextBase*);
     static void deactivateContext(WebGLRenderingContextBase*);
@@ -1118,8 +1119,8 @@ protected:
     static void forciblyLoseOldestContext(const String& reason);
     // Return the least recently used context's position in the active context vector.
     // If the vector is empty, return the maximum allowed active context number.
-    static size_t oldestContextIndex();
-    static IntSize oldestContextSize();
+    static WebGLRenderingContextBase* oldestContext();
+    static WebGLRenderingContextBase* oldestEvictedContext();
 };
 
 DEFINE_TYPE_CASTS(WebGLRenderingContextBase, CanvasRenderingContext, context, context->is3d(), context.is3d());

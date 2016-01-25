@@ -4,11 +4,13 @@
 
 #include "media/base/android/video_decoder_job.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/threading/thread.h"
-#include "media/base/android/media_codec_bridge.h"
 #include "media/base/android/media_drm_bridge.h"
+#include "media/base/android/sdk_media_codec_bridge.h"
 
 namespace media {
 
@@ -49,7 +51,7 @@ bool VideoDecoderJob::SetVideoSurface(gfx::ScopedJavaSurface surface) {
     return false;
   }
 
-  surface_ =  surface.Pass();
+  surface_ = std::move(surface);
   need_to_reconfig_decoder_job_ = true;
   return true;
 }
@@ -136,7 +138,7 @@ MediaDecoderJob::MediaDecoderJobStatus
 
   media_codec_bridge_.reset(VideoCodecBridge::CreateDecoder(
       video_codec_, is_secure, gfx::Size(config_width_, config_height_),
-      surface_.j_surface().obj(), GetMediaCrypto().obj()));
+      surface_.j_surface().obj(), GetMediaCrypto()));
 
   if (!media_codec_bridge_)
     return STATUS_FAILURE;

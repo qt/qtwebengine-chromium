@@ -23,10 +23,10 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutBoxModelObject.h"
 
 #include "core/dom/NodeComputedStyle.h"
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/layout/ImageQualityController.h"
 #include "core/layout/LayoutBlock.h"
@@ -72,12 +72,8 @@ bool FloatStateForStyleChange::s_wasFloating = false;
 LayoutBoxModelObject* FloatStateForStyleChange::s_boxModelObject = nullptr;
 
 // The HashMap for storing continuation pointers.
-// An inline can be split with blocks occuring in between the inline content.
-// When this occurs we need a pointer to the next object. We can basically be
-// split into a sequence of inlines and blocks. The continuation will either be
-// an anonymous block (that houses other blocks) or it will be an inline flow.
-// <b><i><p>Hello</p></i></b>. In this example the <i> will have a block as
-// its continuation but the <b> will just have an inline as its continuation.
+// The continuation chain is a singly linked list. As such, the HashMap's value
+// is the next pointer associated with the key.
 typedef HashMap<const LayoutBoxModelObject*, LayoutBoxModelObject*> ContinuationMap;
 static ContinuationMap* continuationMap = nullptr;
 
@@ -132,7 +128,7 @@ LayoutBoxModelObject::~LayoutBoxModelObject()
 
 void LayoutBoxModelObject::willBeDestroyed()
 {
-    ImageQualityController::remove(this);
+    ImageQualityController::remove(*this);
 
     // A continuation of this LayoutObject should be destroyed at subclasses.
     ASSERT(!continuation());
@@ -250,7 +246,7 @@ void LayoutBoxModelObject::styleDidChange(StyleDifference diff, const ComputedSt
         bool newStyleIsFixedPosition = style()->position() == FixedPosition;
         bool oldStyleIsFixedPosition = oldStyle->position() == FixedPosition;
         if (newStyleIsFixedPosition != oldStyleIsFixedPosition)
-            invalidateDisplayItemClientForNonCompositingDescendants();
+            invalidateDisplayItemClientsIncludingNonCompositingDescendants(nullptr, PaintInvalidationStyleChange);
     }
 
     // The used style for body background may change due to computed style change
@@ -289,10 +285,9 @@ void LayoutBoxModelObject::createLayer(PaintLayerType type)
     // descendants to change paint invalidation container. Therefore we must eagerly invalidate
     // them on the original paint invalidation container before creating the layer.
     if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled() && isRooted() && styleRef().isTreatedAsOrStackingContext()) {
-        if (const LayoutBoxModelObject* currentPaintInvalidationContainer = containerForPaintInvalidation()) {
-            if (!currentPaintInvalidationContainer->styleRef().isStackingContext())
-                invalidatePaintIncludingNonSelfPaintingLayerDescendants(*currentPaintInvalidationContainer);
-        }
+        const LayoutBoxModelObject& currentPaintInvalidationContainer = containerForPaintInvalidation();
+        if (!currentPaintInvalidationContainer.styleRef().isStackingContext())
+            invalidatePaintIncludingNonSelfPaintingLayerDescendants(currentPaintInvalidationContainer);
     }
 
     ASSERT(!m_layer);
@@ -356,7 +351,7 @@ void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintI
     bool establishesNewPaintInvalidationContainer = isPaintInvalidationContainer();
     const LayoutBoxModelObject& newPaintInvalidationContainer = *adjustCompositedContainerForSpecialAncestors(establishesNewPaintInvalidationContainer ? this : &paintInvalidationState.paintInvalidationContainer());
     // FIXME: This assert should be re-enabled when we move paint invalidation to after compositing update. crbug.com/360286
-    // ASSERT(&newPaintInvalidationContainer == containerForPaintInvalidation());
+    // ASSERT(&newPaintInvalidationContainer == &containerForPaintInvalidation());
 
     LayoutRect previousPaintInvalidationRect = this->previousPaintInvalidationRect();
 
@@ -387,6 +382,9 @@ void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintI
 
 void LayoutBoxModelObject::setBackingNeedsPaintInvalidationInRect(const LayoutRect& r, PaintInvalidationReason invalidationReason) const
 {
+    // TODO(wangxianzhu): Enable the following assert after paint invalidation for spv2 is ready.
+    // ASSERT(!RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+
     // https://bugs.webkit.org/show_bug.cgi?id=61159 describes an unreproducible crash here,
     // so assert but check that the layer is composited.
     ASSERT(compositingState() != NotComposited);
@@ -403,13 +401,13 @@ void LayoutBoxModelObject::setBackingNeedsPaintInvalidationInRect(const LayoutRe
     }
 }
 
-void LayoutBoxModelObject::invalidateDisplayItemClientOnBacking(const DisplayItemClientWrapper& displayItemClient) const
+void LayoutBoxModelObject::invalidateDisplayItemClientOnBacking(const DisplayItemClient& displayItemClient, PaintInvalidationReason invalidationReason) const
 {
     if (layer()->groupedMapping()) {
         if (GraphicsLayer* squashingLayer = layer()->groupedMapping()->squashingLayer())
-            squashingLayer->invalidateDisplayItemClient(displayItemClient);
+            squashingLayer->invalidateDisplayItemClient(displayItemClient, invalidationReason);
     } else if (CompositedLayerMapping* compositedLayerMapping = layer()->compositedLayerMapping()) {
-        compositedLayerMapping->invalidateDisplayItemClient(displayItemClient);
+        compositedLayerMapping->invalidateDisplayItemClient(displayItemClient, invalidationReason);
     }
 }
 
@@ -438,14 +436,8 @@ void LayoutBoxModelObject::addOutlineRectsForDescendant(const LayoutObject& desc
     if (descendant.hasLayer()) {
         Vector<LayoutRect> layerOutlineRects;
         descendant.addOutlineRects(layerOutlineRects, LayoutPoint(), includeBlockOverflows);
-        for (size_t i = 0; i < layerOutlineRects.size(); ++i) {
-            FloatQuad quadInBox = toLayoutBoxModelObject(descendant).localToContainerQuad(FloatQuad(FloatRect(layerOutlineRects[i])), this);
-            LayoutRect rect = LayoutRect(quadInBox.boundingBox());
-            if (!rect.isEmpty()) {
-                rect.moveBy(additionalOffset);
-                rects.append(rect);
-            }
-        }
+        descendant.localToAncestorRects(layerOutlineRects, this, LayoutPoint(), additionalOffset);
+        rects.appendVector(layerOutlineRects);
         return;
     }
 
@@ -683,60 +675,60 @@ LayoutUnit LayoutBoxModelObject::computedCSSPadding(const Length& padding) const
     return minimumValueForLength(padding, w);
 }
 
-static inline int resolveWidthForRatio(int height, const FloatSize& intrinsicRatio)
+static inline LayoutUnit resolveWidthForRatio(LayoutUnit height, const FloatSize& intrinsicRatio)
 {
-    return ceilf(height * intrinsicRatio.width() / intrinsicRatio.height());
+    return height * intrinsicRatio.width() / intrinsicRatio.height();
 }
 
-static inline int resolveHeightForRatio(int width, const FloatSize& intrinsicRatio)
+static inline LayoutUnit resolveHeightForRatio(LayoutUnit width, const FloatSize& intrinsicRatio)
 {
-    return ceilf(width * intrinsicRatio.height() / intrinsicRatio.width());
+    return width * intrinsicRatio.height() / intrinsicRatio.width();
 }
 
-static inline IntSize resolveAgainstIntrinsicWidthOrHeightAndRatio(const IntSize& size, const FloatSize& intrinsicRatio, int useWidth, int useHeight)
+static inline LayoutSize resolveAgainstIntrinsicWidthOrHeightAndRatio(const LayoutSize& size, const FloatSize& intrinsicRatio, LayoutUnit useWidth, LayoutUnit useHeight)
 {
     if (intrinsicRatio.isEmpty()) {
         if (useWidth)
-            return IntSize(useWidth, size.height());
-        return IntSize(size.width(), useHeight);
+            return LayoutSize(useWidth, size.height());
+        return LayoutSize(size.width(), useHeight);
     }
 
     if (useWidth)
-        return IntSize(useWidth, resolveHeightForRatio(useWidth, intrinsicRatio));
-    return IntSize(resolveWidthForRatio(useHeight, intrinsicRatio), useHeight);
+        return LayoutSize(useWidth, resolveHeightForRatio(useWidth, intrinsicRatio));
+    return LayoutSize(resolveWidthForRatio(useHeight, intrinsicRatio), useHeight);
 }
 
-static inline IntSize resolveAgainstIntrinsicRatio(const IntSize& size, const FloatSize& intrinsicRatio)
+static inline LayoutSize resolveAgainstIntrinsicRatio(const LayoutSize& size, const FloatSize& intrinsicRatio)
 {
     // Two possible solutions: (size.width(), solutionHeight) or (solutionWidth, size.height())
     // "... must be assumed to be the largest dimensions..." = easiest answer: the rect with the largest surface area.
 
-    int solutionWidth = resolveWidthForRatio(size.height(), intrinsicRatio);
-    int solutionHeight = resolveHeightForRatio(size.width(), intrinsicRatio);
+    LayoutUnit solutionWidth = resolveWidthForRatio(size.height(), intrinsicRatio);
+    LayoutUnit solutionHeight = resolveHeightForRatio(size.width(), intrinsicRatio);
     if (solutionWidth <= size.width()) {
         if (solutionHeight <= size.height()) {
             // If both solutions fit, choose the one covering the larger area.
-            int areaOne = solutionWidth * size.height();
-            int areaTwo = size.width() * solutionHeight;
+            LayoutUnit areaOne = solutionWidth * size.height();
+            LayoutUnit areaTwo = size.width() * solutionHeight;
             if (areaOne < areaTwo)
-                return IntSize(size.width(), solutionHeight);
-            return IntSize(solutionWidth, size.height());
+                return LayoutSize(size.width(), solutionHeight);
+            return LayoutSize(solutionWidth, size.height());
         }
 
         // Only the first solution fits.
-        return IntSize(solutionWidth, size.height());
+        return LayoutSize(solutionWidth, size.height());
     }
 
     // Only the second solution fits, assert that.
     ASSERT(solutionHeight <= size.height());
-    return IntSize(size.width(), solutionHeight);
+    return LayoutSize(size.width(), solutionHeight);
 }
 
-IntSize LayoutBoxModelObject::calculateImageIntrinsicDimensions(StyleImage* image, const IntSize& positioningAreaSize, ScaleByEffectiveZoomOrNot shouldScaleOrNot) const
+LayoutSize LayoutBoxModelObject::calculateImageIntrinsicDimensions(StyleImage* image, const LayoutSize& positioningAreaSize, ScaleByEffectiveZoomOrNot shouldScaleOrNot) const
 {
     // A generated image without a fixed size, will always return the container size as intrinsic size.
     if (image->isGeneratedImage() && image->usesImageContainerSize())
-        return IntSize(positioningAreaSize.width(), positioningAreaSize.height());
+        return positioningAreaSize;
 
     Length intrinsicWidth(Fixed);
     Length intrinsicHeight(Fixed);
@@ -746,8 +738,9 @@ IntSize LayoutBoxModelObject::calculateImageIntrinsicDimensions(StyleImage* imag
     ASSERT(intrinsicWidth.isFixed());
     ASSERT(intrinsicHeight.isFixed());
 
-    IntSize resolvedSize(intrinsicWidth.value(), intrinsicHeight.value());
-    IntSize minimumSize(resolvedSize.width() > 0 ? 1 : 0, resolvedSize.height() > 0 ? 1 : 0);
+    LayoutSize resolvedSize(intrinsicWidth.value(), intrinsicHeight.value());
+    LayoutSize minimumSize(resolvedSize.width() > LayoutUnit() ? LayoutUnit(1) : LayoutUnit(),
+        resolvedSize.height() > LayoutUnit() ? LayoutUnit(1) : LayoutUnit());
     if (shouldScaleOrNot == ScaleByEffectiveZoom)
         resolvedSize.scale(style()->effectiveZoom());
     resolvedSize.clampToMinimumSize(minimumSize);
@@ -759,7 +752,7 @@ IntSize LayoutBoxModelObject::calculateImageIntrinsicDimensions(StyleImage* imag
     // * and an intrinsic aspect ratio, then the missing dimension is calculated from the given dimension and the ratio.
     // * and no intrinsic aspect ratio, then the missing dimension is assumed to be the size of the rectangle that
     //   establishes the coordinate system for the 'background-position' property.
-    if (resolvedSize.width() > 0 || resolvedSize.height() > 0)
+    if (resolvedSize.width() > LayoutUnit() || resolvedSize.height() > LayoutUnit())
         return resolveAgainstIntrinsicWidthOrHeightAndRatio(positioningAreaSize, intrinsicRatio, resolvedSize.width(), resolvedSize.height());
 
     // If the image has no intrinsic dimensions and has an intrinsic ratio the dimensions must be assumed to be the
@@ -1005,6 +998,19 @@ void LayoutBoxModelObject::moveChildTo(LayoutBoxModelObject* toBoxModelObject, L
 
     ASSERT(this == child->parent());
     ASSERT(!beforeChild || toBoxModelObject == beforeChild->parent());
+
+    // If a child is moving from a block-flow to an inline-flow parent then any floats currently intruding into
+    // the child can no longer do so. This can happen if a block becomes floating or out-of-flow and is moved
+    // to an anonymous block. Remove all floats from their float-lists immediately as markAllDescendantsWithFloatsForLayout
+    // won't attempt to remove floats from parents that have inline-flow if we try later.
+    if (child->isLayoutBlockFlow() && toBoxModelObject->childrenInline() && !childrenInline()) {
+        toLayoutBlockFlow(child)->removeFloatingObjectsFromDescendants();
+        ASSERT(!toLayoutBlockFlow(child)->containsFloats());
+    }
+
+    if (fullRemoveInsert && isLayoutBlock() && child->isBox())
+        LayoutBlock::removePercentHeightDescendantIfNeeded(toLayoutBox(child));
+
     if (fullRemoveInsert && (toBoxModelObject->isLayoutBlock() || toBoxModelObject->isLayoutInline())) {
         // Takes care of adding the new child correctly if toBlock and fromBlock
         // have different kind of children (block vs inline).
@@ -1022,6 +1028,7 @@ void LayoutBoxModelObject::moveChildrenTo(LayoutBoxModelObject* toBoxModelObject
     if (fullRemoveInsert && isLayoutBlock()) {
         LayoutBlock* block = toLayoutBlock(this);
         block->removePositionedObjects(nullptr);
+        LayoutBlock::removePercentHeightDescendantIfNeeded(block);
         if (block->isLayoutBlockFlow())
             toLayoutBlockFlow(block)->removeFloatingObjects();
     }

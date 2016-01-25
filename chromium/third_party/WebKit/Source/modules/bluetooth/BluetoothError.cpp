@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/bluetooth/BluetoothError.h"
 
 #include "core/dom/DOMException.h"
@@ -25,23 +24,31 @@ DOMException* BluetoothError::take(ScriptPromiseResolver*, const WebBluetoothErr
         MAP_ERROR(CharacteristicNoLongerExists, InvalidStateError, "GATT Characteristic no longer exists.");
 
         // NetworkErrors:
-        MAP_ERROR(GATTOperationInProgress, NetworkError, "GATT operation already in progress.");
-        MAP_ERROR(GATTNotPaired, NetworkError, "GATT Error: Not paired.");
-        MAP_ERROR(DeviceNoLongerInRange, NetworkError, "Bluetooth Device is no longer in range.");
-        MAP_ERROR(ConnectUnknownError, NetworkError, "Unknown error when connecting to the device.");
         MAP_ERROR(ConnectAlreadyInProgress, NetworkError, "Connection already in progress.");
-        MAP_ERROR(ConnectUnknownFailure, NetworkError, "Connection failed for unknown reason.");
-        MAP_ERROR(ConnectAuthFailed, NetworkError, "Authentication failed.");
+        MAP_ERROR(ConnectAttributeLengthInvalid, NetworkError, "Write operation exceeds the maximum length of the attribute.");
         MAP_ERROR(ConnectAuthCanceled, NetworkError, "Authentication canceled.");
+        MAP_ERROR(ConnectAuthFailed, NetworkError, "Authentication failed.");
         MAP_ERROR(ConnectAuthRejected, NetworkError, "Authentication rejected.");
         MAP_ERROR(ConnectAuthTimeout, NetworkError, "Authentication timeout.");
+        MAP_ERROR(ConnectConnectionCongested, NetworkError, "Remote device connection is congested.");
+        MAP_ERROR(ConnectInsufficientEncryption, NetworkError, "Insufficient encryption for a given operation");
+        MAP_ERROR(ConnectOffsetInvalid, NetworkError, "Read or write operation was requested with an invalid offset.");
+        MAP_ERROR(ConnectReadNotPermitted, NetworkError, "GATT read operation is not permitted.");
+        MAP_ERROR(ConnectRequestNotSupported, NetworkError, "The given request is not supported.");
+        MAP_ERROR(ConnectUnknownError, NetworkError, "Unknown error when connecting to the device.");
+        MAP_ERROR(ConnectUnknownFailure, NetworkError, "Connection failed for unknown reason.");
         MAP_ERROR(ConnectUnsupportedDevice, NetworkError, "Unsupported device.");
+        MAP_ERROR(ConnectWriteNotPermitted, NetworkError, "GATT write operation is not permitted.");
+        MAP_ERROR(DeviceNoLongerInRange, NetworkError, "Bluetooth Device is no longer in range.");
+        MAP_ERROR(GATTNotPaired, NetworkError, "GATT Error: Not paired.");
+        MAP_ERROR(GATTOperationInProgress, NetworkError, "GATT operation already in progress.");
         MAP_ERROR(UntranslatedConnectErrorCode, NetworkError, "Unknown ConnectErrorCode.");
 
         // NotFoundErrors:
         MAP_ERROR(NoBluetoothAdapter, NotFoundError, "Bluetooth adapter not available.");
         MAP_ERROR(ChosenDeviceVanished, NotFoundError, "User selected a device that doesn't exist anymore.");
         MAP_ERROR(ChooserCancelled, NotFoundError, "User cancelled the requestDevice() chooser.");
+        MAP_ERROR(ChooserDeniedPermission, NotFoundError, "User denied the browser permission to scan for Bluetooth devices.");
         MAP_ERROR(ServiceNotFound, NotFoundError, "Service not found in device.");
         MAP_ERROR(CharacteristicNotFound, NotFoundError, "Characteristic not found in device.");
 

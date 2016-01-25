@@ -4,6 +4,8 @@
 
 #include "net/socket/ssl_client_socket_pool.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/metrics/field_trial.h"
@@ -122,7 +124,7 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
                context.channel_id_service,
                context.transport_security_state,
                context.cert_transparency_verifier,
-               context.cert_policy_enforcer,
+               context.ct_policy_enforcer,
                (params->privacy_mode() == PRIVACY_MODE_ENABLED
                     ? "pm/" + context.ssl_session_cache_shard
                     : context.ssl_session_cache_shard)),
@@ -319,10 +321,8 @@ int SSLConnectJob::DoSSLConnect() {
   connect_timing_.ssl_start = base::TimeTicks::Now();
 
   ssl_socket_ = client_socket_factory_->CreateSSLClientSocket(
-      transport_socket_handle_.Pass(),
-      params_->host_and_port(),
-      params_->ssl_config(),
-      context_);
+      std::move(transport_socket_handle_), params_->host_and_port(),
+      params_->ssl_config(), context_);
   return ssl_socket_->Connect(callback_);
 }
 
@@ -372,7 +372,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                                                     ssl_info.connection_status),
                               SSL_CONNECTION_VERSION_MAX);
 
-    uint16 cipher_suite =
+    uint16_t cipher_suite =
         SSLConnectionStatusToCipherSuite(ssl_info.connection_status);
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_CipherSuite", cipher_suite);
 
@@ -440,7 +440,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_Connection_Error", std::abs(result));
 
   if (result == OK || IsCertificateError(result)) {
-    SetSocket(ssl_socket_.Pass());
+    SetSocket(std::move(ssl_socket_));
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     error_response_info_.cert_request_info = new SSLCertRequestInfo;
     ssl_socket_->GetSSLCertRequestInfo(
@@ -510,7 +510,7 @@ SSLClientSocketPool::SSLClientSocketPool(
     ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
     CTVerifier* cert_transparency_verifier,
-    CertPolicyEnforcer* cert_policy_enforcer,
+    CTPolicyEnforcer* ct_policy_enforcer,
     const std::string& ssl_session_cache_shard,
     ClientSocketFactory* client_socket_factory,
     TransportClientSocketPool* transport_pool,
@@ -535,7 +535,7 @@ SSLClientSocketPool::SSLClientSocketPool(
                                        channel_id_service,
                                        transport_security_state,
                                        cert_transparency_verifier,
-                                       cert_policy_enforcer,
+                                       ct_policy_enforcer,
                                        ssl_session_cache_shard),
                 net_log)),
       ssl_config_service_(ssl_config_service) {
@@ -608,7 +608,7 @@ void SSLClientSocketPool::CancelRequest(const std::string& group_name,
 void SSLClientSocketPool::ReleaseSocket(const std::string& group_name,
                                         scoped_ptr<StreamSocket> socket,
                                         int id) {
-  base_.ReleaseSocket(group_name, socket.Pass(), id);
+  base_.ReleaseSocket(group_name, std::move(socket), id);
 }
 
 void SSLClientSocketPool::FlushWithError(int error) {
@@ -657,7 +657,7 @@ scoped_ptr<base::DictionaryValue> SSLClientSocketPool::GetInfoAsValue(
     }
     dict->Set("nested_pools", list);
   }
-  return dict.Pass();
+  return dict;
 }
 
 base::TimeDelta SSLClientSocketPool::ConnectionTimeout() const {

@@ -4,6 +4,8 @@
 
 #include "content/renderer/pepper/url_response_info_util.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
@@ -75,7 +77,7 @@ void DataFromWebURLResponse(RendererPpapiHostImpl* host_impl,
                             const WebURLResponse& response,
                             const DataFromWebURLResponseCallback& callback) {
   ppapi::URLResponseInfoData data;
-  data.url = response.url().spec();
+  data.url = response.url().string().utf8();
   data.status_code = response.httpStatusCode();
   data.status_text = response.httpStatusText().utf8();
   if (IsRedirect(data.status_code)) {

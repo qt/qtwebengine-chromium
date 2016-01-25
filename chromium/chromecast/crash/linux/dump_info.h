@@ -58,10 +58,11 @@ class DumpInfo {
   //   "last_app_name": <last_app_name>,
   //   "release_version": <release_version>,
   //   "build_number": <build_number>
+  //   "reason": <reason>
   // }
   scoped_ptr<base::Value> GetAsValue() const;
   const MinidumpParams& params() const { return params_; }
-  const bool valid() const { return valid_; }
+  bool valid() const { return valid_; }
 
  private:
   // Checks if parsed JSON in |value| is valid, if so populates the object's

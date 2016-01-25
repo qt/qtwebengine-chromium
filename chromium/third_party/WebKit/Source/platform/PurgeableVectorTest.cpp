@@ -28,15 +28,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/PurgeableVector.h"
 
-#include "platform/TestingPlatformSupport.h"
+#include "platform/testing/TestingPlatformSupport.h"
 #include "public/platform/WebDiscardableMemory.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Vector.h"
 #include <algorithm>
 #include <cstdlib>
-#include <gtest/gtest.h>
 
 namespace blink {
 

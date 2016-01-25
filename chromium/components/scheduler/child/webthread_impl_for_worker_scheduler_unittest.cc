@@ -4,6 +4,7 @@
 
 #include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"
 
+#include "base/macros.h"
 #include "base/synchronization/waitable_event.h"
 #include "components/scheduler/child/web_scheduler_impl.h"
 #include "components/scheduler/child/worker_scheduler_impl.h"
@@ -92,6 +93,7 @@ class WebThreadImplForWorkerSchedulerTest : public testing::Test {
 
   void SetUp() override {
     thread_.reset(new WebThreadImplForWorkerScheduler("test thread"));
+    thread_->Init();
   }
 
   void RunOnWorkerThread(const tracked_objects::Location& from_here,

@@ -5,15 +5,18 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_H_
 
+#include <stdint.h>
+
 #include <list>
-#include <map>
 #include <set>
 #include <string>
 #include <utility>
 
 #include "base/callback.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "build/build_config.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
 #include "device/bluetooth/bluetooth_audio_sink.h"
 #include "device/bluetooth/bluetooth_device.h"
@@ -109,6 +112,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
                                     BluetoothDevice* device,
                                     BluetoothGattService* service) {}
 
+    // Called when all the GATT Services in |device| have been discovered
+    // and GattServiceAdded has been called for each service.
+    virtual void GattServicesDiscovered(BluetoothAdapter* adapter,
+                                        BluetoothDevice* device) {}
+
     // Called when all characteristic and descriptor discovery procedures are
     // known to be completed for the GATT service |service|. This method will be
     // called after the initial discovery of a GATT service and will usually be
@@ -163,12 +171,13 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
     virtual void GattCharacteristicValueChanged(
         BluetoothAdapter* adapter,
         BluetoothGattCharacteristic* characteristic,
-        const std::vector<uint8>& value) {}
+        const std::vector<uint8_t>& value) {}
 
     // Called when the value of a characteristic descriptor has been updated.
     virtual void GattDescriptorValueChanged(BluetoothAdapter* adapter,
                                             BluetoothGattDescriptor* descriptor,
-                                            const std::vector<uint8>& value) {}
+                                            const std::vector<uint8_t>& value) {
+    }
   };
 
   // Used to configure a listening servie.
@@ -216,7 +225,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   // Returns a weak pointer to an existing adapter for testing purposes only.
   base::WeakPtr<BluetoothAdapter> GetWeakPtrForTesting();
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
   // Shutdown the adapter: tear down and clean up all objects owned by
   // BluetoothAdapter. After this call, the BluetoothAdapter will behave as if
   // no Bluetooth controller exists in the local system. |IsPresent| will return
@@ -394,7 +403,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   friend class BluetoothDiscoverySession;
   friend class BluetoothTestBase;
 
-  typedef std::map<const std::string, BluetoothDevice*> DevicesMap;
+  typedef base::ScopedPtrHashMap<std::string, scoped_ptr<BluetoothDevice>>
+      DevicesMap;
   typedef std::pair<BluetoothDevice::PairingDelegate*, PairingDelegatePriority>
       PairingDelegatePair;
   typedef base::Callback<void(UMABluetoothDiscoverySessionOutcome)>

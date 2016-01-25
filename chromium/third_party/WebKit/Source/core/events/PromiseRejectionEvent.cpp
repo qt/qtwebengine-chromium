@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 
-#include "config.h"
 #include "core/events/PromiseRejectionEvent.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
@@ -18,10 +17,9 @@ PromiseRejectionEvent::PromiseRejectionEvent(ScriptState* state, const AtomicStr
     : Event(type, initializer)
     , m_scriptState(state)
 {
-    if (initializer.hasPromise()) {
-        m_promise.set(initializer.promise().isolate(), initializer.promise().v8Value());
-        m_promise.setWeak(this, &PromiseRejectionEvent::didCollectPromise);
-    }
+    ASSERT(initializer.hasPromise());
+    m_promise.set(initializer.promise().isolate(), initializer.promise().v8Value());
+    m_promise.setWeak(this, &PromiseRejectionEvent::didCollectPromise);
     if (initializer.hasReason()) {
         m_reason.set(initializer.reason().isolate(), initializer.reason().v8Value());
         m_reason.setWeak(this, &PromiseRejectionEvent::didCollectReason);
@@ -44,7 +42,7 @@ ScriptValue PromiseRejectionEvent::reason(ScriptState* state) const
 {
     // Return null when the value is accessed by a different world than the world that created the value.
     if (m_reason.isEmpty() || !m_scriptState || !m_scriptState->contextIsValid() || m_scriptState->world().worldId() != state->world().worldId())
-        return ScriptValue(state, v8::Null(state->isolate()));
+        return ScriptValue(state, v8::Undefined(state->isolate()));
     return ScriptValue(m_scriptState.get(), m_reason.newLocal(m_scriptState->isolate()));
 }
 

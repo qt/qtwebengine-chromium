@@ -5,6 +5,8 @@
 #ifndef UI_OZONE_PLATFORM_DRM_COMMON_DRM_UTIL_H_
 #define UI_OZONE_PLATFORM_DRM_COMMON_DRM_UTIL_H_
 
+#include <stddef.h>
+
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/scoped_vector.h"
@@ -55,8 +57,14 @@ DisplayMode_Params CreateDisplayModeParams(const drmModeModeInfo& mode);
 DisplaySnapshot_Params CreateDisplaySnapshotParams(
     HardwareDisplayControllerInfo* info,
     int fd,
+    const base::FilePath& sys_path,
     size_t device_index,
     const gfx::Point& origin);
+
+int GetFourCCFormatFromBufferFormat(gfx::BufferFormat format);
+gfx::BufferFormat GetBufferFormatFromFourCCFormat(int format);
+
+int GetFourCCFormatForFramebuffer(gfx::BufferFormat format);
 
 }  // namespace ui
 

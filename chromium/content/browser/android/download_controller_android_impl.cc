@@ -4,6 +4,9 @@
 
 #include "content/browser/android/download_controller_android_impl.h"
 
+#include <utility>
+
+#include "base/android/context_utils.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/bind.h"
@@ -91,7 +94,7 @@ void CreateContextMenuDownload(int render_process_id,
   if (!is_link && extra_headers.empty())
     dl_params->set_prefer_cache(true);
   dl_params->set_prompt(false);
-  dlm->DownloadUrl(dl_params.Pass());
+  dlm->DownloadUrl(std::move(dl_params));
 }
 
 }  // namespace
@@ -181,16 +184,10 @@ void DownloadControllerAndroidImpl::CancelDeferredDownload(
 }
 
 void DownloadControllerAndroidImpl::AcquireFileAccessPermission(
-    int render_process_id,
-    int render_view_id,
+    WebContents* web_contents,
     const DownloadControllerAndroid::AcquireFileAccessPermissionCallback& cb) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  WebContents* web_contents = GetWebContents(render_process_id, render_view_id);
-  if (!web_contents) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, base::Bind(cb, false));
-    return;
-  }
+  DCHECK(web_contents);
 
   ScopedJavaLocalRef<jobject> view =
       GetContentViewCoreFromWebContents(web_contents);
@@ -259,16 +256,10 @@ void DownloadControllerAndroidImpl::PrepareDownloadInfo(
 
   net::CookieStore* cookie_store = request->context()->cookie_store();
   if (cookie_store) {
-    net::CookieMonster* cookie_monster = cookie_store->GetCookieMonster();
-    if (cookie_monster) {
-      cookie_monster->GetAllCookiesForURLAsync(
-          request->url(),
-          base::Bind(&DownloadControllerAndroidImpl::CheckPolicyAndLoadCookies,
-                     base::Unretained(this), info_android, callback,
-                     global_id));
-    } else {
-      DoLoadCookies(info_android, callback, global_id);
-    }
+    cookie_store->GetAllCookiesForURLAsync(
+        request->url(),
+        base::Bind(&DownloadControllerAndroidImpl::CheckPolicyAndLoadCookies,
+                   base::Unretained(this), info_android, callback, global_id));
   } else {
     // Can't get any cookies, start android download.
     callback.Run(info_android);
@@ -360,7 +351,7 @@ void DownloadControllerAndroidImpl::StartAndroidDownload(
   }
 
   AcquireFileAccessPermission(
-      render_process_id, render_view_id,
+      web_contents,
       base::Bind(&DownloadControllerAndroidImpl::StartAndroidDownloadInternal,
                  base::Unretained(this), render_process_id, render_view_id,
                  info));
@@ -536,9 +527,8 @@ void DownloadControllerAndroidImpl::StartContextMenuDownload(
   int process_id = web_contents->GetRenderProcessHost()->GetID();
   int routing_id = web_contents->GetRoutingID();
   AcquireFileAccessPermission(
-      process_id, routing_id,
-      base::Bind(&CreateContextMenuDownload, process_id, routing_id, params,
-                 is_link, extra_headers));
+      web_contents, base::Bind(&CreateContextMenuDownload, process_id,
+                               routing_id, params, is_link, extra_headers));
 }
 
 void DownloadControllerAndroidImpl::DangerousDownloadValidated(

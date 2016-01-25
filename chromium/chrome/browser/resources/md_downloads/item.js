@@ -3,34 +3,25 @@
 // found in the LICENSE file.
 
 cr.define('downloads', function() {
+  var InkyTextButton = Polymer({
+    is: 'inky-text-button',
+
+    behaviors: [
+      Polymer.PaperInkyFocusBehavior
+    ],
+
+    hostAttributes: {
+      role: 'button',
+      tabindex: 0,
+    },
+  });
+
   var Item = Polymer({
     is: 'downloads-item',
-
-    /**
-     * @param {!downloads.ThrottledIconLoader} iconLoader
-     */
-    factoryImpl: function(iconLoader) {
-      /** @private {!downloads.ThrottledIconLoader} */
-      this.iconLoader_ = iconLoader;
-    },
 
     properties: {
       data: {
         type: Object,
-      },
-
-      hideDate: {
-        type: Boolean,
-        value: true,
-      },
-
-      readyPromise: {
-        type: Object,
-        value: function() {
-          return new Promise(function(resolve, reject) {
-            this.resolveReadyPromise_ = resolve;
-          }.bind(this));
-        },
       },
 
       completelyOnDisk_: {
@@ -105,21 +96,11 @@ cr.define('downloads', function() {
       // TODO(dbeam): this gets called way more when I observe data.by_ext_id
       // and data.by_ext_name directly. Why?
       'observeControlledBy_(controlledBy_)',
+      'observeIsDangerous_(isDangerous_, data.file_path)',
     ],
 
     ready: function() {
       this.content = this.$.content;
-      this.resolveReadyPromise_();
-    },
-
-    /** @param {!downloads.Data} data */
-    update: function(data) {
-      this.data = data;
-
-      if (!this.isDangerous_) {
-        var icon = 'chrome://fileicon/' + encodeURIComponent(data.file_path);
-        this.iconLoader_.loadScaledIcon(this.$['file-icon'], icon);
-      }
     },
 
     /** @private */
@@ -155,8 +136,26 @@ cr.define('downloads', function() {
     },
 
     /** @private */
+    computeDangerIcon_: function() {
+      if (!this.isDangerous_)
+        return '';
+
+      switch (this.data.danger_type) {
+        case downloads.DangerType.DANGEROUS_CONTENT:
+        case downloads.DangerType.DANGEROUS_HOST:
+        case downloads.DangerType.DANGEROUS_URL:
+        case downloads.DangerType.POTENTIALLY_UNWANTED:
+        case downloads.DangerType.UNCOMMON_CONTENT:
+          return 'remove-circle';
+        default:
+          return 'warning';
+      }
+    },
+
+    /** @private */
     computeDate_: function() {
-      if (this.hideDate)
+      assert(typeof this.data.hideDate == 'boolean');
+      if (this.data.hideDate)
         return '';
       return assert(this.data.since_string || this.data.date_string);
     },
@@ -263,12 +262,21 @@ cr.define('downloads', function() {
     },
 
     /** @private */
-    onCancelClick_: function() {
+    observeIsDangerous_: function() {
+      if (this.data && !this.isDangerous_) {
+        var filePath = encodeURIComponent(this.data.file_path);
+        var scaleFactor = '?scale=' + window.devicePixelRatio + 'x';
+        this.$['file-icon'].src = 'chrome://fileicon/' + filePath + scaleFactor;
+      }
+    },
+
+    /** @private */
+    onCancelTap_: function() {
       downloads.ActionService.getInstance().cancel(this.data.id);
     },
 
     /** @private */
-    onDiscardDangerous_: function() {
+    onDiscardDangerousTap_: function() {
       downloads.ActionService.getInstance().discardDangerous(this.data.id);
     },
 
@@ -285,41 +293,44 @@ cr.define('downloads', function() {
      * @param {Event} e
      * @private
      */
-    onFileLinkClick_: function(e) {
+    onFileLinkTap_: function(e) {
       e.preventDefault();
       downloads.ActionService.getInstance().openFile(this.data.id);
     },
 
     /** @private */
-    onPauseClick_: function() {
+    onPauseTap_: function() {
       downloads.ActionService.getInstance().pause(this.data.id);
     },
 
     /** @private */
-    onRemoveClick_: function() {
+    onRemoveTap_: function() {
       downloads.ActionService.getInstance().remove(this.data.id);
     },
 
     /** @private */
-    onResumeClick_: function() {
+    onResumeTap_: function() {
       downloads.ActionService.getInstance().resume(this.data.id);
     },
 
     /** @private */
-    onRetryClick_: function() {
+    onRetryTap_: function() {
       downloads.ActionService.getInstance().download(this.data.url);
     },
 
     /** @private */
-    onSaveDangerous_: function() {
+    onSaveDangerousTap_: function() {
       downloads.ActionService.getInstance().saveDangerous(this.data.id);
     },
 
     /** @private */
-    onShowClick_: function() {
+    onShowTap_: function() {
       downloads.ActionService.getInstance().show(this.data.id);
     },
   });
 
-  return {Item: Item};
+  return {
+    InkyTextButton: InkyTextButton,
+    Item: Item,
+  };
 });

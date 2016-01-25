@@ -97,6 +97,7 @@ dir
 direction
 dirname
 disabled
+disableremoteplayback
 download
 draggable
 webkitdropzone
@@ -147,7 +148,6 @@ max
 maxlength
 mayscript
 media
-mediagroup
 method
 min
 minlength
@@ -292,6 +292,7 @@ selected
 shape
 size
 sizes
+slot
 span
 spellcheck
 src

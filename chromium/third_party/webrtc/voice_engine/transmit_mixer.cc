@@ -11,19 +11,17 @@
 #include "webrtc/voice_engine/transmit_mixer.h"
 
 #include "webrtc/base/format_macros.h"
-#include "webrtc/modules/utility/interface/audio_frame_operations.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/modules/utility/include/audio_frame_operations.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/channel.h"
 #include "webrtc/voice_engine/channel_manager.h"
 #include "webrtc/voice_engine/include/voe_external_media.h"
 #include "webrtc/voice_engine/statistics.h"
 #include "webrtc/voice_engine/utility.h"
 #include "webrtc/voice_engine/voe_base_impl.h"
-
-#define WEBRTC_ABS(a) (((a) < 0) ? -(a) : (a))
 
 namespace webrtc {
 namespace voe {
@@ -36,12 +34,20 @@ TransmitMixer::OnPeriodicProcess()
                  "TransmitMixer::OnPeriodicProcess()");
 
 #if defined(WEBRTC_VOICE_ENGINE_TYPING_DETECTION)
-    if (_typingNoiseWarningPending)
+    bool send_typing_noise_warning = false;
+    bool typing_noise_detected = false;
     {
+      CriticalSectionScoped cs(&_critSect);
+      if (_typingNoiseWarningPending) {
+        send_typing_noise_warning = true;
+        typing_noise_detected = _typingNoiseDetected;
+        _typingNoiseWarningPending = false;
+      }
+    }
+    if (send_typing_noise_warning) {
         CriticalSectionScoped cs(&_callbackCritSect);
-        if (_voiceEngineObserverPtr)
-        {
-            if (_typingNoiseDetected) {
+        if (_voiceEngineObserverPtr) {
+            if (typing_noise_detected) {
                 WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, -1),
                              "TransmitMixer::OnPeriodicProcess() => "
                              "CallbackOnError(VE_TYPING_NOISE_WARNING)");
@@ -57,7 +63,6 @@ TransmitMixer::OnPeriodicProcess()
                     VE_TYPING_NOISE_OFF_WARNING);
             }
         }
-        _typingNoiseWarningPending = false;
     }
 #endif
 
@@ -295,7 +300,8 @@ TransmitMixer::SetAudioProcessingModule(AudioProcessing* audioProcessingModule)
     return 0;
 }
 
-void TransmitMixer::GetSendCodecInfo(int* max_sample_rate, int* max_channels) {
+void TransmitMixer::GetSendCodecInfo(int* max_sample_rate,
+                                     size_t* max_channels) {
   *max_sample_rate = 8000;
   *max_channels = 1;
   for (ChannelManager::Iterator it(_channelManagerPtr); it.IsValid();
@@ -313,7 +319,7 @@ void TransmitMixer::GetSendCodecInfo(int* max_sample_rate, int* max_channels) {
 int32_t
 TransmitMixer::PrepareDemux(const void* audioSamples,
                             size_t nSamples,
-                            uint8_t nChannels,
+                            size_t nChannels,
                             uint32_t samplesPerSec,
                             uint16_t totalDelayMS,
                             int32_t clockDrift,
@@ -322,7 +328,7 @@ TransmitMixer::PrepareDemux(const void* audioSamples,
 {
     WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId, -1),
                  "TransmitMixer::PrepareDemux(nSamples=%" PRIuS ", "
-                 "nChannels=%u, samplesPerSec=%u, totalDelayMS=%u, "
+                 "nChannels=%" PRIuS ", samplesPerSec=%u, totalDelayMS=%u, "
                  "clockDrift=%d, currentMicLevel=%u)",
                  nSamples, nChannels, samplesPerSec, totalDelayMS, clockDrift,
                  currentMicLevel);
@@ -427,8 +433,8 @@ TransmitMixer::DemuxAndMix()
 }
 
 void TransmitMixer::DemuxAndMix(const int voe_channels[],
-                                int number_of_voe_channels) {
-  for (int i = 0; i < number_of_voe_channels; ++i) {
+                                size_t number_of_voe_channels) {
+  for (size_t i = 0; i < number_of_voe_channels; ++i) {
     voe::ChannelOwner ch = _channelManagerPtr->GetChannel(voe_channels[i]);
     voe::Channel* channel_ptr = ch.channel();
     if (channel_ptr) {
@@ -460,8 +466,8 @@ TransmitMixer::EncodeAndSend()
 }
 
 void TransmitMixer::EncodeAndSend(const int voe_channels[],
-                                  int number_of_voe_channels) {
-  for (int i = 0; i < number_of_voe_channels; ++i) {
+                                  size_t number_of_voe_channels) {
+  for (size_t i = 0; i < number_of_voe_channels; ++i) {
     voe::ChannelOwner ch = _channelManagerPtr->GetChannel(voe_channels[i]);
     voe::Channel* channel_ptr = ch.channel();
     if (channel_ptr && channel_ptr->Sending())
@@ -693,8 +699,7 @@ int TransmitMixer::StartRecordingMicrophone(const char* fileName,
     const uint32_t notificationTime(0); // Not supported in VoE
     CodecInst dummyCodec = { 100, "L16", 16000, 320, 1, 320000 };
 
-    if (codecInst != NULL &&
-      (codecInst->channels < 0 || codecInst->channels > 2))
+    if (codecInst != NULL && codecInst->channels > 2)
     {
         _engineStatisticsPtr->SetLastError(
             VE_BAD_ARGUMENT, kTraceError,
@@ -1128,10 +1133,10 @@ bool TransmitMixer::IsRecordingMic()
 
 void TransmitMixer::GenerateAudioFrame(const int16_t* audio,
                                        size_t samples_per_channel,
-                                       int num_channels,
+                                       size_t num_channels,
                                        int sample_rate_hz) {
   int codec_rate;
-  int num_codec_channels;
+  size_t num_codec_channels;
   GetSendCodecInfo(&codec_rate, &num_codec_channels);
   stereo_codec_ = num_codec_channels == 2;
 
@@ -1236,15 +1241,13 @@ int32_t TransmitMixer::MixOrReplaceAudioWithFile(
 void TransmitMixer::ProcessAudio(int delay_ms, int clock_drift,
                                  int current_mic_level, bool key_pressed) {
   if (audioproc_->set_stream_delay_ms(delay_ms) != 0) {
-    // A redundant warning is reported in AudioDevice, which we've throttled
-    // to avoid flooding the logs. Relegate this one to LS_VERBOSE to avoid
-    // repeating the problem here.
-    LOG_FERR1(LS_VERBOSE, set_stream_delay_ms, delay_ms);
+    // Silently ignore this failure to avoid flooding the logs.
   }
 
   GainControl* agc = audioproc_->gain_control();
   if (agc->set_stream_analog_level(current_mic_level) != 0) {
-    LOG_FERR1(LS_ERROR, set_stream_analog_level, current_mic_level);
+    LOG(LS_ERROR) << "set_stream_analog_level failed: current_mic_level = "
+                  << current_mic_level;
     assert(false);
   }
 
@@ -1279,9 +1282,11 @@ void TransmitMixer::TypingDetection(bool keyPressed)
 
   bool vadActive = _audioFrame.vad_activity_ == AudioFrame::kVadActive;
   if (_typingDetection.Process(keyPressed, vadActive)) {
+    CriticalSectionScoped cs(&_critSect);
     _typingNoiseWarningPending = true;
     _typingNoiseDetected = true;
   } else {
+    CriticalSectionScoped cs(&_critSect);
     // If there is already a warning pending, do not change the state.
     // Otherwise set a warning pending if last callback was for noise detected.
     if (!_typingNoiseWarningPending && _typingNoiseDetected) {

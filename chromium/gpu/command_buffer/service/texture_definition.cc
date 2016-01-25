@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/texture_definition.h"
 
+#include <stdint.h>
+
 #include <list>
 
 #include "base/lazy_instance.h"
@@ -17,6 +19,7 @@
 #include "ui/gl/scoped_binders.h"
 
 #if !defined(OS_MACOSX)
+#include "base/macros.h"
 #include "ui/gl/gl_surface_egl.h"
 #endif
 
@@ -25,7 +28,7 @@ namespace gles2 {
 
 namespace {
 
-class GLImageSync : public gfx::GLImage {
+class GLImageSync : public gl::GLImage {
  public:
   explicit GLImageSync(const scoped_refptr<NativeImageBuffer>& buffer,
                        const gfx::Size& size);
@@ -36,13 +39,10 @@ class GLImageSync : public gfx::GLImage {
   unsigned GetInternalFormat() override;
   bool BindTexImage(unsigned target) override;
   void ReleaseTexImage(unsigned target) override;
+  bool CopyTexImage(unsigned target) override;
   bool CopyTexSubImage(unsigned target,
                        const gfx::Point& offset,
                        const gfx::Rect& rect) override;
-  void WillUseTexImage() override;
-  void WillModifyTexImage() override;
-  void DidModifyTexImage() override;
-  void DidUseTexImage() override;
   bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                             int z_order,
                             gfx::OverlayTransform transform,
@@ -94,22 +94,14 @@ void GLImageSync::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
+bool GLImageSync::CopyTexImage(unsigned target) {
+  return false;
+}
+
 bool GLImageSync::CopyTexSubImage(unsigned target,
                                   const gfx::Point& offset,
                                   const gfx::Rect& rect) {
   return false;
-}
-
-void GLImageSync::WillUseTexImage() {
-}
-
-void GLImageSync::DidUseTexImage() {
-}
-
-void GLImageSync::WillModifyTexImage() {
-}
-
-void GLImageSync::DidModifyTexImage() {
 }
 
 bool GLImageSync::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
@@ -135,9 +127,9 @@ class NativeImageBufferEGL : public NativeImageBuffer {
  private:
   NativeImageBufferEGL(EGLDisplay display, EGLImageKHR image);
   ~NativeImageBufferEGL() override;
-  void AddClient(gfx::GLImage* client) override;
-  void RemoveClient(gfx::GLImage* client) override;
-  bool IsClient(gfx::GLImage* client) override;
+  void AddClient(gl::GLImage* client) override;
+  void RemoveClient(gl::GLImage* client) override;
+  bool IsClient(gl::GLImage* client) override;
   void BindToTexture(GLenum target) const override;
 
   const EGLDisplay egl_display_;
@@ -146,14 +138,14 @@ class NativeImageBufferEGL : public NativeImageBuffer {
   base::Lock lock_;
 
   struct ClientInfo {
-    explicit ClientInfo(gfx::GLImage* client);
+    explicit ClientInfo(gl::GLImage* client);
     ~ClientInfo();
 
-    gfx::GLImage* client;
+    gl::GLImage* client;
     bool needs_wait_before_read;
   };
   std::list<ClientInfo> client_infos_;
-  gfx::GLImage* write_client_;
+  gl::GLImage* write_client_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeImageBufferEGL);
 };
@@ -188,7 +180,7 @@ scoped_refptr<NativeImageBufferEGL> NativeImageBufferEGL::Create(
   return new NativeImageBufferEGL(egl_display, egl_image);
 }
 
-NativeImageBufferEGL::ClientInfo::ClientInfo(gfx::GLImage* client)
+NativeImageBufferEGL::ClientInfo::ClientInfo(gl::GLImage* client)
     : client(client), needs_wait_before_read(true) {}
 
 NativeImageBufferEGL::ClientInfo::~ClientInfo() {}
@@ -209,12 +201,12 @@ NativeImageBufferEGL::~NativeImageBufferEGL() {
     eglDestroyImageKHR(egl_display_, egl_image_);
 }
 
-void NativeImageBufferEGL::AddClient(gfx::GLImage* client) {
+void NativeImageBufferEGL::AddClient(gl::GLImage* client) {
   base::AutoLock lock(lock_);
   client_infos_.push_back(ClientInfo(client));
 }
 
-void NativeImageBufferEGL::RemoveClient(gfx::GLImage* client) {
+void NativeImageBufferEGL::RemoveClient(gl::GLImage* client) {
   base::AutoLock lock(lock_);
   if (write_client_ == client)
     write_client_ = NULL;
@@ -229,7 +221,7 @@ void NativeImageBufferEGL::RemoveClient(gfx::GLImage* client) {
   NOTREACHED();
 }
 
-bool NativeImageBufferEGL::IsClient(gfx::GLImage* client) {
+bool NativeImageBufferEGL::IsClient(gl::GLImage* client) {
   base::AutoLock lock(lock_);
   for (std::list<ClientInfo>::iterator it = client_infos_.begin();
        it != client_infos_.end();
@@ -255,9 +247,9 @@ class NativeImageBufferStub : public NativeImageBuffer {
 
  private:
   ~NativeImageBufferStub() override {}
-  void AddClient(gfx::GLImage* client) override {}
-  void RemoveClient(gfx::GLImage* client) override {}
-  bool IsClient(gfx::GLImage* client) override { return true; }
+  void AddClient(gl::GLImage* client) override {}
+  void RemoveClient(gl::GLImage* client) override {}
+  bool IsClient(gl::GLImage* client) override { return true; }
   void BindToTexture(GLenum target) const override {}
 
   DISALLOW_COPY_AND_ASSIGN(NativeImageBufferStub);
@@ -345,7 +337,7 @@ TextureDefinition::TextureDefinition(
       usage_(texture->usage()),
       immutable_(texture->IsImmutable()),
       defined_(texture->IsDefined()) {
-  DCHECK_IMPLIES(image_buffer_.get(), defined_);
+  DCHECK(!image_buffer_.get() || defined_);
   if (!image_buffer_.get() && defined_) {
     image_buffer_ = NativeImageBuffer::Create(texture->service_id());
     DCHECK(image_buffer_.get());
@@ -353,11 +345,10 @@ TextureDefinition::TextureDefinition(
 
   const Texture::FaceInfo& first_face = texture->face_infos_[0];
   if (image_buffer_.get()) {
-    scoped_refptr<gfx::GLImage> gl_image(
-        new GLImageSync(image_buffer_,
-                        gfx::Size(first_face.level_infos[0].width,
-                                  first_face.level_infos[0].height)));
-    texture->SetLevelImage(NULL, target_, 0, gl_image.get());
+    scoped_refptr<gl::GLImage> gl_image(new GLImageSync(
+        image_buffer_, gfx::Size(first_face.level_infos[0].width,
+                                 first_face.level_infos[0].height)));
+    texture->SetLevelImage(target_, 0, gl_image.get(), Texture::BOUND);
   }
 
   const Texture::LevelInfo& level = first_face.level_infos[0];
@@ -387,7 +378,7 @@ void TextureDefinition::UpdateTextureInternal(Texture* texture) const {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t_);
 
   if (image_buffer_.get()) {
-    gfx::GLImage* existing_image = texture->GetLevelImage(target_, 0);
+    gl::GLImage* existing_image = texture->GetLevelImage(target_, 0);
     // Don't need to re-bind if already bound before.
     if (!existing_image || !image_buffer_->IsClient(existing_image)) {
       image_buffer_->BindToTexture(target_);
@@ -406,12 +397,10 @@ void TextureDefinition::UpdateTextureInternal(Texture* texture) const {
 
   if (image_buffer_.get()) {
     texture->SetLevelImage(
-        NULL,
-        target_,
-        0,
-        new GLImageSync(
-            image_buffer_,
-            gfx::Size(level_info_.width, level_info_.height)));
+        target_, 0,
+        new GLImageSync(image_buffer_,
+                        gfx::Size(level_info_.width, level_info_.height)),
+        Texture::BOUND);
   }
 
   texture->target_ = target_;
@@ -437,7 +426,7 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
     if (bound_id == static_cast<GLint>(old_service_id)) {
       glBindTexture(target_, service_id);
     }
-    texture->SetLevelImage(NULL, target_, 0, NULL);
+    texture->SetLevelImage(target_, 0, NULL, Texture::UNBOUND);
   }
 
   UpdateTextureInternal(texture);

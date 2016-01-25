@@ -27,8 +27,8 @@
 #include "mojo/runner/android/background_application_loader.h"
 #include "mojo/runner/android/context_init.h"
 #include "mojo/runner/android/ui_application_loader_android.h"
-#include "mojo/runner/child_process.h"
 #include "mojo/runner/context.h"
+#include "mojo/runner/host/child_process.h"
 #include "mojo/runner/init.h"
 #include "mojo/shell/application_loader.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -39,9 +39,6 @@ namespace mojo {
 namespace runner {
 
 namespace {
-
-// Tag for logging.
-const char kLogTag[] = "chromium";
 
 // Command line argument for the communication fifo.
 const char kFifoPath[] = "fifo-path";
@@ -115,8 +112,6 @@ static void Init(JNIEnv* env,
              base::android::ConvertJavaStringToUTF8(env, j_tmp_dir).c_str(), 1);
   DCHECK_EQ(return_value, 0);
 
-  base::android::InitApplicationContext(env, activity);
-
   std::vector<std::string> parameters;
   parameters.push_back(
       base::android::ConvertJavaStringToUTF8(env, mojo_shell_path));
@@ -135,13 +130,13 @@ static void Init(JNIEnv* env,
   // will be invoked first-in-last-out.
   base::FilePath shell_file_root(
       base::android::ConvertJavaStringToUTF8(env, j_local_apps_directory));
-  Context* shell_context = new Context(shell_file_root);
+  Context* shell_context = new Context;
   g_context.Get().reset(shell_context);
 
   g_java_message_loop.Get().reset(new base::MessageLoopForUI);
   base::MessageLoopForUI::current()->Start();
 
-  shell_context->Init();
+  shell_context->Init(shell_file_root);
   ConfigureAndroidServices(shell_context);
 
   // This is done after the main message loop is started since it may post
@@ -187,10 +182,6 @@ Context* GetContext() {
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   base::CommandLine::Init(argc, argv);
-
-#if !defined(OFFICIAL_BUILD)
-  base::debug::EnableInProcessStackDumping();
-#endif
 
   mojo::runner::InitializeLogging();
   return mojo::runner::ChildProcessMain();

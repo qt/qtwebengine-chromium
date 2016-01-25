@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/shadow/ElementShadow.h"
 
 #include "core/css/StyleSheetList.h"
@@ -71,6 +70,10 @@ inline void DistributionPool::populateChildren(const ContainerNode& parent)
 {
     clear();
     for (Node* child = parent.firstChild(); child; child = child->nextSibling()) {
+        if (isHTMLSlotElement(child)) {
+            // TODO(hayato): Support re-distribution across v0 and v1 shadow trees
+            continue;
+        }
         if (isActiveInsertionPoint(*child)) {
             InsertionPoint* insertionPoint = toInsertionPoint(child);
             for (size_t i = 0; i < insertionPoint->distributedNodesSize(); ++i)
@@ -148,10 +151,10 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRootType typ
     EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
-    if (type == ShadowRootType::OpenByDefault) {
-        if (!youngestShadowRoot()) {
+    if (type == ShadowRootType::V0) {
+        if (m_shadowRoots.isEmpty()) {
             shadowHost.willAddFirstAuthorShadowRoot();
-        } else if (youngestShadowRoot()->type() == ShadowRootType::UserAgent) {
+        } else if (m_shadowRoots.head()->type() == ShadowRootType::UserAgent) {
             shadowHost.willAddFirstAuthorShadowRoot();
             UseCounter::countDeprecation(shadowHost.document(), UseCounter::ElementCreateShadowRootMultipleWithUserAgentShadowRoot);
         } else {
@@ -161,7 +164,7 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRootType typ
         shadowHost.willAddFirstAuthorShadowRoot();
     }
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+    for (ShadowRoot* root = m_shadowRoots.head(); root; root = root->olderShadowRoot())
         root->lazyReattachIfAttached();
 
     RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = ShadowRoot::create(shadowHost.document(), type);
@@ -203,7 +206,7 @@ void ElementShadow::attach(const Node::AttachContext& context)
     Node::AttachContext childrenContext(context);
     childrenContext.resolvedStyle = 0;
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
+    for (ShadowRoot* root = &youngestShadowRoot(); root; root = root->olderShadowRoot()) {
         if (root->needsAttach())
             root->attach(childrenContext);
     }
@@ -214,7 +217,7 @@ void ElementShadow::detach(const Node::AttachContext& context)
     Node::AttachContext childrenContext(context);
     childrenContext.resolvedStyle = 0;
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+    for (ShadowRoot* root = &youngestShadowRoot(); root; root = root->olderShadowRoot())
         root->detach(childrenContext);
 }
 
@@ -229,8 +232,8 @@ void ElementShadow::setNeedsDistributionRecalc()
 
 bool ElementShadow::hasSameStyles(const ElementShadow* other) const
 {
-    ShadowRoot* root = youngestShadowRoot();
-    ShadowRoot* otherRoot = other->youngestShadowRoot();
+    ShadowRoot* root = &youngestShadowRoot();
+    ShadowRoot* otherRoot = &other->youngestShadowRoot();
     while (root || otherRoot) {
         if (!root || !otherRoot)
             return false;
@@ -276,11 +279,19 @@ const DestinationInsertionPoints* ElementShadow::destinationInsertionPointsFor(c
 
 void ElementShadow::distribute()
 {
+    if (isV1())
+        distributeV1();
+    else
+        distributeV0();
+}
+
+void ElementShadow::distributeV0()
+{
     host()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Shadow));
     WillBeHeapVector<RawPtrWillBeMember<HTMLShadowElement>, 32> shadowInsertionPoints;
     DistributionPool pool(*host());
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
+    for (ShadowRoot* root = &youngestShadowRoot(); root; root = root->olderShadowRoot()) {
         HTMLShadowElement* shadowInsertionPoint = 0;
         const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& insertionPoints = root->descendantInsertionPoints();
         for (size_t i = 0; i < insertionPoints.size(); ++i) {
@@ -316,6 +327,13 @@ void ElementShadow::distribute()
             shadow->setNeedsDistributionRecalc();
     }
     InspectorInstrumentation::didPerformElementShadowDistribution(host());
+}
+
+void ElementShadow::distributeV1()
+{
+    if (!m_slotAssignment)
+        m_slotAssignment = SlotAssignment::create();
+    m_slotAssignment->resolveAssignment(youngestShadowRoot());
 }
 
 void ElementShadow::didDistributeNode(const Node* node, InsertionPoint* insertionPoint)
@@ -372,7 +390,7 @@ void ElementShadow::clearDistribution()
 {
     m_nodeToInsertionPoints.clear();
 
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+    for (ShadowRoot* root = &youngestShadowRoot(); root; root = root->olderShadowRoot())
         root->setShadowInsertionPointOfYoungerShadowRoot(nullptr);
 }
 
@@ -385,6 +403,7 @@ DEFINE_TRACE(ElementShadow)
     // It is therefore enough to trace one of the shadow roots here and the
     // rest will be traced from there.
     visitor->trace(m_shadowRoots.head());
+    visitor->trace(m_slotAssignment);
 #endif
 }
 

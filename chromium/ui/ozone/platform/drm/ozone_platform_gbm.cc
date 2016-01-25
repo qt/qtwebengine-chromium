@@ -5,10 +5,14 @@
 #include "ui/ozone/platform/drm/ozone_platform_gbm.h"
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <gbm.h>
 #include <stdlib.h>
+#include <xf86drm.h>
+#include <utility>
 
 #include "base/bind.h"
+#include "base/macros.h"
 #include "ui/base/cursor/ozone/bitmap_cursor_factory_ozone.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
@@ -18,9 +22,10 @@
 #include "ui/ozone/platform/drm/gpu/drm_device_manager.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_display_manager.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_platform_support.h"
-#include "ui/ozone/platform/drm/gpu/gbm_buffer.h"
-#include "ui/ozone/platform/drm/gpu/gbm_device.h"
+#include "ui/ozone/platform/drm/gpu/drm_thread_message_proxy.h"
+#include "ui/ozone/platform/drm/gpu/drm_thread_proxy.h"
 #include "ui/ozone/platform/drm/gpu/gbm_surface_factory.h"
+#include "ui/ozone/platform/drm/gpu/proxy_helpers.h"
 #include "ui/ozone/platform/drm/gpu/scanout_buffer.h"
 #include "ui/ozone/platform/drm/gpu/screen_manager.h"
 #include "ui/ozone/platform/drm/host/drm_cursor.h"
@@ -33,7 +38,7 @@
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
-#include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_platform.h"  // nogncheck
 #include "ui/ozone/public/ozone_switches.h"
 
 #if defined(USE_XKBCOMMON)
@@ -41,10 +46,6 @@
 #include "ui/events/ozone/layout/xkb/xkb_keyboard_layout_engine.h"
 #else
 #include "ui/events/ozone/layout/stub/stub_keyboard_layout_engine.h"
-#endif
-
-#if defined(USE_VGEM_MAP)
-#include <fcntl.h>
 #endif
 
 namespace ui {
@@ -71,45 +72,6 @@ class GlApiLoader {
   DISALLOW_COPY_AND_ASSIGN(GlApiLoader);
 };
 
-class GbmBufferGenerator : public ScanoutBufferGenerator {
- public:
-  GbmBufferGenerator() {}
-  ~GbmBufferGenerator() override {}
-
-  // ScanoutBufferGenerator:
-  scoped_refptr<ScanoutBuffer> Create(const scoped_refptr<DrmDevice>& drm,
-                                      gfx::BufferFormat format,
-                                      const gfx::Size& size) override {
-    scoped_refptr<GbmDevice> gbm(static_cast<GbmDevice*>(drm.get()));
-    return GbmBuffer::CreateBuffer(gbm, format, size,
-                                   gfx::BufferUsage::SCANOUT);
-  }
-
- protected:
-  DISALLOW_COPY_AND_ASSIGN(GbmBufferGenerator);
-};
-
-class GbmDeviceGenerator : public DrmDeviceGenerator {
- public:
-  GbmDeviceGenerator(bool use_atomic) : use_atomic_(use_atomic) {}
-  ~GbmDeviceGenerator() override {}
-
-  // DrmDeviceGenerator:
-  scoped_refptr<DrmDevice> CreateDevice(const base::FilePath& path,
-                                        base::File file) override {
-    scoped_refptr<DrmDevice> drm = new GbmDevice(path, file.Pass());
-    if (drm->Initialize(use_atomic_))
-      return drm;
-
-    return nullptr;
-  }
-
- private:
-  bool use_atomic_;
-
-  DISALLOW_COPY_AND_ASSIGN(GbmDeviceGenerator);
-};
-
 class OzonePlatformGbm : public OzonePlatform {
  public:
   OzonePlatformGbm() {}
@@ -117,7 +79,7 @@ class OzonePlatformGbm : public OzonePlatform {
 
   // OzonePlatform:
   ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
-    return surface_factory_ozone_.get();
+    return surface_factory_.get();
   }
   OverlayManagerOzone* GetOverlayManager() override {
     return overlay_manager_.get();
@@ -145,7 +107,7 @@ class OzonePlatformGbm : public OzonePlatform {
                           event_factory_ozone_.get(), cursor_.get(),
                           window_manager_.get(), display_manager_.get()));
     platform_window->Initialize();
-    return platform_window.Pass();
+    return std::move(platform_window);
   }
   scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return make_scoped_ptr(
@@ -153,11 +115,12 @@ class OzonePlatformGbm : public OzonePlatform {
   }
   base::ScopedFD OpenClientNativePixmapDevice() const override {
 #if defined(USE_VGEM_MAP)
-    static const char kVgemPath[] = "/dev/dri/renderD129";
-    base::ScopedFD vgem_fd(open(kVgemPath, O_RDWR | O_CLOEXEC));
-    if (!vgem_fd.is_valid())
-      PLOG(ERROR) << "Failed to open: " << kVgemPath;
-    return vgem_fd;
+    int vgem_fd = drmOpenWithType("vgem", nullptr, DRM_NODE_RENDER);
+    if (vgem_fd < 0) {
+      PLOG(ERROR) << "Failed to find vgem device";
+      vgem_fd = -1;
+    }
+    return base::ScopedFD(vgem_fd);
 #endif
     return base::ScopedFD();
   }
@@ -186,32 +149,21 @@ class OzonePlatformGbm : public OzonePlatform {
   }
 
   void InitializeGPU() override {
-    bool use_atomic = false;
-#if defined(USE_DRM_ATOMIC)
-    use_atomic = true;
-#endif
     gl_api_loader_.reset(new GlApiLoader());
-    drm_device_manager_.reset(new DrmDeviceManager(
-        scoped_ptr<DrmDeviceGenerator>(new GbmDeviceGenerator(use_atomic))));
-    buffer_generator_.reset(new GbmBufferGenerator());
-    screen_manager_.reset(new ScreenManager(buffer_generator_.get()));
-    surface_factory_ozone_.reset(new GbmSurfaceFactory());
-    surface_factory_ozone_->InitializeGpu(drm_device_manager_.get(),
-                                          screen_manager_.get());
-    scoped_ptr<DrmGpuDisplayManager> display_manager(new DrmGpuDisplayManager(
-        screen_manager_.get(), drm_device_manager_.get()));
-    gpu_platform_support_.reset(new DrmGpuPlatformSupport(
-        drm_device_manager_.get(), screen_manager_.get(),
-        buffer_generator_.get(), display_manager.Pass()));
+    // NOTE: Can't start the thread here since this is called before sandbox
+    // initialization.
+    drm_thread_.reset(new DrmThreadProxy());
+
+    surface_factory_.reset(new GbmSurfaceFactory(drm_thread_.get()));
+    gpu_platform_support_.reset(
+        new DrmGpuPlatformSupport(drm_thread_->CreateDrmThreadMessageProxy()));
   }
 
  private:
   // Objects in the GPU process.
-  scoped_ptr<GbmSurfaceFactory> surface_factory_ozone_;
+  scoped_ptr<DrmThreadProxy> drm_thread_;
   scoped_ptr<GlApiLoader> gl_api_loader_;
-  scoped_ptr<DrmDeviceManager> drm_device_manager_;
-  scoped_ptr<GbmBufferGenerator> buffer_generator_;
-  scoped_ptr<ScreenManager> screen_manager_;
+  scoped_ptr<GbmSurfaceFactory> surface_factory_;
   scoped_ptr<DrmGpuPlatformSupport> gpu_platform_support_;
 
   // Objects in the Browser process.

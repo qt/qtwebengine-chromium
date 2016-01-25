@@ -7,6 +7,8 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <mach/shared_region.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <sys/sysctl.h>
 
 #include "base/containers/hash_tables.h"
@@ -284,7 +286,7 @@ double ProcessMetrics::GetCPUUsage() {
   timeradd(&system_timeval, &task_timeval, &task_timeval);
 
   TimeTicks time = TimeTicks::Now();
-  int64 task_time = TimeValToMicroseconds(task_timeval);
+  int64_t task_time = TimeValToMicroseconds(task_timeval);
 
   if (last_system_time_ == 0) {
     // First call, just set the last values.
@@ -293,8 +295,8 @@ double ProcessMetrics::GetCPUUsage() {
     return 0;
   }
 
-  int64 system_time_delta = task_time - last_system_time_;
-  int64 time_delta = (time - last_cpu_time_).InMicroseconds();
+  int64_t system_time_delta = task_time - last_system_time_;
+  int64_t time_delta = (time - last_cpu_time_).InMicroseconds();
   DCHECK_NE(0U, time_delta);
   if (time_delta == 0)
     return 0;
@@ -352,7 +354,7 @@ size_t GetSystemCommitCharge() {
   base::mac::ScopedMachSendRight host(mach_host_self());
   mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
   vm_statistics_data_t data;
-  kern_return_t kr = host_statistics(host, HOST_VM_INFO,
+  kern_return_t kr = host_statistics(host.get(), HOST_VM_INFO,
                                      reinterpret_cast<host_info_t>(&data),
                                      &count);
   if (kr != KERN_SUCCESS) {
@@ -368,7 +370,7 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   struct host_basic_info hostinfo;
   mach_msg_type_number_t count = HOST_BASIC_INFO_COUNT;
   base::mac::ScopedMachSendRight host(mach_host_self());
-  int result = host_info(host, HOST_BASIC_INFO,
+  int result = host_info(host.get(), HOST_BASIC_INFO,
                          reinterpret_cast<host_info_t>(&hostinfo), &count);
   if (result != KERN_SUCCESS)
     return false;

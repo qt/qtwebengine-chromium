@@ -154,12 +154,6 @@ OPENSSL_EXPORT point_conversion_form_t EC_KEY_get_conv_form(const EC_KEY *key);
 OPENSSL_EXPORT void EC_KEY_set_conv_form(EC_KEY *key,
                                          point_conversion_form_t cform);
 
-/* EC_KEY_precompute_mult precomputes multiplies of the generator of the
- * underlying group in order to speed up operations that calculate generator
- * multiples. If |ctx| is not NULL, it may be used. It returns one on success
- * and zero otherwise. */
-OPENSSL_EXPORT int EC_KEY_precompute_mult(EC_KEY *key, BN_CTX *ctx);
-
 /* EC_KEY_check_key performs several checks on |key| (possibly including an
  * expensive check that the public key is in the primary subgroup). It returns
  * one if all checks pass and zero otherwise. If it returns zero then detail
@@ -232,7 +226,7 @@ OPENSSL_EXPORT int i2o_ECPublicKey(const EC_KEY *key, unsigned char **outp);
  * These functions are wrappers. See |ex_data.h| for details. */
 
 OPENSSL_EXPORT int EC_KEY_get_ex_new_index(long argl, void *argp,
-                                           CRYPTO_EX_new *new_func,
+                                           CRYPTO_EX_unused *unused,
                                            CRYPTO_EX_dup *dup_func,
                                            CRYPTO_EX_free *free_func);
 OPENSSL_EXPORT int EC_KEY_set_ex_data(EC_KEY *r, int idx, void *arg);

@@ -10,10 +10,7 @@
 #include "media/base/renderer_factory.h"
 
 namespace media {
-class AudioHardwareConfig;
 class GpuVideoAcceleratorFactories;
-class MediaLog;
-class DefaultRendererFactory;
 }
 
 namespace chromecast {
@@ -22,8 +19,7 @@ namespace media {
 class ChromecastMediaRendererFactory : public ::media::RendererFactory {
  public:
   ChromecastMediaRendererFactory(
-      const scoped_refptr<::media::GpuVideoAcceleratorFactories>& gpu_factories,
-      const scoped_refptr<::media::MediaLog>& media_log,
+      ::media::GpuVideoAcceleratorFactories* gpu_factories,
       int render_frame_id);
   ~ChromecastMediaRendererFactory() final;
 
@@ -35,13 +31,8 @@ class ChromecastMediaRendererFactory : public ::media::RendererFactory {
       ::media::VideoRendererSink* video_renderer_sink) final;
 
  private:
-  int render_frame_id_;
-  scoped_refptr<::media::GpuVideoAcceleratorFactories> gpu_factories_;
-  scoped_refptr<::media::MediaLog> media_log_;
-  scoped_ptr<::media::DefaultRendererFactory> default_render_factory_;
-
-  // Audio config for the default media renderer.
-  scoped_ptr<::media::AudioHardwareConfig> audio_config_;
+  const int render_frame_id_;
+  ::media::GpuVideoAcceleratorFactories* const gpu_factories_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromecastMediaRendererFactory);
 };

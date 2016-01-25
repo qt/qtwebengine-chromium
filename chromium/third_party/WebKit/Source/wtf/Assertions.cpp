@@ -31,25 +31,26 @@
 // we need to place this directive before any data or functions are defined.
 #pragma GCC diagnostic ignored "-Wmissing-format-attribute"
 
-#include "config.h"
 #include "wtf/Assertions.h"
 
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/ThreadSpecific.h"
+#include "wtf/Threading.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#if USE(CF)
+#if OS(MACOSX)
 #include <AvailabilityMacros.h>
 #include <CoreFoundation/CFString.h>
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
 #define WTF_USE_APPLE_SYSTEM_LOG 1
 #include <asl.h>
 #endif
-#endif // USE(CF)
+#endif // OS(MACOSX)
 
 #if COMPILER(MSVC)
 #include <crtdbg.h>
@@ -57,7 +58,6 @@
 
 #if OS(WIN)
 #include <windows.h>
-#define HAVE_ISDEBUGGERPRESENT 1
 #endif
 
 #if OS(MACOSX) || (OS(LINUX) && !defined(__UCLIBC__))
@@ -73,7 +73,7 @@
 WTF_ATTRIBUTE_PRINTF(1, 0)
 static void vprintf_stderr_common(const char* format, va_list args)
 {
-#if USE(CF) && !OS(WIN)
+#if OS(MACOSX)
     if (strstr(format, "%@")) {
         CFStringRef cfFormat = CFStringCreateWithCString(nullptr, format, kCFStringEncodingUTF8);
 
@@ -112,7 +112,7 @@ static void vprintf_stderr_common(const char* format, va_list args)
 
 #elif OS(ANDROID)
     __android_log_vprint(ANDROID_LOG_WARN, "WebKit", format, args);
-#elif HAVE(ISDEBUGGERPRESENT)
+#elif OS(WIN)
     if (IsDebuggerPresent()) {
         size_t size = 1024;
 
@@ -277,6 +277,92 @@ FrameToNameScope::~FrameToNameScope()
     free(m_cxaDemangled);
 }
 
+static const char kScopedLoggerIndent[] = "  ";
+
+ScopedLogger::ScopedLogger(bool condition, const char* format, ...)
+    : m_parent(condition ? current() : 0)
+    , m_multiline(false)
+{
+    if (!condition)
+        return;
+
+    va_list args;
+    va_start(args, format);
+    init(format, args);
+    va_end(args);
+}
+
+ScopedLogger::~ScopedLogger()
+{
+    if (current() == this) {
+        if (m_multiline)
+            indent();
+        else
+            print(" ");
+        print(")\n");
+        current() = m_parent;
+    }
+}
+
+void ScopedLogger::init(const char* format, va_list args)
+{
+    current() = this;
+    if (m_parent)
+        m_parent->writeNewlineIfNeeded();
+    indent();
+    print("( ");
+    m_printFunc(format, args);
+}
+
+void ScopedLogger::writeNewlineIfNeeded()
+{
+    if (!m_multiline) {
+        print("\n");
+        m_multiline = true;
+    }
+}
+
+void ScopedLogger::indent()
+{
+    if (m_parent) {
+        m_parent->indent();
+        print(kScopedLoggerIndent);
+    }
+}
+
+void ScopedLogger::log(const char* format, ...)
+{
+    if (current() != this)
+        return;
+
+    va_list args;
+    va_start(args, format);
+
+    writeNewlineIfNeeded();
+    indent();
+    print(kScopedLoggerIndent);
+    m_printFunc(format, args);
+    print("\n");
+
+    va_end(args);
+}
+
+void ScopedLogger::print(const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    m_printFunc(format, args);
+    va_end(args);
+}
+
+ScopedLogger*& ScopedLogger::current()
+{
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<ScopedLogger*>, ref, new ThreadSpecific<ScopedLogger*>);
+    return *ref;
+}
+
+ScopedLogger::PrintFunctionPtr ScopedLogger::m_printFunc = vprintf_stderr_common;
+
 void WTFPrintBacktrace(void** stack, int size)
 {
     for (int i = 0; i < size; ++i) {
@@ -340,4 +426,3 @@ void WTFLogAlways(const char* format, ...)
     vprintf_stderr_with_trailing_newline(format, args);
     va_end(args);
 }
-

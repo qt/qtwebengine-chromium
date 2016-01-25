@@ -37,14 +37,11 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/web/WebDataSource.h"
-#include "web/WebPluginLoadObserver.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
-
-class WebPluginLoadObserver;
 
 class WebDataSourceImpl final : public DocumentLoader, public WebDataSource {
 public:
@@ -72,15 +69,13 @@ public:
 
     static WebNavigationType toWebNavigationType(NavigationType);
 
-    PassOwnPtr<WebPluginLoadObserver> releasePluginLoadObserver() { return m_pluginLoadObserver.release(); }
-    static void setNextPluginLoadObserver(PassOwnPtr<WebPluginLoadObserver>);
-
     DECLARE_VIRTUAL_TRACE();
 
 private:
     WebDataSourceImpl(LocalFrame*, const ResourceRequest&, const SubstituteData&);
     ~WebDataSourceImpl() override;
     void detachFromFrame() override;
+    String debugName() const override { return "WebDataSourceImpl"; }
 
     // Mutable because the const getters will magically sync these to the
     // latest version from WebKit.
@@ -89,7 +84,6 @@ private:
     mutable WrappedResourceResponse m_responseWrapper;
 
     OwnPtr<ExtraData> m_extraData;
-    OwnPtr<WebPluginLoadObserver> m_pluginLoadObserver;
 };
 
 } // namespace blink

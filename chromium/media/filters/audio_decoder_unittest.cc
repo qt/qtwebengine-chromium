@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <deque>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/format_macros.h"
+#include "base/macros.h"
 #include "base/md5.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -43,8 +47,8 @@ enum AudioDecoderType {
 };
 
 struct DecodedBufferExpectations {
-  const int64 timestamp;
-  const int64 duration;
+  const int64_t timestamp;
+  const int64_t duration;
   const char* hash;
 };
 
@@ -83,8 +87,8 @@ static void SetDiscardPadding(AVPacket* packet,
 
   // If the timestamp is positive, try to use FFmpeg's discard data.
   int skip_samples_size = 0;
-  const uint32* skip_samples_ptr =
-      reinterpret_cast<const uint32*>(av_packet_get_side_data(
+  const uint32_t* skip_samples_ptr =
+      reinterpret_cast<const uint32_t*>(av_packet_get_side_data(
           packet, AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
   if (skip_samples_size < 4)
     return;
@@ -147,7 +151,7 @@ class AudioDecoderTest : public testing::TestWithParam<DecoderTestData> {
     EXPECT_EQ(GetParam().first_packet_pts, packet.pts);
     start_timestamp_ = ConvertFromTimeBase(
         reader_->GetAVStreamForTesting()->time_base, packet.pts);
-    av_free_packet(&packet);
+    av_packet_unref(&packet);
 
     // Seek back to the beginning.
     ASSERT_TRUE(reader_->SeekForTesting(start_timestamp_));
@@ -170,7 +174,7 @@ class AudioDecoderTest : public testing::TestWithParam<DecoderTestData> {
   void InitializeDecoderWithResult(const AudioDecoderConfig& config,
                                    bool success) {
     decoder_->Initialize(
-        config, NewExpectedBoolCB(success),
+        config, SetCdmReadyCB(), NewExpectedBoolCB(success),
         base::Bind(&AudioDecoderTest::OnDecoderOutput, base::Unretained(this)));
     base::RunLoop().RunUntilIdle();
   }
@@ -197,7 +201,7 @@ class AudioDecoderTest : public testing::TestWithParam<DecoderTestData> {
       SetDiscardPadding(&packet, buffer, GetParam().samples_per_second);
 
     // DecodeBuffer() shouldn't need the original packet since it uses the copy.
-    av_free_packet(&packet);
+    av_packet_unref(&packet);
     DecodeBuffer(buffer);
   }
 
@@ -407,18 +411,7 @@ TEST_P(OpusAudioDecoderBehavioralTest, InitializeWithBadCodecDelay) {
       base::TimeDelta::FromMilliseconds(80),
       // Use a different codec delay than in the extradata.
       100);
-  InitializeDecoderWithResult(decoder_config, false);
-}
-
-TEST_P(FFmpegAudioDecoderBehavioralTest, InitializeWithBadConfig) {
-  const AudioDecoderConfig decoder_config(kCodecVorbis,
-                                          kSampleFormatF32,
-                                          CHANNEL_LAYOUT_STEREO,
-                                          // Invalid sample rate of zero.
-                                          0,
-                                          EmptyExtraData(),
-                                          false);
-  InitializeDecoderWithResult(decoder_config, false);
+  InitializeDecoderWithResult(decoder_config, true);
 }
 
 #if defined(OPUS_FIXED_POINT)

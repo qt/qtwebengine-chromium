@@ -18,14 +18,14 @@ namespace blink {
 
 class PLATFORM_EXPORT BeginFilterDisplayItem final : public PairedBeginDisplayItem {
 public:
-    BeginFilterDisplayItem(const DisplayItemClientWrapper& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds, PassOwnPtr<WebFilterOperations> filterOperations = nullptr)
+    BeginFilterDisplayItem(const DisplayItemClient& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds, PassOwnPtr<WebFilterOperations> filterOperations = nullptr)
         : PairedBeginDisplayItem(client, BeginFilter, sizeof(*this))
         , m_imageFilter(imageFilter)
-        , m_webFilterOperations(filterOperations)
+        , m_webFilterOperations(std::move(filterOperations))
         , m_bounds(bounds) { }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
     bool drawsContent() const override;
 
 private:
@@ -49,11 +49,11 @@ private:
 
 class PLATFORM_EXPORT EndFilterDisplayItem final : public PairedEndDisplayItem {
 public:
-    EndFilterDisplayItem(const DisplayItemClientWrapper& client)
+    EndFilterDisplayItem(const DisplayItemClient& client)
         : PairedEndDisplayItem(client, EndFilter, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)

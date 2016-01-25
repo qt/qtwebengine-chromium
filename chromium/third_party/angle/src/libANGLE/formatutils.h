@@ -66,8 +66,18 @@ struct InternalFormat
     SupportCheckFunction filterSupport;
 
     GLuint computeRowPitch(GLenum formatType, GLsizei width, GLint alignment, GLint rowLength) const;
-    GLuint computeDepthPitch(GLenum formatType, GLsizei width, GLsizei height, GLint alignment, GLint rowLength) const;
+    GLuint computeDepthPitch(GLenum formatType,
+                             GLsizei width,
+                             GLsizei height,
+                             GLint alignment,
+                             GLint rowLength,
+                             GLint imageHeight) const;
     GLuint computeBlockSize(GLenum formatType, GLsizei width, GLsizei height) const;
+    GLuint computeSkipPixels(GLint rowPitch,
+                             GLint depthPitch,
+                             GLint skipImages,
+                             GLint skipRows,
+                             GLint skipPixels) const;
 };
 const InternalFormat &GetInternalFormatInfo(GLenum internalFormat);
 
@@ -219,6 +229,6 @@ VertexFormatType GetVertexFormatType(const VertexAttribute &attrib);
 VertexFormatType GetVertexFormatType(const VertexAttribute &attrib, GLenum currentValueType);
 const VertexFormat &GetVertexFormatFromType(VertexFormatType vertexFormatType);
 
-}
+}  // namespace gl
 
 #endif // LIBANGLE_FORMATUTILS_H_

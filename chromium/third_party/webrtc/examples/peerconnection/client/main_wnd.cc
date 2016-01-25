@@ -13,6 +13,7 @@
 #include <math.h>
 
 #include "webrtc/examples/peerconnection/client/defaults.h"
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 
@@ -234,14 +235,14 @@ void MainWnd::OnPaint() {
     int height = abs(bmi.bmiHeader.biHeight);
     int width = bmi.bmiHeader.biWidth;
 
-    const uint8* image = remote_renderer->image();
+    const uint8_t* image = remote_renderer->image();
     if (image != NULL) {
       HDC dc_mem = ::CreateCompatibleDC(ps.hdc);
       ::SetStretchBltMode(dc_mem, HALFTONE);
 
       // Set the map mode so that the ratio will be maintained for us.
       HDC all_dc[] = { ps.hdc, dc_mem };
-      for (int i = 0; i < ARRAY_SIZE(all_dc); ++i) {
+      for (int i = 0; i < arraysize(all_dc); ++i) {
         SetMapMode(all_dc[i], MM_ISOTROPIC);
         SetWindowExtEx(all_dc[i], width, height, NULL);
         SetViewportExtEx(all_dc[i], rc.right, rc.bottom, NULL);
@@ -594,7 +595,7 @@ void MainWnd::VideoRenderer::SetSize(int width, int height) {
   bmi_.bmiHeader.biHeight = -height;
   bmi_.bmiHeader.biSizeImage = width * height *
                                (bmi_.bmiHeader.biBitCount >> 3);
-  image_.reset(new uint8[bmi_.bmiHeader.biSizeImage]);
+  image_.reset(new uint8_t[bmi_.bmiHeader.biSizeImage]);
 }
 
 void MainWnd::VideoRenderer::RenderFrame(

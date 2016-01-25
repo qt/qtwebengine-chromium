@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 
 #include "core/svg/SVGAnimateTransformElement.h"
@@ -99,22 +98,22 @@ PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyF
         return SVGColorProperty::create(value);
     case AnimatedNumber: {
         RefPtrWillBeRawPtr<SVGNumber> property = SVGNumber::create();
-        property->setValueAsString(value, IGNORE_EXCEPTION);
+        property->setValueAsString(value);
         return property.release();
     }
     case AnimatedLength: {
         RefPtrWillBeRawPtr<SVGLength> property = SVGLength::create();
-        property->setValueAsString(value, IGNORE_EXCEPTION);
+        property->setValueAsString(value);
         return property.release();
     }
     case AnimatedLengthList: {
         RefPtrWillBeRawPtr<SVGLengthList> property = SVGLengthList::create();
-        property->setValueAsString(value, IGNORE_EXCEPTION);
+        property->setValueAsString(value);
         return property.release();
     }
     case AnimatedString: {
         RefPtrWillBeRawPtr<SVGString> property = SVGString::create();
-        property->setValueAsString(value, IGNORE_EXCEPTION);
+        property->setValueAsString(value);
         return property.release();
     }
 
@@ -170,8 +169,7 @@ void setAnimatedValueOnAllTargetProperties(const SVGElementInstances& list, cons
     RefPtrWillBeRawPtr<SVGPropertyBase> value = passValue;
 
     for (SVGElement* elementInstance : list) {
-        RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> animatedProperty = elementInstance->propertyFromAttribute(attributeName);
-        if (animatedProperty)
+        if (SVGAnimatedPropertyBase* animatedProperty = elementInstance->propertyFromAttribute(attributeName))
             animatedProperty->setAnimatedValue(value);
     }
 }
@@ -205,8 +203,7 @@ void SVGAnimatedTypeAnimator::stopAnimValAnimation(const SVGElementInstances& li
     SVGElement::InstanceUpdateBlocker blocker(m_contextElement);
 
     for (SVGElement* elementInstance : list) {
-        RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> animatedProperty = elementInstance->propertyFromAttribute(m_animatedProperty->attributeName());
-        if (animatedProperty)
+        if (SVGAnimatedPropertyBase* animatedProperty = elementInstance->propertyFromAttribute(m_animatedProperty->attributeName()))
             animatedProperty->animationEnded();
     }
 }

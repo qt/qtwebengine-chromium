@@ -21,7 +21,6 @@
  *
  */
 
-#include "config.h"
 #include "core/css/resolver/FontBuilder.h"
 
 #include "core/CSSValueKeywords.h"
@@ -32,7 +31,6 @@
 #include "core/layout/TextAutosizer.h"
 #include "platform/FontFamilyNames.h"
 #include "platform/fonts/FontDescription.h"
-#include "platform/text/LocaleToScriptMapping.h"
 
 namespace blink {
 
@@ -138,12 +136,11 @@ void FontBuilder::setStretch(FontStretch fontStretch)
     m_fontDescription.setStretch(fontStretch);
 }
 
-void FontBuilder::setScript(const AtomicString& locale)
+void FontBuilder::setLocale(const AtomicString& locale)
 {
-    set(PropertySetFlag::Script);
+    set(PropertySetFlag::Locale);
 
     m_fontDescription.setLocale(locale);
-    m_fontDescription.setScript(localeToScriptCodeForFontSelection(locale));
 }
 
 void FontBuilder::setStyle(FontStyle italic)
@@ -239,17 +236,11 @@ static FontOrientation fontOrientation(const ComputedStyle& style)
         return FontOrientation::Horizontal;
 
     switch (style.textOrientation()) {
-    case TextOrientationVerticalRight:
+    case TextOrientationMixed:
         return FontOrientation::VerticalMixed;
     case TextOrientationUpright:
         return FontOrientation::VerticalUpright;
     case TextOrientationSideways:
-        if (style.writingMode() == LeftToRightWritingMode) {
-            // FIXME: This should map to sideways-left, which is not supported yet.
-            return FontOrientation::VerticalRotated;
-        }
-        return FontOrientation::VerticalRotated;
-    case TextOrientationSidewaysRight:
         return FontOrientation::VerticalRotated;
     default:
         ASSERT_NOT_REACHED();
@@ -367,10 +358,8 @@ void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, 
         description.setStretch(m_fontDescription.stretch());
     if (isSet(PropertySetFlag::FeatureSettings))
         description.setFeatureSettings(m_fontDescription.featureSettings());
-    if (isSet(PropertySetFlag::Script)) {
-        description.setLocale(m_fontDescription.locale());
-        description.setScript(m_fontDescription.script());
-    }
+    if (isSet(PropertySetFlag::Locale))
+        description.setLocale(m_fontDescription.locale(false));
     if (isSet(PropertySetFlag::Style))
         description.setStyle(m_fontDescription.style());
     if (isSet(PropertySetFlag::Variant))
@@ -399,7 +388,6 @@ void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fon
 {
     FontDescription fontDescription = FontDescription();
     fontDescription.setLocale(documentStyle.locale());
-    fontDescription.setScript(localeToScriptCodeForFontSelection(documentStyle.locale()));
 
     setFamilyDescription(fontDescription, FontBuilder::initialFamilyDescription());
     setSize(fontDescription, FontDescription::Size(FontSize::initialKeywordSize(), 0.0f, false));

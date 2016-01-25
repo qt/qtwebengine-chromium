@@ -262,21 +262,18 @@ TEST_F(TransportControllerTest, TestGetSslRole) {
   ASSERT_NE(nullptr, channel);
   ASSERT_TRUE(channel->SetSslRole(rtc::SSL_CLIENT));
   rtc::SSLRole role;
-  EXPECT_TRUE(transport_controller_->GetSslRole(&role));
+  EXPECT_FALSE(transport_controller_->GetSslRole("video", &role));
+  EXPECT_TRUE(transport_controller_->GetSslRole("audio", &role));
   EXPECT_EQ(rtc::SSL_CLIENT, role);
 }
 
 TEST_F(TransportControllerTest, TestSetAndGetLocalCertificate) {
   rtc::scoped_refptr<rtc::RTCCertificate> certificate1 =
-      rtc::RTCCertificate::Create(
-          rtc::scoped_ptr<rtc::SSLIdentity>(
-              rtc::SSLIdentity::Generate("session1", rtc::KT_DEFAULT))
-              .Pass());
+      rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+          rtc::SSLIdentity::Generate("session1", rtc::KT_DEFAULT)));
   rtc::scoped_refptr<rtc::RTCCertificate> certificate2 =
-      rtc::RTCCertificate::Create(
-          rtc::scoped_ptr<rtc::SSLIdentity>(
-              rtc::SSLIdentity::Generate("session2", rtc::KT_DEFAULT))
-              .Pass());
+      rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+          rtc::SSLIdentity::Generate("session2", rtc::KT_DEFAULT)));
   rtc::scoped_refptr<rtc::RTCCertificate> returned_certificate;
 
   FakeTransportChannel* channel1 = CreateChannel("audio", 1);

@@ -22,12 +22,12 @@ class LayoutRect;
 // the layout viewport. Thus, we could say this class is a decorator on the
 // FrameView scrollable area that adds pinch-zoom semantics to scrolling.
 class CORE_EXPORT RootFrameViewport final : public NoBaseWillBeGarbageCollectedFinalized<RootFrameViewport>, public ScrollableArea {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(RootFrameViewport);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(RootFrameViewport);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RootFrameViewport);
 public:
-    static PassOwnPtrWillBeRawPtr<RootFrameViewport> create(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder = false)
+    static PassOwnPtrWillBeRawPtr<RootFrameViewport> create(ScrollableArea& visualViewport, ScrollableArea& layoutViewport)
     {
-        return adoptPtrWillBeNoop(new RootFrameViewport(visualViewport, layoutViewport, invertScrollOrder));
+        return adoptPtrWillBeNoop(new RootFrameViewport(visualViewport, layoutViewport));
     }
 
     DECLARE_VIRTUAL_TRACE();
@@ -37,7 +37,8 @@ public:
     LayoutRect scrollIntoView(
         const LayoutRect& rectInContent,
         const ScrollAlignment& alignX,
-        const ScrollAlignment& alignY) override;
+        const ScrollAlignment& alignY,
+        ScrollType = ProgrammaticScroll) override;
     DoubleRect visibleContentRectDouble(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     bool shouldUseIntegerScrollOffset() const override;
@@ -57,8 +58,7 @@ public:
     IntRect scrollableAreaBoundingBox() const override;
     bool userInputScrollable(ScrollbarOrientation) const override;
     bool shouldPlaceVerticalScrollbarOnLeft() const override;
-    void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
-    void invalidateScrollCornerRect(const IntRect&) override;
+    void scrollControlWasSetNeedsPaintInvalidation() override;
     GraphicsLayer* layerForContainer() const override;
     GraphicsLayer* layerForScrolling() const override;
     GraphicsLayer* layerForHorizontalScrollbar() const override;
@@ -68,10 +68,12 @@ public:
     HostWindow* hostWindow() const override;
     void serviceScrollAnimations(double) override;
     void updateCompositorScrollAnimations() override;
+    void cancelProgrammaticScrollAnimation() override;
     ScrollBehavior scrollBehaviorStyle() const override;
+    Widget* widget() override;
 
 private:
-    RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder);
+    RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport);
 
     DoublePoint scrollOffsetFromScrollAnimators() const;
 
@@ -87,10 +89,6 @@ private:
 
     RawPtrWillBeMember<ScrollableArea> m_visualViewport;
     RawPtrWillBeMember<ScrollableArea> m_layoutViewport;
-
-    // Experimental flag. If the experiment is enabled, scroll the visual viewport first,
-    // the bubble scrolls to the layout viewport.
-    bool m_invertScrollOrder;
 };
 
 } // namespace blink

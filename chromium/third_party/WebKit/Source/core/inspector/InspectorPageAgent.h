@@ -44,7 +44,7 @@ namespace blink {
 class Resource;
 class Document;
 class DocumentLoader;
-class FrameHost;
+class InspectedFrames;
 class InspectorCSSAgent;
 class InspectorDebuggerAgent;
 class InspectorResourceContentLoader;
@@ -61,8 +61,7 @@ public:
     class Client {
     public:
         virtual ~Client() { }
-        virtual void pageLayoutInvalidated(bool resized) { }
-        virtual void setShowViewportSizeOnResize(bool show, bool showGrid) { }
+        virtual void pageLayoutInvalidated() { }
         virtual void setPausedInDebuggerMessage(const String*) { }
     };
 
@@ -78,13 +77,13 @@ public:
         FetchResource,
         EventSourceResource,
         WebSocketResource,
+        ManifestResource,
         OtherResource
     };
 
-    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, Client*, InspectorResourceContentLoader*);
-    void setDebuggerAgent(InspectorDebuggerAgent*);
+    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(InspectedFrames*, Client*, InspectorResourceContentLoader*, InspectorDebuggerAgent*);
 
-    static Vector<Document*> importsForFrame(LocalFrame*);
+    static WillBeHeapVector<RawPtrWillBeMember<Document>> importsForFrame(LocalFrame*);
     static bool cachedResourceContent(Resource*, String* result, bool* base64Encoded);
     static bool sharedBufferContent(PassRefPtr<SharedBuffer>, const String& textEncodingName, bool withBase64Encode, String* result);
 
@@ -103,11 +102,10 @@ public:
     void navigate(ErrorString*, const String& url, String* frameId) override;
     void getResourceTree(ErrorString*, RefPtr<TypeBuilder::Page::FrameResourceTree>&) override;
     void getResourceContent(ErrorString*, const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback>) override;
-    void searchInResource(ErrorString*, const String& frameId, const String& url, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::SearchMatch>>&) override;
+    void searchInResource(ErrorString*, const String& frameId, const String& url, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, PassRefPtrWillBeRawPtr<SearchInResourceCallback>) override;
     void setDocumentContent(ErrorString*, const String& frameId, const String& html) override;
-    void startScreencast(ErrorString*, const String* format, const int* quality, const int* maxWidth, const int* maxHeight) override;
+    void startScreencast(ErrorString*, const String* format, const int* quality, const int* maxWidth, const int* maxHeight, const int* everyNthFrame) override;
     void stopScreencast(ErrorString*) override;
-    void setShowViewportSizeOnResize(ErrorString*, bool show, const bool* showGrid) override;
     void setOverlayMessage(ErrorString*, const String*) override;
 
     // InspectorInstrumentation API
@@ -130,26 +128,22 @@ public:
     // Inspector Controller API
     void disable(ErrorString*) override;
     void restore() override;
-
-    // Cross-agents API
-    FrameHost* frameHost();
-    LocalFrame* inspectedFrame() const { return m_inspectedFrame.get(); }
-    LocalFrame* findFrameWithSecurityOrigin(const String& originRawString);
     bool screencastEnabled();
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    InspectorPageAgent(LocalFrame* inspectedFrame, Client*, InspectorResourceContentLoader*);
+    InspectorPageAgent(InspectedFrames*, Client*, InspectorResourceContentLoader*, InspectorDebuggerAgent*);
 
     void finishReload();
     void getResourceContentAfterResourcesContentLoaded(const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback>);
+    void searchContentAfterResourcesContentLoaded(const String& frameId, const String& url, const String& query, bool caseSensitive, bool isRegex, PassRefPtrWillBeRawPtr<SearchInResourceCallback>);
 
     static bool dataContent(const char* data, unsigned size, const String& textEncodingName, bool withBase64Encode, String* result);
 
     PassRefPtr<TypeBuilder::Page::Frame> buildObjectForFrame(LocalFrame*);
     PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(LocalFrame*);
-    RawPtrWillBeMember<LocalFrame> m_inspectedFrame;
+    RawPtrWillBeMember<InspectedFrames> m_inspectedFrames;
     RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
     Client* m_client;
     long m_lastScriptIdentifier;

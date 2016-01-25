@@ -26,10 +26,8 @@
 // http://www.w3.org/TR/SVG2/types.html#InterfaceSVGStringList
 
 [
-    TypeChecking=Interface,
     SetWrapperReferenceTo(SVGElement contextElement),
     ImplementedAs=SVGStringListTearOff,
-    RuntimeEnabled=SVG1DOM,
     WillBeGarbageCollected,
 ] interface SVGStringList {
     readonly attribute unsigned long length;

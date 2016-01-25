@@ -27,11 +27,9 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT FETile : public FilterEffect {
+class PLATFORM_EXPORT FETile final : public FilterEffect {
 public:
     static PassRefPtrWillBeRawPtr<FETile> create(Filter*);
-
-    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
     FloatRect mapPaintRect(const FloatRect&, bool forward = true) final;
 
@@ -41,6 +39,8 @@ public:
 
 private:
     FETile(Filter*);
+
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder&) override;
 };
 
 } // namespace blink

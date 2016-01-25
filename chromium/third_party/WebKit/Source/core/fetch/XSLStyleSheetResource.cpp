@@ -24,7 +24,6 @@
     pages from the web. It has a memory cache for these objects.
 */
 
-#include "config.h"
 #include "core/fetch/XSLStyleSheetResource.h"
 
 #include "core/fetch/FetchRequest.h"
@@ -35,6 +34,19 @@
 #include "platform/SharedBuffer.h"
 
 namespace blink {
+
+ResourcePtr<XSLStyleSheetResource> XSLStyleSheetResource::fetchSynchronously(FetchRequest& request, ResourceFetcher* fetcher)
+{
+    request.mutableResourceRequest().setTimeoutInterval(10);
+    request.mutableResourceRequest().setRequestContext(WebURLRequest::RequestContextXSLT);
+    ResourceLoaderOptions options(request.options());
+    options.synchronousPolicy = RequestSynchronously;
+    request.setOptions(options);
+    ResourcePtr<XSLStyleSheetResource> resource = toXSLStyleSheetResource(fetcher->requestResource(request, XSLStyleSheetResourceFactory()));
+    if (resource && resource->m_data)
+        resource->m_sheet = resource->decodedText();
+    return resource;
+}
 
 ResourcePtr<XSLStyleSheetResource> XSLStyleSheetResource::fetch(FetchRequest& request, ResourceFetcher* fetcher)
 {

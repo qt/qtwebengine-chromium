@@ -6,6 +6,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/macros.h"
 
 namespace ui {
 
@@ -42,6 +43,8 @@ class StubInputController : public InputController {
   void GetTouchEventLog(const base::FilePath& out_dir,
                         const GetTouchEventLogReply& reply) override;
   void SetInternalTouchpadEnabled(bool enabled) override;
+  bool IsInternalTouchpadEnabled() const override;
+  void SetTouchscreensEnabled(bool enabled) override;
   void SetInternalKeyboardFilter(bool enable_filter,
                                  std::vector<DomCode> allowed_keys) override;
 
@@ -133,6 +136,12 @@ void StubInputController::GetTouchEventLog(const base::FilePath& out_dir,
 
 void StubInputController::SetInternalTouchpadEnabled(bool enabled) {
 }
+
+bool StubInputController::IsInternalTouchpadEnabled() const {
+  return false;
+}
+
+void StubInputController::SetTouchscreensEnabled(bool enabled) {}
 
 void StubInputController::SetInternalKeyboardFilter(
     bool enable_filter,

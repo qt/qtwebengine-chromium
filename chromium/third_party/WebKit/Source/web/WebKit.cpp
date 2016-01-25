@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebKit.h"
 
 #include "bindings/core/v8/ScriptStreamerThread.h"
@@ -38,6 +37,7 @@
 #include "core/Init.h"
 #include "core/animation/AnimationClock.h"
 #include "core/dom/Microtask.h"
+#include "core/fetch/WebCacheMemoryDumpProvider.h"
 #include "core/frame/Settings.h"
 #include "core/page/Page.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
@@ -46,10 +46,10 @@
 #include "platform/LayoutTestSupport.h"
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/fonts/FontCacheMemoryDumpProvider.h"
 #include "platform/graphics/ImageDecodingStore.h"
+#include "platform/heap/GCTaskRunner.h"
 #include "platform/heap/Heap.h"
-#include "platform/heap/glue/MessageLoopInterruptor.h"
-#include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
@@ -99,8 +99,8 @@ private:
 
 } // namespace
 
-static WebThread::TaskObserver* s_endOfTaskRunner = 0;
-static WebThread::TaskObserver* s_pendingGCRunner = 0;
+static WebThread::TaskObserver* s_endOfTaskRunner = nullptr;
+static GCTaskRunner* s_gcTaskRunner = nullptr;
 
 // Make sure we are not re-initialized in the same address space.
 // Doing so may cause hard to reproduce crashes.
@@ -121,6 +121,10 @@ void initialize(Platform* platform)
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
         currentThread->addTaskObserver(s_endOfTaskRunner);
+
+        // Register web cache dump provider for tracing.
+        platform->registerMemoryDumpProvider(WebCacheMemoryDumpProvider::instance(), "MemoryCache");
+        platform->registerMemoryDumpProvider(FontCacheMemoryDumpProvider::instance(), "FontCaches");
     }
 }
 
@@ -131,17 +135,12 @@ v8::Isolate* mainThreadIsolate()
 
 static double currentTimeFunction()
 {
-    return Platform::current()->currentTime();
+    return Platform::current()->currentTimeSeconds();
 }
 
 static double monotonicallyIncreasingTimeFunction()
 {
-    return Platform::current()->monotonicallyIncreasingTime();
-}
-
-static double systemTraceTimeFunction()
-{
-    return Platform::current()->systemTraceTime();
+    return Platform::current()->monotonicallyIncreasingTimeSeconds();
 }
 
 static void histogramEnumerationFunction(const char* name, int sample, int boundaryValue)
@@ -149,14 +148,9 @@ static void histogramEnumerationFunction(const char* name, int sample, int bound
     Platform::current()->histogramEnumeration(name, sample, boundaryValue);
 }
 
-static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
-{
-    Platform::current()->cryptographicallyRandomValues(buffer, length);
-}
-
 static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
 {
-    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, new MainThreadTaskRunner(function, context));
+    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, new MainThreadTaskRunner(function, context));
 }
 
 static void adjustAmountOfExternalAllocatedMemory(int size)
@@ -172,20 +166,15 @@ void initializeWithoutV8(Platform* platform)
     ASSERT(platform);
     Platform::initialize(platform);
 
-    WTF::setRandomSource(cryptographicallyRandomValues);
-    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction, histogramEnumerationFunction, adjustAmountOfExternalAllocatedMemory);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, histogramEnumerationFunction, adjustAmountOfExternalAllocatedMemory);
     WTF::initializeMainThread(callOnMainThreadFunction);
     Heap::init();
 
     ThreadState::attachMainThread();
     // currentThread() is null if we are running on a thread without a message loop.
     if (WebThread* currentThread = platform->currentThread()) {
-        ASSERT(!s_pendingGCRunner);
-        s_pendingGCRunner = new PendingGCRunner;
-        currentThread->addTaskObserver(s_pendingGCRunner);
-
-        OwnPtr<MessageLoopInterruptor> interruptor = adoptPtr(new MessageLoopInterruptor(currentThread->taskRunner()));
-        ThreadState::current()->addInterruptor(interruptor.release());
+        ASSERT(!s_gcTaskRunner);
+        s_gcTaskRunner = new GCTaskRunner(currentThread);
     }
 
     DEFINE_STATIC_LOCAL(ModulesInitializer, initializer, ());
@@ -196,20 +185,35 @@ void initializeWithoutV8(Platform* platform)
 
 void shutdown()
 {
+#if defined(LEAK_SANITIZER)
+    // If LSan is about to perform leak detection, release all the registered
+    // static Persistent<> root references to global caches that Blink keeps,
+    // followed by GCs to clear out all they referred to. A full v8 GC cycle
+    // is needed to flush out all garbage.
+    //
+    // This is not needed for caches over non-Oilpan objects, as they're
+    // not scanned by LSan due to being held in non-global storage
+    // ("static" references inside functions/methods.)
+    if (ThreadState* threadState = ThreadState::current()) {
+        threadState->releaseStaticPersistentNodes();
+        Heap::collectAllGarbage();
+    }
+#endif
+
     // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
+        Platform::current()->unregisterMemoryDumpProvider(WebCacheMemoryDumpProvider::instance());
+        Platform::current()->unregisterMemoryDumpProvider(FontCacheMemoryDumpProvider::instance());
+
         // We don't need to (cannot) remove s_endOfTaskRunner from the current
         // message loop, because the message loop is already destructed before
         // the shutdown() is called.
         delete s_endOfTaskRunner;
-        s_endOfTaskRunner = 0;
-    }
+        s_endOfTaskRunner = nullptr;
 
-    // currentThread() is null if we are running on a thread without a message loop.
-    if (Platform::current()->currentThread()) {
-        ASSERT(s_pendingGCRunner);
-        delete s_pendingGCRunner;
-        s_pendingGCRunner = 0;
+        ASSERT(s_gcTaskRunner);
+        delete s_gcTaskRunner;
+        s_gcTaskRunner = nullptr;
     }
 
     // Shutdown V8-related background threads before V8 is ramped down. Note
@@ -245,6 +249,9 @@ void shutdownWithoutV8()
     WebPrerenderingSupport::shutdown();
 }
 
+// TODO(tkent): The following functions to wrap LayoutTestSupport should be
+// moved to public/platform/.
+
 void setLayoutTestMode(bool value)
 {
     LayoutTestSupport::setIsRunningLayoutTest(value);
@@ -255,6 +262,11 @@ bool layoutTestMode()
     return LayoutTestSupport::isRunningLayoutTest();
 }
 
+void setMockThemeEnabledForTest(bool value)
+{
+    LayoutTestSupport::setMockThemeEnabledForTest(value);
+}
+
 void setFontAntialiasingEnabledForTest(bool value)
 {
     LayoutTestSupport::setFontAntialiasingEnabledForTest(value);
@@ -263,6 +275,16 @@ void setFontAntialiasingEnabledForTest(bool value)
 bool fontAntialiasingEnabledForTest()
 {
     return LayoutTestSupport::isFontAntialiasingEnabledForTest();
+}
+
+void setAlwaysUseComplexTextForTest(bool value)
+{
+    LayoutTestSupport::setAlwaysUseComplexTextForTest(value);
+}
+
+bool alwaysUseComplexTextForTest()
+{
+    return LayoutTestSupport::alwaysUseComplexTextForTest();
 }
 
 void enableLogChannel(const char* name)

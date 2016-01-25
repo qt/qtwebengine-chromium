@@ -4,6 +4,9 @@
 
 #include "device/devices_app/devices_app.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/macros.h"
@@ -14,9 +17,9 @@
 #include "device/core/device_client.h"
 #include "device/devices_app/usb/device_manager_impl.h"
 #include "device/usb/usb_service.h"
-#include "mojo/application/public/cpp/application_connection.h"
-#include "mojo/application/public/cpp/application_impl.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/shell/public/cpp/application_connection.h"
+#include "mojo/shell/public/cpp/application_impl.h"
 #include "url/gurl.h"
 
 namespace device {
@@ -25,7 +28,7 @@ namespace {
 
 // The number of seconds to wait without any bound DeviceManagers before
 // exiting the app.
-const int64 kIdleTimeoutInSeconds = 10;
+const int64_t kIdleTimeoutInSeconds = 10;
 
 // A DeviceClient implementation to be constructed iff the app is not running
 // in an embedder that provides a DeviceClient (i.e. running as a standalone
@@ -72,22 +75,15 @@ class DevicesApp::USBServiceInitializer {
   DISALLOW_COPY_AND_ASSIGN(USBServiceInitializer);
 };
 
-DevicesApp::DevicesApp(
-    scoped_refptr<base::SequencedTaskRunner> service_task_runner)
-    : app_impl_(nullptr),
-      service_task_runner_(service_task_runner),
-      active_device_manager_count_(0) {
-}
+DevicesApp::DevicesApp()
+    : app_impl_(nullptr), active_device_manager_count_(0) {}
 
 DevicesApp::~DevicesApp() {
 }
 
 void DevicesApp::Initialize(mojo::ApplicationImpl* app) {
   app_impl_ = app;
-  if (!service_task_runner_) {
-    service_initializer_.reset(new USBServiceInitializer);
-    service_task_runner_ = base::ThreadTaskRunnerHandle::Get();
-  }
+  service_initializer_.reset(new USBServiceInitializer);
   StartIdleTimer();
 }
 
@@ -111,7 +107,7 @@ void DevicesApp::Create(mojo::ApplicationConnection* connection,
 
   // Owned by its message pipe.
   usb::DeviceManagerImpl* device_manager = new usb::DeviceManagerImpl(
-      request.Pass(), permission_provider.Pass(), service_task_runner_);
+      std::move(permission_provider), std::move(request));
   device_manager->set_connection_error_handler(
       base::Bind(&DevicesApp::OnConnectionError, base::Unretained(this)));
 

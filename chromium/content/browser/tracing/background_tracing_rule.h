@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_TRACING_BACKGROUND_TRACING_RULE_H_
 #define CONTENT_BROWSER_TRACING_BACKGROUND_TRACING_RULE_H_
 
+#include "base/macros.h"
 #include "content/browser/tracing/background_tracing_config_impl.h"
 #include "content/common/content_export.h"
 
@@ -20,12 +21,17 @@ class CONTENT_EXPORT BackgroundTracingRule {
   virtual ~BackgroundTracingRule();
 
   virtual void Install() {}
-  virtual void IntoDict(base::DictionaryValue* dict) const = 0;
+  virtual void IntoDict(base::DictionaryValue* dict) const;
+  void Setup(const base::DictionaryValue* dict);
   virtual bool ShouldTriggerNamedEvent(const std::string& named_event) const;
   virtual BackgroundTracingConfigImpl::CategoryPreset GetCategoryPreset() const;
   virtual void OnHistogramTrigger(const std::string& histogram_name) const {}
 
-  virtual int GetReactiveTimeout() const;
+  // Seconds from the rule is triggered to finalization should start.
+  virtual int GetTraceTimeout() const;
+
+  // Probability that we should allow a tigger to  happen.
+  double trigger_chance() const { return trigger_chance_; }
 
   static scoped_ptr<BackgroundTracingRule> PreemptiveRuleFromDict(
       const base::DictionaryValue* dict);
@@ -36,6 +42,8 @@ class CONTENT_EXPORT BackgroundTracingRule {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BackgroundTracingRule);
+
+  double trigger_chance_;
 };
 
 }  // namespace content

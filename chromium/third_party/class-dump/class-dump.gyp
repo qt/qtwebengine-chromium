@@ -168,6 +168,14 @@
         'src/Source/ULEB128.m',
         'src/Source/cd_objc2.h',
       ],
+      'variables': {
+        'clang_warning_flags': [
+          # hundreds of technically incorrect calls to stringWithFormat
+          '-Wno-format',
+          # e.g. CDRebaseTypeDescription in CDLCDyldInfo.m
+          '-Wno-unused-function',
+        ],
+      },
       'link_settings': {
         'libraries': [
           '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',

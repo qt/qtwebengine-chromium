@@ -39,12 +39,12 @@ namespace blink {
 
 class ExceptionState;
 
-class CORE_EXPORT TimeRanges : public GarbageCollectedFinalized<TimeRanges>, public ScriptWrappable {
+class CORE_EXPORT TimeRanges final : public GarbageCollectedFinalized<TimeRanges>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // We consider all the Ranges to be semi-bounded as follow: [start, end[
     struct Range {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         Range() { }
         Range(double start, double end)

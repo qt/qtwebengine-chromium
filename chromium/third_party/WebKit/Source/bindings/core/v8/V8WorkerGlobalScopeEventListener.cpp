@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "bindings/core/v8/V8WorkerGlobalScopeEventListener.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -38,15 +36,15 @@
 #include "bindings/core/v8/V8EventTarget.h"
 #include "bindings/core/v8/V8GCController.h"
 #include "bindings/core/v8/V8ScriptRunner.h"
-#include "bindings/core/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace blink {
 
-V8WorkerGlobalScopeEventListener::V8WorkerGlobalScopeEventListener(v8::Local<v8::Object> listener, bool isInline, ScriptState* scriptState)
-    : V8EventListener(listener, isInline, scriptState)
+V8WorkerGlobalScopeEventListener::V8WorkerGlobalScopeEventListener(bool isInline, ScriptState* scriptState)
+    : V8EventListener(isInline, scriptState)
 {
 }
 
@@ -56,7 +54,7 @@ void V8WorkerGlobalScopeEventListener::handleEvent(ScriptState* scriptState, Eve
     // See issue 889829.
     RefPtrWillBeRawPtr<V8AbstractEventListener> protect(this);
 
-    WorkerScriptController* script = toWorkerGlobalScope(scriptState->executionContext())->script();
+    WorkerOrWorkletScriptController* script = toWorkerGlobalScope(scriptState->executionContext())->script();
     if (!script)
         return;
 

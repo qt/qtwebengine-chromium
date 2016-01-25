@@ -4,6 +4,9 @@
 
 #include "content/browser/navigator_connect/navigator_connect_context_impl.h"
 
+#include <stdint.h>
+
+#include "base/stl_util.h"
 #include "content/browser/message_port_service.h"
 #include "content/browser/navigator_connect/service_port_service_impl.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -11,6 +14,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigator_connect_service_factory.h"
 #include "content/public/common/navigator_connect_client.h"
+#include "mojo/common/url_type_converters.h"
 
 namespace content {
 
@@ -30,7 +34,7 @@ struct NavigatorConnectContextImpl::Port {
 
   // If this port is associated with a service worker, these fields store that
   // information.
-  int64 service_worker_registration_id = kInvalidServiceWorkerRegistrationId;
+  int64_t service_worker_registration_id = kInvalidServiceWorkerRegistrationId;
   GURL service_worker_registration_origin;
 };
 
@@ -80,7 +84,7 @@ void NavigatorConnectContextImpl::Connect(
   service_port.client_origin = origin;
 
   // Find the right service worker to service this connection.
-  service_worker_context_->FindRegistrationForDocument(
+  service_worker_context_->FindReadyRegistrationForDocument(
       target_url,
       base::Bind(&NavigatorConnectContextImpl::GotServiceWorkerRegistration,
                  this, callback, client_port_id, service_port_id));
@@ -110,7 +114,7 @@ void NavigatorConnectContextImpl::PostMessage(
     for (const auto& sent_port : sent_message_ports)
       MessagePortService::GetInstance()->HoldMessages(sent_port.id);
 
-    service_worker_context_->FindRegistrationForId(
+    service_worker_context_->FindReadyRegistrationForId(
         port.service_worker_registration_id,
         port.service_worker_registration_origin,
         base::Bind(&NavigatorConnectContextImpl::DeliverMessage, this, port.id,
@@ -137,28 +141,49 @@ void NavigatorConnectContextImpl::GotServiceWorkerRegistration(
 
   if (status != SERVICE_WORKER_OK) {
     // No service worker found, reject connection attempt.
-    OnConnectResult(callback, client_port_id, service_port_id, registration,
-                     status, false, base::string16(), base::string16());
+    OnConnectError(callback, client_port_id, service_port_id, status);
     return;
   }
 
   ServiceWorkerVersion* active_version = registration->active_version();
-  if (!active_version) {
-    // No active version, reject connection attempt.
-    OnConnectResult(callback, client_port_id, service_port_id, registration,
-                     status, false, base::string16(), base::string16());
-    return;
-  }
+  DCHECK(active_version);
 
   Port& service_port = ports_[service_port_id];
   service_port.service_worker_registration_id = registration->id();
   service_port.service_worker_registration_origin =
       registration->pattern().GetOrigin();
 
-  active_version->DispatchServicePortConnectEvent(
+  active_version->RunAfterStartWorker(
+      base::Bind(&NavigatorConnectContextImpl::OnConnectError, this, callback,
+                 client_port_id, service_port_id),
+      base::Bind(&NavigatorConnectContextImpl::DispatchConnectEvent, this,
+                 callback, client_port_id, service_port_id, registration,
+                 make_scoped_refptr(active_version)));
+}
+
+void NavigatorConnectContextImpl::DispatchConnectEvent(
+    const ConnectCallback& callback,
+    int client_port_id,
+    int service_port_id,
+    const scoped_refptr<ServiceWorkerRegistration>& service_worker_registration,
+    const scoped_refptr<ServiceWorkerVersion>& worker) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(ContainsKey(ports_, client_port_id));
+  DCHECK(ContainsKey(ports_, service_port_id));
+
+  const Port& service_port = ports_[service_port_id];
+  int request_id = worker->StartRequest(
+      ServiceWorkerMetrics::EventType::SERVICE_PORT_CONNECT,
+      base::Bind(&NavigatorConnectContextImpl::OnConnectError, this, callback,
+                 client_port_id, service_port_id));
+  base::WeakPtr<ServicePortDispatcher> dispatcher =
+      worker->GetMojoServiceForRequest<ServicePortDispatcher>(request_id);
+  dispatcher->Connect(
+      mojo::String::From(service_port.target_url),
+      mojo::String::From(service_port.client_origin), service_port_id,
       base::Bind(&NavigatorConnectContextImpl::OnConnectResult, this, callback,
-                 client_port_id, service_port_id, registration),
-      service_port.target_url, service_port.client_origin, service_port_id);
+                 client_port_id, service_port_id, service_worker_registration,
+                 worker, request_id));
 }
 
 void NavigatorConnectContextImpl::ServicePortServiceDestroyed(
@@ -174,26 +199,42 @@ void NavigatorConnectContextImpl::ServicePortServiceDestroyed(
   }
 }
 
+void NavigatorConnectContextImpl::OnConnectError(
+    const ConnectCallback& callback,
+    int client_port_id,
+    int service_port_id,
+    ServiceWorkerStatusCode status) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // Destroy ports since connection failed.
+  ports_.erase(service_port_id);
+  ports_.erase(client_port_id);
+  callback.Run(MSG_ROUTING_NONE, false);
+}
+
 void NavigatorConnectContextImpl::OnConnectResult(
     const ConnectCallback& callback,
     int client_port_id,
     int service_port_id,
     const scoped_refptr<ServiceWorkerRegistration>& service_worker_registration,
-    ServiceWorkerStatusCode status,
-    bool accept_connection,
-    const base::string16& name,
-    const base::string16& data) {
+    const scoped_refptr<ServiceWorkerVersion>& worker,
+    int request_id,
+    ServicePortConnectResult result,
+    const mojo::String& name,
+    const mojo::String& data) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  if (accept_connection) {
-    // TODO(mek): Might have to do something else if the client connection got
-    // severed while the service side connection was being set up.
-    callback.Run(client_port_id, true);
-  } else {
-    // Destroy ports since connection failed.
-    ports_.erase(service_port_id);
-    ports_.erase(client_port_id);
-    callback.Run(MSG_ROUTING_NONE, false);
+
+  if (!worker->FinishRequest(request_id))
+    return;
+
+  if (result != SERVICE_PORT_CONNECT_RESULT_ACCEPT) {
+    OnConnectError(callback, client_port_id, service_port_id,
+                   SERVICE_WORKER_ERROR_FAILED);
+    return;
   }
+
+  // TODO(mek): Might have to do something else if the client connection got
+  // severed while the service side connection was being set up.
+  callback.Run(client_port_id, true);
 }
 
 void NavigatorConnectContextImpl::DeliverMessage(
@@ -213,10 +254,7 @@ void NavigatorConnectContextImpl::DeliverMessage(
 
   ServiceWorkerVersion* active_version =
       service_worker_registration->active_version();
-  if (!active_version) {
-    // TODO(mek): Do something when no active version exists.
-    return;
-  }
+  DCHECK(active_version);
 
   const Port& port = ports_[port_id];
   NavigatorConnectClient client(port.target_url, port.client_origin, port_id);

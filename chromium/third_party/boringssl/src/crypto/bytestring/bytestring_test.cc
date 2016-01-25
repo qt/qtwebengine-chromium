@@ -12,6 +12,10 @@
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
 
+#if !defined(__STDC_CONSTANT_MACROS)
+#define __STDC_CONSTANT_MACROS
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +26,6 @@
 #include <openssl/bytestring.h>
 
 #include "internal.h"
-#include "../internal.h"
 #include "../test/scoped_types.h"
 
 
@@ -341,12 +344,14 @@ static bool TestCBBPrefixed() {
   size_t buf_len;
   CBB cbb, contents, inner_contents, inner_inner_contents;
 
-  if (!CBB_init(&cbb, 0)) {
-    return false;
-  }
-  if (!CBB_add_u8_length_prefixed(&cbb, &contents) ||
+  if (!CBB_init(&cbb, 0) ||
+      CBB_len(&cbb) != 0 ||
+      !CBB_add_u8_length_prefixed(&cbb, &contents) ||
       !CBB_add_u8_length_prefixed(&cbb, &contents) ||
       !CBB_add_u8(&contents, 1) ||
+      CBB_len(&contents) != 1 ||
+      !CBB_flush(&cbb) ||
+      CBB_len(&cbb) != 3 ||
       !CBB_add_u16_length_prefixed(&cbb, &contents) ||
       !CBB_add_u16(&contents, 0x203) ||
       !CBB_add_u24_length_prefixed(&cbb, &contents) ||
@@ -362,6 +367,55 @@ static bool TestCBBPrefixed() {
   }
 
   ScopedOpenSSLBytes scoper(buf);
+  return buf_len == sizeof(kExpected) && memcmp(buf, kExpected, buf_len) == 0;
+}
+
+static bool TestCBBDiscardChild() {
+  ScopedCBB cbb;
+  CBB contents, inner_contents, inner_inner_contents;
+
+  if (!CBB_init(cbb.get(), 0) ||
+      !CBB_add_u8(cbb.get(), 0xaa)) {
+    return false;
+  }
+
+  // Discarding |cbb|'s children preserves the byte written.
+  CBB_discard_child(cbb.get());
+
+  if (!CBB_add_u8_length_prefixed(cbb.get(), &contents) ||
+      !CBB_add_u8_length_prefixed(cbb.get(), &contents) ||
+      !CBB_add_u8(&contents, 0xbb) ||
+      !CBB_add_u16_length_prefixed(cbb.get(), &contents) ||
+      !CBB_add_u16(&contents, 0xcccc) ||
+      !CBB_add_u24_length_prefixed(cbb.get(), &contents) ||
+      !CBB_add_u24(&contents, 0xdddddd) ||
+      !CBB_add_u8_length_prefixed(cbb.get(), &contents) ||
+      !CBB_add_u8(&contents, 0xff) ||
+      !CBB_add_u8_length_prefixed(&contents, &inner_contents) ||
+      !CBB_add_u8(&inner_contents, 0x42) ||
+      !CBB_add_u16_length_prefixed(&inner_contents, &inner_inner_contents) ||
+      !CBB_add_u8(&inner_inner_contents, 0x99)) {
+    return false;
+  }
+
+  // Discard everything from |inner_contents| down.
+  CBB_discard_child(&contents);
+
+  uint8_t *buf;
+  size_t buf_len;
+  if (!CBB_finish(cbb.get(), &buf, &buf_len)) {
+    return false;
+  }
+  ScopedOpenSSLBytes scoper(buf);
+
+  static const uint8_t kExpected[] = {
+        0xaa,
+        0,
+        1, 0xbb,
+        0, 2, 0xcc, 0xcc,
+        0, 0, 3, 0xdd, 0xdd, 0xdd,
+        1, 0xff,
+  };
   return buf_len == sizeof(kExpected) && memcmp(buf, kExpected, buf_len) == 0;
 }
 
@@ -434,7 +488,7 @@ static bool TestCBBASN1() {
     return false;
   }
   if (!CBB_add_asn1(&cbb, &contents, 0x30) ||
-      !CBB_add_bytes(&contents, bssl::vector_data(&test_data), 130) ||
+      !CBB_add_bytes(&contents, test_data.data(), 130) ||
       !CBB_finish(&cbb, &buf, &buf_len)) {
     CBB_cleanup(&cbb);
     return false;
@@ -443,7 +497,7 @@ static bool TestCBBASN1() {
 
   if (buf_len != 3 + 130 ||
       memcmp(buf, "\x30\x81\x82", 3) != 0 ||
-      memcmp(buf + 3, bssl::vector_data(&test_data), 130) != 0) {
+      memcmp(buf + 3, test_data.data(), 130) != 0) {
     return false;
   }
 
@@ -451,7 +505,7 @@ static bool TestCBBASN1() {
     return false;
   }
   if (!CBB_add_asn1(&cbb, &contents, 0x30) ||
-      !CBB_add_bytes(&contents, bssl::vector_data(&test_data), 1000) ||
+      !CBB_add_bytes(&contents, test_data.data(), 1000) ||
       !CBB_finish(&cbb, &buf, &buf_len)) {
     CBB_cleanup(&cbb);
     return false;
@@ -460,7 +514,7 @@ static bool TestCBBASN1() {
 
   if (buf_len != 4 + 1000 ||
       memcmp(buf, "\x30\x82\x03\xe8", 4) != 0 ||
-      memcmp(buf + 4, bssl::vector_data(&test_data), 1000)) {
+      memcmp(buf + 4, test_data.data(), 1000)) {
     return false;
   }
 
@@ -469,7 +523,7 @@ static bool TestCBBASN1() {
   }
   if (!CBB_add_asn1(&cbb, &contents, 0x30) ||
       !CBB_add_asn1(&contents, &inner_contents, 0x30) ||
-      !CBB_add_bytes(&inner_contents, bssl::vector_data(&test_data), 100000) ||
+      !CBB_add_bytes(&inner_contents, test_data.data(), 100000) ||
       !CBB_finish(&cbb, &buf, &buf_len)) {
     CBB_cleanup(&cbb);
     return false;
@@ -478,7 +532,7 @@ static bool TestCBBASN1() {
 
   if (buf_len != 5 + 5 + 100000 ||
       memcmp(buf, "\x30\x83\x01\x86\xa5\x30\x83\x01\x86\xa0", 10) != 0 ||
-      memcmp(buf + 10, bssl::vector_data(&test_data), 100000)) {
+      memcmp(buf + 10, test_data.data(), 100000)) {
     return false;
   }
 
@@ -578,9 +632,9 @@ static const ASN1Uint64Test kASN1Uint64Tests[] = {
     {127, "\x02\x01\x7f", 3},
     {128, "\x02\x02\x00\x80", 4},
     {0xdeadbeef, "\x02\x05\x00\xde\xad\xbe\xef", 7},
-    {OPENSSL_U64(0x0102030405060708),
+    {UINT64_C(0x0102030405060708),
      "\x02\x08\x01\x02\x03\x04\x05\x06\x07\x08", 10},
-    {OPENSSL_U64(0xffffffffffffffff),
+    {UINT64_C(0xffffffffffffffff),
       "\x02\x09\x00\xff\xff\xff\xff\xff\xff\xff\xff", 11},
 };
 
@@ -670,6 +724,7 @@ int main(void) {
       !TestCBBFinishChild() ||
       !TestCBBMisuse() ||
       !TestCBBPrefixed() ||
+      !TestCBBDiscardChild() ||
       !TestCBBASN1() ||
       !TestBerConvert() ||
       !TestASN1Uint64() ||

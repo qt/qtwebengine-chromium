@@ -17,10 +17,6 @@
 extern "C" {
 #endif
 
-#define LEFT_TOP_MARGIN ((VP9_ENC_BORDER_IN_PIXELS - VP9_INTERP_EXTEND) << 3)
-#define RIGHT_BOTTOM_MARGIN ((VP9_ENC_BORDER_IN_PIXELS -\
-                                VP9_INTERP_EXTEND) << 3)
-
 #define MVREF_NEIGHBOURS 8
 
 typedef struct position {
@@ -123,13 +119,26 @@ static const int idx_n_column_to_subblock[4][2] = {
 };
 
 // clamp_mv_ref
+#if CONFIG_MISC_FIXES
+#define MV_BORDER (8 << 3)  // Allow 8 pels in 1/8th pel units
+#else
 #define MV_BORDER (16 << 3)  // Allow 16 pels in 1/8th pel units
+#endif
 
-static INLINE void clamp_mv_ref(MV *mv, const MACROBLOCKD *xd) {
+static INLINE void clamp_mv_ref(MV *mv, int bw, int bh, const MACROBLOCKD *xd) {
+#if CONFIG_MISC_FIXES
+  clamp_mv(mv, xd->mb_to_left_edge - bw * 8 - MV_BORDER,
+               xd->mb_to_right_edge + bw * 8 + MV_BORDER,
+               xd->mb_to_top_edge - bh * 8 - MV_BORDER,
+               xd->mb_to_bottom_edge + bh * 8 + MV_BORDER);
+#else
+  (void) bw;
+  (void) bh;
   clamp_mv(mv, xd->mb_to_left_edge - MV_BORDER,
                xd->mb_to_right_edge + MV_BORDER,
                xd->mb_to_top_edge - MV_BORDER,
                xd->mb_to_bottom_edge + MV_BORDER);
+#endif
 }
 
 // This function returns either the appropriate sub block or block's mv
@@ -155,36 +164,41 @@ static INLINE int_mv scale_mv(const MB_MODE_INFO *mbmi, int ref,
   return mv;
 }
 
+#if CONFIG_MISC_FIXES
+#define CLIP_IN_ADD(mv, bw, bh, xd) clamp_mv_ref(mv, bw, bh, xd)
+#else
+#define CLIP_IN_ADD(mv, bw, bh, xd) do {} while (0)
+#endif
+
 // This macro is used to add a motion vector mv_ref list if it isn't
 // already in the list.  If it's the second motion vector it will also
 // skip all additional processing and jump to done!
-#define ADD_MV_REF_LIST(mv, refmv_count, mv_ref_list, Done) \
+#define ADD_MV_REF_LIST(mv, refmv_count, mv_ref_list, bw, bh, xd, Done) \
   do { \
-    if (refmv_count) { \
-      if ((mv).as_int != (mv_ref_list)[0].as_int) { \
-        (mv_ref_list)[(refmv_count)] = (mv); \
+    (mv_ref_list)[(refmv_count)] = (mv); \
+    CLIP_IN_ADD(&(mv_ref_list)[(refmv_count)].as_mv, (bw), (bh), (xd)); \
+    if (refmv_count && (mv_ref_list)[1].as_int != (mv_ref_list)[0].as_int) { \
+        (refmv_count) = 2; \
         goto Done; \
-      } \
-    } else { \
-      (mv_ref_list)[(refmv_count)++] = (mv); \
     } \
+    (refmv_count) = 1; \
   } while (0)
 
 // If either reference frame is different, not INTRA, and they
 // are different from each other scale and add the mv to our list.
 #define IF_DIFF_REF_FRAME_ADD_MV(mbmi, ref_frame, ref_sign_bias, refmv_count, \
-                                 mv_ref_list, Done) \
+                                 mv_ref_list, bw, bh, xd, Done) \
   do { \
     if (is_inter_block(mbmi)) { \
       if ((mbmi)->ref_frame[0] != ref_frame) \
         ADD_MV_REF_LIST(scale_mv((mbmi), 0, ref_frame, ref_sign_bias), \
-                        refmv_count, mv_ref_list, Done); \
+                        refmv_count, mv_ref_list, bw, bh, xd, Done); \
       if (has_second_ref(mbmi) && \
           (CONFIG_MISC_FIXES || \
            (mbmi)->mv[1].as_int != (mbmi)->mv[0].as_int) && \
           (mbmi)->ref_frame[1] != ref_frame) \
         ADD_MV_REF_LIST(scale_mv((mbmi), 1, ref_frame, ref_sign_bias), \
-                        refmv_count, mv_ref_list, Done); \
+                        refmv_count, mv_ref_list, bw, bh, xd, Done); \
     } \
   } while (0)
 
@@ -200,14 +214,6 @@ static INLINE int is_inside(const TileInfo *const tile,
            mi_col + mi_pos->col >= tile->mi_col_end);
 }
 
-// TODO(jingning): this mv clamping function should be block size dependent.
-static INLINE void clamp_mv2(MV *mv, const MACROBLOCKD *xd) {
-  clamp_mv(mv, xd->mb_to_left_edge - LEFT_TOP_MARGIN,
-               xd->mb_to_right_edge + RIGHT_BOTTOM_MARGIN,
-               xd->mb_to_top_edge - LEFT_TOP_MARGIN,
-               xd->mb_to_bottom_edge + RIGHT_BOTTOM_MARGIN);
-}
-
 typedef void (*find_mv_refs_sync)(void *const data, int mi_row);
 void vp10_find_mv_refs(const VP10_COMMON *cm, const MACROBLOCKD *xd,
                       MODE_INFO *mi, MV_REFERENCE_FRAME ref_frame,
@@ -218,7 +224,7 @@ void vp10_find_mv_refs(const VP10_COMMON *cm, const MACROBLOCKD *xd,
 // check a list of motion vectors by sad score using a number rows of pixels
 // above and a number cols of pixels in the left to select the one with best
 // score to use as ref motion vector
-void vp10_find_best_ref_mvs(MACROBLOCKD *xd, int allow_hp,
+void vp10_find_best_ref_mvs(int allow_hp,
                            int_mv *mvlist, int_mv *nearest_mv, int_mv *near_mv);
 
 void vp10_append_sub8x8_mvs_for_idx(VP10_COMMON *cm, MACROBLOCKD *xd,

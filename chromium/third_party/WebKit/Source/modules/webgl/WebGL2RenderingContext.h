@@ -11,6 +11,7 @@
 namespace blink {
 
 class CanvasContextCreationAttributes;
+class EXTColorBufferFloat;
 
 class WebGL2RenderingContext : public WebGL2RenderingContextBase {
     DEFINE_WRAPPERTYPEINFO();
@@ -39,6 +40,8 @@ protected:
     WebGL2RenderingContext(HTMLCanvasElement* passedCanvas, PassOwnPtr<WebGraphicsContext3D>, const WebGLContextAttributes& requestedAttributes);
 
     PersistentWillBeMember<CHROMIUMSubscribeUniform> m_chromiumSubscribeUniform;
+    PersistentWillBeMember<EXTColorBufferFloat> m_extColorBufferFloat;
+    PersistentWillBeMember<EXTDisjointTimerQuery> m_extDisjointTimerQuery;
     PersistentWillBeMember<EXTTextureFilterAnisotropic> m_extTextureFilterAnisotropic;
     PersistentWillBeMember<OESTextureFloatLinear> m_oesTextureFloatLinear;
     PersistentWillBeMember<WebGLCompressedTextureASTC> m_webglCompressedTextureASTC;

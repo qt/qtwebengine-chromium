@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/barrier_closure.h"
@@ -23,14 +24,11 @@
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_process_manager.h"
 #include "content/browser/service_worker/service_worker_quota_client.h"
-#include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/service_worker_context.h"
-#include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
@@ -91,16 +89,6 @@ bool ServiceWorkerContext::IsExcludedHeaderNameForFetchEvent(
          g_excluded_header_name_set.Get().end();
 }
 
-ServiceWorkerContext* ServiceWorkerContext::GetServiceWorkerContext(
-    net::URLRequest* request) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  ServiceWorkerRequestHandler* handler =
-      ServiceWorkerRequestHandler::GetHandler(request);
-  if (!handler || !handler->context())
-    return nullptr;
-  return handler->context()->wrapper_;
-}
-
 ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : observer_list_(
@@ -127,11 +115,8 @@ void ServiceWorkerContextWrapper::Init(
       new ServiceWorkerDatabaseTaskManagerImpl(pool));
   scoped_refptr<base::SingleThreadTaskRunner> disk_cache_thread =
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE);
-  InitInternal(user_data_directory,
-               database_task_manager.Pass(),
-               disk_cache_thread,
-               quota_manager_proxy,
-               special_storage_policy);
+  InitInternal(user_data_directory, std::move(database_task_manager),
+               disk_cache_thread, quota_manager_proxy, special_storage_policy);
 }
 
 void ServiceWorkerContextWrapper::Shutdown() {
@@ -183,7 +168,7 @@ static void FinishRegistrationOnIO(
     const ServiceWorkerContext::ResultCallback& continuation,
     ServiceWorkerStatusCode status,
     const std::string& status_message,
-    int64 registration_id) {
+    int64_t registration_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -307,26 +292,6 @@ void ServiceWorkerContextWrapper::SetForceUpdateOnPageLoad(
                                           force_update_on_page_load);
 }
 
-static void DidFindRegistrationForDocument(
-    const net::CompletionCallback& callback,
-    ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  int rv = registration ? net::OK : net::ERR_CACHE_MISS;
-  // Use RunSoon here because FindRegistrationForDocument can complete
-  // immediately but CanHandleMainResourceOffline must be async.
-  RunSoon(base::Bind(callback, rv));
-}
-
-void ServiceWorkerContextWrapper::CanHandleMainResourceOffline(
-      const GURL& url,
-      const GURL& first_party,
-      const net::CompletionCallback& callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  context()->storage()->FindRegistrationForDocument(
-      net::SimplifyUrlForRequest(url),
-      base::Bind(&DidFindRegistrationForDocument, callback));
-}
-
 void ServiceWorkerContextWrapper::GetAllOriginsInfo(
     const GetUsageInfoCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -365,25 +330,13 @@ void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
   callback.Run(usage_infos);
 }
 
-void ServiceWorkerContextWrapper::DidFindRegistrationForCheckHasServiceWorker(
-    const GURL& other_url,
+void ServiceWorkerContextWrapper::DidCheckHasServiceWorker(
     const CheckHasServiceWorkerCallback& callback,
-    ServiceWorkerStatusCode status,
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+    bool has_service_worker) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  if (status != SERVICE_WORKER_OK) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            base::Bind(callback, false));
-    return;
-  }
-
-  DCHECK(registration);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(callback, registration->active_version() &&
-                               ServiceWorkerUtils::ScopeMatches(
-                                   registration->pattern(), other_url)));
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                          base::Bind(callback, has_service_worker));
 }
 
 void ServiceWorkerContextWrapper::StopAllServiceWorkersForOrigin(
@@ -416,6 +369,11 @@ void ServiceWorkerContextWrapper::DidFindRegistrationForUpdate(
   if (!context_core_)
     return;
   DCHECK(registration);
+  // TODO(jungkees): |force_bypass_cache| is set to true because the call stack
+  // is initiated by an update button on DevTools that expects the cache is
+  // bypassed. However, in order to provide options for callers to choose the
+  // cache bypass mode, plumb |force_bypass_cache| through to
+  // UpdateRegistration().
   context_core_->UpdateServiceWorker(registration.get(),
                                      true /* force_bypass_cache */);
 }
@@ -467,11 +425,10 @@ void ServiceWorkerContextWrapper::CheckHasServiceWorker(
                             base::Bind(callback, false));
     return;
   }
-  context()->storage()->FindRegistrationForDocument(
-      net::SimplifyUrlForRequest(url),
-      base::Bind(&ServiceWorkerContextWrapper::
-                     DidFindRegistrationForCheckHasServiceWorker,
-                 this, net::SimplifyUrlForRequest(other_url), callback));
+  context()->CheckHasServiceWorker(
+      net::SimplifyUrlForRequest(url), net::SimplifyUrlForRequest(other_url),
+      base::Bind(&ServiceWorkerContextWrapper::DidCheckHasServiceWorker, this,
+                 callback));
 }
 
 void ServiceWorkerContextWrapper::ClearAllServiceWorkersForTest(
@@ -522,7 +479,19 @@ ServiceWorkerContextWrapper::GetAllLiveVersionInfo() {
   return context_core_->GetAllLiveVersionInfo();
 }
 
-void ServiceWorkerContextWrapper::FindRegistrationForDocument(
+void ServiceWorkerContextWrapper::HasMainFrameProviderHost(
+    const GURL& origin,
+    const BoolCallback& callback) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!context_core_) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  base::Bind(callback, false));
+    return;
+  }
+  context_core_->HasMainFrameProviderHost(origin, callback);
+}
+
+void ServiceWorkerContextWrapper::FindReadyRegistrationForDocument(
     const GURL& document_url,
     const FindRegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -532,21 +501,9 @@ void ServiceWorkerContextWrapper::FindRegistrationForDocument(
     return;
   }
   context_core_->storage()->FindRegistrationForDocument(
-      net::SimplifyUrlForRequest(document_url), callback);
-}
-
-void ServiceWorkerContextWrapper::FindRegistrationForId(
-    int64_t registration_id,
-    const GURL& origin,
-    const FindRegistrationCallback& callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  if (!context_core_) {
-    // FindRegistrationForId() can run the callback synchronously.
-    callback.Run(SERVICE_WORKER_ERROR_ABORT, nullptr);
-    return;
-  }
-  context_core_->storage()->FindRegistrationForId(registration_id,
-                                                  origin.GetOrigin(), callback);
+      net::SimplifyUrlForRequest(document_url),
+      base::Bind(&ServiceWorkerContextWrapper::DidFindRegistrationForFindReady,
+                 this, callback));
 }
 
 void ServiceWorkerContextWrapper::FindReadyRegistrationForId(
@@ -684,6 +641,14 @@ void ServiceWorkerContextWrapper::RemoveObserver(
   observer_list_->RemoveObserver(observer);
 }
 
+bool ServiceWorkerContextWrapper::OriginHasForeignFetchRegistrations(
+    const GURL& origin) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!context_core_)
+    return false;
+  return context_core_->storage()->OriginHasForeignFetchRegistrations(origin);
+}
+
 void ServiceWorkerContextWrapper::InitInternal(
     const base::FilePath& user_data_directory,
     scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_manager,
@@ -711,13 +676,9 @@ void ServiceWorkerContextWrapper::InitInternal(
   if (quota_manager_proxy) {
     quota_manager_proxy->RegisterClient(new ServiceWorkerQuotaClient(this));
   }
-  context_core_.reset(new ServiceWorkerContextCore(user_data_directory,
-                                                   database_task_manager.Pass(),
-                                                   disk_cache_thread,
-                                                   quota_manager_proxy,
-                                                   special_storage_policy,
-                                                   observer_list_.get(),
-                                                   this));
+  context_core_.reset(new ServiceWorkerContextCore(
+      user_data_directory, std::move(database_task_manager), disk_cache_thread,
+      quota_manager_proxy, special_storage_policy, observer_list_.get(), this));
 }
 
 void ServiceWorkerContextWrapper::ShutdownOnIO() {

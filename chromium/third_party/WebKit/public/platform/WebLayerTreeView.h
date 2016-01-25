@@ -65,7 +65,6 @@ public:
     virtual void setViewportSize(const WebSize& deviceViewportSize) { }
 
     virtual void setDeviceScaleFactor(float) { }
-    virtual float deviceScaleFactor() const { return 0; }
 
     // Sets the background color for the viewport.
     virtual void setBackgroundColor(WebColor) { }
@@ -97,9 +96,6 @@ public:
     // Set top controls height. If |shrinkViewport| is set to true, then Blink shrunk the viewport clip
     // layers by the top controls height.
     virtual void setTopControlsHeight(float height, bool shrinkViewport) { }
-
-    // Sets whether to hide the scrollbars of the inner viewport when we are near the minimum page scale.
-    virtual void setHidePinchScrollbarsNearMinScale(bool) { }
 
     // Flow control and scheduling ---------------------------------------
 

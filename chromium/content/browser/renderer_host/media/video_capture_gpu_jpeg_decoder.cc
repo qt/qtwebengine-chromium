@@ -4,6 +4,8 @@
 
 #include "content/browser/renderer_host/media/video_capture_gpu_jpeg_decoder.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -12,6 +14,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/common/gpu/client/gpu_jpeg_decode_accelerator_host.h"
 #include "content/public/browser/browser_thread.h"
@@ -43,10 +46,8 @@ void VideoCaptureGpuJpegDecoder::Initialize() {
   DCHECK(CalledOnValidThread());
 
   base::AutoLock lock(lock_);
-  // TODO(henryhsu): enable on ARM platform after V4L2 JpegDecodeAccelerator is
-  // ready.
   bool is_platform_supported = false;
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
+#if defined(OS_CHROMEOS)
   // Non-ChromeOS platforms do not support HW JPEG decode now. Do not establish
   // gpu channel to avoid introducing overhead.
   is_platform_supported = true;
@@ -212,7 +213,7 @@ void VideoCaptureGpuJpegDecoder::GpuChannelEstablishedOnUIThread(
       BrowserGpuChannelHostFactory::instance()->GetGpuChannel());
   task_runner->PostTask(
       FROM_HERE, base::Bind(&VideoCaptureGpuJpegDecoder::FinishInitialization,
-                            weak_this, base::Passed(&gpu_channel_host)));
+                            weak_this, std::move(gpu_channel_host)));
 }
 
 void VideoCaptureGpuJpegDecoder::FinishInitialization(
@@ -222,7 +223,7 @@ void VideoCaptureGpuJpegDecoder::FinishInitialization(
   if (!gpu_channel_host) {
     LOG(ERROR) << "Failed to establish GPU channel for JPEG decoder";
   } else if (gpu_channel_host->gpu_info().jpeg_decode_accelerator_supported) {
-    gpu_channel_host_ = gpu_channel_host.Pass();
+    gpu_channel_host_ = std::move(gpu_channel_host);
     decoder_ = gpu_channel_host_->CreateJpegDecoder(this);
   }
   decoder_status_ = decoder_ ? INIT_PASSED : FAILED;

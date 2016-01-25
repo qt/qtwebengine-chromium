@@ -20,7 +20,6 @@
  *
  */
 
-#include "config.h"
 #include "core/layout/LayoutInline.h"
 
 #include "core/dom/Fullscreen.h"
@@ -259,6 +258,11 @@ LayoutRect LayoutInline::localCaretRect(InlineBox* inlineBox, int, LayoutUnit* e
 
 void LayoutInline::addChild(LayoutObject* newChild, LayoutObject* beforeChild)
 {
+    // Any table-part dom child of an inline element has anonymous wrappers in the layout tree
+    // so we need to climb up to the enclosing anonymous table wrapper and add the new child before that.
+    // TODO(rhogan): If newChild is a table part we want to insert it into the same table as beforeChild.
+    while (beforeChild && beforeChild->isTablePart())
+        beforeChild = beforeChild->parent();
     if (continuation())
         return addChildToContinuation(newChild, beforeChild);
     return addChildIgnoringContinuation(newChild, beforeChild);
@@ -266,7 +270,7 @@ void LayoutInline::addChild(LayoutObject* newChild, LayoutObject* beforeChild)
 
 static LayoutBoxModelObject* nextContinuation(LayoutObject* layoutObject)
 {
-    if (layoutObject->isInline() && !layoutObject->isReplaced())
+    if (layoutObject->isInline() && !layoutObject->isAtomicInlineLevel())
         return toLayoutInline(layoutObject)->continuation();
     return toLayoutBlock(layoutObject)->inlineElementContinuation();
 }
@@ -302,12 +306,12 @@ void LayoutInline::addChildIgnoringContinuation(LayoutObject* newChild, LayoutOb
     if (!beforeChild && isAfterContent(lastChild()))
         beforeChild = lastChild();
 
-    if (!newChild->isInline() && !newChild->isFloatingOrOutOfFlowPositioned()) {
+    if (!newChild->isInline() && !newChild->isFloatingOrOutOfFlowPositioned() && !newChild->isTablePart()) {
         // We are placing a block inside an inline. We have to perform a split of this
         // inline into continuations.  This involves creating an anonymous block box to hold
         // |newChild|.  We then make that block box a continuation of this inline.  We take all of
         // the children after |beforeChild| and put them in a clone of this object.
-        RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(styleRef(), BLOCK);
+        RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(containingBlock()->styleRef(), BLOCK);
 
         // If inside an inline affected by in-flow positioning the block needs to be affected by it too.
         // Giving the block a layer like this allows it to collect the x/y offsets from inline parents later.
@@ -487,8 +491,10 @@ void LayoutInline::splitFlow(LayoutObject* beforeChild, LayoutBlock* newBlockBox
 
 void LayoutInline::addChildToContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
 {
+    // A continuation always consists of two potential candidates: an inline or an anonymous
+    // block box holding block children.
     LayoutBoxModelObject* flow = continuationBefore(beforeChild);
-    ASSERT(!beforeChild || beforeChild->parent()->isLayoutBlock() || beforeChild->parent()->isLayoutInline());
+    ASSERT(!beforeChild || beforeChild->parent()->isAnonymousBlock() || beforeChild->parent()->isLayoutInline());
     LayoutBoxModelObject* beforeChildParent = nullptr;
     if (beforeChild) {
         beforeChildParent = toLayoutBoxModelObject(beforeChild->parent());
@@ -500,12 +506,13 @@ void LayoutInline::addChildToContinuation(LayoutObject* newChild, LayoutObject* 
             beforeChildParent = flow;
     }
 
+    // TODO(rhogan): Should we treat out-of-flows and floats as through they're inline below?
     if (newChild->isFloatingOrOutOfFlowPositioned())
         return beforeChildParent->addChildIgnoringContinuation(newChild, beforeChild);
 
-    // A continuation always consists of two potential candidates: an inline or an anonymous
-    // block box holding block children.
-    bool childInline = newChild->isInline();
+    // A table part will be wrapped by an inline anonymous table when it is added to the layout
+    // tree, so treat it as inline when deciding where to add it.
+    bool childInline = newChild->isInline() || newChild->isTablePart();
     bool bcpInline = beforeChildParent->isInline();
     bool flowInline = flow->isInline();
 
@@ -748,6 +755,16 @@ LayoutUnit LayoutInline::marginAfter(const ComputedStyle* otherStyle) const
     return computeMargin(this, style()->marginAfterUsing(otherStyle ? otherStyle : style()));
 }
 
+LayoutUnit LayoutInline::marginOver() const
+{
+    return computeMargin(this, style()->marginOver());
+}
+
+LayoutUnit LayoutInline::marginUnder() const
+{
+    return computeMargin(this, style()->marginUnder());
+}
+
 bool LayoutInline::nodeAtPoint(HitTestResult& result,
     const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
@@ -795,7 +812,9 @@ bool LayoutInline::hitTestCulledInline(HitTestResult& result, const HitTestLocat
         // We can not use addNodeToListBasedTestResult to determine if we fully enclose the hit-test area
         // because it can only handle rectangular targets.
         result.addNodeToListBasedTestResult(node(), locationInContainer);
-        return regionResult.contains(tmpLocation.boundingBox());
+        // We check if using list-based hit-test to continue hit testing.
+        if (!result.hitTestRequest().penetratingList())
+            return regionResult.contains(tmpLocation.boundingBox());
     }
     return false;
 }
@@ -1037,7 +1056,7 @@ LayoutRect LayoutInline::clippedOverflowRect(const LayoutBoxModelObject* paintIn
     if (overflowRect.isEmpty())
         return overflowRect;
 
-    mapRectToPaintInvalidationBacking(paintInvalidationContainer, overflowRect, paintInvalidationState);
+    mapToVisibleRectInAncestorSpace(paintInvalidationContainer, overflowRect, paintInvalidationState);
     return overflowRect;
 }
 
@@ -1059,9 +1078,9 @@ LayoutRect LayoutInline::visualOverflowRect() const
     return overflowRect;
 }
 
-void LayoutInline::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
+void LayoutInline::mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
-    if (paintInvalidationState && paintInvalidationState->canMapToContainer(paintInvalidationContainer)) {
+    if (paintInvalidationState && paintInvalidationState->canMapToContainer(ancestor)) {
         if (style()->hasInFlowPosition() && layer())
             rect.move(layer()->offsetForInFlowPosition());
         rect.move(paintInvalidationState->paintOffset());
@@ -1070,12 +1089,12 @@ void LayoutInline::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject*
         return;
     }
 
-    if (paintInvalidationContainer == this)
+    if (ancestor == this)
         return;
 
-    bool containerSkipped;
-    LayoutObject* o = container(paintInvalidationContainer, &containerSkipped);
-    if (!o)
+    bool ancestorSkipped;
+    LayoutObject* container = this->container(ancestor, &ancestorSkipped);
+    if (!container)
         return;
 
     LayoutPoint topLeft = rect.location();
@@ -1091,21 +1110,23 @@ void LayoutInline::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject*
     // FIXME: We ignore the lightweight clipping rect that controls use, since if |o| is in mid-layout,
     // its controlClipRect will be wrong. For overflow clip we use the values cached by the layer.
     rect.setLocation(topLeft);
-    if (o->hasOverflowClip()) {
-        LayoutBox* containerBox = toLayoutBox(o);
-        containerBox->applyCachedClipAndScrollOffsetForPaintInvalidation(rect);
+    if (container->hasOverflowClip()) {
+        LayoutBox* containerBox = toLayoutBox(container);
+        containerBox->mapScrollingContentsRectToBoxSpace(rect);
+        if (container != ancestor)
+            containerBox->applyOverflowClip(rect);
         if (rect.isEmpty())
             return;
     }
 
-    if (containerSkipped) {
+    if (ancestorSkipped) {
         // If the paintInvalidationContainer is below o, then we need to map the rect into paintInvalidationContainer's coordinates.
-        LayoutSize containerOffset = paintInvalidationContainer->offsetFromAncestorContainer(o);
+        LayoutSize containerOffset = ancestor->offsetFromAncestorContainer(container);
         rect.move(-containerOffset);
         return;
     }
 
-    o->mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
+    container->mapToVisibleRectInAncestorSpace(ancestor, rect, paintInvalidationState);
 }
 
 LayoutSize LayoutInline::offsetFromContainer(const LayoutObject* container, const LayoutPoint& point, bool* offsetDependsOnPoint) const
@@ -1127,12 +1148,18 @@ LayoutSize LayoutInline::offsetFromContainer(const LayoutObject* container, cons
     return offset;
 }
 
-void LayoutInline::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+PaintLayerType LayoutInline::layerTypeRequired() const
 {
-    if (paintInvalidationContainer == this)
+    return isInFlowPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations()
+        ||  style()->hasCompositorProxy() || style()->containsPaint() ? NormalPaintLayer : NoPaintLayer;
+}
+
+void LayoutInline::mapLocalToAncestor(const LayoutBoxModelObject* ancestor, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+{
+    if (ancestor == this)
         return;
 
-    if (paintInvalidationState && paintInvalidationState->canMapToContainer(paintInvalidationContainer)) {
+    if (paintInvalidationState && paintInvalidationState->canMapToContainer(ancestor)) {
         LayoutSize offset = paintInvalidationState->paintOffset();
         if (style()->hasInFlowPosition() && layer())
             offset += layer()->offsetForInFlowPosition();
@@ -1141,7 +1168,7 @@ void LayoutInline::mapLocalToContainer(const LayoutBoxModelObject* paintInvalida
     }
 
     bool containerSkipped;
-    LayoutObject* o = container(paintInvalidationContainer, &containerSkipped);
+    LayoutObject* o = container(ancestor, &containerSkipped);
     if (!o)
         return;
 
@@ -1167,12 +1194,12 @@ void LayoutInline::mapLocalToContainer(const LayoutBoxModelObject* paintInvalida
     if (containerSkipped) {
         // There can't be a transform between paintInvalidationContainer and o, because transforms create containers, so it should be safe
         // to just subtract the delta between the paintInvalidationContainer and o.
-        LayoutSize containerOffset = paintInvalidationContainer->offsetFromAncestorContainer(o);
+        LayoutSize containerOffset = ancestor->offsetFromAncestorContainer(o);
         transformState.move(-containerOffset.width(), -containerOffset.height(), preserve3D ? TransformState::AccumulateTransform : TransformState::FlattenTransform);
         return;
     }
 
-    o->mapLocalToContainer(paintInvalidationContainer, transformState, mode, wasFixed, paintInvalidationState);
+    o->mapLocalToAncestor(ancestor, transformState, mode, wasFixed, paintInvalidationState);
 }
 
 void LayoutInline::updateDragState(bool dragOn)
@@ -1404,11 +1431,12 @@ void LayoutInline::addAnnotatedRegions(Vector<AnnotatedRegionValue>& regions)
     regions.append(region);
 }
 
-void LayoutInline::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const
+void LayoutInline::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason invalidationReason) const
 {
-    LayoutBoxModelObject::invalidateDisplayItemClients(paintInvalidationContainer);
+    LayoutBoxModelObject::invalidateDisplayItemClients(paintInvalidationContainer, invalidationReason);
+
     for (InlineFlowBox* box = firstLineBox(); box; box = box->nextLineBox())
-        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box);
+        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box, invalidationReason);
 }
 
 } // namespace blink

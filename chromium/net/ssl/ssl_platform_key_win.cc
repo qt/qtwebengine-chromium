@@ -20,7 +20,6 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/sequenced_task_runner.h"
-#include "base/stl_util.h"
 #include "base/win/windows_version.h"
 #include "crypto/openssl_util.h"
 #include "crypto/scoped_capi_types.h"
@@ -28,6 +27,7 @@
 #include "net/base/net_errors.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/scoped_openssl_types.h"
+#include "net/ssl/ssl_platform_key_task_runner.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/ssl/threaded_ssl_private_key.h"
 
@@ -145,7 +145,7 @@ class SSLPlatformKeyCAPI : public ThreadedSSLPrivateKey::Delegate {
     }
     signature->resize(signature_len);
     if (!CryptSignHash(hash_handle.get(), key_spec_, nullptr, 0,
-                       vector_as_array(signature), &signature_len)) {
+                       signature->data(), &signature_len)) {
       PLOG(ERROR) << "CryptSignHash failed";
       return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
     }
@@ -242,8 +242,7 @@ class SSLPlatformKeyCNG : public ThreadedSSLPrivateKey::Delegate {
     status = g_cng_functions.Get().ncrypt_sign_hash()(
         key_, padding_info,
         const_cast<BYTE*>(reinterpret_cast<const BYTE*>(input.data())),
-        input.size(), vector_as_array(signature), signature_len, &signature_len,
-        flags);
+        input.size(), signature->data(), signature_len, &signature_len, flags);
     if (FAILED(status)) {
       LOG(ERROR) << "NCryptSignHash failed: " << status;
       return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
@@ -261,9 +260,8 @@ class SSLPlatformKeyCNG : public ThreadedSSLPrivateKey::Delegate {
 
       // Convert the RAW ECDSA signature to a DER-encoded ECDSA-Sig-Value.
       crypto::ScopedECDSA_SIG sig(ECDSA_SIG_new());
-      if (!sig || !BN_bin2bn(vector_as_array(signature), order_len, sig->r) ||
-          !BN_bin2bn(vector_as_array(signature) + order_len, order_len,
-                     sig->s)) {
+      if (!sig || !BN_bin2bn(signature->data(), order_len, sig->r) ||
+          !BN_bin2bn(signature->data() + order_len, order_len, sig->s)) {
         return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
       }
 
@@ -271,7 +269,7 @@ class SSLPlatformKeyCNG : public ThreadedSSLPrivateKey::Delegate {
       if (len <= 0)
         return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
       signature->resize(len);
-      uint8_t* ptr = vector_as_array(signature);
+      uint8_t* ptr = signature->data();
       len = i2d_ECDSA_SIG(sig.get(), &ptr);
       if (len <= 0)
         return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
@@ -323,9 +321,8 @@ bool GetKeyInfo(const X509Certificate* certificate,
 
 }  // namespace
 
-scoped_ptr<SSLPrivateKey> FetchClientCertPrivateKey(
-    X509Certificate* certificate,
-    scoped_refptr<base::SequencedTaskRunner> task_runner) {
+scoped_refptr<SSLPrivateKey> FetchClientCertPrivateKey(
+    X509Certificate* certificate) {
   // Rather than query the private key for metadata, extract the public key from
   // the certificate without using Windows APIs. CAPI and CNG do not
   // consistently work depending on the system. See https://crbug.com/468345.
@@ -360,8 +357,8 @@ scoped_ptr<SSLPrivateKey> FetchClientCertPrivateKey(
     DCHECK(SSLPrivateKey::Type::RSA == key_type);
     delegate.reset(new SSLPlatformKeyCAPI(prov_or_key, key_spec, max_length));
   }
-  return make_scoped_ptr(
-      new ThreadedSSLPrivateKey(delegate.Pass(), task_runner.Pass()));
+  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+      delegate.Pass(), GetSSLPlatformKeyTaskRunner()));
 }
 
 }  // namespace net

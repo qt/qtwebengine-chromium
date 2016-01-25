@@ -2,20 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/ScriptRunner.h"
 
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ScriptLoader.h"
+#include "platform/heap/Handle.h"
 #include "platform/scheduler/CancellableTaskFactory.h"
+#include "platform/testing/TestingPlatformSupport.h"
 #include "public/platform/Platform.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "public/platform/WebViewScheduler.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::Invoke;
 using ::testing::ElementsAre;
 using ::testing::Return;
+using ::testing::WhenSorted;
+using ::testing::ElementsAreArray;
 
 namespace blink {
 
@@ -35,146 +39,32 @@ private:
     }
 };
 
-class MockWebThread : public WebThread {
-public:
-    explicit MockWebThread(WebScheduler* webScheduler) : m_webScheduler(webScheduler) { }
-    ~MockWebThread() override { }
-
-    bool isCurrentThread() const override
-    {
-        ASSERT_NOT_REACHED();
-        return false;
-    }
-
-    PlatformThreadId threadId() const override
-    {
-        ASSERT_NOT_REACHED();
-        return 0;
-    }
-
-    WebTaskRunner* taskRunner() override
-    {
-        ASSERT_NOT_REACHED();
-        return nullptr;
-    }
-
-    void addTaskObserver(TaskObserver*) override { ASSERT_NOT_REACHED(); }
-    void removeTaskObserver(TaskObserver*) override { ASSERT_NOT_REACHED(); }
-
-    WebScheduler* scheduler() const override { return m_webScheduler; }
-
-private:
-    WebScheduler* m_webScheduler;
-};
-
-class MockWebTaskRunner : public WebTaskRunner {
-public:
-    explicit MockWebTaskRunner(Deque<OwnPtr<WebTaskRunner::Task>>* tasks) : m_tasks(tasks) { }
-    ~MockWebTaskRunner() override { }
-
-    virtual void postTask(const WebTraceLocation&, Task* task)
-    {
-        m_tasks->append(adoptPtr(task));
-    }
-
-    void postDelayedTask(const WebTraceLocation&, Task* task, double delayMs) override
-    {
-        ASSERT_NOT_REACHED();
-    }
-
-    Deque<OwnPtr<WebTaskRunner::Task>>* m_tasks; // NOT OWNED
-};
-
-class MockPlatform : public Platform, private WebScheduler {
-public:
-    MockPlatform()
-        : m_mockWebThread(this)
-        , m_mockWebTaskRunner(&m_tasks)
-        , m_shouldYield(false)
-        , m_shouldYieldEveryOtherTime(false) { }
-
-    void cryptographicallyRandomValues(unsigned char* buffer, size_t length) override { }
-
-    WebThread* currentThread() override { return &m_mockWebThread; }
-
-    WebTaskRunner* loadingTaskRunner() override
-    {
-        return &m_mockWebTaskRunner;
-    }
-
-    WebTaskRunner* timerTaskRunner() override
-    {
-        ASSERT_NOT_REACHED();
-        return nullptr;
-    }
-
-    void runSingleTask()
-    {
-        if (m_tasks.isEmpty())
-            return;
-        m_tasks.takeFirst()->run();
-    }
-
-    void runAllTasks()
-    {
-        while (!m_tasks.isEmpty())
-            m_tasks.takeFirst()->run();
-    }
-
-    bool shouldYieldForHighPriorityWork() override
-    {
-        if (m_shouldYieldEveryOtherTime)
-            m_shouldYield = !m_shouldYield;
-        return m_shouldYield;
-    }
-
-    void setShouldYield(bool shouldYield)
-    {
-        m_shouldYield = shouldYield;
-    }
-
-    // NOTE if we yield 100% of the time, nothing will get run.
-    void setShouldYieldEveryOtherTime(bool shouldYieldEveryOtherTime)
-    {
-        m_shouldYieldEveryOtherTime = shouldYieldEveryOtherTime;
-    }
-
-private:
-    MockWebThread m_mockWebThread;
-    Deque<OwnPtr<WebTaskRunner::Task>> m_tasks;
-    MockWebTaskRunner m_mockWebTaskRunner;
-    bool m_shouldYield;
-    bool m_shouldYieldEveryOtherTime;
-};
-
 class ScriptRunnerTest : public testing::Test {
 public:
+    ScriptRunnerTest()
+        : m_document(Document::create())
+        , m_element(m_document->createElement("foo", ASSERT_NO_EXCEPTION))
+    {
+    }
+
     void SetUp() override
     {
-        m_document = Document::create();
-        m_element = m_document->createElement("foo", ASSERT_NO_EXCEPTION);
-
+        // We have to create ScriptRunner after initializing platform, because we need
+        // Platform::current()->currentThread()->scheduler()->loadingTaskRunner()
+        // to be initialized before creating ScriptRunner to save it in constructor.
         m_scriptRunner = ScriptRunner::create(m_document.get());
-        m_oldPlatform = Platform::current();
-
-        // Force Platform::initialize to create a new one pointing at MockPlatform.
-        Platform::initialize(&m_platform);
-        m_platform.setShouldYield(false);
-        m_platform.setShouldYieldEveryOtherTime(false);
     }
 
     void TearDown() override
     {
         m_scriptRunner.release();
-        Platform::initialize(m_oldPlatform);
     }
 
     RefPtrWillBePersistent<Document> m_document;
     RefPtrWillBePersistent<Element> m_element;
+    TestingPlatformSupportWithMockScheduler m_platform;
     OwnPtrWillBePersistent<ScriptRunner> m_scriptRunner;
-    std::vector<int> m_order; // gmock matchers don't work nicely with WTF::Vector
-    MockPlatform m_platform;
-    Platform* m_oldPlatform; // NOT OWNED
+    WTF::Vector<int> m_order;
 };
 
 TEST_F(ScriptRunnerTest, QueueSingleScript_Async)
@@ -184,18 +74,20 @@ TEST_F(ScriptRunnerTest, QueueSingleScript_Async)
     m_scriptRunner->notifyScriptReady(scriptLoader.get(), ScriptRunner::ASYNC_EXECUTION);
 
     EXPECT_CALL(*scriptLoader, execute());
-    m_platform.runAllTasks();
+    m_platform.mockWebScheduler()->runAllTasks();
 }
 
 TEST_F(ScriptRunnerTest, QueueSingleScript_InOrder)
 {
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader = MockScriptLoader::create(m_element.get());
     m_scriptRunner->queueScriptForExecution(scriptLoader.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->resume();
 
     EXPECT_CALL(*scriptLoader, isReady()).WillOnce(Return(true));
     EXPECT_CALL(*scriptLoader, execute());
-    m_platform.runAllTasks();
+
+    m_scriptRunner->notifyScriptReady(scriptLoader.get(), ScriptRunner::IN_ORDER_EXECUTION);
+
+    m_platform.mockWebScheduler()->runAllTasks();
 }
 
 TEST_F(ScriptRunnerTest, QueueMultipleScripts_InOrder)
@@ -204,36 +96,36 @@ TEST_F(ScriptRunnerTest, QueueMultipleScripts_InOrder)
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader3 = MockScriptLoader::create(m_element.get());
 
-    m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
+    WillBeHeapVector<RawPtrWillBeMember<MockScriptLoader>> scriptLoaders;
+    scriptLoaders.append(scriptLoader1.get());
+    scriptLoaders.append(scriptLoader2.get());
+    scriptLoaders.append(scriptLoader3.get());
 
-    EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(1);
-    }));
-    EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(2);
-    }));
-    EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
-    }));
+    for (ScriptLoader* scriptLoader : scriptLoaders) {
+        m_scriptRunner->queueScriptForExecution(scriptLoader, ScriptRunner::IN_ORDER_EXECUTION);
+    }
+
+    for (size_t i = 0; i < scriptLoaders.size(); ++i) {
+        EXPECT_CALL(*scriptLoaders[i], execute())
+            .WillOnce(Invoke([this, i] {
+                m_order.append(i + 1);
+            }));
+    }
 
     // Make the scripts become ready in reverse order.
     bool isReady[] = { false, false, false };
-    EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Invoke([&isReady] {
-        return isReady[0];
-    }));
-    EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Invoke([&isReady] {
-        return isReady[1];
-    }));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Invoke([&isReady] {
-        return isReady[2];
-    }));
+
+    for (size_t i = 0; i < scriptLoaders.size(); ++i) {
+        EXPECT_CALL(*scriptLoaders[i], isReady())
+            .WillRepeatedly(Invoke([&isReady, i] {
+                return isReady[i];
+            }));
+    }
 
     for (int i = 2; i >= 0; i--) {
         isReady[i] = true;
-        m_scriptRunner->resume();
-        m_platform.runAllTasks();
+        m_scriptRunner->notifyScriptReady(scriptLoaders[i], ScriptRunner::IN_ORDER_EXECUTION);
+        m_platform.mockWebScheduler()->runAllTasks();
     }
 
     // But ensure the scripts were run in the expected order.
@@ -248,9 +140,6 @@ TEST_F(ScriptRunnerTest, QueueMixedScripts)
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader4 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader5 = MockScriptLoader::create(m_element.get());
 
-    EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
 
     m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
@@ -258,73 +147,42 @@ TEST_F(ScriptRunnerTest, QueueMixedScripts)
     m_scriptRunner->queueScriptForExecution(scriptLoader4.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader5.get(), ScriptRunner::ASYNC_EXECUTION);
 
-    m_scriptRunner->notifyScriptReady(scriptLoader4.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->notifyScriptReady(scriptLoader5.get(), ScriptRunner::ASYNC_EXECUTION);
-
-    EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(1);
-    }));
-    EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(2);
-    }));
-    EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
-    }));
-    EXPECT_CALL(*scriptLoader4, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(4);
-    }));
-    EXPECT_CALL(*scriptLoader5, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(5);
-    }));
-
-    m_platform.runAllTasks();
-
-    // Make sure the async scripts were run before the in-order ones.
-    EXPECT_THAT(m_order, ElementsAre(4, 5, 1, 2, 3));
-}
-
-TEST_F(ScriptRunnerTest, QueueMixedScripts_YieldAfterEveryExecution)
-{
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader3 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader4 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader5 = MockScriptLoader::create(m_element.get());
-
-    m_platform.setShouldYieldEveryOtherTime(true);
-
     EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*scriptLoader2, isReady())
+        .WillRepeatedly(Return(false));
+    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
 
-    m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader4.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader5.get(), ScriptRunner::ASYNC_EXECUTION);
+    EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*scriptLoader3, isReady())
+        .WillRepeatedly(Return(false));
+    m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
+
+    EXPECT_CALL(*scriptLoader3, isReady())
+        .WillRepeatedly(Return(true));
+    m_scriptRunner->notifyScriptReady(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
 
     m_scriptRunner->notifyScriptReady(scriptLoader4.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->notifyScriptReady(scriptLoader5.get(), ScriptRunner::ASYNC_EXECUTION);
 
     EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(1);
+        m_order.append(1);
     }));
     EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(2);
+        m_order.append(2);
     }));
     EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
+        m_order.append(3);
     }));
     EXPECT_CALL(*scriptLoader4, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(4);
+        m_order.append(4);
     }));
     EXPECT_CALL(*scriptLoader5, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(5);
+        m_order.append(5);
     }));
 
-    m_platform.runAllTasks();
+    m_platform.mockWebScheduler()->runAllTasks();
 
-    // Make sure the async scripts were run before the in-order ones.
+    // Async tasks are expected to run first.
     EXPECT_THAT(m_order, ElementsAre(4, 5, 1, 2, 3));
 }
 
@@ -341,29 +199,29 @@ TEST_F(ScriptRunnerTest, QueueReentrantScript_Async)
 
     MockScriptLoader* scriptLoader = scriptLoader2.get();
     EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([scriptLoader, this] {
-        m_order.push_back(1);
+        m_order.append(1);
         m_scriptRunner->notifyScriptReady(scriptLoader, ScriptRunner::ASYNC_EXECUTION);
     }));
 
     scriptLoader = scriptLoader3.get();
     EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([scriptLoader, this] {
-        m_order.push_back(2);
+        m_order.append(2);
         m_scriptRunner->notifyScriptReady(scriptLoader, ScriptRunner::ASYNC_EXECUTION);
     }));
 
     EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
+        m_order.append(3);
     }));
 
     // Make sure that re-entrant calls to notifyScriptReady don't cause ScriptRunner::execute to do
     // more work than expected.
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1));
 
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1, 2));
 
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1, 2, 3));
 }
 
@@ -378,68 +236,37 @@ TEST_F(ScriptRunnerTest, QueueReentrantScript_InOrder)
     EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
 
     m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->resume();
+    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
 
     MockScriptLoader* scriptLoader = scriptLoader2.get();
-    EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([scriptLoader, this] {
-        m_order.push_back(1);
-        m_scriptRunner->queueScriptForExecution(scriptLoader, ScriptRunner::IN_ORDER_EXECUTION);
-        m_scriptRunner->resume();
-    }));
+    EXPECT_CALL(*scriptLoader1, execute())
+        .WillOnce(Invoke([scriptLoader, &scriptLoader2, this] {
+            m_order.append(1);
+            m_scriptRunner->queueScriptForExecution(scriptLoader, ScriptRunner::IN_ORDER_EXECUTION);
+            m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
+        }));
 
     scriptLoader = scriptLoader3.get();
-    EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([scriptLoader, this] {
-        m_order.push_back(2);
-        m_scriptRunner->queueScriptForExecution(scriptLoader, ScriptRunner::IN_ORDER_EXECUTION);
-        m_scriptRunner->resume();
-    }));
+    EXPECT_CALL(*scriptLoader2, execute())
+        .WillOnce(Invoke([scriptLoader, &scriptLoader3, this] {
+            m_order.append(2);
+            m_scriptRunner->queueScriptForExecution(scriptLoader, ScriptRunner::IN_ORDER_EXECUTION);
+            m_scriptRunner->notifyScriptReady(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
+        }));
 
     EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
+        m_order.append(3);
     }));
 
     // Make sure that re-entrant calls to queueScriptForExecution don't cause ScriptRunner::execute to do
     // more work than expected.
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1));
 
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1, 2));
 
-    m_platform.runSingleTask();
-    EXPECT_THAT(m_order, ElementsAre(1, 2, 3));
-}
-
-TEST_F(ScriptRunnerTest, ShouldYield_AsyncScripts)
-{
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader3 = MockScriptLoader::create(m_element.get());
-
-    m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->notifyScriptReady(scriptLoader3.get(), ScriptRunner::ASYNC_EXECUTION);
-
-    EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(1);
-        m_platform.setShouldYield(true);
-    }));
-    EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(2);
-    }));
-    EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
-    }));
-
-    m_platform.runSingleTask();
-    EXPECT_THAT(m_order, ElementsAre(1));
-
-    // Make sure the interrupted tasks are executed next 'tick'.
-    m_platform.setShouldYield(false);
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
     EXPECT_THAT(m_order, ElementsAre(1, 2, 3));
 }
 
@@ -457,23 +284,21 @@ TEST_F(ScriptRunnerTest, QueueReentrantScript_ManyAsyncScripts)
 
         if (i > 0) {
             EXPECT_CALL(*scriptLoaders[i], execute()).WillOnce(Invoke([this, i] {
-                m_order.push_back(i);
+                m_order.append(i);
             }));
         }
     }
 
     m_scriptRunner->notifyScriptReady(scriptLoaders[0].get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->notifyScriptReady(scriptLoaders[1].get(), ScriptRunner::ASYNC_EXECUTION);
-    m_scriptRunner->resume();
 
     EXPECT_CALL(*scriptLoaders[0], execute()).WillOnce(Invoke([&scriptLoaders, this] {
         for (int i = 2; i < 20; i++)
             m_scriptRunner->notifyScriptReady(scriptLoaders[i].get(), ScriptRunner::ASYNC_EXECUTION);
-        m_scriptRunner->resume();
-        m_order.push_back(0);
+        m_order.append(0);
     }));
 
-    m_platform.runAllTasks();
+    m_platform.mockWebScheduler()->runAllTasks();
 
     int expected[] = {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
@@ -482,42 +307,57 @@ TEST_F(ScriptRunnerTest, QueueReentrantScript_ManyAsyncScripts)
     EXPECT_THAT(m_order, testing::ElementsAreArray(expected));
 }
 
-TEST_F(ScriptRunnerTest, ShouldYield_InOrderScripts)
+TEST_F(ScriptRunnerTest, ResumeAndSuspend_InOrder)
 {
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader3 = MockScriptLoader::create(m_element.get());
 
-    EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
-
     m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->resume();
 
     EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(1);
-        m_platform.setShouldYield(true);
+        m_order.append(1);
     }));
     EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(2);
+        m_order.append(2);
     }));
     EXPECT_CALL(*scriptLoader3, execute()).WillOnce(Invoke([this] {
-        m_order.push_back(3);
+        m_order.append(3);
     }));
 
-    m_platform.runSingleTask();
-    EXPECT_THAT(m_order, ElementsAre(1));
+    EXPECT_CALL(*scriptLoader2, isReady())
+        .WillRepeatedly(Return(true));
+    EXPECT_CALL(*scriptLoader3, isReady())
+        .WillRepeatedly(Return(true));
 
-    // Make sure the interrupted tasks are executed next 'tick'.
-    m_platform.setShouldYield(false);
-    m_platform.runSingleTask();
+    EXPECT_CALL(*scriptLoader1, isReady())
+        .WillRepeatedly(Return(true));
+    EXPECT_CALL(*scriptLoader2, isReady())
+        .WillRepeatedly(Return(false));
+    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
+
+    EXPECT_CALL(*scriptLoader2, isReady())
+        .WillRepeatedly(Return(true));
+    EXPECT_CALL(*scriptLoader3, isReady())
+        .WillRepeatedly(Return(false));
+    m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
+
+    EXPECT_CALL(*scriptLoader3, isReady())
+        .WillRepeatedly(Return(true));
+    m_scriptRunner->notifyScriptReady(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
+
+    m_platform.mockWebScheduler()->runSingleTask();
+    m_scriptRunner->suspend();
+    m_scriptRunner->resume();
+    m_platform.mockWebScheduler()->runAllTasks();
+
+    // Make sure elements are correct and in right order.
     EXPECT_THAT(m_order, ElementsAre(1, 2, 3));
 }
 
-TEST_F(ScriptRunnerTest, ShouldYield_RunsAtLastOneTask_AsyncScripts)
+TEST_F(ScriptRunnerTest, ResumeAndSuspend_Async)
 {
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
@@ -526,56 +366,86 @@ TEST_F(ScriptRunnerTest, ShouldYield_RunsAtLastOneTask_AsyncScripts)
     m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::ASYNC_EXECUTION);
+
     m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
     m_scriptRunner->notifyScriptReady(scriptLoader3.get(), ScriptRunner::ASYNC_EXECUTION);
 
-    m_platform.setShouldYield(true);
-    EXPECT_CALL(*scriptLoader1, execute()).Times(1);
-    EXPECT_CALL(*scriptLoader2, execute()).Times(0);
-    EXPECT_CALL(*scriptLoader3, execute()).Times(0);
+    EXPECT_CALL(*scriptLoader1, execute())
+        .WillOnce(Invoke([this] {
+            m_order.append(1);
+        }));
+    EXPECT_CALL(*scriptLoader2, execute())
+        .WillOnce(Invoke([this] {
+            m_order.append(2);
+        }));
+    EXPECT_CALL(*scriptLoader3, execute())
+        .WillOnce(Invoke([this] {
+            m_order.append(3);
+        }));
 
-    m_platform.runSingleTask();
+    m_platform.mockWebScheduler()->runSingleTask();
+    m_scriptRunner->suspend();
+    m_scriptRunner->resume();
+    m_platform.mockWebScheduler()->runAllTasks();
 
-    // We can't safely distruct ScriptRunner with unexecuted MockScriptLoaders (real ScriptLoader is fine) so drain them.
-    testing::Mock::VerifyAndClear(scriptLoader2.get());
-    testing::Mock::VerifyAndClear(scriptLoader3.get());
-    EXPECT_CALL(*scriptLoader2, execute()).Times(1);
-    EXPECT_CALL(*scriptLoader3, execute()).Times(1);
-
-    m_platform.runAllTasks();
+    // Make sure elements are correct.
+    EXPECT_THAT(m_order, WhenSorted(ElementsAre(1, 2, 3)));
 }
 
-TEST_F(ScriptRunnerTest, ShouldYield_RunsAtLastOneTask_InOrderScripts)
+TEST_F(ScriptRunnerTest, LateNotifications)
 {
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
     OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
-    OwnPtrWillBeRawPtr<MockScriptLoader> scriptLoader3 = MockScriptLoader::create(m_element.get());
 
     EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Return(true));
     EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
 
     m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
     m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->queueScriptForExecution(scriptLoader3.get(), ScriptRunner::IN_ORDER_EXECUTION);
-    m_scriptRunner->resume();
 
-    m_platform.setShouldYield(true);
-    EXPECT_CALL(*scriptLoader1, execute()).Times(1);
-    EXPECT_CALL(*scriptLoader2, execute()).Times(0);
-    EXPECT_CALL(*scriptLoader3, execute()).Times(0);
+    EXPECT_CALL(*scriptLoader1, execute()).WillOnce(Invoke([this] {
+        m_order.append(1);
+    }));
+    EXPECT_CALL(*scriptLoader2, execute()).WillOnce(Invoke([this] {
+        m_order.append(2);
+    }));
 
-    m_platform.runSingleTask();
+    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::IN_ORDER_EXECUTION);
+    m_platform.mockWebScheduler()->runAllTasks();
 
-    // We can't safely distruct ScriptRunner with unexecuted MockScriptLoaders (real ScriptLoader is fine) so drain them.
-    testing::Mock::VerifyAndClear(scriptLoader2.get());
-    testing::Mock::VerifyAndClear(scriptLoader3.get());
-    EXPECT_CALL(*scriptLoader2, execute()).Times(1);
-    EXPECT_CALL(*scriptLoader3, execute()).Times(1);
+    // At this moment all tasks can be already executed. Make sure that we do not crash here.
+    m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::IN_ORDER_EXECUTION);
+    m_platform.mockWebScheduler()->runAllTasks();
+
+    EXPECT_THAT(m_order, ElementsAre(1, 2));
+}
+
+TEST_F(ScriptRunnerTest, TasksWithDeadScriptRunner)
+{
+    OwnPtrWillBePersistent<MockScriptLoader> scriptLoader1 = MockScriptLoader::create(m_element.get());
+    OwnPtrWillBePersistent<MockScriptLoader> scriptLoader2 = MockScriptLoader::create(m_element.get());
+
+    EXPECT_CALL(*scriptLoader1, isReady()).WillRepeatedly(Return(true));
     EXPECT_CALL(*scriptLoader2, isReady()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*scriptLoader3, isReady()).WillRepeatedly(Return(true));
-    m_platform.runAllTasks();
+
+    m_scriptRunner->queueScriptForExecution(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
+    m_scriptRunner->queueScriptForExecution(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
+
+    m_scriptRunner->notifyScriptReady(scriptLoader1.get(), ScriptRunner::ASYNC_EXECUTION);
+    m_scriptRunner->notifyScriptReady(scriptLoader2.get(), ScriptRunner::ASYNC_EXECUTION);
+
+    m_scriptRunner.release();
+
+#if ENABLE(OILPAN)
+    Heap::collectAllGarbage();
+#endif
+
+    // m_scriptRunner is gone. We need to make sure that ScriptRunner::Task do not access dead object.
+    EXPECT_CALL(*scriptLoader1, execute()).Times(0);
+    EXPECT_CALL(*scriptLoader2, execute()).Times(0);
+
+    m_platform.mockWebScheduler()->runAllTasks();
 }
 
 } // namespace blink

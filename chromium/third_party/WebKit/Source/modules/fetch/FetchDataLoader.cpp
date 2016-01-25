@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/FetchDataLoader.h"
 
 #include "core/html/parser/TextResourceDecoder.h"
@@ -39,7 +38,7 @@ private:
         m_reader = handle->obtainReader(this);
         RefPtr<BlobDataHandle> blobHandle = m_reader->drainAsBlobDataHandle();
         if (blobHandle) {
-            ASSERT(blobHandle->size() != kuint64max);
+            ASSERT(blobHandle->size() != UINT64_MAX);
             m_reader.clear();
             if (blobHandle->type() != m_mimeType) {
                 // A new BlobDataHandle is created to override the Blob's type.
@@ -218,7 +217,7 @@ protected:
         ASSERT(!m_decoder);
         ASSERT(!m_reader);
         m_client = client;
-        m_decoder = TextResourceDecoder::create("text/plain", UTF8Encoding());
+        m_decoder = TextResourceDecoder::createAlwaysUseUTF8ForText();
         m_reader = handle->obtainReader(this);
     }
 

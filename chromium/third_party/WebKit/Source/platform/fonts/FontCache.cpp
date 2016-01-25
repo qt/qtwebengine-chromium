@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/fonts/FontCache.h"
 
 #include "platform/FontFamilyNames.h"
@@ -43,6 +42,10 @@
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/TextRenderingMode.h"
 #include "platform/fonts/opentype/OpenTypeVerticalData.h"
+#include "platform/fonts/shaping/ShapeCache.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebMemoryAllocatorDump.h"
+#include "public/platform/WebProcessMemoryDump.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/StdLibExtras.h"
@@ -62,8 +65,10 @@ FontCache::FontCache()
 #endif // !OS(WIN)
 
 typedef HashMap<FontCacheKey, OwnPtr<FontPlatformData>, FontCacheKeyHash, FontCacheKeyTraits> FontPlatformDataCache;
+typedef HashMap<FallbackListCompositeKey, OwnPtr<ShapeCache>, FallbackListCompositeKeyHash, FallbackListCompositeKeyTraits> FallbackListShaperCache;
 
-static FontPlatformDataCache* gFontPlatformDataCache = 0;
+static FontPlatformDataCache* gFontPlatformDataCache = nullptr;
+static FallbackListShaperCache* gFallbackListShaperCache = nullptr;
 
 #if OS(WIN)
 bool FontCache::s_useDirectWrite = false;
@@ -87,16 +92,17 @@ FontPlatformData* FontCache::getFontPlatformData(const FontDescription& fontDesc
     }
 
     FontCacheKey key = fontDescription.cacheKey(creationParams);
-    FontPlatformData* result = 0;
+    FontPlatformData* result;
     bool foundResult;
-    FontPlatformDataCache::iterator it = gFontPlatformDataCache->find(key);
-    if (it == gFontPlatformDataCache->end()) {
-        result = createFontPlatformData(fontDescription, creationParams, fontDescription.effectiveFontSize());
-        gFontPlatformDataCache->set(key, adoptPtr(result));
-        foundResult = result;
-    } else {
-        result = it->value.get();
-        foundResult = true;
+    {
+        // addResult's scope must end before we recurse for alternate family names below,
+        // to avoid trigering its dtor hash-changed asserts.
+        auto addResult = gFontPlatformDataCache->add(key, nullptr);
+        if (addResult.isNewEntry)
+            addResult.storedValue->value = createFontPlatformData(fontDescription, creationParams, fontDescription.effectiveFontSize());
+
+        result = addResult.storedValue->value.get();
+        foundResult = result || !addResult.isNewEntry;
     }
 
     if (!foundResult && !checkingAlternateName && creationParams.creationType() == CreateFontByFamily) {
@@ -111,6 +117,24 @@ FontPlatformData* FontCache::getFontPlatformData(const FontDescription& fontDesc
             gFontPlatformDataCache->set(key, adoptPtr(new FontPlatformData(*result))); // Cache the result under the old name.
     }
 
+    return result;
+}
+
+ShapeCache* FontCache::getShapeCache(const FallbackListCompositeKey& key)
+{
+    if (!gFallbackListShaperCache)
+        gFallbackListShaperCache = new FallbackListShaperCache;
+
+    FallbackListShaperCache::iterator it = gFallbackListShaperCache->find(key);
+    ShapeCache* result = nullptr;
+    if (it == gFallbackListShaperCache->end()) {
+        result = new ShapeCache();
+        gFallbackListShaperCache->set(key, adoptPtr(result));
+    } else {
+        result = it->value.get();
+    }
+
+    ASSERT(result);
     return result;
 }
 
@@ -215,6 +239,25 @@ static inline void purgeFontVerticalDataCache()
     }
 }
 
+static inline void purgeFallbackListShaperCache()
+{
+    unsigned items = 0;
+    if (gFallbackListShaperCache) {
+        FallbackListShaperCache::iterator iter;
+        for (iter = gFallbackListShaperCache->begin();
+            iter != gFallbackListShaperCache->end(); ++iter) {
+            items += iter->value->size();
+        }
+        gFallbackListShaperCache->clear();
+    }
+    Platform::current()->histogramCustomCounts("Blink.Fonts.ShapeCache", items, 1, 1000000, 50);
+}
+
+void FontCache::invalidateShapeCache()
+{
+    purgeFallbackListShaperCache();
+}
+
 void FontCache::purge(PurgeSeverity PurgeSeverity)
 {
     // We should never be forcing the purge while the FontCachePurgePreventer is in scope.
@@ -227,6 +270,7 @@ void FontCache::purge(PurgeSeverity PurgeSeverity)
 
     purgePlatformFontDataCache();
     purgeFontVerticalDataCache();
+    purgeFallbackListShaperCache();
 }
 
 static bool invalidateFontCache = false;
@@ -286,5 +330,37 @@ void FontCache::invalidate()
 
     purge(ForcePurge);
 }
+
+void FontCache::dumpFontPlatformDataCache(WebProcessMemoryDump* memoryDump)
+{
+    ASSERT(isMainThread());
+    if (!gFontPlatformDataCache)
+        return;
+    String dumpName = String("font_caches/font_platform_data_cache");
+    WebMemoryAllocatorDump* dump = memoryDump->createMemoryAllocatorDump(dumpName);
+    size_t fontPlatformDataObjectsSize = gFontPlatformDataCache->size() * sizeof(FontPlatformData);
+    dump->addScalar("size", "bytes", fontPlatformDataObjectsSize);
+    memoryDump->addSuballocation(dump->guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+}
+
+void FontCache::dumpShapeResultCache(WebProcessMemoryDump* memoryDump)
+{
+    ASSERT(isMainThread());
+    if (!gFallbackListShaperCache) {
+        return;
+    }
+    String dumpName = String("font_caches/shape_caches");
+    WebMemoryAllocatorDump* dump = memoryDump->createMemoryAllocatorDump(dumpName);
+    size_t shapeResultCacheSize = 0;
+    FallbackListShaperCache::iterator iter;
+    for (iter = gFallbackListShaperCache->begin();
+        iter != gFallbackListShaperCache->end();
+        ++iter) {
+        shapeResultCacheSize += iter->value->byteSize();
+    }
+    dump->addScalar("size", "bytes", shapeResultCacheSize);
+    memoryDump->addSuballocation(dump->guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+}
+
 
 } // namespace blink

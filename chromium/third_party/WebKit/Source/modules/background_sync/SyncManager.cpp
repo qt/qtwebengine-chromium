@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/background_sync/SyncManager.h"
 
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
@@ -40,15 +39,27 @@ SyncManager::SyncManager(ServiceWorkerRegistration* registration)
     ASSERT(registration);
 }
 
-ScriptPromise SyncManager::registerFunction(ScriptState* scriptState, ExecutionContext* context, const SyncRegistrationOptions& options)
+ScriptPromise SyncManager::registerFunction(ScriptState* scriptState, ExecutionContext* context, const String& tag)
 {
+    // TODO(jkarlin): Wait for the registration to become active instead of rejecting. See crbug.com/542437.
+    if (!m_registration->active())
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "Registration failed - no active Service Worker"));
+
+    if (scriptState->executionContext()->isDocument()) {
+        Document* document = toDocument(scriptState->executionContext());
+        if (!document->domWindow() || !document->frame())
+            return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "Document is detached from window."));
+        if (!document->frame()->isMainFrame())
+            return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "Registration failed - not called from a main frame."));
+    }
+
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     WebSyncRegistration* webSyncRegistration = new WebSyncRegistration(
         WebSyncRegistration::UNREGISTERED_SYNC_ID /* id */,
         WebSyncRegistration::PeriodicityOneShot,
-        options.tag(),
+        tag,
         0 /* minPeriod */,
         WebSyncRegistration::NetworkStateOnline /* networkState */,
         WebSyncRegistration::PowerStateAuto /* powerState */
@@ -58,32 +69,12 @@ ScriptPromise SyncManager::registerFunction(ScriptState* scriptState, ExecutionC
     return promise;
 }
 
-ScriptPromise SyncManager::getRegistration(ScriptState* scriptState, const String& syncRegistrationId)
-{
-    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
-    ScriptPromise promise = resolver->promise();
-
-    backgroundSyncProvider()->getRegistration(WebSyncRegistration::PeriodicityOneShot, syncRegistrationId, m_registration->webRegistration(), new SyncRegistrationCallbacks(resolver, m_registration));
-
-    return promise;
-}
-
-ScriptPromise SyncManager::getRegistrations(ScriptState* scriptState)
+ScriptPromise SyncManager::getTags(ScriptState* scriptState)
 {
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     backgroundSyncProvider()->getRegistrations(WebSyncRegistration::PeriodicityOneShot, m_registration->webRegistration(), new SyncGetRegistrationsCallbacks(resolver, m_registration));
-
-    return promise;
-}
-
-ScriptPromise SyncManager::permissionState(ScriptState* scriptState)
-{
-    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
-    ScriptPromise promise = resolver->promise();
-
-    backgroundSyncProvider()->getPermissionStatus(WebSyncRegistration::PeriodicityOneShot, m_registration->webRegistration(), new SyncGetPermissionStatusCallbacks(resolver, m_registration));
 
     return promise;
 }

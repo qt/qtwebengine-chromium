@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_WINDOW_TREE_HOST_WIN_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_WINDOW_TREE_HOST_WIN_H_
 
+#include "base/macros.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
@@ -134,6 +135,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   bool CanMaximize() const override;
   bool CanMinimize() const override;
   bool CanActivate() const override;
+  bool WantsMouseEventsWhenInactive() const override;
   bool WidgetSizeIsClientSize() const override;
   bool IsModal() const override;
   int GetInitialShowState() const override;

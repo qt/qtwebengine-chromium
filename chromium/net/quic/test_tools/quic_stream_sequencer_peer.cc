@@ -13,18 +13,19 @@ namespace net {
 namespace test {
 
 // static
-size_t QuicStreamSequencerPeer::GetNumBufferedFrames(
+size_t QuicStreamSequencerPeer::GetNumBufferedBytes(
     QuicStreamSequencer* sequencer) {
-  return sequencer->buffered_frames_.size();
+  return sequencer->buffered_frames_->BytesBuffered();
 }
 
 // static
 bool QuicStreamSequencerPeer::FrameOverlapsBufferedData(
-    QuicStreamSequencer* sequencer,
+    QuicFrameList* buffer,
     const QuicStreamFrame& frame) {
-  QuicStreamSequencer::FrameList::iterator it =
-      sequencer->FindInsertionPoint(frame);
-  return sequencer->FrameOverlapsBufferedData(frame, it);
+  list<QuicFrameList::FrameData>::iterator it =
+      buffer->FindInsertionPoint(frame.offset, frame.frame_length);
+  return buffer->FrameOverlapsBufferedData(frame.offset, frame.frame_length,
+                                           it);
 }
 
 // static

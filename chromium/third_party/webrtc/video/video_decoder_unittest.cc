@@ -11,7 +11,8 @@
 #include "webrtc/video_decoder.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/video_coding/codecs/interface/video_error_codes.h"
+#include "webrtc/base/checks.h"
+#include "webrtc/modules/video_coding/include/video_error_codes.h"
 
 namespace webrtc {
 
@@ -52,6 +53,11 @@ class VideoDecoderSoftwareFallbackWrapperTest : public ::testing::Test {
       ++reset_count_;
       return WEBRTC_VIDEO_CODEC_OK;
     }
+
+    const char* ImplementationName() const override {
+      return "fake-decoder";
+    }
+
     int init_decode_count_ = 0;
     int decode_count_ = 0;
     int32_t decode_return_code_ = WEBRTC_VIDEO_CODEC_OK;
@@ -86,13 +92,13 @@ TEST_F(VideoDecoderSoftwareFallbackWrapperTest,
       << "Decoder used even though fallback should be active.";
 
   // Should be able to recover on a keyframe.
-  encoded_image._frameType = kKeyFrame;
+  encoded_image._frameType = kVideoFrameKey;
   fake_decoder_.decode_return_code_ = WEBRTC_VIDEO_CODEC_OK;
   fallback_wrapper_.Decode(encoded_image, false, nullptr, nullptr, -1);
   EXPECT_EQ(2, fake_decoder_.decode_count_)
       << "Wrapper did not try to decode a keyframe using registered decoder.";
 
-  encoded_image._frameType = kDeltaFrame;
+  encoded_image._frameType = kVideoFrameDelta;
   fallback_wrapper_.Decode(encoded_image, false, nullptr, nullptr, -1);
   EXPECT_EQ(3, fake_decoder_.decode_count_)
       << "Decoder not used on future delta frames.";
@@ -143,11 +149,16 @@ TEST_F(VideoDecoderSoftwareFallbackWrapperTest, ForwardsResetCall) {
 }
 
 // TODO(pbos): Fake a VP8 frame well enough to actually receive a callback from
-// the software encoder.
+// the software decoder.
 TEST_F(VideoDecoderSoftwareFallbackWrapperTest,
        ForwardsRegisterDecodeCompleteCallback) {
   class FakeDecodedImageCallback : public DecodedImageCallback {
     int32_t Decoded(VideoFrame& decodedImage) override { return 0; }
+    int32_t Decoded(
+        webrtc::VideoFrame& decodedImage, int64_t decode_time_ms) override {
+      RTC_NOTREACHED();
+      return -1;
+    }
   } callback, callback2;
 
   VideoCodec codec = {};
@@ -160,6 +171,21 @@ TEST_F(VideoDecoderSoftwareFallbackWrapperTest,
   fallback_wrapper_.Decode(encoded_image, false, nullptr, nullptr, -1);
   fallback_wrapper_.RegisterDecodeCompleteCallback(&callback2);
   EXPECT_EQ(&callback2, fake_decoder_.decode_complete_callback_);
+}
+
+TEST_F(VideoDecoderSoftwareFallbackWrapperTest,
+       ReportsFallbackImplementationName) {
+  VideoCodec codec = {};
+  fallback_wrapper_.InitDecode(&codec, 2);
+
+  fake_decoder_.decode_return_code_ = WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
+  EncodedImage encoded_image;
+  fallback_wrapper_.Decode(encoded_image, false, nullptr, nullptr, -1);
+  // Hard coded expected value since libvpx is the software implementation name
+  // for VP8. Change accordingly if the underlying implementation does.
+  EXPECT_STREQ("libvpx (fallback from: fake-decoder)",
+               fallback_wrapper_.ImplementationName());
+  fallback_wrapper_.Release();
 }
 
 }  // namespace webrtc

@@ -10,11 +10,12 @@ namespace scheduler {
 
 IdleTimeEstimator::IdleTimeEstimator(
     const scoped_refptr<TaskQueue>& compositor_task_runner,
+    base::TickClock* time_source,
     int sample_count,
     double estimation_percentile)
     : compositor_task_runner_(compositor_task_runner),
       per_frame_compositor_task_runtime_(sample_count),
-      time_source_(new base::DefaultTickClock),
+      time_source_(time_source),
       estimation_percentile_(estimation_percentile),
       nesting_level_(0),
       did_commit_(false) {
@@ -36,7 +37,8 @@ base::TimeDelta IdleTimeEstimator::GetExpectedIdleDuration(
 void IdleTimeEstimator::DidCommitFrameToCompositor() {
   // This will run inside of a WillProcessTask / DidProcessTask pair, let
   // DidProcessTask know a frame was comitted.
-  did_commit_ = true;
+  if (nesting_level_ == 1)
+    did_commit_ = true;
 }
 
 void IdleTimeEstimator::Clear() {
@@ -47,18 +49,18 @@ void IdleTimeEstimator::Clear() {
   did_commit_ = false;
 }
 
-void IdleTimeEstimator::SetTimeSourceForTesting(
-    scoped_ptr<base::TickClock> time_source) {
-  time_source_ = time_source.Pass();
-}
-
 void IdleTimeEstimator::WillProcessTask(const base::PendingTask& pending_task) {
   nesting_level_++;
-  task_start_time_ = time_source_->NowTicks();
+  if (nesting_level_ == 1)
+    task_start_time_ = time_source_->NowTicks();
 }
 
 void IdleTimeEstimator::DidProcessTask(const base::PendingTask& pending_task) {
-  DCHECK_EQ(nesting_level_, 1);
+  nesting_level_--;
+  DCHECK_GE(nesting_level_, 0);
+  if (nesting_level_ != 0)
+    return;
+
   cumulative_compositor_runtime_ += time_source_->NowTicks() - task_start_time_;
 
   if (did_commit_) {
@@ -67,7 +69,6 @@ void IdleTimeEstimator::DidProcessTask(const base::PendingTask& pending_task) {
     cumulative_compositor_runtime_ = base::TimeDelta();
     did_commit_ = false;
   }
-  nesting_level_--;
 }
 
 }  // namespace scheduler

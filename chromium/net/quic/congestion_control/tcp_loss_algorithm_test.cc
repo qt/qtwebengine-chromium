@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "net/quic/congestion_control/rtt_stats.h"
-#include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_unacked_packet_map.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,26 +20,27 @@ namespace test {
 namespace {
 
 // Default packet length.
-const uint32 kDefaultLength = 1000;
+const uint32_t kDefaultLength = 1000;
 
 class TcpLossAlgorithmTest : public ::testing::Test {
  protected:
-  TcpLossAlgorithmTest() : unacked_packets_(&ack_notifier_manager_) {
+  TcpLossAlgorithmTest() {
     rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(100),
-                         QuicTime::Delta::Zero(),
-                         clock_.Now());
+                         QuicTime::Delta::Zero(), clock_.Now());
   }
 
-  ~TcpLossAlgorithmTest() override {
-    STLDeleteElements(&packets_);
-  }
+  ~TcpLossAlgorithmTest() override { STLDeleteElements(&packets_); }
 
   void SendDataPacket(QuicPacketNumber packet_number) {
     packets_.push_back(new QuicEncryptedPacket(nullptr, kDefaultLength));
-    SerializedPacket packet(
-        packet_number, PACKET_1BYTE_PACKET_NUMBER, packets_.back(), 0,
-        new RetransmittableFrames(ENCRYPTION_NONE), false, false);
-    unacked_packets_.AddSentPacket(packet, 0, NOT_RETRANSMISSION, clock_.Now(),
+    RetransmittableFrames* frames = new RetransmittableFrames();
+    QuicStreamFrame* frame = new QuicStreamFrame();
+    frame->stream_id = kHeadersStreamId;
+    frames->AddFrame(QuicFrame(frame));
+    SerializedPacket packet(kDefaultPathId, packet_number,
+                            PACKET_1BYTE_PACKET_NUMBER, packets_.back(), 0,
+                            frames, false, false);
+    unacked_packets_.AddSentPacket(&packet, 0, NOT_RETRANSMISSION, clock_.Now(),
                                    1000, true);
   }
 
@@ -56,7 +56,6 @@ class TcpLossAlgorithmTest : public ::testing::Test {
   }
 
   vector<QuicEncryptedPacket*> packets_;
-  AckNotifierManager ack_notifier_manager_;
   QuicUnackedPacketMap unacked_packets_;
   TCPLossAlgorithm loss_algorithm_;
   RttStats rtt_stats_;
@@ -156,7 +155,7 @@ TEST_F(TcpLossAlgorithmTest, EarlyRetransmitAllPackets) {
   unacked_packets_.RemoveFromInFlight(kNumSentPackets);
   // This simulates a single ack following multiple missing packets with FACK.
   for (size_t i = 1; i < kNumSentPackets; ++i) {
-    unacked_packets_.NackPacket(i, kNumSentPackets - i);
+    unacked_packets_.NackPacket(i, static_cast<uint16_t>(kNumSentPackets - i));
   }
   QuicPacketNumber lost[] = {1, 2};
   VerifyLosses(kNumSentPackets, lost, arraysize(lost));

@@ -29,19 +29,19 @@ StreamId DecoderBufferAdapter::stream_id() const {
   return stream_id_;
 }
 
-base::TimeDelta DecoderBufferAdapter::timestamp() const {
-  return buffer_->timestamp();
+int64_t DecoderBufferAdapter::timestamp() const {
+  return buffer_->timestamp().InMicroseconds();
 }
 
 void DecoderBufferAdapter::set_timestamp(base::TimeDelta timestamp) {
   buffer_->set_timestamp(timestamp);
 }
 
-const uint8* DecoderBufferAdapter::data() const {
+const uint8_t* DecoderBufferAdapter::data() const {
   return buffer_->data();
 }
 
-uint8* DecoderBufferAdapter::writable_data() const {
+uint8_t* DecoderBufferAdapter::writable_data() const {
   return buffer_->writable_data();
 }
 
@@ -60,6 +60,11 @@ const CastDecryptConfig* DecoderBufferAdapter::decrypt_config() const {
 
 bool DecoderBufferAdapter::end_of_stream() const {
   return buffer_->end_of_stream();
+}
+
+scoped_refptr<::media::DecoderBuffer>
+DecoderBufferAdapter::ToMediaBuffer() const {
+  return buffer_;
 }
 
 }  // namespace media

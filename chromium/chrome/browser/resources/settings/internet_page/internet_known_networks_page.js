@@ -4,14 +4,14 @@
 
 /**
  * @fileoverview
- * 'cr-settings-internet-known-networks' is the settings subpage listing the
+ * 'settings-internet-known-networks' is the settings subpage listing the
  * known networks for a type (currently always WiFi).
  *
  * @group Chrome Settings Elements
- * @element cr-settings-internet-known-networks
+ * @element settings-internet-known-networks
  */
 Polymer({
-  is: 'cr-settings-internet-known-networks-page',
+  is: 'settings-internet-known-networks-page',
 
   properties: {
     /**
@@ -20,7 +20,6 @@ Polymer({
      */
     networkType: {
       type: String,
-      value: CrOnc.Type.WI_FI,
       observer: 'networkTypeChanged_',
     },
 
@@ -39,7 +38,15 @@ Polymer({
     networkStateList: {
       type: Array,
       value: function() { return []; }
-    }
+    },
+
+    /**
+     * Interface for networkingPrivate calls, passed from internet_page.
+     * @type {NetworkingPrivate}
+     */
+    networkingPrivate: {
+      type: Object,
+    },
   },
 
   /**
@@ -52,13 +59,13 @@ Polymer({
   /** @override */
   attached: function() {
     this.networksChangedListener_ = this.onNetworksChangedEvent_.bind(this);
-    chrome.networkingPrivate.onNetworksChanged.addListener(
+    this.networkingPrivate.onNetworksChanged.addListener(
         this.networksChangedListener_);
   },
 
   /** @override */
   detached: function() {
-    chrome.networkingPrivate.onNetworksChanged.removeListener(
+    this.networkingPrivate.onNetworksChanged.removeListener(
         this.networksChangedListener_);
   },
 
@@ -91,7 +98,7 @@ Polymer({
       visible: false,
       configured: true
     };
-    chrome.networkingPrivate.getNetworks(
+    this.networkingPrivate.getNetworks(
         filter,
         function(states) { this.networkStateList = states; }.bind(this));
   },
@@ -114,7 +121,7 @@ Polymer({
     var state = event.detail;
     if (!state.GUID)
       return;
-    chrome.networkingPrivate.forgetNetwork(state.GUID);
+    this.networkingPrivate.forgetNetwork(state.GUID);
   },
 
   /**
@@ -128,6 +135,6 @@ Polymer({
       return;
     var preferred = state.Priority > 0;
     var onc = {Priority: preferred ? 0 : 1};
-    chrome.networkingPrivate.setProperties(state.GUID, onc);
+    this.networkingPrivate.setProperties(state.GUID, onc);
   },
 });

@@ -104,17 +104,40 @@ bool SkImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t
     return this->onGetYUV8Planes(sizes, planes, rowBytes);
 }
 
-GrTexture* SkImageGenerator::generateTexture(GrContext* ctx, SkImageUsageType usage,
-                                             const SkIRect* subset) {
+GrTexture* SkImageGenerator::generateTexture(GrContext* ctx, const SkIRect* subset) {
     if (subset && !SkIRect::MakeWH(fInfo.width(), fInfo.height()).contains(*subset)) {
         return nullptr;
     }
-    return this->onGenerateTexture(ctx, usage, subset);
+    return this->onGenerateTexture(ctx, subset);
+}
+
+bool SkImageGenerator::computeScaledDimensions(SkScalar scale, SupportedSizes* sizes) {
+    if (scale > 0 && scale <= 1) {
+        return this->onComputeScaledDimensions(scale, sizes);
+    }
+    return false;
+}
+
+bool SkImageGenerator::generateScaledPixels(const SkISize& scaledSize,
+                                            const SkIPoint& subsetOrigin,
+                                            const SkPixmap& subsetPixels) {
+    if (scaledSize.width() <= 0 || scaledSize.height() <= 0) {
+        return false;
+    }
+    if (subsetPixels.width() <= 0 || subsetPixels.height() <= 0) {
+        return false;
+    }
+    const SkIRect subset = SkIRect::MakeXYWH(subsetOrigin.x(), subsetOrigin.y(),
+                                             subsetPixels.width(), subsetPixels.height());
+    if (!SkIRect::MakeWH(scaledSize.width(), scaledSize.height()).contains(subset)) {
+        return false;
+    }
+    return this->onGenerateScaledPixels(scaledSize, subsetOrigin, subsetPixels);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-SkData* SkImageGenerator::onRefEncodedData() {
+SkData* SkImageGenerator::onRefEncodedData(SK_REFENCODEDDATA_CTXPARAM) {
     return nullptr;
 }
 
@@ -149,7 +172,7 @@ bool SkImageGenerator::tryGenerateBitmap(SkBitmap* bitmap, const SkImageInfo* in
     if (!bitmap->tryAllocPixels(allocator, ctable)) {
         // SkResourceCache's custom allcator can'thandle ctables, so it may fail on
         // kIndex_8_SkColorTable.
-        // skbug.com/4355
+        // https://bug.skia.org/4355
 #if 1
         // ignroe the allocator, and see if we can succeed without it
         if (!bitmap->tryAllocPixels(nullptr, ctable)) {

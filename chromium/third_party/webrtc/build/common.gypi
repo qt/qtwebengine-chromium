@@ -21,12 +21,10 @@
 
         'conditions': [
           ['build_with_chromium==1', {
-            'build_with_libjingle': 1,
             'webrtc_root%': '<(DEPTH)/third_party/webrtc',
             'apk_tests_path%': '<(DEPTH)/third_party/webrtc/build/apk_tests_noop.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/third_party/webrtc/modules/modules_java_chromium.gyp',
           }, {
-            'build_with_libjingle%': 0,
             'webrtc_root%': '<(DEPTH)/webrtc',
             'apk_tests_path%': '<(DEPTH)/webrtc/build/apk_tests.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/webrtc/modules/modules_java.gyp',
@@ -34,7 +32,6 @@
         ],
       },
       'build_with_chromium%': '<(build_with_chromium)',
-      'build_with_libjingle%': '<(build_with_libjingle)',
       'webrtc_root%': '<(webrtc_root)',
       'apk_tests_path%': '<(apk_tests_path)',
       'modules_java_gyp_path%': '<(modules_java_gyp_path)',
@@ -47,7 +44,6 @@
       'build_with_mozilla%': 0,
     },
     'build_with_chromium%': '<(build_with_chromium)',
-    'build_with_libjingle%': '<(build_with_libjingle)',
     'build_with_mozilla%': '<(build_with_mozilla)',
     'webrtc_root%': '<(webrtc_root)',
     'apk_tests_path%': '<(apk_tests_path)',
@@ -89,15 +85,14 @@
 
     # Disable these to not build components which can be externally provided.
     'build_expat%': 1,
-    'build_icu%': 1,
     'build_json%': 1,
     'build_libjpeg%': 1,
     'build_libvpx%': 1,
     'build_libyuv%': 1,
     'build_openmax_dl%': 1,
     'build_opus%': 1,
+    'build_protobuf%': 1,
     'build_ssl%': 1,
-    'build_vp9%': 1,
 
     # Disable by default
     'have_dbus_glib%': 0,
@@ -129,6 +124,17 @@
     # Enabling this may break interop with Android clients that support H264.
     'use_objc_h264%': 0,
 
+    # Enable this to build H.264 encoder/decoder using third party libraries.
+    # Encoding uses OpenH264 and decoding uses FFmpeg. Because of this, OpenH264
+    # and FFmpeg have to be correctly enabled separately.
+    # - use_openh264=1 is required for OpenH264 targets to be defined.
+    # - ffmpeg_branding=Chrome is one way to support H.264 decoding in FFmpeg.
+    #   FFmpeg can be built with/without H.264 support, see 'ffmpeg_branding'.
+    #   Without it, it compiles but H264DecoderImpl fails to initialize.
+    # CHECK THE OPENH264, FFMPEG AND H.264 LICENSES/PATENTS BEFORE BUILDING.
+    # http://www.openh264.org, https://www.ffmpeg.org/
+    'use_third_party_h264%': 0,  # TODO(hbos): To be used in follow-up CL(s).
+
     'conditions': [
       ['build_with_chromium==1', {
         # Exclude pulse audio on Chromium since its prerequisites don't require
@@ -137,6 +143,10 @@
 
         # Exclude internal ADM since Chromium uses its own IO handling.
         'include_internal_audio_device%': 0,
+
+        # Remove tests for Chromium to avoid slowing down GYP generation.
+        'include_tests%': 0,
+        'restrict_webrtc_logging%': 1,
       }, {  # Settings for the standalone (not-in-Chromium) build.
         # TODO(andrew): For now, disable the Chrome plugins, which causes a
         # flood of chromium-style warnings. Investigate enabling them:
@@ -145,17 +155,11 @@
 
         'include_pulse_audio%': 1,
         'include_internal_audio_device%': 1,
-      }],
-      ['build_with_libjingle==1', {
-        'include_tests%': 0,
-        'restrict_webrtc_logging%': 1,
-      }, {
         'include_tests%': 1,
         'restrict_webrtc_logging%': 0,
       }],
       ['OS=="ios"', {
         'build_libjpeg%': 0,
-        'enable_protobuf%': 0,
       }],
       ['target_arch=="arm" or target_arch=="arm64"', {
         'prefer_fixed_point%': 1,

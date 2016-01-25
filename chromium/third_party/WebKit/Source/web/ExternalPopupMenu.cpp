@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/ExternalPopupMenu.h"
 
 #include "core/dom/NodeComputedStyle.h"
@@ -97,7 +96,7 @@ void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, i
             m_syntheticEvent = adoptPtr(new WebMouseEvent);
             *m_syntheticEvent = *static_cast<const WebMouseEvent*>(currentEvent);
             m_syntheticEvent->type = WebInputEvent::MouseUp;
-            m_dispatchEventTimer.startOneShot(0, FROM_HERE);
+            m_dispatchEventTimer.startOneShot(0, BLINK_FROM_HERE);
             // FIXME: show() is asynchronous. If preparing a popup is slow and
             // a user released the mouse button before showing the popup,
             // mouseup and click events are correctly dispatched. Dispatching

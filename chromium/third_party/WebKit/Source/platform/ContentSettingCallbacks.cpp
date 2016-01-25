@@ -28,20 +28,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/ContentSettingCallbacks.h"
 
 namespace blink {
 
 PassOwnPtr<ContentSettingCallbacks> ContentSettingCallbacks::create(PassOwnPtr<Closure> allowed, PassOwnPtr<Closure> denied)
 {
-    return adoptPtr(new ContentSettingCallbacks(allowed, denied));
+    return adoptPtr(new ContentSettingCallbacks(std::move(allowed), std::move(denied)));
 }
 
 ContentSettingCallbacks::ContentSettingCallbacks(PassOwnPtr<Closure> allowed, PassOwnPtr<Closure> denied)
-    : m_allowed(allowed)
-    , m_denied(denied)
+    : m_allowed(std::move(allowed))
+    , m_denied(std::move(denied))
 {
 }
 

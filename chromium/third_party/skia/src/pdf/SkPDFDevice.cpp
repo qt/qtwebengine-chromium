@@ -41,6 +41,20 @@
 
 // Utility functions
 
+static bool excessive_translation(const SkMatrix& m) {
+    const SkScalar kExcessiveTranslation = 8192.0f;
+    return SkScalarAbs(m.getTranslateX()) > kExcessiveTranslation
+        || SkScalarAbs(m.getTranslateY()) > kExcessiveTranslation;
+}
+
+static SkMatrix untranslate(const SkMatrix& matrix, SkScalar x, SkScalar y) {
+    // https://bug.skia.org/257 If the translation is too large,
+    // PDF can't exactly represent the float values as numbers.
+    SkMatrix result(matrix);
+    result.preTranslate(x, y);
+    return result;
+}
+
 // If the paint will definitely draw opaquely, replace kSrc_Mode with
 // kSrcOver_Mode.  http://crbug.com/473572
 static void replace_srcmode_on_opaque_paint(SkPaint* paint) {
@@ -572,7 +586,7 @@ static bool not_supported_for_layers(const SkPaint& layerPaint) {
     // Note that this rendering is done at "screen" resolution (100dpi), not
     // printer resolution.
     // TODO: It may be possible to express some filters natively using PDF
-    // to improve quality and file size (http://skbug.com/3043)
+    // to improve quality and file size (https://bug.skia.org/3043)
 
     // TODO: should we return true if there is a colorfilter?
     return layerPaint.getImageFilter() != nullptr;
@@ -784,7 +798,7 @@ void SkPDFDevice::internalDrawPaint(const SkPaint& paint,
                           &contentEntry->fContent);
 }
 
-void SkPDFDevice::drawPoints(const SkDraw& d,
+void SkPDFDevice::drawPoints(const SkDraw& srcDraw,
                              SkCanvas::PointMode mode,
                              size_t count,
                              const SkPoint* points,
@@ -797,9 +811,20 @@ void SkPDFDevice::drawPoints(const SkDraw& d,
     }
 
     if (SkAnnotation* annotation = passedPaint.getAnnotation()) {
-        if (handlePointAnnotation(points, count, *d.fMatrix, annotation)) {
+        if (handlePointAnnotation(points, count, *srcDraw.fMatrix, annotation)) {
             return;
         }
+    }
+    SkMatrix newMatrix;
+    SkDraw d(srcDraw);
+    SkTArray<SkPoint> pointsCopy;
+    if (excessive_translation(*d.fMatrix)) {
+        newMatrix = untranslate(*d.fMatrix, points[0].x(), points[0].y());
+        d.fMatrix = &newMatrix;
+        pointsCopy.reset(points, SkToInt(count));
+        SkPoint::Offset(&pointsCopy[0], SkToInt(count),
+                        -points[0].x(), -points[0].y());
+        points = &pointsCopy[0];
     }
 
     // SkDraw::drawPoints converts to multiple calls to fDevice->drawPath.
@@ -921,13 +946,21 @@ static SkPDFDict* create_link_named_dest(const SkData* nameData,
     return annotation.detach();
 }
 
-void SkPDFDevice::drawRect(const SkDraw& d,
+void SkPDFDevice::drawRect(const SkDraw& srcDraw,
                            const SkRect& rect,
                            const SkPaint& srcPaint) {
     SkPaint paint = srcPaint;
     replace_srcmode_on_opaque_paint(&paint);
     SkRect r = rect;
     r.sort();
+
+    SkMatrix newMatrix;
+    SkDraw d(srcDraw);
+    if (excessive_translation(*d.fMatrix)) {
+        newMatrix = untranslate(*d.fMatrix, r.x(), r.y());
+        d.fMatrix = &newMatrix;
+        r.offsetTo(0, 0);
+    }
 
     if (paint.getPathEffect()) {
         if (d.fClip->isEmpty()) {
@@ -976,24 +1009,40 @@ void SkPDFDevice::drawOval(const SkDraw& draw,
     this->drawPath(draw, path, paint, nullptr, true);
 }
 
-void SkPDFDevice::drawPath(const SkDraw& d,
+void SkPDFDevice::drawPath(const SkDraw& srcDraw,
                            const SkPath& origPath,
                            const SkPaint& srcPaint,
                            const SkMatrix* prePathMatrix,
                            bool pathIsMutable) {
-    SkPaint paint = srcPaint;
-    replace_srcmode_on_opaque_paint(&paint);
+    SkMatrix newMatrix;
+    SkDraw d(srcDraw);
     SkPath modifiedPath;
     SkPath* pathPtr = const_cast<SkPath*>(&origPath);
+    if (excessive_translation(*d.fMatrix)) {
+        SkPoint firstPt;
+        if (origPath.getPoints(&firstPt, 1) > 0) {
+            newMatrix = untranslate(*d.fMatrix, firstPt.x(), firstPt.y());
+            d.fMatrix = &newMatrix;
+            modifiedPath = origPath;
+            modifiedPath.offset(-firstPt.x(), -firstPt.y());
+            pathPtr = &modifiedPath;  // NOTE: shader behavior will be off.
+            pathIsMutable = true;
+        }
+    }
+
+    SkPaint paint = srcPaint;
+    replace_srcmode_on_opaque_paint(&paint);
 
     SkMatrix matrix = *d.fMatrix;
     if (prePathMatrix) {
         if (paint.getPathEffect() || paint.getStyle() != SkPaint::kFill_Style) {
-            if (!pathIsMutable) {
+            if (pathIsMutable) {
+                pathPtr->transform(*prePathMatrix);
+            } else {
+                pathPtr->transform(*prePathMatrix, &modifiedPath);
                 pathPtr = &modifiedPath;
                 pathIsMutable = true;
             }
-            origPath.transform(*prePathMatrix, pathPtr);
         } else {
             matrix.preConcat(*prePathMatrix);
         }
@@ -1003,11 +1052,14 @@ void SkPDFDevice::drawPath(const SkDraw& d,
         if (d.fClip->isEmpty()) {
             return;
         }
-        if (!pathIsMutable) {
+        bool fill;
+        if (pathIsMutable) {
+            fill = paint.getFillPath(*pathPtr, pathPtr);
+        } else {
+            fill = paint.getFillPath(*pathPtr, &modifiedPath);
             pathPtr = &modifiedPath;
             pathIsMutable = true;
         }
-        bool fill = paint.getFillPath(origPath, pathPtr);
 
         SkPaint noEffectPaint(paint);
         noEffectPaint.setPathEffect(nullptr);
@@ -1231,8 +1283,66 @@ static SkString format_wide_string(const uint16_t* input,
     }
 }
 
-void SkPDFDevice::drawText(const SkDraw& d, const void* text, size_t len,
+static void draw_transparent_text(SkPDFDevice* device,
+                                  const SkDraw& d,
+                                  const void* text, size_t len,
+                                  SkScalar x, SkScalar y,
+                                  const SkPaint& srcPaint) {
+
+    SkPaint transparent;
+    if (!SkPDFFont::CanEmbedTypeface(transparent.getTypeface(),
+                                     device->getCanon())) {
+        SkDEBUGFAIL("default typeface should be embeddable");
+        return;  // Avoid infinite loop in release.
+    }
+    transparent.setTextSize(srcPaint.getTextSize());
+    transparent.setColor(SK_ColorTRANSPARENT);
+    switch (srcPaint.getTextEncoding()) {
+        case SkPaint::kGlyphID_TextEncoding: {
+            // Since a glyphId<->Unicode mapping is typeface-specific,
+            // map back to Unicode first.
+            size_t glyphCount = len / 2;
+            SkAutoTMalloc<SkUnichar> unichars(glyphCount);
+            srcPaint.glyphsToUnichars(
+                    (const uint16_t*)text, SkToInt(glyphCount), &unichars[0]);
+            transparent.setTextEncoding(SkPaint::kUTF32_TextEncoding);
+            device->drawText(d, &unichars[0],
+                             glyphCount * sizeof(SkUnichar),
+                             x, y, transparent);
+            break;
+        }
+        case SkPaint::kUTF8_TextEncoding:
+        case SkPaint::kUTF16_TextEncoding:
+        case SkPaint::kUTF32_TextEncoding:
+            transparent.setTextEncoding(srcPaint.getTextEncoding());
+            device->drawText(d, text, len, x, y, transparent);
+            break;
+        default:
+            SkFAIL("unknown text encoding");
+    }
+}
+
+
+void SkPDFDevice::drawText(const SkDraw& srcDraw, const void* text, size_t len,
                            SkScalar x, SkScalar y, const SkPaint& srcPaint) {
+    SkMatrix newMatrix;
+    SkDraw d(srcDraw);
+    if (excessive_translation(*d.fMatrix)) {
+        newMatrix = untranslate(*d.fMatrix, x, y);
+        d.fMatrix = &newMatrix;
+        x = 0;
+        y = 0;
+    }
+
+    if (!SkPDFFont::CanEmbedTypeface(srcPaint.getTypeface(), fCanon)) {
+        // https://bug.skia.org/3866
+        SkPath path;
+        srcPaint.getTextPath(text, len, x, y, &path);
+        this->drawPath(d, path, srcPaint, &SkMatrix::I(), true);
+        // Draw text transparently to make it copyable/searchable/accessable.
+        draw_transparent_text(this, d, text, len, x, y, srcPaint);
+        return;
+    }
     SkPaint paint = srcPaint;
     replace_srcmode_on_opaque_paint(&paint);
 
@@ -1282,9 +1392,69 @@ void SkPDFDevice::drawText(const SkDraw& d, const void* text, size_t len,
     content.entry()->fContent.writeText("ET\n");
 }
 
-void SkPDFDevice::drawPosText(const SkDraw& d, const void* text, size_t len,
+void SkPDFDevice::drawPosText(const SkDraw& srcDraw, const void* text, size_t len,
                               const SkScalar pos[], int scalarsPerPos,
-                              const SkPoint& offset, const SkPaint& srcPaint) {
+                              const SkPoint& srcOffset, const SkPaint& srcPaint) {
+    if (len == 0) {
+        return;
+    }
+    SkMatrix newMatrix;
+    SkDraw d(srcDraw);
+    SkPoint offset(srcOffset);
+    SkAutoTMalloc<SkScalar> scalarsBuffer;
+    if (excessive_translation(*d.fMatrix)) {
+        SkPoint first;
+        if (scalarsPerPos != 2) {
+            first.set(pos[0], 0);
+        } else {
+            first.set(pos[0], pos[1]);
+        }
+        newMatrix = untranslate(*d.fMatrix,
+                                first.x() + offset.x(),
+                                first.y() + offset.y());
+        d.fMatrix = &newMatrix;
+        offset.set(0, 0);  // offset -= offset;
+        if (first.x() != 0 || first.y() != 0) {
+            int glyphCount = srcPaint.textToGlyphs(text, len, NULL);
+            if (scalarsPerPos != 2) {
+                scalarsBuffer.reset(glyphCount);
+                for (int i = 0; i < glyphCount; ++i) {
+                    scalarsBuffer[i] = pos[i] - first.x();
+                }
+            } else {
+                scalarsBuffer.reset(2 * glyphCount);
+                for (int i = 0; i < glyphCount; ++i) {
+                    scalarsBuffer[2 * i]     = pos[2 * i]     - first.x();
+                    scalarsBuffer[2 * i + 1] = pos[2 * i + 1] - first.y();
+                }
+            }
+            pos = &scalarsBuffer[0];
+        }
+    }
+
+    if (!SkPDFFont::CanEmbedTypeface(srcPaint.getTypeface(), fCanon)) {
+        const SkPoint* positions = reinterpret_cast<const SkPoint*>(pos);
+        SkAutoTMalloc<SkPoint> positionsBuffer;
+        if (2 != scalarsPerPos) {
+            int glyphCount = srcPaint.textToGlyphs(text, len, NULL);
+            positionsBuffer.reset(glyphCount);
+            for (int  i = 0; i < glyphCount; ++i) {
+                positionsBuffer[i].set(pos[i], 0.0f);
+            }
+            positions = &positionsBuffer[0];
+        }
+        SkPath path;
+        srcPaint.getPosTextPath(text, len, positions, &path);
+        SkMatrix matrix;
+        matrix.setTranslate(offset);
+        this->drawPath(d, path, srcPaint, &matrix, true);
+        // Draw text transparently to make it copyable/searchable/accessable.
+        draw_transparent_text(
+                this, d, text, len, offset.x() + positions[0].x(),
+                offset.y() + positions[0].y(), srcPaint);
+        return;
+    }
+
     SkPaint paint = srcPaint;
     replace_srcmode_on_opaque_paint(&paint);
 
@@ -2277,7 +2447,7 @@ void SkPDFDevice::internalDrawImage(const SkMatrix& origMatrix,
     }
 
     if (SkColorFilter* colorFilter = paint.getColorFilter()) {
-        // TODO(http://skbug.com/4378): implement colorfilter on other
+        // TODO(https://bug.skia.org/4378): implement colorfilter on other
         // draw calls.  This code here works for all
         // drawBitmap*()/drawImage*() calls amd ImageFilters (which
         // rasterize a layer on this backend).  Fortuanely, this seems
@@ -2289,7 +2459,8 @@ void SkPDFDevice::internalDrawImage(const SkMatrix& origMatrix,
     }
     SkAutoTUnref<SkPDFObject> pdfimage(SkSafeRef(fCanon->findPDFBitmap(image)));
     if (!pdfimage) {
-        pdfimage.reset(SkPDFCreateBitmapObject(image));
+        pdfimage.reset(SkPDFCreateBitmapObject(
+                               image, fCanon->fPixelSerializer));
         if (!pdfimage) {
             return;
         }

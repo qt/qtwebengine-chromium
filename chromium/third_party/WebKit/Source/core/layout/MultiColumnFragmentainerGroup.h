@@ -27,10 +27,13 @@ namespace blink {
 // need more columns than what a group has room for, we'll create another group and put them there
 // (and make them appear in the next outer fragmentainer).
 class MultiColumnFragmentainerGroup {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     MultiColumnFragmentainerGroup(LayoutMultiColumnSet&);
 
+    const LayoutMultiColumnSet& columnSet() const { return m_columnSet; }
+
+    bool isFirstGroup() const;
     bool isLastGroup() const;
 
     // Position within the LayoutMultiColumnSet.
@@ -41,9 +44,9 @@ public:
 
     LayoutSize offsetFromColumnSet() const;
 
-    // Return the block offset from the enclosing flow thread, if nested. In the coordinate space
-    // of the enclosing flow thread.
-    LayoutUnit blockOffsetInEnclosingFlowThread() const;
+    // Return the block offset from the enclosing fragmentation context, if nested. In the
+    // coordinate space of the enclosing fragmentation context.
+    LayoutUnit blockOffsetInEnclosingFragmentationContext() const;
 
     // The top of our flow thread portion
     LayoutUnit logicalTopInFlowThread() const { return m_logicalTopInFlowThread; }
@@ -56,12 +59,8 @@ public:
     // The height of our flow thread portion
     LayoutUnit logicalHeightInFlowThread() const { return m_logicalBottomInFlowThread - m_logicalTopInFlowThread; }
 
-    bool heightIsAuto() const;
     void resetColumnHeight();
-    void addContentRun(LayoutUnit endOffsetInFlowThread);
-    void updateMinimumColumnHeight(LayoutUnit height) { m_minimumColumnHeight = std::max(height, m_minimumColumnHeight); }
-    void recordSpaceShortage(LayoutUnit);
-    bool recalculateColumnHeight(BalancedColumnHeightCalculation calculationMode);
+    bool recalculateColumnHeight();
 
     LayoutSize flowThreadTranslationAtOffset(LayoutUnit offsetInFlowThread) const;
     LayoutUnit columnLogicalTopForOffset(LayoutUnit offsetInFlowThread) const;
@@ -71,6 +70,12 @@ public:
     void collectLayerFragments(PaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect) const;
     LayoutRect calculateOverflow() const;
 
+    enum ColumnIndexCalculationMode {
+        ClampToExistingColumns, // Stay within the range of already existing columns.
+        AssumeNewColumns // Allow column indices outside the range of already existing columns.
+    };
+    unsigned columnIndexAtOffset(LayoutUnit offsetInFlowThread, ColumnIndexCalculationMode = ClampToExistingColumns) const;
+
     // The "CSS actual" value of column-count. This includes overflowing columns, if any.
     unsigned actualColumnCount() const;
 
@@ -79,27 +84,12 @@ private:
     LayoutUnit calculateMaxColumnHeight() const;
     void setAndConstrainColumnHeight(LayoutUnit);
 
-    // Return the index of the content run with the currently tallest columns, taking all implicit
-    // breaks assumed so far into account.
-    unsigned findRunWithTallestColumns() const;
-
-    // Given the current list of content runs, make assumptions about where we need to insert
-    // implicit breaks (if there's room for any at all; depending on the number of explicit breaks),
-    // and store the results. This is needed in order to balance the columns.
-    void distributeImplicitBreaks();
-
-    LayoutUnit calculateColumnHeight(BalancedColumnHeightCalculation) const;
+    LayoutUnit rebalanceColumnHeightIfNeeded() const;
 
     LayoutRect columnRectAt(unsigned columnIndex) const;
     LayoutUnit logicalTopInFlowThreadAt(unsigned columnIndex) const { return m_logicalTopInFlowThread + columnIndex * m_columnHeight; }
     LayoutRect flowThreadPortionRectAt(unsigned columnIndex) const;
     LayoutRect flowThreadPortionOverflowRectAt(unsigned columnIndex) const;
-
-    enum ColumnIndexCalculationMode {
-        ClampToExistingColumns, // Stay within the range of already existing columns.
-        AssumeNewColumns // Allow column indices outside the range of already existing columns.
-    };
-    unsigned columnIndexAtOffset(LayoutUnit offsetInFlowThread, ColumnIndexCalculationMode = ClampToExistingColumns) const;
 
     // Return the column that the specified visual point belongs to. Only the coordinate on the
     // column progression axis is relevant. Every point belongs to a column, even if said point is
@@ -121,44 +111,14 @@ private:
 
     LayoutUnit m_columnHeight;
 
-    // The following variables are used when balancing the column set.
     LayoutUnit m_maxColumnHeight; // Maximum column height allowed.
-    LayoutUnit m_minSpaceShortage; // The smallest amout of space shortage that caused a column break.
-    LayoutUnit m_minimumColumnHeight;
-
-    // A run of content without explicit (forced) breaks; i.e. a flow thread portion between two
-    // explicit breaks, between flow thread start and an explicit break, between an explicit break
-    // and flow thread end, or, in cases when there are no explicit breaks at all: between flow
-    // thread portion start and flow thread portion end. We need to know where the explicit breaks
-    // are, in order to figure out where the implicit breaks will end up, so that we get the columns
-    // properly balanced. A content run starts out as representing one single column, and will
-    // represent one additional column for each implicit break "inserted" there.
-    class ContentRun {
-    public:
-        ContentRun(LayoutUnit breakOffset)
-            : m_breakOffset(breakOffset)
-            , m_assumedImplicitBreaks(0) { }
-
-        unsigned assumedImplicitBreaks() const { return m_assumedImplicitBreaks; }
-        void assumeAnotherImplicitBreak() { m_assumedImplicitBreaks++; }
-        LayoutUnit breakOffset() const { return m_breakOffset; }
-
-        // Return the column height that this content run would require, considering the implicit
-        // breaks assumed so far.
-        LayoutUnit columnLogicalHeight(LayoutUnit startOffset) const { return ceilf((m_breakOffset - startOffset).toFloat() / float(m_assumedImplicitBreaks + 1)); }
-
-    private:
-        LayoutUnit m_breakOffset; // Flow thread offset where this run ends.
-        unsigned m_assumedImplicitBreaks; // Number of implicit breaks in this run assumed so far.
-    };
-    Vector<ContentRun, 1> m_contentRuns;
 };
 
 // List of all fragmentainer groups within a column set. There will always be at least one
 // group. Deleting the one group is not allowed (or possible). There will be more than one group if
 // the owning column set lives in multiple outer fragmentainers (e.g. multicol inside paged media).
 class CORE_EXPORT MultiColumnFragmentainerGroupList {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     MultiColumnFragmentainerGroupList(LayoutMultiColumnSet&);
     ~MultiColumnFragmentainerGroupList();

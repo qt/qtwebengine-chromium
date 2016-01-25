@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_export.h"
@@ -32,7 +33,6 @@ class GL_EXPORT GLContextGLX : public GLContextReal {
   void* GetHandle() override;
   void OnSetSwapInterval(int interval) override;
   std::string GetExtensions() override;
-  bool GetTotalGpuMemory(size_t* bytes) override;
   bool WasAllocatedUsingRobustnessExtension() override;
 
  protected:

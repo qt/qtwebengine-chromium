@@ -12,24 +12,13 @@ source_set("audio") {
     "cast_audio_output_stream.h",
   ]
 
-  configs += [ "//chromecast:config" ]
-
-  public_deps = [
+  deps = [
+    "//base",
+    "//chromecast/base",
+    "//chromecast/media/base",
+    "//chromecast/media/cma/base",
     "//chromecast/public/media",
-  ]
-
-  deps = [
     "//media",
-  ]
-}
-
-source_set("test_support") {
-  testonly = true
-
-  configs += [ "//chromecast:config" ]
-
-  deps = [
-    ":audio",
-    "//testing/gtest",
+    "//media:shared_memory_support",
   ]
 }

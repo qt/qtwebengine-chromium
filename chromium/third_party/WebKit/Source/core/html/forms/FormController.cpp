@@ -18,7 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/forms/FormController.h"
 
 #include "core/html/HTMLFormControlElementWithState.h"
@@ -174,7 +173,7 @@ struct FormElementKeyHashTraits : WTF::GenericHashTraits<FormElementKey> {
 
 class SavedFormState {
     WTF_MAKE_NONCOPYABLE(SavedFormState);
-    WTF_MAKE_FAST_ALLOCATED(SavedFormState);
+    USING_FAST_MALLOC(SavedFormState);
 
 public:
     static PassOwnPtr<SavedFormState> create();
@@ -290,7 +289,7 @@ Vector<String> SavedFormState::getReferencedFilePaths() const
 
 class FormKeyGenerator final : public NoBaseWillBeGarbageCollectedFinalized<FormKeyGenerator> {
     WTF_MAKE_NONCOPYABLE(FormKeyGenerator);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FormKeyGenerator);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(FormKeyGenerator);
 
 public:
     static PassOwnPtrWillBeRawPtr<FormKeyGenerator> create() { return adoptPtrWillBeNoop(new FormKeyGenerator); }

@@ -7,7 +7,7 @@
 
 #include <deque>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -45,10 +45,6 @@ class OutputSurfaceClient;
 //      surface (on the compositor thread) and go back to step 1.
 class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
  public:
-  enum {
-    DEFAULT_MAX_FRAMES_PENDING = 2
-  };
-
   OutputSurface(const scoped_refptr<ContextProvider>& context_provider,
                 const scoped_refptr<ContextProvider>& worker_context_provider,
                 scoped_ptr<SoftwareOutputDevice> software_device);
@@ -67,8 +63,7 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   struct Capabilities {
     Capabilities()
         : delegated_rendering(false),
-          max_frames_pending(0),
-          draw_and_swap_full_viewport_every_frame(false),
+          max_frames_pending(1),
           adjust_deadline_for_parent(true),
           uses_default_gl_framebuffer(true),
           flipped_output_surface(false),
@@ -76,7 +71,6 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
           delegated_sync_points_required(true) {}
     bool delegated_rendering;
     int max_frames_pending;
-    bool draw_and_swap_full_viewport_every_frame;
     // This doesn't handle the <webview> case, but once BeginFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
     bool adjust_deadline_for_parent;
@@ -98,6 +92,7 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   }
 
   virtual bool HasExternalStencilTest() const;
+  virtual void ApplyExternalStencil();
 
   // Obtain the 3d context or the software device associated with this output
   // surface. Either of these may return a null pointer, but not both.
@@ -124,7 +119,7 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
 
-  virtual void Reshape(const gfx::Size& size, float scale_factor);
+  virtual void Reshape(const gfx::Size& size, float scale_factor, bool alpha);
   gfx::Size SurfaceSize() const { return surface_size_; }
   float device_scale_factor() const { return device_scale_factor_; }
 
@@ -157,7 +152,7 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   // Get the texture for the main image's overlay.
   virtual unsigned GetOverlayTextureId() const;
 
-  void DidLoseOutputSurface();
+  virtual void DidLoseOutputSurface();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy);
 
   // Support for a pull-model where draws are requested by the output surface.
@@ -188,6 +183,7 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   scoped_ptr<SoftwareOutputDevice> software_device_;
   gfx::Size surface_size_;
   float device_scale_factor_;
+  bool has_alpha_;
   base::ThreadChecker client_thread_checker_;
 
   void CommitVSyncParameters(base::TimeTicks timebase,
@@ -196,13 +192,6 @@ class CC_EXPORT OutputSurface : public base::trace_event::MemoryDumpProvider {
   void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
   void ReclaimResources(const CompositorFrameAck* ack);
   void SetExternalStencilTest(bool enabled);
-  void SetExternalDrawConstraints(
-      const gfx::Transform& transform,
-      const gfx::Rect& viewport,
-      const gfx::Rect& clip,
-      const gfx::Rect& viewport_rect_for_tile_priority,
-      const gfx::Transform& transform_for_tile_priority,
-      bool resourceless_software_draw);
   void DetachFromClientInternal();
 
  private:

@@ -4,16 +4,17 @@
 
 #include "media/ffmpeg/ffmpeg_common.h"
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
+#include "media/media_features.h"
 
 namespace media {
 
@@ -52,13 +53,13 @@ static_assert(
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
 base::TimeDelta ConvertFromTimeBase(const AVRational& time_base,
-                                    int64 timestamp) {
-  int64 microseconds = av_rescale_q(timestamp, time_base, kMicrosBase);
+                                    int64_t timestamp) {
+  int64_t microseconds = av_rescale_q(timestamp, time_base, kMicrosBase);
   return base::TimeDelta::FromMicroseconds(microseconds);
 }
 
-int64 ConvertToTimeBase(const AVRational& time_base,
-                        const base::TimeDelta& timestamp) {
+int64_t ConvertToTimeBase(const AVRational& time_base,
+                          const base::TimeDelta& timestamp) {
   return av_rescale_q(timestamp.InMicroseconds(), kMicrosBase, time_base);
 }
 
@@ -67,6 +68,12 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
   switch (codec_id) {
     case AV_CODEC_ID_AAC:
       return kCodecAAC;
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
+    case AV_CODEC_ID_AC3:
+      return kCodecAC3;
+    case AV_CODEC_ID_EAC3:
+      return kCodecEAC3;
+#endif
     case AV_CODEC_ID_MP3:
       return kCodecMP3;
     case AV_CODEC_ID_VORBIS:
@@ -74,6 +81,7 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
     case AV_CODEC_ID_PCM_U8:
     case AV_CODEC_ID_PCM_S16LE:
     case AV_CODEC_ID_PCM_S24LE:
+    case AV_CODEC_ID_PCM_S32LE:
     case AV_CODEC_ID_PCM_F32LE:
       return kCodecPCM;
     case AV_CODEC_ID_PCM_S16BE:
@@ -117,8 +125,10 @@ static AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
           return AV_CODEC_ID_PCM_U8;
         case kSampleFormatS16:
           return AV_CODEC_ID_PCM_S16LE;
-        case kSampleFormatS32:
+        case kSampleFormatS24:
           return AV_CODEC_ID_PCM_S24LE;
+        case kSampleFormatS32:
+          return AV_CODEC_ID_PCM_S32LE;
         case kSampleFormatF32:
           return AV_CODEC_ID_PCM_F32LE;
         default:
@@ -156,7 +166,7 @@ static VideoCodec CodecIDToVideoCodec(AVCodecID codec_id) {
   switch (codec_id) {
     case AV_CODEC_ID_H264:
       return kCodecH264;
-#if defined(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
     case AV_CODEC_ID_HEVC:
       return kCodecHEVC;
 #endif
@@ -178,7 +188,7 @@ AVCodecID VideoCodecToCodecID(VideoCodec video_codec) {
   switch (video_codec) {
     case kCodecH264:
       return AV_CODEC_ID_H264;
-#if defined(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
     case kCodecHEVC:
       return AV_CODEC_ID_HEVC;
 #endif
@@ -244,14 +254,18 @@ static int VideoCodecProfileToProfileID(VideoCodecProfile profile) {
   return FF_PROFILE_UNKNOWN;
 }
 
-SampleFormat AVSampleFormatToSampleFormat(AVSampleFormat sample_format) {
+SampleFormat AVSampleFormatToSampleFormat(AVSampleFormat sample_format,
+                                          AVCodecID codec_id) {
   switch (sample_format) {
     case AV_SAMPLE_FMT_U8:
       return kSampleFormatU8;
     case AV_SAMPLE_FMT_S16:
       return kSampleFormatS16;
     case AV_SAMPLE_FMT_S32:
-      return kSampleFormatS32;
+      if (codec_id == AV_CODEC_ID_PCM_S24LE)
+        return kSampleFormatS24;
+      else
+        return kSampleFormatS32;
     case AV_SAMPLE_FMT_FLT:
       return kSampleFormatF32;
     case AV_SAMPLE_FMT_S16P:
@@ -272,6 +286,8 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
       return AV_SAMPLE_FMT_U8;
     case kSampleFormatS16:
       return AV_SAMPLE_FMT_S16;
+    // pcm_s24le is treated as a codec with sample format s32 in ffmpeg
+    case kSampleFormatS24:
     case kSampleFormatS32:
       return AV_SAMPLE_FMT_S32;
     case kSampleFormatF32:
@@ -293,25 +309,44 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
 
   AudioCodec codec = CodecIDToAudioCodec(codec_context->codec_id);
 
-  SampleFormat sample_format =
-      AVSampleFormatToSampleFormat(codec_context->sample_fmt);
+  SampleFormat sample_format = AVSampleFormatToSampleFormat(
+      codec_context->sample_fmt, codec_context->codec_id);
 
   ChannelLayout channel_layout = ChannelLayoutToChromeChannelLayout(
       codec_context->channel_layout, codec_context->channels);
 
   int sample_rate = codec_context->sample_rate;
-  if (codec == kCodecOpus) {
-    // |codec_context->sample_fmt| is not set by FFmpeg because Opus decoding is
-    // not enabled in FFmpeg.  It doesn't matter what value is set here, so long
-    // as it's valid, the true sample format is selected inside the decoder.
-    sample_format = kSampleFormatF32;
+  switch (codec) {
+    case kCodecOpus:
+      // |codec_context->sample_fmt| is not set by FFmpeg because Opus decoding
+      // is not enabled in FFmpeg.  It doesn't matter what value is set here, so
+      // long as it's valid, the true sample format is selected inside the
+      // decoder.
+      sample_format = kSampleFormatF32;
 
-    // Always use 48kHz for OPUS.  Technically we should match to the highest
-    // supported hardware sample rate among [8, 12, 16, 24, 48] kHz, but we
-    // don't know the hardware sample rate at this point and those rates are
-    // rarely used for output.  See the "Input Sample Rate" section of the spec:
-    // http://tools.ietf.org/html/draft-terriberry-oggopus-01#page-11
-    sample_rate = 48000;
+      // Always use 48kHz for OPUS.  Technically we should match to the highest
+      // supported hardware sample rate among [8, 12, 16, 24, 48] kHz, but we
+      // don't know the hardware sample rate at this point and those rates are
+      // rarely used for output.  See the "Input Sample Rate" section of the
+      // spec: http://tools.ietf.org/html/draft-terriberry-oggopus-01#page-11
+      sample_rate = 48000;
+      break;
+
+    // For AC3/EAC3 we enable only demuxing, but not decoding, so FFmpeg does
+    // not fill |sample_fmt|.
+    case kCodecAC3:
+    case kCodecEAC3:
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
+      // The spec for AC3/EAC3 audio is ETSI TS 102 366. According to sections
+      // F.3.1 and F.5.1 in that spec the sample_format for AC3/EAC3 must be 16.
+      sample_format = kSampleFormatS16;
+#else
+      NOTREACHED();
+#endif
+      break;
+
+    default:
+      break;
   }
 
   base::TimeDelta seek_preroll;
@@ -344,9 +379,19 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
                      seek_preroll,
                      codec_context->delay);
 
-  if (codec != kCodecOpus) {
-    DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
-              config->bits_per_channel());
+  // Verify that AudioConfig.bits_per_channel was calculated correctly for
+  // codecs that have |sample_fmt| set by FFmpeg.
+  switch (codec) {
+    case kCodecOpus:
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
+    case kCodecAC3:
+    case kCodecEAC3:
+#endif
+      break;
+    default:
+      DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
+                config->bits_per_channel());
+      break;
   }
 
   return true;

@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLEmbedElement.h"
 
 #include "core/CSSPropertyNames.h"
@@ -87,7 +86,7 @@ void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName&
     }
 }
 
-void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == typeAttr) {
         m_serviceType = value.lower();
@@ -110,7 +109,7 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
             m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         }
     } else {
-        HTMLPlugInElement::parseAttribute(name, value);
+        HTMLPlugInElement::parseAttribute(name, oldValue, value);
     }
 }
 

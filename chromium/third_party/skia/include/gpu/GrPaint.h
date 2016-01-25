@@ -11,7 +11,6 @@
 #define GrPaint_DEFINED
 
 #include "GrColor.h"
-#include "GrProcessorDataManager.h"
 #include "GrXferProcessor.h"
 #include "effects/GrPorterDuffXferProcessor.h"
 #include "GrFragmentProcessor.h"
@@ -58,7 +57,7 @@ public:
     bool isAntiAlias() const { return fAntiAlias; }
 
     const GrXPFactory* setXPFactory(const GrXPFactory* xpFactory) {
-        fXPFactory.reset(SkRef(xpFactory));
+        fXPFactory.reset(SkSafeRef(xpFactory));
         return xpFactory;
     }
 
@@ -101,10 +100,7 @@ public:
                                               this->numCoverageFragmentProcessors(); }
 
     const GrXPFactory* getXPFactory() const {
-        if (!fXPFactory) {
-            fXPFactory.reset(GrPorterDuffXPFactory::Create(SkXfermode::kSrc_Mode));
-        }
-        return fXPFactory.get();
+        return fXPFactory;
     }
 
     const GrFragmentProcessor* getColorFragmentProcessor(int i) const {
@@ -128,7 +124,7 @@ public:
             fCoverageFragmentProcessors[i]->ref();
         }
 
-        fXPFactory.reset(SkRef(paint.getXPFactory()));
+        fXPFactory.reset(SkSafeRef(paint.getXPFactory()));
 
         return *this;
     }
@@ -140,10 +136,6 @@ public:
      * not seem constant, even if this function returns true.
      */
     bool isConstantBlendedColor(GrColor* constantColor) const;
-
-    GrProcessorDataManager* getProcessorDataManager() { return &fProcDataManager; }
-
-    const GrProcessorDataManager* processorDataManager() const { return &fProcDataManager; }
 
 private:
     void resetFragmentProcessors() {
@@ -164,7 +156,6 @@ private:
     bool                                            fAntiAlias;
 
     GrColor                                         fColor;
-    GrProcessorDataManager                          fProcDataManager;
 };
 
 #endif

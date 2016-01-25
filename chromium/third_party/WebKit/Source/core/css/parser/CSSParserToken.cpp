@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/parser/CSSParserToken.h"
 
 #include "core/css/CSSMarkup.h"
@@ -127,6 +126,25 @@ CSSValueID CSSParserToken::functionId() const
     if (m_id < 0)
         m_id = cssValueKeywordID(value());
     return static_cast<CSSValueID>(m_id);
+}
+
+bool CSSParserToken::hasStringBacking() const
+{
+    CSSParserTokenType tokenType = type();
+    return tokenType == IdentToken
+        || tokenType == FunctionToken
+        || tokenType == AtKeywordToken
+        || tokenType == HashToken
+        || tokenType == UrlToken
+        || tokenType == DimensionToken
+        || tokenType == StringToken;
+}
+
+CSSParserToken CSSParserToken::copyWithUpdatedString(const CSSParserString& parserString) const
+{
+    CSSParserToken copy(*this);
+    copy.initValueFromCSSParserString(parserString);
+    return copy;
 }
 
 void CSSParserToken::serialize(StringBuilder& builder) const

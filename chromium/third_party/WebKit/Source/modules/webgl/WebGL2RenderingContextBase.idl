@@ -308,7 +308,7 @@ typedef long long      GLint64;
 
     /* Framebuffer objects */
     void blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
-    void framebufferTextureLayer(GLenum target, GLenum attachment, WebGLTexture texture, GLint level, GLint layer);
+    [CallWith=ScriptState] void framebufferTextureLayer(GLenum target, GLenum attachment, WebGLTexture? texture, GLint level, GLint layer);
     [CallWith=ScriptState] any getInternalformatParameter(GLenum target, GLenum internalformat, GLenum pname);
     void invalidateFramebuffer(GLenum target, sequence<GLenum> attachments);
     void invalidateSubFramebuffer (GLenum target, sequence<GLenum> attachments, GLint x, GLint y, GLsizei width, GLsizei height);
@@ -326,6 +326,7 @@ typedef long long      GLint64;
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLImageElement? image);
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLCanvasElement? canvas);
     [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, HTMLVideoElement? video);
+    [RaisesException] void texSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, ImageBitmap? bitmap);
     void copyTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height);
     void compressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, ArrayBufferView data);
     void compressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, ArrayBufferView data);
@@ -408,7 +409,7 @@ typedef long long      GLint64;
     GLenum clientWaitSync(WebGLSync? sync, GLbitfield flags, GLint64 timeout);
     void waitSync(WebGLSync? sync, GLbitfield flags, GLint64 timeout);
 
-    [CallWith=ScriptState] any getSyncParameter(WebGLSync sync, GLenum pname);
+    [CallWith=ScriptState] any getSyncParameter(WebGLSync? sync, GLenum pname);
 
     /* Transform Feedback */
     WebGLTransformFeedback createTransformFeedback();
@@ -427,7 +428,7 @@ typedef long long      GLint64;
     void bindBufferRange(GLenum target, GLuint index, WebGLBuffer? buffer, GLintptr offset, GLsizeiptr size);
     [CallWith=ScriptState] any getIndexedParameter(GLenum target, GLuint index);
     sequence<GLuint>? getUniformIndices(WebGLProgram? program, sequence<DOMString> uniformNames);
-    sequence<GLint>? getActiveUniforms(WebGLProgram? program, sequence<GLuint> uniformIndices, GLenum pname);
+    [CallWith=ScriptState] any getActiveUniforms(WebGLProgram? program, sequence<GLuint> uniformIndices, GLenum pname);
     GLuint getUniformBlockIndex(WebGLProgram? program, DOMString uniformBlockName);
     [CallWith=ScriptState] any getActiveUniformBlockParameter(WebGLProgram? program, GLuint uniformBlockIndex, GLenum pname);
     DOMString getActiveUniformBlockName(WebGLProgram? program, GLuint uniformBlockIndex);
@@ -435,9 +436,9 @@ typedef long long      GLint64;
 
     /* Vertex Array Objects */
     WebGLVertexArrayObject createVertexArray();
-    void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
+    [CallWith=ScriptState] void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
     GLboolean isVertexArray(WebGLVertexArrayObject? vertexArray);
-    void bindVertexArray(WebGLVertexArrayObject? vertexArray);
+    [CallWith=ScriptState] void bindVertexArray(WebGLVertexArrayObject? vertexArray);
 
     /* Reading */
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLintptr offset);

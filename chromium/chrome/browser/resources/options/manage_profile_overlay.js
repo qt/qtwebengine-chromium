@@ -95,7 +95,7 @@ cr.define('options', function() {
 
       $('create-profile-supervised-sign-in-link').onclick =
           function(event) {
-        SyncSetupOverlay.startSignIn();
+        SyncSetupOverlay.startSignIn('access-point-supervised-user');
       };
 
       $('create-profile-supervised-sign-in-again-link').onclick =
@@ -371,6 +371,12 @@ cr.define('options', function() {
      * @private
      */
     receiveExistingSupervisedUsers_: function(supervisedUsers) {
+      // After a supervised user has been created and the dialog has been
+      // hidden, this gets called again with a list including
+      // the just-created SU. Ignore, to prevent the "already exists" bubble
+      // from showing up if the overlay is already hidden.
+      if (!this.visible)
+        return;
       $('import-existing-supervised-user-link').hidden =
           supervisedUsers.length === 0;
       if (!$('create-profile-supervised').checked)
@@ -379,27 +385,39 @@ cr.define('options', function() {
       var newName = $('create-profile-name').value;
       var i;
       for (i = 0; i < supervisedUsers.length; ++i) {
-        if (supervisedUsers[i].name == newName &&
-            !supervisedUsers[i].onCurrentDevice) {
-          var errorHtml = loadTimeData.getStringF(
-              'manageProfilesExistingSupervisedUser',
-              HTMLEscape(elide(newName, /* maxLength */ 50)));
-          this.showErrorBubble_(errorHtml, 'create', true);
-
-          // Check if another supervised user also exists with that name.
-          var nameIsUnique = true;
-          var j;
-          for (j = i + 1; j < supervisedUsers.length; ++j) {
-            if (supervisedUsers[j].name == newName) {
-              nameIsUnique = false;
-              break;
-            }
+        if (supervisedUsers[i].name != newName)
+          continue;
+        // Check if another supervised user also exists with that name.
+        var nameIsUnique = true;
+        // Handling the case when multiple supervised users with the same
+        // name exist, but not all of them are on the device.
+        // If at least one is not imported, we want to offer that
+        // option to the user. This could happen due to a bug that allowed
+        // creating SUs with the same name (https://crbug.com/557445).
+        var allOnCurrentDevice = supervisedUsers[i].onCurrentDevice;
+        var j;
+        for (j = i + 1; j < supervisedUsers.length; ++j) {
+          if (supervisedUsers[j].name == newName) {
+            nameIsUnique = false;
+            allOnCurrentDevice = allOnCurrentDevice &&
+               supervisedUsers[j].onCurrentDevice;
           }
+        }
+
+        var errorHtml = allOnCurrentDevice ?
+            loadTimeData.getStringF(
+                'managedProfilesExistingLocalSupervisedUser') :
+            loadTimeData.getStringF(
+                'manageProfilesExistingSupervisedUser',
+                HTMLEscape(elide(newName, /* maxLength */ 50)));
+        this.showErrorBubble_(errorHtml, 'create', true);
+
+        if ($('supervised-user-import-existing')) {
           $('supervised-user-import-existing').onclick =
               this.getImportHandler_(supervisedUsers[i], nameIsUnique);
-          $('create-profile-ok').disabled = true;
-          return;
         }
+        $('create-profile-ok').disabled = true;
+        return;
       }
     },
 

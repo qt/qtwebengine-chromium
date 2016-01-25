@@ -14,13 +14,13 @@ namespace blink {
 class Document;
 class EventTarget;
 
-typedef HashCountedSet<EventTarget*> EventTargetSet;
+typedef HashCountedSet<RawPtrWillBeUntracedMember<EventTarget>> EventTargetSet;
 
 // Registry for keeping track of event handlers. Note that only handlers on
 // documents that can be rendered or can receive input (i.e., are attached to a
 // FrameHost) are registered here.
 class CORE_EXPORT EventHandlerRegistry final : public NoBaseWillBeGarbageCollectedFinalized<EventHandlerRegistry> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventHandlerRegistry);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(EventHandlerRegistry);
 public:
     explicit EventHandlerRegistry(FrameHost&);
     virtual ~EventHandlerRegistry();

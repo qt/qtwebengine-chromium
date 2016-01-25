@@ -43,7 +43,7 @@ public:
     virtual bool allowScriptFromSource(bool enabledPerSettings, const WebURL& scriptURL) { return enabledPerSettings; }
 
     // Controls whether insecrure content is allowed to display for this frame.
-    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, const WebSecurityOrigin&, const WebURL&) { return enabledPerSettings; }
+    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, const WebURL&) { return enabledPerSettings; }
 
     // Controls whether insecrure scripts are allowed to execute for this frame.
     virtual bool allowRunningInsecureContent(bool enabledPerSettings, const WebSecurityOrigin&, const WebURL&) { return enabledPerSettings; }
@@ -83,6 +83,9 @@ public:
 
     // Notifies the client that the frame would have executed script if script were enabled.
     virtual void didNotAllowScript() { }
+
+    // Notifies the client that the frame instantiated a keygen element.
+    virtual void didUseKeygen() { }
 
     virtual ~WebContentSettingsClient() { }
 };

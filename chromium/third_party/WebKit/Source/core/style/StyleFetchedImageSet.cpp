@@ -23,26 +23,36 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/style/StyleFetchedImageSet.h"
 
 #include "core/css/CSSImageSetValue.h"
 #include "core/fetch/ImageResource.h"
 #include "core/layout/LayoutObject.h"
+#include "core/svg/graphics/SVGImageForContainer.h"
 
 namespace blink {
 
-StyleFetchedImageSet::StyleFetchedImageSet(ImageResource* image, float imageScaleFactor, CSSImageSetValue* value)
+StyleFetchedImageSet::StyleFetchedImageSet(ImageResource* image, float imageScaleFactor, CSSImageSetValue* value, const KURL& url)
     : m_bestFitImage(image)
     , m_imageScaleFactor(imageScaleFactor)
     , m_imageSetValue(value)
+    , m_url(url)
 {
     m_isImageResourceSet = true;
     m_bestFitImage->addClient(this);
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
 }
 
-
 StyleFetchedImageSet::~StyleFetchedImageSet()
+{
+#if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+void StyleFetchedImageSet::dispose()
 {
     m_bestFitImage->removeClient(this);
 }
@@ -67,9 +77,9 @@ PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImageSet::computedCSSValue() const
     return m_imageSetValue->valueWithURLsMadeAbsolute();
 }
 
-bool StyleFetchedImageSet::canRender(const LayoutObject& layoutObject, float multiplier) const
+bool StyleFetchedImageSet::canRender() const
 {
-    return m_bestFitImage->canRender(layoutObject, multiplier);
+    return m_bestFitImage->canRender();
 }
 
 bool StyleFetchedImageSet::isLoaded() const
@@ -84,7 +94,7 @@ bool StyleFetchedImageSet::errorOccurred() const
 
 LayoutSize StyleFetchedImageSet::imageSize(const LayoutObject* layoutObject, float multiplier) const
 {
-    LayoutSize scaledImageSize = m_bestFitImage->imageSizeForLayoutObject(layoutObject, multiplier);
+    LayoutSize scaledImageSize = m_bestFitImage->imageSize(LayoutObject::shouldRespectImageOrientation(layoutObject), multiplier);
     scaledImageSize.scale(1 / m_imageScaleFactor);
     return scaledImageSize;
 }
@@ -109,11 +119,6 @@ bool StyleFetchedImageSet::usesImageContainerSize() const
     return m_bestFitImage->usesImageContainerSize();
 }
 
-void StyleFetchedImageSet::setContainerSizeForLayoutObject(const LayoutObject* layoutObject, const IntSize& imageContainerSize, float imageContainerZoomFactor)
-{
-    m_bestFitImage->setContainerSizeForLayoutObject(layoutObject, imageContainerSize, imageContainerZoomFactor);
-}
-
 void StyleFetchedImageSet::addClient(LayoutObject* layoutObject)
 {
     m_bestFitImage->addClient(layoutObject);
@@ -124,14 +129,18 @@ void StyleFetchedImageSet::removeClient(LayoutObject* layoutObject)
     m_bestFitImage->removeClient(layoutObject);
 }
 
-PassRefPtr<Image> StyleFetchedImageSet::image(const LayoutObject* layoutObject, const IntSize&) const
+PassRefPtr<Image> StyleFetchedImageSet::image(const LayoutObject*, const IntSize& containerSize, float zoom) const
 {
-    return m_bestFitImage->imageForLayoutObject(layoutObject);
+    if (!m_bestFitImage->image()->isSVGImage())
+        return m_bestFitImage->image();
+
+    return SVGImageForContainer::create(toSVGImage(m_bestFitImage->image()), containerSize, zoom, m_url);
 }
 
 bool StyleFetchedImageSet::knownToBeOpaque(const LayoutObject* layoutObject) const
 {
-    return m_bestFitImage->currentFrameKnownToBeOpaque(layoutObject);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *m_bestFitImage.get()));
+    return m_bestFitImage->image()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
 }
 
 DEFINE_TRACE(StyleFetchedImageSet)

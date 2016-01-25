@@ -23,7 +23,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/css/CSSSelector.h"
 
 #include "core/HTMLNames.h"
@@ -603,21 +602,15 @@ String CSSSelector::selectorText(const String& rightSide) const
     while (true) {
         if (cs->m_match == Id) {
             str.append('#');
-            serializeIdentifier(cs->value(), str);
+            serializeIdentifier(cs->serializingValue(), str);
         } else if (cs->m_match == Class) {
             str.append('.');
-            serializeIdentifier(cs->value(), str);
+            serializeIdentifier(cs->serializingValue(), str);
         } else if (cs->m_match == PseudoClass || cs->m_match == PagePseudoClass) {
             str.append(':');
-            str.append(cs->value());
+            str.append(cs->serializingValue());
 
             switch (cs->pseudoType()) {
-            case PseudoNot:
-                ASSERT(cs->selectorList());
-                str.append('(');
-                str.append(cs->selectorList()->first()->selectorText());
-                str.append(')');
-                break;
             case PseudoNthChild:
             case PseudoNthLastChild:
             case PseudoNthOfType:
@@ -646,53 +639,19 @@ String CSSSelector::selectorText(const String& rightSide) const
                 str.append(cs->argument());
                 str.append(')');
                 break;
-            case PseudoAny: {
-                str.append('(');
-                const CSSSelector* firstSubSelector = cs->selectorList()->first();
-                for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(*subSelector)) {
-                    if (subSelector != firstSubSelector)
-                        str.append(',');
-                    str.append(subSelector->selectorText());
-                }
-                str.append(')');
+            case PseudoNot:
+                ASSERT(cs->selectorList());
                 break;
-            }
             case PseudoHost:
-            case PseudoHostContext: {
-                if (cs->selectorList()) {
-                    str.append('(');
-                    const CSSSelector* firstSubSelector = cs->selectorList()->first();
-                    for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(*subSelector)) {
-                        if (subSelector != firstSubSelector)
-                            str.append(',');
-                        str.append(subSelector->selectorText());
-                    }
-                    str.append(')');
-                }
+            case PseudoHostContext:
+            case PseudoAny:
                 break;
-            }
             default:
                 break;
             }
         } else if (cs->m_match == PseudoElement) {
             str.appendLiteral("::");
-            str.append(cs->value());
-
-            if (cs->pseudoType() == PseudoContent) {
-                if (cs->relation() == SubSelector && cs->tagHistory())
-                    return cs->tagHistory()->selectorText() + str.toString() + rightSide;
-            } else if (cs->pseudoType() == PseudoCue) {
-                if (cs->selectorList()) {
-                    str.append('(');
-                    const CSSSelector* firstSubSelector = cs->selectorList()->first();
-                    for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(*subSelector)) {
-                        if (subSelector != firstSubSelector)
-                            str.append(',');
-                        str.append(subSelector->selectorText());
-                    }
-                    str.append(')');
-                }
-            }
+            str.append(cs->serializingValue());
         } else if (cs->isAttributeSelector()) {
             str.append('[');
             const AtomicString& prefix = cs->attribute().prefix();
@@ -728,12 +687,24 @@ String CSSSelector::selectorText(const String& rightSide) const
                 break;
             }
             if (cs->m_match != AttributeSet) {
-                serializeString(cs->value(), str);
+                serializeString(cs->serializingValue(), str);
                 if (cs->attributeMatchType() == CaseInsensitive)
                     str.appendLiteral(" i");
                 str.append(']');
             }
         }
+
+        if (cs->selectorList()) {
+            str.append('(');
+            const CSSSelector* firstSubSelector = cs->selectorList()->first();
+            for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(*subSelector)) {
+                if (subSelector != firstSubSelector)
+                    str.append(',');
+                str.append(subSelector->selectorText());
+            }
+            str.append(')');
+        }
+
         if (cs->relation() != SubSelector || !cs->tagHistory())
             break;
         cs = cs->tagHistory();
@@ -907,7 +878,8 @@ bool CSSSelector::matchNth(int count) const
 }
 
 CSSSelector::RareData::RareData(const AtomicString& value)
-    : m_value(value)
+    : m_matchingValue(value)
+    , m_serializingValue(value)
     , m_bits()
     , m_attribute(anyQName())
     , m_argument(nullAtom)

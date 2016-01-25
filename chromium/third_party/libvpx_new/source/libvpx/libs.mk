@@ -260,7 +260,7 @@ OBJS-yes += $(LIBVPX_OBJS)
 LIBS-$(if yes,$(CONFIG_STATIC)) += $(BUILD_PFX)libvpx.a $(BUILD_PFX)libvpx_g.a
 $(BUILD_PFX)libvpx_g.a: $(LIBVPX_OBJS)
 
-SO_VERSION_MAJOR := 2
+SO_VERSION_MAJOR := 3
 SO_VERSION_MINOR := 0
 SO_VERSION_PATCH := 0
 ifeq ($(filter darwin%,$(TGT_OS)),$(TGT_OS))
@@ -429,12 +429,10 @@ testdata:: $(LIBVPX_TEST_DATA)
           if [ -n "$${sha1sum}" ]; then\
             set -e;\
             echo "Checking test data:";\
-            if [ -n "$(LIBVPX_TEST_DATA)" ]; then\
-                for f in $(call enabled,LIBVPX_TEST_DATA); do\
-                    grep $$f $(SRC_PATH_BARE)/test/test-data.sha1 |\
-                        (cd $(LIBVPX_TEST_DATA_PATH); $${sha1sum} -c);\
-                done; \
-            fi; \
+            for f in $(call enabled,LIBVPX_TEST_DATA); do\
+                grep $$f $(SRC_PATH_BARE)/test/test-data.sha1 |\
+                    (cd $(LIBVPX_TEST_DATA_PATH); $${sha1sum} -c);\
+            done; \
         else\
             echo "Skipping test data integrity check, sha1sum not found.";\
         fi

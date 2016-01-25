@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXSlider.h"
 
 #include "core/dom/shadow/ShadowRoot.h"
@@ -87,6 +86,7 @@ AccessibilityOrientation AXSlider::orientation() const
 
 void AXSlider::addChildren()
 {
+    ASSERT(!isDetached());
     ASSERT(!m_haveChildren);
 
     m_haveChildren = true;
@@ -102,11 +102,6 @@ void AXSlider::addChildren()
         cache.remove(thumb->axObjectID());
     else
         m_children.append(thumb);
-}
-
-const AtomicString& AXSlider::getAttribute(const QualifiedName& attribute) const
-{
-    return element()->getAttribute(attribute);
 }
 
 AXObject* AXSlider::elementAccessibilityHitTest(const IntPoint& point) const

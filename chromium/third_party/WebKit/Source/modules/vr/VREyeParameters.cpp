@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/vr/VREyeParameters.h"
 
 namespace blink {
@@ -14,7 +13,7 @@ void setDomPoint(DOMPoint* point, const WebVRVector3& vec)
     point->setX(vec.x);
     point->setY(vec.y);
     point->setZ(vec.z);
-    point->setW(0.0);
+    point->setW(1.0);
 }
 
 } // namespace

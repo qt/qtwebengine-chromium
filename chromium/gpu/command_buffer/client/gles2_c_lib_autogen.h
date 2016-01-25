@@ -1260,8 +1260,9 @@ void GL_APIENTRY GLES2UnmapTexSubImage2DCHROMIUM(const void* mem) {
 }
 void GL_APIENTRY GLES2ResizeCHROMIUM(GLuint width,
                                      GLuint height,
-                                     GLfloat scale_factor) {
-  gles2::GetGLContext()->ResizeCHROMIUM(width, height, scale_factor);
+                                     GLfloat scale_factor,
+                                     GLboolean alpha) {
+  gles2::GetGLContext()->ResizeCHROMIUM(width, height, scale_factor, alpha);
 }
 const GLchar* GL_APIENTRY GLES2GetRequestableExtensionsCHROMIUM() {
   return gles2::GetGLContext()->GetRequestableExtensionsCHROMIUM();
@@ -1293,9 +1294,6 @@ void GL_APIENTRY GLES2GetUniformsES3CHROMIUM(GLuint program,
                                              GLsizei* size,
                                              void* info) {
   gles2::GetGLContext()->GetUniformsES3CHROMIUM(program, bufsize, size, info);
-}
-GLuint GL_APIENTRY GLES2CreateStreamTextureCHROMIUM(GLuint texture) {
-  return gles2::GetGLContext()->CreateStreamTextureCHROMIUM(texture);
 }
 GLuint GL_APIENTRY GLES2CreateImageCHROMIUM(ClientBuffer buffer,
                                             GLsizei width,
@@ -1336,8 +1334,7 @@ void GL_APIENTRY GLES2TexImageIOSurface2DCHROMIUM(GLenum target,
   gles2::GetGLContext()->TexImageIOSurface2DCHROMIUM(target, width, height,
                                                      ioSurfaceId, plane);
 }
-void GL_APIENTRY GLES2CopyTextureCHROMIUM(GLenum target,
-                                          GLenum source_id,
+void GL_APIENTRY GLES2CopyTextureCHROMIUM(GLenum source_id,
                                           GLenum dest_id,
                                           GLint internalformat,
                                           GLenum dest_type,
@@ -1345,12 +1342,11 @@ void GL_APIENTRY GLES2CopyTextureCHROMIUM(GLenum target,
                                           GLboolean unpack_premultiply_alpha,
                                           GLboolean unpack_unmultiply_alpha) {
   gles2::GetGLContext()->CopyTextureCHROMIUM(
-      target, source_id, dest_id, internalformat, dest_type, unpack_flip_y,
+      source_id, dest_id, internalformat, dest_type, unpack_flip_y,
       unpack_premultiply_alpha, unpack_unmultiply_alpha);
 }
 void GL_APIENTRY
-GLES2CopySubTextureCHROMIUM(GLenum target,
-                            GLenum source_id,
+GLES2CopySubTextureCHROMIUM(GLenum source_id,
                             GLenum dest_id,
                             GLint xoffset,
                             GLint yoffset,
@@ -1362,26 +1358,12 @@ GLES2CopySubTextureCHROMIUM(GLenum target,
                             GLboolean unpack_premultiply_alpha,
                             GLboolean unpack_unmultiply_alpha) {
   gles2::GetGLContext()->CopySubTextureCHROMIUM(
-      target, source_id, dest_id, xoffset, yoffset, x, y, width, height,
-      unpack_flip_y, unpack_premultiply_alpha, unpack_unmultiply_alpha);
+      source_id, dest_id, xoffset, yoffset, x, y, width, height, unpack_flip_y,
+      unpack_premultiply_alpha, unpack_unmultiply_alpha);
 }
-void GL_APIENTRY GLES2CompressedCopyTextureCHROMIUM(GLenum target,
-                                                    GLenum source_id,
+void GL_APIENTRY GLES2CompressedCopyTextureCHROMIUM(GLenum source_id,
                                                     GLenum dest_id) {
-  gles2::GetGLContext()->CompressedCopyTextureCHROMIUM(target, source_id,
-                                                       dest_id);
-}
-void GL_APIENTRY GLES2CompressedCopySubTextureCHROMIUM(GLenum target,
-                                                       GLenum source_id,
-                                                       GLenum dest_id,
-                                                       GLint xoffset,
-                                                       GLint yoffset,
-                                                       GLint x,
-                                                       GLint y,
-                                                       GLsizei width,
-                                                       GLsizei height) {
-  gles2::GetGLContext()->CompressedCopySubTextureCHROMIUM(
-      target, source_id, dest_id, xoffset, yoffset, x, y, width, height);
+  gles2::GetGLContext()->CompressedCopyTextureCHROMIUM(source_id, dest_id);
 }
 void GL_APIENTRY GLES2DrawArraysInstancedANGLE(GLenum mode,
                                                GLint first,
@@ -1481,6 +1463,24 @@ GLuint GL_APIENTRY GLES2InsertSyncPointCHROMIUM() {
 void GL_APIENTRY GLES2WaitSyncPointCHROMIUM(GLuint sync_point) {
   gles2::GetGLContext()->WaitSyncPointCHROMIUM(sync_point);
 }
+GLuint64 GL_APIENTRY GLES2InsertFenceSyncCHROMIUM() {
+  return gles2::GetGLContext()->InsertFenceSyncCHROMIUM();
+}
+void GL_APIENTRY GLES2GenSyncTokenCHROMIUM(GLuint64 fence_sync,
+                                           GLbyte* sync_token) {
+  gles2::GetGLContext()->GenSyncTokenCHROMIUM(fence_sync, sync_token);
+}
+void GL_APIENTRY GLES2GenUnverifiedSyncTokenCHROMIUM(GLuint64 fence_sync,
+                                                     GLbyte* sync_token) {
+  gles2::GetGLContext()->GenUnverifiedSyncTokenCHROMIUM(fence_sync, sync_token);
+}
+void GL_APIENTRY GLES2VerifySyncTokensCHROMIUM(GLbyte** sync_tokens,
+                                               GLsizei count) {
+  gles2::GetGLContext()->VerifySyncTokensCHROMIUM(sync_tokens, count);
+}
+void GL_APIENTRY GLES2WaitSyncTokenCHROMIUM(const GLbyte* sync_token) {
+  gles2::GetGLContext()->WaitSyncTokenCHROMIUM(sync_token);
+}
 void GL_APIENTRY GLES2DrawBuffersEXT(GLsizei count, const GLenum* bufs) {
   gles2::GetGLContext()->DrawBuffersEXT(count, bufs);
 }
@@ -1501,6 +1501,24 @@ void GL_APIENTRY GLES2ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
   gles2::GetGLContext()->ScheduleOverlayPlaneCHROMIUM(
       plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
       bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
+}
+void GL_APIENTRY GLES2ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
+                                              const GLfloat* contents_rect,
+                                              GLfloat opacity,
+                                              GLuint background_color,
+                                              GLuint edge_aa_mask,
+                                              const GLfloat* bounds_rect,
+                                              GLboolean is_clipped,
+                                              const GLfloat* clip_rect,
+                                              GLint sorting_context_id,
+                                              const GLfloat* transform) {
+  gles2::GetGLContext()->ScheduleCALayerCHROMIUM(
+      contents_texture_id, contents_rect, opacity, background_color,
+      edge_aa_mask, bounds_rect, is_clipped, clip_rect, sorting_context_id,
+      transform);
+}
+void GL_APIENTRY GLES2CommitOverlayPlanesCHROMIUM() {
+  gles2::GetGLContext()->CommitOverlayPlanesCHROMIUM();
 }
 void GL_APIENTRY GLES2SwapInterval(GLint interval) {
   gles2::GetGLContext()->SwapInterval(interval);
@@ -1577,6 +1595,102 @@ void GL_APIENTRY GLES2StencilThenCoverStrokePathCHROMIUM(GLuint path,
   gles2::GetGLContext()->StencilThenCoverStrokePathCHROMIUM(path, reference,
                                                             mask, coverMode);
 }
+void GL_APIENTRY
+GLES2StencilFillPathInstancedCHROMIUM(GLsizei numPaths,
+                                      GLenum pathNameType,
+                                      const GLvoid* paths,
+                                      GLuint pathBase,
+                                      GLenum fillMode,
+                                      GLuint mask,
+                                      GLenum transformType,
+                                      const GLfloat* transformValues) {
+  gles2::GetGLContext()->StencilFillPathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, fillMode, mask, transformType,
+      transformValues);
+}
+void GL_APIENTRY
+GLES2StencilStrokePathInstancedCHROMIUM(GLsizei numPaths,
+                                        GLenum pathNameType,
+                                        const GLvoid* paths,
+                                        GLuint pathBase,
+                                        GLint reference,
+                                        GLuint mask,
+                                        GLenum transformType,
+                                        const GLfloat* transformValues) {
+  gles2::GetGLContext()->StencilStrokePathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, reference, mask, transformType,
+      transformValues);
+}
+void GL_APIENTRY
+GLES2CoverFillPathInstancedCHROMIUM(GLsizei numPaths,
+                                    GLenum pathNameType,
+                                    const GLvoid* paths,
+                                    GLuint pathBase,
+                                    GLenum coverMode,
+                                    GLenum transformType,
+                                    const GLfloat* transformValues) {
+  gles2::GetGLContext()->CoverFillPathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, coverMode, transformType,
+      transformValues);
+}
+void GL_APIENTRY
+GLES2CoverStrokePathInstancedCHROMIUM(GLsizei numPaths,
+                                      GLenum pathNameType,
+                                      const GLvoid* paths,
+                                      GLuint pathBase,
+                                      GLenum coverMode,
+                                      GLenum transformType,
+                                      const GLfloat* transformValues) {
+  gles2::GetGLContext()->CoverStrokePathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, coverMode, transformType,
+      transformValues);
+}
+void GL_APIENTRY
+GLES2StencilThenCoverFillPathInstancedCHROMIUM(GLsizei numPaths,
+                                               GLenum pathNameType,
+                                               const GLvoid* paths,
+                                               GLuint pathBase,
+                                               GLenum fillMode,
+                                               GLuint mask,
+                                               GLenum coverMode,
+                                               GLenum transformType,
+                                               const GLfloat* transformValues) {
+  gles2::GetGLContext()->StencilThenCoverFillPathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, fillMode, mask, coverMode,
+      transformType, transformValues);
+}
+void GL_APIENTRY GLES2StencilThenCoverStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLint reference,
+    GLuint mask,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) {
+  gles2::GetGLContext()->StencilThenCoverStrokePathInstancedCHROMIUM(
+      numPaths, pathNameType, paths, pathBase, reference, mask, coverMode,
+      transformType, transformValues);
+}
+void GL_APIENTRY GLES2BindFragmentInputLocationCHROMIUM(GLuint program,
+                                                        GLint location,
+                                                        const char* name) {
+  gles2::GetGLContext()->BindFragmentInputLocationCHROMIUM(program, location,
+                                                           name);
+}
+void GL_APIENTRY
+GLES2ProgramPathFragmentInputGenCHROMIUM(GLuint program,
+                                         GLint location,
+                                         GLenum genMode,
+                                         GLint components,
+                                         const GLfloat* coeffs) {
+  gles2::GetGLContext()->ProgramPathFragmentInputGenCHROMIUM(
+      program, location, genMode, components, coeffs);
+}
+void GL_APIENTRY GLES2CoverageModulationCHROMIUM(GLenum components) {
+  gles2::GetGLContext()->CoverageModulationCHROMIUM(components);
+}
 GLenum GL_APIENTRY GLES2GetGraphicsResetStatusKHR() {
   return gles2::GetGLContext()->GetGraphicsResetStatusKHR();
 }
@@ -1585,6 +1699,21 @@ void GL_APIENTRY GLES2BlendBarrierKHR() {
 }
 void GL_APIENTRY GLES2ApplyScreenSpaceAntialiasingCHROMIUM() {
   gles2::GetGLContext()->ApplyScreenSpaceAntialiasingCHROMIUM();
+}
+void GL_APIENTRY GLES2BindFragDataLocationIndexedEXT(GLuint program,
+                                                     GLuint colorNumber,
+                                                     GLuint index,
+                                                     const char* name) {
+  gles2::GetGLContext()->BindFragDataLocationIndexedEXT(program, colorNumber,
+                                                        index, name);
+}
+void GL_APIENTRY GLES2BindFragDataLocationEXT(GLuint program,
+                                              GLuint colorNumber,
+                                              const char* name) {
+  gles2::GetGLContext()->BindFragDataLocationEXT(program, colorNumber, name);
+}
+GLint GL_APIENTRY GLES2GetFragDataIndexEXT(GLuint program, const char* name) {
+  return gles2::GetGLContext()->GetFragDataIndexEXT(program, name);
 }
 
 namespace gles2 {
@@ -2575,10 +2704,6 @@ extern const NameToFunc g_gles2_function_table[] = {
         reinterpret_cast<GLES2FunctionPointer>(glGetUniformsES3CHROMIUM),
     },
     {
-        "glCreateStreamTextureCHROMIUM",
-        reinterpret_cast<GLES2FunctionPointer>(glCreateStreamTextureCHROMIUM),
-    },
-    {
         "glCreateImageCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glCreateImageCHROMIUM),
     },
@@ -2615,11 +2740,6 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glCompressedCopyTextureCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glCompressedCopyTextureCHROMIUM),
-    },
-    {
-        "glCompressedCopySubTextureCHROMIUM",
-        reinterpret_cast<GLES2FunctionPointer>(
-            glCompressedCopySubTextureCHROMIUM),
     },
     {
         "glDrawArraysInstancedANGLE",
@@ -2720,6 +2840,27 @@ extern const NameToFunc g_gles2_function_table[] = {
         reinterpret_cast<GLES2FunctionPointer>(glWaitSyncPointCHROMIUM),
     },
     {
+        "glInsertFenceSyncCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glInsertFenceSyncCHROMIUM),
+    },
+    {
+        "glGenSyncTokenCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glGenSyncTokenCHROMIUM),
+    },
+    {
+        "glGenUnverifiedSyncTokenCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glGenUnverifiedSyncTokenCHROMIUM),
+    },
+    {
+        "glVerifySyncTokensCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glVerifySyncTokensCHROMIUM),
+    },
+    {
+        "glWaitSyncTokenCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glWaitSyncTokenCHROMIUM),
+    },
+    {
         "glDrawBuffersEXT",
         reinterpret_cast<GLES2FunctionPointer>(glDrawBuffersEXT),
     },
@@ -2730,6 +2871,14 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
         "glScheduleOverlayPlaneCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glScheduleOverlayPlaneCHROMIUM),
+    },
+    {
+        "glScheduleCALayerCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glScheduleCALayerCHROMIUM),
+    },
+    {
+        "glCommitOverlayPlanesCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glCommitOverlayPlanesCHROMIUM),
     },
     {
         "glSwapInterval",
@@ -2802,6 +2951,50 @@ extern const NameToFunc g_gles2_function_table[] = {
             glStencilThenCoverStrokePathCHROMIUM),
     },
     {
+        "glStencilFillPathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glStencilFillPathInstancedCHROMIUM),
+    },
+    {
+        "glStencilStrokePathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glStencilStrokePathInstancedCHROMIUM),
+    },
+    {
+        "glCoverFillPathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glCoverFillPathInstancedCHROMIUM),
+    },
+    {
+        "glCoverStrokePathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glCoverStrokePathInstancedCHROMIUM),
+    },
+    {
+        "glStencilThenCoverFillPathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glStencilThenCoverFillPathInstancedCHROMIUM),
+    },
+    {
+        "glStencilThenCoverStrokePathInstancedCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glStencilThenCoverStrokePathInstancedCHROMIUM),
+    },
+    {
+        "glBindFragmentInputLocationCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glBindFragmentInputLocationCHROMIUM),
+    },
+    {
+        "glProgramPathFragmentInputGenCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glProgramPathFragmentInputGenCHROMIUM),
+    },
+    {
+        "glCoverageModulationCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(glCoverageModulationCHROMIUM),
+    },
+    {
         "glGetGraphicsResetStatusKHR",
         reinterpret_cast<GLES2FunctionPointer>(glGetGraphicsResetStatusKHR),
     },
@@ -2813,6 +3006,19 @@ extern const NameToFunc g_gles2_function_table[] = {
         "glApplyScreenSpaceAntialiasingCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(
             glApplyScreenSpaceAntialiasingCHROMIUM),
+    },
+    {
+        "glBindFragDataLocationIndexedEXT",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glBindFragDataLocationIndexedEXT),
+    },
+    {
+        "glBindFragDataLocationEXT",
+        reinterpret_cast<GLES2FunctionPointer>(glBindFragDataLocationEXT),
+    },
+    {
+        "glGetFragDataIndexEXT",
+        reinterpret_cast<GLES2FunctionPointer>(glGetFragDataIndexEXT),
     },
     {
         NULL, NULL,

@@ -140,7 +140,7 @@ protected:
     void computeCSSPropertyValue(SVGElement*, CSSPropertyID, String& value);
     void determinePropertyValueTypes(const String& from, const String& to);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     void svgAttributeChanged(const QualifiedName&) override;
 
     enum AttributeType {
@@ -178,7 +178,7 @@ protected:
     static bool parseValues(const String&, Vector<String>& result);
 
 private:
-    bool isValid() const final { return SVGTests::isValid(document()); }
+    bool isValid() const final { return SVGTests::isValid(); }
 
     void animationAttributeChanged() override;
     void setAttributeType(const AtomicString&);

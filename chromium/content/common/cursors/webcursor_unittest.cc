@@ -2,10 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include "base/pickle.h"
+#include "build/build_config.h"
 #include "content/common/cursors/webcursor.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
+
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
 
 using blink::WebCursorInfo;
 
@@ -256,5 +263,56 @@ TEST(WebCursorTest, AlphaConversion) {
   }
 #endif
 }
+
+#if defined(USE_AURA)
+TEST(WebCursorTest, CursorScaleFactor) {
+  gfx::Display display;
+  display.set_device_scale_factor(80.2f);
+
+  WebCursor::CursorInfo info;
+  info.image_scale_factor = 2.0f;
+
+  WebCursor cursor;
+  cursor.InitFromCursorInfo(info);
+  cursor.SetDisplayInfo(display);
+
+  EXPECT_EQ(40.1f, cursor.GetCursorScaleFactor());
+}
+#endif
+
+#if defined(OS_WIN)
+void ScaleCursor(float scaleFactor, int hotspotX, int hotspotY) {
+  gfx::Display display;
+  display.set_device_scale_factor(scaleFactor);
+
+  WebCursor::CursorInfo info;
+  info.type = WebCursorInfo::TypeCustom;
+  info.hotspot = gfx::Point(hotspotX, hotspotY);
+
+  info.custom_image = SkBitmap();
+  info.custom_image.allocN32Pixels(10, 10);
+  info.custom_image.eraseColor(0);
+
+  WebCursor cursor;
+  cursor.SetDisplayInfo(display);
+  cursor.InitFromCursorInfo(info);
+
+  HCURSOR windowsCursorHandle = cursor.GetPlatformCursor();
+  EXPECT_NE(nullptr, windowsCursorHandle);
+  ICONINFO windowsIconInfo;
+  EXPECT_TRUE(GetIconInfo(windowsCursorHandle, &windowsIconInfo));
+  EXPECT_FALSE(windowsIconInfo.fIcon);
+  EXPECT_EQ(static_cast<DWORD>(scaleFactor * hotspotX),
+            windowsIconInfo.xHotspot);
+  EXPECT_EQ(static_cast<DWORD>(scaleFactor * hotspotY),
+            windowsIconInfo.yHotspot);
+}
+
+TEST(WebCursorTest, WindowsCursorScaledAtHiDpi) {
+  ScaleCursor(2.0f, 4, 6);
+  ScaleCursor(1.5f, 2, 8);
+  ScaleCursor(1.25f, 3, 7);
+}
+#endif
 
 }  // namespace content

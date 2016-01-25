@@ -27,7 +27,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/MediaQueryEvaluator.h"
 
 #include "core/CSSValueKeywords.h"
@@ -40,7 +39,6 @@
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaValuesDynamic.h"
-#include "core/css/PointerProperties.h"
 #include "core/css/resolver/MediaQueryResult.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameHost.h"
@@ -53,6 +51,7 @@
 #include "core/style/ComputedStyle.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
+#include "public/platform/PointerProperties.h"
 #include "public/platform/WebDisplayMode.h"
 #include "wtf/HashMap.h"
 
@@ -93,6 +92,11 @@ MediaQueryEvaluator::~MediaQueryEvaluator()
 {
 }
 
+DEFINE_TRACE(MediaQueryEvaluator)
+{
+    visitor->trace(m_mediaValues);
+}
+
 const String MediaQueryEvaluator::mediaType() const
 {
     // If a static mediaType was given by the constructor, we use it here.
@@ -116,7 +120,7 @@ static bool applyRestrictor(MediaQuery::Restrictor r, bool value)
     return r == MediaQuery::Not ? !value : value;
 }
 
-bool MediaQueryEvaluator::eval(const MediaQuery* query, MediaQueryResultList* viewportDependentMediaQueryResults) const
+bool MediaQueryEvaluator::eval(const MediaQuery* query, MediaQueryResultList* viewportDependentMediaQueryResults, MediaQueryResultList* deviceDependentMediaQueryResults) const
 {
     if (!mediaTypeMatch(query->mediaType()))
         return applyRestrictor(query->restrictor(), false);
@@ -128,6 +132,8 @@ bool MediaQueryEvaluator::eval(const MediaQuery* query, MediaQueryResultList* vi
         bool exprResult = eval(expressions.at(i).get());
         if (viewportDependentMediaQueryResults && expressions.at(i)->isViewportDependent())
             viewportDependentMediaQueryResults->append(adoptRefWillBeNoop(new MediaQueryResult(*expressions.at(i), exprResult)));
+        if (deviceDependentMediaQueryResults && expressions.at(i)->isDeviceDependent())
+            deviceDependentMediaQueryResults->append(adoptRefWillBeNoop(new MediaQueryResult(*expressions.at(i), exprResult)));
         if (!exprResult)
             break;
     }
@@ -136,7 +142,7 @@ bool MediaQueryEvaluator::eval(const MediaQuery* query, MediaQueryResultList* vi
     return applyRestrictor(query->restrictor(), expressions.size() == i);
 }
 
-bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultList* viewportDependentMediaQueryResults) const
+bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultList* viewportDependentMediaQueryResults, MediaQueryResultList* deviceDependentMediaQueryResults) const
 {
     if (!querySet)
         return true;
@@ -148,7 +154,7 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultLi
     // Iterate over queries, stop if any of them eval to true (OR semantics).
     bool result = false;
     for (size_t i = 0; i < queries.size() && !result; ++i)
-        result = eval(queries[i].get(), viewportDependentMediaQueryResults);
+        result = eval(queries[i].get(), viewportDependentMediaQueryResults, deviceDependentMediaQueryResults);
 
     return result;
 }
@@ -221,6 +227,11 @@ static bool monochromeMediaFeatureEval(const MediaQueryExpValue& value, MediaFea
 
 static bool displayModeMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
+    // isValid() is false if there is no parameter. Without parameter we should return true to indicate that
+    // displayModeMediaFeature is enabled in the browser.
+    if (!value.isValid())
+        return true;
+
     if (!value.isID)
         return false;
 
@@ -309,7 +320,7 @@ static bool evalResolution(const MediaQueryExpValue& value, MediaFeaturePrefix o
     double canonicalFactor = CSSPrimitiveValue::conversionToCanonicalUnitsScaleFactor(value.unit);
     double dppxFactor = CSSPrimitiveValue::conversionToCanonicalUnitsScaleFactor(CSSPrimitiveValue::UnitType::DotsPerPixel);
     float valueInDppx = clampTo<float>(value.value * (canonicalFactor / dppxFactor));
-    if (CSSPrimitiveValue::isDotsPerCentimeter(value.unit)) {
+    if (value.unit == CSSPrimitiveValue::UnitType::DotsPerCentimeter) {
         // To match DPCM to DPPX values, we limit to 2 decimal points.
         // The http://dev.w3.org/csswg/css3-values/#absolute-lengths recommends
         // "that the pixel unit refer to the whole number of device pixels that best
@@ -388,7 +399,7 @@ static bool deviceWidthMediaFeatureEval(const MediaQueryExpValue& value, MediaFe
 
 static bool heightMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
-    int height = mediaValues.viewportHeight();
+    double height = mediaValues.viewportHeight();
     if (value.isValid())
         return computeLengthAndCompare(value, op, mediaValues, height);
 
@@ -397,7 +408,7 @@ static bool heightMediaFeatureEval(const MediaQueryExpValue& value, MediaFeature
 
 static bool widthMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
-    int width = mediaValues.viewportWidth();
+    double width = mediaValues.viewportWidth();
     if (value.isValid())
         return computeLengthAndCompare(value, op, mediaValues, width);
 

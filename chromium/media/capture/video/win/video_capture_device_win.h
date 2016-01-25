@@ -11,10 +11,12 @@
 // Avoid including strsafe.h via dshow as it will cause build warnings.
 #define NO_DSHOW_STRSAFE
 #include <dshow.h>
+#include <stdint.h>
 
 #include <map>
 #include <string>
 
+#include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "base/win/scoped_comptr.h"
 #include "media/base/video_capture_types.h"
@@ -22,6 +24,10 @@
 #include "media/capture/video/win/capability_list_win.h"
 #include "media/capture/video/win/sink_filter_win.h"
 #include "media/capture/video/win/sink_input_pin_win.h"
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -77,12 +83,14 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
   };
 
   // Implements SinkFilterObserver.
-  void FrameReceived(const uint8* buffer, int length,
+  void FrameReceived(const uint8_t* buffer,
+                     int length,
                      base::TimeTicks timestamp) override;
 
   bool CreateCapabilityMap();
   void SetAntiFlickerInCaptureFilter(const VideoCaptureParams& params);
-  void SetErrorState(const std::string& reason);
+  void SetErrorState(const tracked_objects::Location& from_here,
+                     const std::string& reason);
 
   const Name device_name_;
   InternalState state_;

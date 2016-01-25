@@ -4,8 +4,6 @@
 
 #include "blimp/client/compositor/blimp_compositor_android.h"
 
-#include <android/native_window_jni.h>
-
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/geometry/size.h"
@@ -17,53 +15,35 @@ const int kMinimumTileContentWidthPixels = 64;
 }
 
 namespace blimp {
+namespace client {
 
 // static
 scoped_ptr<BlimpCompositorAndroid> BlimpCompositorAndroid::Create(
     const gfx::Size& real_size,
     const gfx::Size& size,
-    float dp_to_px) {
+    float dp_to_px,
+    RenderWidgetFeature* render_widget_feature) {
   gfx::Size device_size(real_size);
   bool real_size_supported = true;
   if (device_size.IsEmpty()) {
     real_size_supported = false;
     device_size = size;
   }
-  return make_scoped_ptr(
-      new BlimpCompositorAndroid(device_size, real_size_supported, dp_to_px));
+  return make_scoped_ptr(new BlimpCompositorAndroid(
+      device_size, real_size_supported, dp_to_px, render_widget_feature));
 }
 
-BlimpCompositorAndroid::BlimpCompositorAndroid(const gfx::Size& size,
-                                               bool real_size_supported,
-                                               float dp_to_px)
-    : BlimpCompositor(dp_to_px),
+BlimpCompositorAndroid::BlimpCompositorAndroid(
+    const gfx::Size& size,
+    bool real_size_supported,
+    float dp_to_px,
+    RenderWidgetFeature* render_widget_feature)
+    : BlimpCompositor(dp_to_px, render_widget_feature),
       portrait_width_(std::min(size.width(), size.height())),
       landscape_width_(std::max(size.width(), size.height())),
-      real_size_supported_(real_size_supported),
-      window_(nullptr) {}
+      real_size_supported_(real_size_supported) {}
 
-BlimpCompositorAndroid::~BlimpCompositorAndroid() {
-  SetSurface(nullptr, 0 /* null surface */);
-}
-
-void BlimpCompositorAndroid::SetSurface(JNIEnv* env, jobject jsurface) {
-  if (window_) {
-    SetVisible(false);
-    ANativeWindow_release(window_);
-    window_ = nullptr;
-  }
-
-  if (!jsurface)
-    return;
-
-  base::android::ScopedJavaLocalFrame scoped_local_reference_frame(env);
-  window_ = ANativeWindow_fromSurface(env, jsurface);
-  SetVisible(true);
-}
-
-gfx::AcceleratedWidget BlimpCompositorAndroid::GetWindow() {
-  return window_;
-}
+BlimpCompositorAndroid::~BlimpCompositorAndroid() {}
 
 void BlimpCompositorAndroid::GenerateLayerTreeSettings(
     cc::LayerTreeSettings* settings) {
@@ -111,4 +91,5 @@ void BlimpCompositorAndroid::GenerateLayerTreeSettings(
   settings->default_tile_size.SetSize(default_tile_size, default_tile_size);
 }
 
+}  // namespace client
 }  // namespace blimp

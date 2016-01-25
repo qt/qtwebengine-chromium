@@ -4,6 +4,8 @@
 
 #include "content/child/child_gpu_memory_buffer_manager.h"
 
+#include <utility>
+
 #include "content/common/child_process_messages.h"
 #include "content/common/generic_shared_memory_id_generator.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
@@ -13,10 +15,10 @@ namespace {
 
 void DeletedGpuMemoryBuffer(ThreadSafeSender* sender,
                             gfx::GpuMemoryBufferId id,
-                            uint32 sync_point) {
+                            const gpu::SyncToken& sync_token) {
   TRACE_EVENT0("renderer",
                "ChildGpuMemoryBufferManager::DeletedGpuMemoryBuffer");
-  sender->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(id, sync_point));
+  sender->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(id, sync_token));
 }
 
 }  // namespace
@@ -52,11 +54,21 @@ ChildGpuMemoryBufferManager::AllocateGpuMemoryBuffer(const gfx::Size& size,
       handle, size, format, usage,
       base::Bind(&DeletedGpuMemoryBuffer, sender_, handle.id)));
   if (!buffer) {
-    sender_->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(handle.id, 0));
+    sender_->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(
+        handle.id, gpu::SyncToken()));
     return nullptr;
   }
 
-  return buffer.Pass();
+  return std::move(buffer);
+}
+
+scoped_ptr<gfx::GpuMemoryBuffer>
+ChildGpuMemoryBufferManager::CreateGpuMemoryBufferFromHandle(
+    const gfx::GpuMemoryBufferHandle& handle,
+    const gfx::Size& size,
+    gfx::BufferFormat format) {
+  NOTIMPLEMENTED();
+  return nullptr;
 }
 
 gfx::GpuMemoryBuffer*
@@ -65,11 +77,11 @@ ChildGpuMemoryBufferManager::GpuMemoryBufferFromClientBuffer(
   return GpuMemoryBufferImpl::FromClientBuffer(buffer);
 }
 
-void ChildGpuMemoryBufferManager::SetDestructionSyncPoint(
+void ChildGpuMemoryBufferManager::SetDestructionSyncToken(
     gfx::GpuMemoryBuffer* buffer,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   static_cast<GpuMemoryBufferImpl*>(buffer)
-      ->set_destruction_sync_point(sync_point);
+      ->set_destruction_sync_token(sync_token);
 }
 
 }  // namespace content

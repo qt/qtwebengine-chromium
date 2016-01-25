@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/canvas2d/CanvasRenderingContext2D.h"
 
 #include "core/frame/FrameView.h"
@@ -19,8 +18,8 @@
 #include "modules/canvas2d/HitRegionOptions.h"
 #include "modules/webgl/WebGLRenderingContext.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::Mock;
 
@@ -183,7 +182,7 @@ TEST_F(CanvasRenderingContext2DAPITest, LineDashStateSave)
 {
     createContext(NonOpaque);
 
-    Vector<float> simpleDash;
+    Vector<double> simpleDash;
     simpleDash.append(4);
     simpleDash.append(2);
 

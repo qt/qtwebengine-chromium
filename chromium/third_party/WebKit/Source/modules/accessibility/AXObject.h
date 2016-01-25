@@ -198,7 +198,6 @@ enum AccessibilityState {
     AXFocusedState,
     AXHaspopupState,
     AXHoveredState,
-    AXIndeterminateState,
     AXInvisibleState,
     AXLinkedState,
     AXMultilineState,
@@ -216,19 +215,6 @@ enum AccessibilityState {
 
 class AccessibilityText final : public GarbageCollectedFinalized<AccessibilityText> {
 public:
-    static AccessibilityText* create(const String& text, const AccessibilityTextSource& source)
-    {
-        return new AccessibilityText(text, source, nullptr);
-    }
-    static AccessibilityText* create(const String& text, const AccessibilityTextSource& source, AXObject* element)
-    {
-        return new AccessibilityText(text, source, element);
-    }
-
-    String text() const { return m_text; }
-    AccessibilityTextSource textSource() const { return m_textSource; }
-    AXObject* textElement() const { return m_textElement; }
-
     DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_textElement);
@@ -237,12 +223,10 @@ public:
 private:
     AccessibilityText(const String& text, const AccessibilityTextSource& source, AXObject* element)
     : m_text(text)
-    , m_textSource(source)
     , m_textElement(element)
     { }
 
     String m_text;
-    AccessibilityTextSource m_textSource;
     Member<AXObject> m_textElement;
 };
 
@@ -319,9 +303,12 @@ enum TextUnderElementMode {
 enum AXNameFrom {
     AXNameFromUninitialized = -1,
     AXNameFromAttribute = 0,
+    AXNameFromCaption,
     AXNameFromContents,
     AXNameFromPlaceholder,
     AXNameFromRelatedElement,
+    AXNameFromValue,
+    AXNameFromTitle,
 };
 
 // The potential native HTML-based text (name, description or placeholder) sources for an element.
@@ -332,15 +319,20 @@ enum AXTextFromNativeHTML {
     AXTextFromNativeHTMLLabel,
     AXTextFromNativeHTMLLabelFor,
     AXTextFromNativeHTMLLabelWrapped,
+    AXTextFromNativeHTMLLegend,
     AXTextFromNativeHTMLTableCaption,
+    AXTextFromNativeHTMLTitleElement,
 };
 
 // The source of the accessible description of an element. This is needed
 // because on some platforms this determines how the accessible description
 // is exposed.
 enum AXDescriptionFrom {
+    AXDescriptionFromUninitialized = -1,
+    AXDescriptionFromAttribute = 0,
+    AXDescriptionFromContents,
     AXDescriptionFromPlaceholder,
-    AXDescriptionFromRelatedElement
+    AXDescriptionFromRelatedElement,
 };
 
 enum AXIgnoredReason {
@@ -364,7 +356,7 @@ enum AXIgnoredReason {
 };
 
 class IgnoredReason {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     AXIgnoredReason reason;
     Member<const AXObject> relatedObject;
@@ -385,9 +377,26 @@ public:
     }
 };
 
-typedef HeapVector<Member<AXObject>> AXObjectVector;
+class NameSourceRelatedObject : public GarbageCollectedFinalized<NameSourceRelatedObject> {
+public:
+    WeakMember<AXObject> object;
+    String text;
+
+    NameSourceRelatedObject(AXObject* object, String text)
+        : object(object)
+        , text(text)
+    {
+    }
+
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(object);
+    }
+};
+
+typedef HeapVector<Member<NameSourceRelatedObject>> AXRelatedObjectVector;
 class NameSource {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     String text;
     bool superseded = false;
@@ -396,9 +405,9 @@ public:
     const QualifiedName& attribute;
     AtomicString attributeValue;
     AXTextFromNativeHTML nativeSource = AXTextFromNativeHTMLUninitialized;
-    AXObjectVector nameObjects;
+    AXRelatedObjectVector relatedObjects;
 
-    explicit NameSource(bool superseded, const QualifiedName& attr)
+    NameSource(bool superseded, const QualifiedName& attr)
         : superseded(superseded)
         , attribute(attr)
     {
@@ -412,15 +421,46 @@ public:
 
     DEFINE_INLINE_TRACE()
     {
-        visitor->trace(nameObjects);
+        visitor->trace(relatedObjects);
+    }
+};
+
+class DescriptionSource {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
+public:
+    String text;
+    bool superseded = false;
+    bool invalid = false;
+    AXDescriptionFrom type = AXDescriptionFromUninitialized;
+    const QualifiedName& attribute;
+    AtomicString attributeValue;
+    AXTextFromNativeHTML nativeSource = AXTextFromNativeHTMLUninitialized;
+    AXRelatedObjectVector relatedObjects;
+
+    DescriptionSource(bool superseded, const QualifiedName& attr)
+        : superseded(superseded)
+        , attribute(attr)
+    {
+    }
+
+    explicit DescriptionSource(bool superseded)
+        : superseded(superseded)
+        , attribute(QualifiedName::null())
+    {
+    }
+
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(relatedObjects);
     }
 };
 
 class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
 public:
-    typedef HeapVector<Member<AXObject>> AccessibilityChildrenVector;
+    typedef HeapVector<Member<AXObject>> AXObjectVector;
 
     struct AXRange {
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         // The deepest descendant in which the range starts.
         // (nullptr means the current object.)
         Persistent<AXObject> anchorObject;
@@ -535,7 +575,6 @@ public:
     bool isLandmarkRelated() const;
     virtual bool isLink() const { return false; }
     virtual bool isList() const { return false; }
-    bool isListItem() const { return roleValue() == ListItemRole; }
     virtual bool isMenu() const { return false; }
     virtual bool isMenuButton() const { return false; }
     virtual bool isMenuList() const { return false; }
@@ -564,7 +603,6 @@ public:
     virtual bool isTextControl() const { return false; }
     virtual bool isTableCol() const { return false; }
     bool isTree() const { return roleValue() == TreeRole; }
-    bool isTreeItem() const { return roleValue() == TreeItemRole; }
     bool isWebArea() const { return roleValue() == WebAreaRole; }
 
     // Check object state.
@@ -575,7 +613,6 @@ public:
     virtual AccessibilityExpanded isExpanded() const { return ExpandedUndefined; }
     virtual bool isFocused() const { return false; }
     virtual bool isHovered() const { return false; }
-    virtual bool isIndeterminate() const { return false; }
     virtual bool isLinked() const { return false; }
     virtual bool isLoaded() const { return false; }
     virtual bool isMultiSelectable() const { return false; }
@@ -613,22 +650,7 @@ public:
     bool isPresentationalChild() const;
 
     //
-    // Deprecated text alternative calculation API. All of these will be replaced
-    // with the new API, below (under "New text alternative calculation API".
-    //
-
-    virtual bool deprecatedExposesTitleUIElement() const { return true; }
-    virtual AXObject* deprecatedTitleUIElement() const { return 0; }
-    virtual String deprecatedPlaceholder() const { return String(); }
-    virtual void deprecatedAriaDescribedbyElements(AccessibilityChildrenVector& describedby) const { }
-    virtual void deprecatedAriaLabelledbyElements(AccessibilityChildrenVector& labelledby) const { }
-    virtual String deprecatedAccessibilityDescription() const { return String(); }
-    virtual String deprecatedTitle(TextUnderElementMode mode = TextUnderElementAll) const { return String(); }
-    virtual String deprecatedHelpText() const { return String(); }
-    virtual String deprecatedTextUnderElement(TextUnderElementMode mode = TextUnderElementAll) const { return String(); }
-
-    //
-    // New text alternative calculation API (under development).
+    // Accessible name calculation
     //
 
     // Retrieves the accessible name of the object, an enum indicating where the name
@@ -640,24 +662,34 @@ public:
     // for the name, indicating which were used.
     virtual String name(NameSources*) const;
 
+    typedef HeapVector<DescriptionSource> DescriptionSources;
     // Takes the result of nameFrom from calling |name|, above, and retrieves the
     // accessible description of the object, which is secondary to |name|, an enum indicating
     // where the description was derived from, and a list of objects that were used to
     // derive the description, if any.
-    virtual String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector* descriptionObjects) { return String(); }
+    virtual String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector* descriptionObjects) const { return String(); }
+
+    // Same as above, but returns a list of all potential sources for the description, indicating which were used.
+    virtual String description(AXNameFrom, AXDescriptionFrom&, DescriptionSources*, AXRelatedObjectVector*) const { return String(); }
 
     // Takes the result of nameFrom and descriptionFrom from calling |name| and |description|,
     // above, and retrieves the placeholder of the object, if present and if it wasn't already
     // exposed by one of the two functions above.
-    virtual String placeholder(AXNameFrom, AXDescriptionFrom) { return String(); }
+    virtual String placeholder(AXNameFrom, AXDescriptionFrom) const { return String(); }
 
-    // Internal function used by name and description, above.
+    // Internal functions used by name and description, above.
     typedef HeapHashSet<Member<const AXObject>> AXObjectSet;
-    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXObjectVector* nameObjects, NameSources* nameSources) const { return String(); }
+    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const { return String(); }
+    virtual String textFromDescendants(AXObjectSet& visited, bool recursive) const { return String(); }
 
     // Returns result of Accessible Name Calculation algorithm.
     // This is a simpler high-level interface to |name| used by Inspector.
-    virtual String computedName() const { return String(); }
+    String computedName() const;
+
+    // Internal function used to determine whether the result of calling |name| on this object would
+    // return text that came from the an HTML label element or not. This is intended to be faster than calling
+    // |name| or |textAlternative|, and without side effects (it won't call axObjectCache->getOrCreate).
+    virtual bool nameFromLabelElement() const { return false; }
 
     //
     // Properties of static elements.
@@ -712,9 +744,11 @@ public:
     virtual AXObject* activeDescendant() const { return 0; }
     virtual String ariaAutoComplete() const { return String(); }
     virtual String ariaDescribedByAttribute() const { return String(); }
-    virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
-    virtual void ariaControlsElements(AccessibilityChildrenVector&) const { }
-    virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { }
+    virtual void ariaFlowToElements(AXObjectVector&) const { }
+    virtual void ariaControlsElements(AXObjectVector&) const { }
+    virtual void ariaOwnsElements(AXObjectVector& owns) const { }
+    virtual void ariaDescribedbyElements(AXObjectVector&) const { }
+    virtual void ariaLabelledbyElements(AXObjectVector&) const { }
     virtual bool ariaHasPopup() const { return false; }
     virtual bool isEditable() const { return false; }
     bool isMultiline() const;
@@ -740,10 +774,6 @@ public:
     virtual int posInSet() const { return 0; }
     virtual int setSize() const { return 0; }
     bool supportsSetSizeAndPosInSet() const;
-
-    // ARIA trees.
-    // Used by an ARIA tree to get all its rows.
-    void ariaTreeRows(AccessibilityChildrenVector&);
 
     // ARIA live-region features.
     bool isLiveRegion() const;
@@ -771,7 +801,7 @@ public:
     virtual AXObject* elementAccessibilityHitTest(const IntPoint&) const;
 
     // High-level accessibility tree access. Other modules should only use these functions.
-    const AccessibilityChildrenVector& children();
+    const AXObjectVector& children();
     AXObject* parentObject() const;
     AXObject* parentObjectIfExists() const;
     virtual AXObject* computeParent() const = 0;
@@ -780,9 +810,8 @@ public:
     AXObject* parentObjectUnignored() const;
 
     // Low-level accessibility tree exploration, only for use within the accessibility module.
-    virtual AXObject* firstChild() const { return 0; }
-    virtual AXObject* nextSibling() const { return 0; }
-    AXObject* firstAccessibleObjectFromNode(const Node*);
+    virtual AXObject* rawFirstChild() const { return 0; }
+    virtual AXObject* rawNextSibling() const { return 0; }
     virtual void addChildren() { }
     virtual bool canHaveChildren() const { return true; }
     bool hasChildren() const { return m_haveChildren; }
@@ -842,7 +871,6 @@ public:
     void scrollToGlobalPoint(const IntPoint&) const;
     virtual void setFocused(bool) { }
     virtual void setSelected(bool) { }
-    void setSelectedText(const String&) { }
     virtual void setValue(const String&) { }
     virtual void setValue(float) { }
 
@@ -872,24 +900,29 @@ public:
 
 protected:
     AXID m_id;
-    AccessibilityChildrenVector m_children;
+    AXObjectVector m_children;
     mutable bool m_haveChildren;
     AccessibilityRole m_role;
     AXObjectInclusion m_lastKnownIsIgnoredValue;
     LayoutRect m_explicitElementRect;
 
-    // Used only in recursive calls from textAlternative()
+    // Used only inside textAlternative():
+    static String collapseWhitespace(const String&);
     static String recursiveTextAlternative(const AXObject&, bool inAriaLabelledByTraversal, AXObjectSet& visited);
+    bool isHiddenForTextAlternativeCalculation() const;
+    String ariaTextAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*, bool* foundTextAlternative) const;
+    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXRelatedObjectVector* relatedObjects) const;
+    void tokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
+    void elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName&) const;
+    void ariaLabelledbyElementVector(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const;
+    String textFromAriaLabelledby(AXObjectSet& visited, AXRelatedObjectVector* relatedObjects) const;
+    String textFromAriaDescribedby(AXRelatedObjectVector* relatedObjects) const;
 
     virtual const AXObject* inheritsPresentationalRoleFrom() const { return 0; }
 
-    bool nameFromContents() const;
+    virtual bool nameFromContents() const;
 
     AccessibilityRole buttonRoleType() const;
-
-    unsigned getLengthForTextRange() const { return text().length(); }
-
-    bool m_detached;
 
     mutable Member<AXObject> m_parent;
 
@@ -924,5 +957,6 @@ private:
 
 WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::IgnoredReason);
 WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::NameSource);
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::DescriptionSource);
 
 #endif // AXObject_h

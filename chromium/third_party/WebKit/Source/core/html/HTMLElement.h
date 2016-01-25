@@ -112,7 +112,7 @@ protected:
     void applyAlignmentAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
     void applyBorderAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     bool isPresentationAttribute(const QualifiedName&) const override;
     void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
@@ -121,6 +121,7 @@ protected:
     void calculateAndAdjustDirectionality();
 
 private:
+    String debugNodeName() const final;
     String nodeName() const final;
 
     bool isHTMLElement() const = delete; // This will catch anyone doing an unnecessary check.

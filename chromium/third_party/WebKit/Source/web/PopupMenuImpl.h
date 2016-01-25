@@ -44,7 +44,6 @@ private:
     void updateFromElement() override;
 
     // PagePopupClient functions:
-    IntSize contentSize() override;
     void writeDocument(SharedBuffer*) override;
     void selectFontsFromOwnerDocument(Document&) override;
     void setValueAndClosePopup(int, const String&) override;
@@ -54,7 +53,7 @@ private:
     Locale& locale() override;
     void didClosePopup() override;
 
-    ChromeClientImpl* m_chromeClient;
+    RawPtrWillBeMember<ChromeClientImpl> m_chromeClient;
     RawPtrWillBeMember<HTMLSelectElement> m_ownerElement;
     PagePopup* m_popup;
     bool m_needsUpdate;

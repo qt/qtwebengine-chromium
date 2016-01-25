@@ -43,11 +43,12 @@
 #define WTF_ThreadSpecific_h
 
 #include "wtf/Noncopyable.h"
+#include "wtf/Partitions.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/WTF.h"
 #include "wtf/WTFExport.h"
 
-#if USE(PTHREADS)
+#if OS(POSIX)
 #include <pthread.h>
 #elif OS(WIN)
 #include <windows.h>
@@ -97,14 +98,14 @@ private:
 #endif
     };
 
-#if USE(PTHREADS)
+#if OS(POSIX)
     pthread_key_t m_key;
 #elif OS(WIN)
     int m_index;
 #endif
 };
 
-#if USE(PTHREADS)
+#if OS(POSIX)
 
 typedef pthread_key_t ThreadSpecificKey;
 
@@ -226,16 +227,16 @@ inline void ThreadSpecific<T>::destroy(void* ptr)
 
     Data* data = static_cast<Data*>(ptr);
 
-#if USE(PTHREADS)
+#if OS(POSIX)
     // We want get() to keep working while data destructor works, because it can be called indirectly by the destructor.
     // Some pthreads implementations zero out the pointer before calling destroy(), so we temporarily reset it.
     pthread_setspecific(data->owner->m_key, ptr);
 #endif
 
     data->value->~T();
-    fastFree(data->value);
+    Partitions::fastFree(data->value);
 
-#if USE(PTHREADS)
+#if OS(POSIX)
     pthread_setspecific(data->owner->m_key, 0);
 #elif OS(WIN)
     TlsSetValue(tlsKeys()[data->owner->m_index], 0);
@@ -259,7 +260,7 @@ inline ThreadSpecific<T>::operator T*()
     if (!ptr) {
         // Set up thread-specific value's memory pointer before invoking constructor, in case any function it calls
         // needs to access the value, to avoid recursion.
-        ptr = static_cast<T*>(fastZeroedMalloc(sizeof(T)));
+        ptr = static_cast<T*>(Partitions::fastZeroedMalloc(sizeof(T), WTF_HEAP_PROFILER_TYPE_NAME(T)));
         set(ptr);
         new (NotNull, ptr) T;
     }

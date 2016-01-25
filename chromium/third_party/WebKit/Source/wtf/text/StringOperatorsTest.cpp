@@ -23,14 +23,12 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #define WTF_STRINGTYPEADAPTER_COPIED_WTF_STRING() (++wtfStringCopyCount)
 
 static int wtfStringCopyCount;
 
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/WTFString.h"
-#include <gtest/gtest.h>
 
 namespace WTF {
 

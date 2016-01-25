@@ -28,10 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/PickerIndicatorElement.h"
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/events/Event.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/frame/Settings.h"
@@ -185,9 +184,11 @@ void PickerIndicatorElement::didNotifySubtreeInsertionsToDocument()
 DEFINE_TRACE(PickerIndicatorElement)
 {
     visitor->trace(m_pickerIndicatorOwner);
+    visitor->trace(m_chooser);
     HTMLDivElement::trace(visitor);
+    DateTimeChooserClient::trace(visitor);
 }
 
-}
+} // namespace blink
 
-#endif
+#endif // ENABLE(INPUT_MULTIPLE_FIELDS_UI)

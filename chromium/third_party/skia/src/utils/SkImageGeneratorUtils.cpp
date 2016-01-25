@@ -47,7 +47,7 @@ SkImageGenerator* SkImageGeneratorUtils::NewFromBitmap(const SkBitmap& bm) {
 
 #include "GrContext.h"
 #include "GrTexture.h"
-#include "SkGr.h"
+#include "SkGrPriv.h"
 
 class GeneratorFromTexture : public SkImageGenerator {
 public:
@@ -56,7 +56,7 @@ public:
     {}
 
 protected:
-    GrTexture* onGenerateTexture(GrContext* ctx, SkImageUsageType, const SkIRect* subset) override {
+    GrTexture* onGenerateTexture(GrContext* ctx, const SkIRect* subset) override {
         if (ctx) {
             SkASSERT(ctx == fCtx.get());
         }
@@ -112,7 +112,7 @@ protected:
         return fImage->readPixels(info, pixels, rowBytes, 0, 0);
     }
 
-    GrTexture* onGenerateTexture(GrContext* ctx, SkImageUsageType, const SkIRect* subset) override {
+    GrTexture* onGenerateTexture(GrContext* ctx, const SkIRect* subset) override {
         // waiting on https://code.google.com/p/skia/issues/detail?id=4233
         return nullptr;
     }

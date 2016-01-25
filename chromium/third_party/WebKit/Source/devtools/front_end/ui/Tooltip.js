@@ -9,14 +9,15 @@
 WebInspector.Tooltip = function(doc)
 {
     this.element = doc.body.createChild("div");
-    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element);
-    this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/tooltip.css"));
+    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element, "ui/tooltip.css");
 
     this._tooltipElement = this._shadowRoot.createChild("div", "tooltip");
     doc.addEventListener("mousemove", this._mouseMove.bind(this), true);
     doc.addEventListener("mousedown", this._hide.bind(this, true), true);
-    doc.addEventListener("mouseout", this._hide.bind(this, true), true);
+    doc.addEventListener("mouseleave", this._hide.bind(this, false), true);
     doc.addEventListener("keydown", this._hide.bind(this, true), true);
+    WebInspector.zoomManager.addEventListener(WebInspector.ZoomManager.Events.ZoomChanged, this._reset, this);
+    doc.defaultView.addEventListener("resize", this._reset.bind(this), false);
 }
 
 WebInspector.Tooltip.Timing = {
@@ -37,7 +38,7 @@ WebInspector.Tooltip.prototype = {
             return;
 
         if (this._anchorElement && path.indexOf(this._anchorElement) === -1)
-            this._hide();
+            this._hide(false);
 
         for (var element of path) {
             if (element === this._anchorElement) {
@@ -105,6 +106,7 @@ WebInspector.Tooltip.prototype = {
         const pageMargin = 2;
         var cursorOffset = 10;
         this._tooltipElement.style.maxWidth = (containerOffsetWidth - pageMargin * 2) + "px";
+        this._tooltipElement.style.maxHeight = "";
         var tooltipWidth = this._tooltipElement.offsetWidth;
         var tooltipHeight = this._tooltipElement.offsetHeight;
         var anchorTooltipAtElement = this._anchorElement.nodeName === "BUTTON" || this._anchorElement.nodeName === "LABEL";
@@ -123,7 +125,7 @@ WebInspector.Tooltip.prototype = {
     },
 
     /**
-     * @param {boolean=} removeInstant
+     * @param {boolean} removeInstant
      */
     _hide: function(removeInstant)
     {
@@ -133,6 +135,14 @@ WebInspector.Tooltip.prototype = {
             this._tooltipLastClosed = Date.now();
         if (removeInstant)
             delete this._tooltipLastClosed;
+    },
+
+    _reset: function()
+    {
+        this._hide(true);
+        this._tooltipElement.positionAt(0, 0);
+        this._tooltipElement.style.maxWidth = "0";
+        this._tooltipElement.style.maxHeight = "0";
     }
 }
 

@@ -5,9 +5,12 @@
 #ifndef MEDIA_FORMATS_MP2T_MP2T_STREAM_PARSER_H_
 #define MEDIA_FORMATS_MP2T_MP2T_STREAM_PARSER_H_
 
+#include <stdint.h>
+
 #include <list>
 #include <map>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/base/audio_decoder_config.h"
@@ -40,7 +43,7 @@ class MEDIA_EXPORT Mp2tStreamParser : public StreamParser {
             const base::Closure& end_of_segment_cb,
             const scoped_refptr<MediaLog>& media_log) override;
   void Flush() override;
-  bool Parse(const uint8* buf, int size) override;
+  bool Parse(const uint8_t* buf, int size) override;
 
  private:
   typedef std::map<int, PidState*> PidMap;

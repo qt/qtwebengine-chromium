@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/MutationObserver.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -77,10 +76,7 @@ MutationObserver::~MutationObserver()
 
 void MutationObserver::observe(Node* node, const MutationObserverInit& observerInit, ExceptionState& exceptionState)
 {
-    if (!node) {
-        exceptionState.throwDOMException(NotFoundError, "The provided node was null.");
-        return;
-    }
+    ASSERT(node);
 
     MutationObserverOptions options = 0;
 

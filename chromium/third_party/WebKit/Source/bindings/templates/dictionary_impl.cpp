@@ -1,5 +1,4 @@
 {% include 'copyright_block.txt' %}
-#include "config.h"
 #include "{{cpp_class}}.h"
 
 {% for filename in cpp_includes %}
@@ -14,6 +13,10 @@ namespace blink {
     {% for member in members if member.cpp_default_value %}
     {{member.setter_name}}({{member.cpp_default_value}});
     {% endfor %}
+}
+
+{{cpp_class}}::~{{cpp_class}}()
+{
 }
 
 DEFINE_TRACE({{cpp_class}})

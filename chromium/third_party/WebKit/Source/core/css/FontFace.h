@@ -46,7 +46,7 @@
 namespace blink {
 
 class CSSFontFace;
-class CSSPrimitiveValue;
+class CSSValue;
 class DOMArrayBuffer;
 class DOMArrayBufferView;
 class Document;
@@ -121,11 +121,11 @@ private:
     FontFace(ExecutionContext*, const AtomicString& family, const FontFaceDescriptors&);
 
     void initCSSFontFace(Document*, PassRefPtrWillBeRawPtr<CSSValue> src);
-    void initCSSFontFace(const unsigned char* data, unsigned size);
+    void initCSSFontFace(const unsigned char* data, size_t);
     void setPropertyFromString(const Document*, const String&, CSSPropertyID, ExceptionState* = 0);
     bool setPropertyFromStyle(const StylePropertySet&, CSSPropertyID);
     bool setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue>, CSSPropertyID);
-    bool setFamilyValue(CSSPrimitiveValue*);
+    bool setFamilyValue(const CSSValue&);
     void loadInternal(ExecutionContext*);
     ScriptPromise fontStatusPromise(ScriptState*);
 
@@ -133,13 +133,13 @@ private:
 
     AtomicString m_family;
     String m_otsParseMessage;
-    RefPtrWillBeMember<CSSValue> m_src;
     RefPtrWillBeMember<CSSValue> m_style;
     RefPtrWillBeMember<CSSValue> m_weight;
     RefPtrWillBeMember<CSSValue> m_stretch;
     RefPtrWillBeMember<CSSValue> m_unicodeRange;
     RefPtrWillBeMember<CSSValue> m_variant;
     RefPtrWillBeMember<CSSValue> m_featureSettings;
+    RefPtrWillBeMember<CSSValue> m_display;
     LoadStatus m_status;
     PersistentWillBeMember<DOMException> m_error;
 

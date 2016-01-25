@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/opus/interface/opus_interface.h"
+#include "webrtc/modules/audio_coding/codecs/opus/opus_interface.h"
 #include "webrtc/modules/audio_coding/codecs/tools/audio_codec_speed_test.h"
 
 using ::std::string;
@@ -77,7 +77,7 @@ float OpusSpeedTest::DecodeABlock(const uint8_t* bit_stream,
   value = WebRtcOpus_Decode(opus_decoder_, bit_stream, encoded_bytes, out_data,
                             &audio_type);
   clocks = clock() - clocks;
-  EXPECT_EQ(output_length_sample_, value);
+  EXPECT_EQ(output_length_sample_, static_cast<size_t>(value));
   return 1000.0 * clocks / CLOCKS_PER_SEC;
 }
 

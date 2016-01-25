@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/xml/DocumentXSLT.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
@@ -34,7 +33,7 @@ public:
     using V8AbstractEventListener::deref;
 #endif
 
-    virtual bool operator==(const EventListener&)
+    bool operator==(const EventListener&) const override
     {
         return true;
     }
@@ -150,6 +149,8 @@ bool DocumentXSLT::processingInstructionInsertedIntoDocument(Document& document,
         return true;
 
     ScriptState* scriptState = ScriptState::forMainWorld(document.frame());
+    if (!scriptState)
+        return false;
     RefPtrWillBeRawPtr<DOMContentLoadedListener> listener = DOMContentLoadedListener::create(scriptState, pi);
     document.addEventListener(EventTypeNames::DOMContentLoaded, listener, false);
     ASSERT(!pi->eventListenerForXSLT());

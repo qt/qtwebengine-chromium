@@ -20,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/svg/SVGStyleElement.h"
 
 #include "core/MediaTypeNames.h"
@@ -32,8 +31,8 @@ namespace blink {
 
 static SVGStyleEventSender& styleErrorEventSender()
 {
-    DEFINE_STATIC_LOCAL(SVGStyleEventSender, sharedErrorEventSender, (EventTypeNames::error));
-    return sharedErrorEventSender;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<SVGStyleEventSender>, sharedErrorEventSender, (SVGStyleEventSender::create(EventTypeNames::error)));
+    return *sharedErrorEventSender;
 }
 
 inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser)
@@ -46,9 +45,9 @@ SVGStyleElement::~SVGStyleElement()
 {
 #if !ENABLE(OILPAN)
     StyleElement::clearDocumentData(document(), this);
-#endif
 
     styleErrorEventSender().cancelEvent(this);
+#endif
 }
 
 PassRefPtrWillBeRawPtr<SVGStyleElement> SVGStyleElement::create(Document& document, bool createdByParser)
@@ -103,7 +102,7 @@ void SVGStyleElement::setTitle(const AtomicString& title)
     setAttribute(SVGNames::titleAttr, title);
 }
 
-void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == SVGNames::titleAttr) {
         if (m_sheet)
@@ -112,7 +111,7 @@ void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicStri
         return;
     }
 
-    SVGElement::parseAttribute(name, value);
+    SVGElement::parseAttribute(name, oldValue, value);
 }
 
 void SVGStyleElement::finishParsingChildren()

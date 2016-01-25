@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/run_loop.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_message_enums.h"
@@ -16,6 +17,7 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -33,109 +35,27 @@ class PluginPowerSaverHelperTest : public RenderViewTest {
     return static_cast<RenderFrameImpl*>(view_->GetMainRenderFrame());
   }
 
-  PluginPowerSaverHelper* helper() {
-    return frame()->plugin_power_saver_helper();
-  }
-
-  blink::WebPluginParams MakeParams(const std::string& url,
-                                    const std::string& poster,
-                                    const std::string& width,
-                                    const std::string& height) {
-    const size_t size = 3;
-    blink::WebVector<blink::WebString> names(size);
-    blink::WebVector<blink::WebString> values(size);
-
-    blink::WebPluginParams params;
-    params.url = GURL(url);
-
-    params.attributeNames.swap(names);
-    params.attributeValues.swap(values);
-
-    params.attributeNames[0] = "poster";
-    params.attributeNames[1] = "height";
-    params.attributeNames[2] = "width";
-    params.attributeValues[0] = blink::WebString::fromUTF8(poster);
-    params.attributeValues[1] = blink::WebString::fromUTF8(height);
-    params.attributeValues[2] = blink::WebString::fromUTF8(width);
-
-    return params;
-  }
-
  protected:
   IPC::TestSink* sink_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginPowerSaverHelperTest);
 };
 
-TEST_F(PluginPowerSaverHelperTest, AllowSameOrigin) {
-  EXPECT_FALSE(
-      helper()->ShouldThrottleContent(url::Origin(GURL("http://same.com")),
-                                      url::Origin(GURL("http://same.com")),
-                                      kFlashPluginName, 100, 100, nullptr));
-  EXPECT_FALSE(
-      helper()->ShouldThrottleContent(url::Origin(GURL("http://same.com")),
-                                      url::Origin(GURL("http://same.com")),
-                                      kFlashPluginName, 1000, 1000, nullptr));
-}
-
-TEST_F(PluginPowerSaverHelperTest, DisallowCrossOriginUnlessLarge) {
-  bool cross_origin_main_content = false;
-  EXPECT_TRUE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 100, 100,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
-
-  EXPECT_FALSE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 1000, 1000,
-      &cross_origin_main_content));
-  EXPECT_TRUE(cross_origin_main_content);
-}
-
-TEST_F(PluginPowerSaverHelperTest, AlwaysAllowTinyContent) {
-  bool cross_origin_main_content = false;
-  EXPECT_FALSE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://same.com")), kFlashPluginName, 1, 1, nullptr));
-  EXPECT_FALSE(cross_origin_main_content);
-
-  EXPECT_FALSE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 1, 1,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
-
-  EXPECT_FALSE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 5, 5,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
-
-  EXPECT_TRUE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 10, 10,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
-}
-
 TEST_F(PluginPowerSaverHelperTest, TemporaryOriginWhitelist) {
-  bool cross_origin_main_content = false;
-  EXPECT_TRUE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 100, 100,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
+  EXPECT_EQ(RenderFrame::CONTENT_STATUS_PERIPHERAL,
+            frame()->GetPeripheralContentStatus(
+                url::Origin(GURL("http://same.com")),
+                url::Origin(GURL("http://other.com")), gfx::Size(100, 100)));
 
   // Clear out other messages so we find just the plugin power saver IPCs.
   sink_->ClearMessages();
 
-  helper()->WhitelistContentOrigin(url::Origin(GURL("http://other.com")));
-  EXPECT_FALSE(helper()->ShouldThrottleContent(
-      url::Origin(GURL("http://same.com")),
-      url::Origin(GURL("http://other.com")), kFlashPluginName, 100, 100,
-      &cross_origin_main_content));
-  EXPECT_FALSE(cross_origin_main_content);
+  frame()->WhitelistContentOrigin(url::Origin(GURL("http://other.com")));
+
+  EXPECT_EQ(RenderFrame::CONTENT_STATUS_ESSENTIAL_CROSS_ORIGIN_WHITELISTED,
+            frame()->GetPeripheralContentStatus(
+                url::Origin(GURL("http://same.com")),
+                url::Origin(GURL("http://other.com")), gfx::Size(100, 100)));
 
   // Test that we've sent an IPC to the browser.
   ASSERT_EQ(1u, sink_->message_count());
@@ -162,19 +82,19 @@ TEST_F(PluginPowerSaverHelperTest, UnthrottleOnExPostFactoWhitelist) {
 }
 
 TEST_F(PluginPowerSaverHelperTest, ClearWhitelistOnNavigate) {
-  helper()->WhitelistContentOrigin(url::Origin(GURL("http://other.com")));
+  frame()->WhitelistContentOrigin(url::Origin(GURL("http://other.com")));
 
-  EXPECT_FALSE(
-      helper()->ShouldThrottleContent(url::Origin(GURL("http://same.com")),
-                                      url::Origin(GURL("http://other.com")),
-                                      kFlashPluginName, 100, 100, nullptr));
+  EXPECT_EQ(RenderFrame::CONTENT_STATUS_ESSENTIAL_CROSS_ORIGIN_WHITELISTED,
+            frame()->GetPeripheralContentStatus(
+                url::Origin(GURL("http://same.com")),
+                url::Origin(GURL("http://other.com")), gfx::Size(100, 100)));
 
   LoadHTML("<html></html>");
 
-  EXPECT_TRUE(
-      helper()->ShouldThrottleContent(url::Origin(GURL("http://same.com")),
-                                      url::Origin(GURL("http://other.com")),
-                                      kFlashPluginName, 100, 100, nullptr));
+  EXPECT_EQ(RenderFrame::CONTENT_STATUS_PERIPHERAL,
+            frame()->GetPeripheralContentStatus(
+                url::Origin(GURL("http://same.com")),
+                url::Origin(GURL("http://other.com")), gfx::Size(100, 100)));
 }
 
 }  // namespace content

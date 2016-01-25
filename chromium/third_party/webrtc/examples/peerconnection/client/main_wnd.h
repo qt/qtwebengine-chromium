@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef PEERCONNECTION_SAMPLES_CLIENT_MAIN_WND_H_
-#define PEERCONNECTION_SAMPLES_CLIENT_MAIN_WND_H_
+#ifndef WEBRTC_EXAMPLES_PEERCONNECTION_CLIENT_MAIN_WND_H_
+#define WEBRTC_EXAMPLES_PEERCONNECTION_CLIENT_MAIN_WND_H_
 #pragma once
 
 #include <map>
@@ -60,7 +60,8 @@ class MainWindow {
 
   virtual void StartLocalRenderer(webrtc::VideoTrackInterface* local_video) = 0;
   virtual void StopLocalRenderer() = 0;
-  virtual void StartRemoteRenderer(webrtc::VideoTrackInterface* remote_video) = 0;
+  virtual void StartRemoteRenderer(
+      webrtc::VideoTrackInterface* remote_video) = 0;
   virtual void StopRemoteRenderer() = 0;
 
   virtual void QueueUIThreadCallback(int msg_id, void* data) = 0;
@@ -120,7 +121,7 @@ class MainWnd : public MainWindow {
     virtual void RenderFrame(const cricket::VideoFrame* frame);
 
     const BITMAPINFO& bmi() const { return bmi_; }
-    const uint8* image() const { return image_.get(); }
+    const uint8_t* image() const { return image_.get(); }
 
    protected:
     enum {
@@ -130,7 +131,7 @@ class MainWnd : public MainWindow {
 
     HWND wnd_;
     BITMAPINFO bmi_;
-    rtc::scoped_ptr<uint8[]> image_;
+    rtc::scoped_ptr<uint8_t[]> image_;
     CRITICAL_SECTION buffer_lock_;
     rtc::scoped_refptr<webrtc::VideoTrackInterface> rendered_track_;
   };
@@ -197,4 +198,4 @@ class MainWnd : public MainWindow {
 };
 #endif  // WIN32
 
-#endif  // PEERCONNECTION_SAMPLES_CLIENT_MAIN_WND_H_
+#endif  // WEBRTC_EXAMPLES_PEERCONNECTION_CLIENT_MAIN_WND_H_

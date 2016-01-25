@@ -26,7 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/accessibility/AXListBoxOption.h"
 
 #include "core/html/HTMLOptionElement.h"
@@ -138,19 +137,30 @@ bool AXListBoxOption::canSetSelectedAttribute() const
     return true;
 }
 
-String AXListBoxOption::stringValue() const
+String AXListBoxOption::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
 {
+    // If nameSources is non-null, relatedObjects is used in filling it in, so it must be non-null as well.
+    if (nameSources)
+        ASSERT(relatedObjects);
+
     if (!node())
         return String();
 
-    const AtomicString& ariaLabel = getAttribute(aria_labelAttr);
-    if (!ariaLabel.isNull())
-        return ariaLabel;
+    bool foundTextAlternative = false;
+    String textAlternative = ariaTextAlternative(recursive, inAriaLabelledByTraversal, visited, nameFrom, relatedObjects, nameSources, &foundTextAlternative);
+    if (foundTextAlternative && !nameSources)
+        return textAlternative;
 
-    if (isHTMLOptionElement(node()))
-        return toHTMLOptionElement(node())->text();
+    nameFrom = AXNameFromContents;
+    textAlternative = toHTMLOptionElement(node())->displayLabel();
+    if (nameSources) {
+        nameSources->append(NameSource(foundTextAlternative));
+        nameSources->last().type = nameFrom;
+        nameSources->last().text = textAlternative;
+        foundTextAlternative = true;
+    }
 
-    return String();
+    return textAlternative;
 }
 
 void AXListBoxOption::setSelected(bool selected)

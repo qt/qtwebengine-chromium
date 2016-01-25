@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/InlinePainter.h"
 
 #include "core/layout/LayoutBlock.h"
@@ -21,15 +20,15 @@ namespace blink {
 
 void InlinePainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled()) {
+    if (RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && !paintInfo.context.paintController().skippingCache()) {
         if (m_layoutInline.paintOffsetChanged(paintOffset)) {
-            paintInfo.context->displayItemList()->invalidatePaintOffset(m_layoutInline);
+            paintInfo.context.paintController().invalidatePaintOffset(m_layoutInline);
             LineBoxListPainter(*m_layoutInline.lineBoxes()).invalidateLineBoxPaintOffsets(paintInfo);
         }
         // Set previousPaintOffset here in case that m_layoutInline paints nothing and no
         // LayoutObjectDrawingRecorder updates its previousPaintOffset.
         // TODO(wangxianzhu): Integrate paint offset checking into new paint invalidation.
-        m_layoutInline.setPreviousPaintOffset(paintOffset);
+        m_layoutInline.mutableForPainting().setPreviousPaintOffset(paintOffset);
     }
 
     // FIXME: When Skia supports annotation rect covering (https://code.google.com/p/skia/issues/detail?id=3872),
@@ -37,11 +36,11 @@ void InlinePainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOf
     if (paintInfo.phase == PaintPhaseForeground && paintInfo.isPrinting())
         ObjectPainter(m_layoutInline).addPDFURLRectIfNeeded(paintInfo, paintOffset);
 
-    if (paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline || paintInfo.phase == PaintPhaseChildOutlines) {
+    if (shouldPaintSelfOutline(paintInfo.phase) || shouldPaintDescendantOutlines(paintInfo.phase)) {
         ObjectPainter painter(m_layoutInline);
-        if (paintInfo.phase != PaintPhaseSelfOutline)
+        if (shouldPaintDescendantOutlines(paintInfo.phase))
             painter.paintInlineChildrenOutlines(paintInfo, paintOffset);
-        if (paintInfo.phase != PaintPhaseChildOutlines && !m_layoutInline.isElementContinuation())
+        if (shouldPaintSelfOutline(paintInfo.phase) && !m_layoutInline.isElementContinuation())
             painter.paintOutline(paintInfo, paintOffset);
         return;
     }

@@ -4,14 +4,21 @@
 
 #include "content/browser/media/capture/desktop_capture_device.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
@@ -134,11 +141,10 @@ DesktopCaptureDevice::Core::Core(
     scoped_ptr<webrtc::DesktopCapturer> capturer,
     DesktopMediaID::Type type)
     : task_runner_(task_runner),
-      desktop_capturer_(capturer.Pass()),
+      desktop_capturer_(std::move(capturer)),
       capture_in_progress_(false),
       first_capture_returned_(false),
-      capturer_type_(type) {
-}
+      capturer_type_(type) {}
 
 DesktopCaptureDevice::Core::~Core() {
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -158,7 +164,7 @@ void DesktopCaptureDevice::Core::AllocateAndStart(
   DCHECK(client.get());
   DCHECK(!client_.get());
 
-  client_ = client.Pass();
+  client_ = std::move(client);
   requested_frame_rate_ = params.requested_format.frame_rate;
   resolution_chooser_.reset(new media::CaptureResolutionChooser(
       params.requested_format.frame_size,
@@ -206,9 +212,7 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
   capture_in_progress_ = false;
 
   if (!frame) {
-    std::string log("Failed to capture a frame.");
-    LOG(ERROR) << log;
-    client_->OnError(log);
+    client_->OnError(FROM_HERE, "Failed to capture a frame.");
     return;
   }
 
@@ -336,9 +340,9 @@ void DesktopCaptureDevice::Core::CaptureFrameAndScheduleNext() {
 
   // Limit frame-rate to reduce CPU consumption.
   base::TimeDelta capture_period = std::max(
-    (last_capture_duration * 100) / kMaximumCpuConsumptionPercentage,
-    base::TimeDelta::FromMicroseconds(static_cast<int64>(
-        1000000.0 / requested_frame_rate_ + 0.5 /* round to nearest int */)));
+      (last_capture_duration * 100) / kMaximumCpuConsumptionPercentage,
+      base::TimeDelta::FromMicroseconds(static_cast<int64_t>(
+          1000000.0 / requested_frame_rate_ + 0.5 /* round to nearest int */)));
 
   // Schedule a task for the next frame.
   capture_timer_.Start(FROM_HERE, capture_period - last_capture_duration,
@@ -404,9 +408,9 @@ scoped_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
 
   scoped_ptr<media::VideoCaptureDevice> result;
   if (capturer)
-    result.reset(new DesktopCaptureDevice(capturer.Pass(), source.type));
+    result.reset(new DesktopCaptureDevice(std::move(capturer), source.type));
 
-  return result.Pass();
+  return result;
 }
 
 DesktopCaptureDevice::~DesktopCaptureDevice() {
@@ -454,7 +458,7 @@ DesktopCaptureDevice::DesktopCaptureDevice(
 
   thread_.StartWithOptions(base::Thread::Options(thread_type, 0));
 
-  core_.reset(new Core(thread_.task_runner(), capturer.Pass(), type));
+  core_.reset(new Core(thread_.task_runner(), std::move(capturer), type));
 }
 
 }  // namespace content

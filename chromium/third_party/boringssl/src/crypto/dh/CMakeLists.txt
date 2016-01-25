@@ -6,7 +6,6 @@ add_library(
   OBJECT
 
   dh.c
-  dh_impl.c
   params.c
   check.c
   dh_asn1.c
@@ -21,3 +20,4 @@ add_executable(
 )
 
 target_link_libraries(dh_test crypto)
+add_dependencies(all_tests dh_test)

@@ -11,8 +11,8 @@
 #include "SkRefCnt.h"
 #include "GrPathRendering.h"
 #include "GrStencil.h"
-#include "gl/GrGLFunctions.h"
-#include "gl/GrGLProgram.h"
+#include "gl/GrGLTypes.h"
+#include "glsl/GrGLSLUtil.h"
 
 class GrGLNameAllocator;
 class GrGLGpu;
@@ -94,7 +94,7 @@ private:
         /**
          * Gets a matrix that goes from local coordinates to GL normalized device coords.
          */
-        template<int Size> void getRTAdjustedGLMatrix(GrGLfloat* destMatrix) {
+        template<int Size> void getRTAdjustedGLMatrix(float* destMatrix) {
             SkMatrix combined;
             if (kBottomLeft_GrSurfaceOrigin == fRenderTargetOrigin) {
                 combined.setAll(SkIntToScalar(2) / fRenderTargetSize.fWidth, 0, -SK_Scalar1,
@@ -106,12 +106,13 @@ private:
                                 0, 0, 1);
             }
             combined.preConcat(fViewMatrix);
-            GrGLGetMatrix<Size>(destMatrix, combined);
+            GrGLSLGetMatrix<Size>(destMatrix, combined);
         }
     };
     GrGLGpu* gpu();
 
-    SkAutoTDelete<GrGLNameAllocator> fPathNameAllocator;
+    GrGLuint fFirstPreallocatedPathID;
+    GrGLsizei fPreallocatedPathCount;
     MatrixState fHWProjectionMatrixState;
     GrStencilSettings fHWPathStencilSettings;
     Caps fCaps;

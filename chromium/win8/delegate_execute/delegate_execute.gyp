@@ -11,6 +11,7 @@
   ],
   'targets': [
     {
+      # GN version: //win8/delegate_execute:version_resources
       'target_name': 'delegate_execute_version_resources',
       'type': 'none',
       'conditions': [
@@ -36,13 +37,13 @@
       ],
     },
     {
+      # GN version: //win8/delegate_execute
       'target_name': 'delegate_execute',
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
         '../../breakpad/breakpad.gyp:breakpad_handler',
         '../../chrome/chrome.gyp:installer_util',
-        '../../content/content.gyp:content_common',
         '../../google_update/google_update.gyp:google_update',
         '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
@@ -85,6 +86,7 @@
       ],
     },
     {
+      # GN version: //win8/delegate_execute:delegate_execute_unittests
       'target_name': 'delegate_execute_unittests',
       'type': 'executable',
       'dependencies': [

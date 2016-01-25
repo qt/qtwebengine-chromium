@@ -510,7 +510,7 @@ V8_VALUE_TO_CPP_VALUE = {
     'FlexibleArrayBufferView': 'toFlexibleArrayBufferView({isolate}, {v8_value}, {variable_name}, allocateFlexibleArrayBufferViewStorage({v8_value}))',
     'NodeFilter': 'toNodeFilter({v8_value}, info.Holder(), ScriptState::current({isolate}))',
     'Promise': 'ScriptPromise::cast(ScriptState::current({isolate}), {v8_value})',
-    'SerializedScriptValue': 'SerializedScriptValueFactory::instance().create({isolate}, {v8_value}, 0, 0, exceptionState)',
+    'SerializedScriptValue': 'SerializedScriptValueFactory::instance().create({isolate}, {v8_value}, nullptr, nullptr, nullptr, exceptionState)',
     'ScriptValue': 'ScriptValue(ScriptState::current({isolate}), {v8_value})',
     'Window': 'toDOMWindow({isolate}, {v8_value})',
     'XPathNSResolver': 'toXPathNSResolver(ScriptState::current({isolate}), {v8_value})',
@@ -583,9 +583,10 @@ def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, variable_name
         cpp_expression_format = (
             '{v8_value}->Is{idl_type}() ? '
             'V8{idl_type}::toImpl(v8::Local<v8::{idl_type}>::Cast({v8_value})) : 0')
+    elif idl_type.is_union_type:
+        nullable = 'UnionTypeConversionMode::Nullable' if idl_type.includes_nullable_type else 'UnionTypeConversionMode::NotNullable'
+        cpp_expression_format = 'V8{idl_type}::toImpl({isolate}, {v8_value}, {variable_name}, %s, exceptionState)' % nullable
     elif idl_type.use_output_parameter_for_result:
-        if idl_type.includes_nullable_type:
-            base_idl_type = idl_type.cpp_type + 'OrNull'
         cpp_expression_format = 'V8{idl_type}::toImpl({isolate}, {v8_value}, {variable_name}, exceptionState)'
     else:
         cpp_expression_format = (

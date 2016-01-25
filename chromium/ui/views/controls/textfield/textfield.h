@@ -5,10 +5,13 @@
 #ifndef UI_VIEWS_CONTROLS_TEXTFIELD_TEXTFIELD_H_
 #define UI_VIEWS_CONTROLS_TEXTFIELD_TEXTFIELD_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -225,7 +228,7 @@ class VIEWS_EXPORT Textfield : public View,
   bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) override;
   bool GetDropFormats(
       int* formats,
-      std::set<ui::OSExchangeData::CustomFormat>* custom_formats) override;
+      std::set<ui::Clipboard::FormatType>* format_types) override;
   bool CanDrop(const ui::OSExchangeData& data) override;
   int OnDragUpdated(const ui::DropTargetEvent& event) override;
   void OnDragExited() override;
@@ -284,13 +287,13 @@ class VIEWS_EXPORT Textfield : public View,
   void ConfirmCompositionText() override;
   void ClearCompositionText() override;
   void InsertText(const base::string16& text) override;
-  void InsertChar(base::char16 ch, int flags) override;
+  void InsertChar(const ui::KeyEvent& event) override;
   ui::TextInputType GetTextInputType() const override;
   ui::TextInputMode GetTextInputMode() const override;
   int GetTextInputFlags() const override;
   bool CanComposeInline() const override;
   gfx::Rect GetCaretBounds() const override;
-  bool GetCompositionCharacterBounds(uint32 index,
+  bool GetCompositionCharacterBounds(uint32_t index,
                                      gfx::Rect* rect) const override;
   bool HasCompositionText() const override;
   bool GetTextRange(gfx::Range* range) const override;

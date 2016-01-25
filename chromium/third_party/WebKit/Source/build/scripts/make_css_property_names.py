@@ -28,6 +28,7 @@ namespace blink {
 
 enum CSSPropertyID {
     CSSPropertyInvalid = 0,
+    CSSPropertyVariable = 1,
 %(property_enums)s
 };
 
@@ -44,7 +45,7 @@ WTF::String getJSPropertyName(CSSPropertyID);
 
 inline CSSPropertyID convertToCSSPropertyID(int value)
 {
-    ASSERT((value >= firstCSSProperty && value <= lastCSSProperty) || value == CSSPropertyInvalid);
+    ASSERT((value >= firstCSSProperty && value <= lastCSSProperty) || value == CSSPropertyInvalid || value == CSSPropertyVariable);
     return static_cast<CSSPropertyID>(value);
 }
 
@@ -77,7 +78,6 @@ GPERF_TEMPLATE = """
 %%{
 %(license)s
 
-#include "config.h"
 #include "%(class_name)s.h"
 #include "core/css/HashTools.h"
 #include <string.h>
@@ -85,6 +85,13 @@ GPERF_TEMPLATE = """
 #include "wtf/ASCIICType.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
+
+#ifdef _MSC_VER
+// Disable the warnings from casting a 64-bit pointer to 32-bit long
+// warning C4302: 'type cast': truncation from 'char (*)[28]' to 'long'
+// warning C4311: 'type cast': pointer truncation from 'char (*)[18]' to 'long'
+#pragma warning(disable : 4302 4311)
+#endif
 
 namespace blink {
 static const char propertyNameStringsPool[] = {

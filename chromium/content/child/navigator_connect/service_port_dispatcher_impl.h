@@ -5,11 +5,13 @@
 #ifndef CONTENT_CHILD_NAVIGATOR_CONNECT_SERVICE_PORT_DISPATCHER_IMPL_H_
 #define CONTENT_CHILD_NAVIGATOR_CONNECT_SERVICE_PORT_DISPATCHER_IMPL_H_
 
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/service_port_service.mojom.h"
 #include "content/public/child/worker_thread.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace blink {
 class WebServiceWorkerContextProxy;

@@ -5,13 +5,16 @@
 #include "media/base/video_frame.h"
 
 #include <algorithm>
+#include <climits>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/aligned_memory.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "media/base/limits.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_util.h"
@@ -44,6 +47,35 @@ static std::string ConfigToString(const VideoPixelFormat format,
       visible_rect.ToString().c_str(), natural_size.ToString().c_str());
 }
 
+static std::string StorageTypeToString(
+    const VideoFrame::StorageType storage_type) {
+  switch (storage_type) {
+    case VideoFrame::STORAGE_UNKNOWN:
+      return "UNKNOWN";
+    case VideoFrame::STORAGE_OPAQUE:
+      return "OPAQUE";
+    case VideoFrame::STORAGE_UNOWNED_MEMORY:
+      return "UNOWNED_MEMORY";
+    case VideoFrame::STORAGE_OWNED_MEMORY:
+      return "OWNED_MEMORY";
+    case VideoFrame::STORAGE_SHMEM:
+      return "SHMEM";
+#if defined(OS_LINUX)
+    case VideoFrame::STORAGE_DMABUFS:
+      return "DMABUFS";
+#endif
+#if defined(VIDEO_HOLE)
+    case VideoFrame::STORAGE_HOLE:
+      return "HOLE";
+#endif
+    case VideoFrame::STORAGE_GPU_MEMORY_BUFFERS:
+      return "GPU_MEMORY_BUFFERS";
+  }
+
+  NOTREACHED() << "Invalid StorageType provided: " << storage_type;
+  return "INVALID";
+}
+
 // Returns true if |plane| is a valid plane index for the given |format|.
 static bool IsValidPlane(size_t plane, VideoPixelFormat format) {
   DCHECK_LE(VideoFrame::NumPlanes(format),
@@ -62,7 +94,8 @@ static bool IsStorageTypeMappable(VideoFrame::StorageType storage_type) {
 #endif
       (storage_type == VideoFrame::STORAGE_UNOWNED_MEMORY ||
        storage_type == VideoFrame::STORAGE_OWNED_MEMORY ||
-       storage_type == VideoFrame::STORAGE_SHMEM);
+       storage_type == VideoFrame::STORAGE_SHMEM ||
+       storage_type == VideoFrame::STORAGE_GPU_MEMORY_BUFFERS);
 }
 
 // Returns the pixel size per element for given |plane| and |format|. E.g. 2x2
@@ -162,13 +195,15 @@ bool VideoFrame::IsValidConfig(VideoPixelFormat format,
                                const gfx::Rect& visible_rect,
                                const gfx::Size& natural_size) {
   // Check maximum limits for all formats.
-  if (coded_size.GetArea() > limits::kMaxCanvas ||
+  int coded_size_area = coded_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  int natural_size_area = natural_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  static_assert(limits::kMaxCanvas < INT_MAX, "");
+  if (coded_size_area > limits::kMaxCanvas ||
       coded_size.width() > limits::kMaxDimension ||
-      coded_size.height() > limits::kMaxDimension ||
-      visible_rect.x() < 0 || visible_rect.y() < 0 ||
-      visible_rect.right() > coded_size.width() ||
+      coded_size.height() > limits::kMaxDimension || visible_rect.x() < 0 ||
+      visible_rect.y() < 0 || visible_rect.right() > coded_size.width() ||
       visible_rect.bottom() > coded_size.height() ||
-      natural_size.GetArea() > limits::kMaxCanvas ||
+      natural_size_area > limits::kMaxCanvas ||
       natural_size.width() > limits::kMaxDimension ||
       natural_size.height() > limits::kMaxDimension)
     return false;
@@ -222,16 +257,15 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
-  if (format != PIXEL_FORMAT_ARGB &&
-      format != PIXEL_FORMAT_UYVY &&
-      format != PIXEL_FORMAT_NV12) {
-    DLOG(ERROR) << "Unsupported pixel format supported, got "
+  if (format != PIXEL_FORMAT_ARGB && format != PIXEL_FORMAT_XRGB &&
+      format != PIXEL_FORMAT_UYVY && format != PIXEL_FORMAT_NV12) {
+    LOG(DFATAL) << "Unsupported pixel format supported, got "
                 << VideoPixelFormatToString(format);
     return nullptr;
   }
   const StorageType storage = STORAGE_OPAQUE;
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -256,7 +290,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapYUV420NativeTextures(
   const StorageType storage = STORAGE_OPAQUE;
   VideoPixelFormat format = PIXEL_FORMAT_I420;
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -276,7 +310,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalData(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    uint8* data,
+    uint8_t* data,
     size_t data_size,
     base::TimeDelta timestamp) {
   return WrapExternalStorage(format, STORAGE_UNOWNED_MEMORY, coded_size,
@@ -290,7 +324,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalSharedMemory(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    uint8* data,
+    uint8_t* data,
     size_t data_size,
     base::SharedMemoryHandle handle,
     size_t data_offset,
@@ -306,16 +340,16 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    int32 y_stride,
-    int32 u_stride,
-    int32 v_stride,
-    uint8* y_data,
-    uint8* u_data,
-    uint8* v_data,
+    int32_t y_stride,
+    int32_t u_stride,
+    int32_t v_stride,
+    uint8_t* y_data,
+    uint8_t* u_data,
+    uint8_t* v_data,
     base::TimeDelta timestamp) {
   const StorageType storage = STORAGE_UNOWNED_MEMORY;
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -329,6 +363,44 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
   frame->data_[kYPlane] = y_data;
   frame->data_[kUPlane] = u_data;
   frame->data_[kVPlane] = v_data;
+  return frame;
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvGpuMemoryBuffers(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    int32_t y_stride,
+    int32_t u_stride,
+    int32_t v_stride,
+    uint8_t* y_data,
+    uint8_t* u_data,
+    uint8_t* v_data,
+    const gfx::GpuMemoryBufferHandle& y_handle,
+    const gfx::GpuMemoryBufferHandle& u_handle,
+    const gfx::GpuMemoryBufferHandle& v_handle,
+    base::TimeDelta timestamp) {
+  const StorageType storage = STORAGE_GPU_MEMORY_BUFFERS;
+  if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
+                << ConfigToString(format, storage, coded_size, visible_rect,
+                                  natural_size);
+    return nullptr;
+  }
+
+  scoped_refptr<VideoFrame> frame(new VideoFrame(
+      format, storage, coded_size, visible_rect, natural_size, timestamp));
+  frame->strides_[kYPlane] = y_stride;
+  frame->strides_[kUPlane] = u_stride;
+  frame->strides_[kVPlane] = v_stride;
+  frame->data_[kYPlane] = y_data;
+  frame->data_[kUPlane] = u_data;
+  frame->data_[kVPlane] = v_data;
+  frame->gpu_memory_buffer_handles_.push_back(y_handle);
+  frame->gpu_memory_buffer_handles_.push_back(u_handle);
+  frame->gpu_memory_buffer_handles_.push_back(v_handle);
   return frame;
 }
 
@@ -347,7 +419,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
 
   const StorageType storage = STORAGE_DMABUFS;
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -357,8 +429,10 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
   scoped_refptr<VideoFrame> frame =
       new VideoFrame(format, storage, coded_size, visible_rect, natural_size,
                      mailbox_holders, ReleaseMailboxCB(), timestamp);
-  if (!frame || !frame->DuplicateFileDescriptors(dmabuf_fds))
+  if (!frame || !frame->DuplicateFileDescriptors(dmabuf_fds)) {
+    LOG(DFATAL) << __FUNCTION__ << " Couldn't duplicate fds.";
     return nullptr;
+  }
   return frame;
 }
 #endif
@@ -383,7 +457,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapCVPixelBuffer(
     // minimum OS X and iOS SDKs permits it.
     format = PIXEL_FORMAT_NV12;
   } else {
-    DLOG(ERROR) << "CVPixelBuffer format not supported: " << cv_format;
+    LOG(DFATAL) << "CVPixelBuffer format not supported: " << cv_format;
     return nullptr;
   }
 
@@ -393,7 +467,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapCVPixelBuffer(
   const StorageType storage = STORAGE_UNOWNED_MEMORY;
 
   if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -420,7 +494,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
 
   if (!IsValidConfig(frame->format(), frame->storage_type(),
                      frame->coded_size(), visible_rect, natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(frame->format(), frame->storage_type(),
                                   frame->coded_size(), visible_rect,
                                   natural_size);
@@ -446,10 +520,15 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
     std::vector<int> original_fds;
     for (size_t i = 0; i < kMaxPlanes; ++i)
       original_fds.push_back(frame->dmabuf_fd(i));
-    if (!wrapping_frame->DuplicateFileDescriptors(original_fds))
+    if (!wrapping_frame->DuplicateFileDescriptors(original_fds)) {
+      LOG(DFATAL) << __FUNCTION__ << " Couldn't duplicate fds.";
       return nullptr;
+    }
   }
 #endif
+
+  if (frame->storage_type() == STORAGE_SHMEM)
+    wrapping_frame->AddSharedMemoryHandle(frame->shared_memory_handle_);
 
   return wrapping_frame;
 }
@@ -466,7 +545,9 @@ scoped_refptr<VideoFrame> VideoFrame::CreateEOSFrame() {
 // static
 scoped_refptr<VideoFrame> VideoFrame::CreateColorFrame(
     const gfx::Size& size,
-    uint8 y, uint8 u, uint8 v,
+    uint8_t y,
+    uint8_t u,
+    uint8_t v,
     base::TimeDelta timestamp) {
   scoped_refptr<VideoFrame> frame =
       CreateFrame(PIXEL_FORMAT_YV12, size, gfx::Rect(size), size, timestamp);
@@ -476,8 +557,8 @@ scoped_refptr<VideoFrame> VideoFrame::CreateColorFrame(
 
 // static
 scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(const gfx::Size& size) {
-  const uint8 kBlackY = 0x00;
-  const uint8 kBlackUV = 0x80;
+  const uint8_t kBlackY = 0x00;
+  const uint8_t kBlackUV = 0x80;
   const base::TimeDelta kZero;
   return CreateColorFrame(size, kBlackY, kBlackUV, kBlackUV, kZero);
 }
@@ -485,9 +566,9 @@ scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(const gfx::Size& size) {
 // static
 scoped_refptr<VideoFrame> VideoFrame::CreateTransparentFrame(
     const gfx::Size& size) {
-  const uint8 kBlackY = 0x00;
-  const uint8 kBlackUV = 0x00;
-  const uint8 kTransparentA = 0x00;
+  const uint8_t kBlackY = 0x00;
+  const uint8_t kBlackUV = 0x00;
+  const uint8_t kTransparentA = 0x00;
   const base::TimeDelta kZero;
   scoped_refptr<VideoFrame> frame =
       CreateFrame(PIXEL_FORMAT_YV12A, size, gfx::Rect(size), size, kZero);
@@ -507,7 +588,7 @@ scoped_refptr<VideoFrame> VideoFrame::CreateHoleFrame(
   const StorageType storage = STORAGE_HOLE;
   const gfx::Rect visible_rect = gfx::Rect(size);
   if (!IsValidConfig(format, storage, size, visible_rect, size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, size, visible_rect, size);
     return nullptr;
   }
@@ -651,19 +732,19 @@ int VideoFrame::rows(size_t plane) const {
   return Rows(plane, format_, coded_size_.height());
 }
 
-const uint8* VideoFrame::data(size_t plane) const {
+const uint8_t* VideoFrame::data(size_t plane) const {
   DCHECK(IsValidPlane(plane, format_));
   DCHECK(IsMappable());
   return data_[plane];
 }
 
-uint8* VideoFrame::data(size_t plane) {
+uint8_t* VideoFrame::data(size_t plane) {
   DCHECK(IsValidPlane(plane, format_));
   DCHECK(IsMappable());
   return data_[plane];
 }
 
-const uint8* VideoFrame::visible_data(size_t plane) const {
+const uint8_t* VideoFrame::visible_data(size_t plane) const {
   DCHECK(IsValidPlane(plane, format_));
   DCHECK(IsMappable());
 
@@ -681,8 +762,8 @@ const uint8* VideoFrame::visible_data(size_t plane) const {
              (offset.x() / subsample.width());
 }
 
-uint8* VideoFrame::visible_data(size_t plane) {
-  return const_cast<uint8*>(
+uint8_t* VideoFrame::visible_data(size_t plane) {
+  return const_cast<uint8_t*>(
       static_cast<const VideoFrame*>(this)->visible_data(plane));
 }
 
@@ -703,6 +784,13 @@ size_t VideoFrame::shared_memory_offset() const {
   DCHECK_EQ(storage_type_, STORAGE_SHMEM);
   DCHECK(shared_memory_handle_ != base::SharedMemory::NULLHandle());
   return shared_memory_offset_;
+}
+
+const std::vector<gfx::GpuMemoryBufferHandle>&
+VideoFrame::gpu_memory_buffer_handles() const {
+  DCHECK_EQ(storage_type_, STORAGE_GPU_MEMORY_BUFFERS);
+  DCHECK(!gpu_memory_buffer_handles_.empty());
+  return gpu_memory_buffer_handles_;
 }
 
 #if defined(OS_LINUX)
@@ -756,15 +844,29 @@ void VideoFrame::AddDestructionObserver(const base::Closure& callback) {
   done_callbacks_.push_back(callback);
 }
 
-void VideoFrame::UpdateReleaseSyncPoint(SyncPointClient* client) {
+void VideoFrame::UpdateReleaseSyncToken(SyncTokenClient* client) {
   DCHECK(HasTextures());
-  base::AutoLock locker(release_sync_point_lock_);
+  base::AutoLock locker(release_sync_token_lock_);
   // Must wait on the previous sync point before inserting a new sync point so
   // that |mailbox_holders_release_cb_| guarantees the previous sync point
-  // occurred when it waits on |release_sync_point_|.
-  if (release_sync_point_)
-    client->WaitSyncPoint(release_sync_point_);
-  release_sync_point_ = client->InsertSyncPoint();
+  // occurred when it waits on |release_sync_token_|.
+  if (release_sync_token_.HasData())
+    client->WaitSyncToken(release_sync_token_);
+  client->GenerateSyncToken(&release_sync_token_);
+}
+
+std::string VideoFrame::AsHumanReadableString() {
+  if (metadata()->IsTrue(media::VideoFrameMetadata::END_OF_STREAM))
+    return "end of stream";
+
+  std::ostringstream s;
+  s << "format: " << VideoPixelFormatToString(format_)
+    << " storage_type: " << StorageTypeToString(storage_type_)
+    << " coded_size: " << coded_size_.ToString()
+    << " visible_rect: " << visible_rect_.ToString()
+    << " natural_size: " << natural_size_.ToString()
+    << " timestamp: " << timestamp_.InMicroseconds();
+  return s.str();
 }
 
 // static
@@ -774,22 +876,24 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalStorage(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    uint8* data,
+    uint8_t* data,
     size_t data_size,
     base::TimeDelta timestamp,
     base::SharedMemoryHandle handle,
     size_t data_offset) {
   DCHECK(IsStorageTypeMappable(storage_type));
 
+  // TODO(miu): This function should support any pixel format.
+  // http://crbug.com/555909
   if (format != PIXEL_FORMAT_I420) {
-    DLOG(ERROR) << "Only PIXEL_FORMAT_I420 format supported: "
+    LOG(DFATAL) << "Only PIXEL_FORMAT_I420 format supported: "
                 << VideoPixelFormatToString(format);
     return nullptr;
   }
 
   if (!IsValidConfig(format, storage_type, coded_size, visible_rect,
                      natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage_type, coded_size,
                                   visible_rect, natural_size);
     return nullptr;
@@ -804,6 +908,10 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalStorage(
                            natural_size, timestamp);
   }
   frame->strides_[kYPlane] = coded_size.width();
+  // TODO(miu): This always rounds widths down, whereas VideoFrame::RowBytes()
+  // always rounds up.  This inconsistency must be resolved.  Perhaps a
+  // CommonAlignment() check should be made in IsValidConfig()?
+  // http://crbug.com/555909
   frame->strides_[kUPlane] = coded_size.width() / 2;
   frame->strides_[kVPlane] = coded_size.width() / 2;
   frame->data_[kYPlane] = data;
@@ -825,8 +933,7 @@ VideoFrame::VideoFrame(VideoPixelFormat format,
       natural_size_(natural_size),
       shared_memory_handle_(base::SharedMemory::NULLHandle()),
       shared_memory_offset_(0),
-      timestamp_(timestamp),
-      release_sync_point_(0) {
+      timestamp_(timestamp) {
   DCHECK(IsValidConfig(format_, storage_type, coded_size_, visible_rect_,
                        natural_size_));
   memset(&mailbox_holders_, 0, sizeof(mailbox_holders_));
@@ -873,14 +980,14 @@ VideoFrame::VideoFrame(VideoPixelFormat format,
 
 VideoFrame::~VideoFrame() {
   if (!mailbox_holders_release_cb_.is_null()) {
-    uint32 release_sync_point;
+    gpu::SyncToken release_sync_token;
     {
-      // To ensure that changes to |release_sync_point_| are visible on this
+      // To ensure that changes to |release_sync_token_| are visible on this
       // thread (imply a memory barrier).
-      base::AutoLock locker(release_sync_point_lock_);
-      release_sync_point = release_sync_point_;
+      base::AutoLock locker(release_sync_token_lock_);
+      release_sync_token = release_sync_token_;
     }
-    base::ResetAndReturn(&mailbox_holders_release_cb_).Run(release_sync_point);
+    base::ResetAndReturn(&mailbox_holders_release_cb_).Run(release_sync_token);
   }
 
   for (auto& callback : done_callbacks_)
@@ -914,7 +1021,7 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrameInternal(
   const StorageType storage = STORAGE_OWNED_MEMORY;
   if (!IsValidConfig(format, storage, new_coded_size, visible_rect,
                      natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+    LOG(DFATAL) << __FUNCTION__ << " Invalid config."
                 << ConfigToString(format, storage, coded_size, visible_rect,
                                   natural_size);
     return nullptr;
@@ -950,7 +1057,7 @@ void VideoFrame::AllocateYUV(bool zero_initialize_memory) {
   DCHECK(IsValidPlane(kUPlane, format_));
   data_size += strides_[kUPlane] + kFrameSizePadding;
 
-  uint8* data = reinterpret_cast<uint8*>(
+  uint8_t* data = reinterpret_cast<uint8_t*>(
       base::AlignedAlloc(data_size, kFrameAddressAlignment));
   if (zero_initialize_memory)
     memset(data, 0, data_size);

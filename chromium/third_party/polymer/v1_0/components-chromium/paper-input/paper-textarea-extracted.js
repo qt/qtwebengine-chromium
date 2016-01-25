@@ -1,5 +1,4 @@
-
-  Polymer({
+Polymer({
     is: 'paper-textarea',
 
     behaviors: [
@@ -49,5 +48,9 @@
 
     _ariaDescribedByChanged: function(ariaDescribedBy) {
       this.$.input.textarea.setAttribute('aria-describedby', ariaDescribedBy);
-    }
+    },
+
+    get _focusableElement() {
+      return this.$.input.textarea;
+    },
   });

@@ -43,6 +43,7 @@
 #include "mpegutils.h"
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
+#include "profiles.h"
 #include "thread.h"
 #include "version.h"
 #include "vdpau_compat.h"
@@ -93,13 +94,6 @@ static const uint32_t btype2mb_type[11] = {
     MB_TYPE_QUANT | MB_TYPE_L1   | MB_TYPE_CBP,
     MB_TYPE_QUANT | MB_TYPE_L0   | MB_TYPE_CBP,
     MB_TYPE_QUANT | MB_TYPE_L0L1 | MB_TYPE_CBP,
-};
-
-static const uint8_t non_linear_qscale[32] = {
-     0,  1,  2,  3,  4,  5,   6,   7,
-     8, 10, 12, 14, 16, 18,  20,  22,
-    24, 28, 32, 36, 40, 44,  48,  52,
-    56, 64, 72, 80, 88, 96, 104, 112,
 };
 
 /* as H.263, but only 17 codes */
@@ -718,7 +712,7 @@ static inline int get_qscale(MpegEncContext *s)
 {
     int qscale = get_bits(&s->gb, 5);
     if (s->q_scale_type)
-        return non_linear_qscale[qscale];
+        return ff_mpeg2_non_linear_qscale[qscale];
     else
         return qscale << 1;
 }
@@ -1136,6 +1130,7 @@ static av_cold int mpeg_decode_init(AVCodecContext *avctx)
     ff_mpeg12_common_init(&s->mpeg_enc_ctx);
     ff_mpeg12_init_vlcs();
 
+    s2->chroma_format              = 1;
     s->mpeg_enc_ctx_allocated      = 0;
     s->mpeg_enc_ctx.picture_number = 0;
     s->repeat_field                = 0;
@@ -1144,6 +1139,7 @@ static av_cold int mpeg_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
+#if HAVE_THREADS
 static int mpeg_decode_update_thread_context(AVCodecContext *avctx,
                                              const AVCodecContext *avctx_from)
 {
@@ -1168,6 +1164,7 @@ static int mpeg_decode_update_thread_context(AVCodecContext *avctx,
 
     return 0;
 }
+#endif
 
 static void quant_matrix_rebuild(uint16_t *matrix, const uint8_t *old_perm,
                                  const uint8_t *new_perm)
@@ -1952,7 +1949,7 @@ static int mpeg_decode_slice(MpegEncContext *s, int mb_y,
                     (left && show_bits(&s->gb, FFMIN(left, 23)) && !is_d10) ||
                     ((avctx->err_recognition & (AV_EF_BITSTREAM | AV_EF_AGGRESSIVE)) && left > 8)) {
                     av_log(avctx, AV_LOG_ERROR, "end mismatch left=%d %0X\n",
-                           left, show_bits(&s->gb, FFMIN(left, 23)));
+                           left, left>0 ? show_bits(&s->gb, FFMIN(left, 23)) : 0);
                     return AVERROR_INVALIDDATA;
                 } else
                     goto eos;
@@ -2858,18 +2855,6 @@ static av_cold int mpeg_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-static const AVProfile mpeg2_video_profiles[] = {
-    { FF_PROFILE_MPEG2_422,          "4:2:2"              },
-    { FF_PROFILE_MPEG2_HIGH,         "High"               },
-    { FF_PROFILE_MPEG2_SS,           "Spatially Scalable" },
-    { FF_PROFILE_MPEG2_SNR_SCALABLE, "SNR Scalable"       },
-    { FF_PROFILE_MPEG2_MAIN,         "Main"               },
-    { FF_PROFILE_MPEG2_SIMPLE,       "Simple"             },
-    { FF_PROFILE_RESERVED,           "Reserved"           },
-    { FF_PROFILE_RESERVED,           "Reserved"           },
-    { FF_PROFILE_UNKNOWN                                  },
-};
-
 AVCodec ff_mpeg1video_decoder = {
     .name                  = "mpeg1video",
     .long_name             = NULL_IF_CONFIG_SMALL("MPEG-1 video"),
@@ -2901,7 +2886,7 @@ AVCodec ff_mpeg2video_decoder = {
                       AV_CODEC_CAP_SLICE_THREADS,
     .flush          = flush,
     .max_lowres     = 3,
-    .profiles       = NULL_IF_CONFIG_SMALL(mpeg2_video_profiles),
+    .profiles       = NULL_IF_CONFIG_SMALL(ff_mpeg2_video_profiles),
 };
 
 //legacy decoder

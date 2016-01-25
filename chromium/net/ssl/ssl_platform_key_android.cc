@@ -6,13 +6,14 @@
 
 #include <openssl/digest.h>
 #include <openssl/evp.h>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
 #include "net/ssl/openssl_client_key_store.h"
+#include "net/ssl/ssl_platform_key_task_runner.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/ssl/threaded_ssl_private_key.h"
 
@@ -23,7 +24,7 @@ namespace {
 class SSLPlatformKeyAndroid : public ThreadedSSLPrivateKey::Delegate {
  public:
   SSLPlatformKeyAndroid(crypto::ScopedEVP_PKEY key, SSLPrivateKey::Type type)
-      : key_(key.Pass()), type_(type) {}
+      : key_(std::move(key)), type_(type) {}
 
   ~SSLPlatformKeyAndroid() override {}
 
@@ -79,19 +80,16 @@ class SSLPlatformKeyAndroid : public ThreadedSSLPrivateKey::Delegate {
         return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
     }
 
-    uint8_t* input_ptr =
-        const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(input.data()));
+    const uint8_t* input_ptr = reinterpret_cast<const uint8_t*>(input.data());
     size_t input_len = input.size();
     size_t sig_len = 0;
     if (!EVP_PKEY_sign(ctx.get(), NULL, &sig_len, input_ptr, input_len))
       return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
     signature->resize(sig_len);
-    uint8_t* sig = const_cast<uint8_t*>(
-        reinterpret_cast<const uint8_t*>(vector_as_array(signature)));
-    if (!sig)
+    if (!EVP_PKEY_sign(ctx.get(), signature->data(), &sig_len, input_ptr,
+                       input_len)) {
       return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
-    if (!EVP_PKEY_sign(ctx.get(), sig, &sig_len, input_ptr, input_len))
-      return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
+    }
 
     signature->resize(sig_len);
 
@@ -105,14 +103,7 @@ class SSLPlatformKeyAndroid : public ThreadedSSLPrivateKey::Delegate {
   DISALLOW_COPY_AND_ASSIGN(SSLPlatformKeyAndroid);
 };
 
-}  // namespace
-
-scoped_ptr<SSLPrivateKey> FetchClientCertPrivateKey(
-    X509Certificate* certificate,
-    scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  crypto::ScopedEVP_PKEY key =
-      OpenSSLClientKeyStore::GetInstance()->FetchClientCertPrivateKey(
-          certificate);
+scoped_refptr<SSLPrivateKey> WrapOpenSSLPrivateKey(crypto::ScopedEVP_PKEY key) {
   if (!key)
     return nullptr;
 
@@ -128,9 +119,19 @@ scoped_ptr<SSLPrivateKey> FetchClientCertPrivateKey(
       LOG(ERROR) << "Unknown key type: " << EVP_PKEY_id(key.get());
       return nullptr;
   }
-  return make_scoped_ptr(new ThreadedSSLPrivateKey(
-      make_scoped_ptr(new SSLPlatformKeyAndroid(key.Pass(), type)),
-      task_runner.Pass()));
+  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+      make_scoped_ptr(new SSLPlatformKeyAndroid(std::move(key), type)),
+      GetSSLPlatformKeyTaskRunner()));
+}
+
+}  // namespace
+
+scoped_refptr<SSLPrivateKey> FetchClientCertPrivateKey(
+    X509Certificate* certificate) {
+  crypto::ScopedEVP_PKEY key =
+      OpenSSLClientKeyStore::GetInstance()->FetchClientCertPrivateKey(
+          certificate);
+  return WrapOpenSSLPrivateKey(std::move(key));
 }
 
 }  // namespace net

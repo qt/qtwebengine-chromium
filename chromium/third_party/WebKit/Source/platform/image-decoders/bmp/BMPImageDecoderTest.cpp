@@ -2,18 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/image-decoders/bmp/BMPImageDecoder.h"
 
 #include "platform/SharedBuffer.h"
 #include "platform/image-decoders/ImageDecoderTestHelpers.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
 namespace {
 
-PassOwnPtr<BMPImageDecoder> createDecoder()
+PassOwnPtr<ImageDecoder> createDecoder()
 {
     return adoptPtr(new BMPImageDecoder(ImageDecoder::AlphaNotPremultiplied, ImageDecoder::GammaAndColorProfileApplied, ImageDecoder::noDecodedImageByteLimit));
 }
@@ -26,7 +25,7 @@ TEST(BMPImageDecoderTest, isSizeAvailable)
     RefPtr<SharedBuffer> data = readFile(bmpFile);
     ASSERT_TRUE(data.get());
 
-    OwnPtr<BMPImageDecoder> decoder = createDecoder();
+    OwnPtr<ImageDecoder> decoder = createDecoder();
     decoder->setData(data.get(), true);
     EXPECT_TRUE(decoder->isSizeAvailable());
     EXPECT_EQ(256, decoder->size().width());
@@ -39,7 +38,7 @@ TEST(BMPImageDecoderTest, parseAndDecode)
     RefPtr<SharedBuffer> data = readFile(bmpFile);
     ASSERT_TRUE(data.get());
 
-    OwnPtr<BMPImageDecoder> decoder = createDecoder();
+    OwnPtr<ImageDecoder> decoder = createDecoder();
     decoder->setData(data.get(), true);
 
     ImageFrame* frame = decoder->frameBufferAtIndex(0);
@@ -57,13 +56,23 @@ TEST(BMPImageDecoderTest, emptyImage)
     RefPtr<SharedBuffer> data = readFile(bmpFile);
     ASSERT_TRUE(data.get());
 
-    OwnPtr<BMPImageDecoder> decoder = createDecoder();
+    OwnPtr<ImageDecoder> decoder = createDecoder();
     decoder->setData(data.get(), true);
 
     ImageFrame* frame = decoder->frameBufferAtIndex(0);
     ASSERT_TRUE(frame);
     EXPECT_EQ(ImageFrame::FrameEmpty, frame->status());
     EXPECT_TRUE(decoder->failed());
+}
+
+// This test verifies that calling SharedBuffer::mergeSegmentsIntoBuffer() does
+// not break BMP decoding at a critical point: in between a call to decode the
+// size (when BMPImageDecoder stops while it may still have input data to
+// read) and a call to do a full decode.
+TEST(BMPImageDecoderTest, mergeBuffer)
+{
+    const char* bmpFile = "/LayoutTests/fast/images/resources/lenna.bmp";
+    testMergeBuffer(&createDecoder, bmpFile);
 }
 
 } // namespace blink

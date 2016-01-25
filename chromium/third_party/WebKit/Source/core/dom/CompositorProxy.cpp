@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/dom/CompositorProxy.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -12,42 +11,29 @@
 #include "core/dom/ExecutionContext.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebCompositorMutableProperties.h"
 #include "public/platform/WebTraceLocation.h"
+#include <algorithm>
 
 namespace blink {
 
-struct AttributeFlagMapping {
+static const struct {
     const char* name;
-    unsigned length;
-    CompositorProxy::Attributes attribute;
+    WebCompositorMutableProperty property;
+} allowedProperties[] = {
+    { "opacity", WebCompositorMutablePropertyOpacity },
+    { "scrollleft", WebCompositorMutablePropertyScrollLeft },
+    { "scrolltop", WebCompositorMutablePropertyScrollTop },
+    { "transform", WebCompositorMutablePropertyTransform },
 };
 
-static AttributeFlagMapping allowedAttributes[] = {
-    { "opacity", 7, CompositorProxy::Attributes::OPACITY },
-    { "scrollleft", 10, CompositorProxy::Attributes::SCROLL_LEFT },
-    { "scrolltop", 9, CompositorProxy::Attributes::SCROLL_TOP },
-    { "touch", 5, CompositorProxy::Attributes::TOUCH },
-    { "transform", 8, CompositorProxy::Attributes::TRANSFORM },
-};
-
-static bool CompareAttributeName(const AttributeFlagMapping& attribute, StringImpl* attributeLower)
+static WebCompositorMutableProperty compositorMutablePropertyForName(const String& attributeName)
 {
-    ASSERT(attributeLower->is8Bit());
-    return memcmp(attribute.name, attributeLower->characters8(), std::min(attribute.length, attributeLower->length())) < 0;
-}
-
-static CompositorProxy::Attributes attributeFlagForName(const String& attributeName)
-{
-    CompositorProxy::Attributes attributeFlag = CompositorProxy::Attributes::NONE;
-    const String attributeLower = attributeName.lower();
-    const AttributeFlagMapping* start = allowedAttributes;
-    const AttributeFlagMapping* end = allowedAttributes + WTF_ARRAY_LENGTH(allowedAttributes);
-    if (attributeLower.impl()->is8Bit()) {
-        const AttributeFlagMapping* match = std::lower_bound(start, end, attributeLower.impl(), CompareAttributeName);
-        if (match != end)
-            attributeFlag = match->attribute;
+    for (const auto& mapping : allowedProperties) {
+        if (equalIgnoringCase(mapping.name, attributeName))
+            return mapping.property;
     }
-    return attributeFlag;
+    return WebCompositorMutablePropertyNone;
 }
 
 static bool isControlThread()
@@ -61,24 +47,24 @@ static bool isCallingCompositorFrameCallback()
     return true;
 }
 
-static void decrementCountForElement(uint64_t elementId)
+static void decrementCompositorProxiedPropertiesForElement(uint64_t elementId, uint32_t compositorMutableProperties)
 {
     ASSERT(isMainThread());
     Node* node = DOMNodeIds::nodeForId(elementId);
     if (!node)
         return;
     Element* element = toElement(node);
-    element->decrementProxyCount();
+    element->decrementCompositorProxiedProperties(compositorMutableProperties);
 }
 
-static void incrementProxyCountForElement(uint64_t elementId)
+static void incrementCompositorProxiedPropertiesForElement(uint64_t elementId, uint32_t compositorMutableProperties)
 {
     ASSERT(isMainThread());
     Node* node = DOMNodeIds::nodeForId(elementId);
     if (!node)
         return;
     Element* element = toElement(node);
-    element->incrementProxyCount();
+    element->incrementCompositorProxiedProperties(compositorMutableProperties);
 }
 
 static bool raiseExceptionIfMutationNotAllowed(ExceptionState& exceptionState)
@@ -94,23 +80,24 @@ static bool raiseExceptionIfMutationNotAllowed(ExceptionState& exceptionState)
     return false;
 }
 
-static uint32_t attributesBitfieldFromNames(const Vector<String>& attributeArray)
+static uint32_t compositorMutablePropertiesFromNames(const Vector<String>& attributeArray)
 {
-    uint32_t attributesBitfield = 0;
+    uint32_t properties = 0;
     for (const auto& attribute : attributeArray) {
-        attributesBitfield |= static_cast<uint32_t>(attributeFlagForName(attribute));
+        properties |= static_cast<uint32_t>(compositorMutablePropertyForName(attribute));
     }
-    return attributesBitfield;
+    return properties;
 }
 
 #if ENABLE(ASSERT)
-static bool sanityCheckAttributeFlags(uint32_t attributeFlags)
+static bool sanityCheckMutableProperties(uint32_t properties)
 {
-    uint32_t sanityCheckAttributes = attributeFlags;
-    for (unsigned i = 0; i < arraysize(allowedAttributes); ++i) {
-        sanityCheckAttributes &= ~static_cast<uint32_t>(allowedAttributes[i].attribute);
+    // Ensures that we only have bits set for valid mutable properties.
+    uint32_t sanityCheckProperties = properties;
+    for (unsigned i = 0; i < WTF_ARRAY_LENGTH(allowedProperties); ++i) {
+        sanityCheckProperties &= ~static_cast<uint32_t>(allowedProperties[i].property);
     }
-    return !sanityCheckAttributes;
+    return !sanityCheckProperties;
 }
 #endif
 
@@ -125,29 +112,29 @@ CompositorProxy* CompositorProxy::create(ExecutionContext* context, Element* ele
     return new CompositorProxy(*element, attributeArray);
 }
 
-CompositorProxy* CompositorProxy::create(uint64_t elementId, uint32_t attributeFlags)
+CompositorProxy* CompositorProxy::create(uint64_t elementId, uint32_t compositorMutableProperties)
 {
-    return new CompositorProxy(elementId, attributeFlags);
+    return new CompositorProxy(elementId, compositorMutableProperties);
 }
 
 CompositorProxy::CompositorProxy(Element& element, const Vector<String>& attributeArray)
     : m_elementId(DOMNodeIds::idForNode(&element))
-    , m_bitfieldsSupported(attributesBitfieldFromNames(attributeArray))
+    , m_compositorMutableProperties(compositorMutablePropertiesFromNames(attributeArray))
 {
     ASSERT(isMainThread());
-    ASSERT(m_bitfieldsSupported);
-    ASSERT(sanityCheckAttributeFlags(m_bitfieldsSupported));
+    ASSERT(m_compositorMutableProperties);
+    ASSERT(sanityCheckMutableProperties(m_compositorMutableProperties));
 
-    incrementProxyCountForElement(m_elementId);
+    incrementCompositorProxiedPropertiesForElement(m_elementId, m_compositorMutableProperties);
 }
 
-CompositorProxy::CompositorProxy(uint64_t elementId, uint32_t attributeFlags)
+CompositorProxy::CompositorProxy(uint64_t elementId, uint32_t compositorMutableProperties)
     : m_elementId(elementId)
-    , m_bitfieldsSupported(attributeFlags)
+    , m_compositorMutableProperties(compositorMutableProperties)
 {
     ASSERT(isControlThread());
-    ASSERT(sanityCheckAttributeFlags(m_bitfieldsSupported));
-    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&incrementProxyCountForElement, m_elementId));
+    ASSERT(sanityCheckMutableProperties(m_compositorMutableProperties));
+    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&incrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
 }
 
 CompositorProxy::~CompositorProxy()
@@ -158,14 +145,14 @@ CompositorProxy::~CompositorProxy()
 
 bool CompositorProxy::supports(const String& attributeName) const
 {
-    return !!(m_bitfieldsSupported & static_cast<uint32_t>(attributeFlagForName(attributeName)));
+    return !!(m_compositorMutableProperties & static_cast<uint32_t>(compositorMutablePropertyForName(attributeName)));
 }
 
 double CompositorProxy::opacity(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(Attributes::OPACITY, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyOpacity), exceptionState))
         return 0.0;
     return m_opacity;
 }
@@ -174,7 +161,7 @@ double CompositorProxy::scrollLeft(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(Attributes::SCROLL_LEFT, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft), exceptionState))
         return 0.0;
     return m_scrollLeft;
 }
@@ -183,7 +170,7 @@ double CompositorProxy::scrollTop(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(Attributes::SCROLL_TOP, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop), exceptionState))
         return 0.0;
     return m_scrollTop;
 }
@@ -192,7 +179,7 @@ DOMMatrix* CompositorProxy::transform(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return nullptr;
-    if (raiseExceptionIfNotMutable(Attributes::TRANSFORM, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyTransform), exceptionState))
         return nullptr;
     return m_transform;
 }
@@ -201,45 +188,45 @@ void CompositorProxy::setOpacity(double opacity, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(Attributes::OPACITY, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyOpacity), exceptionState))
         return;
     m_opacity = std::min(1., std::max(0., opacity));
-    m_mutatedAttributes |= static_cast<uint32_t>(Attributes::OPACITY);
+    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyTransform);
 }
 
 void CompositorProxy::setScrollLeft(double scrollLeft, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(Attributes::SCROLL_LEFT, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft), exceptionState))
         return;
     m_scrollLeft = scrollLeft;
-    m_mutatedAttributes |= static_cast<uint32_t>(Attributes::SCROLL_LEFT);
+    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft);
 }
 
 void CompositorProxy::setScrollTop(double scrollTop, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(Attributes::SCROLL_TOP, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop), exceptionState))
         return;
     m_scrollTop = scrollTop;
-    m_mutatedAttributes |= static_cast<uint32_t>(Attributes::SCROLL_TOP);
+    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop);
 }
 
 void CompositorProxy::setTransform(DOMMatrix* transform, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(Attributes::TRANSFORM, exceptionState))
+    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyTransform), exceptionState))
         return;
     m_transform = transform;
-    m_mutatedAttributes |= static_cast<uint32_t>(Attributes::TRANSFORM);
+    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyTransform);
 }
 
-bool CompositorProxy::raiseExceptionIfNotMutable(Attributes attribute, ExceptionState& exceptionState) const
+bool CompositorProxy::raiseExceptionIfNotMutable(uint32_t property, ExceptionState& exceptionState) const
 {
-    if (m_connected && (m_bitfieldsSupported & static_cast<uint32_t>(attribute)))
+    if (m_connected && (m_compositorMutableProperties & property))
         return false;
     exceptionState.throwDOMException(NoModificationAllowedError,
         m_connected ? "Attempted to mutate non-mutable attribute." : "Attempted to mutate attribute on a disconnected proxy.");
@@ -250,9 +237,9 @@ void CompositorProxy::disconnect()
 {
     m_connected = false;
     if (isMainThread())
-        decrementCountForElement(m_elementId);
+        decrementCompositorProxiedPropertiesForElement(m_elementId, m_compositorMutableProperties);
     else
-        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&decrementCountForElement, m_elementId));
+        Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&decrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
 }
 
 } // namespace blink

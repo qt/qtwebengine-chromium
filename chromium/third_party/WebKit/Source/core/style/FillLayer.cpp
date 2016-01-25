@@ -19,7 +19,6 @@
  *
  */
 
-#include "config.h"
 #include "core/style/FillLayer.h"
 
 #include "core/style/DataEquivalency.h"
@@ -392,6 +391,22 @@ bool FillLayer::hasOpaqueImage(const LayoutObject* layoutObject) const
 bool FillLayer::hasRepeatXY() const
 {
     return m_repeatX == RepeatFill && m_repeatY == RepeatFill;
+}
+
+static inline bool layerImagesIdentical(const FillLayer& layer1, const FillLayer& layer2)
+{
+    // We just care about pointer equivalency.
+    return layer1.image() == layer2.image();
+}
+
+bool FillLayer::imagesIdentical(const FillLayer* layer1, const FillLayer* layer2)
+{
+    for (; layer1 && layer2; layer1 = layer1->next(), layer2 = layer2->next()) {
+        if (!layerImagesIdentical(*layer1, *layer2))
+            return false;
+    }
+
+    return !layer1 && !layer2;
 }
 
 } // namespace blink

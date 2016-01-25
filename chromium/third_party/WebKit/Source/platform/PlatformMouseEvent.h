@@ -28,10 +28,12 @@
 
 #include "platform/PlatformEvent.h"
 #include "platform/geometry/IntPoint.h"
+#include "public/platform/WebPointerProperties.h"
 
 namespace blink {
 
-// These button numbers match the ones used in the DOM API, 0 through 2, except for NoButton which isn't specified.
+// These button numbers match the ones used in the DOM API, 0 through 2, except for NoButton which is specified in PointerEvent
+// spec but not in MouseEvent spec.
 enum MouseButton { NoButton = -1, LeftButton, MiddleButton, RightButton };
 
 class PlatformMouseEvent : public PlatformEvent {
@@ -64,7 +66,7 @@ public:
     {
     }
 
-    PlatformMouseEvent(const IntPoint& position, const IntPoint& globalPosition, MouseButton button, PlatformEvent::Type type, int clickCount, Modifiers modifiers, SyntheticEventType synthesized, double timestamp)
+    PlatformMouseEvent(const IntPoint& position, const IntPoint& globalPosition, MouseButton button, PlatformEvent::Type type, int clickCount, Modifiers modifiers, SyntheticEventType synthesized, double timestamp, WebPointerProperties::PointerType pointerType = WebPointerProperties::PointerType::Unknown)
         : PlatformEvent(type, modifiers, timestamp)
         , m_position(position)
         , m_globalPosition(globalPosition)
@@ -72,18 +74,10 @@ public:
         , m_clickCount(clickCount)
         , m_synthesized(synthesized)
     {
+        m_pointerProperties.pointerType = pointerType;
     }
 
-    PlatformMouseEvent(const IntPoint& position, const IntPoint& globalPosition, MouseButton button, PlatformEvent::Type type, int clickCount, bool shiftKey, bool ctrlKey, bool altKey, bool metaKey, SyntheticEventType synthesized, double timestamp)
-        : PlatformEvent(type, shiftKey, ctrlKey, altKey, metaKey, timestamp)
-        , m_position(position)
-        , m_globalPosition(globalPosition)
-        , m_button(button)
-        , m_clickCount(clickCount)
-        , m_synthesized(synthesized)
-    {
-    }
-
+    const WebPointerProperties& pointerProperties() const { return m_pointerProperties; }
     const IntPoint& position() const { return m_position; }
     const IntPoint& globalPosition() const { return m_globalPosition; }
     const IntPoint& movementDelta() const { return m_movementDelta; }
@@ -94,8 +88,15 @@ public:
     SyntheticEventType syntheticEventType() const { return m_synthesized; }
 
 protected:
+    WebPointerProperties m_pointerProperties;
+
+    // In local root frame coordinates. (Except possibly if the Widget under
+    // the mouse is a popup, see FIXME in PlatformMouseEventBuilder).
     IntPoint m_position;
+
+    // In screen coordinates.
     IntPoint m_globalPosition;
+
     IntPoint m_movementDelta;
     MouseButton m_button;
     int m_clickCount;

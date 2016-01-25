@@ -60,7 +60,7 @@ public:
     // purged. Large values disable the feature (as the ring buffer of flush timestamps would be
     // large). This is currently the default until we decide to enable this feature
     // of the cache by default.
-    static const int    kDefaultMaxUnusedFlushes    = 1024;
+    static const int    kDefaultMaxUnusedFlushes    = 64;
 
     /** Used to access functionality needed by GrGpuResource for lifetime management. */
     class ResourceAccess;
@@ -182,8 +182,55 @@ public:
 
     void notifyFlushOccurred();
 
-#if GR_GPU_STATS
+#if GR_CACHE_STATS
+    struct Stats {
+        int fTotal;
+        int fNumPurgeable;
+        int fNumNonPurgeable;
+
+        int fScratch;
+        int fExternal;
+        int fBorrowed;
+        int fAdopted;
+        size_t fUnbudgetedSize;
+
+        Stats() { this->reset(); }
+
+        void reset() {
+            fTotal = 0;
+            fNumPurgeable = 0;
+            fNumNonPurgeable = 0;
+            fScratch = 0;
+            fExternal = 0;
+            fBorrowed = 0;
+            fAdopted = 0;
+            fUnbudgetedSize = 0;
+        }
+
+        void update(GrGpuResource* resource) {
+            if (resource->cacheAccess().isScratch()) {
+                ++fScratch;
+            }
+            if (resource->cacheAccess().isExternal()) {
+                ++fExternal;
+            }
+            if (resource->cacheAccess().isBorrowed()) {
+                ++fBorrowed;
+            }
+            if (resource->cacheAccess().isAdopted()) {
+                ++fAdopted;
+            }
+            if (!resource->resourcePriv().isBudgeted()) {
+                fUnbudgetedSize += resource->gpuMemorySize();
+            }
+        }
+    };
+
+    void getStats(Stats*) const;
+
     void dumpStats(SkString*) const;
+
+    void dumpStatsKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* value) const;
 #endif
 
     // This function is for unit testing and is only defined in test tools.

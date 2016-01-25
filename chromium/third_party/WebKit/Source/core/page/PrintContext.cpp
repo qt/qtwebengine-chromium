@@ -18,13 +18,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/page/PrintContext.h"
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutView.h"
-#include "third_party/skia/include/core/SkAnnotation.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace blink {
 
@@ -151,6 +150,9 @@ void PrintContext::computePageRectsWithPageSizeInternal(const FloatSize& pageSiz
 
 void PrintContext::begin(float width, float height)
 {
+    ASSERT(width > 0);
+    ASSERT(height > 0);
+
     // This function can be called multiple times to adjust printing parameters without going back to screen mode.
     m_isPrinting = true;
 
@@ -230,7 +232,7 @@ void PrintContext::collectLinkedDestinations(Node* node)
     }
 }
 
-void PrintContext::outputLinkedDestinations(SkCanvas* canvas, const IntRect& pageRect)
+void PrintContext::outputLinkedDestinations(GraphicsContext& context, const IntRect& pageRect)
 {
     if (!m_linkedDestinationsValid) {
         // Collect anchors in the top-level frame only because our PrintContext
@@ -244,13 +246,14 @@ void PrintContext::outputLinkedDestinations(SkCanvas* canvas, const IntRect& pag
         if (!layoutObject || !layoutObject->frameView())
             continue;
         IntRect boundingBox = layoutObject->absoluteBoundingBoxRect();
-        boundingBox = layoutObject->frameView()->convertToContainingWindow(boundingBox);
-        if (!pageRect.intersects(boundingBox))
+        // TODO(bokan): boundingBox looks to be in content coordinates but
+        // convertToRootFrame doesn't apply scroll offsets when converting up to
+        // the root frame.
+        IntPoint point = layoutObject->frameView()->convertToRootFrame(boundingBox.location());
+        if (!pageRect.contains(point))
             continue;
-        IntPoint point = boundingBox.minXMinYCorner();
         point.clampNegativeToZero();
-        SkAutoDataUnref nameData(SkData::NewWithCString(entry.key.utf8().data()));
-        SkAnnotateNamedDestination(canvas, SkPoint::Make(point.x(), point.y()), nameData);
+        context.setURLDestinationLocation(entry.key, point);
     }
 }
 
@@ -258,8 +261,9 @@ String PrintContext::pageProperty(LocalFrame* frame, const char* propertyName, i
 {
     Document* document = frame->document();
     PrintContext printContext(frame);
-    printContext.begin(800); // Any width is OK here.
-    document->updateLayout();
+    // Any non-zero size is OK here. We don't care about actual layout. We just want to collect
+    // @page rules and figure out what declarations apply on a given page (that may or may not exist).
+    printContext.begin(800, 1000);
     RefPtr<ComputedStyle> style = document->styleForPage(pageNumber);
 
     // Implement formatters for properties we care about.

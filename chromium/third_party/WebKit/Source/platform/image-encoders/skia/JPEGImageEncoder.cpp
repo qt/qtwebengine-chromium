@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/image-encoders/skia/JPEGImageEncoder.h"
 
 #include "SkColorPriv.h"
@@ -44,6 +43,7 @@ extern "C" {
 namespace blink {
 
 struct JPEGOutputBuffer : public jpeg_destination_mgr {
+    DISALLOW_NEW();
     Vector<unsigned char>* output;
     Vector<unsigned char> buffer;
 };

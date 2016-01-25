@@ -23,7 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/ColorChooserPopupUIController.h"
 
 #include "core/frame/FrameView.h"
@@ -47,15 +46,32 @@ enum ColorPickerPopupAction {
 ColorChooserPopupUIController::ColorChooserPopupUIController(LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
     : ColorChooserUIController(frame, client)
     , m_chromeClient(chromeClient)
-    , m_popup(0)
+    , m_popup(nullptr)
     , m_locale(Locale::defaultLocale())
 {
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
 }
 
 ColorChooserPopupUIController::~ColorChooserPopupUIController()
 {
+#if !ENABLE(OILPAN)
     closePopup();
+#endif
     // ~ColorChooserUIController ends the ColorChooser.
+}
+
+void ColorChooserPopupUIController::dispose()
+{
+    // Finalized earlier so as to access m_chromeClient while alive.
+    closePopup();
+}
+
+DEFINE_TRACE(ColorChooserPopupUIController)
+{
+    visitor->trace(m_chromeClient);
+    ColorChooserUIController::trace(visitor);
 }
 
 void ColorChooserPopupUIController::openUI()
@@ -76,12 +92,7 @@ void ColorChooserPopupUIController::endChooser()
 
 AXObject* ColorChooserPopupUIController::rootAXObject()
 {
-    return m_popup ? m_popup->rootAXObject() : 0;
-}
-
-IntSize ColorChooserPopupUIController::contentSize()
-{
-    return IntSize(0, 0);
+    return m_popup ? m_popup->rootAXObject() : nullptr;
 }
 
 void ColorChooserPopupUIController::writeDocument(SharedBuffer* data)
@@ -100,6 +111,7 @@ void ColorChooserPopupUIController::writeDocument(SharedBuffer* data)
     PagePopupClient::addProperty("values", suggestionValues, data);
     PagePopupClient::addProperty("otherColorLabel", locale().queryString(WebLocalizedString::OtherColorLabel), data);
     addProperty("anchorRectInScreen", anchorRectInScreen, data);
+    addProperty("zoomFactor", zoomFactor(), data);
     PagePopupClient::addString("};\n", data);
     data->append(Platform::current()->loadResource("pickerCommon.js"));
     data->append(Platform::current()->loadResource("colorSuggestionPicker.js"));
@@ -133,7 +145,7 @@ void ColorChooserPopupUIController::setValue(const String& value)
 
 void ColorChooserPopupUIController::didClosePopup()
 {
-    m_popup = 0;
+    m_popup = nullptr;
 
     if (!m_chooser)
         didEndChooser();

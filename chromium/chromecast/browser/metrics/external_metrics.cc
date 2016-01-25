@@ -4,6 +4,8 @@
 
 #include "chromecast/browser/metrics/external_metrics.h"
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/bind.h"
@@ -76,6 +78,15 @@ void ExternalMetrics::Start() {
   DCHECK(result);
 }
 
+void ExternalMetrics::ProcessExternalEvents(const base::Closure& cb) {
+  content::BrowserThread::PostTaskAndReply(
+      content::BrowserThread::FILE, FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&ExternalMetrics::CollectEvents),
+          weak_factory_.GetWeakPtr()),
+      cb);
+}
+
 void ExternalMetrics::RecordCrash(const std::string& crash_kind) {
   content::BrowserThread::PostTask(
       content::BrowserThread::UI,
@@ -120,7 +131,8 @@ int ExternalMetrics::CollectEvents() {
                                              sample.sample(),
                                              sample.min(),
                                              sample.max(),
-                                             sample.bucket_count());
+                                             sample.bucket_count(),
+                                             1);
         break;
       case ::metrics::MetricSample::LINEAR_HISTOGRAM:
         if (!CheckLinearValues(sample.name(), sample.max())) {

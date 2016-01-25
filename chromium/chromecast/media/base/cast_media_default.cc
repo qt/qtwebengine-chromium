@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/build_config.h"
 #include "chromecast/media/cma/backend/media_pipeline_backend_default.h"
 #include "chromecast/public/cast_media_shlib.h"
 #include "chromecast/public/graphics_types.h"
@@ -39,7 +40,7 @@ VideoPlane* CastMediaShlib::GetVideoPlane() {
 
 MediaPipelineBackend* CastMediaShlib::CreateMediaPipelineBackend(
     const MediaPipelineDeviceParams& params) {
-  return new MediaPipelineBackendDefault(params);
+  return new MediaPipelineBackendDefault();
 }
 
 MediaCodecSupportShlib::CodecSupport MediaCodecSupportShlib::IsSupported(
@@ -63,6 +64,25 @@ MediaCodecSupportShlib::CodecSupport MediaCodecSupportShlib::IsSupported(
 #endif
 
   return kDefault;
+}
+
+double CastMediaShlib::GetMediaClockRate() {
+  return 0.0;
+}
+
+double CastMediaShlib::MediaClockRatePrecision() {
+  return 0.0;
+}
+
+void CastMediaShlib::MediaClockRateRange(double* minimum_rate,
+                                         double* maximum_rate) {}
+
+bool CastMediaShlib::SetMediaClockRate(double new_rate) {
+  return false;
+}
+
+bool CastMediaShlib::SupportsMediaClockRateChange() {
+  return false;
 }
 
 }  // namespace media

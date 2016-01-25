@@ -7,12 +7,14 @@
 
 #include "ui/gfx/transform.h"
 
-#include <cmath>
-#include <ostream>
-#include <limits>
+#include <stddef.h>
 
-#include "base/basictypes.h"
+#include <cmath>
+#include <limits>
+#include <ostream>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/box_f.h"
 #include "ui/gfx/geometry/point.h"
@@ -2689,6 +2691,29 @@ TEST(XFormTest, RoundTranslationComponents) {
   expected.Translate3d(0.f, 0.f, 0.5f);
   translation.RoundTranslationComponents();
   EXPECT_EQ(expected.ToString(), translation.ToString());
+}
+
+TEST(XFormTest, BackFaceVisiblilityTolerance) {
+  Transform backface_invisible;
+  backface_invisible.matrix().set(0, 3, 1.f);
+  backface_invisible.matrix().set(3, 0, 1.f);
+  backface_invisible.matrix().set(2, 0, 1.f);
+  backface_invisible.matrix().set(3, 2, 1.f);
+
+  // The transformation matrix has a determinant = 1 and cofactor33 = 0. So,
+  // IsBackFaceVisible should return false.
+  EXPECT_EQ(backface_invisible.matrix().determinant(), 1.f);
+  EXPECT_FALSE(backface_invisible.IsBackFaceVisible());
+
+  // Adding a noise to the transformsation matrix that is within the tolerance
+  // (machine epsilon) should not change the result.
+  float noise = std::numeric_limits<float>::epsilon();
+  backface_invisible.matrix().set(0, 3, 1.f + noise);
+  EXPECT_FALSE(backface_invisible.IsBackFaceVisible());
+
+  // A noise that is more than the tolerance should change the result.
+  backface_invisible.matrix().set(0, 3, 1.f + (2 * noise));
+  EXPECT_TRUE(backface_invisible.IsBackFaceVisible());
 }
 
 }  // namespace

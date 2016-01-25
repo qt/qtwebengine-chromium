@@ -6,6 +6,7 @@
 #define MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "media/base/media_export.h"
 #include "media/base/renderer_factory.h"
 
@@ -20,10 +21,9 @@ class VideoRendererSink;
 // The default factory class for creating RendererImpl.
 class MEDIA_EXPORT DefaultRendererFactory : public RendererFactory {
  public:
-  DefaultRendererFactory(
-      const scoped_refptr<MediaLog>& media_log,
-      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
-      const AudioHardwareConfig& audio_hardware_config);
+  DefaultRendererFactory(const scoped_refptr<MediaLog>& media_log,
+                         GpuVideoAcceleratorFactories* gpu_factories,
+                         const AudioHardwareConfig& audio_hardware_config);
   ~DefaultRendererFactory() final;
 
   scoped_ptr<Renderer> CreateRenderer(
@@ -36,7 +36,7 @@ class MEDIA_EXPORT DefaultRendererFactory : public RendererFactory {
   scoped_refptr<MediaLog> media_log_;
 
   // Factories for supporting video accelerators. May be null.
-  scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories_;
+  GpuVideoAcceleratorFactories* gpu_factories_;
 
   const AudioHardwareConfig& audio_hardware_config_;
 

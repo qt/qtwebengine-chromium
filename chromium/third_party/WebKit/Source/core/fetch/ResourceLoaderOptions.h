@@ -80,7 +80,7 @@ enum CORSEnabled {
 };
 
 struct ResourceLoaderOptions {
-    WTF_MAKE_FAST_ALLOCATED(ResourceLoaderOptions);
+    USING_FAST_MALLOC(ResourceLoaderOptions);
 public:
     ResourceLoaderOptions()
         : dataBufferingPolicy(BufferData)
@@ -140,7 +140,7 @@ public:
 
 // Encode AtomicString (in FetchInitiatorInfo) as String to cross threads.
 struct CrossThreadResourceLoaderOptionsData {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     explicit CrossThreadResourceLoaderOptionsData(const ResourceLoaderOptions& options)
         : dataBufferingPolicy(options.dataBufferingPolicy)
         , allowCredentials(options.allowCredentials)
@@ -179,7 +179,7 @@ struct CrossThreadResourceLoaderOptionsData {
 };
 
 template<> struct CrossThreadCopierBase<false, false, false, ResourceLoaderOptions> {
-    typedef CrossThreadResourceLoaderOptionsData Type;
+    using Type = CrossThreadResourceLoaderOptionsData;
     static Type copy(const ResourceLoaderOptions& options)
     {
         return CrossThreadResourceLoaderOptionsData(options);

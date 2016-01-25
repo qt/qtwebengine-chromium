@@ -4,9 +4,14 @@
 
 #include "device/bluetooth/bluetooth_device.h"
 
+#include <stddef.h>
+
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
+#include "device/bluetooth/bluetooth_gatt_service.h"
+#include "device/bluetooth/test/test_bluetooth_adapter_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
@@ -72,7 +77,7 @@ TEST_F(BluetoothTest, LowEnergyDeviceProperties) {
     return;
   }
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(1);
   ASSERT_TRUE(device);
   EXPECT_EQ(0x1F00u, device->GetBluetoothClass());
@@ -97,7 +102,7 @@ TEST_F(BluetoothTest, LowEnergyDeviceNoUUIDs) {
     return;
   }
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
   ASSERT_TRUE(device);
   BluetoothDevice::UUIDList uuids = device->GetUUIDs();
@@ -116,15 +121,13 @@ TEST_F(BluetoothTest, LowEnergyDeviceNoUUIDs) {
 // Basic CreateGattConnection test.
 TEST_F(BluetoothTest, CreateGattConnection) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
-  EXPECT_EQ(1, callback_count_);
-  EXPECT_EQ(0, error_callback_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
   ASSERT_EQ(1u, gatt_connections_.size());
   EXPECT_TRUE(device->IsGattConnected());
   EXPECT_TRUE(gatt_connections_[0]->IsConnected());
@@ -136,16 +139,16 @@ TEST_F(BluetoothTest, CreateGattConnection) {
 // functions even when some Disconnect and the BluetoothDevice is destroyed.
 TEST_F(BluetoothTest, BluetoothGattConnection) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
   std::string device_address = device->GetAddress();
 
   // CreateGattConnection
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  EXPECT_EQ(1, gatt_connection_attempts_);
+  SimulateGattConnection(device);
   EXPECT_EQ(1, callback_count_);
   EXPECT_EQ(0, error_callback_count_);
   ASSERT_EQ(1u, gatt_connections_.size());
@@ -154,11 +157,11 @@ TEST_F(BluetoothTest, BluetoothGattConnection) {
 
   // Connect again once already connected.
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(0, gatt_connection_attempt_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  EXPECT_EQ(0, gatt_connection_attempts_);
   EXPECT_EQ(2, callback_count_);
   EXPECT_EQ(0, error_callback_count_);
   ASSERT_EQ(3u, gatt_connections_.size());
@@ -177,12 +180,12 @@ TEST_F(BluetoothTest, BluetoothGattConnection) {
   EXPECT_FALSE(gatt_connections_[0]->IsConnected());
   EXPECT_TRUE(gatt_connections_[1]->IsConnected());
   EXPECT_TRUE(device->IsGattConnected());
-  EXPECT_EQ(0, gatt_disconnection_attempt_count_);
+  EXPECT_EQ(0, gatt_disconnection_attempts_);
 
   // Delete device, connection objects should all be disconnected.
-  gatt_disconnection_attempt_count_ = 0;
+  gatt_disconnection_attempts_ = 0;
   DeleteDevice(device);
-  EXPECT_EQ(1, gatt_disconnection_attempt_count_);
+  EXPECT_EQ(1, gatt_disconnection_attempts_);
   EXPECT_FALSE(gatt_connections_[0]->IsConnected());
   EXPECT_FALSE(gatt_connections_[1]->IsConnected());
 
@@ -197,26 +200,23 @@ TEST_F(BluetoothTest, BluetoothGattConnection) {
 TEST_F(BluetoothTest,
        BluetoothGattConnection_ConnectWithMultipleOSConnections) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   // CreateGattConnection, & multiple connections from platform only invoke
   // callbacks once:
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
-  CompleteGattConnection(device);
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
+  SimulateGattConnection(device);
+  EXPECT_EQ(1, gatt_connection_attempts_);
   EXPECT_EQ(1, callback_count_);
   EXPECT_EQ(0, error_callback_count_);
   EXPECT_TRUE(gatt_connections_[0]->IsConnected());
 
   // Become disconnected:
-  ResetEventCounts();
-  CompleteGattDisconnection(device);
-  EXPECT_EQ(0, callback_count_);
-  EXPECT_EQ(0, error_callback_count_);
+  SimulateGattDisconnection(device);
   EXPECT_FALSE(gatt_connections_[0]->IsConnected());
 }
 #endif  // defined(OS_ANDROID)
@@ -225,22 +225,20 @@ TEST_F(BluetoothTest,
 // Calls CreateGattConnection after already connected.
 TEST_F(BluetoothTest, BluetoothGattConnection_AlreadyConnected) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   // Be already connected:
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
   EXPECT_TRUE(gatt_connections_[0]->IsConnected());
 
   // Then CreateGattConnection:
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(0, gatt_connection_attempt_count_);
-  EXPECT_EQ(1, callback_count_);
-  EXPECT_EQ(0, error_callback_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  EXPECT_EQ(0, gatt_connection_attempts_);
   EXPECT_TRUE(gatt_connections_[1]->IsConnected());
 }
 #endif  // defined(OS_ANDROID)
@@ -250,22 +248,22 @@ TEST_F(BluetoothTest, BluetoothGattConnection_AlreadyConnected) {
 TEST_F(BluetoothTest,
        BluetoothGattConnection_NewConnectionLeavesPreviousDisconnected) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   // Create connection:
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
 
   // Disconnect connection:
   gatt_connections_[0]->Disconnect();
-  CompleteGattDisconnection(device);
+  SimulateGattDisconnection(device);
 
   // Create 2nd connection:
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
 
   EXPECT_FALSE(gatt_connections_[0]->IsConnected())
       << "The disconnected connection shouldn't become connected when another "
@@ -278,20 +276,20 @@ TEST_F(BluetoothTest,
 // Deletes BluetoothGattConnection causing disconnection.
 TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectWhenObjectsDestroyed) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   // Create multiple connections and simulate connection complete:
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
 
   // Delete all CreateGattConnection objects, observe disconnection:
   ResetEventCounts();
   gatt_connections_.clear();
-  EXPECT_EQ(1, gatt_disconnection_attempt_count_);
+  EXPECT_EQ(1, gatt_disconnection_attempts_);
 }
 #endif  // defined(OS_ANDROID)
 
@@ -299,37 +297,34 @@ TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectWhenObjectsDestroyed) {
 // Starts process of disconnecting and then calls BluetoothGattConnection.
 TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectInProgress) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   // Create multiple connections and simulate connection complete:
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  CompleteGattConnection(device);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
 
   // Disconnect all CreateGattConnection objects & create a new connection.
   // But, don't yet simulate the device disconnecting:
   ResetEventCounts();
   for (BluetoothGattConnection* connection : gatt_connections_)
     connection->Disconnect();
-  EXPECT_EQ(1, gatt_disconnection_attempt_count_);
+  EXPECT_EQ(1, gatt_disconnection_attempts_);
 
   // Create a connection.
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(0, gatt_connection_attempt_count_);  // No connection attempt.
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  EXPECT_EQ(0, gatt_connection_attempts_);  // No connection attempt.
   EXPECT_EQ(1, callback_count_);  // Device is assumed still connected.
   EXPECT_EQ(0, error_callback_count_);
   EXPECT_FALSE(gatt_connections_.front()->IsConnected());
   EXPECT_TRUE(gatt_connections_.back()->IsConnected());
 
   // Actually disconnect:
-  ResetEventCounts();
-  CompleteGattDisconnection(device);
-  EXPECT_EQ(0, callback_count_);
-  EXPECT_EQ(0, error_callback_count_);
+  SimulateGattDisconnection(device);
   for (BluetoothGattConnection* connection : gatt_connections_)
     EXPECT_FALSE(connection->IsConnected());
 }
@@ -340,16 +335,14 @@ TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectInProgress) {
 // before it ever connects.
 TEST_F(BluetoothTest, BluetoothGattConnection_SimulateDisconnect) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
-  CompleteGattDisconnection(device);
-  EXPECT_EQ(0, callback_count_);
-  EXPECT_EQ(1, error_callback_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::NOT_EXPECTED),
+                               GetConnectErrorCallback(Call::EXPECTED));
+  EXPECT_EQ(1, gatt_connection_attempts_);
+  SimulateGattDisconnection(device);
   EXPECT_EQ(BluetoothDevice::ERROR_FAILED, last_connect_error_code_);
   for (BluetoothGattConnection* connection : gatt_connections_)
     EXPECT_FALSE(connection->IsConnected());
@@ -360,21 +353,21 @@ TEST_F(BluetoothTest, BluetoothGattConnection_SimulateDisconnect) {
 // Calls CreateGattConnection & DisconnectGatt, then simulates connection.
 TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectGatt_SimulateConnect) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
   device->DisconnectGatt();
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
-  EXPECT_EQ(1, gatt_disconnection_attempt_count_);
-  CompleteGattConnection(device);
+  EXPECT_EQ(1, gatt_connection_attempts_);
+  EXPECT_EQ(1, gatt_disconnection_attempts_);
+  SimulateGattConnection(device);
   EXPECT_EQ(1, callback_count_);
   EXPECT_EQ(0, error_callback_count_);
   EXPECT_TRUE(gatt_connections_.back()->IsConnected());
   ResetEventCounts();
-  CompleteGattDisconnection(device);
+  SimulateGattDisconnection(device);
   EXPECT_EQ(0, callback_count_);
   EXPECT_EQ(0, error_callback_count_);
 }
@@ -385,21 +378,68 @@ TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectGatt_SimulateConnect) {
 TEST_F(BluetoothTest,
        BluetoothGattConnection_DisconnectGatt_SimulateDisconnect) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
+  device->CreateGattConnection(GetGattConnectionCallback(Call::NOT_EXPECTED),
+                               GetConnectErrorCallback(Call::EXPECTED));
   device->DisconnectGatt();
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
-  EXPECT_EQ(1, gatt_disconnection_attempt_count_);
-  CompleteGattDisconnection(device);
-  EXPECT_EQ(0, callback_count_);
-  EXPECT_EQ(1, error_callback_count_);
+  EXPECT_EQ(1, gatt_connection_attempts_);
+  EXPECT_EQ(1, gatt_disconnection_attempts_);
+  SimulateGattDisconnection(device);
   EXPECT_EQ(BluetoothDevice::ERROR_FAILED, last_connect_error_code_);
   for (BluetoothGattConnection* connection : gatt_connections_)
     EXPECT_FALSE(connection->IsConnected());
+}
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_ANDROID)
+// Calls CreateGattConnection & DisconnectGatt, then checks that gatt services
+// have been cleaned up.
+TEST_F(BluetoothTest, BluetoothGattConnection_DisconnectGatt_Cleanup) {
+  InitWithFakeAdapter();
+  StartLowEnergyDiscoverySession();
+  BluetoothDevice* device = DiscoverLowEnergyDevice(3);
+  EXPECT_FALSE(device->IsConnected());
+
+  // Connect to the device
+  ResetEventCounts();
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  TestBluetoothAdapterObserver observer(adapter_);
+  SimulateGattConnection(device);
+  EXPECT_TRUE(device->IsConnected());
+
+  // Discover services
+  std::vector<std::string> services;
+  services.push_back("00000000-0000-1000-8000-00805f9b34fb");
+  services.push_back("00000001-0000-1000-8000-00805f9b34fb");
+  SimulateGattServicesDiscovered(device, services);
+  EXPECT_TRUE(device->IsGattServicesDiscoveryComplete());
+  EXPECT_EQ(2u, device->GetGattServices().size());
+  EXPECT_EQ(1, observer.gatt_services_discovered_count());
+
+  // Disconnect from the device
+  device->DisconnectGatt();
+  SimulateGattDisconnection(device);
+  EXPECT_FALSE(device->IsConnected());
+  EXPECT_FALSE(device->IsGattServicesDiscoveryComplete());
+  EXPECT_EQ(0u, device->GetGattServices().size());
+
+  // Verify that the device can be connected to again
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  SimulateGattConnection(device);
+  EXPECT_TRUE(device->IsConnected());
+
+  // Verify that service discovery can be done again
+  std::vector<std::string> services2;
+  services2.push_back("00000002-0000-1000-8000-00805f9b34fb");
+  SimulateGattServicesDiscovered(device, services2);
+  EXPECT_TRUE(device->IsGattServicesDiscoveryComplete());
+  EXPECT_EQ(1u, device->GetGattServices().size());
+  EXPECT_EQ(2, observer.gatt_services_discovered_count());
 }
 #endif  // defined(OS_ANDROID)
 
@@ -408,20 +448,85 @@ TEST_F(BluetoothTest,
 // multiple errors should only invoke callbacks once.
 TEST_F(BluetoothTest, BluetoothGattConnection_ErrorAfterConnection) {
   InitWithFakeAdapter();
-  StartDiscoverySession();
+  StartLowEnergyDiscoverySession();
   BluetoothDevice* device = DiscoverLowEnergyDevice(3);
 
   ResetEventCounts();
-  device->CreateGattConnection(GetGattConnectionCallback(),
-                               GetConnectErrorCallback());
-  EXPECT_EQ(1, gatt_connection_attempt_count_);
-  FailGattConnection(device, BluetoothDevice::ERROR_AUTH_FAILED);
-  FailGattConnection(device, BluetoothDevice::ERROR_FAILED);
-  EXPECT_EQ(0, callback_count_);
-  EXPECT_EQ(1, error_callback_count_);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::NOT_EXPECTED),
+                               GetConnectErrorCallback(Call::EXPECTED));
+  EXPECT_EQ(1, gatt_connection_attempts_);
+  SimulateGattConnectionError(device, BluetoothDevice::ERROR_AUTH_FAILED);
+  SimulateGattConnectionError(device, BluetoothDevice::ERROR_FAILED);
   EXPECT_EQ(BluetoothDevice::ERROR_AUTH_FAILED, last_connect_error_code_);
   for (BluetoothGattConnection* connection : gatt_connections_)
     EXPECT_FALSE(connection->IsConnected());
+}
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_ANDROID)
+TEST_F(BluetoothTest, GattServices_ObserversCalls) {
+  InitWithFakeAdapter();
+  StartLowEnergyDiscoverySession();
+  BluetoothDevice* device = DiscoverLowEnergyDevice(3);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  TestBluetoothAdapterObserver observer(adapter_);
+  ResetEventCounts();
+  SimulateGattConnection(device);
+  EXPECT_EQ(1, gatt_discovery_attempts_);
+
+  std::vector<std::string> services;
+  services.push_back("00000000-0000-1000-8000-00805f9b34fb");
+  services.push_back("00000001-0000-1000-8000-00805f9b34fb");
+  SimulateGattServicesDiscovered(device, services);
+
+  EXPECT_EQ(1, observer.gatt_services_discovered_count());
+  EXPECT_EQ(2, observer.gatt_service_added_count());
+}
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_ANDROID)
+TEST_F(BluetoothTest, GetGattServices_and_GetGattService) {
+  InitWithFakeAdapter();
+  StartLowEnergyDiscoverySession();
+  BluetoothDevice* device = DiscoverLowEnergyDevice(3);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  ResetEventCounts();
+  SimulateGattConnection(device);
+  EXPECT_EQ(1, gatt_discovery_attempts_);
+
+  std::vector<std::string> services;
+  services.push_back("00000000-0000-1000-8000-00805f9b34fb");
+  // 2 duplicate UUIDs creating 2 instances.
+  services.push_back("00000001-0000-1000-8000-00805f9b34fb");
+  services.push_back("00000001-0000-1000-8000-00805f9b34fb");
+  SimulateGattServicesDiscovered(device, services);
+  EXPECT_EQ(3u, device->GetGattServices().size());
+
+  // Test GetGattService:
+  std::string service_id1 = device->GetGattServices()[0]->GetIdentifier();
+  std::string service_id2 = device->GetGattServices()[1]->GetIdentifier();
+  std::string service_id3 = device->GetGattServices()[2]->GetIdentifier();
+  EXPECT_TRUE(device->GetGattService(service_id1));
+  EXPECT_TRUE(device->GetGattService(service_id2));
+  EXPECT_TRUE(device->GetGattService(service_id3));
+}
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_ANDROID)
+TEST_F(BluetoothTest, GetGattServices_DiscoveryError) {
+  InitWithFakeAdapter();
+  StartLowEnergyDiscoverySession();
+  BluetoothDevice* device = DiscoverLowEnergyDevice(3);
+  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
+                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  ResetEventCounts();
+  SimulateGattConnection(device);
+  EXPECT_EQ(1, gatt_discovery_attempts_);
+
+  SimulateGattServicesDiscoveryError(device);
+  EXPECT_EQ(0u, device->GetGattServices().size());
 }
 #endif  // defined(OS_ANDROID)
 

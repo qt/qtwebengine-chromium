@@ -11,6 +11,13 @@ cr.define('media_router.ui', function() {
   var container = null;
 
   /**
+   * Handles timeout of previous create route attempt.
+   */
+  function onNotifyRouteCreationTimeout() {
+    container.onNotifyRouteCreationTimeout();
+  }
+
+  /**
    * Handles response of previous create route attempt.
    *
    * @param {string} sinkId The ID of the sink to which the Media Route was
@@ -43,27 +50,27 @@ cr.define('media_router.ui', function() {
   /**
    * Populates the WebUI with data obtained from Media Router.
    *
-   * @param {headerText: string,
-   *         headerTextTooltip: string,
-   *         deviceMissingUrl: string,
-   *         sinks: !Array<!media_router.Sink>,
-   *         routes: !Array<!media_router.Route>,
-   *         castModes: !Array<!media_router.CastMode>} data
+   * @param {{deviceMissingUrl: string,
+   *          sinks: !Array<!media_router.Sink>,
+   *          routes: !Array<!media_router.Route>,
+   *          castModes: !Array<!media_router.CastMode>,
+   *          wasFirstRunFlowAcknowledged: boolean}} data
    * Parameters in data:
-   *   headerText - text to be displayed in the header of the WebUI.
-   *   headerTextTooltip - tooltip to be displayed for the header of the WebUI.
    *   deviceMissingUrl - url to be opened on "Device missing?" clicked.
    *   sinks - list of sinks to be displayed.
    *   routes - list of routes that are associated with the sinks.
    *   castModes - list of available cast modes.
+   *   wasFirstRunFlowAcknowledged - true if first run flow was previously
+   *       acknowledged by user.
    */
   function setInitialData(data) {
-    container.headerText = data['headerText'];
-    container.headerTextTooltip = data['headerTextTooltip'];
     container.deviceMissingUrl = data['deviceMissingUrl'];
-    container.sinkList = data['sinks'];
-    container.routeList = data['routes'];
     container.castModeList = data['castModes'];
+    container.allSinks = data['sinks'];
+    container.routeList = data['routes'];
+    container.showFirstRunFlow = !data['wasFirstRunFlowAcknowledged'];
+    container.maybeShowRouteDetailsOnOpen();
+    media_router.browserApi.onInitialDataReceived();
   }
 
   /**
@@ -91,10 +98,20 @@ cr.define('media_router.ui', function() {
    * @param {!Array<!media_router.Sink>} sinkList
    */
   function setSinkList(sinkList) {
-    container.sinkList = sinkList;
+    container.allSinks = sinkList;
+  }
+
+  /**
+   * Updates the max height of the dialog
+   *
+   * @param {number} height
+   */
+  function updateMaxHeight(height) {
+    container.updateMaxSinkListHeight(height);
   }
 
   return {
+    onNotifyRouteCreationTimeout: onNotifyRouteCreationTimeout,
     onCreateRouteResponseReceived: onCreateRouteResponseReceived,
     setCastModeList: setCastModeList,
     setContainer: setContainer,
@@ -102,12 +119,20 @@ cr.define('media_router.ui', function() {
     setIssue: setIssue,
     setRouteList: setRouteList,
     setSinkList: setSinkList,
+    updateMaxHeight: updateMaxHeight,
   };
 });
 
 // API invoked by this UI to communicate with the browser WebUI message handler.
 cr.define('media_router.browserApi', function() {
   'use strict';
+
+  /**
+   * Indicates that the user has acknowledged the first run flow.
+   */
+  function acknowledgeFirstRunFlow() {
+    chrome.send('acknowledgeFirstRunFlow');
+  }
 
   /**
    * Acts on the given issue.
@@ -134,7 +159,97 @@ cr.define('media_router.browserApi', function() {
    * @param {!media_router.Route} route
    */
   function closeRoute(route) {
-    chrome.send('closeRoute', [{routeId: route.id}]);
+    chrome.send('closeRoute', [{routeId: route.id, isLocal: route.isLocal}]);
+  }
+
+  /**
+   * Joins the given route.
+   *
+   * @param {!media_router.Route} route
+   */
+  function joinRoute(route) {
+    chrome.send('joinRoute', [{sinkId: route.sinkId, routeId: route.id}]);
+  }
+
+  /**
+   * Indicates that the initial data has been received.
+   */
+  function onInitialDataReceived() {
+    chrome.send('onInitialDataReceived');
+  }
+
+  /**
+   * Reports the index of the selected sink.
+   *
+   * @param {number} sinkIndex
+   */
+  function reportClickedSinkIndex(sinkIndex) {
+    chrome.send('reportClickedSinkIndex', [sinkIndex]);
+  }
+
+  /**
+   * Reports the initial dialog view.
+   *
+   * @param {string} view
+   */
+  function reportInitialState(view) {
+    chrome.send('reportInitialState', [view]);
+  }
+
+  /**
+   * Reports the initial action the user took.
+   *
+   * @param {number} action
+   */
+  function reportInitialAction(action) {
+    chrome.send('reportInitialAction', [action]);
+  }
+
+  /**
+   * Reports the navigation to the specified view.
+   *
+   * @param {string} view
+   */
+  function reportNavigateToView(view) {
+    chrome.send('reportNavigateToView', [view]);
+  }
+
+  /**
+   * Reports the cast mode that the user selected.
+   *
+   * @param {number} castModeType
+   */
+  function reportSelectedCastMode(castModeType) {
+    chrome.send('reportSelectedCastMode', [castModeType]);
+  }
+
+  /**
+   * Reports the current number of sinks.
+   *
+   * @param {number} sinkCount
+   */
+  function reportSinkCount(sinkCount) {
+    chrome.send('reportSinkCount', [sinkCount]);
+  }
+
+  /**
+   * Reports the time it took for the user to select a sink after the sink list
+   * is populated and shown.
+   *
+   * @param {number} timeMs
+   */
+  function reportTimeToClickSink(timeMs) {
+    chrome.send('reportTimeToClickSink', [timeMs]);
+  }
+
+  /**
+   * Reports the time, in ms, it took for the user to close the dialog without
+   * taking any other action.
+   *
+   * @param {number} timeMs
+   */
+  function reportTimeToInitialActionClose(timeMs) {
+    chrome.send('reportTimeToInitialActionClose', [timeMs]);
   }
 
   /**
@@ -150,7 +265,7 @@ cr.define('media_router.browserApi', function() {
    *
    * @param {string} sinkId The sink ID.
    * @param {number} selectedCastMode The value of the cast mode the user
-   *   selected, or -1 if the user has not explicitly selected a mode.
+   *   selected.
    */
   function requestRoute(sinkId, selectedCastMode) {
     chrome.send('requestRoute',
@@ -158,9 +273,20 @@ cr.define('media_router.browserApi', function() {
   }
 
   return {
+    acknowledgeFirstRunFlow: acknowledgeFirstRunFlow,
     actOnIssue: actOnIssue,
     closeDialog: closeDialog,
     closeRoute: closeRoute,
+    joinRoute: joinRoute,
+    onInitialDataReceived: onInitialDataReceived,
+    reportClickedSinkIndex: reportClickedSinkIndex,
+    reportInitialAction: reportInitialAction,
+    reportInitialState: reportInitialState,
+    reportNavigateToView: reportNavigateToView,
+    reportSelectedCastMode: reportSelectedCastMode,
+    reportSinkCount: reportSinkCount,
+    reportTimeToClickSink: reportTimeToClickSink,
+    reportTimeToInitialActionClose: reportTimeToInitialActionClose,
     requestInitialData: requestInitialData,
     requestRoute: requestRoute,
   };

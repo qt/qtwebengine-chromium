@@ -5,6 +5,11 @@
 #ifndef MOJO_EDK_SYSTEM_SHARED_BUFFER_DISPATCHER_H_
 #define MOJO_EDK_SYSTEM_SHARED_BUFFER_DISPATCHER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <utility>
+
 #include "mojo/edk/embedder/platform_shared_buffer.h"
 #include "mojo/edk/system/simple_dispatcher.h"
 #include "mojo/edk/system/system_impl_export.h"
@@ -58,7 +63,8 @@ class MOJO_SYSTEM_IMPL_EXPORT SharedBufferDispatcher final
  private:
   static scoped_refptr<SharedBufferDispatcher> CreateInternal(
       scoped_refptr<PlatformSharedBuffer> shared_buffer) {
-    return make_scoped_refptr(new SharedBufferDispatcher(shared_buffer.Pass()));
+    return make_scoped_refptr(
+        new SharedBufferDispatcher(std::move(shared_buffer)));
   }
 
   explicit SharedBufferDispatcher(

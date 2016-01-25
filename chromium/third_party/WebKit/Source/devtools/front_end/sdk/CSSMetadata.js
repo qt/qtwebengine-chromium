@@ -138,6 +138,18 @@ WebInspector.CSSMetadata.canonicalPropertyName = function(name)
  * @param {string} propertyName
  * @return {boolean}
  */
+WebInspector.CSSMetadata.isCSSPropertyName = function(propertyName)
+{
+    if (propertyName.startsWith("-moz-") || propertyName.startsWith("-o-") || propertyName.startsWith("-webkit-") || propertyName.startsWith("-ms-"))
+        return true;
+    var hasSupportedProperties = WebInspector.CSSMetadata.cssPropertiesMetainfo._values.length > 0;
+    return !hasSupportedProperties || WebInspector.CSSMetadata.cssPropertiesMetainfoKeySet().hasOwnProperty(propertyName);
+}
+
+/**
+ * @param {string} propertyName
+ * @return {boolean}
+ */
 WebInspector.CSSMetadata.isPropertyInherited = function(propertyName)
 {
     return !!(WebInspector.CSSMetadata.InheritedProperties[WebInspector.CSSMetadata.canonicalPropertyName(propertyName)]
@@ -214,6 +226,9 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "box-shadow": { values: [
         "inset", "none"
+    ] },
+    "writing-mode": { values: [
+        "horizontal-tb", "vertical-rl", "vertical-lr"
     ] },
     "-webkit-writing-mode": { values: [
         "lr", "rl", "tb", "lr-tb", "rl-tb", "tb-rl", "horizontal-tb", "vertical-rl", "vertical-lr", "horizontal-bt"
@@ -336,8 +351,14 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "lower-armenian", "upper-armenian", "georgian", "cjk-ideographic", "hiragana", "katakana", "hiragana-iroha",
         "katakana-iroha"
     ] },
+    "text-combine-upright": { values: [
+        "none", "all"
+    ] },
     "-webkit-text-combine": { values: [
         "none", "horizontal"
+    ] },
+    "text-orientation": { values: [
+        "mixed", "upright", "sideways"
     ] },
     "outline": { values: [
         "none", "hidden", "inset", "groove", "ridge", "outset", "dotted", "dashed", "solid", "double"
@@ -595,7 +616,15 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "-webkit-text-decoration-skip": { values: [
         "none", "objects", "spaces", "ink", "edges", "box-decoration"
-    ] }
+    ] },
+    "mix-blend-mode": { values: [
+        "normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light",
+        "difference", "exclusion", "hue", "saturation", "color", "luminosity", "unset"
+    ] },
+    "background-blend-mode": { values: [
+        "normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light",
+        "difference", "exclusion", "hue", "saturation", "color", "luminosity", "unset"
+    ] },
 }
 
 /**

@@ -23,12 +23,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/V8PerIsolateData.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -121,7 +122,7 @@ DEFINE_TRACE(IDBTransaction)
     ActiveDOMObject::trace(visitor);
 }
 
-void IDBTransaction::setError(DOMError* error)
+void IDBTransaction::setError(DOMException* error)
 {
     ASSERT(m_state != Finished);
     ASSERT(error);
@@ -231,7 +232,7 @@ void IDBTransaction::unregisterRequest(IDBRequest* request)
     m_requestList.remove(request);
 }
 
-void IDBTransaction::onAbort(DOMError* error)
+void IDBTransaction::onAbort(DOMException* error)
 {
     IDB_TRACE("IDBTransaction::onAbort");
     if (m_contextStopped) {

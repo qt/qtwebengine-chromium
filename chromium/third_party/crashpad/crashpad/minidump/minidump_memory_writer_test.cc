@@ -14,12 +14,10 @@
 
 #include "minidump/minidump_memory_writer.h"
 
-#include <windows.h>
-#include <dbghelp.h>
-#include <stdint.h>
+#include <utility>
 
-#include "base/basictypes.h"
 #include "base/format_macros.h"
+#include "base/macros.h"
 #include "base/strings/stringprintf.h"
 #include "gtest/gtest.h"
 #include "minidump/minidump_extensions.h"
@@ -80,7 +78,7 @@ TEST(MinidumpMemoryWriter, EmptyMemoryList) {
   MinidumpFileWriter minidump_file_writer;
   auto memory_list_writer = make_scoped_ptr(new MinidumpMemoryListWriter());
 
-  minidump_file_writer.AddStream(memory_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(memory_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -106,9 +104,9 @@ TEST(MinidumpMemoryWriter, OneMemoryRegion) {
 
   auto memory_writer = make_scoped_ptr(
       new TestMinidumpMemoryWriter(kBaseAddress, kSize, kValue));
-  memory_list_writer->AddMemory(memory_writer.Pass());
+  memory_list_writer->AddMemory(std::move(memory_writer));
 
-  minidump_file_writer.AddStream(memory_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(memory_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -144,12 +142,12 @@ TEST(MinidumpMemoryWriter, TwoMemoryRegions) {
 
   auto memory_writer_0 = make_scoped_ptr(
       new TestMinidumpMemoryWriter(kBaseAddress0, kSize0, kValue0));
-  memory_list_writer->AddMemory(memory_writer_0.Pass());
+  memory_list_writer->AddMemory(std::move(memory_writer_0));
   auto memory_writer_1 = make_scoped_ptr(
       new TestMinidumpMemoryWriter(kBaseAddress1, kSize1, kValue1));
-  memory_list_writer->AddMemory(memory_writer_1.Pass());
+  memory_list_writer->AddMemory(std::move(memory_writer_1));
 
-  minidump_file_writer.AddStream(memory_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(memory_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -248,7 +246,7 @@ TEST(MinidumpMemoryWriter, ExtraMemory) {
   auto memory_list_writer = make_scoped_ptr(new MinidumpMemoryListWriter());
   memory_list_writer->AddExtraMemory(test_memory_stream->memory());
 
-  minidump_file_writer.AddStream(test_memory_stream.Pass());
+  minidump_file_writer.AddStream(std::move(test_memory_stream));
 
   const uint64_t kBaseAddress1 = 0x2000;
   const size_t kSize1 = 0x0400;
@@ -256,9 +254,9 @@ TEST(MinidumpMemoryWriter, ExtraMemory) {
 
   auto memory_writer = make_scoped_ptr(
       new TestMinidumpMemoryWriter(kBaseAddress1, kSize1, kValue1));
-  memory_list_writer->AddMemory(memory_writer.Pass());
+  memory_list_writer->AddMemory(std::move(memory_writer));
 
-  minidump_file_writer.AddStream(memory_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(memory_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));
@@ -336,7 +334,7 @@ TEST(MinidumpMemoryWriter, AddFromSnapshot) {
   memory_list_writer->AddFromSnapshot(memory_snapshots);
 
   MinidumpFileWriter minidump_file_writer;
-  minidump_file_writer.AddStream(memory_list_writer.Pass());
+  minidump_file_writer.AddStream(std::move(memory_list_writer));
 
   StringFile string_file;
   ASSERT_TRUE(minidump_file_writer.WriteEverything(&string_file));

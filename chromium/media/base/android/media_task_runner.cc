@@ -32,7 +32,7 @@ bool UseMediaThreadForMediaPlayback() {
   const std::string group_name =
       base::FieldTrialList::FindFullName("EnableMediaThreadForMediaPlayback");
 
-  // Command line switches take precedence over field trial groups.
+  // Command line switches take precedence over filed trial groups.
   // The disable switch takes precedence over enable switch.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableMediaThreadForMediaPlayback)) {

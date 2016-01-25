@@ -5,7 +5,7 @@
 #include "net/cert/x509_util_android.h"
 
 #include "base/android/build_info.h"
-#include "base/android/jni_android.h"
+#include "base/android/context_utils.h"
 #include "base/metrics/histogram_macros.h"
 #include "jni/X509Util_jni.h"
 #include "net/cert/cert_database.h"
@@ -25,16 +25,6 @@ void RecordCertVerifyCapabilitiesHistogram(JNIEnv* env,
     UMA_HISTOGRAM_BOOLEAN("Net.FoundSystemTrustRootsAndroid",
                           found_system_trust_roots);
   }
-}
-
-ScopedJavaLocalRef<jobject> GetApplicationContext(
-    JNIEnv* env,
-    const JavaParamRef<jclass>& clazz) {
-  ScopedJavaLocalRef<jobject> r;
-  // Must use Reset to force creation of a new local ref, instead of trying to
-  // adopt the global-ref'ed jobject as a local ref as the constructor would.
-  r.Reset(env, base::android::GetApplicationContext());
-  return r;
 }
 
 bool RegisterX509Util(JNIEnv* env) {

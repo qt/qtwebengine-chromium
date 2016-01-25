@@ -4,6 +4,11 @@
 
 #include "mojo/edk/system/transport_data.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <utility>
+
 #include "base/logging.h"
 #include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/message_in_transit.h"
@@ -18,15 +23,13 @@ namespace edk {
 // |TransportData::kMaxBufferSize|. This value should be a multiple of the
 // alignment in order to simplify calculations, even though the actual amount of
 // space needed need not be a multiple of the alignment.
-const size_t kMaxSizePerPlatformHandle = 16;
+const size_t kMaxSizePerPlatformHandle = 8;
 static_assert(kMaxSizePerPlatformHandle % MessageInTransit::kMessageAlignment ==
                   0,
               "kMaxSizePerPlatformHandle not a multiple of alignment");
 
 MOJO_STATIC_CONST_MEMBER_DEFINITION const size_t
     TransportData::kMaxSerializedDispatcherSize;
-MOJO_STATIC_CONST_MEMBER_DEFINITION const size_t
-    TransportData::kMaxSerializedDispatcherPlatformHandles;
 
 // static
 size_t TransportData::GetMaxBufferSize() {
@@ -40,8 +43,7 @@ size_t TransportData::GetMaxBufferSize() {
 
 // static
 size_t TransportData::GetMaxPlatformHandles() {
-  return GetConfiguration().max_message_num_handles *
-         kMaxSerializedDispatcherPlatformHandles;
+  return GetConfiguration().max_message_num_handles;
 }
 
 struct TransportData::PrivateStructForCompileAsserts {
@@ -89,9 +91,11 @@ TransportData::TransportData(scoped_ptr<DispatcherVector> dispatchers)
       estimated_size += MessageInTransit::RoundUpMessageAlignment(max_size);
       DCHECK_LE(estimated_size, GetMaxBufferSize());
 
-      DCHECK_LE(max_platform_handles, kMaxSerializedDispatcherPlatformHandles);
       estimated_num_platform_handles += max_platform_handles;
-      DCHECK_LE(estimated_num_platform_handles, GetMaxPlatformHandles());
+      // We don't expect more than 10K Mojo handles in one process at a time,
+      // since each is backed by a FD. If we're hitting the check below, we have
+      // bigger problems of reducing the number of FDs or possibly multiplexing.
+      CHECK_LE(estimated_num_platform_handles, GetMaxPlatformHandles());
 
 #if DCHECK_IS_ON()
       all_max_sizes[i] = max_size;
@@ -187,10 +191,9 @@ TransportData::TransportData(scoped_ptr<DispatcherVector> dispatchers)
   // |dispatchers_| will be destroyed as it goes out of scope.
 }
 
-TransportData::TransportData(
-    ScopedPlatformHandleVectorPtr platform_handles,
-    size_t serialized_platform_handle_size)
-    : buffer_size_(), platform_handles_(platform_handles.Pass()) {
+TransportData::TransportData(ScopedPlatformHandleVectorPtr platform_handles,
+                             size_t serialized_platform_handle_size)
+    : buffer_size_(), platform_handles_(std::move(platform_handles)) {
   buffer_size_ = MessageInTransit::RoundUpMessageAlignment(
       sizeof(Header) +
       platform_handles_->size() * serialized_platform_handle_size);
@@ -238,9 +241,7 @@ const char* TransportData::ValidateBuffer(
              "present";
     }
   } else {
-    if (header->num_platform_handles >
-        GetConfiguration().max_message_num_handles *
-            kMaxSerializedDispatcherPlatformHandles)
+    if (header->num_platform_handles > GetMaxPlatformHandles())
       return "Message has too many platform handles attached";
 
     static const char kInvalidPlatformHandleTableOffset[] =
@@ -329,7 +330,7 @@ scoped_ptr<DispatcherVector> TransportData::DeserializeDispatchers(
         handle_table[i].type, source, size, platform_handles.get());
   }
 
-  return dispatchers.Pass();
+  return dispatchers;
 }
 
 }  // namespace edk

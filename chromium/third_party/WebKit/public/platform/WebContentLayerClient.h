@@ -26,13 +26,16 @@
 #ifndef WebContentLayerClient_h
 #define WebContentLayerClient_h
 
-#include "WebCanvas.h"
 #include "WebCommon.h"
+
+namespace gfx {
+class Rect;
+}
 
 namespace blink {
 
-class WebDisplayItemList;
 struct WebRect;
+class WebDisplayItemList;
 
 class BLINK_PLATFORM_EXPORT WebContentLayerClient {
 public:
@@ -40,27 +43,24 @@ public:
         PaintDefaultBehavior,
         DisplayListConstructionDisabled,
         DisplayListCachingDisabled,
-        DisplayListPaintingDisabled
+        DisplayListPaintingDisabled,
+        SubsequenceCachingDisabled
     };
 
-    // Paints the content area for the layer, typically dirty rects submitted
-    // through WebContentLayer::setNeedsDisplay, submitting drawing commands
-    // through the WebCanvas.
-    // The canvas is already clipped to the |clip| rect.
-    // The |PaintingControlSetting| enum controls painting to isolate different components in performance tests.
-    virtual void paintContents(WebCanvas*, const WebRect& clip, PaintingControlSetting = PaintDefaultBehavior) = 0;
+    // The paintable region is the rectangular region, within the bounds of the layer
+    // this client paints, that the client is capable of painting via paintContents().
+    // Calling paintContents will return a WebDisplayitemList that is guaranteed valid
+    // only within this region.
+    // In particular, this is used to represent the interest rect in Blink.
+    virtual gfx::Rect paintableRegion() = 0;
 
     // Paints the content area for the layer, typically dirty rects submitted
     // through WebContentLayer::setNeedsDisplayInRect, submitting drawing commands
     // to populate the WebDisplayItemList.
-    // The |clip| rect defines the region of interest. The resulting WebDisplayItemList should contain
-    // sufficient content to correctly paint the rect, but may also contain other content. The result
-    // will be clipped on playback.
     // The |PaintingControlSetting| enum controls painting to isolate different components in performance tests.
     // Currently the DisplayListConstructionDisabled does nothing.
     virtual void paintContents(
         WebDisplayItemList*,
-        const WebRect& clip,
         PaintingControlSetting = PaintDefaultBehavior) = 0;
 
     // Returns an estimate of the current memory usage within this object,

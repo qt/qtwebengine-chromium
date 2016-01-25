@@ -23,7 +23,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/LayoutTableSection.h"
 
 #include "core/layout/HitTestResult.h"
@@ -35,6 +34,7 @@
 #include "core/layout/SubtreeLayoutScope.h"
 #include "core/paint/TableSectionPainter.h"
 #include "wtf/HashSet.h"
+#include <algorithm>
 #include <limits>
 
 namespace blink {
@@ -80,8 +80,8 @@ row, const LayoutTableCell* cell)
 
 void CellSpan::ensureConsistency(const unsigned maximumSpanSize)
 {
-    static_assert(WTF::IsSameType<decltype(m_start), unsigned>::value, "Asserts below assume m_start is unsigned");
-    static_assert(WTF::IsSameType<decltype(m_end), unsigned>::value, "Asserts below assume m_end is unsigned");
+    static_assert(std::is_same<decltype(m_start), unsigned>::value, "Asserts below assume m_start is unsigned");
+    static_assert(std::is_same<decltype(m_end), unsigned>::value, "Asserts below assume m_end is unsigned");
     RELEASE_ASSERT(m_start <= maximumSpanSize);
     RELEASE_ASSERT(m_end <= maximumSpanSize);
     RELEASE_ASSERT(m_start <= m_end);
@@ -200,6 +200,32 @@ void LayoutTableSection::ensureRows(unsigned numRows)
         m_grid[row].row.grow(effectiveColumnCount);
 }
 
+static inline void checkThatVectorIsDOMOrdered(const Vector<LayoutTableCell*, 1>& cells)
+{
+#ifndef NDEBUG
+    // This function should be called on a non-empty vector.
+    ASSERT(cells.size() > 0);
+
+    const LayoutTableCell* previousCell = cells[0];
+    for (size_t i = 1; i < cells.size(); ++i) {
+        const LayoutTableCell* currentCell = cells[i];
+        // The check assumes that all cells belong to the same row group.
+        ASSERT(previousCell->section() == currentCell->section());
+
+        // 2 overlapping cells can't be on the same row.
+        ASSERT(currentCell->row() != previousCell->row());
+
+        // Look backwards in the tree for the previousCell's row. If we are
+        // DOM ordered, we should find it.
+        const LayoutTableRow* row = currentCell->row();
+        for (; row && row != previousCell->row(); row = row->previousRow()) { }
+        ASSERT(row == previousCell->row());
+
+        previousCell = currentCell;
+    }
+#endif // NDEBUG
+}
+
 void LayoutTableSection::addCell(LayoutTableCell* cell, LayoutTableRow* row)
 {
     // We don't insert the cell if we need cell recalc as our internal columns' representation
@@ -246,6 +272,7 @@ void LayoutTableSection::addCell(LayoutTableCell* cell, LayoutTableRow* row)
             CellStruct& c = cellAt(insertionRow + r, m_cCol);
             ASSERT(cell);
             c.cells.append(cell);
+            checkThatVectorIsDOMOrdered(c.cells);
             // If cells overlap then we take the slow path for painting.
             if (c.cells.size() > 1)
                 m_hasMultipleCellLevels = true;
@@ -762,25 +789,21 @@ int LayoutTableSection::calcRowLogicalHeight()
 
                         rowSpanCells.append(cell);
                         lastRowSpanCell = cell;
-
-                        // Find out the baseline. The baseline is set on the first row in a rowSpan.
-                        updateBaselineForCell(cell, r, baselineDescent);
                     }
-                    continue;
                 }
 
-                ASSERT(cell->rowSpan() == 1);
-
-                if (cell->hasOverrideLogicalContentHeight()) {
+                if (cell->rowIndex() == r && cell->hasOverrideLogicalContentHeight()) {
                     cell->clearIntrinsicPadding();
                     cell->clearOverrideSize();
                     cell->forceChildLayout();
                 }
 
-                m_rowPos[r + 1] = std::max(m_rowPos[r + 1], m_rowPos[r] + cell->logicalHeightForRowSizing());
+                if (cell->rowSpan() == 1)
+                    m_rowPos[r + 1] = std::max(m_rowPos[r + 1], m_rowPos[r] + cell->logicalHeightForRowSizing());
 
-                // Find out the baseline.
-                updateBaselineForCell(cell, r, baselineDescent);
+                // Find out the baseline. The baseline is set on the first row in a rowSpan.
+                if (cell->rowIndex() == r)
+                    updateBaselineForCell(cell, r, baselineDescent);
             }
         }
 
@@ -942,7 +965,7 @@ int LayoutTableSection::distributeExtraLogicalHeightToRows(int extraLogicalHeigh
 
 static bool shouldFlexCellChild(LayoutObject* cellDescendant)
 {
-    return cellDescendant->isReplaced() || (cellDescendant->isBox() && toLayoutBox(cellDescendant)->scrollsOverflow());
+    return cellDescendant->isAtomicInlineLevel() || (cellDescendant->isBox() && toLayoutBox(cellDescendant)->scrollsOverflow());
 }
 
 void LayoutTableSection::layoutRows()
@@ -1067,7 +1090,7 @@ void LayoutTableSection::layoutRows()
                 if (oldLogicalHeight > rHeight)
                     rowHeightIncreaseForPagination = std::max<int>(rowHeightIncreaseForPagination, oldLogicalHeight - rHeight);
                 cell->setLogicalHeight(rHeight);
-                cell->computeOverflow(oldLogicalHeight);
+                cell->computeOverflow(oldLogicalHeight, false);
             }
 
             if (rowLayoutObject)
@@ -1090,7 +1113,7 @@ void LayoutTableSection::layoutRows()
                 for (size_t i = 0; i < cells.size(); ++i) {
                     LayoutUnit oldLogicalHeight = cells[i]->logicalHeight();
                     cells[i]->setLogicalHeight(oldLogicalHeight + rowHeightIncreaseForPagination);
-                    cells[i]->computeOverflow(oldLogicalHeight);
+                    cells[i]->computeOverflow(oldLogicalHeight, false);
                 }
             }
         }
@@ -1174,9 +1197,9 @@ int LayoutTableSection::calcBlockDirectionOuterBorder(BlockBorderSide side) cons
         const ComputedStyle& primaryCellStyle = current.primaryCell()->styleRef();
         const BorderValue& cb = side == BorderBefore ? primaryCellStyle.borderBefore() : primaryCellStyle.borderAfter(); // FIXME: Make this work with perpendicular and flipped cells.
         // FIXME: Don't repeat for the same col group
-        LayoutTableCol* colGroup = table()->colElement(c);
-        if (colGroup) {
-            const BorderValue& gb = side == BorderBefore ? colGroup->style()->borderBefore() : colGroup->style()->borderAfter();
+        LayoutTableCol* col = table()->colElement(c).innermostColOrColGroup();
+        if (col) {
+            const BorderValue& gb = side == BorderBefore ? col->style()->borderBefore() : col->style()->borderAfter();
             if (gb.style() == BHIDDEN || cb.style() == BHIDDEN)
                 continue;
             allHidden = false;
@@ -1215,8 +1238,8 @@ int LayoutTableSection::calcInlineDirectionOuterBorder(InlineBorderSide side) co
     if (sb.style() > BHIDDEN)
         borderWidth = sb.width();
 
-    if (LayoutTableCol* colGroup = table()->colElement(colIndex)) {
-        const BorderValue& gb = side == BorderStart ? colGroup->style()->borderStart() : colGroup->style()->borderEnd();
+    if (LayoutTableCol* col = table()->colElement(colIndex).innermostColOrColGroup()) {
+        const BorderValue& gb = side == BorderStart ? col->style()->borderStart() : col->style()->borderEnd();
         if (gb.style() == BHIDDEN)
             return -1;
         if (gb.style() > BHIDDEN && gb.width() > borderWidth)

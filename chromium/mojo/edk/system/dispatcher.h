@@ -60,6 +60,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     DATA_PIPE_PRODUCER,
     DATA_PIPE_CONSUMER,
     SHARED_BUFFER,
+    WAIT_SET,
 
     // "Private" types (not exposed via the public interface):
     PLATFORM_HANDLE = -1
@@ -139,13 +140,32 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   //    that |signals| will ever be satisfied.
   MojoResult AddAwakable(Awakable* awakable,
                          MojoHandleSignals signals,
-                         uint32_t context,
+                         uintptr_t context,
                          HandleSignalsState* signals_state);
   // Removes an awakable from this dispatcher. (It is valid to call this
   // multiple times for the same |awakable| on the same object, so long as
   // |AddAwakable()| was called at most once.) If |signals_state| is non-null,
   // |*signals_state| will be set to the current handle signals state.
   void RemoveAwakable(Awakable* awakable, HandleSignalsState* signals_state);
+
+  // Adds a dispatcher to wait on. When the dispatcher satisfies |signals|, it
+  // will be returned in the next call to |GetReadyDispatchers()|. If
+  // |dispatcher| has been added, it must be removed before adding again,
+  // otherwise |MOJO_RESULT_ALREADY_EXISTS| will be returned.
+  MojoResult AddWaitingDispatcher(const scoped_refptr<Dispatcher>& dispatcher,
+                                  MojoHandleSignals signals,
+                                  uintptr_t context);
+  // Removes a dispatcher to wait on. If |dispatcher| has not been added,
+  // |MOJO_RESULT_NOT_FOUND| will be returned.
+  MojoResult RemoveWaitingDispatcher(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  // Returns a set of ready dispatchers. |*count| is the maximum number of
+  // dispatchers to return, and will contain the number of dispatchers returned
+  // in |dispatchers| on completion.
+  MojoResult GetReadyDispatchers(uint32_t* count,
+                                 DispatcherVector* dispatchers,
+                                 MojoResult* results,
+                                 uintptr_t* contexts);
 
   // A dispatcher must be put into a special state in order to be sent across a
   // message pipe. Outside of tests, only |HandleTableAccess| is allowed to do
@@ -261,21 +281,25 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                            MojoHandleSignals signals,
-                                           uint32_t context,
+                                           uintptr_t context,
                                            HandleSignalsState* signals_state);
   virtual void RemoveAwakableImplNoLock(Awakable* awakable,
                                         HandleSignalsState* signals_state);
+  virtual MojoResult AddWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher,
+      MojoHandleSignals signals,
+      uintptr_t context);
+  virtual MojoResult RemoveWaitingDispatcherImplNoLock(
+      const scoped_refptr<Dispatcher>& dispatcher);
+  virtual MojoResult GetReadyDispatchersImplNoLock(
+      uint32_t* count,
+      DispatcherVector* dispatchers,
+      MojoResult* results,
+      uintptr_t* contexts);
 
   // These implement the API used to serialize dispatchers (described below).
   // They will only be called on a dispatcher that's attached to and "owned" by
   // a |MessageInTransit|. See the non-"impl" versions for more information.
-  //
-  // Note: |StartSerializeImplNoLock()| is actually called with |lock_| NOT
-  // held, since the dispatcher should only be accessible to the calling thread.
-  // On Debug builds, |EndSerializeAndCloseImplNoLock()| is called with |lock_|
-  // held, to satisfy any |lock_.AssertAcquired()| (e.g., in |CloseImplNoLock()|
-  // -- and anything it calls); disentangling those assertions is
-  // difficult/fragile, and would weaken our general checking of invariants.
   //
   // TODO(vtl): Consider making these pure virtual once most things support
   // being passed over a message pipe.
@@ -307,6 +331,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Available to subclasses. (Note: Returns a non-const reference, just like
   // |base::AutoLock|'s constructor takes a non-const reference.)
   base::Lock& lock() const { return lock_; }
+  bool is_closed() const { return is_closed_; }
 
  private:
   friend class DispatcherTransport;
@@ -331,8 +356,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Starts the serialization. Returns (via the two "out" parameters) the
   // maximum amount of space that may be needed to serialize this dispatcher (no
   // more than |TransportData::kMaxSerializedDispatcherSize|) and the maximum
-  // number of |PlatformHandle|s that may need to be attached (no more than
-  // |TransportData::kMaxSerializedDispatcherPlatformHandles|). If this
+  // number of |PlatformHandle|s that may need to be attached. If this
   // dispatcher cannot be serialized, |*max_size| and |*max_platform_handles|
   // should be set to zero. A call to this method will ALWAYS be followed by a
   // call to |EndSerializeAndClose()| (even if this dispatcher cannot be

@@ -10,11 +10,12 @@
 
 #include "webrtc/voice_engine/output_mixer.h"
 
+#include "webrtc/base/format_macros.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/utility/interface/audio_frame_operations.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/file_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/modules/utility/include/audio_frame_operations.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/file_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/include/voe_external_media.h"
 #include "webrtc/voice_engine/statistics.h"
 #include "webrtc/voice_engine/utility.h"
@@ -462,11 +463,12 @@ int OutputMixer::StopRecordingPlayout()
 }
 
 int OutputMixer::GetMixedAudio(int sample_rate_hz,
-                               int num_channels,
+                               size_t num_channels,
                                AudioFrame* frame) {
-  WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
-               "OutputMixer::GetMixedAudio(sample_rate_hz=%d, num_channels=%d)",
-               sample_rate_hz, num_channels);
+  WEBRTC_TRACE(
+      kTraceStream, kTraceVoice, VoEId(_instanceId,-1),
+      "OutputMixer::GetMixedAudio(sample_rate_hz=%d, num_channels=%" PRIuS ")",
+      sample_rate_hz, num_channels);
 
   // --- Record playout if enabled
   {
@@ -517,8 +519,20 @@ OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
     }
 
     // --- Far-end Voice Quality Enhancement (AudioProcessing Module)
-    if (feed_data_to_apm)
-      APMProcessReverseStream();
+    if (feed_data_to_apm) {
+      // Convert from mixing to AudioProcessing sample rate, similarly to how it
+      // is done on the send side. Downmix to mono.
+      AudioFrame frame;
+      frame.num_channels_ = 1;
+      frame.sample_rate_hz_ = _audioProcessingModulePtr->input_sample_rate_hz();
+      RemixAndResample(_audioFrame, &audioproc_resampler_, &frame);
+
+      if (_audioProcessingModulePtr->AnalyzeReverseStream(&frame) != 0) {
+        WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId, -1),
+                     "AudioProcessingModule::AnalyzeReverseStream() => error");
+        RTC_DCHECK(false);
+      }
+    }
 
     // --- External media processing
     {
@@ -548,13 +562,6 @@ OutputMixer::DoOperationsOnCombinedSignal(bool feed_data_to_apm)
 // ----------------------------------------------------------------------------
 //                             Private methods
 // ----------------------------------------------------------------------------
-
-void OutputMixer::APMProcessReverseStream() {
-  if (_audioProcessingModulePtr->ProcessReverseStream(&_audioFrame) == -1) {
-    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
-                 "AudioProcessingModule::ProcessReverseStream() => error");
-  }
-}
 
 int
 OutputMixer::InsertInbandDtmfTone()

@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "modules/storage/InspectorDOMStorageAgent.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -37,6 +36,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorState.h"
 #include "core/page/Page.h"
 #include "modules/storage/Storage.h"
@@ -193,18 +193,6 @@ void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, con
         frontend()->domStorageItemUpdated(id, key, oldValue, newValue);
 }
 
-static LocalFrame* findFrameWithSecurityOrigin(LocalFrame* inspectedFrame, const String& originRawString)
-{
-    for (Frame* frame = inspectedFrame; frame; frame = frame->tree().traverseNext(inspectedFrame)) {
-        if (!frame->isLocalFrame())
-            continue;
-        RefPtr<SecurityOrigin> documentOrigin = toLocalFrame(frame)->document()->securityOrigin();
-        if (documentOrigin->toRawString() == originRawString)
-            return toLocalFrame(frame);
-    }
-    return nullptr;
-}
-
 StorageArea* InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, LocalFrame*& targetFrame)
 {
     String securityOrigin;
@@ -221,7 +209,8 @@ StorageArea* InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString,
     if (!m_page->mainFrame()->isLocalFrame())
         return nullptr;
 
-    LocalFrame* frame = findFrameWithSecurityOrigin(m_page->deprecatedLocalMainFrame(), securityOrigin);
+    OwnPtrWillBeRawPtr<InspectedFrames> inspectedFrames = InspectedFrames::create(m_page->deprecatedLocalMainFrame());
+    LocalFrame* frame = inspectedFrames->frameWithSecurityOrigin(securityOrigin);
     if (!frame) {
         if (errorString)
             *errorString = "LocalFrame not found for the given security origin";
@@ -231,7 +220,13 @@ StorageArea* InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString,
 
     if (isLocalStorage)
         return StorageNamespace::localStorageArea(frame->document()->securityOrigin());
-    return StorageNamespaceController::from(m_page)->sessionStorage()->storageArea(frame->document()->securityOrigin());
+    StorageNamespace* sessionStorage = StorageNamespaceController::from(m_page)->sessionStorage();
+    if (!sessionStorage) {
+        if (errorString)
+            *errorString = "SessionStorage is not supported";
+        return nullptr;
+    }
+    return sessionStorage->storageArea(frame->document()->securityOrigin());
 }
 
 } // namespace blink

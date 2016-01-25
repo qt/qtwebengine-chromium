@@ -15,11 +15,10 @@
 #ifndef CRASHPAD_HANDLER_MAC_EXCEPTION_HANDLER_SERVER_H_
 #define CRASHPAD_HANDLER_MAC_EXCEPTION_HANDLER_SERVER_H_
 
-#include "base/basictypes.h"
-
 #include <mach/mach.h>
 
 #include "base/mac/scoped_mach_port.h"
+#include "base/macros.h"
 #include "util/mach/exc_server_variants.h"
 
 namespace crashpad {
@@ -28,19 +27,29 @@ namespace crashpad {
 //!     process.
 class ExceptionHandlerServer {
  public:
-  ExceptionHandlerServer();
+  //! \brief Constructs an ExceptionHandlerServer object.
+  //!
+  //! \param[in] receive_port The port that exception messages and no-senders
+  //!     notifications will be received on.
+  //! \param[in] launchd If `true`, the exception handler is being run from
+  //!     launchd. \a receive_port is not monitored for no-senders
+  //!     notifications, and instead, Stop() must be called to provide a “quit”
+  //!     signal.
+  ExceptionHandlerServer(base::mac::ScopedMachReceiveRight receive_port,
+                         bool launchd);
   ~ExceptionHandlerServer();
 
   //! \brief Runs the exception-handling server.
   //!
   //! \param[in] exception_interface An object to send exception messages to.
   //!
-  //! This method monitors receive_port() for exception messages and no-senders
-  //! notifications. It continues running until it has no more clients,
-  //! indicated by the receipt of a no-senders notification. It is important to
-  //! assure that a send right has been transferred to a client (or queued by
-  //! `mach_msg()` to be sent to a client) prior to calling this method, or it
-  //! will detect that it is sender-less and return immediately.
+  //! This method monitors the receive port for exception messages and, if
+  //! not being run by launchd, no-senders notifications. It continues running
+  //! until it has no more clients, indicated by the receipt of a no-senders
+  //! notification, or until Stop() is called. When not being run by launchd, it
+  //! is important to assure that a send right exists in a client (or has been
+  //! queued by `mach_msg()` to be sent to a client) prior to calling this
+  //! method, or it will detect that it is sender-less and return immediately.
   //!
   //! All exception messages will be passed to \a exception_interface.
   //!
@@ -48,19 +57,24 @@ class ExceptionHandlerServer {
   //!
   //! If an unexpected condition that prevents this method from functioning is
   //! encountered, it will log a message and terminate execution. Receipt of an
-  //! invalid message on receive_port() will cause a message to be logged, but
+  //! invalid message on the receive port will cause a message to be logged, but
   //! this method will continue running normally.
   void Run(UniversalMachExcServer::Interface* exception_interface);
 
-  //! \brief Returns the receive right that will be monitored for exception
-  //!     messages.
+  //! \brief Stops a running exception-handling server.
   //!
-  //! The caller does not take ownership of this port. The caller must not use
-  //! this port for any purpose other than to make send rights for clients.
-  mach_port_t receive_port() const { return receive_port_; }
+  //! The normal mode of operation is to call Stop() while Run() is running. It
+  //! is expected that Stop() would be called from a signal handler.
+  //!
+  //! If Stop() is called before Run() it will cause Run() to return as soon as
+  //! it is called. It is harmless to call Stop() after Run() has already
+  //! returned, or to call Stop() after it has already been called.
+  void Stop();
 
  private:
   base::mac::ScopedMachReceiveRight receive_port_;
+  base::mac::ScopedMachReceiveRight notify_port_;
+  bool launchd_;
 
   DISALLOW_COPY_AND_ASSIGN(ExceptionHandlerServer);
 };

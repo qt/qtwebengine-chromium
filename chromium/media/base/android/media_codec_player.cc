@@ -4,8 +4,11 @@
 
 #include "media/base/android/media_codec_player.h"
 
+#include <utility>
+
 #include "base/barrier_closure.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/thread_task_runner_handle.h"
@@ -44,12 +47,11 @@ MediaCodecPlayer::MediaCodecPlayer(
                          on_decoder_resources_released_cb,
                          frame_url),
       ui_task_runner_(base::ThreadTaskRunnerHandle::Get()),
-      demuxer_(demuxer.Pass()),
+      demuxer_(std::move(demuxer)),
       state_(kStatePaused),
       interpolator_(&default_tick_clock_),
       pending_start_(false),
       pending_seek_(kNoTimestamp()),
-      drm_bridge_(nullptr),
       cdm_registration_id_(0),
       key_is_required_(false),
       key_is_added_(false),
@@ -87,6 +89,8 @@ MediaCodecPlayer::~MediaCodecPlayer()
   DVLOG(1) << "MediaCodecPlayer::~MediaCodecPlayer";
   DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
 
+  media_stat_->StopAndReport(GetInterpolatedTime());
+
   // Currently the unit tests wait for the MediaCodecPlayer destruction by
   // watching the demuxer, which is destroyed as one of the member variables.
   // Release the codecs here, before any member variable is destroyed to make
@@ -97,11 +101,10 @@ MediaCodecPlayer::~MediaCodecPlayer()
   if (audio_decoder_)
     audio_decoder_->ReleaseDecoderResources();
 
-  media_stat_->StopAndReport(GetInterpolatedTime());
-
-  if (drm_bridge_) {
+  if (cdm_) {
     DCHECK(cdm_registration_id_);
-    drm_bridge_->UnregisterPlayer(cdm_registration_id_);
+    static_cast<MediaDrmBridge*>(cdm_.get())
+        ->UnregisterPlayer(cdm_registration_id_);
   }
 }
 
@@ -158,7 +161,7 @@ void MediaCodecPlayer::SetVideoSurface(gfx::ScopedJavaSurface surface) {
     return;
   }
 
-  video_decoder_->SetVideoSurface(surface.Pass());
+  video_decoder_->SetVideoSurface(std::move(surface));
 
   if (surface_is_empty) {
     // Remove video surface.
@@ -246,6 +249,8 @@ void MediaCodecPlayer::Pause(bool is_media_related_action) {
 
   DVLOG(1) << __FUNCTION__;
 
+  media_stat_->StopAndReport(GetInterpolatedTime());
+
   SetPendingStart(false);
 
   switch (state_) {
@@ -277,6 +282,8 @@ void MediaCodecPlayer::SeekTo(base::TimeDelta timestamp) {
   RUN_ON_MEDIA_THREAD(SeekTo, timestamp);
 
   DVLOG(1) << __FUNCTION__ << " " << timestamp;
+
+  media_stat_->StopAndReport(GetInterpolatedTime());
 
   switch (state_) {
     case kStatePaused:
@@ -328,6 +335,8 @@ void MediaCodecPlayer::Release() {
 
   DVLOG(1) << __FUNCTION__;
 
+  media_stat_->StopAndReport(GetInterpolatedTime());
+
   // Stop decoding threads and delete MediaCodecs, but keep IPC between browser
   // and renderer processes going. Seek should work across and after Release().
 
@@ -355,6 +364,16 @@ void MediaCodecPlayer::SetVolume(double volume) {
 
   DVLOG(1) << __FUNCTION__ << " " << volume;
   audio_decoder_->SetVolume(volume);
+}
+
+bool MediaCodecPlayer::HasAudio() const {
+  DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
+  return audio_decoder_->HasStream();
+}
+
+bool MediaCodecPlayer::HasVideo() const {
+  DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
+  return video_decoder_->HasStream();
 }
 
 int MediaCodecPlayer::GetVideoWidth() {
@@ -410,7 +429,8 @@ bool MediaCodecPlayer::IsPlayerReady() {
   return true;
 }
 
-void MediaCodecPlayer::SetCdm(BrowserCdm* cdm) {
+void MediaCodecPlayer::SetCdm(const scoped_refptr<MediaKeys>& cdm) {
+  DCHECK(cdm);
   RUN_ON_MEDIA_THREAD(SetCdm, cdm);
 
   DVLOG(1) << __FUNCTION__;
@@ -423,27 +443,31 @@ void MediaCodecPlayer::SetCdm(BrowserCdm* cdm) {
     return;
   }
 
-  if (drm_bridge_) {
+  if (cdm_) {
     NOTREACHED() << "Currently we do not support resetting CDM.";
     return;
   }
 
-  DCHECK(cdm);
-  drm_bridge_ = static_cast<MediaDrmBridge*>(cdm);
+  cdm_ = cdm;
 
-  DCHECK(drm_bridge_);
+  // Only MediaDrmBridge will be set on MediaCodecPlayer.
+  MediaDrmBridge* drm_bridge = static_cast<MediaDrmBridge*>(cdm_.get());
 
-  cdm_registration_id_ = drm_bridge_->RegisterPlayer(
-      base::Bind(&MediaCodecPlayer::OnKeyAdded, media_weak_this_),
-      base::Bind(&MediaCodecPlayer::OnCdmUnset, media_weak_this_));
+  // Register CDM callbacks. The callbacks registered will be posted back to the
+  // media thread via BindToCurrentLoop.
 
-  MediaDrmBridge::MediaCryptoReadyCB cb = BindToCurrentLoop(
-      base::Bind(&MediaCodecPlayer::OnMediaCryptoReady, media_weak_this_));
+  // Since |this| holds a reference to the |cdm_|, by the time the CDM is
+  // destructed, UnregisterPlayer() must have been called and |this| has been
+  // destructed as well. So the |cdm_unset_cb| will never have a chance to be
+  // called.
+  // TODO(xhwang): Remove |cdm_unset_cb| after it's not used on all platforms.
+  cdm_registration_id_ = drm_bridge->RegisterPlayer(
+      BindToCurrentLoop(
+          base::Bind(&MediaCodecPlayer::OnKeyAdded, media_weak_this_)),
+      base::Bind(&base::DoNothing));
 
-  // Post back to UI thread.
-  ui_task_runner_->PostTask(FROM_HERE,
-                            base::Bind(&MediaDrmBridge::SetMediaCryptoReadyCB,
-                                       drm_bridge_->WeakPtrForUIThread(), cb));
+  drm_bridge->SetMediaCryptoReadyCB(BindToCurrentLoop(
+      base::Bind(&MediaCodecPlayer::OnMediaCryptoReady, media_weak_this_)));
 }
 
 // Callbacks from Demuxer.
@@ -597,12 +621,12 @@ bool MediaCodecPlayer::IsPrerollingForTests(DemuxerStream::Type type) const {
 
 // Events from Player, called on UI thread
 
-void MediaCodecPlayer::RequestPermissionAndPostResult(
-    base::TimeDelta duration) {
+void MediaCodecPlayer::RequestPermissionAndPostResult(base::TimeDelta duration,
+                                                      bool has_audio) {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " duration:" << duration;
 
-  bool granted = manager()->RequestPlay(player_id(), duration);
+  bool granted = manager()->RequestPlay(player_id(), duration, has_audio);
   GetMediaTaskRunner()->PostTask(
       FROM_HERE, base::Bind(&MediaCodecPlayer::OnPermissionDecided,
                             media_weak_this_, granted));
@@ -816,13 +840,13 @@ void MediaCodecPlayer::OnStopDone(DemuxerStream::Type type) {
       return;
   }
 
-  media_stat_->StopAndReport(GetInterpolatedTime());
-
   // DetachListener to UI thread
   ui_task_runner_->PostTask(FROM_HERE, detach_listener_cb_);
 
-  if (AudioFinished() && VideoFinished())
+  if (AudioFinished() && VideoFinished()) {
+    media_stat_->StopAndReport(GetInterpolatedTime());
     ui_task_runner_->PostTask(FROM_HERE, completion_cb_);
+  }
 }
 
 void MediaCodecPlayer::OnMissingKeyReported(DemuxerStream::Type type) {
@@ -833,6 +857,8 @@ void MediaCodecPlayer::OnMissingKeyReported(DemuxerStream::Type type) {
   key_is_required_ = true;
 
   if (state_ == kStatePlaying) {
+    media_stat_->StopAndReport(GetInterpolatedTime());
+
     SetState(kStateStopping);
     RequestToStopDecoders();
     SetPendingStart(true);
@@ -842,6 +868,8 @@ void MediaCodecPlayer::OnMissingKeyReported(DemuxerStream::Type type) {
 void MediaCodecPlayer::OnError() {
   DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__;
+
+  media_stat_->StopAndReport(GetInterpolatedTime());
 
   // kStateError blocks all events
   SetState(kStateError);
@@ -931,9 +959,17 @@ void MediaCodecPlayer::OnMediaCryptoReady(
   // and the surface requirement does not change until new SetCdm() is called.
 
   DCHECK(media_crypto);
-  DCHECK(!media_crypto->is_null());
 
-  media_crypto_ = media_crypto.Pass();
+  if (media_crypto->is_null()) {
+    // TODO(timav): Fail playback nicely here if needed. Note that we could get
+    // here even though the stream to play is unencrypted and therefore
+    // MediaCrypto is not needed. In that case, we may ignore this error and
+    // continue playback, or fail the playback.
+    LOG(ERROR) << "MediaCrypto creation failed.";
+    return;
+  }
+
+  media_crypto_ = std::move(media_crypto);
 
   if (audio_decoder_) {
     audio_decoder_->SetNeedsReconfigure();
@@ -965,31 +1001,6 @@ void MediaCodecPlayer::OnKeyAdded() {
   }
 }
 
-void MediaCodecPlayer::OnCdmUnset() {
-  DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
-  DVLOG(1) << __FUNCTION__;
-
-  // This comment is copied from MediaSourcePlayer::OnCdmUnset().
-  // TODO(xhwang): Currently this is only called during teardown. Support full
-  // detachment of CDM during playback. This will be needed when we start to
-  // support setMediaKeys(0) (see http://crbug.com/330324), or when we release
-  // MediaDrm when the video is paused, or when the device goes to sleep (see
-  // http://crbug.com/272421).
-
-  if (audio_decoder_) {
-    audio_decoder_->SetNeedsReconfigure();
-  }
-
-  if (video_decoder_) {
-    video_decoder_->SetProtectedSurfaceRequired(false);
-    video_decoder_->SetNeedsReconfigure();
-  }
-
-  cdm_registration_id_ = 0;
-  drm_bridge_ = nullptr;
-  media_crypto_.reset();
-}
-
 // State machine operations, called on Media thread
 
 void MediaCodecPlayer::SetState(PlayerState new_state) {
@@ -1019,16 +1030,6 @@ void MediaCodecPlayer::SetPendingSeek(base::TimeDelta timestamp) {
 base::TimeDelta MediaCodecPlayer::GetPendingSeek() const {
   DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
   return pending_seek_;
-}
-
-bool MediaCodecPlayer::HasAudio() const {
-  DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
-  return audio_decoder_->HasStream();
-}
-
-bool MediaCodecPlayer::HasVideo() const {
-  DCHECK(GetMediaTaskRunner()->BelongsToCurrentThread());
-  return video_decoder_->HasStream();
 }
 
 void MediaCodecPlayer::SetDemuxerConfigs(const DemuxerConfigs& configs) {
@@ -1063,7 +1064,7 @@ void MediaCodecPlayer::RequestPlayPermission() {
 
   ui_task_runner_->PostTask(
       FROM_HERE, base::Bind(&MediaPlayerAndroid::RequestPermissionAndPostResult,
-                            WeakPtrForUIThread(), duration_));
+                            WeakPtrForUIThread(), duration_, HasAudio()));
 }
 
 void MediaCodecPlayer::StartPrefetchDecoders() {
@@ -1254,7 +1255,6 @@ MediaCodecPlayer::StartStatus MediaCodecPlayer::StartDecoders() {
 
   // At this point decoder threads are either not running at all or their
   // message pumps are in the idle state after the preroll is done.
-  media_stat_->Start(current_time);
 
   if (!AudioFinished()) {
     if (!audio_decoder_->Start(current_time))
@@ -1269,6 +1269,8 @@ MediaCodecPlayer::StartStatus MediaCodecPlayer::StartDecoders() {
       return kStartFailed;
   }
 
+  media_stat_->Start(current_time);
+
   return kStartOk;
 }
 
@@ -1278,8 +1280,6 @@ void MediaCodecPlayer::StopDecoders() {
 
   video_decoder_->SyncStop();
   audio_decoder_->SyncStop();
-
-  media_stat_->StopAndReport(GetInterpolatedTime());
 }
 
 void MediaCodecPlayer::RequestToStopDecoders() {
@@ -1337,8 +1337,6 @@ void MediaCodecPlayer::ReleaseDecoderResources() {
   // At this point decoder threads should not be running
   if (interpolator_.interpolating())
     interpolator_.StopInterpolating();
-
-  media_stat_->StopAndReport(GetInterpolatedTime());
 }
 
 void MediaCodecPlayer::CreateDecoders() {

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/NodeRareData.h"
 
 #include "core/dom/Element.h"
@@ -40,8 +39,8 @@
 namespace blink {
 
 struct SameSizeAsNodeRareData {
-    void* m_pointer[2];
-    OwnPtrWillBeMember<NodeMutationObserverData> m_mutationObserverData;
+    void* m_pointer;
+    RawPtrWillBeMember<void*> m_willbeMember[2];
     unsigned m_bitfields;
 };
 

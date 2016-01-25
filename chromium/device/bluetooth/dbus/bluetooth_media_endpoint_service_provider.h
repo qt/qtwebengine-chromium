@@ -5,10 +5,13 @@
 #ifndef DEVICE_BLUETOOTH_DBUS_BLUETOOTH_MEDIA_ENDPOINT_SERVICE_PROVIDER_H_
 #define DEVICE_BLUETOOTH_DBUS_BLUETOOTH_MEDIA_ENDPOINT_SERVICE_PROVIDER_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -21,7 +24,7 @@ namespace bluez {
 //
 // Instantiate with a chosen D-Bus object path and a delegate object, and pass
 // the D-Bus object path as |endpoint_path| argument to the
-// chromeos::BluetoothMediaClient::RegisterEndoint() method.
+// bluez::BluetoothMediaClient::RegisterEndoint() method.
 //
 // After initiating a connection between an audio source and an audio sink, the
 // Bluetooth daemon will make calls to this endpoint object and they will be

@@ -5,12 +5,15 @@
 #ifndef CONTENT_BROWSER_BACKGROUND_SYNC_BACKGROUND_SYNC_SERVICE_IMPL_H_
 #define CONTENT_BROWSER_BACKGROUND_SYNC_BACKGROUND_SYNC_SERVICE_IMPL_H_
 
+#include <stdint.h>
+
 #include "base/id_map.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "content/browser/background_sync/background_sync_manager.h"
 #include "content/common/background_sync_service.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/binding.h"
 
 namespace content {
 
@@ -52,8 +55,8 @@ class CONTENT_EXPORT BackgroundSyncServiceImpl
       const DuplicateRegistrationHandleCallback& callback) override;
   void ReleaseRegistration(
       BackgroundSyncRegistrationHandle::HandleId handle_id) override;
-  void NotifyWhenDone(BackgroundSyncRegistrationHandle::HandleId handle_id,
-                      const NotifyWhenDoneCallback& callback) override;
+  void NotifyWhenFinished(BackgroundSyncRegistrationHandle::HandleId handle_id,
+                          const NotifyWhenFinishedCallback& callback) override;
 
   void OnRegisterResult(const RegisterCallback& callback,
                         BackgroundSyncStatus status,
@@ -64,9 +67,9 @@ class CONTENT_EXPORT BackgroundSyncServiceImpl
       const GetRegistrationsCallback& callback,
       BackgroundSyncStatus status,
       scoped_ptr<ScopedVector<BackgroundSyncRegistrationHandle>> result);
-  void OnNotifyWhenDoneResult(const NotifyWhenDoneCallback& callback,
-                              BackgroundSyncStatus status,
-                              BackgroundSyncState sync_state);
+  void OnNotifyWhenFinishedResult(const NotifyWhenFinishedCallback& callback,
+                                  BackgroundSyncStatus status,
+                                  BackgroundSyncState sync_state);
 
   // Called when an error is detected on binding_.
   void OnConnectionError();

@@ -29,12 +29,6 @@
 /* COMPILER() - the compiler being used to build the project */
 #define COMPILER(WTF_FEATURE) (defined WTF_COMPILER_##WTF_FEATURE  && WTF_COMPILER_##WTF_FEATURE)
 
-/* COMPILER_SUPPORTS() - whether the compiler being used to build the project supports the given feature. */
-#define COMPILER_SUPPORTS(WTF_COMPILER_FEATURE) (defined WTF_COMPILER_SUPPORTS_##WTF_COMPILER_FEATURE  && WTF_COMPILER_SUPPORTS_##WTF_COMPILER_FEATURE)
-
-/* COMPILER_QUIRK() - whether the compiler being used to build the project requires a given quirk. */
-#define COMPILER_QUIRK(WTF_COMPILER_QUIRK) (defined WTF_COMPILER_QUIRK_##WTF_COMPILER_QUIRK  && WTF_COMPILER_QUIRK_##WTF_COMPILER_QUIRK)
-
 /* ==== COMPILER() - the compiler being used to build the project ==== */
 
 /* COMPILER(CLANG) - Clang  */
@@ -42,12 +36,12 @@
 #define WTF_COMPILER_CLANG 1
 #endif
 
-/* COMPILER(MSVC) - Microsoft Visual C++ */
+/* COMPILER(MSVC) - Microsoft Visual C++ (and Clang when compiling for Windows). */
 #if defined(_MSC_VER)
 #define WTF_COMPILER_MSVC 1
 #endif
 
-/* COMPILER(GCC) - GNU Compiler Collection */
+/* COMPILER(GCC) - GNU Compiler Collection (and Clang when compiling for platforms other than Windows). */
 #if defined(__GNUC__)
 #define WTF_COMPILER_GCC 1
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
@@ -149,15 +143,12 @@
 /* WTF_PRETTY_FUNCTION */
 
 #if COMPILER(GCC)
-#define WTF_COMPILER_SUPPORTS_PRETTY_FUNCTION 1
 #define WTF_PRETTY_FUNCTION __PRETTY_FUNCTION__
 #elif COMPILER(MSVC)
-#define WTF_COMPILER_SUPPORTS_PRETTY_FUNCTION 1
 #define WTF_PRETTY_FUNCTION __FUNCSIG__
 #else
 #define WTF_PRETTY_FUNCTION __FUNCTION__
 #endif
-
 
 /* NO_SANITIZE_UNRELATED_CAST - Disable runtime checks related to casts between
  * unrelated objects (-fsanitize=cfi-unrelated-cast or -fsanitize=vptr). */

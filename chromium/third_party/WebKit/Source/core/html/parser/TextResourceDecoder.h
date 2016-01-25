@@ -32,11 +32,12 @@ namespace blink {
 class HTMLMetaCharsetParser;
 
 class CORE_EXPORT TextResourceDecoder {
-    WTF_MAKE_FAST_ALLOCATED(TextResourceDecoder);
+    USING_FAST_MALLOC(TextResourceDecoder);
     WTF_MAKE_NONCOPYABLE(TextResourceDecoder);
 public:
     enum EncodingSource {
         DefaultEncoding,
+        DefaultEncodingAttemptedSniffing,
         AutoDetectedEncoding,
         EncodingFromContentSniffing,
         EncodingFromXMLHeader,
@@ -48,7 +49,13 @@ public:
 
     static PassOwnPtr<TextResourceDecoder> create(const String& mimeType, const WTF::TextEncoding& defaultEncoding = WTF::TextEncoding(), bool usesEncodingDetector = false)
     {
-        return adoptPtr(new TextResourceDecoder(mimeType, defaultEncoding, usesEncodingDetector));
+        return adoptPtr(new TextResourceDecoder(mimeType, defaultEncoding, usesEncodingDetector ? UseAllAutoDetection : UseContentAndBOMBasedDetection));
+    }
+    // Corresponds to utf-8 decode in Encoding spec:
+    // https://encoding.spec.whatwg.org/#utf-8-decode.
+    static PassOwnPtr<TextResourceDecoder> createAlwaysUseUTF8ForText()
+    {
+        return adoptPtr(new TextResourceDecoder("plain/text", UTF8Encoding(), AlwaysUseUTF8ForText));
     }
     ~TextResourceDecoder();
 
@@ -57,6 +64,18 @@ public:
     bool encodingWasDetectedHeuristically() const
     {
         return m_source == AutoDetectedEncoding
+            || m_source == EncodingFromContentSniffing
+            || m_source == DefaultEncodingAttemptedSniffing;
+    }
+
+    bool encodingWasDetectedFromContentSniffing() const
+    {
+        return m_source == EncodingFromContentSniffing;
+    }
+
+    bool attemptedToDetermineEncodingFromContentSniffing() const
+    {
+        return m_source == DefaultEncodingAttemptedSniffing
             || m_source == EncodingFromContentSniffing;
     }
 
@@ -73,7 +92,28 @@ public:
     size_t checkForBOM(const char*, size_t);
 
 private:
-    TextResourceDecoder(const String& mimeType, const WTF::TextEncoding& defaultEncoding, bool usesEncodingDetector);
+
+    // TextResourceDecoder does three kind of encoding detection:
+    // 1. By BOM,
+    // 2. By Content if |m_contentType| is not |PlainTextContext|
+    //    (e.g. <meta> tag for HTML), and
+    // 3. By detectTextEncoding().
+    enum EncodingDetectionOption {
+        // Use 1. + 2. + 3.
+        UseAllAutoDetection,
+
+        // Use 1. + 2.
+        UseContentAndBOMBasedDetection,
+
+        // Use None of them.
+        // |m_contentType| must be |PlainTextContent| and
+        // |m_encoding| must be UTF8Encoding.
+        // This doesn't change encoding based on BOMs, but still processes
+        // utf-8 BOMs so that utf-8 BOMs don't appear in the decoded result.
+        AlwaysUseUTF8ForText
+    };
+
+    TextResourceDecoder(const String& mimeType, const WTF::TextEncoding& defaultEncoding, EncodingDetectionOption);
 
     enum ContentType { PlainTextContent, HTMLContent, XMLContent, CSSContent }; // PlainText only checks for BOM.
     static ContentType determineContentType(const String& mimeType);
@@ -83,6 +123,7 @@ private:
     bool checkForXMLCharset(const char*, size_t, bool& movedDataToBuffer);
     void checkForMetaCharset(const char*, size_t);
     bool shouldAutoDetect() const;
+    void detectTextEncoding(const char*, size_t);
 
     ContentType m_contentType;
     WTF::TextEncoding m_encoding;
@@ -96,7 +137,7 @@ private:
     bool m_checkedForMetaCharset;
     bool m_useLenientXMLDecoding; // Don't stop on XML decoding errors.
     bool m_sawError;
-    bool m_usesEncodingDetector;
+    EncodingDetectionOption m_encodingDetectionOption;
 
     OwnPtr<HTMLMetaCharsetParser> m_charsetParser;
 };

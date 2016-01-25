@@ -15,17 +15,14 @@
 //   infrastructure.
 
 #include <fcntl.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <deque>
 #include <map>
-
-// Include gtest.h out of order because <X11/X.h> #define's Bool & None, which
-// gtest uses as struct names (inside a namespace).  This means that
-// #include'ing gtest after anything that pulls in X.h fails to compile.
-// This is http://code.google.com/p/googletest/issues/detail?id=371
-#include "testing/gtest/include/gtest/gtest.h"
+#include <utility>
 
 #include "base/at_exit.h"
 #include "base/bind.h"
@@ -34,6 +31,7 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
+#include "base/macros.h"
 #include "base/md5.h"
 #include "base/process/process_handle.h"
 #include "base/stl_util.h"
@@ -47,17 +45,19 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "content/common/gpu/media/fake_video_decode_accelerator.h"
 #include "content/common/gpu/media/rendering_helper.h"
 #include "content/common/gpu/media/video_accelerator_unittest_helpers.h"
 #include "content/public/common/content_switches.h"
 #include "media/filters/h264_parser.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gl/gl_image.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "content/common/gpu/media/dxva_video_decode_accelerator.h"
+#include "content/common/gpu/media/dxva_video_decode_accelerator_win.h"
 #elif defined(OS_CHROMEOS)
 #if defined(USE_V4L2_CODEC)
 #include "content/common/gpu/media/v4l2_device.h"
@@ -271,16 +271,16 @@ class VideoDecodeAcceleratorTestEnvironment : public ::testing::Environment {
 // A helper class used to manage the lifetime of a Texture.
 class TextureRef : public base::RefCounted<TextureRef> {
  public:
-  TextureRef(uint32 texture_id, const base::Closure& no_longer_needed_cb)
+  TextureRef(uint32_t texture_id, const base::Closure& no_longer_needed_cb)
       : texture_id_(texture_id), no_longer_needed_cb_(no_longer_needed_cb) {}
 
-  int32 texture_id() const { return texture_id_; }
+  int32_t texture_id() const { return texture_id_; }
 
  private:
   friend class base::RefCounted<TextureRef>;
   ~TextureRef();
 
-  uint32 texture_id_;
+  uint32_t texture_id_;
   base::Closure no_longer_needed_cb_;
 };
 
@@ -333,13 +333,13 @@ class GLRenderingVDAClient
 
   // VideoDecodeAccelerator::Client implementation.
   // The heart of the Client.
-  void ProvidePictureBuffers(uint32 requested_num_of_buffers,
+  void ProvidePictureBuffers(uint32_t requested_num_of_buffers,
                              const gfx::Size& dimensions,
-                             uint32 texture_target) override;
-  void DismissPictureBuffer(int32 picture_buffer_id) override;
+                             uint32_t texture_target) override;
+  void DismissPictureBuffer(int32_t picture_buffer_id) override;
   void PictureReady(const media::Picture& picture) override;
   // Simple state changes.
-  void NotifyEndOfBitstreamBuffer(int32 bitstream_buffer_id) override;
+  void NotifyEndOfBitstreamBuffer(int32_t bitstream_buffer_id) override;
   void NotifyFlushDone() override;
   void NotifyResetDone() override;
   void NotifyError(VideoDecodeAccelerator::Error error) override;
@@ -357,7 +357,7 @@ class GLRenderingVDAClient
   bool decoder_deleted() { return !decoder_.get(); }
 
  private:
-  typedef std::map<int32, scoped_refptr<TextureRef>> TextureRefMap;
+  typedef std::map<int32_t, scoped_refptr<TextureRef>> TextureRefMap;
 
   scoped_ptr<media::VideoDecodeAccelerator> CreateFakeVDA();
   scoped_ptr<media::VideoDecodeAccelerator> CreateDXVAVDA();
@@ -365,13 +365,13 @@ class GLRenderingVDAClient
   scoped_ptr<media::VideoDecodeAccelerator> CreateV4L2SliceVDA();
   scoped_ptr<media::VideoDecodeAccelerator> CreateVaapiVDA();
 
-  void BindImage(uint32 client_texture_id,
-                 uint32 texture_target,
-                 scoped_refptr<gfx::GLImage> image);
+  void BindImage(uint32_t client_texture_id,
+                 uint32_t texture_target,
+                 scoped_refptr<gl::GLImage> image);
 
   void SetState(ClientState new_state);
   void FinishInitialization();
-  void ReturnPicture(int32 picture_buffer_id);
+  void ReturnPicture(int32_t picture_buffer_id);
 
   // Delete the associated decoder helper.
   void DeleteDecoder();
@@ -438,7 +438,7 @@ class GLRenderingVDAClient
   // CS_RESET_State.
   TextureRefMap pending_textures_;
 
-  int32 next_picture_buffer_id_;
+  int32_t next_picture_buffer_id_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GLRenderingVDAClient);
 };
@@ -513,7 +513,7 @@ GLRenderingVDAClient::CreateFakeVDA() {
         frame_size_,
         base::Bind(&DoNothingReturnTrue)));
   }
-  return decoder.Pass();
+  return decoder;
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
@@ -526,7 +526,7 @@ GLRenderingVDAClient::CreateDXVAVDA() {
             base::Bind(&DoNothingReturnTrue),
             rendering_helper_->GetGLContext().get()));
 #endif
-  return decoder.Pass();
+  return decoder;
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
@@ -543,7 +543,7 @@ GLRenderingVDAClient::CreateV4L2VDA() {
         base::ThreadTaskRunnerHandle::Get()));
   }
 #endif
-  return decoder.Pass();
+  return decoder;
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
@@ -560,7 +560,7 @@ GLRenderingVDAClient::CreateV4L2SliceVDA() {
         base::ThreadTaskRunnerHandle::Get()));
   }
 #endif
-  return decoder.Pass();
+  return decoder;
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
@@ -571,13 +571,12 @@ GLRenderingVDAClient::CreateVaapiVDA() {
       base::Bind(&DoNothingReturnTrue),
       base::Bind(&GLRenderingVDAClient::BindImage, base::Unretained(this))));
 #endif
-  return decoder.Pass();
+  return decoder;
 }
 
-void GLRenderingVDAClient::BindImage(uint32 client_texture_id,
-                                     uint32 texture_target,
-                                     scoped_refptr<gfx::GLImage> image) {
-}
+void GLRenderingVDAClient::BindImage(uint32_t client_texture_id,
+                                     uint32_t texture_target,
+                                     scoped_refptr<gl::GLImage> image) {}
 
 void GLRenderingVDAClient::CreateAndStartDecoder() {
   LOG_ASSERT(decoder_deleted());
@@ -596,7 +595,7 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
   for (size_t i = 0; i < arraysize(decoders); ++i) {
     if (!decoders[i])
       continue;
-    decoder_ = decoders[i].Pass();
+    decoder_ = std::move(decoders[i]);
     weak_decoder_factory_.reset(
         new base::WeakPtrFactory<VideoDecodeAccelerator>(decoder_.get()));
     if (decoder_->Initialize(profile_, client)) {
@@ -611,9 +610,9 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
 }
 
 void GLRenderingVDAClient::ProvidePictureBuffers(
-    uint32 requested_num_of_buffers,
+    uint32_t requested_num_of_buffers,
     const gfx::Size& dimensions,
-    uint32 texture_target) {
+    uint32_t texture_target) {
   if (decoder_deleted())
     return;
   std::vector<media::PictureBuffer> buffers;
@@ -621,14 +620,14 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
   requested_num_of_buffers += kExtraPictureBuffers;
 
   texture_target_ = texture_target;
-  for (uint32 i = 0; i < requested_num_of_buffers; ++i) {
-    uint32 texture_id;
+  for (uint32_t i = 0; i < requested_num_of_buffers; ++i) {
+    uint32_t texture_id;
     base::WaitableEvent done(false, false);
     rendering_helper_->CreateTexture(
         texture_target_, &texture_id, dimensions, &done);
     done.Wait();
 
-    int32 picture_buffer_id = next_picture_buffer_id_++;
+    int32_t picture_buffer_id = next_picture_buffer_id_++;
     LOG_ASSERT(active_textures_
               .insert(std::make_pair(
                   picture_buffer_id,
@@ -644,7 +643,7 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
   decoder_->AssignPictureBuffers(buffers);
 }
 
-void GLRenderingVDAClient::DismissPictureBuffer(int32 picture_buffer_id) {
+void GLRenderingVDAClient::DismissPictureBuffer(int32_t picture_buffer_id) {
   LOG_ASSERT(1U == active_textures_.erase(picture_buffer_id));
 }
 
@@ -698,7 +697,7 @@ void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
   }
 }
 
-void GLRenderingVDAClient::ReturnPicture(int32 picture_buffer_id) {
+void GLRenderingVDAClient::ReturnPicture(int32_t picture_buffer_id) {
   if (decoder_deleted())
     return;
   LOG_ASSERT(1U == pending_textures_.erase(picture_buffer_id));
@@ -722,7 +721,7 @@ void GLRenderingVDAClient::ReturnPicture(int32 picture_buffer_id) {
 }
 
 void GLRenderingVDAClient::NotifyEndOfBitstreamBuffer(
-    int32 bitstream_buffer_id) {
+    int32_t bitstream_buffer_id) {
   // TODO(fischman): this test currently relies on this notification to make
   // forward progress during a Reset().  But the VDA::Reset() API doesn't
   // guarantee this, so stop relying on it (and remove the notifications from
@@ -899,7 +898,7 @@ std::string GLRenderingVDAClient::GetBytesForNextFrame(
   if (start_pos == 0)
     start_pos = 32;  // Skip IVF header.
   *end_pos = start_pos;
-  uint32 frame_size = *reinterpret_cast<uint32*>(&encoded_data_[*end_pos]);
+  uint32_t frame_size = *reinterpret_cast<uint32_t*>(&encoded_data_[*end_pos]);
   *end_pos += 12;  // Skip frame header.
   bytes.append(encoded_data_.substr(*end_pos, frame_size));
   *end_pos += frame_size;
@@ -907,7 +906,8 @@ std::string GLRenderingVDAClient::GetBytesForNextFrame(
   return bytes;
 }
 
-static bool FragmentHasConfigInfo(const uint8* data, size_t size,
+static bool FragmentHasConfigInfo(const uint8_t* data,
+                                  size_t size,
                                   media::VideoCodecProfile profile) {
   if (profile >= media::H264PROFILE_MIN &&
       profile <= media::H264PROFILE_MAX) {
@@ -951,9 +951,8 @@ void GLRenderingVDAClient::DecodeNextFragment() {
   bool reset_here = false;
   if (reset_after_frame_num_ == RESET_AFTER_FIRST_CONFIG_INFO) {
     reset_here = FragmentHasConfigInfo(
-        reinterpret_cast<const uint8*>(next_fragment_bytes.data()),
-        next_fragment_size,
-        profile_);
+        reinterpret_cast<const uint8_t*>(next_fragment_bytes.data()),
+        next_fragment_size, profile_);
     if (reset_here)
       reset_after_frame_num_ = END_OF_STREAM_RESET;
   }

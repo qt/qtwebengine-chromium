@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/csp/CSPDirectiveList.h"
 
 #include "core/dom/Document.h"
@@ -26,8 +25,8 @@ namespace {
 String getSha256String(const String& content)
 {
     DigestValue digest;
-    StringUTF8Adaptor normalizedContent = normalizeSource(content);
-    bool digestSuccess = computeDigest(HashAlgorithmSha256, normalizedContent.data(), normalizedContent.length(), digest);
+    StringUTF8Adaptor utf8Content(content);
+    bool digestSuccess = computeDigest(HashAlgorithmSha256, utf8Content.data(), utf8Content.length(), digest);
     if (!digestSuccess) {
         return "sha256-...";
     }
@@ -73,21 +72,21 @@ void CSPDirectiveList::reportViolation(const String& directiveText, const String
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
     m_policy->logToConsole(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message));
-    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header, ContentSecurityPolicy::URLViolation);
 }
 
 void CSPDirectiveList::reportViolationWithFrame(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, LocalFrame* frame) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
     m_policy->logToConsole(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message), frame);
-    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header, frame);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header, ContentSecurityPolicy::URLViolation, frame);
 }
 
 void CSPDirectiveList::reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
     m_policy->logToConsole(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt()));
-    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header, ContentSecurityPolicy::InlineViolation);
 }
 
 void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& message, const KURL& blockedURL, ScriptState* scriptState, const ContentSecurityPolicy::ExceptionStatus exceptionStatus) const
@@ -102,7 +101,7 @@ void CSPDirectiveList::reportViolationWithState(const String& directiveText, con
         consoleMessage->setScriptState(scriptState);
         m_policy->logToConsole(consoleMessage.release());
     }
-    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header);
+    m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportEndpoints, m_header, ContentSecurityPolicy::EvalViolation);
 }
 
 bool CSPDirectiveList::checkEval(SourceListDirective* directive) const
@@ -659,12 +658,6 @@ void CSPDirectiveList::parseReflectedXSS(const String& name, const String& value
 
 void CSPDirectiveList::parseReferrer(const String& name, const String& value)
 {
-    if (m_didSetReferrerPolicy) {
-        m_policy->reportDuplicateDirective(name);
-        m_referrerPolicy = ReferrerPolicyNever;
-        return;
-    }
-
     m_didSetReferrerPolicy = true;
 
     if (value.isEmpty()) {
@@ -706,7 +699,6 @@ void CSPDirectiveList::parseReferrer(const String& name, const String& value)
 
     // value1 value2
     //        ^
-    m_referrerPolicy = ReferrerPolicyNever;
     m_policy->reportInvalidReferrer(value);
 }
 

@@ -26,15 +26,19 @@
 #ifndef CachingWordShapeIterator_h
 #define CachingWordShapeIterator_h
 
+#include "platform/fonts/Font.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/shaping/CachingWordShapeIterator.h"
 #include "platform/fonts/shaping/HarfBuzzShaper.h"
 #include "platform/fonts/shaping/ShapeCache.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
-class CachingWordShapeIterator {
+class CachingWordShapeIterator final {
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(CachingWordShapeIterator);
 public:
     CachingWordShapeIterator(ShapeCache* cache, const TextRun& run,
         const Font* font)
@@ -96,34 +100,90 @@ private:
 
     bool nextWord(RefPtr<ShapeResult>* wordResult)
     {
-        unsigned length = m_textRun.length();
-        if (m_startIndex < length) {
-            if (m_textRun[m_startIndex] == spaceCharacter
-                || m_textRun[m_startIndex] == tabulationCharacter) {
-                TextRun wordRun = m_textRun.subRun(m_startIndex, 1);
-                *wordResult = shapeWord(wordRun, m_font);
-                m_startIndex++;
-                return *wordResult;
-            }
-
-            return nextUntilCharacterOrTab(wordResult, spaceCharacter);
-        }
-        return false;
+        return shapeToEndIndex(wordResult, nextWordEndIndex());
     }
 
-    bool nextUntilCharacterOrTab(RefPtr<ShapeResult>* wordResult, UChar delimiter)
+    static bool isWordDelimiter(UChar ch)
+    {
+        return ch == spaceCharacter || ch == tabulationCharacter;
+    }
+
+    unsigned nextWordEndIndex()
+    {
+        const unsigned length = m_textRun.length();
+        if (m_startIndex >= length)
+            return 0;
+
+        if (m_startIndex + 1u == length || isWordDelimiter(m_textRun[m_startIndex]))
+            return m_startIndex + 1;
+
+        // Delimit every CJK character because these scripts do not delimit
+        // words by spaces, and not delimiting hits the performance.
+        if (!m_textRun.is8Bit()) {
+            UChar32 ch;
+            unsigned end = m_startIndex;
+            U16_NEXT(m_textRun.characters16(), end, length, ch);
+            if (Character::isCJKIdeographOrSymbol(ch)) {
+                bool hasAnyScript = !Character::isCommonOrInheritedScript(ch);
+                for (unsigned i = end; i < length; end = i) {
+                    U16_NEXT(m_textRun.characters16(), i, length, ch);
+                    // ZWJ check in order not to split Emoji ZWJ sequences.
+                    if (U_GET_GC_MASK(ch) & (U_GC_M_MASK | U_GC_LM_MASK | U_GC_SK_MASK)
+                        || ch == zeroWidthJoinerCharacter)
+                        continue;
+                    // Avoid delimiting COMMON/INHERITED alone, which makes harder to
+                    // identify the script.
+                    if (Character::isCJKIdeographOrSymbol(ch)) {
+                        if (Character::isCommonOrInheritedScript(ch))
+                            continue;
+                        if (!hasAnyScript) {
+                            hasAnyScript = true;
+                            continue;
+                        }
+                    }
+                    return end;
+                }
+                return length;
+            }
+        }
+
+        for (unsigned i = m_startIndex + 1; ; i++) {
+            if (i == length || isWordDelimiter(m_textRun[i])) {
+                return i;
+            }
+            if (!m_textRun.is8Bit()) {
+                UChar32 nextChar;
+                U16_GET(m_textRun.characters16(), 0, i, length, nextChar);
+                if (Character::isCJKIdeographOrSymbol(nextChar))
+                    return i;
+            }
+        }
+    }
+
+    bool shapeToEndIndex(RefPtr<ShapeResult>* result, unsigned endIndex)
+    {
+        if (!endIndex || endIndex <= m_startIndex)
+            return false;
+
+        const unsigned length = m_textRun.length();
+        if (!m_startIndex && endIndex == length) {
+            *result = shapeWord(m_textRun, m_font);
+        } else {
+            ASSERT(endIndex <= length);
+            TextRun subRun = m_textRun.subRun(m_startIndex, endIndex - m_startIndex);
+            *result = shapeWord(subRun, m_font);
+        }
+        m_startIndex = endIndex;
+        return *result;
+    }
+
+    unsigned endIndexUntil(UChar ch)
     {
         unsigned length = m_textRun.length();
         ASSERT(m_startIndex < length);
         for (unsigned i = m_startIndex + 1; ; i++) {
-            if (i == length || m_textRun[i] == delimiter
-                || m_textRun[i] == tabulationCharacter) {
-                TextRun wordRun = m_textRun.subRun(m_startIndex,
-                    i - m_startIndex);
-                m_startIndex = i;
-                *wordResult = shapeWord(wordRun, m_font);
-                return *wordResult;
-            }
+            if (i == length || m_textRun[i] == ch)
+                return i;
         }
     }
 
@@ -143,14 +203,13 @@ private:
                 }
             }
         } else if (!m_shapeByWord) {
-            if (!nextUntilCharacterOrTab(wordResult, 0))
+            if (!shapeToEndIndex(wordResult, endIndexUntil(tabulationCharacter)))
                 return false;
         } else {
             if (!nextWord(wordResult))
                 return false;
         }
-        if (!*wordResult)
-            return false;
+        ASSERT(*wordResult);
         m_widthSoFar += (*wordResult)->width();
         return true;
     }

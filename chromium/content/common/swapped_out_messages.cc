@@ -27,11 +27,12 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     // Handled by RenderViewHost.
     case ViewHostMsg_ClosePage_ACK::ID:
     case ViewHostMsg_SwapCompositorFrame::ID:
-    // Handled by WorkerMessageFilter (or by SharedWorkerMessageFilter when
-    // embedded-shared-worker is enabled).
+    // Handled by SharedWorkerMessageFilter.
     case ViewHostMsg_DocumentDetached::ID:
     // Allow cross-process JavaScript calls.
     case ViewHostMsg_RouteCloseEvent::ID:
+    // Send page scale factor reset notification upon cross-process navigations.
+    case ViewHostMsg_PageScaleFactorChanged::ID:
     // Handled by RenderFrameHost.
     case FrameHostMsg_BeforeUnload_ACK::ID:
     case FrameHostMsg_SwapOut_ACK::ID:

@@ -73,6 +73,7 @@ public:
 
     virtual bool isDocument() const { return false; }
     virtual bool isWorkerGlobalScope() const { return false; }
+    virtual bool isWorkletGlobalScope() const { return false; }
     virtual bool isDedicatedWorkerGlobalScope() const { return false; }
     virtual bool isSharedWorkerGlobalScope() const { return false; }
     virtual bool isServiceWorkerGlobalScope() const { return false; }
@@ -87,9 +88,8 @@ public:
     KURL completeURL(const String& url) const;
     virtual void disableEval(const String& errorMessage) = 0;
     virtual LocalDOMWindow* executingWindow() { return 0; }
-    virtual String userAgent(const KURL&) const = 0;
+    virtual String userAgent() const = 0;
     virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) = 0; // Executes the task on context's thread asynchronously.
-    virtual double timerAlignmentInterval() const = 0;
 
     // Gets the DOMTimerCoordinator which maintains the "active timer
     // list" of tasks created by setTimeout and setInterval. The
@@ -141,9 +141,6 @@ public:
     virtual EventTarget* errorEventTarget() = 0;
     virtual EventQueue* eventQueue() const = 0;
 
-    void enforceStrictMixedContentChecking() { m_strictMixedContentCheckingEnforced = true; }
-    bool shouldEnforceStrictMixedContentChecking() const { return m_strictMixedContentCheckingEnforced; }
-
     void enforceSuborigin(const String& name);
     bool hasSuborigin();
     String suboriginName();
@@ -157,6 +154,7 @@ public:
     // Decides whether this context is privileged, as described in
     // https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-privileged.
     virtual bool isSecureContext(String& errorMessage, const SecureContextCheck = StandardSecureContextCheck) const = 0;
+    virtual bool isSecureContext(const SecureContextCheck = StandardSecureContextCheck) const;
 
     virtual void setReferrerPolicy(ReferrerPolicy);
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
@@ -188,8 +186,6 @@ private:
     bool m_activeDOMObjectsAreStopped;
 
     OwnPtrWillBeMember<PublicURLManager> m_publicURLManager;
-
-    bool m_strictMixedContentCheckingEnforced;
 
     // Counter that keeps track of how many window interaction calls are allowed
     // for this ExecutionContext. Callers are expected to call

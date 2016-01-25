@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_MEDIA_MEDIA_STREAM_VIDEO_CAPTURER_SOURCE_H_
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "content/common/media/video_capture.h"
@@ -31,6 +32,7 @@ class CONTENT_EXPORT MediaStreamVideoCapturerSource
   ~MediaStreamVideoCapturerSource() override;
 
  private:
+  friend class CanvasCaptureHandlerTest;
   friend class MediaStreamVideoCapturerSourceTest;
 
   // Implements MediaStreamVideoSource.

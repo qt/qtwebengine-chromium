@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/WebRemoteFrameImpl.h"
 
 #include "core/frame/FrameView.h"
-#include "core/frame/RemoteFrame.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
 #include "public/web/WebDocument.h"
+#include "public/web/WebFrameOwnerProperties.h"
 #include "public/web/WebPerformance.h"
 #include "public/web/WebRange.h"
 #include "public/web/WebTreeScopeType.h"
@@ -27,7 +27,7 @@ WebRemoteFrame* WebRemoteFrame::create(WebTreeScopeType scope, WebRemoteFrameCli
     return WebRemoteFrameImpl::create(scope, client);
 }
 
-WebRemoteFrame* WebRemoteFrameImpl::create(WebTreeScopeType scope, WebRemoteFrameClient* client)
+WebRemoteFrameImpl* WebRemoteFrameImpl::create(WebTreeScopeType scope, WebRemoteFrameClient* client)
 {
     WebRemoteFrameImpl* frame = new WebRemoteFrameImpl(scope, client);
 #if ENABLE(OILPAN)
@@ -49,6 +49,7 @@ DEFINE_TRACE(WebRemoteFrameImpl)
     visitor->trace(m_ownersForChildren);
     visitor->template registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
     WebFrame::traceFrames(visitor, this);
+    WebFrameImplBase::trace(visitor);
 }
 #endif
 
@@ -375,11 +376,6 @@ unsigned WebRemoteFrameImpl::unloadListenerCount() const
     return 0;
 }
 
-void WebRemoteFrameImpl::replaceSelection(const WebString&)
-{
-    ASSERT_NOT_REACHED();
-}
-
 void WebRemoteFrameImpl::insertText(const WebString&)
 {
     ASSERT_NOT_REACHED();
@@ -447,11 +443,6 @@ bool WebRemoteFrameImpl::isContinuousSpellCheckingEnabled() const
 }
 
 void WebRemoteFrameImpl::requestTextChecking(const WebElement&)
-{
-    ASSERT_NOT_REACHED();
-}
-
-void WebRemoteFrameImpl::replaceMisspelledRange(const WebString&)
 {
     ASSERT_NOT_REACHED();
 }
@@ -708,11 +699,11 @@ WebString WebRemoteFrameImpl::layerTreeAsText(bool showDebugInfo) const
     return WebString();
 }
 
-WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)
+WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling, const WebFrameOwnerProperties& frameOwnerProperties)
 {
     WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
-        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags)));
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags), frameOwnerProperties));
     insertAfter(child, previousSibling);
     // FIXME: currently this calls LocalFrame::init() on the created LocalFrame, which may
     // result in the browser observing two navigations to about:blank (one from the initial
@@ -726,20 +717,20 @@ WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, cons
 }
 
 
-void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name)
+void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name, const AtomicString& fallbackName)
 {
     setCoreFrame(RemoteFrame::create(m_frameClient.get(), host, owner));
     frame()->createView();
-    m_frame->tree().setName(name, nullAtom);
+    m_frame->tree().setName(name, fallbackName);
 }
 
 WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebRemoteFrameClient* client)
 {
     WebRemoteFrameImpl* child = toWebRemoteFrameImpl(WebRemoteFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
-        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags)));
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags), WebFrameOwnerProperties()));
     appendChild(child);
-    child->initializeCoreFrame(frame()->host(), result.storedValue->value.get(), name);
+    child->initializeCoreFrame(frame()->host(), result.storedValue->value.get(), name, nullAtom);
     return child;
 }
 
@@ -769,6 +760,20 @@ void WebRemoteFrameImpl::setReplicatedOrigin(const WebSecurityOrigin& origin) co
 {
     ASSERT(frame());
     frame()->securityContext()->setReplicatedOrigin(origin);
+
+    // If the origin of a remote frame changed, the accessibility object for the owner
+    // element now points to a different child.
+    //
+    // TODO(dmazzoni, dcheng): there's probably a better way to solve this.
+    // Run SitePerProcessAccessibilityBrowserTest.TwoCrossSiteNavigations to
+    // ensure an alternate fix works.  http://crbug.com/566222
+    FrameOwner* owner = frame()->owner();
+    if (owner && owner->isLocal()) {
+        HTMLElement* ownerElement = toHTMLFrameOwnerElement(owner);
+        AXObjectCache* cache = ownerElement->document().existingAXObjectCache();
+        if (cache)
+            cache->childrenChanged(ownerElement);
+    }
 }
 
 void WebRemoteFrameImpl::setReplicatedSandboxFlags(WebSandboxFlags flags) const
@@ -781,6 +786,12 @@ void WebRemoteFrameImpl::setReplicatedName(const WebString& name) const
 {
     ASSERT(frame());
     frame()->tree().setName(name, nullAtom);
+}
+
+void WebRemoteFrameImpl::setReplicatedShouldEnforceStrictMixedContentChecking(bool shouldEnforce) const
+{
+    ASSERT(frame());
+    frame()->securityContext()->setShouldEnforceStrictMixedContentChecking(shouldEnforce);
 }
 
 void WebRemoteFrameImpl::DispatchLoadEventForFrameOwner() const

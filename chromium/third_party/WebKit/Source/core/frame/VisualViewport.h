@@ -186,14 +186,15 @@ public:
     IntRect scrollableAreaBoundingBox() const override;
     bool userInputScrollable(ScrollbarOrientation) const override { return true; }
     bool shouldPlaceVerticalScrollbarOnLeft() const override { return false; }
-    void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
-    void invalidateScrollCornerRect(const IntRect&) override { }
+    bool scrollAnimatorEnabled() const override;
+    void scrollControlWasSetNeedsPaintInvalidation() override { }
     void setScrollOffset(const IntPoint&, ScrollType) override;
     void setScrollOffset(const DoublePoint&, ScrollType) override;
     GraphicsLayer* layerForContainer() const override;
     GraphicsLayer* layerForScrolling() const override;
     GraphicsLayer* layerForHorizontalScrollbar() const override;
     GraphicsLayer* layerForVerticalScrollbar() const override;
+    Widget* widget() override;
 
     // Used for gathering data on user pinch-zoom statistics.
     void userDidChangeScale();
@@ -210,8 +211,9 @@ private:
     bool visualViewportSuppliesScrollbars() const;
 
     // GraphicsLayerClient implementation.
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const override;
-    String debugName(const GraphicsLayer*) override;
+    IntRect computeInterestRect(const GraphicsLayer*, const IntRect&) const;
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) const override;
+    String debugName(const GraphicsLayer*) const override;
 
     void setupScrollbar(WebScrollbar::Orientation);
     FloatPoint clampOffsetToBoundaries(const FloatPoint&);

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8XMLHttpRequest.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -86,7 +85,7 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::FunctionCallbackI
 
             // Catch syntax error. Swallows an exception (when thrown) as the
             // spec says. https://xhr.spec.whatwg.org/#response-body
-            v8::TryCatch exceptionCatcher;
+            v8::TryCatch exceptionCatcher(isolate);
             v8::Local<v8::Value> json;
             if (v8Call(v8::JSON::Parse(isolate, jsonSource.v8Value()), json, exceptionCatcher))
                 v8SetReturnValue(info, json);

@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
@@ -297,6 +298,12 @@ void ToastContentsView::ClickOnNotification(
     const std::string& notification_id) {
   if (collection_)
     collection_->ClickOnNotification(notification_id);
+}
+
+void ToastContentsView::ClickOnSettingsButton(
+    const std::string& notification_id) {
+  if (collection_)
+    collection_->ClickOnSettingsButton(notification_id);
 }
 
 void ToastContentsView::RemoveNotification(

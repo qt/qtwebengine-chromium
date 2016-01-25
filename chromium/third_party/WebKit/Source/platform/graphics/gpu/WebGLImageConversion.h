@@ -12,6 +12,7 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/khronos/GLES3/gl3.h"
+#include "wtf/Allocator.h"
 #include "wtf/Optional.h"
 #include "wtf/RefPtr.h"
 
@@ -20,7 +21,8 @@ class Image;
 class IntSize;
 
 // Helper functions for texture uploading and pixel readback.
-class PLATFORM_EXPORT WebGLImageConversion {
+class PLATFORM_EXPORT WebGLImageConversion final {
+    STATIC_ONLY(WebGLImageConversion);
 public:
     // Attempt to enumerate all possible native image formats to
     // reduce the amount of temporary allocations during texture
@@ -113,7 +115,18 @@ public:
         HtmlDomNone = 3
     };
 
-    class PLATFORM_EXPORT ImageExtractor {
+    struct PLATFORM_EXPORT PixelStoreParams final {
+        PixelStoreParams();
+
+        GLint alignment;
+        GLint rowLength;
+        GLint imageHeight;
+        GLint skipPixels;
+        GLint skipRows;
+        GLint skipImages;
+    };
+
+    class PLATFORM_EXPORT ImageExtractor final {
         STACK_ALLOCATED();
     public:
         ImageExtractor(Image*, ImageHtmlDomSource, bool premultiplyAlpha, bool ignoreGammaAndColorProfile);
@@ -148,9 +161,14 @@ public:
     // Computes the image size in bytes. If paddingInBytes is not null, padding
     // is also calculated in return. Returns NO_ERROR if succeed, otherwise
     // return the suggested GL error indicating the cause of the failure:
-    //   INVALID_VALUE if width/height is negative or overflow happens.
+    //   INVALID_VALUE if width/height/depth is negative or overflow happens.
     //   INVALID_ENUM if format/type is illegal.
-    static GLenum computeImageSizeInBytes(GLenum format, GLenum type, GLsizei width, GLsizei height, GLint alignment, unsigned* imageSizeInBytes, unsigned* paddingInBytes);
+    // Note that imageSizeBytes does not include skipSizeInBytes, but it is
+    // guaranteed if NO_ERROR is returned, adding the two sizes won't cause
+    // overflow.
+    // |paddingInBytes| and |skipSizeInBytes| are optional and can be null, but
+    // the overflow validation is still performed.
+    static GLenum computeImageSizeInBytes(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const PixelStoreParams&, unsigned* imageSizeInBytes, unsigned* paddingInBytes, unsigned* skipSizeInBytes);
 
     // Check if the format is one of the formats from the ImageData or DOM elements.
     // The formats from ImageData is always RGBA8.

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/memory/scoped_ptr.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
@@ -47,6 +49,7 @@ class TestGpuChannel : public GpuChannel {
  public:
   TestGpuChannel(IPC::TestSink* sink,
                  GpuChannelManager* gpu_channel_manager,
+                 gpu::SyncPointManager* sync_point_manager,
                  gfx::GLShareGroup* share_group,
                  gpu::gles2::MailboxManager* mailbox_manager,
                  gpu::PreemptionFlag* preempting_flag,

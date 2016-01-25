@@ -21,11 +21,11 @@ public:
     void setExecutionContext(ExecutionContext*) override;
 private:
     ScriptStateForTesting(v8::Local<v8::Context>, PassRefPtr<DOMWrapperWorld>);
-    ExecutionContext* m_executionContext;
+    RawPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
 class V8TestingScope {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit V8TestingScope(v8::Isolate*);
     ScriptState* scriptState() const;

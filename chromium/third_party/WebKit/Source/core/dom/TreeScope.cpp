@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/TreeScope.h"
 
 #include "core/HTMLNames.h"
@@ -186,6 +185,7 @@ void TreeScope::addElementById(const AtomicString& elementId, Element* element)
     m_idTargetObserverRegistry->notifyObservers(elementId);
 }
 
+
 void TreeScope::removeElementById(const AtomicString& elementId, Element* element)
 {
     if (!m_elementsById)
@@ -293,18 +293,9 @@ Element* TreeScope::hitTestPoint(int x, int y, const HitTestRequest& request) co
     return toElement(node);
 }
 
-Vector<Element*> TreeScope::elementsFromPoint(int x, int y) const
+WillBeHeapVector<RawPtrWillBeMember<Element>> TreeScope::elementsFromHitTestResult(HitTestResult& result) const
 {
-    Vector<Element*> elements;
-
-    Document& document = rootNode().document();
-    IntPoint hitPoint(x, y);
-    if (!pointWithScrollAndZoomIfPossible(document, hitPoint))
-        return elements;
-
-    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ListBased | HitTestRequest::PenetratingList);
-    HitTestResult result(request, hitPoint);
-    document.layoutView()->hitTest(result);
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
 
     Node* lastNode = nullptr;
     for (const auto rectBasedNode : result.listBasedTestResult()) {
@@ -335,6 +326,20 @@ Vector<Element*> TreeScope::elementsFromPoint(int x, int y) const
     }
 
     return elements;
+}
+
+WillBeHeapVector<RawPtrWillBeMember<Element>> TreeScope::elementsFromPoint(int x, int y) const
+{
+    Document& document = rootNode().document();
+    IntPoint hitPoint(x, y);
+    if (!pointWithScrollAndZoomIfPossible(document, hitPoint))
+        return WillBeHeapVector<RawPtrWillBeMember<Element>>();
+
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ListBased | HitTestRequest::PenetratingList);
+    HitTestResult result(request, hitPoint);
+    document.layoutView()->hitTest(result);
+
+    return elementsFromHitTestResult(result);
 }
 
 void TreeScope::addLabel(const AtomicString& forAttributeValue, HTMLLabelElement* element)
@@ -414,23 +419,12 @@ void TreeScope::adoptIfNeeded(Node& node)
         adopter.execute();
 }
 
-static Element* focusedFrameOwnerElement(Frame* focusedFrame, Frame* currentFrame)
-{
-    for (; focusedFrame; focusedFrame = focusedFrame->tree().parent()) {
-        if (focusedFrame->tree().parent() == currentFrame) {
-            // FIXME: This won't work for OOPI.
-            return focusedFrame->deprecatedLocalOwner();
-        }
-    }
-    return 0;
-}
-
 Element* TreeScope::adjustedFocusedElement() const
 {
     Document& document = rootNode().document();
     Element* element = document.focusedElement();
     if (!element && document.page())
-        element = focusedFrameOwnerElement(document.page()->focusController().focusedFrame(), document.frame());
+        element = document.page()->focusController().focusedFrameOwnerElement(*document.frame());
     if (!element)
         return 0;
 
@@ -453,8 +447,8 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
     if (otherScope == this)
         return Node::DOCUMENT_POSITION_EQUIVALENT;
 
-    Vector<const TreeScope*, 16> chain1;
-    Vector<const TreeScope*, 16> chain2;
+    WillBeHeapVector<RawPtrWillBeMember<const TreeScope>, 16> chain1;
+    WillBeHeapVector<RawPtrWillBeMember<const TreeScope>, 16> chain2;
     const TreeScope* current;
     for (current = this; current; current = current->parentTreeScope())
         chain1.append(current);
@@ -493,17 +487,17 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
 
 const TreeScope* TreeScope::commonAncestorTreeScope(const TreeScope& other) const
 {
-    Vector<const TreeScope*, 16> thisChain;
+    WillBeHeapVector<RawPtrWillBeMember<const TreeScope>, 16> thisChain;
     for (const TreeScope* tree = this; tree; tree = tree->parentTreeScope())
         thisChain.append(tree);
 
-    Vector<const TreeScope*, 16> otherChain;
+    WillBeHeapVector<RawPtrWillBeMember<const TreeScope>, 16> otherChain;
     for (const TreeScope* tree = &other; tree; tree = tree->parentTreeScope())
         otherChain.append(tree);
 
     // Keep popping out the last elements of these chains until a mismatched pair is found. If |this| and |other|
     // belong to different documents, null will be returned.
-    const TreeScope* lastAncestor = 0;
+    const TreeScope* lastAncestor = nullptr;
     while (!thisChain.isEmpty() && !otherChain.isEmpty() && thisChain.last() == otherChain.last()) {
         lastAncestor = thisChain.last();
         thisChain.removeLast();

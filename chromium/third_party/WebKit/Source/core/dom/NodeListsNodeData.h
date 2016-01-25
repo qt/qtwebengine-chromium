@@ -35,7 +35,7 @@ namespace blink {
 
 class NodeListsNodeData final : public NoBaseWillBeGarbageCollectedFinalized<NodeListsNodeData> {
     WTF_MAKE_NONCOPYABLE(NodeListsNodeData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(NodeListsNodeData);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(NodeListsNodeData);
 public:
     ChildNodeList* childNodeList(ContainerNode& node)
     {
@@ -197,7 +197,7 @@ public:
         TagCollectionCacheNS::const_iterator tagEnd = m_tagCollectionCacheNS.end();
         for (TagCollectionCacheNS::const_iterator it = m_tagCollectionCacheNS.begin(); it != tagEnd; ++it) {
             LiveNodeListBase* list = it->value;
-            ASSERT(!list->isRootedAtDocument());
+            ASSERT(!list->isRootedAtTreeScope());
             list->didMoveToDocument(oldDocument, newDocument);
         }
     }

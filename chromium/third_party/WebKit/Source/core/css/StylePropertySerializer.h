@@ -89,8 +89,10 @@ private:
         bool m_isInherited;
     };
 
+    String getCustomPropertyText(const PropertyValueForSerializer&, bool isNotFirstDecl) const;
+
     class StylePropertySetForSerializer final {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         explicit StylePropertySetForSerializer(const StylePropertySet&);
 

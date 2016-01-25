@@ -105,6 +105,34 @@ The following changes have been made since qcms was imported:
    - https://code.google.com/p/chromium/issues/detail?id=487284
  - Caching transform prelude to save computation in V4 profiles
    - https://code.google.com/p/chromium/issues/detail?id=506607
+ - Use the caching transform prelude for non-SSE code in transform.c
+   - https://code.google.com/p/chromium/issues/detail?id=506607
+ - Expand QCMS tests. Add Munsell test for transform accuracy
+   - https://code.google.com/p/chromium/issues/detail?id=532910
+ - Compute RMS error from color error dE in the Munsell test
+   - https://code.google.com/p/chromium/issues/detail?id=532910
+ - Store color profile version and add a version read API
+   - https://code.google.com/p/chromium/issues/detail?id=532258
+ - Add support for VCGT tag formula gamma
+   - https://code.google.com/p/chromium/issues/detail?id=551568
+ - Minimize transform RMS in qcms_transform_data_rgb(a)_out_lut
+   - https://code.google.com/p/chromium/issues/detail?id=532910
+ - Allow negative XYZ for display profiles on the APPLE port
+   - https://code.google.com/p/chromium/issues/detail?id=562951
+ - Add a color profile white point transform api
+   - https://code.google.com/p/chromium/issues/detail?id=564355
+ - Compute the pole and zero values needed by lut_inverse_interp16 once
+   - https://code.google.com/p/chromium/issues/detail?id=505793
+ - Store the profile media white point during iccread.c
+   - http://code.google.com/p/chromium/issues/detail?id=565222
+ - Add an API to check for profile media white point
+   - http://code.google.com/p/chromium/issues/detail?id=565222
+ - Add a qcms_profile_get_white_point() api
+   - http://code.google.com/p/chromium/issues/detail?id=565222
+ - Set the media white point of the sRGB profile
+   - http://code.google.com/p/chromium/issues/detail?id=565222
+ - Don't build QCMS on Android and iOS
+   - https://code.google.com/p/chromium/issues/detail?id=577155
 
 For the Chromium changes, since the import, in a patch format run:
   git diff b8456f38 src

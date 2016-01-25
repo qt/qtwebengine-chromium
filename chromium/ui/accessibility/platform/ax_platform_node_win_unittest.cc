@@ -41,20 +41,20 @@ class AXPlatformNodeWinTest : public testing::Test {
   }
 
   // Initialize given an AXTreeUpdate.
-  void Init(const AXTreeUpdate<AXNodeData>& initial_state) {
+  void Init(const AXTreeUpdate& initial_state) {
     tree_.reset(new AXTree(initial_state));
   }
 
   // Convenience functions to initialize directly from a few AXNodeDatas.
   void Init(const AXNodeData& node1) {
-    AXTreeUpdate<AXNodeData> update;
+    AXTreeUpdate update;
     update.nodes.push_back(node1);
     Init(update);
   }
 
   void Init(const AXNodeData& node1,
             const AXNodeData& node2) {
-    AXTreeUpdate<AXNodeData> update;
+    AXTreeUpdate update;
     update.nodes.push_back(node1);
     update.nodes.push_back(node2);
     Init(update);
@@ -63,7 +63,7 @@ class AXPlatformNodeWinTest : public testing::Test {
   void Init(const AXNodeData& node1,
             const AXNodeData& node2,
             const AXNodeData& node3) {
-    AXTreeUpdate<AXNodeData> update;
+    AXTreeUpdate update;
     update.nodes.push_back(node1);
     update.nodes.push_back(node2);
     update.nodes.push_back(node3);
@@ -152,24 +152,6 @@ TEST_F(AXPlatformNodeWinTest, TestIAccessibleDescription) {
   ScopedVariant bad_id(999);
   ScopedBstr d2;
   ASSERT_EQ(E_INVALIDARG, root_obj->get_accDescription(bad_id, d2.Receive()));
-}
-
-TEST_F(AXPlatformNodeWinTest, TestIAccessibleHelp) {
-  AXNodeData root;
-  root.id = 1;
-  root.role = AX_ROLE_ROOT_WEB_AREA;
-  root.AddStringAttribute(AX_ATTR_HELP, "Help");
-  Init(root);
-
-  ScopedComPtr<IAccessible> root_obj(GetRootIAccessible());
-  ScopedBstr help;
-  ASSERT_EQ(S_OK, root_obj->get_accHelp(SELF, help.Receive()));
-  EXPECT_EQ(L"Help", base::string16(help));
-
-  ASSERT_EQ(E_INVALIDARG, root_obj->get_accHelp(SELF, nullptr));
-  ScopedVariant bad_id(999);
-  ScopedBstr h2;
-  ASSERT_EQ(E_INVALIDARG, root_obj->get_accHelp(bad_id, h2.Receive()));
 }
 
 TEST_F(AXPlatformNodeWinTest, TestIAccessibleValue) {

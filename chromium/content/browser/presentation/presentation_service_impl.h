@@ -9,10 +9,8 @@
 #include <map>
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
-#include "base/containers/scoped_ptr_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/linked_ptr.h"
@@ -26,7 +24,7 @@
 #include "content/public/browser/presentation_service_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/binding.h"
 
 namespace content {
 
@@ -90,15 +88,13 @@ class CONTENT_EXPORT PresentationServiceImpl
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
                            MaxPendingJoinSessionRequests);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
-                           ListenForSessionStateChange);
+                           ListenForConnectionStateChange);
+
   // Maximum number of pending JoinSession requests at any given time.
   static const int kMaxNumQueuedSessionRequests = 10;
 
-  using DefaultSessionMojoCallback =
+  using PresentationSessionMojoCallback =
       mojo::Callback<void(presentation::PresentationSessionInfoPtr)>;
-  using SessionStateCallback =
-      mojo::Callback<void(presentation::PresentationSessionInfoPtr,
-          presentation::PresentationSessionState)>;
   using SessionMessagesCallback =
       mojo::Callback<void(mojo::Array<presentation::SessionMessagePtr>)>;
   using SendMessageMojoCallback = mojo::Callback<void(bool)>;
@@ -123,27 +119,6 @@ class CONTENT_EXPORT PresentationServiceImpl
    private:
     const std::string availability_url_;
     PresentationServiceImpl* const service_;
-  };
-
-  class CONTENT_EXPORT DefaultSessionStartContext {
-   public:
-    DefaultSessionStartContext();
-    ~DefaultSessionStartContext();
-
-    // Adds a callback. May invoke the callback immediately if |session| using
-    // default presentation URL was already started.
-    void AddCallback(const DefaultSessionMojoCallback& callback);
-
-    // Sets the session info. Maybe invoke callbacks queued with AddCallback().
-    void set_session(const PresentationSessionInfo& session);
-
-   private:
-    // Flush all queued callbacks by invoking them with null
-    // PresentationSessionInfoPtr.
-    void Reset();
-
-    ScopedVector<DefaultSessionMojoCallback> callbacks_;
-    scoped_ptr<PresentationSessionInfo> session_;
   };
 
   // Ensures the provided NewSessionMojoCallback is invoked exactly once
@@ -177,8 +152,6 @@ class CONTENT_EXPORT PresentationServiceImpl
   void SetClient(presentation::PresentationServiceClientPtr client) override;
   void ListenForScreenAvailability(const mojo::String& url) override;
   void StopListeningForScreenAvailability(const mojo::String& url) override;
-  void ListenForDefaultSessionStart(
-      const DefaultSessionMojoCallback& callback) override;
   void StartSession(
       const mojo::String& presentation_url,
       const NewSessionMojoCallback& callback) override;
@@ -189,10 +162,10 @@ class CONTENT_EXPORT PresentationServiceImpl
   void SendSessionMessage(presentation::PresentationSessionInfoPtr session_info,
                           presentation::SessionMessagePtr session_message,
                           const SendMessageMojoCallback& callback) override;
-  void CloseSession(
-      const mojo::String& presentation_url,
-      const mojo::String& presentation_id) override;
-  void ListenForSessionStateChange() override;
+  void CloseConnection(const mojo::String& presentation_url,
+                       const mojo::String& presentation_id) override;
+  void Terminate(const mojo::String& presentation_url,
+                 const mojo::String& presentation_id) override;
   void ListenForSessionMessages(
       presentation::PresentationSessionInfoPtr session) override;
 
@@ -208,14 +181,18 @@ class CONTENT_EXPORT PresentationServiceImpl
 
   // PresentationServiceDelegate::Observer
   void OnDelegateDestroyed() override;
-  void OnDefaultPresentationStarted(const PresentationSessionInfo& session)
-      override;
+
+  // Passed to embedder's implementation of PresentationServiceDelegate for
+  // later invocation when default presentation has started.
+  void OnDefaultPresentationStarted(
+      const PresentationSessionInfo& session_info);
 
   // Finds the callback from |pending_join_session_cbs_| using
   // |request_session_id|.
   // If it exists, invoke it with |session| and |error|, then erase it from
   // |pending_join_session_cbs_|.
-  void RunAndEraseJoinSessionMojoCallback(
+  // Returns true if the callback was found.
+  bool RunAndEraseJoinSessionMojoCallback(
       int request_session_id,
       presentation::PresentationSessionInfoPtr session,
       presentation::PresentationErrorPtr error);
@@ -241,6 +218,11 @@ class CONTENT_EXPORT PresentationServiceImpl
       const PresentationError& error);
   void OnSendMessageCallback(bool sent);
 
+  // Calls to |delegate_| to start listening for state changes for |connection|.
+  // State changes will be returned via |OnConnectionStateChanged|.
+  void ListenForConnectionStateChange(
+      const PresentationSessionInfo& connection);
+
   // Passed to embedder's implementation of PresentationServiceDelegate for
   // later invocation when session messages arrive.
   void OnSessionMessages(
@@ -254,9 +236,9 @@ class CONTENT_EXPORT PresentationServiceImpl
   int RegisterJoinSessionCallback(const NewSessionMojoCallback& callback);
 
   // Invoked by the embedder's PresentationServiceDelegate when a
-  // presentation session's state has changed.
-  void OnSessionStateChanged(const PresentationSessionInfo& session_info,
-                             PresentationSessionState session_state);
+  // PresentationConnection's state has changed.
+  void OnConnectionStateChanged(const PresentationSessionInfo& connection,
+                                PresentationConnectionState state);
 
   // Returns true if this object is associated with |render_frame_host|.
   bool FrameMatches(content::RenderFrameHost* render_frame_host) const;
@@ -272,7 +254,7 @@ class CONTENT_EXPORT PresentationServiceImpl
   std::string default_presentation_url_;
 
   using ScreenAvailabilityListenerMap =
-    base::ScopedPtrMap<std::string, scoped_ptr<ScreenAvailabilityListenerImpl>>;
+      std::map<std::string, scoped_ptr<ScreenAvailabilityListenerImpl>>;
   ScreenAvailabilityListenerMap screen_availability_listeners_;
 
   // For StartSession requests.
@@ -283,8 +265,6 @@ class CONTENT_EXPORT PresentationServiceImpl
   // For JoinSession requests.
   base::hash_map<int, linked_ptr<NewSessionMojoCallbackWrapper>>
       pending_join_session_cbs_;
-
-  scoped_ptr<DefaultSessionStartContext> default_session_start_context_;
 
   // RAII binding of |this| to an Presentation interface request.
   // The binding is removed when binding_ is cleared or goes out of scope.

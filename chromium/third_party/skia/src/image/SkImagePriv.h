@@ -14,8 +14,7 @@
 // Call this if you explicitly want to use/share this pixelRef in the image
 extern SkImage* SkNewImageFromPixelRef(const SkImageInfo&, SkPixelRef*,
                                        const SkIPoint& pixelRefOrigin,
-                                       size_t rowBytes,
-                                       const SkSurfaceProps*);
+                                       size_t rowBytes);
 
 /**
  *  Examines the bitmap to decide if it can share the existing pixelRef, or
@@ -39,16 +38,7 @@ enum ForceCopyMode {
     kNo_ForceCopyMode,
     kYes_ForceCopyMode, // must copy the pixels even if the bitmap is immutable
 };
-extern SkImage* SkNewImageFromRasterBitmap(const SkBitmap&, const SkSurfaceProps*,
-                                           ForceCopyMode = kNo_ForceCopyMode);
-
-static inline size_t SkImageMinRowBytes(const SkImageInfo& info) {
-    size_t minRB = info.minRowBytes();
-    if (kIndex_8_SkColorType != info.colorType()) {
-        minRB = SkAlign4(minRB);
-    }
-    return minRB;
-}
+extern SkImage* SkNewImageFromRasterBitmap(const SkBitmap&, ForceCopyMode = kNo_ForceCopyMode);
 
 // Given an image created from SkNewImageFromBitmap, return its pixelref. This
 // may be called to see if the surface and the image share the same pixelref,

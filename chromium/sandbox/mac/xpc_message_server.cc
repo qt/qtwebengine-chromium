@@ -48,6 +48,10 @@ bool XPCMessageServer::Initialize() {
   return true;
 }
 
+void XPCMessageServer::Shutdown() {
+  dispatch_source_.reset();
+}
+
 pid_t XPCMessageServer::GetMessageSenderPID(IPCMessage request) {
   audit_token_t token;
   xpc_dictionary_get_audit_token(request.xpc, &token);
@@ -104,7 +108,7 @@ mach_port_t XPCMessageServer::GetServerPort() const {
 
 void XPCMessageServer::ReceiveMessage() {
   IPCMessage request;
-  int rv = xpc_pipe_receive(server_port_, &request.xpc);
+  int rv = xpc_pipe_receive(server_port_.get(), &request.xpc);
   if (rv) {
     LOG(ERROR) << "Failed to xpc_pipe_receive(): " << rv;
     return;

@@ -17,7 +17,7 @@
       ],
       'include_dirs': [
         './main/test',
-        './main/interface',
+        './main/include',
         './main/util',
         '<(webrtc_root)',
       ],
@@ -25,6 +25,19 @@
         './main/test/simpleKenny.c',
         './main/util/utility.c',
       ],
+      'conditions': [
+        ['OS=="win" and clang==1', {
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'AdditionalOptions': [
+                # Disable warnings failing when compiling with Clang on Windows.
+                # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                '-Wno-format',
+              ],
+            },
+          },
+        }],
+      ],  # conditions.
     },
     # ReleaseTest-API
     {
@@ -35,7 +48,7 @@
       ],
       'include_dirs': [
         './main/test',
-        './main/interface',
+        './main/include',
         './main/util',
         '<(webrtc_root)',
       ],
@@ -53,7 +66,7 @@
       ],
       'include_dirs': [
         './main/test',
-        './main/interface',
+        './main/include',
         '../../../../common_audio/signal_processing/include',
         './main/util',
         '<(webrtc_root)',
@@ -63,6 +76,5 @@
         './main/util/utility.c',
       ],
     },
-
   ],
 }

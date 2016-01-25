@@ -261,9 +261,27 @@ GrGLRenderer GrGLGetRendererFromString(const char* rendererString) {
         if (1 == n && lastDigit >= 0 && lastDigit <= 9) {
             return kPowerVR54x_GrGLRenderer;
         }
+        // certain iOS devices also use PowerVR54x GPUs
+        static const char kAppleA4Str[] = "Apple A4";
+        static const char kAppleA5Str[] = "Apple A5";
+        static const char kAppleA6Str[] = "Apple A6";
+        if (0 == strncmp(rendererString, kAppleA4Str,
+                         SK_ARRAY_COUNT(kAppleA4Str)-1) ||
+            0 == strncmp(rendererString, kAppleA5Str,
+                         SK_ARRAY_COUNT(kAppleA5Str)-1) ||
+            0 == strncmp(rendererString, kAppleA6Str,
+                         SK_ARRAY_COUNT(kAppleA6Str)-1)) {
+            return kPowerVR54x_GrGLRenderer;
+        }
         static const char kPowerVRRogueStr[] = "PowerVR Rogue";
+        static const char kAppleA7Str[] = "Apple A7";
+        static const char kAppleA8Str[] = "Apple A8";
         if (0 == strncmp(rendererString, kPowerVRRogueStr,
-                         SK_ARRAY_COUNT(kPowerVRRogueStr)-1)) {
+                         SK_ARRAY_COUNT(kPowerVRRogueStr)-1) ||
+            0 == strncmp(rendererString, kAppleA7Str,
+                         SK_ARRAY_COUNT(kAppleA7Str)-1) ||
+            0 == strncmp(rendererString, kAppleA8Str,
+                         SK_ARRAY_COUNT(kAppleA8Str)-1)) {
             return kPowerVRRogue_GrGLRenderer;
         }
         int adrenoNumber;
@@ -304,49 +322,6 @@ GrGLRenderer GrGLGetRenderer(const GrGLInterface* gl) {
     const GrGLubyte* v;
     GR_GL_CALL_RET(gl, v, GetString(GR_GL_RENDERER));
     return GrGLGetRendererFromString((const char*) v);
-}
-
-template<> void GrGLGetMatrix<3>(GrGLfloat* dest, const SkMatrix& src) {
-    // Col 0
-    dest[0] = SkScalarToFloat(src[SkMatrix::kMScaleX]);
-    dest[1] = SkScalarToFloat(src[SkMatrix::kMSkewY]);
-    dest[2] = SkScalarToFloat(src[SkMatrix::kMPersp0]);
-
-    // Col 1
-    dest[3] = SkScalarToFloat(src[SkMatrix::kMSkewX]);
-    dest[4] = SkScalarToFloat(src[SkMatrix::kMScaleY]);
-    dest[5] = SkScalarToFloat(src[SkMatrix::kMPersp1]);
-
-    // Col 2
-    dest[6] = SkScalarToFloat(src[SkMatrix::kMTransX]);
-    dest[7] = SkScalarToFloat(src[SkMatrix::kMTransY]);
-    dest[8] = SkScalarToFloat(src[SkMatrix::kMPersp2]);
-}
-
-template<> void GrGLGetMatrix<4>(GrGLfloat* dest, const SkMatrix& src) {
-    // Col 0
-    dest[0]  = SkScalarToFloat(src[SkMatrix::kMScaleX]);
-    dest[1]  = SkScalarToFloat(src[SkMatrix::kMSkewY]);
-    dest[2]  = 0;
-    dest[3]  = SkScalarToFloat(src[SkMatrix::kMPersp0]);
-
-    // Col 1
-    dest[4]  = SkScalarToFloat(src[SkMatrix::kMSkewX]);
-    dest[5]  = SkScalarToFloat(src[SkMatrix::kMScaleY]);
-    dest[6]  = 0;
-    dest[7]  = SkScalarToFloat(src[SkMatrix::kMPersp1]);
-
-    // Col 2
-    dest[8]  = 0;
-    dest[9]  = 0;
-    dest[10] = 1;
-    dest[11] = 0;
-
-    // Col 3
-    dest[12] = SkScalarToFloat(src[SkMatrix::kMTransX]);
-    dest[13] = SkScalarToFloat(src[SkMatrix::kMTransY]);
-    dest[14] = 0;
-    dest[15] = SkScalarToFloat(src[SkMatrix::kMPersp2]);
 }
 
 GrGLenum GrToGLStencilFunc(GrStencilFunc basicFunc) {

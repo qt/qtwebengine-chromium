@@ -18,8 +18,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
-
 #include "core/svg/SVGFEComponentTransferElement.h"
 
 #include "core/SVGNames.h"
@@ -62,9 +60,7 @@ void SVGFEComponentTransferElement::svgAttributeChanged(const QualifiedName& att
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
-
-    if (!input1)
-        return nullptr;
+    ASSERT(input1);
 
     ComponentTransferFunction red;
     ComponentTransferFunction green;

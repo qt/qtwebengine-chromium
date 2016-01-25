@@ -128,10 +128,15 @@ struct Codec {
 
 struct AudioCodec : public Codec {
   int bitrate;
-  int channels;
+  size_t channels;
 
   // Creates a codec with the given parameters.
-  AudioCodec(int pt, const std::string& nm, int cr, int br, int cs, int pr);
+  AudioCodec(int id,
+             const std::string& name,
+             int clockrate,
+             int bitrate,
+             size_t channels,
+             int preference);
   // Creates an empty codec.
   AudioCodec();
   AudioCodec(const AudioCodec& c);
@@ -161,8 +166,13 @@ struct VideoCodec : public Codec {
   int framerate;
 
   // Creates a codec with the given parameters.
-  VideoCodec(int pt, const std::string& nm, int w, int h, int fr, int pr);
-  VideoCodec(int pt, const std::string& nm);
+  VideoCodec(int id,
+             const std::string& name,
+             int width,
+             int height,
+             int framerate,
+             int preference);
+  VideoCodec(int id, const std::string& name);
   // Creates an empty codec.
   VideoCodec();
   VideoCodec(const VideoCodec& c);
@@ -209,50 +219,6 @@ struct DataCodec : public Codec {
   std::string ToString() const;
 };
 
-struct VideoEncoderConfig {
-  static const int kDefaultMaxThreads = -1;
-  static const int kDefaultCpuProfile = -1;
-
-  VideoEncoderConfig()
-      : max_codec(),
-        num_threads(kDefaultMaxThreads),
-        cpu_profile(kDefaultCpuProfile) {
-  }
-
-  VideoEncoderConfig(const VideoCodec& c)
-      : max_codec(c),
-        num_threads(kDefaultMaxThreads),
-        cpu_profile(kDefaultCpuProfile) {
-  }
-
-  VideoEncoderConfig(const VideoCodec& c, int t, int p)
-      : max_codec(c),
-        num_threads(t),
-        cpu_profile(p) {
-  }
-
-  VideoEncoderConfig& operator=(const VideoEncoderConfig& config) {
-    max_codec = config.max_codec;
-    num_threads = config.num_threads;
-    cpu_profile = config.cpu_profile;
-    return *this;
-  }
-
-  bool operator==(const VideoEncoderConfig& config) const {
-    return max_codec == config.max_codec &&
-           num_threads == config.num_threads &&
-           cpu_profile == config.cpu_profile;
-  }
-
-  bool operator!=(const VideoEncoderConfig& config) const {
-    return !(*this == config);
-  }
-
-  VideoCodec max_codec;
-  int num_threads;
-  int cpu_profile;
-};
-
 // Get the codec setting associated with |payload_type|. If there
 // is no codec associated with that payload type it returns false.
 template <class Codec>
@@ -271,6 +237,7 @@ bool FindCodecById(const std::vector<Codec>& codecs,
 bool CodecNamesEq(const std::string& name1, const std::string& name2);
 bool HasNack(const VideoCodec& codec);
 bool HasRemb(const VideoCodec& codec);
+bool HasTransportCc(const VideoCodec& codec);
 
 }  // namespace cricket
 

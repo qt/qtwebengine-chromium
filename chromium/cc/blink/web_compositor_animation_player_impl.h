@@ -5,6 +5,7 @@
 #ifndef CC_BLINK_WEB_COMPOSITOR_ANIMATION_PLAYER_IMPL_H_
 #define CC_BLINK_WEB_COMPOSITOR_ANIMATION_PLAYER_IMPL_H_
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/blink/cc_blink_export.h"
@@ -35,6 +36,7 @@ class WebCompositorAnimationPlayerImpl
   void addAnimation(blink::WebCompositorAnimation* animation) override;
   void removeAnimation(int animation_id) override;
   void pauseAnimation(int animation_id, double time_offset) override;
+  void abortAnimation(int animation_id) override;
 
  private:
   scoped_refptr<cc::AnimationPlayer> animation_player_;

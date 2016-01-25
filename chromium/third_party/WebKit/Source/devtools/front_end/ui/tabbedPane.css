@@ -56,7 +56,7 @@
     display: flex;
     flex: 0 0 27px;
     border-bottom: 1px solid #ccc;
-    overflow: hidden;
+    overflow: visible;
     width: 100%;
     background-color: #f3f3f3;
 }
@@ -91,8 +91,10 @@
     color: #5a5a5a;
 }
 
-.tabbed-pane-header-tab:hover {
+.tabbed-pane-header-tab:hover,
+.tabbed-pane-header-tab.selected:hover {
     color: #333;
+    background-color: #e5e5e5;
 }
 
 .tabbed-pane-header-tab-title {
@@ -111,12 +113,14 @@
 }
 
 .tabbed-pane-header-tab.selected {
-    background: white;
+    background-color: white;
     border-top-color: #ccc;
 }
 
 .tabbed-pane-header-tab.dragging {
     position: relative;
+    box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.37);
+    background-color: #e5e5e5;
 }
 
 .tabbed-pane-header-tab .tabbed-pane-close-button {
@@ -189,6 +193,7 @@
     flex: 0 0 auto;
     flex-direction: column;
     padding-top: 10px;
+    overflow: hidden;
 }
 
 .tabbed-pane-shadow.vertical-tab-layout .tabbed-pane-content {
@@ -231,7 +236,8 @@
     border-left: 6px solid #666;
 }
 
-.tabbed-pane-tab-slider {
+.tabbed-pane-tab-slider,
+.-theme-selection-color {
     height: 2px;
     position: absolute;
     bottom: -1px;

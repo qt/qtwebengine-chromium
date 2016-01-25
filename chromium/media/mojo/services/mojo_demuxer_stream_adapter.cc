@@ -4,18 +4,22 @@
 
 #include "media/mojo/services/mojo_demuxer_stream_adapter.h"
 
+#include <stdint.h>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/numerics/safe_conversions.h"
 #include "media/base/decoder_buffer.h"
 #include "media/mojo/services/media_type_converters.h"
-#include "third_party/mojo/src/mojo/public/cpp/system/data_pipe.h"
+#include "mojo/public/cpp/system/data_pipe.h"
 
 namespace media {
 
 MojoDemuxerStreamAdapter::MojoDemuxerStreamAdapter(
     interfaces::DemuxerStreamPtr demuxer_stream,
     const base::Closure& stream_ready_cb)
-    : demuxer_stream_(demuxer_stream.Pass()),
+    : demuxer_stream_(std::move(demuxer_stream)),
       stream_ready_cb_(stream_ready_cb),
       type_(DemuxerStream::UNKNOWN),
       weak_factory_(this) {
@@ -77,8 +81,8 @@ void MojoDemuxerStreamAdapter::OnStreamReady(
   DCHECK_EQ(DemuxerStream::UNKNOWN, type_);
 
   type_ = static_cast<DemuxerStream::Type>(type);
-  stream_pipe_ = pipe.Pass();
-  UpdateConfig(audio_config.Pass(), video_config.Pass());
+  stream_pipe_ = std::move(pipe);
+  UpdateConfig(std::move(audio_config), std::move(video_config));
 
   stream_ready_cb_.Run();
 }
@@ -94,7 +98,7 @@ void MojoDemuxerStreamAdapter::OnBufferReady(
   DCHECK(stream_pipe_.is_valid());
 
   if (status == interfaces::DemuxerStream::STATUS_CONFIG_CHANGED) {
-    UpdateConfig(audio_config.Pass(), video_config.Pass());
+    UpdateConfig(std::move(audio_config), std::move(video_config));
     base::ResetAndReturn(&read_cb_).Run(DemuxerStream::kConfigChanged, nullptr);
     return;
   }
@@ -109,14 +113,23 @@ void MojoDemuxerStreamAdapter::OnBufferReady(
       buffer.To<scoped_refptr<DecoderBuffer>>());
 
   if (!media_buffer->end_of_stream()) {
-    DCHECK_GT(media_buffer->data_size(), 0);
+    DCHECK_GT(media_buffer->data_size(), 0u);
+
+    // Wait for the data to become available in the DataPipe.
+    MojoHandleSignalsState state;
+    CHECK_EQ(MOJO_RESULT_OK,
+             MojoWait(stream_pipe_.get().value(), MOJO_HANDLE_SIGNAL_READABLE,
+                      MOJO_DEADLINE_INDEFINITE, &state));
+    CHECK_EQ(MOJO_HANDLE_SIGNAL_READABLE, state.satisfied_signals);
 
     // Read the inner data for the DecoderBuffer from our DataPipe.
-    uint32_t num_bytes = media_buffer->data_size();
+    uint32_t bytes_to_read =
+        base::checked_cast<uint32_t>(media_buffer->data_size());
+    uint32_t bytes_read = bytes_to_read;
     CHECK_EQ(ReadDataRaw(stream_pipe_.get(), media_buffer->writable_data(),
-                         &num_bytes, MOJO_READ_DATA_FLAG_ALL_OR_NONE),
+                         &bytes_read, MOJO_READ_DATA_FLAG_ALL_OR_NONE),
              MOJO_RESULT_OK);
-    CHECK_EQ(num_bytes, static_cast<uint32_t>(media_buffer->data_size()));
+    CHECK_EQ(bytes_to_read, bytes_read);
   }
 
   base::ResetAndReturn(&read_cb_).Run(DemuxerStream::kOk, media_buffer);

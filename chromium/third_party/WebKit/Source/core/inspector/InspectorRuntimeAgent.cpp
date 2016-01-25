@@ -28,15 +28,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 
 #include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorState.h"
+#include "core/inspector/MuteConsoleScope.h"
 #include "core/inspector/RemoteObjectId.h"
 #include "core/inspector/v8/V8Debugger.h"
+#include "core/inspector/v8/V8RuntimeAgent.h"
 #include "platform/JSONValues.h"
 
 using blink::TypeBuilder::Runtime::ExecutionContextDescription;
@@ -45,53 +46,13 @@ namespace blink {
 
 namespace InspectorRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
-static const char customObjectFormatterEnabled[] = "customObjectFormatterEnabled";
-};
-
-class InspectorRuntimeAgent::InjectedScriptCallScope {
-    STACK_ALLOCATED();
-public:
-    InjectedScriptCallScope(InspectorRuntimeAgent* agent, bool doNotPauseOnExceptionsAndMuteConsole)
-        : m_agent(agent)
-        , m_doNotPauseOnExceptionsAndMuteConsole(doNotPauseOnExceptionsAndMuteConsole)
-        , m_previousPauseOnExceptionsState(V8Debugger::DontPauseOnExceptions)
-    {
-        if (!m_doNotPauseOnExceptionsAndMuteConsole)
-            return;
-        m_previousPauseOnExceptionsState = setPauseOnExceptionsState(V8Debugger::DontPauseOnExceptions);
-        m_agent->muteConsole();
-    }
-    ~InjectedScriptCallScope()
-    {
-        if (!m_doNotPauseOnExceptionsAndMuteConsole)
-            return;
-        m_agent->unmuteConsole();
-        setPauseOnExceptionsState(m_previousPauseOnExceptionsState);
-    }
-
-private:
-    V8Debugger::PauseOnExceptionsState setPauseOnExceptionsState(V8Debugger::PauseOnExceptionsState newState)
-    {
-        V8Debugger* debugger = m_agent->m_debugger;
-        ASSERT(debugger);
-        if (!debugger->enabled())
-            return newState;
-        V8Debugger::PauseOnExceptionsState presentState = debugger->pauseOnExceptionsState();
-        if (presentState != newState)
-            debugger->setPauseOnExceptionsState(newState);
-        return presentState;
-    }
-
-    RawPtrWillBeMember<InspectorRuntimeAgent> m_agent;
-    bool m_doNotPauseOnExceptionsAndMuteConsole;
-    V8Debugger::PauseOnExceptionsState m_previousPauseOnExceptionsState;
 };
 
 InspectorRuntimeAgent::InspectorRuntimeAgent(InjectedScriptManager* injectedScriptManager, V8Debugger* debugger, Client* client)
     : InspectorBaseAgent<InspectorRuntimeAgent, InspectorFrontend::Runtime>("Runtime")
     , m_enabled(false)
+    , m_v8RuntimeAgent(V8RuntimeAgent::create(injectedScriptManager, debugger))
     , m_injectedScriptManager(injectedScriptManager)
-    , m_debugger(debugger)
     , m_client(client)
 {
 }
@@ -106,110 +67,79 @@ DEFINE_TRACE(InspectorRuntimeAgent)
     InspectorBaseAgent::trace(visitor);
 }
 
-void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+// InspectorBaseAgent overrides.
+void InspectorRuntimeAgent::init()
 {
-    InjectedScript injectedScript = injectedScriptForEval(errorString, executionContextId);
-    if (injectedScript.isEmpty())
-        return;
-
-    InjectedScriptCallScope callScope(this, asBool(doNotPauseOnExceptionsAndMuteConsole));
-    injectedScript.evaluate(errorString, expression, objectGroup ? *objectGroup : "", asBool(includeCommandLineAPI), asBool(returnByValue), asBool(generatePreview), &result, wasThrown, &exceptionDetails);
+    m_v8RuntimeAgent->setInspectorState(m_state);
 }
 
-void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InspectorRuntimeAgent::setFrontend(InspectorFrontend* frontend)
 {
-    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
-    if (!remoteId) {
-        *errorString = "Invalid object id";
-        return;
-    }
-    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
-    if (injectedScript.isEmpty()) {
-        *errorString = "Inspected frame has gone";
-        return;
-    }
-    String arguments;
-    if (optionalArguments)
-        arguments = (*optionalArguments)->toJSONString();
-
-    InjectedScriptCallScope callScope(this, asBool(doNotPauseOnExceptionsAndMuteConsole));
-    injectedScript.callFunctionOn(errorString, objectId, expression, arguments, asBool(returnByValue), asBool(generatePreview), &result, wasThrown);
+    InspectorBaseAgent::setFrontend(frontend);
+    m_v8RuntimeAgent->setFrontend(InspectorFrontend::Runtime::from(frontend));
 }
 
-void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, const bool* generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>& internalProperties, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+void InspectorRuntimeAgent::clearFrontend()
 {
-    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
-    if (!remoteId) {
-        *errorString = "Invalid object id";
-        return;
-    }
-    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
-    if (injectedScript.isEmpty()) {
-        *errorString = "Inspected frame has gone";
-        return;
-    }
-
-    InjectedScriptCallScope callScope(this, true);
-
-    injectedScript.getProperties(errorString, objectId, asBool(ownProperties), asBool(accessorPropertiesOnly), asBool(generatePreview), &result, &exceptionDetails);
-
-    if (!exceptionDetails && !asBool(accessorPropertiesOnly))
-        injectedScript.getInternalProperties(errorString, objectId, &internalProperties, &exceptionDetails);
-}
-
-void InspectorRuntimeAgent::releaseObject(ErrorString* errorString, const String& objectId)
-{
-    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
-    if (!remoteId) {
-        *errorString = "Invalid object id";
-        return;
-    }
-    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
-    if (injectedScript.isEmpty())
-        return;
-    bool pausingOnNextStatement = m_debugger->pausingOnNextStatement();
-    if (pausingOnNextStatement)
-        m_debugger->setPauseOnNextStatement(false);
-    injectedScript.releaseObject(objectId);
-    if (pausingOnNextStatement)
-        m_debugger->setPauseOnNextStatement(true);
-}
-
-void InspectorRuntimeAgent::releaseObjectGroup(ErrorString*, const String& objectGroup)
-{
-    bool pausingOnNextStatement = m_debugger->pausingOnNextStatement();
-    if (pausingOnNextStatement)
-        m_debugger->setPauseOnNextStatement(false);
-    m_injectedScriptManager->releaseObjectGroup(objectGroup);
-    if (pausingOnNextStatement)
-        m_debugger->setPauseOnNextStatement(true);
-}
-
-void InspectorRuntimeAgent::run(ErrorString*)
-{
-    m_client->resumeStartup();
-}
-
-void InspectorRuntimeAgent::isRunRequired(ErrorString*, bool* out_result)
-{
-    *out_result = m_client->isRunRequired();
-}
-
-void InspectorRuntimeAgent::setCustomObjectFormatterEnabled(ErrorString*, bool enabled)
-{
-    m_state->setBoolean(InspectorRuntimeAgentState::customObjectFormatterEnabled, enabled);
-    injectedScriptManager()->setCustomObjectFormatterEnabled(enabled);
+    m_v8RuntimeAgent->clearFrontend();
+    InspectorBaseAgent::clearFrontend();
 }
 
 void InspectorRuntimeAgent::restore()
 {
-    if (m_state->getBoolean(InspectorRuntimeAgentState::runtimeEnabled)) {
-        frontend()->executionContextsCleared();
-        String error;
-        enable(&error);
-        if (m_state->getBoolean(InspectorRuntimeAgentState::customObjectFormatterEnabled))
-            injectedScriptManager()->setCustomObjectFormatterEnabled(true);
-    }
+    if (!m_state->getBoolean(InspectorRuntimeAgentState::runtimeEnabled))
+        return;
+    m_v8RuntimeAgent->restore();
+    ErrorString errorString;
+    enable(&errorString);
+}
+
+void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* optExecutionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+{
+    int executionContextId = optExecutionContextId ? *optExecutionContextId : m_injectedScriptManager->injectedScriptFor(defaultScriptState()).contextId();
+    MuteConsoleScope<InspectorRuntimeAgent> muteScope;
+    if (asBool(doNotPauseOnExceptionsAndMuteConsole))
+        muteScope.enter(this);
+    m_v8RuntimeAgent->evaluate(errorString, expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, &executionContextId, returnByValue, generatePreview, result, wasThrown, exceptionDetails);
+}
+
+void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+{
+    MuteConsoleScope<InspectorRuntimeAgent> muteScope;
+    if (asBool(doNotPauseOnExceptionsAndMuteConsole))
+        muteScope.enter(this);
+    m_v8RuntimeAgent->callFunctionOn(errorString, objectId, expression, optionalArguments, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, result, wasThrown);
+}
+
+void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, const bool* generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>& internalProperties, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+{
+    MuteConsoleScope<InspectorRuntimeAgent> muteScope(this);
+    m_v8RuntimeAgent->getProperties(errorString, objectId, ownProperties, accessorPropertiesOnly, generatePreview, result, internalProperties, exceptionDetails);
+}
+
+void InspectorRuntimeAgent::releaseObject(ErrorString* errorString, const String& objectId)
+{
+    m_v8RuntimeAgent->releaseObject(errorString, objectId);
+}
+
+void InspectorRuntimeAgent::releaseObjectGroup(ErrorString* errorString, const String& objectGroup)
+{
+    m_v8RuntimeAgent->releaseObjectGroup(errorString, objectGroup);
+}
+
+void InspectorRuntimeAgent::run(ErrorString* errorString)
+{
+    m_client->resumeStartup();
+}
+
+void InspectorRuntimeAgent::isRunRequired(ErrorString* errorString, bool* outResult)
+{
+    *outResult = m_client->isRunRequired();
+}
+
+void InspectorRuntimeAgent::setCustomObjectFormatterEnabled(ErrorString* errorString, bool enabled)
+{
+    m_v8RuntimeAgent->setCustomObjectFormatterEnabled(errorString, enabled);
 }
 
 void InspectorRuntimeAgent::enable(ErrorString* errorString)
@@ -219,6 +149,7 @@ void InspectorRuntimeAgent::enable(ErrorString* errorString)
 
     m_enabled = true;
     m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, true);
+    m_v8RuntimeAgent->enable(errorString);
 }
 
 void InspectorRuntimeAgent::disable(ErrorString* errorString)
@@ -228,18 +159,17 @@ void InspectorRuntimeAgent::disable(ErrorString* errorString)
 
     m_enabled = false;
     m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, false);
+    m_v8RuntimeAgent->disable(errorString);
 }
 
-void InspectorRuntimeAgent::addExecutionContextToFrontend(int executionContextId, const String& type, const String& origin, const String& humanReadableName, const String& frameId)
+void InspectorRuntimeAgent::reportExecutionContextCreated(ScriptState* scriptState, const String& type, const String& origin, const String& humanReadableName, const String& frameId)
 {
-    RefPtr<ExecutionContextDescription> description = ExecutionContextDescription::create()
-        .setId(executionContextId)
-        .setName(humanReadableName)
-        .setOrigin(origin)
-        .setFrameId(frameId);
-    if (!type.isEmpty())
-        description->setType(type);
-    frontend()->executionContextCreated(description.release());
+    m_v8RuntimeAgent->reportExecutionContextCreated(scriptState, type, origin, humanReadableName, frameId);
+}
+
+void InspectorRuntimeAgent::reportExecutionContextDestroyed(ScriptState* scriptState)
+{
+    m_v8RuntimeAgent->reportExecutionContextDestroyed(scriptState);
 }
 
 } // namespace blink

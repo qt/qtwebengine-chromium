@@ -33,7 +33,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 
-#define RGBA(r,g,b,a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+#define RGBA(r,g,b,a) (((unsigned)(a) << 24) | ((r) << 16) | ((g) << 8) | (b))
 #define MAX_EPOCH_PALETTES 8   // Max 8 allowed per PGS epoch
 #define MAX_EPOCH_OBJECTS  64  // Max 64 allowed per PGS epoch
 #define MAX_OBJECT_REFS    2   // Max objects per display set
@@ -166,9 +166,9 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitleRect *rect,
 
     rle_bitmap_end = buf + buf_size;
 
-    rect->pict.data[0] = av_malloc_array(rect->w, rect->h);
+    rect->data[0] = av_malloc_array(rect->w, rect->h);
 
-    if (!rect->pict.data[0])
+    if (!rect->data[0])
         return AVERROR(ENOMEM);
 
     pixel_count = 0;
@@ -190,7 +190,7 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitleRect *rect,
         }
 
         if (run > 0 && pixel_count + run <= rect->w * rect->h) {
-            memset(rect->pict.data[0] + pixel_count, color, run);
+            memset(rect->data[0] + pixel_count, color, run);
             pixel_count += run;
         } else if (!run) {
             /*
@@ -290,8 +290,8 @@ static int parse_object_segment(AVCodecContext *avctx,
     height = bytestream_get_be16(&buf);
 
     /* Make sure the bitmap is not too large */
-    if (avctx->width < width || avctx->height < height) {
-        av_log(avctx, AV_LOG_ERROR, "Bitmap dimensions larger than video.\n");
+    if (avctx->width < width || avctx->height < height || !width || !height) {
+        av_log(avctx, AV_LOG_ERROR, "Bitmap dimensions (%dx%d) invalid.\n", width, height);
         return AVERROR_INVALIDDATA;
     }
 
@@ -523,6 +523,8 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
     }
     for (i = 0; i < ctx->presentation.object_count; i++) {
         PGSSubObject *object;
+        AVSubtitleRect *rect;
+        int j;
 
         sub->rects[i]  = av_mallocz(sizeof(*sub->rects[0]));
         if (!sub->rects[i]) {
@@ -553,7 +555,7 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
         sub->rects[i]->w    = object->w;
         sub->rects[i]->h    = object->h;
 
-        sub->rects[i]->pict.linesize[0] = object->w;
+        sub->rects[i]->linesize[0] = object->w;
 
         if (object->rle) {
             if (object->rle_remaining_len) {
@@ -578,15 +580,24 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
         }
         /* Allocate memory for colors */
         sub->rects[i]->nb_colors    = 256;
-        sub->rects[i]->pict.data[1] = av_mallocz(AVPALETTE_SIZE);
-        if (!sub->rects[i]->pict.data[1]) {
+        sub->rects[i]->data[1] = av_mallocz(AVPALETTE_SIZE);
+        if (!sub->rects[i]->data[1]) {
             avsubtitle_free(sub);
             return AVERROR(ENOMEM);
         }
 
         if (!ctx->forced_subs_only || ctx->presentation.objects[i].composition_flag & 0x40)
-        memcpy(sub->rects[i]->pict.data[1], palette->clut, sub->rects[i]->nb_colors * sizeof(uint32_t));
+        memcpy(sub->rects[i]->data[1], palette->clut, sub->rects[i]->nb_colors * sizeof(uint32_t));
 
+#if FF_API_AVPICTURE
+FF_DISABLE_DEPRECATION_WARNINGS
+        rect = sub->rects[i];
+        for (j = 0; j < 4; j++) {
+            rect->pict.data[j] = rect->data[j];
+            rect->pict.linesize[j] = rect->linesize[j];
+        }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     }
     return 1;
 }

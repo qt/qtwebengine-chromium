@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "platform/graphics/ThreadSafeDataTransport.h"
 
 #include "platform/SharedBuffer.h"
@@ -54,6 +52,10 @@ void ThreadSafeDataTransport::setData(SharedBuffer* buffer, bool allDataReceived
     }
 
     MutexLocker locker(m_mutex);
+
+    // If all data was previously received, don't append more to it.
+    RELEASE_ASSERT(!(m_allDataReceived && newBufferQueue.size()));
+
     m_newBufferQueue.appendVector(newBufferQueue);
     newBufferQueue.clear();
     m_allDataReceived = allDataReceived;

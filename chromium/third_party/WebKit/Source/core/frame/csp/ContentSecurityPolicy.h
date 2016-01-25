@@ -67,7 +67,7 @@ typedef WillBeHeapVector<RefPtrWillBeMember<ConsoleMessage>> ConsoleMessageVecto
 typedef std::pair<String, ContentSecurityPolicyHeaderType> CSPHeaderAndType;
 
 class CORE_EXPORT ContentSecurityPolicy : public RefCountedWillBeGarbageCollectedFinalized<ContentSecurityPolicy> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ContentSecurityPolicy);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ContentSecurityPolicy);
 public:
     // CSP Level 1 Directives
     static const char ConnectSrc[];
@@ -121,6 +121,16 @@ public:
     enum ExceptionStatus {
         WillThrowException,
         WillNotThrowException
+    };
+
+    // This covers the possible values of a violation's 'resource', as defined in
+    // https://w3c.github.io/webappsec-csp/#violation-resource. By the time we
+    // generate a report, we're guaranteed that the value isn't 'null', so we don't
+    // need that state in this enum.
+    enum ViolationType {
+        InlineViolation,
+        EvalViolation,
+        URLViolation
     };
 
     static PassRefPtrWillBeRawPtr<ContentSecurityPolicy> create()
@@ -226,7 +236,7 @@ public:
     // If a frame is passed in, the report will be sent using it as a context. If no frame is
     // passed in, the report will be sent via this object's |m_executionContext| (or dropped
     // on the floor if no such context is available).
-    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<String>& reportEndpoints, const String& header, LocalFrame* = nullptr);
+    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<String>& reportEndpoints, const String& header, ViolationType, LocalFrame* = nullptr);
 
     void reportBlockedScriptExecutionToInspector(const String& directiveText) const;
 

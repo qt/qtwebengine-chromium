@@ -23,13 +23,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/HTMLTrackElement.h"
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/html/CrossOriginAttribute.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/LoadableTextTrack.h"
 #include "platform/Logging.h"
@@ -87,7 +87,7 @@ void HTMLTrackElement::removedFrom(ContainerNode* insertionPoint)
     HTMLElement::removedFrom(insertionPoint);
 }
 
-void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == srcAttr) {
         if (!value.isEmpty())
@@ -107,7 +107,7 @@ void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicStr
         track()->setId(value);
     }
 
-    HTMLElement::parseAttribute(name, value);
+    HTMLElement::parseAttribute(name, oldValue, value);
 }
 
 const AtomicString& HTMLTrackElement::kind()
@@ -157,7 +157,7 @@ void HTMLTrackElement::scheduleLoad()
         return;
 
     // 4. Run the remainder of these steps in parallel, allowing whatever caused these steps to run to continue.
-    m_loadTimer.startOneShot(0, FROM_HERE);
+    m_loadTimer.startOneShot(0, BLINK_FROM_HERE);
 
     // 5. Top: Await a stable state. The synchronous section consists of the following steps. (The steps in the
     // synchronous section are marked with [X])
@@ -213,7 +213,7 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
         m_loader->cancelLoad();
 
     m_loader = TextTrackLoader::create(*this, document());
-    if (!m_loader->load(m_url, corsMode))
+    if (!m_loader->load(m_url, crossOriginAttributeValue(corsMode)))
         didCompleteLoad(Failure);
 }
 

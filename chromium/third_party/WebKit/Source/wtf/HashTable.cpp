@@ -17,7 +17,6 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "config.h"
 #include "wtf/HashTable.h"
 
 #include "wtf/DataLog.h"
@@ -36,7 +35,7 @@ int HashTableStats::numReinserts;
 
 static Mutex& hashTableStatsMutex()
 {
-    AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, new Mutex);
     return mutex;
 }
 

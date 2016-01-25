@@ -34,15 +34,31 @@ namespace blink {
 class CSSParserSelector;
 
 class CORE_EXPORT CSSSelectorList {
-    WTF_MAKE_FAST_ALLOCATED(CSSSelectorList);
+    USING_FAST_MALLOC(CSSSelectorList);
 public:
     CSSSelectorList() : m_selectorArray(nullptr) { }
-    CSSSelectorList(const CSSSelectorList&);
 
-    ~CSSSelectorList();
+    CSSSelectorList(CSSSelectorList&& o)
+        : m_selectorArray(o.m_selectorArray)
+    {
+        o.m_selectorArray = nullptr;
+    }
 
-    void adopt(CSSSelectorList&);
-    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
+    CSSSelectorList& operator=(CSSSelectorList&& o)
+    {
+        deleteSelectorsIfNeeded();
+        m_selectorArray = o.m_selectorArray;
+        o.m_selectorArray = nullptr;
+        return *this;
+    }
+
+    ~CSSSelectorList()
+    {
+        deleteSelectorsIfNeeded();
+    }
+
+    static CSSSelectorList adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
+    CSSSelectorList copy() const;
 
     bool isValid() const { return !!m_selectorArray; }
     const CSSSelector* first() const { return m_selectorArray; }
@@ -63,18 +79,25 @@ public:
 
     bool selectorNeedsUpdatedDistribution(size_t index) const;
 
-    // TODO(esprehn): These methods are confusing and incorrectly named.
-    bool hasShadowDistributedAt(size_t index) const;
-    bool selectorCrossesTreeScopes(size_t index) const;
+    // TODO(kochi): "ShadowDistributed" means the selector has ::content pseudo element.
+    // Once ::slotted is introduced, come up with more readable name.
+    bool selectorHasShadowDistributed(size_t index) const;
+    bool selectorUsesDeepCombinatorOrShadowPseudo(size_t index) const;
 
     String selectorsText() const;
 
 private:
     unsigned length() const;
+
+    void deleteSelectorsIfNeeded()
+    {
+        if (m_selectorArray)
+            deleteSelectors();
+    }
     void deleteSelectors();
 
-    // Hide.
-    CSSSelectorList& operator=(const CSSSelectorList&);
+    CSSSelectorList(const CSSSelectorList&) = delete;
+    CSSSelectorList& operator=(const CSSSelectorList&) = delete;
 
     // End of a multipart selector is indicated by m_isLastInTagHistory bit in the last item.
     // End of the array is indicated by m_isLastInSelectorList bit in the last item.

@@ -82,6 +82,7 @@ public:
 
     // EventTarget overrides:
     ExecutionContext* executionContext() const override;
+    const LocalDOMWindow* toDOMWindow() const override;
     LocalDOMWindow* toDOMWindow() override;
 
     // DOMWindow overrides:
@@ -118,7 +119,6 @@ public:
     int orientation() const override;
     Console* console() const override;
     DOMSelection* getSelection() override;
-    void focus(ExecutionContext*) override;
     void blur() override;
     void print() override;
     void stop() override;
@@ -165,7 +165,7 @@ public:
 
     FrameConsole* frameConsole() const;
 
-    void printErrorMessage(const String&);
+    void printErrorMessage(const String&) const;
 
     void postMessageTimerFired(PostMessageTimer*);
     void removePostMessageTimer(PostMessageTimer*);
@@ -173,8 +173,6 @@ public:
 
     // Events
     // EventTarget API
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     void removeAllEventListeners() override;
 
     using EventTarget::dispatchEvent;
@@ -183,8 +181,6 @@ public:
     void dispatchLoadEvent();
 
     void finishedLoading();
-
-    ApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
 
     // Dispatch the (deprecated) orientationchange event to this DOMWindow and
     // recurse on its child frames.
@@ -207,6 +203,11 @@ public:
 
     void acceptLanguagesChanged();
 
+protected:
+    // EventTarget overrides.
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+    bool removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+
 private:
     // Rather than simply inheriting LocalFrameLifecycleObserver like most other
     // classes, LocalDOMWindow hides its LocalFrameLifecycleObserver with
@@ -215,7 +216,7 @@ private:
     // LocalFrameLifecycleObserver, which has a frame() accessor that returns a
     // LocalFrame*.
     class WindowFrameObserver final : public NoBaseWillBeGarbageCollected<WindowFrameObserver>, public LocalFrameLifecycleObserver {
-        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WindowFrameObserver);
+        USING_FAST_MALLOC_WILL_BE_REMOVED(WindowFrameObserver);
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WindowFrameObserver);
         DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(WindowFrameObserver);
     public:
@@ -236,8 +237,6 @@ private:
 
     explicit LocalDOMWindow(LocalFrame&);
     void dispose();
-
-    Page* page();
 
     void clearDocument();
     void willDestroyDocumentInFrame();

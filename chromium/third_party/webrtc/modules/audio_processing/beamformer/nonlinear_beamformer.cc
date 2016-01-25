@@ -27,33 +27,21 @@ namespace {
 // Alpha for the Kaiser Bessel Derived window.
 const float kKbdAlpha = 1.5f;
 
-// The minimum value a post-processing mask can take.
-const float kMaskMinimum = 0.01f;
-
 const float kSpeedOfSoundMeterSeconds = 343;
 
-// For both target and interference angles, PI / 2 is perpendicular to the
-// microphone array, facing forwards. The positive direction goes
-// counterclockwise.
-// The angle at which we amplify sound.
-const float kTargetAngleRadians = static_cast<float>(M_PI) / 2.f;
+// The minimum separation in radians between the target direction and an
+// interferer scenario.
+const float kMinAwayRadians = 0.2f;
 
-// The angle at which we suppress sound. Suppression is symmetric around PI / 2
-// radians, so sound is suppressed at both +|kInterfAngleRadians| and
-// PI - |kInterfAngleRadians|. Since the beamformer is robust, this should
-// suppress sound coming from close angles as well.
-const float kInterfAngleRadians = static_cast<float>(M_PI) / 4.f;
+// The separation between the target direction and the closest interferer
+// scenario is proportional to this constant.
+const float kAwaySlope = 0.008f;
 
 // When calculating the interference covariance matrix, this is the weight for
 // the weighted average between the uniform covariance matrix and the angled
 // covariance matrix.
 // Rpsi = Rpsi_angled * kBalance + Rpsi_uniform * (1 - kBalance)
-const float kBalance = 0.4f;
-
-const float kHalfBeamWidthRadians = static_cast<float>(M_PI) * 20.f / 180.f;
-
-// TODO(claguna): need comment here.
-const float kBeamwidthConstant = 0.00002f;
+const float kBalance = 0.95f;
 
 // Alpha coefficients for mask smoothing.
 const float kMaskTimeSmoothAlpha = 0.2f;
@@ -64,23 +52,34 @@ const float kMaskFrequencySmoothAlpha = 0.6f;
 const int kLowMeanStartHz = 200;
 const int kLowMeanEndHz = 400;
 
-const int kHighMeanStartHz = 3000;
-const int kHighMeanEndHz = 5000;
+// Range limiter for subtractive terms in the nominator and denominator of the
+// postfilter expression. It handles the scenario mismatch between the true and
+// model sources (target and interference).
+const float kCutOffConstant = 0.9999f;
 
 // Quantile of mask values which is used to estimate target presence.
 const float kMaskQuantile = 0.7f;
 // Mask threshold over which the data is considered signal and not interference.
-const float kMaskTargetThreshold = 0.3f;
+// It has to be updated every time the postfilter calculation is changed
+// significantly.
+// TODO(aluebs): Write a tool to tune the target threshold automatically based
+// on files annotated with target and interference ground truth.
+const float kMaskTargetThreshold = 0.01f;
 // Time in seconds after which the data is considered interference if the mask
 // does not pass |kMaskTargetThreshold|.
 const float kHoldTargetSeconds = 0.25f;
+
+// To compensate for the attenuation this algorithm introduces to the target
+// signal. It was estimated empirically from a low-noise low-reverberation
+// recording from broadside.
+const float kCompensationGain = 2.f;
 
 // Does conjugate(|norm_mat|) * |mat| * transpose(|norm_mat|). No extra space is
 // used; to accomplish this, we compute both multiplications in the same loop.
 // The returned norm is clamped to be non-negative.
 float Norm(const ComplexMatrix<float>& mat,
            const ComplexMatrix<float>& norm_mat) {
-  RTC_CHECK_EQ(norm_mat.num_rows(), 1);
+  RTC_CHECK_EQ(1u, norm_mat.num_rows());
   RTC_CHECK_EQ(norm_mat.num_columns(), mat.num_rows());
   RTC_CHECK_EQ(norm_mat.num_columns(), mat.num_columns());
 
@@ -90,8 +89,8 @@ float Norm(const ComplexMatrix<float>& mat,
   const complex<float>* const* mat_els = mat.elements();
   const complex<float>* const* norm_mat_els = norm_mat.elements();
 
-  for (int i = 0; i < norm_mat.num_columns(); ++i) {
-    for (int j = 0; j < norm_mat.num_columns(); ++j) {
+  for (size_t i = 0; i < norm_mat.num_columns(); ++i) {
+    for (size_t j = 0; j < norm_mat.num_columns(); ++j) {
       first_product += conj(norm_mat_els[0][j]) * mat_els[j][i];
     }
     second_product += first_product * norm_mat_els[0][i];
@@ -103,15 +102,15 @@ float Norm(const ComplexMatrix<float>& mat,
 // Does conjugate(|lhs|) * |rhs| for row vectors |lhs| and |rhs|.
 complex<float> ConjugateDotProduct(const ComplexMatrix<float>& lhs,
                                    const ComplexMatrix<float>& rhs) {
-  RTC_CHECK_EQ(lhs.num_rows(), 1);
-  RTC_CHECK_EQ(rhs.num_rows(), 1);
+  RTC_CHECK_EQ(1u, lhs.num_rows());
+  RTC_CHECK_EQ(1u, rhs.num_rows());
   RTC_CHECK_EQ(lhs.num_columns(), rhs.num_columns());
 
   const complex<float>* const* lhs_elements = lhs.elements();
   const complex<float>* const* rhs_elements = rhs.elements();
 
   complex<float> result = complex<float>(0.f, 0.f);
-  for (int i = 0; i < lhs.num_columns(); ++i) {
+  for (size_t i = 0; i < lhs.num_columns(); ++i) {
     result += conj(lhs_elements[0][i]) * rhs_elements[0][i];
   }
 
@@ -127,8 +126,8 @@ size_t Round(float x) {
 float SumAbs(const ComplexMatrix<float>& mat) {
   float sum_abs = 0.f;
   const complex<float>* const* mat_els = mat.elements();
-  for (int i = 0; i < mat.num_rows(); ++i) {
-    for (int j = 0; j < mat.num_columns(); ++j) {
+  for (size_t i = 0; i < mat.num_rows(); ++i) {
+    for (size_t j = 0; j < mat.num_columns(); ++j) {
       sum_abs += std::abs(mat_els[i][j]);
     }
   }
@@ -139,8 +138,8 @@ float SumAbs(const ComplexMatrix<float>& mat) {
 float SumSquares(const ComplexMatrix<float>& mat) {
   float sum_squares = 0.f;
   const complex<float>* const* mat_els = mat.elements();
-  for (int i = 0; i < mat.num_rows(); ++i) {
-    for (int j = 0; j < mat.num_columns(); ++j) {
+  for (size_t i = 0; i < mat.num_rows(); ++i) {
+    for (size_t j = 0; j < mat.num_columns(); ++j) {
       float abs_value = std::abs(mat_els[i][j]);
       sum_squares += abs_value * abs_value;
     }
@@ -151,20 +150,20 @@ float SumSquares(const ComplexMatrix<float>& mat) {
 // Does |out| = |in|.' * conj(|in|) for row vector |in|.
 void TransposedConjugatedProduct(const ComplexMatrix<float>& in,
                                  ComplexMatrix<float>* out) {
-  RTC_CHECK_EQ(in.num_rows(), 1);
+  RTC_CHECK_EQ(1u, in.num_rows());
   RTC_CHECK_EQ(out->num_rows(), in.num_columns());
   RTC_CHECK_EQ(out->num_columns(), in.num_columns());
   const complex<float>* in_elements = in.elements()[0];
   complex<float>* const* out_elements = out->elements();
-  for (int i = 0; i < out->num_rows(); ++i) {
-    for (int j = 0; j < out->num_columns(); ++j) {
+  for (size_t i = 0; i < out->num_rows(); ++i) {
+    for (size_t j = 0; j < out->num_columns(); ++j) {
       out_elements[i][j] = in_elements[i] * conj(in_elements[j]);
     }
   }
 }
 
 std::vector<Point> GetCenteredArray(std::vector<Point> array_geometry) {
-  for (int dim = 0; dim < 3; ++dim) {
+  for (size_t dim = 0; dim < 3; ++dim) {
     float center = 0.f;
     for (size_t i = 0; i < array_geometry.size(); ++i) {
       center += array_geometry[i].c[dim];
@@ -179,13 +178,23 @@ std::vector<Point> GetCenteredArray(std::vector<Point> array_geometry) {
 
 }  // namespace
 
+const float NonlinearBeamformer::kHalfBeamWidthRadians = DegreesToRadians(20.f);
+
 // static
 const size_t NonlinearBeamformer::kNumFreqBins;
 
 NonlinearBeamformer::NonlinearBeamformer(
-    const std::vector<Point>& array_geometry)
-  : num_input_channels_(array_geometry.size()),
-      array_geometry_(GetCenteredArray(array_geometry)) {
+    const std::vector<Point>& array_geometry,
+    SphericalPointf target_direction)
+    : num_input_channels_(array_geometry.size()),
+      array_geometry_(GetCenteredArray(array_geometry)),
+      array_normal_(GetArrayNormalIfExists(array_geometry)),
+      min_mic_spacing_(GetMinimumSpacing(array_geometry)),
+      target_angle_radians_(target_direction.azimuth()),
+      away_radians_(std::min(
+          static_cast<float>(M_PI),
+          std::max(kMinAwayRadians,
+                   kAwaySlope * static_cast<float>(M_PI) / min_mic_spacing_))) {
   WindowGenerator::KaiserBesselDerived(kKbdAlpha, kFftSize, window_);
 }
 
@@ -193,31 +202,11 @@ void NonlinearBeamformer::Initialize(int chunk_size_ms, int sample_rate_hz) {
   chunk_length_ =
       static_cast<size_t>(sample_rate_hz / (1000.f / chunk_size_ms));
   sample_rate_hz_ = sample_rate_hz;
-  low_mean_start_bin_ = Round(kLowMeanStartHz * kFftSize / sample_rate_hz_);
-  low_mean_end_bin_ = Round(kLowMeanEndHz * kFftSize / sample_rate_hz_);
-  high_mean_start_bin_ = Round(kHighMeanStartHz * kFftSize / sample_rate_hz_);
-  high_mean_end_bin_ = Round(kHighMeanEndHz * kFftSize / sample_rate_hz_);
-  // These bin indexes determine the regions over which a mean is taken. This
-  // is applied as a constant value over the adjacent end "frequency correction"
-  // regions.
-  //
-  //             low_mean_start_bin_     high_mean_start_bin_
-  //                   v                         v              constant
-  // |----------------|--------|----------------|-------|----------------|
-  //   constant               ^                        ^
-  //             low_mean_end_bin_       high_mean_end_bin_
-  //
-  RTC_DCHECK_GT(low_mean_start_bin_, 0U);
-  RTC_DCHECK_LT(low_mean_start_bin_, low_mean_end_bin_);
-  RTC_DCHECK_LT(low_mean_end_bin_, high_mean_end_bin_);
-  RTC_DCHECK_LT(high_mean_start_bin_, high_mean_end_bin_);
-  RTC_DCHECK_LT(high_mean_end_bin_, kNumFreqBins - 1);
 
   high_pass_postfilter_mask_ = 1.f;
   is_target_present_ = false;
   hold_target_blocks_ = kHoldTargetSeconds * 2 * sample_rate_hz / kFftSize;
   interference_blocks_count_ = hold_target_blocks_;
-
 
   lapped_transform_.reset(new LappedTransform(num_input_channels_,
                                               1,
@@ -231,34 +220,88 @@ void NonlinearBeamformer::Initialize(int chunk_size_ms, int sample_rate_hz) {
     final_mask_[i] = 1.f;
     float freq_hz = (static_cast<float>(i) / kFftSize) * sample_rate_hz_;
     wave_numbers_[i] = 2 * M_PI * freq_hz / kSpeedOfSoundMeterSeconds;
-    mask_thresholds_[i] = num_input_channels_ * num_input_channels_ *
-                          kBeamwidthConstant * wave_numbers_[i] *
-                          wave_numbers_[i];
   }
 
-  // Initialize all nonadaptive values before looping through the frames.
-  InitDelaySumMasks();
-  InitTargetCovMats();
-  InitInterfCovMats();
+  InitLowFrequencyCorrectionRanges();
+  InitDiffuseCovMats();
+  AimAt(SphericalPointf(target_angle_radians_, 0.f, 1.f));
+}
 
-  for (size_t i = 0; i < kNumFreqBins; ++i) {
-    rxiws_[i] = Norm(target_cov_mats_[i], delay_sum_masks_[i]);
-    rpsiws_[i] = Norm(interf_cov_mats_[i], delay_sum_masks_[i]);
-    reflected_rpsiws_[i] =
-        Norm(reflected_interf_cov_mats_[i], delay_sum_masks_[i]);
+// These bin indexes determine the regions over which a mean is taken. This is
+// applied as a constant value over the adjacent end "frequency correction"
+// regions.
+//
+//             low_mean_start_bin_     high_mean_start_bin_
+//                   v                         v              constant
+// |----------------|--------|----------------|-------|----------------|
+//   constant               ^                        ^
+//             low_mean_end_bin_       high_mean_end_bin_
+//
+void NonlinearBeamformer::InitLowFrequencyCorrectionRanges() {
+  low_mean_start_bin_ = Round(kLowMeanStartHz * kFftSize / sample_rate_hz_);
+  low_mean_end_bin_ = Round(kLowMeanEndHz * kFftSize / sample_rate_hz_);
+
+  RTC_DCHECK_GT(low_mean_start_bin_, 0U);
+  RTC_DCHECK_LT(low_mean_start_bin_, low_mean_end_bin_);
+}
+
+void NonlinearBeamformer::InitHighFrequencyCorrectionRanges() {
+  const float kAliasingFreqHz =
+      kSpeedOfSoundMeterSeconds /
+      (min_mic_spacing_ * (1.f + std::abs(std::cos(target_angle_radians_))));
+  const float kHighMeanStartHz = std::min(0.5f *  kAliasingFreqHz,
+                                          sample_rate_hz_ / 2.f);
+  const float kHighMeanEndHz = std::min(0.75f *  kAliasingFreqHz,
+                                        sample_rate_hz_ / 2.f);
+  high_mean_start_bin_ = Round(kHighMeanStartHz * kFftSize / sample_rate_hz_);
+  high_mean_end_bin_ = Round(kHighMeanEndHz * kFftSize / sample_rate_hz_);
+
+  RTC_DCHECK_LT(low_mean_end_bin_, high_mean_end_bin_);
+  RTC_DCHECK_LT(high_mean_start_bin_, high_mean_end_bin_);
+  RTC_DCHECK_LT(high_mean_end_bin_, kNumFreqBins - 1);
+}
+
+void NonlinearBeamformer::InitInterfAngles() {
+  interf_angles_radians_.clear();
+  const Point target_direction = AzimuthToPoint(target_angle_radians_);
+  const Point clockwise_interf_direction =
+      AzimuthToPoint(target_angle_radians_ - away_radians_);
+  if (!array_normal_ ||
+      DotProduct(*array_normal_, target_direction) *
+              DotProduct(*array_normal_, clockwise_interf_direction) >=
+          0.f) {
+    // The target and clockwise interferer are in the same half-plane defined
+    // by the array.
+    interf_angles_radians_.push_back(target_angle_radians_ - away_radians_);
+  } else {
+    // Otherwise, the interferer will begin reflecting back at the target.
+    // Instead rotate it away 180 degrees.
+    interf_angles_radians_.push_back(target_angle_radians_ - away_radians_ +
+                                     M_PI);
+  }
+  const Point counterclock_interf_direction =
+      AzimuthToPoint(target_angle_radians_ + away_radians_);
+  if (!array_normal_ ||
+      DotProduct(*array_normal_, target_direction) *
+              DotProduct(*array_normal_, counterclock_interf_direction) >=
+          0.f) {
+    // The target and counter-clockwise interferer are in the same half-plane
+    // defined by the array.
+    interf_angles_radians_.push_back(target_angle_radians_ + away_radians_);
+  } else {
+    // Otherwise, the interferer will begin reflecting back at the target.
+    // Instead rotate it away 180 degrees.
+    interf_angles_radians_.push_back(target_angle_radians_ + away_radians_ -
+                                     M_PI);
   }
 }
 
 void NonlinearBeamformer::InitDelaySumMasks() {
   for (size_t f_ix = 0; f_ix < kNumFreqBins; ++f_ix) {
     delay_sum_masks_[f_ix].Resize(1, num_input_channels_);
-    CovarianceMatrixGenerator::PhaseAlignmentMasks(f_ix,
-                                                   kFftSize,
-                                                   sample_rate_hz_,
-                                                   kSpeedOfSoundMeterSeconds,
-                                                   array_geometry_,
-                                                   kTargetAngleRadians,
-                                                   &delay_sum_masks_[f_ix]);
+    CovarianceMatrixGenerator::PhaseAlignmentMasks(
+        f_ix, kFftSize, sample_rate_hz_, kSpeedOfSoundMeterSeconds,
+        array_geometry_, target_angle_radians_, &delay_sum_masks_[f_ix]);
 
     complex_f norm_factor = sqrt(
         ConjugateDotProduct(delay_sum_masks_[f_ix], delay_sum_masks_[f_ix]));
@@ -273,40 +316,53 @@ void NonlinearBeamformer::InitTargetCovMats() {
   for (size_t i = 0; i < kNumFreqBins; ++i) {
     target_cov_mats_[i].Resize(num_input_channels_, num_input_channels_);
     TransposedConjugatedProduct(delay_sum_masks_[i], &target_cov_mats_[i]);
-    complex_f normalization_factor = target_cov_mats_[i].Trace();
-    target_cov_mats_[i].Scale(1.f / normalization_factor);
+  }
+}
+
+void NonlinearBeamformer::InitDiffuseCovMats() {
+  for (size_t i = 0; i < kNumFreqBins; ++i) {
+    uniform_cov_mat_[i].Resize(num_input_channels_, num_input_channels_);
+    CovarianceMatrixGenerator::UniformCovarianceMatrix(
+        wave_numbers_[i], array_geometry_, &uniform_cov_mat_[i]);
+    complex_f normalization_factor = uniform_cov_mat_[i].elements()[0][0];
+    uniform_cov_mat_[i].Scale(1.f / normalization_factor);
+    uniform_cov_mat_[i].Scale(1 - kBalance);
   }
 }
 
 void NonlinearBeamformer::InitInterfCovMats() {
   for (size_t i = 0; i < kNumFreqBins; ++i) {
-    interf_cov_mats_[i].Resize(num_input_channels_, num_input_channels_);
-    ComplexMatrixF uniform_cov_mat(num_input_channels_, num_input_channels_);
-    ComplexMatrixF angled_cov_mat(num_input_channels_, num_input_channels_);
+    interf_cov_mats_[i].clear();
+    for (size_t j = 0; j < interf_angles_radians_.size(); ++j) {
+      interf_cov_mats_[i].push_back(new ComplexMatrixF(num_input_channels_,
+                                                       num_input_channels_));
+      ComplexMatrixF angled_cov_mat(num_input_channels_, num_input_channels_);
+      CovarianceMatrixGenerator::AngledCovarianceMatrix(
+          kSpeedOfSoundMeterSeconds,
+          interf_angles_radians_[j],
+          i,
+          kFftSize,
+          kNumFreqBins,
+          sample_rate_hz_,
+          array_geometry_,
+          &angled_cov_mat);
+      // Normalize matrices before averaging them.
+      complex_f normalization_factor = angled_cov_mat.elements()[0][0];
+      angled_cov_mat.Scale(1.f / normalization_factor);
+      // Weighted average of matrices.
+      angled_cov_mat.Scale(kBalance);
+      interf_cov_mats_[i][j]->Add(uniform_cov_mat_[i], angled_cov_mat);
+    }
+  }
+}
 
-    CovarianceMatrixGenerator::UniformCovarianceMatrix(wave_numbers_[i],
-                                                       array_geometry_,
-                                                       &uniform_cov_mat);
-
-    CovarianceMatrixGenerator::AngledCovarianceMatrix(kSpeedOfSoundMeterSeconds,
-                                                      kInterfAngleRadians,
-                                                      i,
-                                                      kFftSize,
-                                                      kNumFreqBins,
-                                                      sample_rate_hz_,
-                                                      array_geometry_,
-                                                      &angled_cov_mat);
-    // Normalize matrices before averaging them.
-    complex_f normalization_factor = uniform_cov_mat.Trace();
-    uniform_cov_mat.Scale(1.f / normalization_factor);
-    normalization_factor = angled_cov_mat.Trace();
-    angled_cov_mat.Scale(1.f / normalization_factor);
-
-    // Average matrices.
-    uniform_cov_mat.Scale(1 - kBalance);
-    angled_cov_mat.Scale(kBalance);
-    interf_cov_mats_[i].Add(uniform_cov_mat, angled_cov_mat);
-    reflected_interf_cov_mats_[i].PointwiseConjugate(interf_cov_mats_[i]);
+void NonlinearBeamformer::NormalizeCovMats() {
+  for (size_t i = 0; i < kNumFreqBins; ++i) {
+    rxiws_[i] = Norm(target_cov_mats_[i], delay_sum_masks_[i]);
+    rpsiws_[i].clear();
+    for (size_t j = 0; j < interf_angles_radians_.size(); ++j) {
+      rpsiws_[i].push_back(Norm(*interf_cov_mats_[i][j], delay_sum_masks_[i]));
+    }
   }
 }
 
@@ -322,39 +378,43 @@ void NonlinearBeamformer::ProcessChunk(const ChannelBuffer<float>& input,
   const float ramp_increment =
       (high_pass_postfilter_mask_ - old_high_pass_mask) /
       input.num_frames_per_band();
-  // Apply delay and sum and post-filter in the time domain. WARNING: only works
-  // because delay-and-sum is not frequency dependent.
+  // Apply the smoothed high-pass mask to the first channel of each band.
+  // This can be done because the effect of the linear beamformer is negligible
+  // compared to the post-filter.
   for (size_t i = 1; i < input.num_bands(); ++i) {
     float smoothed_mask = old_high_pass_mask;
     for (size_t j = 0; j < input.num_frames_per_band(); ++j) {
       smoothed_mask += ramp_increment;
-
-      // Applying the delay and sum (at zero degrees, this is equivalent to
-      // averaging).
-      float sum = 0.f;
-      for (int k = 0; k < input.num_channels(); ++k) {
-        sum += input.channels(i)[k][j];
-      }
-      output->channels(i)[0][j] = sum / input.num_channels() * smoothed_mask;
+      output->channels(i)[0][j] = input.channels(i)[0][j] * smoothed_mask;
     }
   }
+}
+
+void NonlinearBeamformer::AimAt(const SphericalPointf& target_direction) {
+  target_angle_radians_ = target_direction.azimuth();
+  InitHighFrequencyCorrectionRanges();
+  InitInterfAngles();
+  InitDelaySumMasks();
+  InitTargetCovMats();
+  InitInterfCovMats();
+  NormalizeCovMats();
 }
 
 bool NonlinearBeamformer::IsInBeam(const SphericalPointf& spherical_point) {
   // If more than half-beamwidth degrees away from the beam's center,
   // you are out of the beam.
-  return fabs(spherical_point.azimuth() - kTargetAngleRadians) <
+  return fabs(spherical_point.azimuth() - target_angle_radians_) <
          kHalfBeamWidthRadians;
 }
 
 void NonlinearBeamformer::ProcessAudioBlock(const complex_f* const* input,
-                                            int num_input_channels,
+                                            size_t num_input_channels,
                                             size_t num_freq_bins,
-                                            int num_output_channels,
+                                            size_t num_output_channels,
                                             complex_f* const* output) {
-  RTC_CHECK_EQ(num_freq_bins, kNumFreqBins);
-  RTC_CHECK_EQ(num_input_channels, num_input_channels_);
-  RTC_CHECK_EQ(num_output_channels, 1);
+  RTC_CHECK_EQ(kNumFreqBins, num_freq_bins);
+  RTC_CHECK_EQ(num_input_channels_, num_input_channels);
+  RTC_CHECK_EQ(1u, num_output_channels);
 
   // Calculating the post-filter masks. Note that we need two for each
   // frequency bin to account for the positive and negative interferer
@@ -376,17 +436,19 @@ void NonlinearBeamformer::ProcessAudioBlock(const complex_f* const* input,
     rmw *= rmw;
     float rmw_r = rmw.real();
 
-    new_mask_[i] = CalculatePostfilterMask(interf_cov_mats_[i],
-                                           rpsiws_[i],
+    new_mask_[i] = CalculatePostfilterMask(*interf_cov_mats_[i][0],
+                                           rpsiws_[i][0],
                                            ratio_rxiw_rxim,
-                                           rmw_r,
-                                           mask_thresholds_[i]);
-
-    new_mask_[i] *= CalculatePostfilterMask(reflected_interf_cov_mats_[i],
-                                            reflected_rpsiws_[i],
-                                            ratio_rxiw_rxim,
-                                            rmw_r,
-                                            mask_thresholds_[i]);
+                                           rmw_r);
+    for (size_t j = 1; j < interf_angles_radians_.size(); ++j) {
+      float tmp_mask = CalculatePostfilterMask(*interf_cov_mats_[i][j],
+                                               rpsiws_[i][j],
+                                               ratio_rxiw_rxim,
+                                               rmw_r);
+      if (tmp_mask < new_mask_[i]) {
+        new_mask_[i] = tmp_mask;
+      }
+    }
   }
 
   ApplyMaskTimeSmoothing();
@@ -401,24 +463,16 @@ float NonlinearBeamformer::CalculatePostfilterMask(
     const ComplexMatrixF& interf_cov_mat,
     float rpsiw,
     float ratio_rxiw_rxim,
-    float rmw_r,
-    float mask_threshold) {
+    float rmw_r) {
   float rpsim = Norm(interf_cov_mat, eig_m_);
 
-  // Find lambda.
   float ratio = 0.f;
   if (rpsim > 0.f) {
     ratio = rpsiw / rpsim;
   }
-  float numerator = rmw_r - ratio;
-  float denominator = ratio_rxiw_rxim - ratio;
 
-  float mask = 1.f;
-  if (denominator > mask_threshold) {
-    float lambda = numerator / denominator;
-    mask = std::max(lambda * ratio_rxiw_rxim / rmw_r, kMaskMinimum);
-  }
-  return mask;
+  return (1.f - std::min(kCutOffConstant, ratio / rmw_r)) /
+         (1.f - std::min(kCutOffConstant, ratio / ratio_rxiw_rxim));
 }
 
 void NonlinearBeamformer::ApplyMasks(const complex_f* const* input,
@@ -429,11 +483,11 @@ void NonlinearBeamformer::ApplyMasks(const complex_f* const* input,
 
     const complex_f* delay_sum_mask_els =
         normalized_delay_sum_masks_[f_ix].elements()[0];
-    for (int c_ix = 0; c_ix < num_input_channels_; ++c_ix) {
+    for (size_t c_ix = 0; c_ix < num_input_channels_; ++c_ix) {
       output_channel[f_ix] += input[c_ix][f_ix] * delay_sum_mask_els[c_ix];
     }
 
-    output_channel[f_ix] *= final_mask_[f_ix];
+    output_channel[f_ix] *= kCompensationGain * final_mask_[f_ix];
   }
 }
 

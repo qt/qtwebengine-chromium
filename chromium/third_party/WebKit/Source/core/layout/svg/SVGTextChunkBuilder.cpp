@@ -17,14 +17,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/svg/SVGTextChunkBuilder.h"
 
-#include "core/layout/svg/LayoutSVGInlineText.h"
+#include "core/layout/api/LineLayoutSVGInlineText.h"
 #include "core/layout/svg/line/SVGInlineTextBox.h"
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/SVGTextContentElement.h"
-#include "platform/transforms/AffineTransform.h"
 
 namespace blink {
 
@@ -160,9 +158,9 @@ SVGTextPathChunkBuilder::SVGTextPathChunkBuilder()
 
 void SVGTextPathChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, BoxListConstIterator boxEnd)
 {
-    const ComputedStyle& style = (*boxStart)->layoutObject().styleRef();
+    const ComputedStyle& style = (*boxStart)->lineLayoutItem().styleRef();
 
-    ChunkLengthAccumulator lengthAccumulator(style.svgStyle().isVerticalWritingMode());
+    ChunkLengthAccumulator lengthAccumulator(!style.isHorizontalWritingMode());
     lengthAccumulator.processRange(boxStart, boxEnd);
 
     // Handle text-anchor as additional start offset for text paths.
@@ -172,29 +170,23 @@ void SVGTextPathChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, Box
     m_totalCharacters += lengthAccumulator.numCharacters();
 }
 
-static void buildSpacingAndGlyphsTransform(bool isVerticalText, float scale, const SVGTextFragment& fragment, AffineTransform& spacingAndGlyphsTransform)
+static float computeTextLengthBias(const SVGTextFragment& fragment, float scale)
 {
-    spacingAndGlyphsTransform.translate(fragment.x, fragment.y);
-
-    if (isVerticalText)
-        spacingAndGlyphsTransform.scaleNonUniform(1, scale);
-    else
-        spacingAndGlyphsTransform.scaleNonUniform(scale, 1);
-
-    spacingAndGlyphsTransform.translate(-fragment.x, -fragment.y);
+    float initialPosition = fragment.isVertical ? fragment.y : fragment.x;
+    return initialPosition + scale * -initialPosition;
 }
 
 void SVGTextChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, BoxListConstIterator boxEnd)
 {
     ASSERT(*boxStart);
 
-    const LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText((*boxStart)->layoutObject());
-    const ComputedStyle& style = textLayoutObject.styleRef();
+    const LineLayoutSVGInlineText textLineLayout = LineLayoutSVGInlineText((*boxStart)->lineLayoutItem());
+    const ComputedStyle& style = textLineLayout.styleRef();
 
     // Handle 'lengthAdjust' property.
     float desiredTextLength = 0;
     SVGLengthAdjustType lengthAdjust = SVGLengthAdjustUnknown;
-    if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromLayoutObject(textLayoutObject.parent())) {
+    if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromLayoutObject(textLineLayout.parent())) {
         lengthAdjust = textContentElement->lengthAdjust()->currentValue()->enumValue();
 
         SVGLengthContext lengthContext(textContentElement);
@@ -209,7 +201,7 @@ void SVGTextChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, BoxList
     if (!processTextAnchor && !processTextLength)
         return;
 
-    bool isVerticalText = style.svgStyle().isVerticalWritingMode();
+    bool isVerticalText = !style.isHorizontalWritingMode();
 
     // Calculate absolute length of whole text chunk (starting from text box 'start', spanning 'length' text boxes).
     ChunkLengthAccumulator lengthAccumulator(isVerticalText);
@@ -236,7 +228,7 @@ void SVGTextChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, BoxList
         } else {
             ASSERT(lengthAdjust == SVGLengthAdjustSpacingAndGlyphs);
             float textLengthScale = desiredTextLength / chunkLength;
-            AffineTransform spacingAndGlyphsTransform;
+            float textLengthBias = 0;
 
             bool foundFirstFragment = false;
             for (auto boxIter = boxStart; boxIter != boxEnd; ++boxIter) {
@@ -247,10 +239,10 @@ void SVGTextChunkBuilder::handleTextChunk(BoxListConstIterator boxStart, BoxList
 
                 if (!foundFirstFragment) {
                     foundFirstFragment = true;
-                    buildSpacingAndGlyphsTransform(isVerticalText, textLengthScale, fragments.first(), spacingAndGlyphsTransform);
+                    textLengthBias = computeTextLengthBias(fragments.first(), textLengthScale);
                 }
 
-                applyTextLengthScaleAdjustment(spacingAndGlyphsTransform, fragments);
+                applyTextLengthScaleAdjustment(textLengthScale, textLengthBias, fragments);
             }
         }
     }
@@ -279,11 +271,12 @@ void SVGTextChunkBuilder::processTextLengthSpacingCorrection(bool isVerticalText
     }
 }
 
-void SVGTextChunkBuilder::applyTextLengthScaleAdjustment(const AffineTransform& spacingAndGlyphsTransform, Vector<SVGTextFragment>& fragments)
+void SVGTextChunkBuilder::applyTextLengthScaleAdjustment(float textLengthScale, float textLengthBias, Vector<SVGTextFragment>& fragments)
 {
     for (SVGTextFragment& fragment : fragments) {
-        ASSERT(fragment.lengthAdjustTransform.isIdentity());
-        fragment.lengthAdjustTransform = spacingAndGlyphsTransform;
+        ASSERT(fragment.lengthAdjustScale == 1);
+        fragment.lengthAdjustScale = textLengthScale;
+        fragment.lengthAdjustBias = textLengthBias;
     }
 }
 

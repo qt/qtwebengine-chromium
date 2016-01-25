@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/FileUploadControlPainter.h"
 
 #include "core/layout/LayoutButton.h"
@@ -24,16 +23,16 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
 
     // Push a clip.
     Optional<ClipRecorder> clipRecorder;
-    if (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseChildBlockBackgrounds) {
+    if (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseDescendantBlockBackgroundsOnly) {
         IntRect clipRect = enclosingIntRect(LayoutRect(
             LayoutPoint(paintOffset.x() + m_layoutFileUploadControl.borderLeft(), paintOffset.y() + m_layoutFileUploadControl.borderTop()),
             m_layoutFileUploadControl.size() + LayoutSize(0, -m_layoutFileUploadControl.borderWidth() + buttonShadowHeight)));
         if (clipRect.isEmpty())
             return;
-        clipRecorder.emplace(*paintInfo.context, m_layoutFileUploadControl, DisplayItem::ClipFileUploadControlRect, LayoutRect(clipRect));
+        clipRecorder.emplace(paintInfo.context, m_layoutFileUploadControl, DisplayItem::ClipFileUploadControlRect, LayoutRect(clipRect));
     }
 
-    if (paintInfo.phase == PaintPhaseForeground && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutFileUploadControl, paintInfo.phase, paintOffset)) {
+    if (paintInfo.phase == PaintPhaseForeground && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutFileUploadControl, paintInfo.phase, paintOffset)) {
         const String& displayedFilename = m_layoutFileUploadControl.fileTextValue();
         const Font& font = m_layoutFileUploadControl.style()->font();
         TextRun textRun = constructTextRun(font, displayedFilename, m_layoutFileUploadControl.styleRef(), RespectDirection | RespectDirectionOverride);
@@ -67,9 +66,9 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
             textWidth, m_layoutFileUploadControl.style()->fontMetrics().height());
 
         // Draw the filename.
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFileUploadControl, paintInfo.phase, textRunPaintInfo.bounds, paintOffset);
-        paintInfo.context->setFillColor(m_layoutFileUploadControl.resolveColor(CSSPropertyColor));
-        paintInfo.context->drawBidiText(font, textRunPaintInfo, FloatPoint(roundToInt(textX), roundToInt(textY)));
+        LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutFileUploadControl, paintInfo.phase, textRunPaintInfo.bounds, paintOffset);
+        paintInfo.context.setFillColor(m_layoutFileUploadControl.resolveColor(CSSPropertyColor));
+        paintInfo.context.drawBidiText(font, textRunPaintInfo, FloatPoint(roundToInt(textX), roundToInt(textY)));
     }
 
     // Paint the children.

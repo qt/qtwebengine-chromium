@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/SuspendableScriptExecutor.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -58,7 +57,7 @@ void SuspendableScriptExecutor::run()
         executeAndDestroySelf();
         return;
     }
-    startOneShot(0, FROM_HERE);
+    startOneShot(0, BLINK_FROM_HERE);
     suspendIfNeeded();
 }
 

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "modules/canvas2d/CanvasRenderingContext2DState.h"
 
 #include "core/css/CSSFontSelector.h"
@@ -46,6 +44,7 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState()
     , m_fillStyleDirty(true)
     , m_strokeStyleDirty(true)
     , m_lineDashDirty(false)
+    , m_imageSmoothingQuality(kLow_SkFilterQuality)
 {
     m_fillPaint.setStyle(SkPaint::kFill_Style);
     m_fillPaint.setAntiAlias(true);
@@ -97,6 +96,8 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState(const CanvasRenderi
     , m_fillStyleDirty(other.m_fillStyleDirty)
     , m_strokeStyleDirty(other.m_strokeStyleDirty)
     , m_lineDashDirty(other.m_lineDashDirty)
+    , m_imageSmoothingEnabled(other.m_imageSmoothingEnabled)
+    , m_imageSmoothingQuality(other.m_imageSmoothingQuality)
 {
     if (mode == CopyClipList) {
         m_clipList = other.m_clipList;
@@ -148,6 +149,8 @@ CanvasRenderingContext2DState& CanvasRenderingContext2DState::operator=(const Ca
     m_strokeStyleDirty = other.m_strokeStyleDirty;
     m_lineDashDirty = other.m_lineDashDirty;
     m_clipList = other.m_clipList;
+    m_imageSmoothingEnabled = other.m_imageSmoothingEnabled;
+    m_imageSmoothingQuality = other.m_imageSmoothingQuality;
 
     if (m_realizedFont)
         static_cast<CSSFontSelector*>(m_font.fontSelector())->registerForInvalidationCallbacks(this);
@@ -182,13 +185,13 @@ DEFINE_TRACE(CanvasRenderingContext2DState)
     CSSFontSelectorClient::trace(visitor);
 }
 
-void CanvasRenderingContext2DState::setLineDashOffset(float offset)
+void CanvasRenderingContext2DState::setLineDashOffset(double offset)
 {
     m_lineDashOffset = offset;
     m_lineDashDirty = true;
 }
 
-void CanvasRenderingContext2DState::setLineDash(const Vector<float>& dash)
+void CanvasRenderingContext2DState::setLineDash(const Vector<double>& dash)
 {
     m_lineDash = dash;
     // Spec requires the concatenation of two copies the dash list when the
@@ -199,10 +202,10 @@ void CanvasRenderingContext2DState::setLineDash(const Vector<float>& dash)
     m_lineDashDirty = true;
 }
 
-static bool hasANonZeroElement(const Vector<float>& lineDash)
+static bool hasANonZeroElement(const Vector<double>& lineDash)
 {
     for (size_t i = 0; i < lineDash.size(); i++) {
-        if (lineDash[i] != 0.0f)
+        if (lineDash[i] != 0.0)
             return true;
     }
     return false;
@@ -216,7 +219,9 @@ void CanvasRenderingContext2DState::updateLineDash() const
     if (!hasANonZeroElement(m_lineDash)) {
         m_strokePaint.setPathEffect(0);
     } else {
-        RefPtr<SkPathEffect> dashPathEffect = adoptRef(SkDashPathEffect::Create(m_lineDash.data(), m_lineDash.size(), m_lineDashOffset));
+        Vector<float> lineDash(m_lineDash.size());
+        std::copy(m_lineDash.begin(), m_lineDash.end(), lineDash.begin());
+        RefPtr<SkPathEffect> dashPathEffect = adoptRef(SkDashPathEffect::Create(lineDash.data(), lineDash.size(), m_lineDashOffset));
         m_strokePaint.setPathEffect(dashPathEffect.get());
     }
 
@@ -242,7 +247,7 @@ void CanvasRenderingContext2DState::updateStrokeStyle() const
 
     int clampedAlpha = clampedAlphaForBlending(m_globalAlpha);
     ASSERT(m_strokeStyle);
-    m_strokePaint.setShader(m_strokeStyle->shader());
+    m_strokeStyle->applyToPaint(m_strokePaint);
     m_strokePaint.setColor(scaleAlpha(m_strokeStyle->paintColor(), clampedAlpha));
     m_strokeStyleDirty = false;
 }
@@ -254,7 +259,7 @@ void CanvasRenderingContext2DState::updateFillStyle() const
 
     int clampedAlpha = clampedAlphaForBlending(m_globalAlpha);
     ASSERT(m_fillStyle);
-    m_fillPaint.setShader(m_fillStyle->shader());
+    m_fillStyle->applyToPaint(m_fillPaint);
     m_fillPaint.setColor(scaleAlpha(m_fillStyle->paintColor(), clampedAlpha));
     m_fillStyleDirty = false;
 }
@@ -286,7 +291,7 @@ bool CanvasRenderingContext2DState::shouldAntialias() const
     return m_fillPaint.isAntiAlias();
 }
 
-void CanvasRenderingContext2DState::setGlobalAlpha(float alpha)
+void CanvasRenderingContext2DState::setGlobalAlpha(double alpha)
 {
     m_globalAlpha = alpha;
     m_strokeStyleDirty = true;
@@ -349,12 +354,19 @@ SkImageFilter* CanvasRenderingContext2DState::getFilter(Element* styleResolution
         StyleResolverState resolverState(styleResolutionHost->document(), styleResolutionHost, filterStyle.get());
         resolverState.setStyle(filterStyle);
 
-        // TODO(junov): crbug.com/502877 Feed m_fillStyle and m_strokeStyle into FillPaint and
-        // StrokePaint respectively for filters that reference SVG.
         StyleBuilder::applyProperty(CSSPropertyWebkitFilter, resolverState, m_filterValue.get());
         RefPtrWillBeRawPtr<FilterEffectBuilder> filterEffectBuilder = FilterEffectBuilder::create();
-        const float effectiveZoom = 1.0f; // Deliberately ignore zoom on the canvas element
-        filterEffectBuilder->build(styleResolutionHost, filterStyle->filter(), effectiveZoom);
+
+        // We can't reuse m_fillPaint and m_strokePaint for the filter, since these incorporate
+        // the global alpha, which isn't applicable here.
+        SkPaint fillPaintForFilter;
+        SkPaint strokePaintForFilter;
+        m_fillStyle->applyToPaint(fillPaintForFilter);
+        m_strokeStyle->applyToPaint(strokePaintForFilter);
+        fillPaintForFilter.setColor(m_fillStyle->paintColor());
+        strokePaintForFilter.setColor(m_strokeStyle->paintColor());
+        const double effectiveZoom = 1.0; // Deliberately ignore zoom on the canvas element
+        filterEffectBuilder->build(styleResolutionHost, filterStyle->filter(), effectiveZoom, &fillPaintForFilter, &strokePaintForFilter);
 
         SkiaImageFilterBuilder imageFilterBuilder;
         RefPtrWillBeRawPtr<FilterEffect> lastEffect = filterEffectBuilder->lastEffect();
@@ -397,7 +409,7 @@ SkDrawLooper* CanvasRenderingContext2DState::shadowAndForegroundDrawLooper() con
 SkImageFilter* CanvasRenderingContext2DState::shadowOnlyImageFilter() const
 {
     if (!m_shadowOnlyImageFilter) {
-        float sigma = skBlurRadiusToSigma(m_shadowBlur);
+        double sigma = skBlurRadiusToSigma(m_shadowBlur);
         m_shadowOnlyImageFilter = adoptRef(SkDropShadowImageFilter::Create(m_shadowOffset.width(), m_shadowOffset.height(), sigma, sigma, m_shadowColor, SkDropShadowImageFilter::kDrawShadowOnly_ShadowMode));
     }
     return m_shadowOnlyImageFilter.get();
@@ -406,7 +418,7 @@ SkImageFilter* CanvasRenderingContext2DState::shadowOnlyImageFilter() const
 SkImageFilter* CanvasRenderingContext2DState::shadowAndForegroundImageFilter() const
 {
     if (!m_shadowAndForegroundImageFilter) {
-        float sigma = skBlurRadiusToSigma(m_shadowBlur);
+        double sigma = skBlurRadiusToSigma(m_shadowBlur);
         m_shadowAndForegroundImageFilter = adoptRef(SkDropShadowImageFilter::Create(m_shadowOffset.width(), m_shadowOffset.height(), sigma, sigma, m_shadowColor, SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode));
     }
     return m_shadowAndForegroundImageFilter.get();
@@ -420,19 +432,19 @@ void CanvasRenderingContext2DState::shadowParameterChanged()
     m_shadowAndForegroundImageFilter.clear();
 }
 
-void CanvasRenderingContext2DState::setShadowOffsetX(float x)
+void CanvasRenderingContext2DState::setShadowOffsetX(double x)
 {
     m_shadowOffset.setWidth(x);
     shadowParameterChanged();
 }
 
-void CanvasRenderingContext2DState::setShadowOffsetY(float y)
+void CanvasRenderingContext2DState::setShadowOffsetY(double y)
 {
     m_shadowOffset.setHeight(y);
     shadowParameterChanged();
 }
 
-void CanvasRenderingContext2DState::setShadowBlur(float shadowBlur)
+void CanvasRenderingContext2DState::setShadowBlur(double shadowBlur)
 {
     m_shadowBlur = shadowBlur;
     shadowParameterChanged();
@@ -468,16 +480,60 @@ SkXfermode::Mode CanvasRenderingContext2DState::globalComposite() const
 
 void CanvasRenderingContext2DState::setImageSmoothingEnabled(bool enabled)
 {
-    SkFilterQuality filterQuality = enabled ? kLow_SkFilterQuality : kNone_SkFilterQuality;
+    m_imageSmoothingEnabled = enabled;
+    updateFilterQuality();
+}
+
+bool CanvasRenderingContext2DState::imageSmoothingEnabled() const
+{
+    return m_imageSmoothingEnabled;
+}
+
+void CanvasRenderingContext2DState::setImageSmoothingQuality(const String& qualityString)
+{
+    if (qualityString == "low") {
+        m_imageSmoothingQuality = kLow_SkFilterQuality;
+    } else if (qualityString == "medium") {
+        m_imageSmoothingQuality = kMedium_SkFilterQuality;
+    } else if (qualityString == "high") {
+        m_imageSmoothingQuality = kHigh_SkFilterQuality;
+    } else {
+        return;
+    }
+    updateFilterQuality();
+}
+
+String CanvasRenderingContext2DState::imageSmoothingQuality() const
+{
+    switch (m_imageSmoothingQuality) {
+    case kLow_SkFilterQuality:
+        return "low";
+    case kMedium_SkFilterQuality:
+        return "medium";
+    case kHigh_SkFilterQuality:
+        return "high";
+    default:
+        ASSERT_NOT_REACHED();
+        return "low";
+    }
+}
+
+void CanvasRenderingContext2DState::updateFilterQuality() const
+{
+    if (!m_imageSmoothingEnabled) {
+        updateFilterQualityWithSkFilterQuality(kNone_SkFilterQuality);
+    } else {
+        updateFilterQualityWithSkFilterQuality(m_imageSmoothingQuality);
+    }
+}
+
+void CanvasRenderingContext2DState::updateFilterQualityWithSkFilterQuality(const SkFilterQuality& filterQuality) const
+{
     m_strokePaint.setFilterQuality(filterQuality);
     m_fillPaint.setFilterQuality(filterQuality);
     m_imagePaint.setFilterQuality(filterQuality);
 }
 
-bool CanvasRenderingContext2DState::imageSmoothingEnabled() const
-{
-    return m_imagePaint.getFilterQuality() == kLow_SkFilterQuality;
-}
 
 bool CanvasRenderingContext2DState::shouldDrawShadows() const
 {

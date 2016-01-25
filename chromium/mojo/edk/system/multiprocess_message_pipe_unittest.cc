@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/bind.h"
@@ -16,8 +17,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/test/test_io_thread.h"
-#include "build/build_config.h"  // TODO(vtl): Remove this.
+#include "build/build_config.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
@@ -44,16 +44,11 @@ class MultiprocessMessagePipeTest
 // (which it doesn't reply to). It'll return the number of messages received,
 // not including any "quitquitquit" message, modulo 100.
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
-  SimplePlatformSupport platform_support;
-  base::MessageLoop message_loop;
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
-
   ScopedPlatformHandle client_platform_handle =
-      test::MultiprocessTestHelper::client_platform_handle.Pass();
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(client_platform_handle.Pass());
+      CreateMessagePipe(std::move(client_platform_handle));
 
   const std::string quitquitquit("quitquitquit");
   int rv = 0;
@@ -90,8 +85,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
 
     std::string write_buffer = read_buffer + read_buffer;
     CHECK_EQ(MojoWriteMessage(mp.get().value(), write_buffer.data(),
-                              write_buffer.size(),
-                              nullptr, 0, MOJO_WRITE_MESSAGE_FLAG_NONE),
+                              static_cast<uint32_t>(write_buffer.size()),
+                              nullptr, 0u, MOJO_WRITE_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
   }
 
@@ -108,13 +103,13 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
 TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
   helper()->StartChild("EchoEcho");
 
-  ScopedMessagePipeHandle mp = CreateMessagePipe(
-      helper()->server_platform_handle.Pass());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   std::string hello("hello");
   ASSERT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(mp.get().value(), hello.data(),
-                             hello.size(), nullptr, 0,
+                             static_cast<uint32_t>(hello.size()), nullptr, 0u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   HandleSignalsState hss;
@@ -154,23 +149,17 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
 TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
   helper()->StartChild("EchoEcho");
 
-  ScopedMessagePipeHandle mp = CreateMessagePipe(
-      helper()->server_platform_handle.Pass());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   static const size_t kNumMessages = 1001;
   for (size_t i = 0; i < kNumMessages; i++) {
     std::string write_buffer(i, 'A' + (i % 26));
     ASSERT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(mp.get().value(), write_buffer.data(),
-                             write_buffer.size(), nullptr, 0,
-                             MOJO_WRITE_MESSAGE_FLAG_NONE));
+                             static_cast<uint32_t>(write_buffer.size()),
+                             nullptr, 0u, MOJO_WRITE_MESSAGE_FLAG_NONE));
   }
-
-  const std::string quitquitquit("quitquitquit");
-  ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp.get().value(), quitquitquit.data(),
-                             quitquitquit.size(), nullptr, 0,
-                             MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   for (size_t i = 0; i < kNumMessages; i++) {
     HandleSignalsState hss;
@@ -194,6 +183,12 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
     ASSERT_EQ(std::string(i * 2, 'A' + (i % 26)), read_buffer);
   }
 
+  const std::string quitquitquit("quitquitquit");
+  ASSERT_EQ(MOJO_RESULT_OK,
+            MojoWriteMessage(mp.get().value(), quitquitquit.data(),
+                             static_cast<uint32_t>(quitquitquit.size()),
+                             nullptr, 0u, MOJO_WRITE_MESSAGE_FLAG_NONE));
+
   // Wait for it to become readable, which should fail (since we sent
   // "quitquitquit").
   HandleSignalsState hss;
@@ -208,16 +203,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_QueueMessages) {
 }
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
-  SimplePlatformSupport platform_support;
-  base::MessageLoop message_loop;
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
-
   ScopedPlatformHandle client_platform_handle =
-      test::MultiprocessTestHelper::client_platform_handle.Pass();
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(client_platform_handle.Pass());
+      CreateMessagePipe(std::move(client_platform_handle));
 
   // Wait for the first message from our parent.
   HandleSignalsState hss;
@@ -261,8 +251,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   // And send a message to signal that we've written stuff.
   const std::string go2("go 2");
   CHECK_EQ(MojoWriteMessage(mp.get().value(), go2.data(),
-                              go2.size(), nullptr, 0,
-                              MOJO_WRITE_MESSAGE_FLAG_NONE),
+                            static_cast<uint32_t>(go2.size()), nullptr, 0u,
+                            MOJO_WRITE_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
 
   // Now wait for our parent to send us a message.
@@ -302,8 +292,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
 TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   helper()->StartChild("CheckSharedBuffer");
 
-  ScopedMessagePipeHandle mp = CreateMessagePipe(
-      helper()->server_platform_handle.Pass());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   // Make a shared buffer.
   MojoCreateSharedBufferOptions options;
@@ -326,7 +316,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   MojoHandle handles[1];
   handles[0] = duplicated_shared_buffer;
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp.get().value(), &go1[0], go1.size(), &handles[0],
+            MojoWriteMessage(mp.get().value(), &go1[0],
+                             static_cast<uint32_t>(go1.size()), &handles[0],
                              MOJO_ARRAYSIZE(handles),
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
@@ -364,7 +355,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   const std::string go3("go 3");
   ASSERT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(mp.get().value(), &go3[0],
-                             go3.size(), nullptr, 0,
+                             static_cast<uint32_t>(go3.size()), nullptr, 0u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for |mp| to become readable, which should fail.
@@ -381,16 +372,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
 }
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
-  SimplePlatformSupport platform_support;
-  base::MessageLoop message_loop;
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
-
   ScopedPlatformHandle client_platform_handle =
-      test::MultiprocessTestHelper::client_platform_handle.Pass();
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(client_platform_handle.Pass());
+      CreateMessagePipe(std::move(client_platform_handle));
 
   HandleSignalsState hss;
   CHECK_EQ(MojoWait(mp.get().value(), MOJO_HANDLE_SIGNAL_READABLE,
@@ -428,7 +414,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
     CHECK(h.is_valid());
     MojoClose(handles[i]);
 
-    base::ScopedFILE fp(test::FILEFromPlatformHandle(h.Pass(), "r"));
+    base::ScopedFILE fp(test::FILEFromPlatformHandle(std::move(h), "r"));
     CHECK(fp);
     std::string fread_buffer(100, '\0');
     size_t bytes_read =
@@ -449,8 +435,8 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   helper()->StartChild("CheckPlatformHandleFile");
-  ScopedMessagePipeHandle mp = CreateMessagePipe(
-      helper()->server_platform_handle.Pass());
+  ScopedMessagePipeHandle mp =
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   std::vector<MojoHandle> handles;
 
@@ -464,10 +450,11 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
     fflush(fp.get());
     rewind(fp.get());
     MojoHandle handle;
-    ASSERT_EQ(CreatePlatformHandleWrapper(
-                  ScopedPlatformHandle(test::PlatformHandleFromFILE(fp.Pass())),
-                  &handle),
-              MOJO_RESULT_OK);
+    ASSERT_EQ(
+        CreatePlatformHandleWrapper(
+            ScopedPlatformHandle(test::PlatformHandleFromFILE(std::move(fp))),
+            &handle),
+        MOJO_RESULT_OK);
     handles.push_back(handle);
   }
 
@@ -475,9 +462,9 @@ TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
   sprintf(message, "hello %d", static_cast<int>(pipe_count));
   ASSERT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(mp.get().value(), message,
-                             strlen(message),
-                             &handles[0], handles.size(),
-                              MOJO_WRITE_MESSAGE_FLAG_NONE));
+                             static_cast<uint32_t>(strlen(message)),
+                             &handles[0], static_cast<uint32_t>(handles.size()),
+                             MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for it to become readable, which should fail.
   HandleSignalsState hss;
@@ -500,17 +487,12 @@ INSTANTIATE_TEST_CASE_P(PipeCount,
 #endif
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckMessagePipe) {
-  SimplePlatformSupport platform_support;
-  base::MessageLoop message_loop;
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
-
   ScopedPlatformHandle client_platform_handle =
-      test::MultiprocessTestHelper::client_platform_handle.Pass();
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
 
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(client_platform_handle.Pass());
+      CreateMessagePipe(std::move(client_platform_handle));
 
   // Wait for the first message from our parent.
   HandleSignalsState hss;
@@ -556,9 +538,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckMessagePipe) {
   // Now write some data into the message pipe.
   std::string write_buffer = "world";
   CHECK_EQ(MojoWriteMessage(handles[0], write_buffer.data(),
-                            write_buffer.size(),
-                            nullptr, 0, MOJO_WRITE_MESSAGE_FLAG_NONE),
-            MOJO_RESULT_OK);
+                            static_cast<uint32_t>(write_buffer.size()), nullptr,
+                            0u, MOJO_WRITE_MESSAGE_FLAG_NONE),
+           MOJO_RESULT_OK);
   MojoClose(handles[0]);
   return 0;
 }
@@ -573,7 +555,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipePassing) {
   helper()->StartChild("CheckMessagePipe");
 
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(helper()->server_platform_handle.Pass());
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
   MojoCreateSharedBufferOptions options;
   options.struct_size = sizeof(options);
   options.flags = MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
@@ -585,7 +567,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipePassing) {
   // Write a string into one end of the new message pipe and send the other end.
   const std::string hello("hello");
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp1, &hello[0], hello.size(), nullptr, 0,
+            MojoWriteMessage(mp1, &hello[0],
+                             static_cast<uint32_t>(hello.size()), nullptr, 0,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
   ASSERT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(mp.get().value(), nullptr, 0, &mp2, 1,
@@ -625,7 +608,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
   helper()->StartChild("CheckMessagePipe");
 
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(helper()->server_platform_handle.Pass());
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
 
   MojoHandle mp1, mp2;
   ASSERT_EQ(MOJO_RESULT_OK,
@@ -634,10 +617,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
   // Write a string into one end of the new message pipe and send the other end.
   const std::string hello("hello");
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp1, &hello[0], hello.size(), nullptr, 0,
+            MojoWriteMessage(mp1, &hello[0],
+                             static_cast<uint32_t>(hello.size()), nullptr, 0u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp.get().value(), nullptr, 0, &mp2, 1,
+            MojoWriteMessage(mp.get().value(), nullptr, 0u, &mp2, 1u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for a message from the child.
@@ -663,17 +647,12 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_MessagePipeTwoPassing) {
 }
 
 MOJO_MULTIPROCESS_TEST_CHILD_MAIN(DataPipeConsumer) {
-  SimplePlatformSupport platform_support;
-  base::MessageLoop message_loop;
-  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
-  test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
-
   ScopedPlatformHandle client_platform_handle =
-      test::MultiprocessTestHelper::client_platform_handle.Pass();
+      std::move(test::MultiprocessTestHelper::client_platform_handle);
   CHECK(client_platform_handle.is_valid());
 
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(client_platform_handle.Pass());
+      CreateMessagePipe(std::move(client_platform_handle));
 
   // Wait for the first message from our parent.
   HandleSignalsState hss;
@@ -719,8 +698,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(DataPipeConsumer) {
   // Now write some data into the message pipe.
   std::string write_buffer = "world";
   CHECK_EQ(MojoWriteMessage(handles[0], write_buffer.data(),
-                            write_buffer.size(),
-                            nullptr, 0, MOJO_WRITE_MESSAGE_FLAG_NONE),
+                            static_cast<uint32_t>(write_buffer.size()),
+                            nullptr, 0u, MOJO_WRITE_MESSAGE_FLAG_NONE),
             MOJO_RESULT_OK);
   MojoClose(handles[0]);
   return 0;
@@ -736,7 +715,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_DataPipeConsumer) {
   helper()->StartChild("DataPipeConsumer");
 
   ScopedMessagePipeHandle mp =
-      CreateMessagePipe(helper()->server_platform_handle.Pass());
+      CreateMessagePipe(std::move(helper()->server_platform_handle));
   MojoCreateSharedBufferOptions options;
   options.struct_size = sizeof(options);
   options.flags = MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE;
@@ -748,10 +727,11 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_DataPipeConsumer) {
   // Write a string into one end of the new message pipe and send the other end.
   const std::string hello("hello");
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp1, &hello[0], hello.size(), nullptr, 0,
+            MojoWriteMessage(mp1, &hello[0],
+                             static_cast<uint32_t>(hello.size()), nullptr, 0u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
   ASSERT_EQ(MOJO_RESULT_OK,
-            MojoWriteMessage(mp.get().value(), nullptr, 0, &mp2, 1,
+            MojoWriteMessage(mp.get().value(), nullptr, 0, &mp2, 1u,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for a message from the child.

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/v8/JavaScriptCallFrame.h"
 
 #include "bindings/core/v8/V8Binding.h"
@@ -140,6 +139,14 @@ int JavaScriptCallFrame::scopeType(int scopeIndex) const
     return scopeType->Get(scopeIndex)->Int32Value();
 }
 
+v8::Local<v8::String> JavaScriptCallFrame::scopeName(int scopeIndex) const
+{
+    v8::Local<v8::Object> callFrame = m_callFrame.newLocal(m_isolate);
+    v8::Local<v8::Function> func = v8::Local<v8::Function>::Cast(callFrame->Get(v8AtomicString(m_isolate, "scopeName")));
+    v8::Local<v8::Array> scopeType = v8::Local<v8::Array>::Cast(V8ScriptRunner::callInternalFunction(func, callFrame, 0, 0, m_isolate).ToLocalChecked());
+    return scopeType->Get(scopeIndex)->ToString();
+}
+
 v8::Local<v8::Value> JavaScriptCallFrame::thisObject() const
 {
     return m_callFrame.newLocal(m_isolate)->Get(v8AtomicString(m_isolate, "thisObject"));
@@ -173,7 +180,7 @@ v8::Local<v8::Value> JavaScriptCallFrame::evaluateWithExceptionDetails(v8::Local
         expression,
         scopeExtension
     };
-    v8::TryCatch tryCatch;
+    v8::TryCatch tryCatch(m_isolate);
     v8::Local<v8::Object> wrappedResult = v8::Object::New(m_isolate);
     v8::Local<v8::Value> result;
     if (V8ScriptRunner::callInternalFunction(evalFunction, callFrame, WTF_ARRAY_LENGTH(argv), argv, m_isolate).ToLocal(&result)) {

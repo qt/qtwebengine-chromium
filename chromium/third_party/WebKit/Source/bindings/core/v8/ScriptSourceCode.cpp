@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 
 namespace blink {
@@ -65,10 +64,10 @@ String ScriptSourceCode::sourceMapUrl() const
     if (!m_resource)
         return String();
     const ResourceResponse& response = m_resource->response();
-    String sourceMapUrl = response.httpHeaderField("SourceMap");
+    String sourceMapUrl = response.httpHeaderField(HTTPNames::SourceMap);
     if (sourceMapUrl.isEmpty()) {
         // Try to get deprecated header.
-        sourceMapUrl = response.httpHeaderField("X-SourceMap");
+        sourceMapUrl = response.httpHeaderField(HTTPNames::X_SourceMap);
     }
     return sourceMapUrl;
 }

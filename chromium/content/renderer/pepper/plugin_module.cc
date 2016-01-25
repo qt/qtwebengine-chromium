@@ -4,7 +4,11 @@
 
 #include "content/renderer/pepper/plugin_module.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 #include <set>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -371,9 +375,11 @@ void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
   // Does nothing. Not needed in-process.
 }
 
-void RunV8GC(PP_Instance instance) {
-  content::PepperPluginInstance::Get(instance)->GetIsolate()->
-      RequestGarbageCollectionForTesting(v8::Isolate::kFullGarbageCollection);
+void RunV8GC(PP_Instance pp_instance) {
+  PepperPluginInstanceImpl* instance =
+      content::PepperPluginInstanceImpl::GetForTesting(pp_instance);
+  instance->GetIsolate()->RequestGarbageCollectionForTesting(
+      v8::Isolate::kFullGarbageCollection);
 }
 
 const PPB_Testing_Private testing_interface = {
@@ -554,7 +560,7 @@ PluginModule::~PluginModule() {
 
 void PluginModule::SetRendererPpapiHost(
     scoped_ptr<RendererPpapiHostImpl> host) {
-  renderer_ppapi_host_ = host.Pass();
+  renderer_ppapi_host_ = std::move(host);
 }
 
 bool PluginModule::InitAsInternalPlugin(

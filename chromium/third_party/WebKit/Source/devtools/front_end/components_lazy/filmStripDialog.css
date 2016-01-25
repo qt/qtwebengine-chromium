@@ -4,12 +4,18 @@
  * found in the LICENSE file.
  */
 
+:host {
+    flex: none !important;
+}
+
 .filmstrip-dialog {
     margin: 12px;
 }
 
 .filmstrip-dialog > img {
     border: 1px solid #ddd;
+    max-height: 80vh;
+    max-width: 80vw;
 }
 
 .filmstrip-dialog-footer {

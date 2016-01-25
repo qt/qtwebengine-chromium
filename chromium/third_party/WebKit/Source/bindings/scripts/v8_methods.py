@@ -90,22 +90,20 @@ def method_context(interface, method, is_visible=True):
     is_call_with_this_value = has_extended_attribute_value(method, 'CallWith', 'ThisValue')
     if is_call_with_script_state or is_call_with_this_value:
         includes.add('bindings/core/v8/ScriptState.h')
-    is_check_security_for_node = 'CheckSecurity' in extended_attributes
-    if is_check_security_for_node:
+
+    # [CheckSecurity]
+    is_do_not_check_security = 'DoNotCheckSecurity' in extended_attributes
+    is_check_security_for_receiver = (
+        has_extended_attribute_value(interface, 'CheckSecurity', 'Receiver') and
+        not is_do_not_check_security)
+    is_check_security_for_return_value = (
+        has_extended_attribute_value(method, 'CheckSecurity', 'ReturnValue'))
+    if is_check_security_for_receiver or is_check_security_for_return_value:
         includes.add('bindings/core/v8/BindingSecurity.h')
+
     is_custom_element_callbacks = 'CustomElementCallbacks' in extended_attributes
     if is_custom_element_callbacks:
         includes.add('core/dom/custom/CustomElementProcessingStack.h')
-
-    is_do_not_check_security = 'DoNotCheckSecurity' in extended_attributes
-
-    is_check_security_for_frame = (
-        has_extended_attribute_value(interface, 'CheckSecurity', 'Frame') and
-        not is_do_not_check_security)
-
-    is_check_security_for_window = (
-        has_extended_attribute_value(interface, 'CheckSecurity', 'Window') and
-        not is_do_not_check_security)
 
     is_raises_exception = 'RaisesException' in extended_attributes
     is_custom_call_prologue = has_extended_attribute_value(method, 'Custom', 'CallPrologue')
@@ -115,17 +113,26 @@ def method_context(interface, method, is_visible=True):
         includes.add('bindings/core/v8/SerializedScriptValueFactory.h')
         includes.add('core/dom/DOMArrayBuffer.h')
         includes.add('core/dom/MessagePort.h')
+        includes.add('core/frame/ImageBitmap.h')
 
     if 'LenientThis' in extended_attributes:
         raise Exception('[LenientThis] is not supported for operations.')
 
+    if 'APIExperimentEnabled' in extended_attributes:
+        includes.add('core/experiments/ExperimentalFeatures.h')
+        includes.add('core/inspector/ConsoleMessage.h')
+
+    argument_contexts = [
+        argument_context(interface, method, argument, index, is_visible=is_visible)
+        for index, argument in enumerate(arguments)]
+
     return {
         'activity_logging_world_list': v8_utilities.activity_logging_world_list(method),  # [ActivityLogging]
-        'arguments': [argument_context(interface, method, argument, index, is_visible=is_visible)
-                      for index, argument in enumerate(arguments)],
+        'api_experiment_enabled': v8_utilities.api_experiment_enabled_function(method),  # [APIExperimentEnabled]
+        'api_experiment_enabled_per_interface': v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
+        'arguments': argument_contexts,
         'argument_declarations_for_private_script':
             argument_declarations_for_private_script(interface, method),
-        'conditional_string': v8_utilities.conditional_string(method),
         'cpp_type': (v8_types.cpp_template_type('Nullable', idl_type.cpp_type)
                      if idl_type.is_explicit_nullable else idl_type.cpp_type),
         'cpp_value': this_cpp_value,
@@ -142,19 +149,21 @@ def method_context(interface, method, is_visible=True):
                 method, CUSTOM_REGISTRATION_EXTENDED_ATTRIBUTES),
         'has_exception_state':
             is_raises_exception or
-            is_check_security_for_frame or
-            is_check_security_for_window or
+            is_check_security_for_receiver or
             any(argument for argument in arguments
                 if (argument.idl_type.name == 'SerializedScriptValue' or
                     argument_conversion_needs_exception_state(method, argument))),
+        'has_optional_argument_without_default_value':
+            any(True for argument_context in argument_contexts
+                if argument_context['is_optional_without_default_value']),
         'idl_type': idl_type.base_type,
+        'is_api_experiment_enabled': v8_utilities.api_experiment_enabled_function(method) or v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
         'is_call_with_execution_context': has_extended_attribute_value(method, 'CallWith', 'ExecutionContext'),
         'is_call_with_script_arguments': is_call_with_script_arguments,
         'is_call_with_script_state': is_call_with_script_state,
         'is_call_with_this_value': is_call_with_this_value,
-        'is_check_security_for_frame': is_check_security_for_frame,
-        'is_check_security_for_node': is_check_security_for_node,
-        'is_check_security_for_window': is_check_security_for_window,
+        'is_check_security_for_receiver': is_check_security_for_receiver,
+        'is_check_security_for_return_value': is_check_security_for_return_value,
         'is_custom': 'Custom' in extended_attributes and
             not (is_custom_call_prologue or is_custom_call_epilogue),
         'is_custom_call_prologue': is_custom_call_prologue,
@@ -169,8 +178,8 @@ def method_context(interface, method, is_visible=True):
         'is_per_world_bindings': 'PerWorldBindings' in extended_attributes,
         'is_post_message': is_post_message,
         'is_raises_exception': is_raises_exception,
-        'is_read_only': is_unforgeable(interface, method),
         'is_static': is_static,
+        'is_unforgeable': is_unforgeable(interface, method),
         'is_variadic': arguments and arguments[-1].is_variadic,
         'measure_as': v8_utilities.measure_as(method, interface),  # [MeasureAs]
         'name': name,
@@ -208,7 +217,7 @@ def argument_context(interface, method, argument, index, is_visible=True):
     this_cpp_value = cpp_value(interface, method, index)
     is_variadic_wrapper_type = argument.is_variadic and idl_type.is_wrapper_type
 
-    # [TypeChecking=Interface] / [LegacyInterfaceTypeChecking]
+    # [LegacyInterfaceTypeChecking]
     has_type_checking_interface = (
         not is_legacy_interface_type_checking(interface, method) and
         idl_type.is_wrapper_type)
@@ -222,7 +231,7 @@ def argument_context(interface, method, argument, index, is_visible=True):
     this_cpp_type = idl_type.cpp_type_args(extended_attributes=extended_attributes,
                                            raw_type=True,
                                            used_as_variadic_argument=argument.is_variadic)
-    return {
+    context = {
         'cpp_type': (
             v8_types.cpp_template_type('Nullable', this_cpp_type)
             if idl_type.is_explicit_nullable and not argument.is_variadic
@@ -259,6 +268,14 @@ def argument_context(interface, method, argument, index, is_visible=True):
         'v8_set_return_value_for_main_world': v8_set_return_value(interface.name, method, this_cpp_value, for_main_world=True),
         'v8_value_to_local_cpp_value': v8_value_to_local_cpp_value(method, argument, index),
     }
+    context.update({
+        'is_optional_without_default_value':
+            context['is_optional'] and
+            not context['has_default'] and
+            not context['is_dictionary'] and
+            not context['is_callback_interface'],
+    })
+    return context
 
 
 def argument_declarations_for_private_script(interface, method):

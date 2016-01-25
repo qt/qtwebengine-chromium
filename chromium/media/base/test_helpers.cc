@@ -4,8 +4,11 @@
 
 #include "media/base/test_helpers.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/run_loop.h"
@@ -216,9 +219,9 @@ scoped_refptr<AudioBuffer> MakeAudioBuffer(SampleFormat format,
       type increment,                                        \
       size_t frames,                                         \
       base::TimeDelta start_time)
-DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(uint8);
-DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int16);
-DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int32);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(uint8_t);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int16_t);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int32_t);
 DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(float);
 
 static const char kFakeVideoBufferHeader[] = "FakeVideoBufferForTest";
@@ -232,9 +235,9 @@ scoped_refptr<DecoderBuffer> CreateFakeVideoBufferForTest(
   pickle.WriteInt(config.coded_size().height());
   pickle.WriteInt64(timestamp.InMilliseconds());
 
-  scoped_refptr<DecoderBuffer> buffer = DecoderBuffer::CopyFrom(
-      static_cast<const uint8*>(pickle.data()),
-      static_cast<int>(pickle.size()));
+  scoped_refptr<DecoderBuffer> buffer =
+      DecoderBuffer::CopyFrom(static_cast<const uint8_t*>(pickle.data()),
+                              static_cast<int>(pickle.size()));
   buffer->set_timestamp(timestamp);
   buffer->set_duration(duration);
   buffer->set_is_key_frame(true);
@@ -246,8 +249,9 @@ bool VerifyFakeVideoBufferForTest(
     const scoped_refptr<DecoderBuffer>& buffer,
     const VideoDecoderConfig& config) {
   // Check if the input |buffer| matches the |config|.
-  base::PickleIterator pickle(base::Pickle(
-      reinterpret_cast<const char*>(buffer->data()), buffer->data_size()));
+  base::PickleIterator pickle(
+      base::Pickle(reinterpret_cast<const char*>(buffer->data()),
+                   static_cast<int>(buffer->data_size())));
   std::string header;
   int width = 0;
   int height = 0;

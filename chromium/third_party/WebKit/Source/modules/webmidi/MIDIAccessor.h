@@ -33,7 +33,7 @@
 
 #include "public/platform/WebMIDIAccessor.h"
 #include "public/platform/WebMIDIAccessorClient.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -42,7 +42,7 @@ namespace blink {
 class MIDIAccessorClient;
 
 class MIDIAccessor final : public WebMIDIAccessorClient {
-    WTF_MAKE_FAST_ALLOCATED(MIDIAccessor);
+    USING_FAST_MALLOC(MIDIAccessor);
 public:
     static PassOwnPtr<MIDIAccessor> create(MIDIAccessorClient*);
 

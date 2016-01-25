@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -12,25 +11,25 @@
 
 namespace blink {
 
-void BeginClipPathDisplayItem::replay(GraphicsContext& context)
+void BeginClipPathDisplayItem::replay(GraphicsContext& context) const
 {
     context.save();
     context.clipPath(m_clipPath, AntiAliased);
 }
 
-void BeginClipPathDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void BeginClipPathDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendClipPathItem(m_clipPath, SkRegion::kIntersect_Op, true);
+    list->appendClipPathItem(visualRect, m_clipPath, SkRegion::kIntersect_Op, true);
 }
 
-void EndClipPathDisplayItem::replay(GraphicsContext& context)
+void EndClipPathDisplayItem::replay(GraphicsContext& context) const
 {
     context.restore();
 }
 
-void EndClipPathDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndClipPathDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndClipPathItem();
+    list->appendEndClipPathItem(visualRect);
 }
 
 #ifndef NDEBUG

@@ -41,8 +41,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeImpl {
                                        uint32_t min_num_bytes_to_write) = 0;
   virtual MojoResult ProducerBeginWriteData(
       UserPointer<void*> buffer,
-      UserPointer<uint32_t> buffer_num_bytes,
-      uint32_t min_num_bytes_to_write) = 0;
+      UserPointer<uint32_t> buffer_num_bytes) = 0;
   virtual MojoResult ProducerEndWriteData(uint32_t num_bytes_written) = 0;
   // Note: A producer should not be writable during a two-phase write.
   virtual HandleSignalsState ProducerGetHandleSignalsState() const = 0;
@@ -69,8 +68,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeImpl {
   virtual MojoResult ConsumerQueryData(UserPointer<uint32_t> num_bytes) = 0;
   virtual MojoResult ConsumerBeginReadData(
       UserPointer<const void*> buffer,
-      UserPointer<uint32_t> buffer_num_bytes,
-      uint32_t min_num_bytes_to_read) = 0;
+      UserPointer<uint32_t> buffer_num_bytes) = 0;
   virtual MojoResult ConsumerEndReadData(uint32_t num_bytes_read) = 0;
   // Note: A consumer should not be writable during a two-phase read.
   virtual HandleSignalsState ConsumerGetHandleSignalsState() const = 0;
@@ -142,9 +140,9 @@ struct MOJO_ALIGNAS(8) SerializedDataPipeProducerDispatcher {
   // However, the deserializer must revalidate (as with everything received).
   MojoCreateDataPipeOptions validated_options;
   // Number of bytes already enqueued to the consumer. Set to
-  // |static_cast<size_t>(-1)| if the consumer is already closed, in which case
-  // this will *not* be followed by a serialized |ChannelEndpoint|.
-  size_t consumer_num_bytes;
+  // |static_cast<uint32_t>(-1)| if the consumer is already closed, in which
+  // case this will *not* be followed by a serialized |ChannelEndpoint|.
+  uint32_t consumer_num_bytes;
 };
 
 // Serialized form of a consumer dispatcher. This will actually be followed by a

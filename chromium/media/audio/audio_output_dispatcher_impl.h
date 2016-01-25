@@ -13,10 +13,12 @@
 #ifndef MEDIA_AUDIO_AUDIO_OUTPUT_DISPATCHER_IMPL_H_
 #define MEDIA_AUDIO_AUDIO_OUTPUT_DISPATCHER_IMPL_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "media/audio/audio_io.h"

@@ -15,18 +15,19 @@
 #ifndef CRASHPAD_SNAPSHOT_WIN_MODULE_SNAPSHOT_WIN_H_
 #define CRASHPAD_SNAPSHOT_WIN_MODULE_SNAPSHOT_WIN_H_
 
+#include <windows.h>
 #include <stdint.h>
-#include <sys/types.h>
 
 #include <map>
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "snapshot/crashpad_info_client_options.h"
 #include "snapshot/module_snapshot.h"
 #include "snapshot/win/process_reader_win.h"
+#include "util/misc/initialization_state.h"
 #include "util/misc/initialization_state_dcheck.h"
 #include "util/win/process_info.h"
 
@@ -80,7 +81,8 @@ class ModuleSnapshotWin final : public ModuleSnapshot {
                      uint16_t* version_2,
                      uint16_t* version_3) const override;
   ModuleType GetModuleType() const override;
-  void UUID(crashpad::UUID* uuid) const override;
+  void UUIDAndAge(crashpad::UUID* uuid, uint32_t* age) const override;
+  std::string DebugFileName() const override;
   std::vector<std::string> AnnotationsVector() const override;
   std::map<std::string, std::string> AnnotationsSimpleMap() const override;
 
@@ -88,11 +90,24 @@ class ModuleSnapshotWin final : public ModuleSnapshot {
   template <class Traits>
   void GetCrashpadOptionsInternal(CrashpadInfoClientOptions* options);
 
+  // Initializes vs_fixed_file_info_ if it has not yet been initialized, and
+  // returns a pointer to it. Returns nullptr on failure, with a message logged
+  // on the first call.
+  const VS_FIXEDFILEINFO* VSFixedFileInfo() const;
+
   std::wstring name_;
-  time_t timestamp_;
+  std::string pdb_name_;
+  UUID uuid_;
   scoped_ptr<PEImageReader> pe_image_reader_;
   ProcessReaderWin* process_reader_;  // weak
+  time_t timestamp_;
+  uint32_t age_;
   InitializationStateDcheck initialized_;
+
+  // VSFixedFileInfo() is logically const, but updates these members on the
+  // the call. See https://crashpad.chromium.org/bug/9.
+  mutable VS_FIXEDFILEINFO vs_fixed_file_info_;
+  mutable InitializationState initialized_vs_fixed_file_info_;
 
   DISALLOW_COPY_AND_ASSIGN(ModuleSnapshotWin);
 };

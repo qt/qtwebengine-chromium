@@ -25,8 +25,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
 #include "core/svg/graphics/SVGImage.h"
 
 #include "core/animation/AnimationTimeline.h"
@@ -38,7 +36,6 @@
 #include "core/style/ComputedStyle.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/paint/CompositingRecorder.h"
 #include "core/paint/FloatClipRecorder.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -55,6 +52,7 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/CullRect.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "third_party/skia/include/core/SkPicture.h"
@@ -78,6 +76,12 @@ SVGImage::~SVGImage()
 
     // Verify that page teardown destroyed the Chrome
     ASSERT(!m_chromeClient || !m_chromeClient->image());
+}
+
+IntRect SVGImage::visualRect() const
+{
+    // TODO(chrishtr): fix this.
+    return IntRect();
 }
 
 bool SVGImage::isInSVGImage(const Node* node)
@@ -133,9 +137,6 @@ static SVGSVGElement* svgRootElement(Page* page)
 
 void SVGImage::setContainerSize(const IntSize& size)
 {
-    if (!usesContainerSize())
-        return;
-
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
         return;
@@ -193,7 +194,7 @@ IntSize SVGImage::containerSize() const
 }
 
 void SVGImage::drawForContainer(SkCanvas* canvas, const SkPaint& paint, const FloatSize containerSize, float zoom, const FloatRect& dstRect,
-    const FloatRect& srcRect)
+    const FloatRect& srcRect, const KURL& url)
 {
     if (!m_page)
         return;
@@ -212,27 +213,18 @@ void SVGImage::drawForContainer(SkCanvas* canvas, const SkPaint& paint, const Fl
     adjustedSrcSize.scale(roundedContainerSize.width() / containerSize.width(), roundedContainerSize.height() / containerSize.height());
     scaledSrc.setSize(adjustedSrcSize);
 
-    draw(canvas, paint, dstRect, scaledSrc, DoNotRespectImageOrientation, ClampImageToSourceRect);
+    drawInternal(canvas, paint, dstRect, scaledSrc, DoNotRespectImageOrientation, ClampImageToSourceRect, url);
 }
 
 PassRefPtr<SkImage> SVGImage::imageForCurrentFrame()
 {
-    if (!m_page)
-        return nullptr;
-
-    SkPictureRecorder recorder;
-    SkCanvas* canvas = recorder.beginRecording(width(), height());
-    drawForContainer(canvas, SkPaint(), size(), 1, rect(), rect());
-    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
-
-    return adoptRef(
-        SkImage::NewFromPicture(picture.get(), SkISize::Make(width(), height()), nullptr, nullptr));
+    return imageForCurrentFrameForContainer(KURL());
 }
 
-void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
+void SVGImage::drawPatternForContainer(GraphicsContext& context, const FloatSize containerSize,
     float zoom, const FloatRect& srcRect, const FloatSize& tileScale, const FloatPoint& phase,
     SkXfermode::Mode compositeOp, const FloatRect& dstRect,
-    const IntSize& repeatSpacing)
+    const FloatSize& repeatSpacing, const KURL& url)
 {
     // Tile adjusted for scaling/stretch.
     FloatRect tile(srcRect);
@@ -240,16 +232,16 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
 
     // Expand the tile to account for repeat spacing.
     FloatRect spacedTile(tile);
-    spacedTile.expand(repeatSpacing);
+    spacedTile.expand(FloatSize(repeatSpacing));
 
-    SkPictureBuilder patternPicture(spacedTile, nullptr, context);
+    SkPictureBuilder patternPicture(spacedTile, nullptr, &context);
     if (!DrawingRecorder::useCachedDrawingIfPossible(patternPicture.context(), *this, DisplayItem::Type::SVGImage)) {
         DrawingRecorder patternPictureRecorder(patternPicture.context(), *this, DisplayItem::Type::SVGImage, spacedTile);
         // When generating an expanded tile, make sure we don't draw into the spacing area.
         if (tile != spacedTile)
             patternPicture.context().clip(tile);
         SkPaint paint;
-        drawForContainer(patternPicture.context().canvas(), paint, containerSize, zoom, tile, srcRect);
+        drawForContainer(patternPicture.context().canvas(), paint, containerSize, zoom, tile, srcRect, url);
     }
     RefPtr<const SkPicture> tilePicture = patternPicture.endRecording();
 
@@ -262,8 +254,22 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     SkPaint paint;
     paint.setShader(patternShader.get());
     paint.setXfermodeMode(compositeOp);
-    paint.setColorFilter(context->colorFilter());
-    context->drawRect(dstRect, paint);
+    paint.setColorFilter(context.colorFilter());
+    context.drawRect(dstRect, paint);
+}
+
+PassRefPtr<SkImage> SVGImage::imageForCurrentFrameForContainer(const KURL& url)
+{
+    if (!m_page)
+        return nullptr;
+
+    SkPictureRecorder recorder;
+    SkCanvas* canvas = recorder.beginRecording(width(), height());
+    drawForContainer(canvas, SkPaint(), FloatSize(size()), 1, rect(), rect(), url);
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
+
+    return adoptRef(
+        SkImage::NewFromPicture(picture.get(), SkISize::Make(width(), height()), nullptr, nullptr));
 }
 
 static bool drawNeedsLayer(const SkPaint& paint)
@@ -280,17 +286,24 @@ static bool drawNeedsLayer(const SkPaint& paint)
     return false;
 }
 
-void SVGImage::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dstRect, const FloatRect& srcRect, RespectImageOrientationEnum, ImageClampingMode)
+void SVGImage::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dstRect, const FloatRect& srcRect,
+    RespectImageOrientationEnum shouldRespectImageOrientation, ImageClampingMode clampMode)
 {
     if (!m_page)
         return;
 
+    drawInternal(canvas, paint, dstRect, srcRect, shouldRespectImageOrientation, clampMode, KURL());
+}
+
+void SVGImage::drawInternal(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dstRect, const FloatRect& srcRect,
+    RespectImageOrientationEnum, ImageClampingMode, const KURL& url)
+{
     FrameView* view = frameView();
     view->resize(containerSize());
 
     // Always call processUrlFragment, even if the url is empty, because
     // there may have been a previous url/fragment that needs to be reset.
-    view->processUrlFragment(m_url);
+    view->processUrlFragment(url);
 
     SkPictureBuilder imagePicture(dstRect);
     {
@@ -306,7 +319,7 @@ void SVGImage::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dst
         TransformRecorder transformRecorder(imagePicture.context(), *this, transform);
 
         view->updateAllLifecyclePhases();
-        view->paint(&imagePicture.context(), enclosingIntRect(srcRect));
+        view->paint(imagePicture.context(), CullRect(enclosingIntRect(srcRect)));
         ASSERT(!view->needsLayout());
     }
 
@@ -434,6 +447,12 @@ bool SVGImage::dataChanged(bool allDataReceived)
 
         DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FrameLoaderClient>, dummyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
 
+        if (m_page) {
+            toLocalFrame(m_page->mainFrame())->loader().load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), AtomicString("image/svg+xml", AtomicString::ConstructFromLiteral),
+                AtomicString("UTF-8", AtomicString::ConstructFromLiteral), KURL(), ForceSynchronousLoad)));
+            return true;
+        }
+
         Page::PageClients pageClients;
         fillWithEmptyClients(pageClients);
         m_chromeClient = SVGImageChromeClient::create(this);
@@ -448,7 +467,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         OwnPtrWillBeRawPtr<Page> page;
         {
             TRACE_EVENT0("blink", "SVGImage::dataChanged::createPage");
-            page = adoptPtrWillBeNoop(new Page(pageClients));
+            page = Page::create(pageClients);
             page->settings().setScriptEnabled(false);
             page->settings().setPluginsEnabled(false);
             page->settings().setAcceleratedCompositingEnabled(false);

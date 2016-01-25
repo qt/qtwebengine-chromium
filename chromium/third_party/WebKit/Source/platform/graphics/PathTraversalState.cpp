@@ -17,7 +17,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "platform/graphics/PathTraversalState.h"
 
 #include "wtf/MathExtras.h"
@@ -36,6 +35,7 @@ static inline float distanceLine(const FloatPoint& start, const FloatPoint& end)
 }
 
 struct QuadraticBezier {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     QuadraticBezier() { }
     QuadraticBezier(const FloatPoint& s, const FloatPoint& c, const FloatPoint& e)
         : start(s)
@@ -77,6 +77,7 @@ struct QuadraticBezier {
 };
 
 struct CubicBezier {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     CubicBezier() { }
     CubicBezier(const FloatPoint& s, const FloatPoint& c1, const FloatPoint& c2, const FloatPoint& e)
         : start(s)

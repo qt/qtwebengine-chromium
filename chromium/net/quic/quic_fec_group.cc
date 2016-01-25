@@ -6,7 +6,6 @@
 
 #include <limits>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
 
@@ -16,8 +15,9 @@ using std::set;
 
 namespace net {
 
-QuicFecGroup::QuicFecGroup()
-    : min_protected_packet_(kInvalidPacketNumber),
+QuicFecGroup::QuicFecGroup(QuicPacketNumber fec_group_number)
+    : QuicFecGroupInterface(),
+      min_protected_packet_(fec_group_number),
       max_protected_packet_(kInvalidPacketNumber),
       payload_parity_len_(0),
       effective_encryption_level_(NUM_ENCRYPTION_LEVELS) {}
@@ -27,22 +27,22 @@ QuicFecGroup::~QuicFecGroup() {}
 bool QuicFecGroup::Update(EncryptionLevel encryption_level,
                           const QuicPacketHeader& header,
                           StringPiece decrypted_payload) {
-  DCHECK_NE(kInvalidPacketNumber, header.packet_packet_number);
-  if (ContainsKey(received_packets_, header.packet_packet_number)) {
+  DCHECK_EQ(min_protected_packet_, header.fec_group);
+  DCHECK_NE(kInvalidPacketNumber, header.packet_number);
+  if (ContainsKey(received_packets_, header.packet_number)) {
     return false;
   }
-  if (min_protected_packet_ != kInvalidPacketNumber &&
-      max_protected_packet_ != kInvalidPacketNumber &&
-      (header.packet_packet_number < min_protected_packet_ ||
-       header.packet_packet_number > max_protected_packet_)) {
+  if (header.packet_number < min_protected_packet_ ||
+      (has_received_fec_packet() &&
+       header.packet_number > max_protected_packet_)) {
     DLOG(ERROR) << "FEC group does not cover received packet: "
-                << header.packet_packet_number;
+                << header.packet_number;
     return false;
   }
   if (!UpdateParity(decrypted_payload)) {
     return false;
   }
-  received_packets_.insert(header.packet_packet_number);
+  received_packets_.insert(header.packet_number);
   if (encryption_level < effective_encryption_level_) {
     effective_encryption_level_ = encryption_level;
   }
@@ -50,26 +50,23 @@ bool QuicFecGroup::Update(EncryptionLevel encryption_level,
 }
 
 bool QuicFecGroup::UpdateFec(EncryptionLevel encryption_level,
-                             QuicPacketNumber fec_packet_packet_number,
-                             const QuicFecData& fec) {
-  DCHECK_NE(kInvalidPacketNumber, fec_packet_packet_number);
-  DCHECK_NE(kInvalidPacketNumber, fec.fec_group);
-  if (min_protected_packet_ != kInvalidPacketNumber) {
+                             const QuicPacketHeader& header,
+                             StringPiece redundancy) {
+  DCHECK_EQ(min_protected_packet_, header.fec_group);
+  DCHECK_NE(kInvalidPacketNumber, header.packet_number);
+  if (has_received_fec_packet()) {
     return false;
   }
-  PacketNumberSet::const_iterator it = received_packets_.begin();
-  while (it != received_packets_.end()) {
-    if ((*it < fec.fec_group) || (*it >= fec_packet_packet_number)) {
-      DLOG(ERROR) << "FEC group does not cover received packet: " << *it;
+  for (QuicPacketNumber packet : received_packets_) {
+    if (packet >= header.packet_number) {
+      DLOG(ERROR) << "FEC group does not cover received packet: " << packet;
       return false;
     }
-    ++it;
   }
-  if (!UpdateParity(fec.redundancy)) {
+  if (!UpdateParity(redundancy)) {
     return false;
   }
-  min_protected_packet_ = fec.fec_group;
-  max_protected_packet_ = fec_packet_packet_number - 1;
+  max_protected_packet_ = header.packet_number - 1;
   if (encryption_level < effective_encryption_level_) {
     effective_encryption_level_ = encryption_level;
   }
@@ -113,20 +110,38 @@ size_t QuicFecGroup::Revive(QuicPacketHeader* header,
     decrypted_payload[i] = payload_parity_[i];
   }
 
-  header->packet_packet_number = missing;
+  header->packet_number = missing;
   header->entropy_flag = false;  // Unknown entropy.
 
   received_packets_.insert(missing);
   return payload_parity_len_;
 }
 
-bool QuicFecGroup::ProtectsPacketsBefore(QuicPacketNumber num) const {
-  if (max_protected_packet_ != kInvalidPacketNumber) {
-    return max_protected_packet_ < num;
+bool QuicFecGroup::IsWaitingForPacketBefore(QuicPacketNumber num) const {
+  // Entire range is larger than the threshold.
+  if (min_protected_packet_ >= num) {
+    return false;
   }
-  // Since we might not yet have received the FEC packet, we must check
-  // the packets we have received.
-  return *received_packets_.begin() < num;
+
+  // Entire range is smaller than the threshold.
+  if (received_packets_.size() > 0 ? *received_packets_.rbegin() + 1 < num
+                                   : min_protected_packet_ < num) {
+    return true;
+  }
+
+  // Range spans the threshold so look for a missing packet below the threshold.
+  QuicPacketNumber target = min_protected_packet_;
+  for (QuicPacketNumber packet : received_packets_) {
+    if (target++ != packet) {
+      return true;
+    }
+    if (target >= num) {
+      return false;
+    }
+  }
+
+  // No missing packets below the threshold.
+  return false;
 }
 
 bool QuicFecGroup::UpdateParity(StringPiece payload) {
@@ -138,8 +153,7 @@ bool QuicFecGroup::UpdateParity(StringPiece payload) {
   if (payload_parity_len_ < payload.size()) {
     payload_parity_len_ = payload.size();
   }
-  if (received_packets_.empty() &&
-      min_protected_packet_ == kInvalidPacketNumber) {
+  if (received_packets_.empty() && !has_received_fec_packet()) {
     // Initialize the parity to the value of this payload
     memcpy(payload_parity_, payload.data(), payload.size());
     if (payload.size() < kMaxPacketSize) {
@@ -155,7 +169,7 @@ bool QuicFecGroup::UpdateParity(StringPiece payload) {
 }
 
 QuicPacketCount QuicFecGroup::NumMissingPackets() const {
-  if (min_protected_packet_ == kInvalidPacketNumber) {
+  if (!has_received_fec_packet()) {
     return numeric_limits<QuicPacketCount>::max();
   }
   return static_cast<QuicPacketCount>(
@@ -163,39 +177,20 @@ QuicPacketCount QuicFecGroup::NumMissingPackets() const {
       received_packets_.size());
 }
 
-void QuicFecGroup::XorBuffers(const char* input,
-                              size_t size_in_bytes,
-                              char* output) {
-#if defined(__i386__) || defined(__x86_64__)
-  // On x86, alignment is not required and casting bytes to words is safe.
+const StringPiece QuicFecGroup::PayloadParity() const {
+  return StringPiece(payload_parity_, payload_parity_len_);
+}
 
-  // size_t is a reasonable approximation of how large a general-purpose
-  // register is for the platforms and compilers Chrome is built on.
-  typedef size_t platform_word;
-  const size_t size_in_words = size_in_bytes / sizeof(platform_word);
+QuicPacketCount QuicFecGroup::NumReceivedPackets() const {
+  return received_packets_.size();
+}
 
-  const platform_word* input_words =
-      reinterpret_cast<const platform_word*>(input);
-  platform_word* output_words = reinterpret_cast<platform_word*>(output);
+EncryptionLevel QuicFecGroup::EffectiveEncryptionLevel() const {
+  return effective_encryption_level_;
+}
 
-  // Handle word-sized part of the buffer.
-  size_t offset_in_words = 0;
-  for (; offset_in_words < size_in_words; offset_in_words++) {
-    output_words[offset_in_words] ^= input_words[offset_in_words];
-  }
-
-  // Handle the tail which does not fit into the word.
-  for (size_t offset_in_bytes = offset_in_words * sizeof(platform_word);
-       offset_in_bytes < size_in_bytes; offset_in_bytes++) {
-    output[offset_in_bytes] ^= input[offset_in_bytes];
-  }
-#else
-  // On ARM and most other plaforms, the code above could fail due to the
-  // alignment errors.  Stick to byte-by-byte comparison.
-  for (size_t offset = 0; offset < size_in_bytes; offset++) {
-    output[offset] ^= input[offset];
-  }
-#endif /* defined(__i386__) || defined(__x86_64__) */
+QuicFecGroupNumber QuicFecGroup::FecGroupNumber() const {
+  return min_protected_packet_;
 }
 
 }  // namespace net

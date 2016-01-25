@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/html/imports/HTMLImportTreeRoot.h"
 
 #include "core/dom/Document.h"
@@ -76,7 +75,7 @@ void HTMLImportTreeRoot::scheduleRecalcState()
     if (m_recalcTimer.isActive() || !m_document)
         return;
 #endif
-    m_recalcTimer.startOneShot(0, FROM_HERE);
+    m_recalcTimer.startOneShot(0, BLINK_FROM_HERE);
 }
 
 HTMLImportChild* HTMLImportTreeRoot::add(PassOwnPtrWillBeRawPtr<HTMLImportChild> child)

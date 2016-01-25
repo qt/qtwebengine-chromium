@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/notifications/NotificationData.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -10,9 +9,9 @@
 #include "core/testing/NullExecutionContext.h"
 #include "modules/notifications/Notification.h"
 #include "modules/notifications/NotificationOptions.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 namespace {
@@ -50,7 +49,7 @@ private:
 TEST_F(NotificationDataTest, ReflectProperties)
 {
     Vector<unsigned> vibrationPattern;
-    for (size_t i = 0; i < arraysize(kNotificationVibration); ++i)
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(kNotificationVibration); ++i)
         vibrationPattern.append(kNotificationVibration[i]);
 
     UnsignedLongOrUnsignedLongSequence vibrationSequence;
@@ -103,7 +102,7 @@ TEST_F(NotificationDataTest, ReflectProperties)
 TEST_F(NotificationDataTest, SilentNotificationWithVibration)
 {
     Vector<unsigned> vibrationPattern;
-    for (size_t i = 0; i < arraysize(kNotificationVibration); ++i)
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(kNotificationVibration); ++i)
         vibrationPattern.append(kNotificationVibration[i]);
 
     UnsignedLongOrUnsignedLongSequence vibrationSequence;
@@ -135,7 +134,7 @@ TEST_F(NotificationDataTest, InvalidIconUrl)
 TEST_F(NotificationDataTest, VibrationNormalization)
 {
     Vector<unsigned> unnormalizedPattern;
-    for (size_t i = 0; i < arraysize(kNotificationVibrationUnnormalized); ++i)
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(kNotificationVibrationUnnormalized); ++i)
         unnormalizedPattern.append(kNotificationVibrationUnnormalized[i]);
 
     UnsignedLongOrUnsignedLongSequence vibrationSequence;
@@ -149,7 +148,7 @@ TEST_F(NotificationDataTest, VibrationNormalization)
     EXPECT_FALSE(exceptionState.hadException());
 
     Vector<int> normalizedPattern;
-    for (size_t i = 0; i < arraysize(kNotificationVibrationNormalized); ++i)
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(kNotificationVibrationNormalized); ++i)
         normalizedPattern.append(kNotificationVibrationNormalized[i]);
 
     ASSERT_EQ(normalizedPattern.size(), notificationData.vibrate.size());
@@ -176,43 +175,6 @@ TEST_F(NotificationDataTest, DirectionValues)
         ASSERT_FALSE(exceptionState.hadException());
 
         EXPECT_EQ(mappings.get(direction), notificationData.direction);
-    }
-}
-
-TEST_F(NotificationDataTest, RequiredActionProperties)
-{
-    NotificationOptions options;
-
-    // The NotificationAction.action property is required.
-    {
-        NotificationAction action;
-        action.setTitle(kNotificationActionTitle);
-
-        HeapVector<NotificationAction> actions;
-        actions.append(action);
-
-        options.setActions(actions);
-
-        TrackExceptionState exceptionState;
-        WebNotificationData notificationData = createWebNotificationData(executionContext(), kNotificationTitle, options, exceptionState);
-        ASSERT_TRUE(exceptionState.hadException());
-        EXPECT_EQ("NotificationAction `action` must not be empty.", exceptionState.message());
-    }
-
-    // The NotificationAction.title property is required.
-    {
-        NotificationAction action;
-        action.setAction(kNotificationActionAction);
-
-        HeapVector<NotificationAction> actions;
-        actions.append(action);
-
-        options.setActions(actions);
-
-        TrackExceptionState exceptionState;
-        WebNotificationData notificationData = createWebNotificationData(executionContext(), kNotificationTitle, options, exceptionState);
-        ASSERT_TRUE(exceptionState.hadException());
-        EXPECT_EQ("NotificationAction `title` must not be empty.", exceptionState.message());
     }
 }
 

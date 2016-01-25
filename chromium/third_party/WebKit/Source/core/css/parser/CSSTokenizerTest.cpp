@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/css/parser/CSSTokenizer.h"
 
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "core/css/parser/MediaQueryBlockWatcher.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/Partitions.h"
-#include <gtest/gtest.h>
 
 namespace blink {
 
@@ -124,8 +123,8 @@ static CSSParserToken percentage(NumericValueType type, double value)
 #define DEFINE_TOKEN(name, argument)                                \
 static CSSParserToken& name()                                       \
 {                                                                   \
-    WTF::Partitions::initialize();                                  \
-    DEFINE_STATIC_LOCAL_NOASSERT(CSSParserToken, name, (argument)); \
+    WTF::Partitions::initialize(nullptr);                           \
+    DEFINE_STATIC_LOCAL(CSSParserToken, name, (argument));          \
     return name;                                                    \
 }
 

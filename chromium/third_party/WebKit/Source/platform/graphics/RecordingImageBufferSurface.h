@@ -9,7 +9,8 @@
 #include "platform/graphics/ImageBufferSurface.h"
 #include "public/platform/WebThread.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "wtf/LinkedStack.h"
+#include "wtf/Allocator.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -22,13 +23,17 @@ class ImageBuffer;
 class RecordingImageBufferSurfaceTest;
 
 class RecordingImageBufferFallbackSurfaceFactory {
+    USING_FAST_MALLOC(RecordingImageBufferFallbackSurfaceFactory);
+    WTF_MAKE_NONCOPYABLE(RecordingImageBufferFallbackSurfaceFactory);
 public:
     virtual PassOwnPtr<ImageBufferSurface> createSurface(const IntSize&, OpacityMode) = 0;
     virtual ~RecordingImageBufferFallbackSurfaceFactory() { }
+protected:
+    RecordingImageBufferFallbackSurfaceFactory() { }
 };
 
 class PLATFORM_EXPORT RecordingImageBufferSurface : public ImageBufferSurface {
-    WTF_MAKE_NONCOPYABLE(RecordingImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(RecordingImageBufferSurface);
+    WTF_MAKE_NONCOPYABLE(RecordingImageBufferSurface); USING_FAST_MALLOC(RecordingImageBufferSurface);
 public:
     RecordingImageBufferSurface(const IntSize&, PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> fallbackFactory, OpacityMode = NonOpaque);
     ~RecordingImageBufferSurface() override;
@@ -46,12 +51,11 @@ public:
     virtual void finalizeFrame(const FloatRect&);
     void setImageBuffer(ImageBuffer*) override;
     PassRefPtr<SkImage> newImageSnapshot(AccelerationHint) override;
-    void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode) override;
+    void draw(GraphicsContext&, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode) override;
     bool isExpensiveToPaint() override;
     void setHasExpensiveOp() override { m_currentFrameHasExpensiveOp = true; }
 
     // Passthroughs to fallback surface
-    const SkBitmap& deprecatedBitmapForOverwrite() override;
     bool restore() override;
     WebLayer* layer() const override;
     bool isAccelerated() const override;

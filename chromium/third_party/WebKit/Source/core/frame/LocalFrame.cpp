@@ -27,7 +27,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/frame/LocalFrame.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -73,9 +72,9 @@
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/text/TextStream.h"
-#include "public/platform/WebFrameHostScheduler.h"
 #include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebViewScheduler.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
@@ -188,8 +187,8 @@ void LocalFrame::createView(const IntSize& viewportSize, const Color& background
             owner->setWidget(frameView);
     }
 
-    if (HTMLFrameOwnerElement* owner = deprecatedLocalOwner())
-        view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
+    if (owner())
+        view()->setCanHaveScrollbars(owner()->scrollingMode() != ScrollbarAlwaysOff);
 }
 
 LocalFrame::~LocalFrame()
@@ -220,7 +219,6 @@ DEFINE_TRACE(LocalFrame)
     visitor->trace(m_eventHandler);
     visitor->trace(m_console);
     visitor->trace(m_inputMethodController);
-    visitor->template registerWeakMembers<LocalFrame, &LocalFrame::clearWeakMembers>(this);
     HeapSupplementable<LocalFrame>::trace(visitor);
 #endif
     LocalFrameLifecycleNotifier::trace(visitor);
@@ -371,13 +369,6 @@ void LocalFrame::disconnectOwnerElement()
     if (owner()) {
         if (Document* document = this->document())
             document->topDocument().clearAXObjectCache();
-#if ENABLE(OILPAN)
-        // First give the plugin elements holding persisted,
-        // renderer-less plugins the opportunity to dispose of them.
-        for (const auto& pluginElement : m_pluginElements)
-            pluginElement->disconnectContentFrame();
-        m_pluginElements.clear();
-#endif
     }
     Frame::disconnectOwnerElement();
 }
@@ -499,7 +490,6 @@ void LocalFrame::setPrinting(bool printing, const FloatSize& pageSize, const Flo
     document()->setPrinting(printing);
     view()->adjustMediaTypeForPrinting(printing);
 
-    document()->styleResolverChanged();
     if (shouldUsePrintingLayout()) {
         view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio);
     } else {
@@ -619,7 +609,7 @@ double LocalFrame::devicePixelRatio() const
 }
 
 PassOwnPtr<DragImage> LocalFrame::paintIntoDragImage(
-    const DisplayItemClientWrapper& displayItemClient,
+    const DisplayItemClient& displayItemClient,
     RespectImageOrientationEnum shouldRespectImageOrientation,
     const GlobalPaintFlags globalPaintFlags, IntRect paintingRect, float opacity)
 {
@@ -643,7 +633,7 @@ PassOwnPtr<DragImage> LocalFrame::paintIntoDragImage(
         transform.translate(-paintingRect.x(), -paintingRect.y());
         TransformRecorder transformRecorder(paintContext, displayItemClient, transform);
 
-        m_view->paintContents(&paintContext, globalPaintFlags, paintingRect);
+        m_view->paintContents(paintContext, globalPaintFlags, paintingRect);
 
     }
     RefPtr<const SkPicture> recording = pictureBuilder.endRecording();
@@ -673,7 +663,7 @@ PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
 
     IntRect rect;
 
-    return paintIntoDragImage(*layoutObject, layoutObject->shouldRespectImageOrientation(),
+    return paintIntoDragImage(*layoutObject, LayoutObject::shouldRespectImageOrientation(layoutObject),
         GlobalPaintFlattenCompositingLayers, layoutObject->paintingRootRect(rect));
 }
 
@@ -756,6 +746,10 @@ EphemeralRange LocalFrame::rangeForPoint(const IntPoint& framePoint)
 
 bool LocalFrame::isURLAllowed(const KURL& url) const
 {
+    // Exempt about: URLs from self-reference check.
+    if (url.protocolIsAbout())
+        return true;
+
     // We allow one level of self-reference because some sites depend on that,
     // but we don't allow more than one.
     bool foundSelfReference = false;
@@ -830,38 +824,17 @@ bool LocalFrame::shouldScrollTopControls(const FloatSize& delta) const
     return delta.height() > 0 || scrollPosition.y() < maximumScrollPosition.y();
 }
 
-#if ENABLE(OILPAN)
-void LocalFrame::registerPluginElement(HTMLPlugInElement* plugin)
-{
-    m_pluginElements.add(plugin);
-}
-
-void LocalFrame::unregisterPluginElement(HTMLPlugInElement* plugin)
-{
-    ASSERT(m_pluginElements.contains(plugin));
-    m_pluginElements.remove(plugin);
-}
-
-void LocalFrame::clearWeakMembers(Visitor* visitor)
-{
-    Vector<HTMLPlugInElement*> deadPlugins;
-    for (const auto& pluginElement : m_pluginElements) {
-        if (!Heap::isHeapObjectAlive(pluginElement)) {
-            pluginElement->shouldDisposePlugin();
-            deadPlugins.append(pluginElement);
-        }
-    }
-    for (unsigned i = 0; i < deadPlugins.size(); ++i)
-        m_pluginElements.remove(deadPlugins[i]);
-}
-#endif
-
 String LocalFrame::localLayerTreeAsText(unsigned flags) const
 {
     if (!contentLayoutObject())
         return String();
 
     return contentLayoutObject()->compositor()->layerTreeAsText(static_cast<LayerTreeFlags>(flags));
+}
+
+bool LocalFrame::shouldThrottleRendering() const
+{
+    return view() && view()->shouldThrottleRendering();
 }
 
 inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
@@ -889,20 +862,23 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
 WebFrameScheduler* LocalFrame::frameScheduler()
 {
     if (!m_frameScheduler.get())
-        m_frameScheduler = adoptPtr(host()->frameHostScheduler()->createFrameScheduler());
+        m_frameScheduler = page()->chromeClient().createFrameScheduler();
 
     ASSERT(m_frameScheduler.get());
     return m_frameScheduler.get();
 }
 
-void LocalFrame::updateFrameSecurityOrigin()
+void LocalFrame::scheduleVisualUpdateUnlessThrottled()
 {
-    SecurityContext* context = securityContext();
-    if (!context)
+    if (shouldThrottleRendering())
         return;
+    page()->animator().scheduleVisualUpdate(this);
+}
 
-    WebSecurityOrigin securityOrigin(context->securityOrigin());
-    frameScheduler()->setFrameOrigin(&securityOrigin);
+void LocalFrame::updateSecurityOrigin(SecurityOrigin* origin)
+{
+    script().updateSecurityOrigin(origin);
+    frameScheduler()->setFrameOrigin(WebSecurityOrigin(origin));
 }
 
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);

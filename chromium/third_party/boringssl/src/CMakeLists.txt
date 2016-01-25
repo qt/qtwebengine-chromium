@@ -17,15 +17,14 @@ if (NOT GO_EXECUTABLE)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -ggdb -fvisibility=hidden")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -ggdb -std=c++0x -fvisibility=hidden")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wsign-compare -Wmissing-field-initializers -ggdb -fvisibility=hidden")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wsign-compare -Wmissing-field-initializers -ggdb -std=c++0x -fvisibility=hidden")
 elseif(MSVC)
   set(MSVC_DISABLED_WARNINGS_LIST
       "C4100" # 'exarg' : unreferenced formal parameter
       "C4127" # conditional expression is constant
       "C4200" # nonstandard extension used : zero-sized array in
               # struct/union.
-      "C4210" # nonstandard extension used : function given file scope
       "C4242" # 'function' : conversion from 'int' to 'uint8_t',
               # possible loss of data
       "C4244" # 'function' : conversion from 'int' to 'uint8_t',
@@ -79,6 +78,17 @@ endif()
 if((CMAKE_COMPILER_IS_GNUCXX AND CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.99") OR
    CMAKE_CXX_COMPILER_ID MATCHES "Clang")
  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -D_XOPEN_SOURCE=700")
+endif()
+
+if(FUZZ)
+  if(!CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message("You need to build with Clang for fuzzing to work")
+  endif()
+
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
+  link_directories(.)
 endif()
 
 add_definitions(-DBORINGSSL_IMPLEMENTATION)
@@ -138,8 +148,31 @@ if (OPENSSL_NO_ASM)
   set(ARCH "generic")
 endif()
 
+# Declare a dummy target to build all unit tests. Test targets should inject
+# themselves as dependencies next to the target definition.
+add_custom_target(all_tests)
+
 add_subdirectory(crypto)
 add_subdirectory(ssl)
 add_subdirectory(ssl/test)
 add_subdirectory(tool)
 add_subdirectory(decrepit)
+
+if(FUZZ)
+  add_subdirectory(fuzz)
+endif()
+
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.2")
+  # USES_TERMINAL is only available in CMake 3.2 or later.
+  set(MAYBE_USES_TERMINAL USES_TERMINAL)
+endif()
+
+add_custom_target(
+    run_tests
+    COMMAND ${GO_EXECUTABLE} run util/all_tests.go -build-dir
+            ${CMAKE_BINARY_DIR}
+    COMMAND cd ssl/test/runner
+    COMMAND ${GO_EXECUTABLE} test -shim-path $<TARGET_FILE:bssl_shim>
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS all_tests bssl_shim
+    ${MAYBE_USES_TERMINAL})

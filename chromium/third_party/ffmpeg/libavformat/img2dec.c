@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #include <sys/stat.h>
 #include "libavutil/avstring.h"
@@ -102,7 +103,7 @@ static int is_glob(const char *path)
  * @param start_index  minimum accepted value for the first index in the range
  * @return -1 if no image file could be found
  */
-static int find_image_range(int *pfirst_index, int *plast_index,
+static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index,
                             const char *path, int start_index, int start_index_range)
 {
     char buf[1024];
@@ -113,7 +114,7 @@ static int find_image_range(int *pfirst_index, int *plast_index,
         if (av_get_frame_filename(buf, sizeof(buf), path, first_index) < 0) {
             *pfirst_index =
             *plast_index  = 1;
-            if (avio_check(buf, AVIO_FLAG_READ) > 0)
+            if (pb || avio_check(buf, AVIO_FLAG_READ) > 0)
                 return 0;
             return -1;
         }
@@ -259,7 +260,7 @@ int ff_img_read_header(AVFormatContext *s1)
         }
         }
         if ((s->pattern_type == PT_GLOB_SEQUENCE && !s->use_glob) || s->pattern_type == PT_SEQUENCE) {
-            if (find_image_range(&first_index, &last_index, s->path,
+            if (find_image_range(s1->pb, &first_index, &last_index, s->path,
                                  s->start_number, s->start_number_range) < 0) {
                 av_log(s1, AV_LOG_ERROR,
                        "Could find no file with path '%s' and index in the range %d-%d\n",
@@ -390,7 +391,12 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
             return AVERROR(EIO);
         }
         for (i = 0; i < 3; i++) {
-            if (avio_open2(&f[i], filename, AVIO_FLAG_READ,
+            if (s1->pb &&
+                !strcmp(filename_bytes, s->path) &&
+                !s->loop &&
+                !s->split_planes) {
+                f[i] = s1->pb;
+            } else if (avio_open2(&f[i], filename, AVIO_FLAG_READ,
                            &s1->interrupt_callback, NULL) < 0) {
                 if (i >= 1)
                     break;
@@ -444,14 +450,17 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     }
 
     res = av_new_packet(pkt, size[0] + size[1] + size[2]);
-    if (res < 0)
-        return res;
+    if (res < 0) {
+        goto fail;
+    }
     pkt->stream_index = 0;
     pkt->flags       |= AV_PKT_FLAG_KEY;
     if (s->ts_from_file) {
         struct stat img_stat;
-        if (stat(filename, &img_stat))
-            return AVERROR(EIO);
+        if (stat(filename, &img_stat)) {
+            res = AVERROR(EIO);
+            goto fail;
+        }
         pkt->pts = (int64_t)img_stat.st_mtime;
 #if HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
         if (s->ts_from_file == 2)
@@ -475,7 +484,7 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
                     ret[i] = avio_read(f[i], pkt->data + pkt->size, size[i]);
                 }
             }
-            if (!s->is_pipe)
+            if (!s->is_pipe && f[i] != s1->pb)
                 avio_closep(&f[i]);
             if (ret[i] > 0)
                 pkt->size += ret[i];
@@ -483,20 +492,32 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     }
 
     if (ret[0] <= 0 || ret[1] < 0 || ret[2] < 0) {
-        av_free_packet(pkt);
+        av_packet_unref(pkt);
         if (ret[0] < 0) {
-            return ret[0];
+            res = ret[0];
         } else if (ret[1] < 0) {
-            return ret[1];
-        } else if (ret[2] < 0)
-            return ret[2];
-        return AVERROR_EOF;
+            res = ret[1];
+        } else if (ret[2] < 0) {
+            res = ret[2];
+        } else {
+            res = AVERROR_EOF;
+        }
+        goto fail;
     } else {
         s->img_count++;
         s->img_number++;
         s->pts++;
         return 0;
     }
+
+fail:
+    if (!s->is_pipe) {
+        for (i = 0; i < 3; i++) {
+            if (f[i] != s1->pb)
+                avio_closep(&f[i]);
+        }
+    }
+    return res;
 }
 
 static int img_read_close(struct AVFormatContext* s1)
@@ -534,7 +555,7 @@ static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 const AVOption ff_img_options[] = {
     { "framerate",    "set the video framerate",             OFFSET(framerate),    AV_OPT_TYPE_VIDEO_RATE, {.str = "25"}, 0, 0,   DEC },
-    { "loop",         "force loop over input file sequence", OFFSET(loop),         AV_OPT_TYPE_INT,    {.i64 = 0   }, 0, 1,       DEC },
+    { "loop",         "force loop over input file sequence", OFFSET(loop),         AV_OPT_TYPE_BOOL,   {.i64 = 0   }, 0, 1,       DEC },
 
     { "pattern_type", "set pattern type",                    OFFSET(pattern_type), AV_OPT_TYPE_INT,    {.i64=PT_GLOB_SEQUENCE}, 0,       INT_MAX, DEC, "pattern_type"},
     { "glob_sequence","select glob/sequence pattern type",   0, AV_OPT_TYPE_CONST,  {.i64=PT_GLOB_SEQUENCE}, INT_MIN, INT_MAX, DEC, "pattern_type" },

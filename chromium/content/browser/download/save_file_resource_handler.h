@@ -5,9 +5,13 @@
 #ifndef CONTENT_BROWSER_DOWNLOAD_SAVE_FILE_RESOURCE_HANDLER_H_
 #define CONTENT_BROWSER_DOWNLOAD_SAVE_FILE_RESOURCE_HANDLER_H_
 
+#include <stdint.h>
+
 #include <string>
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "content/browser/download/save_types.h"
 #include "content/browser/loader/resource_handler.h"
 #include "url/gurl.h"
 
@@ -22,8 +26,10 @@ class SaveFileManager;
 class SaveFileResourceHandler : public ResourceHandler {
  public:
   SaveFileResourceHandler(net::URLRequest* request,
+                          SaveItemId save_item_id,
+                          SavePackageId save_package_id,
                           int render_process_host_id,
-                          int render_frame_id,
+                          int render_frame_routing_id,
                           const GURL& url,
                           SaveFileManager* manager);
   ~SaveFileResourceHandler() override;
@@ -71,14 +77,15 @@ class SaveFileResourceHandler : public ResourceHandler {
   }
 
  private:
-  int save_id_;
+  SaveItemId save_item_id_;
+  SavePackageId save_package_id_;
   int render_process_id_;
-  int render_frame_id_;
+  int render_frame_routing_id_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   std::string content_disposition_;
   GURL url_;
   GURL final_url_;
-  int64 content_length_;
+  int64_t content_length_;
   SaveFileManager* save_manager_;
 
   static const int kReadBufSize = 32768;  // bytes

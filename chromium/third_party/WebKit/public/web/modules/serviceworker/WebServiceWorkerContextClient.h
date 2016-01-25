@@ -103,7 +103,7 @@ public:
     virtual void reportConsoleMessage(int source, int level, const WebString& message, int lineNumber, const WebString& sourceURL) { }
 
     // Inspector related messages.
-    virtual void sendDevToolsMessage(int callId, const WebString& message, const WebString& state) { }
+    virtual void sendDevToolsMessage(int sessionId, int callId, const WebString& message, const WebString& state) { }
 
     // ServiceWorker specific method.
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult result) { }
@@ -185,6 +185,10 @@ public:
     // WebServiceWorkerClientInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
     virtual void navigate(const WebString& uuid, const WebURL&, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // Called when the worker wants to register subscopes to handle via foreign
+    // fetch. Will only be called while an install event is in progress.
+    virtual void registerForeignFetchScopes(const WebVector<WebURL>& subScopes) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

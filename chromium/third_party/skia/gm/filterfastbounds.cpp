@@ -14,6 +14,7 @@
 #include "SkPictureRecorder.h"
 #include "SkRandom.h"
 #include "SkSurface.h"
+#include "SkTileImageFilter.h"
 
 namespace skiagm {
 
@@ -110,10 +111,19 @@ static void create_paints(SkImageFilter* source, SkTArray<SkPaint>* paints) {
     }
 
     {
+        SkRect src = SkRect::MakeXYWH(20, 20, 10, 10);
+        SkRect dst = SkRect::MakeXYWH(30, 30, 30, 30);
+        SkAutoTUnref<SkImageFilter> tileIF(
+            SkTileImageFilter::Create(src, dst, nullptr));
+
+        add_paint(tileIF, paints);
+    }
+
+    {
         static const SkDropShadowImageFilter::ShadowMode kBoth =
                     SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode;
 
-        SkAutoTUnref<SkDropShadowImageFilter> dsif(
+        SkAutoTUnref<SkImageFilter> dsif(
             SkDropShadowImageFilter::Create(10.0f, 10.0f,
                                             3.0f, 3.0f,
                                             SK_ColorRED, kBoth,
@@ -123,7 +133,7 @@ static void create_paints(SkImageFilter* source, SkTArray<SkPaint>* paints) {
     }
 
     {
-        SkAutoTUnref<SkDropShadowImageFilter> dsif(
+        SkAutoTUnref<SkImageFilter> dsif(
             SkDropShadowImageFilter::Create(27.0f, 27.0f,
                                             3.0f, 3.0f,
                                             SK_ColorRED,
@@ -134,13 +144,13 @@ static void create_paints(SkImageFilter* source, SkTArray<SkPaint>* paints) {
     }
 
     {
-        SkAutoTUnref<SkBlurImageFilter> bif(SkBlurImageFilter::Create(3, 3, source));
+        SkAutoTUnref<SkImageFilter> bif(SkBlurImageFilter::Create(3, 3, source));
 
         add_paint(bif, paints);
     }
 
     {
-        SkAutoTUnref<SkOffsetImageFilter> oif(SkOffsetImageFilter::Create(15, 15, source));
+        SkAutoTUnref<SkImageFilter> oif(SkOffsetImageFilter::Create(15, 15, source));
 
         add_paint(oif, paints);
     }
@@ -157,7 +167,7 @@ public:
 protected:
     static const int kTileWidth = 100;
     static const int kTileHeight = 100;
-    static const int kNumVertTiles = 6;
+    static const int kNumVertTiles = 7;
     static const int kNumXtraCols = 2;
 
     SkString onShortName() override{ return SkString("filterfastbounds"); }
@@ -246,7 +256,7 @@ protected:
             pic.reset(rec.endRecording());
         }
 
-        SkAutoTUnref<SkPictureImageFilter> pif(SkPictureImageFilter::Create(pic));
+        SkAutoTUnref<SkImageFilter> pif(SkPictureImageFilter::Create(pic));
 
         SkTArray<SkPaint> pifPaints;
         create_paints(pif, &pifPaints);

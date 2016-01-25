@@ -4,13 +4,21 @@
 
 #include "ui/gfx/ipc/gfx_param_traits.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/range/range.h"
+
+#if defined(OS_MACOSX)
+#include "ipc/mach_port_mac.h"
+#endif
 
 namespace {
 
@@ -22,10 +30,10 @@ struct SkBitmap_Data {
   SkAlphaType fAlphaType;
 
   // The width of the bitmap in pixels.
-  uint32 fWidth;
+  uint32_t fWidth;
 
   // The height of the bitmap in pixels.
-  uint32 fHeight;
+  uint32_t fHeight;
 
   void InitSkBitmapDataForTransfer(const SkBitmap& bitmap) {
     const SkImageInfo& info = bitmap.info();
@@ -308,6 +316,60 @@ bool ParamTraits<gfx::Range>::Read(const Message* m,
 void ParamTraits<gfx::Range>::Log(const gfx::Range& r, std::string* l) {
   l->append(base::StringPrintf("(%" PRIuS ", %" PRIuS ")", r.start(), r.end()));
 }
+
+void ParamTraits<gfx::ScrollOffset>::Write(Message* m, const param_type& p) {
+  m->WriteDouble(p.x());
+  m->WriteDouble(p.y());
+}
+
+bool ParamTraits<gfx::ScrollOffset>::Read(const Message* m,
+                                          base::PickleIterator* iter,
+                                          param_type* r) {
+  double x = 0.f;
+  double y = 0.f;
+  if (!iter->ReadDouble(&x))
+    return false;
+  if (!iter->ReadDouble(&y))
+    return false;
+  r->set_x(x);
+  r->set_y(y);
+  return true;
+}
+
+void ParamTraits<gfx::ScrollOffset>::Log(const param_type& p, std::string* l) {
+  l->append("(");
+  LogParam(p.x(), l);
+  l->append(", ");
+  LogParam(p.y(), l);
+  l->append(")");
+}
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void ParamTraits<gfx::ScopedRefCountedIOSurfaceMachPort>::Write(
+    Message* m,
+    const param_type p) {
+  MachPortMac mach_port_mac(p.get());
+  ParamTraits<MachPortMac>::Write(m, mach_port_mac);
+}
+
+bool ParamTraits<gfx::ScopedRefCountedIOSurfaceMachPort>::Read(
+    const Message* m,
+    base::PickleIterator* iter,
+    param_type* r) {
+  MachPortMac mach_port_mac;
+  if (!ParamTraits<MachPortMac>::Read(m, iter, &mach_port_mac))
+    return false;
+  r->reset(mach_port_mac.get_mach_port());
+  return true;
+}
+
+void ParamTraits<gfx::ScopedRefCountedIOSurfaceMachPort>::Log(
+    const param_type& p,
+    std::string* l) {
+  l->append("IOSurface Mach send right: ");
+  LogParam(p.get(), l);
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 }  // namespace IPC
 

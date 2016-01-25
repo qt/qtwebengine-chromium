@@ -18,10 +18,10 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h"
 #include "webrtc/modules/remote_bitrate_estimator/transport_feedback_adapter.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/utility/interface/mock/mock_process_thread.h"
-#include "webrtc/system_wrappers/interface/clock.h"
+#include "webrtc/modules/utility/include/mock/mock_process_thread.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -103,9 +103,11 @@ class TransportFeedbackAdapterTest : public ::testing::Test {
   }
 
   // Utility method, to reset arrival_time_ms before adding send time.
-  void OnPacketSent(PacketInfo info) {
+  void OnSentPacket(PacketInfo info) {
     info.arrival_time_ms = 0;
-    adapter_->OnPacketSent(info);
+    adapter_->AddPacket(info.sequence_number, info.payload_size,
+                        info.was_paced);
+    adapter_->OnSentPacket(info.sequence_number, info.send_time_ms);
   }
 
   SimulatedClock clock_;
@@ -125,7 +127,7 @@ TEST_F(TransportFeedbackAdapterTest, AdaptsFeedbackAndPopulatesSendTimes) {
   packets.push_back(PacketInfo(140, 240, 4, 1500, true));
 
   for (const PacketInfo& packet : packets)
-    OnPacketSent(packet);
+    OnSentPacket(packet);
 
   rtcp::TransportFeedback feedback;
   feedback.WithBase(packets[0].sequence_number,
@@ -160,7 +162,7 @@ TEST_F(TransportFeedbackAdapterTest, HandlesDroppedPackets) {
 
   for (const PacketInfo& packet : packets) {
     if (packet.sequence_number >= kSendSideDropBefore)
-      OnPacketSent(packet);
+      OnSentPacket(packet);
   }
 
   rtcp::TransportFeedback feedback;
@@ -199,7 +201,7 @@ TEST_F(TransportFeedbackAdapterTest, SendTimeWrapsBothWays) {
   packets.push_back(PacketInfo(kHighArrivalTimeMs, 220, 2, 1500, true));
 
   for (const PacketInfo& packet : packets)
-    OnPacketSent(packet);
+    OnSentPacket(packet);
 
   for (size_t i = 0; i < packets.size(); ++i) {
     rtc::scoped_ptr<rtcp::TransportFeedback> feedback(
@@ -263,8 +265,8 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
 
   // Packets will be added to send history.
   for (const PacketInfo& packet : sent_packets)
-    OnPacketSent(packet);
-  OnPacketSent(info);
+    OnSentPacket(packet);
+  OnSentPacket(info);
 
   // Create expected feedback and send into adapter.
   rtc::scoped_ptr<rtcp::TransportFeedback> feedback(

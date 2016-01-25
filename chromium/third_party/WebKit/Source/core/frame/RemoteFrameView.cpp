@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/RemoteFrameView.h"
 
 #include "core/frame/RemoteFrame.h"
+#include "core/html/HTMLFrameOwnerElement.h"
 #include "core/layout/LayoutPart.h"
 
 namespace blink {
@@ -25,6 +25,16 @@ PassRefPtrWillBeRawPtr<RemoteFrameView> RemoteFrameView::create(RemoteFrame* rem
     RefPtrWillBeRawPtr<RemoteFrameView> view = adoptRefWillBeNoop(new RemoteFrameView(remoteFrame));
     view->show();
     return view.release();
+}
+
+void RemoteFrameView::dispose()
+{
+    HTMLFrameOwnerElement* ownerElement = m_remoteFrame->deprecatedLocalOwner();
+    // ownerElement can be null during frame swaps, because the
+    // RemoteFrameView is disconnected before detachment.
+    if (ownerElement && ownerElement->ownedWidget() == this)
+        ownerElement->setWidget(nullptr);
+    Widget::dispose();
 }
 
 void RemoteFrameView::invalidateRect(const IntRect& rect)
@@ -54,6 +64,36 @@ void RemoteFrameView::setFrameRect(const IntRect& newRect)
 void RemoteFrameView::frameRectsChanged()
 {
     m_remoteFrame->frameRectsChanged(frameRect());
+}
+
+void RemoteFrameView::hide()
+{
+    setSelfVisible(false);
+
+    Widget::hide();
+
+    m_remoteFrame->visibilityChanged(false);
+}
+
+void RemoteFrameView::show()
+{
+    setSelfVisible(true);
+
+    Widget::show();
+
+    m_remoteFrame->visibilityChanged(true);
+}
+
+void RemoteFrameView::setParentVisible(bool visible)
+{
+    if (isParentVisible() == visible)
+        return;
+
+    Widget::setParentVisible(visible);
+    if (!isSelfVisible())
+        return;
+
+    m_remoteFrame->visibilityChanged(isVisible());
 }
 
 DEFINE_TRACE(RemoteFrameView)

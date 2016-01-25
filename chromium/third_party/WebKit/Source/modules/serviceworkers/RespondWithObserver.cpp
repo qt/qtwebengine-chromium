@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/serviceworkers/RespondWithObserver.h"
 
 #include "bindings/core/v8/ScriptFunction.h"
@@ -56,6 +55,9 @@ const String getMessageForResponseError(WebServiceWorkerResponseError error, con
         break;
     case WebServiceWorkerResponseErrorResponseTypeOpaqueRedirect:
         errorMessage = errorMessage + "an \"opaqueredirect\" type response was used for a request which is not a navigation request.";
+        break;
+    case WebServiceWorkerResponseErrorBodyLocked:
+        errorMessage = errorMessage + "a Response whose \"body\" is locked cannot be used to respond to a request.";
         break;
     case WebServiceWorkerResponseErrorUnknown:
     default:
@@ -222,12 +224,15 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
         responseWasRejected(WebServiceWorkerResponseErrorResponseTypeOpaqueRedirect);
         return;
     }
+    if (response->isBodyLocked()) {
+        responseWasRejected(WebServiceWorkerResponseErrorBodyLocked);
+        return;
+    }
     if (response->bodyUsed()) {
         responseWasRejected(WebServiceWorkerResponseErrorBodyUsed);
         return;
     }
 
-    response->setBodyPassed();
     WebServiceWorkerResponse webResponse;
     response->populateWebServiceWorkerResponse(webResponse);
     BodyStreamBuffer* buffer = response->internalBodyBuffer();

@@ -4,11 +4,14 @@
 
 #include "media/renderers/default_renderer_factory.h"
 
+#include <utility>
+
 #include "base/bind.h"
-#include "build/build_config.h"
 #include "base/single_thread_task_runner.h"
+#include "build/build_config.h"
 #include "media/base/media_log.h"
 #include "media/filters/gpu_video_decoder.h"
+#include "media/filters/opus_audio_decoder.h"
 #include "media/renderers/audio_renderer_impl.h"
 #include "media/renderers/gpu_video_accelerator_factories.h"
 #include "media/renderers/renderer_impl.h"
@@ -21,10 +24,6 @@
 #endif
 #endif
 
-#if !defined(OS_ANDROID) || defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-#include "media/filters/opus_audio_decoder.h"
-#endif
-
 #if !defined(MEDIA_DISABLE_LIBVPX)
 #include "media/filters/vpx_video_decoder.h"
 #endif
@@ -33,12 +32,11 @@ namespace media {
 
 DefaultRendererFactory::DefaultRendererFactory(
     const scoped_refptr<MediaLog>& media_log,
-    const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+    GpuVideoAcceleratorFactories* gpu_factories,
     const AudioHardwareConfig& audio_hardware_config)
     : media_log_(media_log),
       gpu_factories_(gpu_factories),
-      audio_hardware_config_(audio_hardware_config) {
-}
+      audio_hardware_config_(audio_hardware_config) {}
 
 DefaultRendererFactory::~DefaultRendererFactory() {
 }
@@ -58,12 +56,10 @@ scoped_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
       new FFmpegAudioDecoder(media_task_runner, media_log_));
 #endif
 
-#if !defined(OS_ANDROID) || defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
   audio_decoders.push_back(new OpusAudioDecoder(media_task_runner));
-#endif
 
   scoped_ptr<AudioRenderer> audio_renderer(new AudioRendererImpl(
-      media_task_runner, audio_renderer_sink, audio_decoders.Pass(),
+      media_task_runner, audio_renderer_sink, std::move(audio_decoders),
       audio_hardware_config_, media_log_));
 
   // Create our video decoders and renderer.
@@ -72,27 +68,27 @@ scoped_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   // |gpu_factories_| requires that its entry points be called on its
   // |GetTaskRunner()|.  Since |pipeline_| will own decoders created from the
   // factories, require that their message loops are identical.
-  DCHECK(!gpu_factories_.get() ||
+  DCHECK(!gpu_factories_ ||
          (gpu_factories_->GetTaskRunner() == media_task_runner.get()));
 
-  if (gpu_factories_.get())
+  if (gpu_factories_)
     video_decoders.push_back(new GpuVideoDecoder(gpu_factories_));
 
 #if !defined(MEDIA_DISABLE_LIBVPX)
-  video_decoders.push_back(new VpxVideoDecoder(media_task_runner));
+  video_decoders.push_back(new VpxVideoDecoder());
 #endif
 
 #if !defined(MEDIA_DISABLE_FFMPEG) && !defined(DISABLE_FFMPEG_VIDEO_DECODERS)
-  video_decoders.push_back(new FFmpegVideoDecoder(media_task_runner));
+  video_decoders.push_back(new FFmpegVideoDecoder());
 #endif
 
   scoped_ptr<VideoRenderer> video_renderer(new VideoRendererImpl(
       media_task_runner, worker_task_runner, video_renderer_sink,
-      video_decoders.Pass(), true, gpu_factories_, media_log_));
+      std::move(video_decoders), true, gpu_factories_, media_log_));
 
   // Create renderer.
   return scoped_ptr<Renderer>(new RendererImpl(
-      media_task_runner, audio_renderer.Pass(), video_renderer.Pass()));
+      media_task_runner, std::move(audio_renderer), std::move(video_renderer)));
 }
 
 }  // namespace media

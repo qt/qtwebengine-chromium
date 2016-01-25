@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/css/resolver/AnimatedStyleBuilder.h"
 
 #include "core/animation/animatable/AnimatableClipPathOperation.h"
@@ -43,6 +42,7 @@
 #include "core/animation/animatable/AnimatableLengthPoint.h"
 #include "core/animation/animatable/AnimatableLengthPoint3D.h"
 #include "core/animation/animatable/AnimatableLengthSize.h"
+#include "core/animation/animatable/AnimatablePath.h"
 #include "core/animation/animatable/AnimatableRepeatable.h"
 #include "core/animation/animatable/AnimatableSVGPaint.h"
 #include "core/animation/animatable/AnimatableShadow.h"
@@ -59,7 +59,8 @@
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/style/ComputedStyle.h"
 #include "wtf/MathExtras.h"
-#include "wtf/TypeTraits.h"
+
+#include <type_traits>
 
 namespace blink {
 
@@ -95,8 +96,15 @@ BorderImageLength animatableValueToBorderImageLength(const AnimatableValue* valu
 
 template<typename T> T animatableValueClampTo(const AnimatableValue* value, T min = defaultMinimumForClamp<T>(), T max = defaultMaximumForClamp<T>())
 {
-    static_assert(WTF::IsInteger<T>::value, "should use integral type T when rounding values");
+    static_assert(std::is_integral<T>::value, "should use integral type T when rounding values");
     return clampTo<T>(roundForImpreciseConversion<T>(toAnimatableDouble(value)->toDouble()), min, max);
+}
+
+template<typename T> T animatableLineWidthClamp(const AnimatableValue* value)
+{
+    double doubleValue = toAnimatableDouble(value)->toDouble();
+    // This matches StyleBuilderConverter::convertLineWidth().
+    return (doubleValue > 0 && doubleValue < 1) ? 1 : animatableValueClampTo<T>(value);
 }
 
 LengthBox animatableValueToLengthBox(const AnimatableValue* value, const StyleResolverState& state, ValueRange range = ValueRangeAll)
@@ -150,7 +158,7 @@ void setFillSize(FillLayer* fillLayer, const AnimatableValue* value, StyleResolv
     if (value->isLengthSize())
         fillLayer->setSize(FillSize(SizeLength, animatableValueToLengthSize(value, state, ValueRangeNonNegative)));
     else
-        CSSToStyleMap::mapFillSize(state, fillLayer, toAnimatableUnknown(value)->toCSSValue().get());
+        CSSToStyleMap::mapFillSize(state, fillLayer, *toAnimatableUnknown(value)->toCSSValue());
 }
 
 template <CSSPropertyID property>
@@ -168,7 +176,7 @@ void setOnFillLayers(FillLayer& fillLayers, const AnimatableValue* value, StyleR
         case CSSPropertyBackgroundImage:
         case CSSPropertyWebkitMaskImage:
             if (layerValue->isImage()) {
-                fillLayer->setImage(state.styleImage(property, toAnimatableImage(layerValue)->toCSSValue()));
+                fillLayer->setImage(state.styleImage(property, *toAnimatableImage(layerValue)->toCSSValue()));
             } else {
                 ASSERT(toAnimatableUnknown(layerValue)->toCSSValueID() == CSSValueNone);
                 fillLayer->setImage(nullptr);
@@ -315,7 +323,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderBottomRightRadius(animatableValueToLengthSize(value, state, ValueRangeNonNegative));
         return;
     case CSSPropertyBorderBottomWidth:
-        style->setBorderBottomWidth(animatableValueClampTo<unsigned>(value));
+        style->setBorderBottomWidth(animatableLineWidthClamp<unsigned>(value));
         return;
     case CSSPropertyBorderImageOutset:
         style->setBorderImageOutset(animatableValueToBorderImageLengthBox(value, state));
@@ -325,7 +333,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderImageSlicesFill(toAnimatableLengthBoxAndBool(value)->flag());
         return;
     case CSSPropertyBorderImageSource:
-        style->setBorderImageSource(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
+        style->setBorderImageSource(state.styleImage(property, *toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyBorderImageWidth:
         style->setBorderImageWidth(animatableValueToBorderImageLengthBox(value, state));
@@ -335,14 +343,14 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setVisitedLinkBorderLeftColor(toAnimatableColor(value)->visitedLinkColor());
         return;
     case CSSPropertyBorderLeftWidth:
-        style->setBorderLeftWidth(animatableValueClampTo<unsigned>(value));
+        style->setBorderLeftWidth(animatableLineWidthClamp<unsigned>(value));
         return;
     case CSSPropertyBorderRightColor:
         style->setBorderRightColor(toAnimatableColor(value)->color());
         style->setVisitedLinkBorderRightColor(toAnimatableColor(value)->visitedLinkColor());
         return;
     case CSSPropertyBorderRightWidth:
-        style->setBorderRightWidth(animatableValueClampTo<unsigned>(value));
+        style->setBorderRightWidth(animatableLineWidthClamp<unsigned>(value));
         return;
     case CSSPropertyBorderTopColor:
         style->setBorderTopColor(toAnimatableColor(value)->color());
@@ -355,7 +363,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setBorderTopRightRadius(animatableValueToLengthSize(value, state, ValueRangeNonNegative));
         return;
     case CSSPropertyBorderTopWidth:
-        style->setBorderTopWidth(animatableValueClampTo<unsigned>(value));
+        style->setBorderTopWidth(animatableLineWidthClamp<unsigned>(value));
         return;
     case CSSPropertyBottom:
         style->setBottom(animatableValueToLength(value, state));
@@ -423,7 +431,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
             style->setLineHeight(Length(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0), Percent));
         return;
     case CSSPropertyListStyleImage:
-        style->setListStyleImage(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
+        style->setListStyleImage(state.styleImage(property, *toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyLetterSpacing:
         style->setLetterSpacing(clampTo<float>(toAnimatableDouble(value)->toDouble()));
@@ -460,7 +468,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setOpacity(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0, nextafterf(1, 0)));
         return;
     case CSSPropertyOrphans:
-        style->setOrphans(clampTo<unsigned short>(round(toAnimatableDouble(value)->toDouble()), 1));
+        style->setOrphans(clampTo<short>(round(toAnimatableDouble(value)->toDouble()), 1));
         return;
     case CSSPropertyOutlineColor:
         style->setOutlineColor(toAnimatableColor(value)->color());
@@ -470,7 +478,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setOutlineOffset(animatableValueClampTo<int>(value));
         return;
     case CSSPropertyOutlineWidth:
-        style->setOutlineWidth(animatableValueClampTo<unsigned short>(value));
+        style->setOutlineWidth(animatableLineWidthClamp<unsigned short>(value));
         return;
     case CSSPropertyPaddingBottom:
         style->setPaddingBottom(animatableValueToLength(value, state, ValueRangeNonNegative));
@@ -551,7 +559,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setColumnWidth(clampTo(toAnimatableDouble(value)->toDouble(), std::numeric_limits<float>::epsilon()));
         return;
     case CSSPropertyWebkitColumnRuleWidth:
-        style->setColumnRuleWidth(clampTo<unsigned short>(toAnimatableDouble(value)->toDouble()));
+        style->setColumnRuleWidth(animatableLineWidthClamp<unsigned short>(value));
         return;
     case CSSPropertyWebkitFilter:
         style->setFilter(toAnimatableFilterOperations(value)->operations());
@@ -567,7 +575,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setMaskBoxImageSlicesFill(toAnimatableLengthBoxAndBool(value)->flag());
         return;
     case CSSPropertyWebkitMaskBoxImageSource:
-        style->setMaskBoxImageSource(state.styleImage(property, toAnimatableImage(value)->toCSSValue()));
+        style->setMaskBoxImageSource(state.styleImage(property, *toAnimatableImage(value)->toCSSValue()));
         return;
     case CSSPropertyWebkitMaskBoxImageWidth:
         style->setMaskBoxImageWidth(animatableValueToBorderImageLengthBox(value, state));
@@ -656,7 +664,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setTransformOriginZ(toAnimatableDouble(value)->toDouble());
         return;
     case CSSPropertyWidows:
-        style->setWidows(clampTo<unsigned short>(round(toAnimatableDouble(value)->toDouble()), 1));
+        style->setWidows(clampTo<short>(round(toAnimatableDouble(value)->toDouble()), 1));
         return;
     case CSSPropertyWidth:
         style->setWidth(animatableValueToLength(value, state, ValueRangeNonNegative));
@@ -672,6 +680,9 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         return;
     case CSSPropertyZIndex:
         style->setZIndex(clampTo<int>(round(toAnimatableDouble(value)->toDouble())));
+        return;
+    case CSSPropertyD:
+        style->setD(toAnimatablePath(value)->path());
         return;
     case CSSPropertyCx:
         style->setCx(animatableValueToLength(value, state));

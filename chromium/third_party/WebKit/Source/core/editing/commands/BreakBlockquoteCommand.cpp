@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/editing/commands/BreakBlockquoteCommand.h"
 
 #include "core/HTMLNames.h"
@@ -101,7 +100,7 @@ void BreakBlockquoteCommand::doApply()
     if (!topBlockquote || !topBlockquote->parentNode())
         return;
 
-    RefPtrWillBeRawPtr<HTMLBRElement> breakElement = createBreakElement(document());
+    RefPtrWillBeRawPtr<HTMLBRElement> breakElement = HTMLBRElement::create(document());
 
     bool isLastVisPosInNode = isLastVisiblePositionInNode(visiblePos, topBlockquote);
 

@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/base64url.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/macros.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
 #include "components/webcrypto/crypto_data.h"
@@ -23,8 +27,19 @@ blink::WebCryptoAlgorithm CreateRsaOaepAlgorithm(
   return blink::WebCryptoAlgorithm::adoptParamsAndCreate(
       blink::WebCryptoAlgorithmIdRsaOaep,
       new blink::WebCryptoRsaOaepParams(
-          !label.empty(), vector_as_array(&label),
+          !label.empty(), label.data(),
           static_cast<unsigned int>(label.size())));
+}
+
+std::string Base64EncodeUrlSafe(const std::vector<uint8_t>& input) {
+  // The JSON web signature spec says that padding is omitted.
+  // https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-36#section-2
+  std::string base64url_encoded;
+  base::Base64UrlEncode(
+      base::StringPiece(reinterpret_cast<const char*>(input.data()),
+                        input.size()),
+      base::Base64UrlEncodePolicy::OMIT_PADDING, &base64url_encoded);
+  return base64url_encoded;
 }
 
 scoped_ptr<base::DictionaryValue> CreatePublicKeyJwkDict() {
@@ -34,7 +49,7 @@ scoped_ptr<base::DictionaryValue> CreatePublicKeyJwkDict() {
                  Base64EncodeUrlSafe(HexStringToBytes(kPublicKeyModulusHex)));
   jwk->SetString("e",
                  Base64EncodeUrlSafe(HexStringToBytes(kPublicKeyExponentHex)));
-  return jwk.Pass();
+  return jwk;
 }
 
 class WebCryptoRsaOaepTest : public WebCryptoTestBase {};

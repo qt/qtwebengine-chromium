@@ -27,8 +27,6 @@
 
 %{
 
-#include "config.h"
-
 #include "core/xml/XPathFunctions.h"
 #include "core/xml/XPathNSResolver.h"
 #include "core/xml/XPathParser.h"
@@ -36,10 +34,15 @@
 #include "core/xml/XPathPredicate.h"
 #include "core/xml/XPathStep.h"
 #include "core/xml/XPathVariableReference.h"
-#include "wtf/FastMalloc.h"
+#include "wtf/Partitions.h"
 
-#define YYMALLOC fastMalloc
-#define YYFREE fastFree
+void* yyFastMalloc(size_t size)
+{
+    return WTF::Partitions::fastMalloc(size, nullptr);
+}
+
+#define YYMALLOC yyFastMalloc
+#define YYFREE WTF::Partitions::fastFree
 
 #define YYENABLE_NLS 0
 #define YYLTYPE_IS_TRIVIAL 1

@@ -83,10 +83,6 @@ fieldset[disabled] label:hover input {
     background-clip: padding-box;
 }
 
-.inspector-view-toolbar-left {
-    margin-right: -5px; /* Should compensate for .tabbed-pane-header-contents margin-left. */
-}
-
 .bubble-repeat-count {
     display: inline-block;
     height: 14px;
@@ -106,6 +102,10 @@ fieldset[disabled] label:hover input {
 
 .error-message {
     color: red;
+}
+
+.-theme-with-dark-background .error-message {
+    color: hsl(0, 100%, 65%);
 }
 
 .error-input {
@@ -139,6 +139,10 @@ iframe.panel.extension {
     margin: 0;
 }
 
+.outline-disclosure li {
+    position: relative;
+}
+
 .outline-disclosure li.hovered:not(.selected) .selection {
     display: block;
     left: 3px;
@@ -149,11 +153,8 @@ iframe.panel.extension {
 
 .outline-disclosure li .selection {
     display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 15px;
     z-index: -1;
+    margin-left: -10000px;
 }
 
 .outline-disclosure li.selected .selection {
@@ -196,7 +197,6 @@ ol.outline-disclosure,
     margin-top: 1px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    overflow: hidden;
 }
 
 ol.outline-disclosure:focus li.selected {
@@ -208,18 +208,13 @@ ol.outline-disclosure:focus li.selected * {
 }
 
 .outline-disclosure li::before {
-    float: left;
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
     -webkit-mask-size: 352px 168px;
-    content: "a";
+    content: "aa";
     color: transparent;
     text-shadow: none;
-    position: relative;
-    top: 2px;
-    margin-right: 1px;
-    width: 10px;
-    height: 10px;
+    margin-right: -2px;
 }
 
 .outline-disclosure li:not(.parent)::before {
@@ -467,9 +462,9 @@ body.inactive li.selected .status .bubble-repeat-count {
     margin-top: 1px;
 }
 
-.sidebar-tree-item.selected {
+.sidebar-tree-item.selected,
+.-theme-selection-color {
     color: white;
-    text-shadow: rgba(0, 0, 0, 0.33) 1px 1px 0;
     background-origin: padding-box;
     background-clip: padding-box;
     background-color: rgb(56, 121, 217);
@@ -550,6 +545,7 @@ body.inactive .sidebar-tree-item.selected {
 }
 
 .root-view {
+    background-color: white;
     overflow: hidden;
     position: absolute !important;
     left: 0;
@@ -558,58 +554,6 @@ body.inactive .sidebar-tree-item.selected {
     bottom: 0;
 }
 
-.viewport-control-gap-element {
-    color: transparent;
-}
-
-.chrome-select {
-    -webkit-appearance: none;
-    -webkit-user-select: none;
-    border: 1px solid rgba(0, 0, 0, 0.25);
-    border-radius: 2px;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08),
-    inset 0 1px 2px rgba(255, 255, 255, 0.75);
-    color: #444;
-    font: inherit;
-    margin: 0 1px 0 0;
-    outline: none;
-    text-shadow: 0 1px 0 rgb(240, 240, 240);
-    padding-right: 20px;
-    padding-left: 6px;
-    background-image: -webkit-image-set(url(Images/chromeSelect.png) 1x, url(Images/chromeSelect_2x.png) 2x), linear-gradient(#ededed, #ededed 38%, #dedede);
-    background-position: right center;
-    background-repeat: no-repeat;
-    min-height: 24px;
-}
-
-.chrome-select:enabled:hover {
-    background-image: -webkit-image-set(url(Images/chromeSelect.png) 1x, url(Images/chromeSelect_2x.png) 2x), linear-gradient(#f0f0f0, #f0f0f0 38%, #e0e0e0);
-    border-color: rgba(0, 0, 0, 0.3);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12),
-    inset 0 1px 2px rgba(255, 255, 255, 0.95);
-    color: black;
-}
-
-.chrome-select:enabled:active {
-    background-image: -webkit-image-set(url(Images/chromeSelect.png) 1x, url(Images/chromeSelect_2x.png) 2x), linear-gradient(#e7e7e7, #e7e7e7 38%, #d7d7d7);
-    box-shadow: none;
-    text-shadow: none;
-}
-
-.chrome-select:enabled:focus {
-    /* OVERRIDE */
-    -webkit-transition: border-color 200ms;
-    /* We use border color because it follows the border radius (unlike outline).
-     * This is particularly noticeable on mac. */
-    border-color: rgb(77, 144, 254);
-    outline: none;
-}
-
-body.inactive select.chrome-select,
-.chrome-select:disabled {
-    background-image: -webkit-image-set(url(Images/chromeDisabledSelect.png) 1x, url(Images/chromeDisabledSelect_2x.png) 2x), linear-gradient(#f1f1f1, #f1f1f1 38%, #e6e6e6);
-    border-color: rgba(80, 80, 80, 0.2);
-    box-shadow: 0 1px 0 rgba(80, 80, 80, 0.08),
-    inset 0 1px 2px rgba(255, 255, 255, 0.75);
-    color: #aaa;
+.drawer-toolbar {
+    margin-right: -6px;
 }

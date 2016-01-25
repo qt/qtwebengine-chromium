@@ -24,7 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/dom/SelectorQuery.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -106,13 +105,13 @@ void SelectorDataList::initialize(const CSSSelectorList& selectorList)
     for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector))
         selectorCount++;
 
-    m_crossesTreeBoundary = false;
+    m_usesDeepCombinatorOrShadowPseudo = false;
     m_needsUpdatedDistribution = false;
     m_selectors.reserveInitialCapacity(selectorCount);
     unsigned index = 0;
     for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector), ++index) {
         m_selectors.uncheckedAppend(selector);
-        m_crossesTreeBoundary |= selectorList.selectorCrossesTreeScopes(index);
+        m_usesDeepCombinatorOrShadowPseudo |= selectorList.selectorUsesDeepCombinatorOrShadowPseudo(index);
         m_needsUpdatedDistribution |= selectorList.selectorNeedsUpdatedDistribution(index);
     }
 }
@@ -122,9 +121,7 @@ inline bool SelectorDataList::selectorMatches(const CSSSelector& selector, Eleme
     SelectorChecker selectorChecker(SelectorChecker::QueryingRules);
     SelectorChecker::SelectorCheckingContext selectorCheckingContext(&element, SelectorChecker::VisitedMatchDisabled);
     selectorCheckingContext.selector = &selector;
-    selectorCheckingContext.scope = !rootNode.isDocumentNode() ? &rootNode : nullptr;
-    if (selectorCheckingContext.scope)
-        selectorCheckingContext.scopeContainsLastMatchedElement = true;
+    selectorCheckingContext.scope = &rootNode;
     return selectorChecker.match(selectorCheckingContext);
 }
 
@@ -215,7 +212,7 @@ void SelectorDataList::collectElementsByTagName(ContainerNode& rootNode, const Q
 
 inline bool SelectorDataList::canUseFastQuery(const ContainerNode& rootNode) const
 {
-    if (m_crossesTreeBoundary)
+    if (m_usesDeepCombinatorOrShadowPseudo)
         return false;
     if (m_needsUpdatedDistribution)
         return false;
@@ -388,7 +385,7 @@ static ShadowRoot* authorShadowRootOf(const ContainerNode& node)
     ElementShadow* shadow = toElement(node).shadow();
     ASSERT(shadow);
     for (ShadowRoot* shadowRoot = shadow->oldestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->youngerShadowRoot()) {
-        if (shadowRoot->type() == ShadowRootType::OpenByDefault || shadowRoot->type() == ShadowRootType::Open)
+        if (shadowRoot->type() == ShadowRootType::V0 || shadowRoot->type() == ShadowRootType::Open)
             return shadowRoot;
     }
     return nullptr;
@@ -419,7 +416,7 @@ static ContainerNode* nextTraversingShadowTree(const ContainerNode& node, const 
             return nullptr;
         if (ShadowRoot* youngerShadowRoot = shadowRoot->youngerShadowRoot()) {
             // Should not obtain any elements in closed or user-agent shadow root.
-            ASSERT(youngerShadowRoot->type() == ShadowRootType::OpenByDefault || youngerShadowRoot->type() == ShadowRootType::Open);
+            ASSERT(youngerShadowRoot->type() == ShadowRootType::V0 || youngerShadowRoot->type() == ShadowRootType::Open);
             return youngerShadowRoot;
         }
 
@@ -457,7 +454,7 @@ void SelectorDataList::execute(ContainerNode& rootNode, typename SelectorQueryTr
     if (!canUseFastQuery(rootNode)) {
         if (m_needsUpdatedDistribution)
             rootNode.updateDistribution();
-        if (m_crossesTreeBoundary) {
+        if (m_usesDeepCombinatorOrShadowPseudo) {
             executeSlowTraversingShadowTree<SelectorQueryTrait>(rootNode, output);
         } else {
             executeSlow<SelectorQueryTrait>(rootNode, output);
@@ -513,14 +510,14 @@ void SelectorDataList::execute(ContainerNode& rootNode, typename SelectorQueryTr
     findTraverseRootsAndExecute<SelectorQueryTrait>(rootNode, output);
 }
 
-PassOwnPtr<SelectorQuery> SelectorQuery::adopt(CSSSelectorList& selectorList)
+PassOwnPtr<SelectorQuery> SelectorQuery::adopt(CSSSelectorList selectorList)
 {
-    return adoptPtr(new SelectorQuery(selectorList));
+    return adoptPtr(new SelectorQuery(std::move(selectorList)));
 }
 
-SelectorQuery::SelectorQuery(CSSSelectorList& selectorList)
+SelectorQuery::SelectorQuery(CSSSelectorList selectorList)
 {
-    m_selectorList.adopt(selectorList);
+    m_selectorList = std::move(selectorList);
     m_selectors.initialize(m_selectorList);
 }
 
@@ -550,8 +547,7 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Docu
     if (it != m_entries.end())
         return it->value.get();
 
-    CSSSelectorList selectorList;
-    CSSParser::parseSelector(CSSParserContext(document, nullptr), selectors, selectorList);
+    CSSSelectorList selectorList = CSSParser::parseSelector(CSSParserContext(document, nullptr), selectors);
 
     if (!selectorList.first()) {
         exceptionState.throwDOMException(SyntaxError, "'" + selectors + "' is not a valid selector.");
@@ -568,7 +564,7 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Docu
     if (m_entries.size() == maximumSelectorQueryCacheSize)
         m_entries.remove(m_entries.begin());
 
-    return m_entries.add(selectors, SelectorQuery::adopt(selectorList)).storedValue->value.get();
+    return m_entries.add(selectors, SelectorQuery::adopt(std::move(selectorList))).storedValue->value.get();
 }
 
 void SelectorQueryCache::invalidate()

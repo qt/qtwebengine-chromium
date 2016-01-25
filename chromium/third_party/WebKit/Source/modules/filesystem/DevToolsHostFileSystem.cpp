@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/filesystem/DevToolsHostFileSystem.h"
 
 #include "core/dom/Document.h"
@@ -30,10 +29,5 @@ void DevToolsHostFileSystem::upgradeDraggedFileSystemPermissions(DevToolsHost& h
     params->pushString(domFileSystem->rootURL().string());
     host.sendMessageToEmbedder(message->toJSONString());
 }
-
-DevToolsHostFileSystem::DevToolsHostFileSystem() { }
-
-DevToolsHostFileSystem::~DevToolsHostFileSystem() { }
-
 
 } // namespace blink

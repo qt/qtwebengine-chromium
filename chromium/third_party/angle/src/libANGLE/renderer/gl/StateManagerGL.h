@@ -28,6 +28,8 @@ namespace rx
 {
 
 class FunctionsGL;
+class TransformFeedbackGL;
+class QueryGL;
 
 class StateManagerGL final : angle::NonCopyable
 {
@@ -41,6 +43,8 @@ class StateManagerGL final : angle::NonCopyable
     void deleteBuffer(GLuint buffer);
     void deleteFramebuffer(GLuint fbo);
     void deleteRenderbuffer(GLuint rbo);
+    void deleteTransformFeedback(GLuint transformFeedback);
+    void deleteQuery(GLuint query);
 
     void useProgram(GLuint program);
     void bindVertexArray(GLuint vao, GLuint elementArrayBuffer);
@@ -52,6 +56,9 @@ class StateManagerGL final : angle::NonCopyable
     void bindSampler(size_t unit, GLuint sampler);
     void bindFramebuffer(GLenum type, GLuint framebuffer);
     void bindRenderbuffer(GLenum type, GLuint renderbuffer);
+    void bindTransformFeedback(GLenum type, GLuint transformFeedback);
+    void beginQuery(GLenum type, GLuint query);
+    void endQuery(GLenum type, GLuint query);
 
     void setAttributeCurrentData(size_t index, const gl::VertexAttribCurrentValueData &data);
 
@@ -115,6 +122,8 @@ class StateManagerGL final : angle::NonCopyable
 
     void setFramebufferSRGBEnabled(bool enabled);
 
+    void onDeleteQueryObject(QueryGL *query);
+
     gl::Error setDrawArraysState(const gl::Data &data,
                                  GLint first,
                                  GLsizei count,
@@ -155,6 +164,14 @@ class StateManagerGL final : angle::NonCopyable
     size_t mTextureUnitIndex;
     std::map<GLenum, std::vector<GLuint>> mTextures;
     std::vector<GLuint> mSamplers;
+
+    GLuint mTransformFeedback;
+
+    std::map<GLenum, GLuint> mQueries;
+
+    TransformFeedbackGL *mPrevDrawTransformFeedback;
+    std::set<QueryGL *> mPrevDrawQueries;
+    uintptr_t mPrevDrawContext;
 
     GLint mUnpackAlignment;
     GLint mUnpackRowLength;

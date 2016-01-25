@@ -50,6 +50,11 @@ public:
 
     int length() const { return m_textLength; }
 
+    // Note: |characterAt()| returns characters in the reversed order, since
+    // the iterator is backwards. For example, if the current text is "abc",
+    // then |characterAt(0)| returns 'c'.
+    UChar characterAt(unsigned index) const;
+
     Node* node() const { return m_node; }
 
     template<typename BufferType>
@@ -67,6 +72,8 @@ public:
     int endOffset() const;
     PositionTemplate<Strategy> startPosition() const;
     PositionTemplate<Strategy> endPosition() const;
+
+    bool isInTextSecurityMode() const;
 
 private:
     void init(Node* startNode, Node* endNode, int startOffset, int endOffset);

@@ -21,7 +21,6 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "config.h"
 #include "core/fetch/ImageResource.h"
 
 #include "core/fetch/ImageResourceClient.h"
@@ -30,10 +29,7 @@
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
-#include "core/html/HTMLImageElement.h"
-#include "core/layout/LayoutObject.h"
 #include "core/svg/graphics/SVGImage.h"
-#include "core/svg/graphics/SVGImageForContainer.h"
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
@@ -127,8 +123,6 @@ void ImageResource::didRemoveClient(ResourceClient* c)
 {
     ASSERT(c);
     ASSERT(c->resourceClientType() == ImageResourceClient::expectedType());
-    if (m_imageForContainerMap)
-        m_imageForContainerMap->remove(static_cast<ImageResourceClient*>(c));
 
     Resource::didRemoveClient(c);
 }
@@ -137,6 +131,12 @@ bool ImageResource::isSafeToUnlock() const
 {
     // Note that |m_image| holds a reference to |m_data| in addition to the one held by the Resource parent class.
     return !m_image || (m_image->hasOneRef() && m_data->refCount() == 2);
+}
+
+void ImageResource::destroyDecodedDataForFailedRevalidation()
+{
+    m_image = nullptr;
+    setDecodedSize(0);
 }
 
 void ImageResource::destroyDecodedDataIfPossible()
@@ -189,47 +189,6 @@ blink::Image* ImageResource::image()
     return blink::Image::nullImage();
 }
 
-blink::Image* ImageResource::imageForLayoutObject(const LayoutObject* layoutObject)
-{
-    ASSERT(!isPurgeable());
-
-    if (errorOccurred()) {
-        // Returning the 1x broken image is non-ideal, but we cannot reliably access the appropriate
-        // deviceScaleFactor from here. It is critical that callers use ImageResource::brokenImage()
-        // when they need the real, deviceScaleFactor-appropriate broken image icon.
-        return brokenImage(1).first;
-    }
-
-    if (!m_image)
-        return blink::Image::nullImage();
-
-    if (m_image->isSVGImage()) {
-        blink::Image* image = svgImageForLayoutObject(layoutObject);
-        if (image != blink::Image::nullImage())
-            return image;
-    }
-
-    return m_image.get();
-}
-
-void ImageResource::setContainerSizeForLayoutObject(const ImageResourceClient* layoutObject, const IntSize& containerSize, float containerZoom)
-{
-    if (containerSize.isEmpty())
-        return;
-    ASSERT(layoutObject);
-    ASSERT(containerZoom);
-    if (!m_image)
-        return;
-    if (!m_image->isSVGImage()) {
-        m_image->setContainerSize(containerSize);
-        return;
-    }
-
-    FloatSize containerSizeWithoutZoom(containerSize);
-    containerSizeWithoutZoom.scale(1 / containerZoom);
-    m_imageForContainerMap->set(layoutObject, SVGImageForContainer::create(toSVGImage(m_image.get()), containerSizeWithoutZoom, containerZoom));
-}
-
 bool ImageResource::usesImageContainerSize() const
 {
     if (m_image)
@@ -254,36 +213,34 @@ bool ImageResource::imageHasRelativeHeight() const
     return false;
 }
 
-LayoutSize ImageResource::imageSizeForLayoutObject(const LayoutObject* layoutObject, float multiplier, SizeType sizeType)
+LayoutSize ImageResource::imageSize(RespectImageOrientationEnum shouldRespectImageOrientation, float multiplier, SizeType sizeType)
 {
     ASSERT(!isPurgeable());
 
     if (!m_image)
         return LayoutSize();
 
-    LayoutSize imageSize;
+    LayoutSize size;
 
-    if (m_image->isBitmapImage() && (layoutObject && layoutObject->shouldRespectImageOrientation() == RespectImageOrientation))
-        imageSize = LayoutSize(toBitmapImage(m_image.get())->sizeRespectingOrientation());
-    else if (m_image->isSVGImage() && sizeType == NormalSize)
-        imageSize = LayoutSize(svgImageSizeForLayoutObject(layoutObject));
+    if (m_image->isBitmapImage() && shouldRespectImageOrientation == RespectImageOrientation)
+        size = LayoutSize(toBitmapImage(m_image.get())->sizeRespectingOrientation());
     else
-        imageSize = LayoutSize(m_image->size());
+        size = LayoutSize(m_image->size());
 
     if (sizeType == IntrinsicCorrectedToDPR && m_hasDevicePixelRatioHeaderValue && m_devicePixelRatioHeaderValue > 0)
         multiplier = 1.0 / m_devicePixelRatioHeaderValue;
 
     if (multiplier == 1.0f)
-        return imageSize;
+        return size;
 
     // Don't let images that have a width/height >= 1 shrink below 1 when zoomed.
     float widthScale = m_image->hasRelativeWidth() ? 1.0f : multiplier;
     float heightScale = m_image->hasRelativeHeight() ? 1.0f : multiplier;
-    LayoutSize minimumSize(imageSize.width() > 0 ? 1 : 0, imageSize.height() > 0 ? 1 : 0);
-    imageSize.scale(widthScale, heightScale);
-    imageSize.clampToMinimumSize(minimumSize);
-    ASSERT(multiplier != 1.0f || (imageSize.width().fraction() == 0.0f && imageSize.height().fraction() == 0.0f));
-    return imageSize;
+    LayoutSize minimumSize(size.width() > 0 ? 1 : 0, size.height() > 0 ? 1 : 0);
+    size.scale(widthScale, heightScale);
+    size.clampToMinimumSize(minimumSize);
+    ASSERT(multiplier != 1.0f || (size.width().fraction() == 0.0f && size.height().fraction() == 0.0f));
+    return size;
 }
 
 void ImageResource::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
@@ -296,6 +253,10 @@ void ImageResource::notifyObservers(const IntRect* changeRect)
 {
     ResourceClientWalker<ImageResourceClient> w(m_clients);
     while (ImageResourceClient* c = w.next())
+        c->imageChanged(this, changeRect);
+
+    ResourceClientWalker<ImageResourceClient> w2(m_finishedClients);
+    while (ImageResourceClient* c = w2.next())
         c->imageChanged(this, changeRect);
 }
 
@@ -320,7 +281,6 @@ inline void ImageResource::createImage()
 
     if (m_response.mimeType() == "image/svg+xml") {
         m_image = SVGImage::create(this);
-        m_imageForContainerMap = adoptPtr(new ImageForContainerMap);
     } else {
         m_image = BitmapImage::create(this);
     }
@@ -335,7 +295,7 @@ inline void ImageResource::clearImage()
     m_image.clear();
 }
 
-void ImageResource::appendData(const char* data, unsigned length)
+void ImageResource::appendData(const char* data, size_t length)
 {
     Resource::appendData(data, length);
     if (!loadingMultipartContent())
@@ -396,15 +356,15 @@ void ImageResource::responseReceived(const ResourceResponse& response, PassOwnPt
 {
     if (loadingMultipartContent() && m_data)
         finishOnePart();
+    Resource::responseReceived(response, handle);
     if (RuntimeEnabledFeatures::clientHintsEnabled()) {
-        m_devicePixelRatioHeaderValue = response.httpHeaderField("content-dpr").toFloat(&m_hasDevicePixelRatioHeaderValue);
+        m_devicePixelRatioHeaderValue = m_response.httpHeaderField(HTTPNames::Content_DPR).toFloat(&m_hasDevicePixelRatioHeaderValue);
         if (!m_hasDevicePixelRatioHeaderValue || m_devicePixelRatioHeaderValue <= 0.0) {
             m_devicePixelRatioHeaderValue = 1.0;
             m_hasDevicePixelRatioHeaderValue = false;
         }
 
     }
-    Resource::responseReceived(response, handle);
 }
 
 void ImageResource::decodedSizeChanged(const blink::Image* image, int delta)
@@ -437,6 +397,12 @@ bool ImageResource::shouldPauseAnimation(const blink::Image* image)
             return false;
     }
 
+    ResourceClientWalker<ImageResourceClient> w2(m_finishedClients);
+    while (ImageResourceClient* c = w2.next()) {
+        if (c->willRenderImage(this))
+            return false;
+    }
+
     return true;
 }
 
@@ -459,6 +425,12 @@ void ImageResource::updateImageAnimationPolicy()
             break;
     }
 
+    ResourceClientWalker<ImageResourceClient> w2(m_finishedClients);
+    while (ImageResourceClient* c = w2.next()) {
+        if (c->getImageAnimationPolicy(this, newPolicy))
+            break;
+    }
+
     if (m_image->animationPolicy() != newPolicy) {
         m_image->resetAnimation();
         m_image->setAnimationPolicy(newPolicy);
@@ -472,18 +444,6 @@ void ImageResource::changedInRect(const blink::Image* image, const IntRect& rect
     notifyObservers(&rect);
 }
 
-bool ImageResource::currentFrameKnownToBeOpaque(const LayoutObject* layoutObject)
-{
-    blink::Image* image = imageForLayoutObject(layoutObject);
-    if (image->isBitmapImage()) {
-        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *this));
-        // BitmapImage::currentFrameKnownToBeOpaque() conservatively returns true for uncached
-        // frames. To get an accurate answer, we pre-cache the current frame metadata.
-        image->imageForCurrentFrame();
-    }
-    return image->currentFrameKnownToBeOpaque();
-}
-
 bool ImageResource::isAccessAllowed(SecurityOrigin* securityOrigin)
 {
     if (response().wasFetchedViaServiceWorker())
@@ -493,45 +453,6 @@ bool ImageResource::isAccessAllowed(SecurityOrigin* securityOrigin)
     if (passesAccessControlCheck(securityOrigin))
         return true;
     return !securityOrigin->taintsCanvas(response().url());
-}
-
-IntSize ImageResource::svgImageSizeForLayoutObject(const LayoutObject* layoutObject) const
-{
-    IntSize imageSize = m_image->size();
-    if (!layoutObject)
-        return imageSize;
-
-    ImageForContainerMap::const_iterator it = m_imageForContainerMap->find(layoutObject);
-    if (it == m_imageForContainerMap->end())
-        return imageSize;
-
-    RefPtr<SVGImageForContainer> imageForContainer = it->value;
-    ASSERT(!imageForContainer->size().isEmpty());
-    return imageForContainer->size();
-}
-
-// FIXME: This doesn't take into account the animation timeline so animations will not
-// restart on page load, nor will two animations in different pages have different timelines.
-Image* ImageResource::svgImageForLayoutObject(const LayoutObject* layoutObject)
-{
-    if (!layoutObject)
-        return Image::nullImage();
-
-    ImageForContainerMap::iterator it = m_imageForContainerMap->find(layoutObject);
-    if (it == m_imageForContainerMap->end())
-        return Image::nullImage();
-
-    RefPtr<SVGImageForContainer> imageForContainer = it->value;
-    ASSERT(!imageForContainer->size().isEmpty());
-
-    Node* node = layoutObject->node();
-    if (node && isHTMLImageElement(node)) {
-        const AtomicString& urlString = toHTMLImageElement(node)->imageSourceURL();
-        KURL url = node->document().completeURL(urlString);
-        imageForContainer->setURL(url);
-    }
-
-    return imageForContainer.get();
 }
 
 bool ImageResource::loadingMultipartContent() const

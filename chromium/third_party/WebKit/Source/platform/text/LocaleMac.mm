@@ -28,12 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/LocaleMac.h"
 
 #import <Foundation/NSDateFormatter.h>
 #import <Foundation/NSLocale.h>
 #include "platform/Language.h"
+#include "platform/LayoutTestSupport.h"
 #include "wtf/DateMath.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RetainPtr.h"
@@ -53,13 +53,15 @@ static inline String languageFromLocale(const String& locale)
 
 static RetainPtr<NSLocale> determineLocale(const String& locale)
 {
-    RetainPtr<NSLocale> currentLocale = [NSLocale currentLocale];
-    String currentLocaleLanguage = languageFromLocale(String([currentLocale.get() localeIdentifier]));
-    String localeLanguage = languageFromLocale(locale);
-    if (equalIgnoringCase(currentLocaleLanguage, localeLanguage))
-        return currentLocale;
+    if (!LayoutTestSupport::isRunningLayoutTest()) {
+        RetainPtr<NSLocale> currentLocale = [NSLocale currentLocale];
+        String currentLocaleLanguage = languageFromLocale(String([currentLocale.get() localeIdentifier]));
+        String localeLanguage = languageFromLocale(locale);
+        if (equalIgnoringCase(currentLocaleLanguage, localeLanguage))
+            return currentLocale;
+    }
     // It seems initWithLocaleIdentifier accepts dash-separated locale identifier.
-     return RetainPtr<NSLocale>(AdoptNS, [[NSLocale alloc] initWithLocaleIdentifier:locale]);
+    return RetainPtr<NSLocale>(AdoptNS, [[NSLocale alloc] initWithLocaleIdentifier:locale]);
 }
 
 PassOwnPtr<Locale> Locale::create(const String& locale)

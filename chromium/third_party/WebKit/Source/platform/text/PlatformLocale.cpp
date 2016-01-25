@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "platform/text/PlatformLocale.h"
 
 #include "platform/text/DateTimeFormat.h"
@@ -375,6 +374,10 @@ String Locale::convertFromLocalizedNumber(const String& localized)
     if (!detectSignAndGetDigitRange(input, isNegative, startIndex, endIndex))
         return input;
 
+    // Ignore leading '+', but will reject '+'-only string later.
+    if (!isNegative && endIndex - startIndex >= 2 && input[startIndex] == '+')
+        ++startIndex;
+
     StringBuilder builder;
     builder.reserveCapacity(input.length());
     if (isNegative)
@@ -390,7 +393,11 @@ String Locale::convertFromLocalizedNumber(const String& localized)
         else
             builder.append(static_cast<UChar>('0' + symbolIndex));
     }
-    return builder.toString();
+    String converted = builder.toString();
+    // Ignore trailing '.', but will reject '.'-only string later.
+    if (converted.length() >= 2 && converted[converted.length() - 1] == '.')
+        converted = converted.left(converted.length() - 1);
+    return converted;
 }
 
 String Locale::stripInvalidNumberCharacters(const String& input, const String& standardChars) const

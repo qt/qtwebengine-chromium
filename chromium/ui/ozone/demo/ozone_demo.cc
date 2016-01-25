@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <utility>
+
 #include "base/at_exit.h"
 #include "base/command_line.h"
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -90,7 +93,7 @@ class WindowManager : public ui::NativeDisplayObserver {
   scoped_ptr<ui::NativeDisplayDelegate> delegate_;
   base::Closure quit_closure_;
   RendererFactory renderer_factory_;
-  ScopedVector<DemoWindow> windows_;
+  std::vector<scoped_ptr<DemoWindow>> windows_;
 
   // Flags used to keep track of the current state of display configuration.
   //
@@ -143,7 +146,7 @@ class DemoWindow : public ui::PlatformWindowDelegate {
   void OnDamageRect(const gfx::Rect& damaged_region) override {}
   void DispatchEvent(ui::Event* event) override {
     if (event->IsKeyEvent() &&
-        static_cast<ui::KeyEvent*>(event)->code() == ui::DomCode::KEY_Q)
+        static_cast<ui::KeyEvent*>(event)->code() == ui::DomCode::US_Q)
       Quit();
   }
   void OnCloseRequest() override { Quit(); }
@@ -154,6 +157,9 @@ class DemoWindow : public ui::PlatformWindowDelegate {
                                     float device_pixel_ratio) override {
     DCHECK_NE(widget, gfx::kNullAcceleratedWidget);
     widget_ = widget;
+  }
+  void OnAcceleratedWidgetDestroyed() override {
+    NOTREACHED();
   }
   void OnActivationChanged(bool active) override {}
 
@@ -308,7 +314,7 @@ void WindowManager::OnDisplayConfigured(const gfx::Rect& bounds, bool success) {
     scoped_ptr<DemoWindow> window(
         new DemoWindow(this, &renderer_factory_, bounds));
     window->Start();
-    windows_.push_back(window.Pass());
+    windows_.push_back(std::move(window));
   } else {
     LOG(ERROR) << "Failed to configure display at " << bounds.ToString();
   }

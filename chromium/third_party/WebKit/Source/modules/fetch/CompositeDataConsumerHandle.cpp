@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/CompositeDataConsumerHandle.h"
 
 #include "platform/Task.h"
@@ -141,7 +140,7 @@ private:
             return;
         }
         ++m_token;
-        m_readerThread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&Context::updateReader, this, m_token)));
+        m_readerThread->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&Context::updateReader, this, m_token)));
     }
 
     OwnPtr<Reader> m_reader;

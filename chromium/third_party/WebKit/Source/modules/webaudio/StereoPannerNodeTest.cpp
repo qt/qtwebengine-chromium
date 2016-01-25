@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/webaudio/StereoPannerNode.h"
-
 #include "core/testing/DummyPageHolder.h"
 #include "modules/webaudio/OfflineAudioContext.h"
-#include <gtest/gtest.h>
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
@@ -26,3 +24,4 @@ TEST(StereoPannerNodeTest, StereoPannerLifetime)
 }
 
 } // namespace blink
+

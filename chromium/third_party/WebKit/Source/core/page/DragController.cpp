@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/page/DragController.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -71,6 +70,7 @@
 #include "core/layout/LayoutImage.h"
 #include "platform/DragImage.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/network/ResourceRequest.h"
@@ -115,7 +115,7 @@ static PlatformMouseEvent createMouseEvent(DragData* dragData)
     return PlatformMouseEvent(dragData->clientPosition(), dragData->globalPosition(),
         LeftButton, PlatformEvent::MouseMoved, 0,
         static_cast<PlatformEvent::Modifiers>(dragData->modifiers()),
-        PlatformMouseEvent::RealOrIndistinguishable, currentTime());
+        PlatformMouseEvent::RealOrIndistinguishable, monotonicallyIncreasingTime());
 }
 
 static DataTransfer* createDraggingDataTransfer(DataTransferAccessPolicy policy, DragData* dragData)
@@ -242,7 +242,7 @@ bool DragController::performDrag(DragData* dragData)
             // Sending an event can result in the destruction of the view and part.
             DataTransfer* dataTransfer = createDraggingDataTransfer(DataTransferReadable, dragData);
             dataTransfer->setSourceOperation(dragData->draggingSourceOperationMask());
-            preventedDefault = mainFrame->eventHandler().performDragAndDrop(createMouseEvent(dragData), dataTransfer);
+            preventedDefault = mainFrame->eventHandler().performDragAndDrop(createMouseEvent(dragData), dataTransfer) != WebInputEventResult::NotHandled;
             dataTransfer->setAccessPolicy(DataTransferNumb); // Invalidate clipboard here for security
         }
         if (preventedDefault) {
@@ -601,7 +601,7 @@ bool DragController::tryDHTMLDrag(DragData* dragData, DragOperation& operation)
     dataTransfer->setSourceOperation(srcOpMask);
 
     PlatformMouseEvent event = createMouseEvent(dragData);
-    if (!mainFrame->eventHandler().updateDragAndDrop(event, dataTransfer)) {
+    if (mainFrame->eventHandler().updateDragAndDrop(event, dataTransfer) == WebInputEventResult::NotHandled) {
         dataTransfer->setAccessPolicy(DataTransferNumb); // invalidate clipboard here for security
         return false;
     }
@@ -704,9 +704,6 @@ static Image* getImage(Element* element)
 {
     ASSERT(element);
     ImageResource* cachedImage = getImageResource(element);
-    // Don't use cachedImage->imageForLayoutObject() here as that may return BitmapImages for cached SVG Images.
-    // Users of getImage() want access to the SVGImage, in order to figure out the filename extensions,
-    // which would be empty when asking the cached BitmapImages.
     return (cachedImage && !cachedImage->errorOccurred()) ?
         cachedImage->image() : nullptr;
 }
@@ -799,11 +796,16 @@ static PassOwnPtr<DragImage> dragImageForImage(Element* element, Image* image, c
     IntPoint origin;
 
     InterpolationQuality interpolationQuality = element->ensureComputedStyle()->imageRendering() == ImageRenderingPixelated ? InterpolationNone : InterpolationHigh;
+    RespectImageOrientationEnum shouldRespectImageOrientation = LayoutObject::shouldRespectImageOrientation(element->layoutObject());
+    ImageOrientation orientation;
+
+    if (shouldRespectImageOrientation == RespectImageOrientation && image->isBitmapImage())
+        orientation = toBitmapImage(image)->currentFrameOrientation();
+
     if (image->size().height() * image->size().width() <= MaxOriginalImageArea
-        && (dragImage = DragImage::create(image,
-            element->layoutObject() ? element->layoutObject()->shouldRespectImageOrientation() : DoNotRespectImageOrientation,
+        && (dragImage = DragImage::create(image, shouldRespectImageOrientation,
             1 /* deviceScaleFactor */, interpolationQuality, DragImageAlpha,
-            DragImage::clampedImageScale(*image, imageRect.size(), maxDragImageSize())))) {
+            DragImage::clampedImageScale(orientation.usesWidthAsHeight() ? image->size().transposedSize() : image->size(), imageRect.size(), maxDragImageSize())))) {
         IntSize originalSize = imageRect.size();
         origin = imageRect.location();
 

@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "web/FrameLoaderClientImpl.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -41,6 +40,7 @@
 #include "core/events/UIEventWithKeyState.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/input/EventHandler.h"
@@ -51,11 +51,14 @@
 #include "core/loader/HistoryItem.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
+#include "modules/audio_output_devices/HTMLMediaElementAudioOutputDevice.h"
 #include "modules/device_light/DeviceLightController.h"
 #include "modules/device_orientation/DeviceMotionController.h"
+#include "modules/device_orientation/DeviceOrientationAbsoluteController.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/gamepad/NavigatorGamepad.h"
+#include "modules/mediasession/MediaSession.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
 #include "modules/storage/DOMWindowStorageController.h"
 #include "modules/vr/NavigatorVRDevice.h"
@@ -64,6 +67,7 @@
 #include "platform/UserGestureIndicator.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/exported/WrappedResourceResponse.h"
+#include "platform/fonts/GlyphPageTreeNode.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/plugins/PluginData.h"
 #include "public/platform/Platform.h"
@@ -74,6 +78,7 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/mediasession/WebMediaSession.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 #include "public/web/WebAutofillClient.h"
@@ -93,7 +98,6 @@
 #include "web/WebDevToolsFrontendImpl.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPluginContainerImpl.h"
-#include "web/WebPluginLoadObserver.h"
 #include "web/WebViewImpl.h"
 #include "wtf/StringExtras.h"
 #include "wtf/text/CString.h"
@@ -101,6 +105,21 @@
 #include <v8.h>
 
 namespace blink {
+
+namespace {
+
+// Convenience helper for frame tree helpers in FrameClient to reduce the amount
+// of null-checking boilerplate code. Since the frame tree is maintained in the
+// web/ layer, the frame tree helpers often have to deal with null WebFrames:
+// for example, a frame with no parent will return null for WebFrame::parent().
+// TODO(dcheng): Remove duplication between FrameLoaderClientImpl and
+// RemoteFrameClientImpl somehow...
+Frame* toCoreFrame(WebFrame* frame)
+{
+    return frame ? frame->toImplBase()->frame() : nullptr;
+}
+
+} // namespace
 
 FrameLoaderClientImpl::FrameLoaderClientImpl(WebLocalFrameImpl* frame)
     : m_webFrame(frame)
@@ -136,6 +155,8 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInMainWorld()
         if (document) {
             DeviceMotionController::from(*document);
             DeviceOrientationController::from(*document);
+            if (RuntimeEnabledFeatures::deviceOrientationAbsoluteEnabled())
+                DeviceOrientationAbsoluteController::from(*document);
             if (RuntimeEnabledFeatures::deviceLightEnabled())
                 DeviceLightController::from(*document);
             NavigatorGamepad::from(*document);
@@ -243,10 +264,10 @@ bool FrameLoaderClientImpl::allowMedia(const KURL& mediaURL)
     return true;
 }
 
-bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
+bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettings, const KURL& url)
 {
     if (m_webFrame->contentSettingsClient())
-        return m_webFrame->contentSettingsClient()->allowDisplayingInsecureContent(enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
+        return m_webFrame->contentSettingsClient()->allowDisplayingInsecureContent(enabledPerSettings, WebURL(url));
 
     return enabledPerSettings;
 }
@@ -270,6 +291,12 @@ void FrameLoaderClientImpl::didNotAllowPlugins()
     if (m_webFrame->contentSettingsClient())
         m_webFrame->contentSettingsClient()->didNotAllowPlugins();
 
+}
+
+void FrameLoaderClientImpl::didUseKeygen()
+{
+    if (m_webFrame->contentSettingsClient())
+        m_webFrame->contentSettingsClient()->didUseKeygen();
 }
 
 bool FrameLoaderClientImpl::hasWebView() const
@@ -455,6 +482,12 @@ void FrameLoaderClientImpl::dispatchDidChangeIcons(IconType type)
 void FrameLoaderClientImpl::dispatchDidCommitLoad(HistoryItem* item, HistoryCommitType commitType)
 {
     m_webFrame->viewImpl()->didCommitLoad(commitType == StandardCommit, false);
+
+    // Save some histogram data so we can compute the average memory used per
+    // page load of the glyphs.
+    // TODO(esprehn): Is this ancient uma actually useful?
+    Platform::current()->histogramCustomCounts("Memory.GlyphPagesPerLoad", GlyphPageTreeNode::treeGlyphPageCount(), 1, 10000, 50);
+
     if (m_webFrame->client())
         m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, WebHistoryItem(item), static_cast<WebHistoryCommitType>(commitType));
     WebDevToolsAgentImpl* devToolsAgent = WebLocalFrameImpl::fromFrame(m_webFrame->frame()->localFrameRoot())->devToolsAgentImpl();
@@ -465,37 +498,17 @@ void FrameLoaderClientImpl::dispatchDidCommitLoad(HistoryItem* item, HistoryComm
 void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
     const ResourceError& error, HistoryCommitType commitType)
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().provisionalDocumentLoader());
     m_webFrame->didFail(error, true, commitType);
-    if (observer)
-        observer->didFailLoading(error);
 }
 
 void FrameLoaderClientImpl::dispatchDidFailLoad(const ResourceError& error, HistoryCommitType commitType)
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
     m_webFrame->didFail(error, false, commitType);
-    if (observer)
-        observer->didFailLoading(error);
-
-    // Don't clear the redirect chain, this will happen in the middle of client
-    // redirects, and we need the context. The chain will be cleared when the
-    // provisional load succeeds or fails, not the "real" one.
 }
 
 void FrameLoaderClientImpl::dispatchDidFinishLoad()
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
-
-    if (m_webFrame->client())
-        m_webFrame->client()->didFinishLoad(m_webFrame);
-
-    if (observer)
-        observer->didFinishLoading();
-
-    // Don't clear the redirect chain, this will happen in the middle of client
-    // redirects, and we need the context. The chain will be cleared when the
-    // provisional load succeeds or fails, not the "real" one.
+    m_webFrame->didFinish();
 }
 
 void FrameLoaderClientImpl::dispatchDidChangeThemeColor()
@@ -544,7 +557,7 @@ static bool allowCreatingBackgroundTabs()
     return userPolicy == NavigationPolicyNewBackgroundTab;
 }
 
-NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy)
+NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationType type, NavigationPolicy policy, bool replacesCurrentHistoryItem)
 {
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
@@ -554,13 +567,23 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
 
     WebDataSourceImpl* ds = WebDataSourceImpl::fromDocumentLoader(loader);
 
+    // Newly created child frames may need to be navigated to a history item
+    // during a back/forward navigation. This will only happen when the parent
+    // is a LocalFrame doing a back/forward navigation that has not completed.
+    // (If the load has completed and the parent later adds a frame with script,
+    // we do not want to use a history item for it.)
+    bool isHistoryNavigationInNewChildFrame = m_webFrame->parent()
+        && m_webFrame->parent()->isWebLocalFrame()
+        && isBackForwardLoadType(toWebLocalFrameImpl(m_webFrame->parent())->frame()->loader().loadType())
+        && !toWebLocalFrameImpl(m_webFrame->parent())->frame()->document()->loadEventFinished();
+
     WrappedResourceRequest wrappedResourceRequest(request);
     WebFrameClient::NavigationPolicyInfo navigationInfo(wrappedResourceRequest);
-    navigationInfo.frame = m_webFrame;
-    navigationInfo.extraData = ds->extraData();
-    navigationInfo.navigationType = ds->navigationType();
+    navigationInfo.navigationType = static_cast<WebNavigationType>(type);
     navigationInfo.defaultPolicy = static_cast<WebNavigationPolicy>(policy);
-    navigationInfo.isRedirect = ds->isRedirect();
+    navigationInfo.extraData = ds ? ds->extraData() : nullptr;
+    navigationInfo.replacesCurrentHistoryItem = replacesCurrentHistoryItem;
+    navigationInfo.isHistoryNavigationInNewChildFrame = isHistoryNavigationInNewChildFrame;
 
     WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(navigationInfo);
     return static_cast<NavigationPolicy>(webPolicy);
@@ -604,15 +627,14 @@ void FrameLoaderClientImpl::didStopLoading()
         m_webFrame->client()->didStopLoading();
 }
 
-void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName)
+void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName, bool shouldReplaceCurrentEntry)
 {
-    if (m_webFrame->client()) {
-        ASSERT(m_webFrame->frame()->document());
-        Fullscreen::fullyExitFullscreen(*m_webFrame->frame()->document());
-        WrappedResourceRequest webreq(request);
-        m_webFrame->client()->loadURLExternally(
-            m_webFrame, webreq, static_cast<WebNavigationPolicy>(policy), suggestedName);
-    }
+    if (!m_webFrame->client())
+        return;
+    ASSERT(m_webFrame->frame()->document());
+    Fullscreen::fullyExitFullscreen(*m_webFrame->frame()->document());
+    m_webFrame->client()->loadURLExternally(
+        WrappedResourceRequest(request), static_cast<WebNavigationPolicy>(policy), suggestedName, shouldReplaceCurrentEntry);
 }
 
 bool FrameLoaderClientImpl::navigateBackForward(int offset) const
@@ -660,6 +682,18 @@ void FrameLoaderClientImpl::didDispatchPingLoader(const KURL& url)
         m_webFrame->client()->didDispatchPingLoader(m_webFrame, url);
 }
 
+void FrameLoaderClientImpl::didDisplayContentWithCertificateErrors(const KURL& url, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo)
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didDisplayContentWithCertificateErrors(url, securityInfo, mainResourceUrl, mainResourceSecurityInfo);
+}
+
+void FrameLoaderClientImpl::didRunContentWithCertificateErrors(const KURL& url, const CString& securityInfo, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo)
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didRunContentWithCertificateErrors(url, securityInfo, mainResourceUrl, mainResourceSecurityInfo);
+}
+
 void FrameLoaderClientImpl::didChangePerformanceTiming()
 {
     if (m_webFrame->client())
@@ -680,9 +714,9 @@ PassRefPtrWillBeRawPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoad
     return ds.release();
 }
 
-String FrameLoaderClientImpl::userAgent(const KURL& url)
+String FrameLoaderClientImpl::userAgent()
 {
-    WebString override = m_webFrame->client()->userAgentOverride(m_webFrame, WebURL(url));
+    WebString override = m_webFrame->client()->userAgentOverride(m_webFrame);
     if (!override.isEmpty())
         return override;
 
@@ -747,19 +781,11 @@ PassRefPtrWillBeRawPtr<Widget> FrameLoaderClientImpl::createPlugin(
     RefPtrWillBeRawPtr<WebPluginContainerImpl> container =
         WebPluginContainerImpl::create(element, webPlugin);
 
-    if (!webPlugin->initialize(container.get())) {
-#if ENABLE(OILPAN)
-        container->dispose();
-#endif
+    if (!webPlugin->initialize(container.get()))
         return nullptr;
-    }
 
-    if (policy != AllowDetachedPlugin && !element->layoutObject()) {
-#if ENABLE(OILPAN)
-        container->dispose();
-#endif
+    if (policy != AllowDetachedPlugin && !element->layoutObject())
         return nullptr;
-    }
 
     return container;
 }
@@ -776,9 +802,18 @@ PassOwnPtr<WebMediaPlayer> FrameLoaderClientImpl::createWebMediaPlayer(
         return nullptr;
 
     HTMLMediaElementEncryptedMedia& encryptedMedia = HTMLMediaElementEncryptedMedia::from(htmlMediaElement);
+    WebString sinkId(HTMLMediaElementAudioOutputDevice::sinkId(htmlMediaElement));
     return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url,
         client, &encryptedMedia,
-        encryptedMedia.contentDecryptionModule()));
+        encryptedMedia.contentDecryptionModule(), sinkId));
+}
+
+PassOwnPtr<WebMediaSession> FrameLoaderClientImpl::createWebMediaSession()
+{
+    if (!m_webFrame->client())
+        return nullptr;
+
+    return adoptPtr(m_webFrame->client()->createMediaSession());
 }
 
 ObjectContentType FrameLoaderClientImpl::objectContentType(
@@ -824,11 +859,6 @@ ObjectContentType FrameLoaderClientImpl::objectContentType(
     return ObjectContentNone;
 }
 
-PassOwnPtr<WebPluginLoadObserver> FrameLoaderClientImpl::pluginLoadObserver(DocumentLoader* loader)
-{
-    return WebDataSourceImpl::fromDocumentLoader(loader)->releasePluginLoadObserver();
-}
-
 WebCookieJar* FrameLoaderClientImpl::cookieJar() const
 {
     if (!m_webFrame->client())
@@ -845,6 +875,12 @@ bool FrameLoaderClientImpl::willCheckAndDispatchMessageEvent(
         WebLocalFrameImpl::fromFrame(sourceFrame), m_webFrame, WebSecurityOrigin(target), WebDOMMessageEvent(event));
 }
 
+void FrameLoaderClientImpl::frameFocused() const
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->frameFocused();
+}
+
 void FrameLoaderClientImpl::didChangeName(const String& name)
 {
     if (!m_webFrame->client())
@@ -852,11 +888,26 @@ void FrameLoaderClientImpl::didChangeName(const String& name)
     m_webFrame->client()->didChangeName(m_webFrame, name);
 }
 
+void FrameLoaderClientImpl::didEnforceStrictMixedContentChecking()
+{
+    if (!m_webFrame->client())
+        return;
+    m_webFrame->client()->didEnforceStrictMixedContentChecking();
+}
+
 void FrameLoaderClientImpl::didChangeSandboxFlags(Frame* childFrame, SandboxFlags flags)
 {
     if (!m_webFrame->client())
         return;
     m_webFrame->client()->didChangeSandboxFlags(WebFrame::fromFrame(childFrame), static_cast<WebSandboxFlags>(flags));
+}
+
+void FrameLoaderClientImpl::didChangeFrameOwnerProperties(HTMLFrameElementBase* frameElement)
+{
+    if (!m_webFrame->client())
+        return;
+
+    m_webFrame->client()->didChangeFrameOwnerProperties(WebFrame::fromFrame(frameElement->contentFrame()), WebFrameOwnerProperties(frameElement->scrollingMode(), frameElement->marginWidth(), frameElement->marginHeight()));
 }
 
 void FrameLoaderClientImpl::dispatchWillOpenWebSocket(WebSocketHandle* handle)
@@ -932,12 +983,6 @@ PassOwnPtr<WebApplicationCacheHost> FrameLoaderClientImpl::createApplicationCach
     if (!m_webFrame->client())
         return nullptr;
     return adoptPtr(m_webFrame->client()->createApplicationCacheHost(m_webFrame, client));
-}
-
-void FrameLoaderClientImpl::didStopAllLoaders()
-{
-    if (m_webFrame->client())
-        m_webFrame->client()->didAbortLoading(m_webFrame);
 }
 
 void FrameLoaderClientImpl::dispatchDidChangeManifest()

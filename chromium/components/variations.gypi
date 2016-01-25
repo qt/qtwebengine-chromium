@@ -19,7 +19,7 @@
         '../crypto/crypto.gyp:crypto',
         '../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
         '../third_party/protobuf/protobuf.gyp:protobuf_lite',
-        'compression',
+        '../third_party/zlib/google/zip.gyp:compression_utils',
         'crash_core_common',
       ],
       'sources': [
@@ -30,6 +30,8 @@
         'variations/android/component_jni_registrar.h',
         'variations/android/variations_associated_data_android.cc',
         'variations/android/variations_associated_data_android.h',
+        'variations/android/variations_seed_bridge.cc',
+        'variations/android/variations_seed_bridge.h',
         'variations/caching_permuted_entropy_provider.cc',
         'variations/caching_permuted_entropy_provider.h',
         'variations/entropy_provider.cc',
@@ -48,10 +50,14 @@
         'variations/proto/variations_seed.proto',
         'variations/study_filtering.cc',
         'variations/study_filtering.h',
+        "variations/synthetic_trials.cc",
+        "variations/synthetic_trials.h",
         'variations/variations_associated_data.cc',
         'variations/variations_associated_data.h',
         'variations/variations_experiment_util.cc',
         'variations/variations_experiment_util.h',
+        'variations/variations_http_header_provider.cc',
+        'variations/variations_http_header_provider.h',
         'variations/variations_request_scheduler.cc',
         'variations/variations_request_scheduler.h',
         'variations/variations_request_scheduler_mobile.cc',
@@ -117,7 +123,7 @@
     },
     {
       # GN version: //components/variations/net:net
-      'target_name': 'variations_http_provider',
+      'target_name': 'variations_net',
       'type': 'static_library',
       'include_dirs': [
         '..',
@@ -134,8 +140,8 @@
         'components.gyp:metrics',
       ],
       'sources': [
-        'variations/net/variations_http_header_provider.cc',
-        'variations/net/variations_http_header_provider.h',
+        'variations/net/variations_http_headers.cc',
+        'variations/net/variations_http_headers.h',
       ],
     },
   ],
@@ -160,6 +166,7 @@
           'type': 'none',
           'sources': [
             'variations/android/java/src/org/chromium/components/variations/VariationsAssociatedData.java',
+            'variations/android/java/src/org/chromium/components/variations/firstrun/VariationsSeedBridge.java',
           ],
           'variables': {
             'jni_gen_package': 'variations',

@@ -226,7 +226,7 @@ TestSuite.prototype.testPauseWhenScriptIsRunning = function()
     function testScriptPause() {
         // The script should be in infinite loop. Click "Pause" button to
         // pause it and wait for the result.
-        WebInspector.panels.sources._pauseButton.element.click();
+        WebInspector.panels.sources._togglePause();
 
         this._waitForScriptPause(this.releaseControl.bind(this));
     }
@@ -244,7 +244,6 @@ TestSuite.prototype.testNetworkSize = function()
 
     function finishResource(resource, finishTime)
     {
-        test.assertEquals(219, resource.transferSize, "Incorrect total encoded data length");
         test.assertEquals(25, resource.resourceSize, "Incorrect total data length");
         test.releaseControl();
     }
@@ -267,7 +266,6 @@ TestSuite.prototype.testNetworkSyncSize = function()
 
     function finishResource(resource, finishTime)
     {
-        test.assertEquals(219, resource.transferSize, "Incorrect total encoded data length");
         test.assertEquals(25, resource.resourceSize, "Incorrect total data length");
         test.releaseControl();
     }
@@ -292,7 +290,8 @@ TestSuite.prototype.testNetworkRawHeadersText = function()
     {
         if (!resource.responseHeadersText)
             test.fail("Failure: resource does not have response headers text");
-        test.assertEquals(164, resource.responseHeadersText.length, "Incorrect response headers text length");
+        var index = resource.responseHeadersText.indexOf("Date:")
+        test.assertEquals(112, resource.responseHeadersText.substring(index).length, "Incorrect response headers text length");
         test.releaseControl();
     }
 
@@ -385,33 +384,31 @@ TestSuite.prototype.testSharedWorker = function()
 TestSuite.prototype.testPauseInSharedWorkerInitialization1 = function()
 {
     // Make sure the worker is loaded.
-    function isReady()
-    {
-        return WebInspector.targetManager.targets().length == 2;
-    }
-
-    if (isReady())
-        return;
     this.takeControl();
-    this.addSniffer(WebInspector.TargetManager.prototype, "addTarget", targetAdded.bind(this));
+    this._waitForTargets(2, callback.bind(this));
 
-    function targetAdded()
+    function callback()
     {
-        if (isReady()) {
-            this.releaseControl();
-            return;
-        }
-        this.addSniffer(WebInspector.TargetManager.prototype, "addTarget", targetAdded.bind(this));
+        var target = WebInspector.targetManager.targetsWithJSContext()[0];
+        target._connection.runAfterPendingDispatches(this.releaseControl.bind(this));
     }
 };
 
 TestSuite.prototype.testPauseInSharedWorkerInitialization2 = function()
 {
-    var debuggerModel = WebInspector.DebuggerModel.fromTarget(WebInspector.targetManager.mainTarget());
-    if (debuggerModel.isPaused())
-        return;
-    this._waitForScriptPause(this.releaseControl.bind(this));
     this.takeControl();
+    this._waitForTargets(2, callback.bind(this));
+
+    function callback()
+    {
+        var target = WebInspector.targetManager.targetsWithJSContext()[0];
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (debuggerModel.isPaused()) {
+            this.releaseControl();
+            return;
+        }
+        this._waitForScriptPause(this.releaseControl.bind(this));
+    }
 };
 
 TestSuite.prototype.enableTouchEmulation = function()
@@ -546,9 +543,6 @@ TestSuite.prototype.testScreenshotRecording = function()
 
     function validateImagesAndCompleteTest(images)
     {
-        var redString = [255, 0, 0, 255].join(",");
-        var greenString = [0, 255, 0, 255].join(",");
-        var blueString = [0, 0, 255, 255].join(",");
         var redCount = 0;
         var greenCount = 0;
         var blueCount = 0;
@@ -563,11 +557,11 @@ TestSuite.prototype.testScreenshotRecording = function()
             ctx.drawImage(image, 0, 0);
             var data = ctx.getImageData(0, 0, 1, 1);
             var color = Array.prototype.join.call(data.data, ",");
-            if (color === redString)
+            if (data.data[0] > 200)
                 redCount++;
-            else if (color === greenString)
+            else if (data.data[1] > 200)
                 greenCount++;
-            else if (color === blueString)
+            else if (data.data[2] > 200)
                 blueCount++;
             else
                 test.fail("Unexpected color: " + color);
@@ -646,7 +640,7 @@ TestSuite.prototype.invokeAsyncWithTimeline_ = function(functionName, callback)
     var test = this;
     test.showPanel("timeline").then(function() {
         WebInspector.panels.timeline._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStarted, onRecordingStarted);
-        WebInspector.panels.timeline.toggleTimelineButton.element.click();
+        WebInspector.panels.timeline._toggleRecording();
     });
 
     function onRecordingStarted()
@@ -668,7 +662,7 @@ TestSuite.prototype.invokeAsyncWithTimeline_ = function(functionName, callback)
     function pageActionsDone()
     {
         WebInspector.panels.timeline._model.addEventListener(WebInspector.TimelineModel.Events.RecordingStopped, onRecordingStopped);
-        WebInspector.panels.timeline.toggleTimelineButton.element.click();
+        WebInspector.panels.timeline._toggleRecording();
     }
 
     function onRecordingStopped()
@@ -705,7 +699,7 @@ TestSuite.prototype.nonAnonymousUISourceCodes_ = function()
 
     function filterOutService(uiSourceCode)
     {
-        return !uiSourceCode.project().isServiceProject();
+        return !uiSourceCode.isFromServiceProject();
     }
 
     var uiSourceCodes = WebInspector.workspace.uiSourceCodes();
@@ -799,6 +793,18 @@ TestSuite.prototype._waitUntilScriptsAreParsed = function(expectedScripts, callb
     waitForAllScripts();
 };
 
+TestSuite.prototype._waitForTargets = function(n, callback)
+{
+    checkTargets.call(this);
+
+    function checkTargets()
+    {
+        if (WebInspector.targetManager.targets().length >= n)
+            callback.call(null);
+        else
+            this.addSniffer(WebInspector.TargetManager.prototype, "addTarget", checkTargets.bind(this));
+    }
+}
 
 /**
  * Key event with given key identifier.

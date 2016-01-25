@@ -16,31 +16,6 @@ namespace media {
 // background rendering to keep the Render() callbacks moving.
 const int kBackgroundRenderingTimeoutMs = 250;
 
-// Returns true if the format has no Alpha channel (hence is always opaque).
-static bool IsOpaque(const scoped_refptr<VideoFrame>& frame) {
-  switch (frame->format()) {
-    case PIXEL_FORMAT_UNKNOWN:
-    case PIXEL_FORMAT_I420:
-    case PIXEL_FORMAT_YV12:
-    case PIXEL_FORMAT_YV16:
-    case PIXEL_FORMAT_YV24:
-    case PIXEL_FORMAT_NV12:
-    case PIXEL_FORMAT_NV21:
-    case PIXEL_FORMAT_UYVY:
-    case PIXEL_FORMAT_YUY2:
-    case PIXEL_FORMAT_XRGB:
-    case PIXEL_FORMAT_RGB24:
-    case PIXEL_FORMAT_MJPEG:
-    case PIXEL_FORMAT_MT21:
-      return true;
-    case PIXEL_FORMAT_YV12A:
-    case PIXEL_FORMAT_ARGB:
-    case PIXEL_FORMAT_RGB32:
-      break;
-  }
-  return false;
-}
-
 VideoFrameCompositor::VideoFrameCompositor(
     const scoped_refptr<base::SingleThreadTaskRunner>& compositor_task_runner,
     const base::Callback<void(gfx::Size)>& natural_size_changed_cb,
@@ -138,7 +113,7 @@ void VideoFrameCompositor::Start(RenderCallback* callback) {
 
   // Called from the media thread, so acquire the callback under lock before
   // returning in case a Stop() call comes in before the PostTask is processed.
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(callback_lock_);
   DCHECK(!callback_);
   callback_ = callback;
   compositor_task_runner_->PostTask(
@@ -152,7 +127,7 @@ void VideoFrameCompositor::Stop() {
   // Called from the media thread, so release the callback under lock before
   // returning to avoid a pending UpdateCurrentFrame() call occurring before
   // the PostTask is processed.
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(callback_lock_);
   DCHECK(callback_);
   callback_ = nullptr;
   compositor_task_runner_->PostTask(
@@ -197,6 +172,16 @@ VideoFrameCompositor::GetCurrentFrameAndUpdateIfStale() {
   return current_frame_;
 }
 
+base::TimeDelta VideoFrameCompositor::GetCurrentFrameTimestamp() const {
+  // When the VFC is stopped, |callback_| is cleared; this synchronously
+  // prevents CallRender() from invoking ProcessNewFrame(), and so
+  // |current_frame_| won't change again until after Start(). (Assuming that
+  // PaintFrameUsingOldRenderingPath() is not also called while stopped.)
+  if (!current_frame_)
+    return base::TimeDelta();
+  return current_frame_->timestamp();
+}
+
 bool VideoFrameCompositor::ProcessNewFrame(
     const scoped_refptr<VideoFrame>& frame) {
   DCHECK(compositor_task_runner_->BelongsToCurrentThread());
@@ -213,8 +198,9 @@ bool VideoFrameCompositor::ProcessNewFrame(
     natural_size_changed_cb_.Run(frame->natural_size());
   }
 
-  if (!current_frame_ || IsOpaque(current_frame_) != IsOpaque(frame))
-    opacity_changed_cb_.Run(IsOpaque(frame));
+  if (!current_frame_ ||
+      IsOpaque(current_frame_->format()) != IsOpaque(frame->format()))
+    opacity_changed_cb_.Run(IsOpaque(frame->format()));
 
   current_frame_ = frame;
   return true;
@@ -234,7 +220,7 @@ bool VideoFrameCompositor::CallRender(base::TimeTicks deadline_min,
                                       bool background_rendering) {
   DCHECK(compositor_task_runner_->BelongsToCurrentThread());
 
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(callback_lock_);
   if (!callback_) {
     // Even if we no longer have a callback, return true if we have a frame
     // which |client_| hasn't seen before.

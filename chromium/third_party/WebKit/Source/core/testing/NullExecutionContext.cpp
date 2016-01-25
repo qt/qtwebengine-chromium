@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/testing/NullExecutionContext.h"
 
 #include "core/dom/ExecutionContextTask.h"
@@ -32,11 +31,6 @@ NullExecutionContext::NullExecutionContext()
 
 void NullExecutionContext::postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>)
 {
-}
-
-double NullExecutionContext::timerAlignmentInterval() const
-{
-    return DOMTimer::visiblePageAlignmentInterval();
 }
 
 bool NullExecutionContext::isSecureContext(String& errorMessage, const SecureContextCheck privilegeContextCheck) const

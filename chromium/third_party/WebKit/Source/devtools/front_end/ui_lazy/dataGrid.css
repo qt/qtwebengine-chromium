@@ -67,7 +67,7 @@
     right: 0;
     bottom: 0;
     border-top: 0 none transparent;
-    background-image: linear-gradient(to bottom, white, white 50%, rgb(234, 243, 255) 50%, rgb(234, 243, 255));
+    background-image: linear-gradient(to bottom, transparent, transparent 50%, hsla(214, 100%, 40%, 0.1) 50%, hsla(214, 100%, 40%, 0.1));
     background-size: 128px 32px;
     table-layout: fixed;
 }
@@ -138,7 +138,13 @@
     position: relative;
 }
 
-.data-grid th.sortable:active {
+.data-grid th.sortable:active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
     background-color: rgba(0, 0, 0, 0.15);
 }
 
@@ -178,7 +184,7 @@
 }
 
 .data-grid th:hover {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: hsla(0, 0%, 90%, 1);
 }
 
 .data-grid button {

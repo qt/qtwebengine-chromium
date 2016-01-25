@@ -24,7 +24,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 
 #include "core/css/resolver/StyleResolver.h"
@@ -82,7 +81,7 @@ void DocumentStyleSheetCollection::collectStyleSheetsFromCandidates(StyleEngine&
 void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine& engine, DocumentStyleSheetCollector& collector)
 {
     ASSERT(&document().styleEngine() == &engine);
-    collector.appendActiveStyleSheets(engine.documentAuthorStyleSheets());
+    collector.appendActiveStyleSheets(engine.injectedAuthorStyleSheets());
     collectStyleSheetsFromCandidates(engine, collector);
 }
 

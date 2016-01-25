@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLAreaElement.h"
 
 #include "core/HTMLNames.h"
@@ -55,7 +54,7 @@ HTMLAreaElement::~HTMLAreaElement()
 
 DEFINE_NODE_FACTORY(HTMLAreaElement)
 
-void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == shapeAttr) {
         if (equalIgnoringCase(value, "default"))
@@ -73,7 +72,7 @@ void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicStri
     } else if (name == altAttr || name == accesskeyAttr) {
         // Do nothing.
     } else {
-        HTMLAnchorElement::parseAttribute(name, value);
+        HTMLAnchorElement::parseAttribute(name, oldValue, value);
     }
 }
 
@@ -222,16 +221,13 @@ void HTMLAreaElement::setFocus(bool shouldBeFocused)
     toLayoutImage(layoutObject)->areaElementFocusChanged(this);
 }
 
-void HTMLAreaElement::updateFocusAppearance(bool restorePreviousSelection)
+void HTMLAreaElement::updateFocusAppearance(SelectionBehaviorOnFocus selectionBehavior)
 {
     if (!isFocusable())
         return;
 
-    HTMLImageElement* imageElement = this->imageElement();
-    if (!imageElement)
-        return;
-
-    imageElement->updateFocusAppearance(restorePreviousSelection);
+    if (HTMLImageElement* imageElement = this->imageElement())
+        imageElement->updateFocusAppearance(selectionBehavior);
 }
 
 }

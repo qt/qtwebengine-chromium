@@ -9,10 +9,11 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "components/clipboard/public/interfaces/clipboard.mojom.h"
-#include "mojo/application/public/cpp/application_delegate.h"
-#include "mojo/application/public/cpp/interface_factory_impl.h"
-#include "mojo/application/public/interfaces/content_handler.mojom.h"
 #include "mojo/common/weak_binding_set.h"
+#include "mojo/services/tracing/public/cpp/tracing_impl.h"
+#include "mojo/shell/public/cpp/application_delegate.h"
+#include "mojo/shell/public/cpp/interface_factory_impl.h"
+#include "mojo/shell/public/interfaces/content_handler.mojom.h"
 
 namespace core_services {
 
@@ -44,12 +45,14 @@ class CoreServicesApplicationDelegate
   // Overridden from mojo::ContentHandler:
   void StartApplication(
       mojo::InterfaceRequest<mojo::Application> request,
-      mojo::URLResponsePtr response) override;
+      mojo::URLResponsePtr response,
+      const mojo::Callback<void()>& destruct_callback) override;
 
   // Bindings for all of our connections.
   mojo::WeakBindingSet<ContentHandler> handler_bindings_;
 
   ScopedVector<ApplicationThread> application_threads_;
+  mojo::TracingImpl tracing_;
 
   base::WeakPtrFactory<CoreServicesApplicationDelegate> weak_factory_;
 

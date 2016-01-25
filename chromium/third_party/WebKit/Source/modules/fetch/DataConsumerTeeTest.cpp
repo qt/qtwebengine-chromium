@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "modules/fetch/DataConsumerTee.h"
 
 #include "core/testing/DummyPageHolder.h"
@@ -15,10 +14,9 @@
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
 #include "public/platform/WebWaitableEvent.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-
-#include <gtest/gtest.h>
 #include <string.h>
 #include <v8.h>
 
@@ -60,7 +58,7 @@ public:
     {
         m_thread = adoptPtr(new Thread("src thread", Thread::WithExecutionContext));
         m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
-        m_thread->thread()->postTask(FROM_HERE, new Task(threadSafeBind(&TeeCreationThread<Handle>::runInternal, AllowCrossThreadAccess(this), src, AllowCrossThreadAccess(dest1), AllowCrossThreadAccess(dest2))));
+        m_thread->thread()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&TeeCreationThread<Handle>::runInternal, AllowCrossThreadAccess(this), src, AllowCrossThreadAccess(dest1), AllowCrossThreadAccess(dest2))));
         m_waitableEvent->wait();
     }
 
@@ -215,7 +213,7 @@ TEST(DataConsumerTeeTest, StopSource)
 
     // We can pass a raw pointer because the subsequent |wait| calls ensure
     // t->thread() is alive.
-    t->thread()->thread()->postTask(FROM_HERE, new Task(threadSafeBind(postStop, AllowCrossThreadAccess(t->thread()))));
+    t->thread()->thread()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(postStop, AllowCrossThreadAccess(t->thread()))));
 
     OwnPtr<HandleReadResult> res1 = r1.wait();
     OwnPtr<HandleReadResult> res2 = r2.wait();

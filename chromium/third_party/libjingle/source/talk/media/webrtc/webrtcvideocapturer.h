@@ -39,7 +39,7 @@
 #include "webrtc/base/messagehandler.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/video_capture/include/video_capture.h"
+#include "webrtc/modules/video_capture/video_capture.h"
 
 namespace cricket {
 
@@ -77,7 +77,7 @@ class WebRtcVideoCapturer : public VideoCapturer,
 
  protected:
   // Override virtual methods of the parent class VideoCapturer.
-  virtual bool GetPreferredFourccs(std::vector<uint32>* fourccs);
+  virtual bool GetPreferredFourccs(std::vector<uint32_t>* fourccs);
 
  private:
   // Callback when a frame is captured by camera.
@@ -92,7 +92,7 @@ class WebRtcVideoCapturer : public VideoCapturer,
   // directly from OnIncomingCapturedFrame.
   // TODO(tommi): Remove this workaround when we've updated the WebRTC capturers
   // to follow the same contract.
-  void SignalFrameCapturedOnStartThread(const webrtc::VideoFrame frame);
+  void SignalFrameCapturedOnStartThread(const webrtc::VideoFrame& frame);
 
   rtc::scoped_ptr<WebRtcVcmFactoryInterface> factory_;
   webrtc::VideoCaptureModule* module_;

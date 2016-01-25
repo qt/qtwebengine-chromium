@@ -9,9 +9,9 @@
 }
 
 .node-link {
-    text-decoration: underline;
     cursor: pointer;
     display: inline;
+    pointer-events: auto;
 }
 
 .stack-preview-async-description {
@@ -24,5 +24,28 @@
 }
 
 .stack-preview-container > tr {
-    height: 17px;
+    height: 16px;
+    line-height: 16px;
+}
+
+.stack-preview-container td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stack-preview-container .function-name {
+    max-width: 80em;
+}
+
+.node-label-name {
+    color: rgb(136, 18, 128);
+}
+
+.node-label-id {
+    color: rgb(26, 26, 166);
+}
+
+.node-label-class, .node-label-pseudo {
+    color: rgb(153, 69, 0);
 }

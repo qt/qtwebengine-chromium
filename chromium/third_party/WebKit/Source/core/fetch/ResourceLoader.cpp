@@ -27,7 +27,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fetch/ResourceLoader.h"
 
 #include "core/fetch/CSSStyleSheetResource.h"
@@ -51,6 +50,15 @@
 
 namespace blink {
 
+namespace {
+
+bool isManualRedirectFetchRequest(const ResourceRequest& request)
+{
+    return request.fetchRedirectMode() == WebURLRequest::FetchRedirectModeManual && request.requestContext() == WebURLRequest::RequestContextFetch;
+}
+
+} // namespace
+
 ResourceLoader* ResourceLoader::create(ResourceFetcher* fetcher, Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
 {
     ResourceLoader* loader = new ResourceLoader(fetcher, resource, options);
@@ -68,6 +76,8 @@ ResourceLoader::ResourceLoader(ResourceFetcher* fetcher, Resource* resource, con
     , m_state(Initialized)
     , m_connectionState(ConnectionStateNew)
 {
+    ASSERT(m_resource);
+    ASSERT(m_fetcher);
 }
 
 ResourceLoader::~ResourceLoader()
@@ -85,7 +95,7 @@ void ResourceLoader::releaseResources()
 {
     ASSERT(m_state != Terminated);
     ASSERT(m_notifiedLoadComplete);
-    m_fetcher->didLoadResource();
+    m_fetcher->didLoadResource(m_resource.get());
     if (m_state == Terminated)
         return;
     m_resource->clearLoader();
@@ -142,6 +152,7 @@ void ResourceLoader::start()
 
     m_loader = adoptPtr(Platform::current()->createURLLoader());
     ASSERT(m_loader);
+    m_loader->setLoadingTaskRunner(m_fetcher->loadingTaskRunner());
     WrappedResourceRequest wrappedRequest(m_request);
     m_loader->loadAsynchronously(wrappedRequest, this);
 }
@@ -206,16 +217,9 @@ void ResourceLoader::didFinishLoadingOnePart(double finishTime, int64_t encodedD
 
 void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority, int intraPriorityValue)
 {
-    if (m_loader) {
-        m_fetcher->didChangeLoadingPriority(m_resource, loadPriority, intraPriorityValue);
-        ASSERT(m_state != Terminated);
+    ASSERT(m_state != Terminated);
+    if (m_loader)
         m_loader->didChangePriority(static_cast<WebURLRequest::Priority>(loadPriority), intraPriorityValue);
-    }
-}
-
-bool ResourceLoader::shouldUseIncreasedPriorities()
-{
-    return m_fetcher->context().fetchIncreasePriorities();
 }
 
 void ResourceLoader::cancelIfNotFinishing()
@@ -264,7 +268,7 @@ void ResourceLoader::cancel(const ResourceError& error)
         releaseResources();
 }
 
-void ResourceLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewRequest, const WebURLResponse& passedRedirectResponse)
+void ResourceLoader::willFollowRedirect(WebURLLoader*, WebURLRequest& passedNewRequest, const WebURLResponse& passedRedirectResponse)
 {
     ASSERT(m_state != Terminated);
 
@@ -274,7 +278,7 @@ void ResourceLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewRequ
     const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
     ASSERT(!redirectResponse.isNull());
     newRequest.setFollowedRedirect(true);
-    if (!m_fetcher->canAccessRedirect(m_resource, newRequest, redirectResponse, m_options)) {
+    if (!isManualRedirectFetchRequest(m_resource->resourceRequest()) && !m_fetcher->canAccessRedirect(m_resource, newRequest, redirectResponse, m_options)) {
         cancel(ResourceError::cancelledDueToAccessCheckError(newRequest.url()));
         return;
     }
@@ -347,9 +351,7 @@ void ResourceLoader::didReceiveResponse(WebURLLoader*, const WebURLResponse& res
             // the access control with respect to it. Need to do this right here
             // before the resource switches clients over to that validated resource.
             Resource* resource = m_resource;
-            if (resource->isCacheValidator() && resourceResponse.httpStatusCode() == 304)
-                resource = m_resource->resourceToRevalidate();
-            else
+            if (!resource->isCacheValidator() || resourceResponse.httpStatusCode() != 304)
                 m_resource->setResponse(resourceResponse);
             if (!m_fetcher->canAccessResource(resource, m_options.securityOrigin.get(), response.url(), ResourceFetcher::ShouldLogAccessControlErrors)) {
                 m_fetcher->didReceiveResponse(m_resource, resourceResponse);
@@ -513,8 +515,15 @@ void ResourceLoader::requestSynchronously()
         return;
     RefPtr<ResourceLoadInfo> resourceLoadInfo = responseOut.toResourceResponse().resourceLoadInfo();
     int64_t encodedDataLength = resourceLoadInfo ? resourceLoadInfo->encodedDataLength : WebURLLoaderClient::kUnknownEncodedDataLength;
-    m_fetcher->didReceiveData(m_resource, dataOut.data(), dataOut.size(), encodedDataLength);
-    m_resource->setResourceBuffer(dataOut);
+
+    // Follow the async case convention of not calling didReceiveData or
+    // appending data to m_resource if the response body is empty. Copying the
+    // empty buffer is a noop in most cases, but is destructive in the case of
+    // a 304, where it will overwrite the cached data we should be reusing.
+    if (dataOut.size()) {
+        m_fetcher->didReceiveData(m_resource, dataOut.data(), dataOut.size(), encodedDataLength);
+        m_resource->setResourceBuffer(dataOut);
+    }
     didFinishLoading(0, monotonicallyIncreasingTime(), encodedDataLength);
 }
 

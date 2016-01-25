@@ -5,16 +5,19 @@
 #ifndef CONTENT_BROWSER_BACKGROUND_SYNC_BACKGROUND_SYNC_REGISTRATION_H_
 #define CONTENT_BROWSER_BACKGROUND_SYNC_BACKGROUND_SYNC_REGISTRATION_H_
 
+#include <stdint.h>
+
 #include <list>
 
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "content/browser/background_sync/background_sync.pb.h"
 #include "content/browser/background_sync/background_sync_registration_options.h"
 #include "content/common/background_sync_service.mojom.h"
 #include "content/common/content_export.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/type_converter.h"
+#include "mojo/public/cpp/bindings/type_converter.h"
 
 namespace content {
 
@@ -30,9 +33,16 @@ class CONTENT_EXPORT BackgroundSyncRegistration {
 
   bool Equals(const BackgroundSyncRegistration& other) const;
   bool IsValid() const;
-  void AddDoneCallback(const StateCallback& callback);
-  void RunDoneCallbacks();
+  void AddFinishedCallback(const StateCallback& callback);
+  void RunFinishedCallbacks();
   bool HasCompleted() const;
+  bool IsFiring() const;
+
+  // If the registration is currently firing, sets its state to
+  // BACKGROUND_SYNC_STATE_UNREGISTERED_WHILE_FIRING. If it is firing, it sets
+  // the state to BACKGROUND_SYNC_STATE_UNREGISTERED and calls
+  // RunFinishedCallbacks.
+  void SetUnregisteredState();
 
   const BackgroundSyncRegistrationOptions* options() const { return &options_; }
   BackgroundSyncRegistrationOptions* options() { return &options_; }
@@ -43,14 +53,22 @@ class CONTENT_EXPORT BackgroundSyncRegistration {
   BackgroundSyncState sync_state() const { return sync_state_; }
   void set_sync_state(BackgroundSyncState state) { sync_state_ = state; }
 
+  int num_attempts() const { return num_attempts_; }
+  void set_num_attempts(int num_attempts) { num_attempts_ = num_attempts; }
+
+  base::Time delay_until() const { return delay_until_; }
+  void set_delay_until(base::Time delay_until) { delay_until_ = delay_until; }
+
  private:
   static const RegistrationId kInvalidRegistrationId;
 
   BackgroundSyncRegistrationOptions options_;
   RegistrationId id_ = kInvalidRegistrationId;
   BackgroundSyncState sync_state_ = BACKGROUND_SYNC_STATE_PENDING;
+  int num_attempts_ = 0;
+  base::Time delay_until_;
 
-  std::list<StateCallback> notify_done_callbacks_;
+  std::list<StateCallback> notify_finished_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundSyncRegistration);
 };

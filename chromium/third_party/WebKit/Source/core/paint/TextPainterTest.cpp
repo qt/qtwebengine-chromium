@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/paint/TextPainter.h"
 
 #include "core/CSSPropertyNames.h"
@@ -14,17 +13,27 @@
 #include "core/paint/PaintInfo.h"
 #include "core/style/ShadowData.h"
 #include "core/style/ShadowList.h"
-#include <gtest/gtest.h>
+#include "platform/graphics/paint/PaintController.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 namespace {
 
 class TextPainterTest : public RenderingTest {
 public:
-    TextPainterTest() : m_layoutText(nullptr) { }
+    TextPainterTest()
+        : m_layoutText(nullptr)
+        , m_paintController(PaintController::create())
+        , m_context(*m_paintController)
+    { }
 
 protected:
     LayoutText* layoutText() { return m_layoutText; }
+
+    PaintInfo createPaintInfo(bool usesTextAsClip, bool isPrinting)
+    {
+        return PaintInfo(m_context, IntRect(), usesTextAsClip ? PaintPhaseTextClip : PaintPhaseSelfBlockBackgroundOnly, isPrinting ? GlobalPaintPrinting : GlobalPaintNormalPhase, 0);
+    }
 
 private:
     void SetUp() override
@@ -37,12 +46,9 @@ private:
     }
 
     LayoutText* m_layoutText;
+    OwnPtr<PaintController> m_paintController;
+    GraphicsContext m_context;
 };
-
-static PaintInfo createPaintInfo(bool usesTextAsClip, bool isPrinting)
-{
-    return PaintInfo(nullptr, IntRect(), usesTextAsClip ? PaintPhaseTextClip : PaintPhaseBlockBackground, isPrinting ? GlobalPaintPrinting : GlobalPaintNormalPhase, 0);
-}
 
 TEST_F(TextPainterTest, TextPaintingStyle_Simple)
 {

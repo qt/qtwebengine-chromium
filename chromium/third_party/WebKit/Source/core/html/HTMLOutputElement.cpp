@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/HTMLOutputElement.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -40,8 +39,15 @@ inline HTMLOutputElement::HTMLOutputElement(Document& document, HTMLFormElement*
     : HTMLFormControlElement(HTMLNames::outputTag, document, form)
     , m_isDefaultValueMode(true)
     , m_defaultValue("")
-    , m_tokens(DOMSettableTokenList::create())
+    , m_tokens(DOMSettableTokenList::create(this))
 {
+}
+
+HTMLOutputElement::~HTMLOutputElement()
+{
+#if !ENABLE(OILPAN)
+    m_tokens->setObserver(nullptr);
+#endif
 }
 
 PassRefPtrWillBeRawPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
@@ -60,12 +66,12 @@ bool HTMLOutputElement::supportsFocus() const
     return HTMLElement::supportsFocus();
 }
 
-void HTMLOutputElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLOutputElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == HTMLNames::forAttr)
         setFor(value);
     else
-        HTMLFormControlElement::parseAttribute(name, value);
+        HTMLFormControlElement::parseAttribute(name, oldValue, value);
 }
 
 DOMSettableTokenList* HTMLOutputElement::htmlFor() const
@@ -111,6 +117,11 @@ void HTMLOutputElement::setValue(const String& value)
     setTextContent(value);
 }
 
+void HTMLOutputElement::valueWasSet()
+{
+    setSynchronizedLazyAttribute(HTMLNames::forAttr, m_tokens->value());
+}
+
 String HTMLOutputElement::defaultValue() const
 {
     return m_defaultValue;
@@ -132,6 +143,7 @@ DEFINE_TRACE(HTMLOutputElement)
 {
     visitor->trace(m_tokens);
     HTMLFormControlElement::trace(visitor);
+    DOMSettableTokenListObserver::trace(visitor);
 }
 
 } // namespace

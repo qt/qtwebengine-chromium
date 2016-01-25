@@ -33,7 +33,9 @@
 #include "platform/fonts/FontDescription.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Color.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
@@ -42,6 +44,8 @@ class ScrollableArea;
 
 // Unlike other platform classes, Theme does extensively use virtual functions.  This design allows a platform to switch between multiple themes at runtime.
 class PLATFORM_EXPORT Theme {
+    USING_FAST_MALLOC(Theme);
+    WTF_MAKE_NONCOPYABLE(Theme);
 public:
     Theme() { }
     virtual ~Theme() { }
@@ -94,7 +98,7 @@ public:
     virtual bool controlRequiresPreWhiteSpace(ControlPart) const { return false; }
 
     // Method for painting a control. The rect is in zoomed coordinates.
-    virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect& /*zoomedRect*/, float /*zoomFactor*/, ScrollableArea*) const { }
+    virtual void paint(ControlPart, ControlStates, GraphicsContext&, const IntRect& /*zoomedRect*/, float /*zoomFactor*/, ScrollableArea*) const { }
 
     // Add visual overflow (e.g., the check on an OS X checkbox). The rect passed in is in zoomed coordinates so
     // the inflation should take that into account and make sure the inflation amount is also scaled by the zoomFactor.

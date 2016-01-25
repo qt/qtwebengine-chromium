@@ -5,19 +5,16 @@
 #ifndef MEDIA_MOJO_SERVICES_MOJO_RENDERER_SERVICE_H_
 #define MEDIA_MOJO_SERVICES_MOJO_RENDERER_SERVICE_H_
 
-#include "base/callback.h"
-#include "base/compiler_specific.h"
+#include <stdint.h>
+
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "media/base/audio_decoder_config.h"
 #include "media/base/buffering_state.h"
-#include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 #include "media/mojo/interfaces/renderer.mojom.h"
-#include "media/mojo/services/mojo_cdm_service_context.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace mojo {
 class ApplicationConnection;
@@ -25,24 +22,18 @@ class ApplicationConnection;
 
 namespace media {
 
-class AudioRendererSink;
 class DemuxerStreamProviderShim;
 class CdmContextProvider;
-class MediaLog;
 class Renderer;
-class RendererFactory;
-class VideoRendererSink;
 
 // A interfaces::Renderer implementation that uses media::AudioRenderer to
 // decode and render audio to a sink obtained from the ApplicationConnection.
-class MEDIA_EXPORT MojoRendererService
-    : NON_EXPORTED_BASE(interfaces::Renderer) {
+class MojoRendererService : interfaces::Renderer {
  public:
   // |cdm_context_provider| can be used to find the CdmContext to support
   // encrypted media. If null, encrypted media is not supported.
   MojoRendererService(base::WeakPtr<CdmContextProvider> cdm_context_provider,
-                      RendererFactory* renderer_factory,
-                      const scoped_refptr<MediaLog>& media_log,
+                      scoped_ptr<media::Renderer> renderer,
                       mojo::InterfaceRequest<interfaces::Renderer> request);
   ~MojoRendererService() final;
 
@@ -103,16 +94,13 @@ class MEDIA_EXPORT MojoRendererService
   mojo::StrongBinding<interfaces::Renderer> binding_;
 
   base::WeakPtr<CdmContextProvider> cdm_context_provider_;
+  scoped_ptr<media::Renderer> renderer_;
 
   State state_;
 
-  // Note: |renderer_| should be destructed before these objects to avoid access
+  // Note: stream_provider_ must be destructed after renderer_ to avoid access
   // violation.
   scoped_ptr<DemuxerStreamProviderShim> stream_provider_;
-  scoped_refptr<AudioRendererSink> audio_renderer_sink_;
-  scoped_ptr<VideoRendererSink> video_renderer_sink_;
-
-  scoped_ptr<media::Renderer> renderer_;
 
   base::RepeatingTimer time_update_timer_;
   uint64_t last_media_time_usec_;

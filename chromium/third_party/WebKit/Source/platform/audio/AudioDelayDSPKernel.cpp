@@ -22,15 +22,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-
-#if ENABLE(WEB_AUDIO)
-
 #include "platform/audio/AudioDelayDSPKernel.h"
-
 #include "platform/audio/AudioUtilities.h"
 #include "wtf/MathExtras.h"
-#include <algorithm>
+#include <cmath>
 
 namespace blink {
 
@@ -113,8 +108,7 @@ void AudioDelayDSPKernel::process(const float* source, float* destination, size_
         delayTime = this->delayTime(sampleRate);
 
         // Make sure the delay time is in a valid range.
-        delayTime = std::min(maxTime, delayTime);
-        delayTime = std::max(0.0, delayTime);
+        delayTime = clampTo(delayTime, 0.0, maxTime);
 
         if (m_firstTime) {
             m_currentDelayTime = delayTime;
@@ -125,8 +119,7 @@ void AudioDelayDSPKernel::process(const float* source, float* destination, size_
     for (unsigned i = 0; i < framesToProcess; ++i) {
         if (sampleAccurate) {
             delayTime = delayTimes[i];
-            delayTime = std::min(maxTime, delayTime);
-            delayTime = std::max(0.0, delayTime);
+            delayTime = clampTo(delayTime, 0.0, maxTime);
             m_currentDelayTime = delayTime;
         } else {
             // Approach desired delay time.
@@ -177,4 +170,3 @@ double AudioDelayDSPKernel::latencyTime() const
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

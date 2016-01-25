@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/web/WebElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -94,14 +93,6 @@ bool WebElement::hasAttribute(const WebString& attrName) const
     return constUnwrap<Element>()->hasAttribute(attrName);
 }
 
-void WebElement::removeAttribute(const WebString& attrName)
-{
-    // TODO: Custom element callbacks need to be called on WebKit API methods that
-    // mutate the DOM in any way.
-    CustomElementProcessingStack::CallbackDeliveryScope deliverCustomElementCallbacks;
-    unwrap<Element>()->removeAttribute(attrName);
-}
-
 WebString WebElement::getAttribute(const WebString& attrName) const
 {
     return constUnwrap<Element>()->getAttribute(attrName);
@@ -154,9 +145,9 @@ bool WebElement::hasNonEmptyLayoutSize() const
     return constUnwrap<Element>()->hasNonEmptyLayoutSize();
 }
 
-WebRect WebElement::boundsInViewportSpace()
+WebRect WebElement::boundsInViewport() const
 {
-    return unwrap<Element>()->boundsInViewportSpace();
+    return constUnwrap<Element>()->boundsInViewport();
 }
 
 WebImage WebElement::imageContents()
@@ -164,15 +155,7 @@ WebImage WebElement::imageContents()
     if (isNull())
         return WebImage();
 
-    Image* image = unwrap<Element>()->imageContents();
-    if (!image)
-        return WebImage();
-
-    SkBitmap bitmap;
-    if (!image->deprecatedBitmapForCurrentFrame(&bitmap))
-        return WebImage();
-
-    return WebImage(bitmap);
+    return WebImage(unwrap<Element>()->imageContents());
 }
 
 WebElement::WebElement(const PassRefPtrWillBeRawPtr<Element>& elem)

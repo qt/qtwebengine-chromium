@@ -6,13 +6,15 @@
 #define UI_VIEWS_COCOA_BRIDGED_NATIVE_WIDGET_H_
 
 #import <Cocoa/Cocoa.h>
+
 #include <vector>
 
 #import "base/mac/scoped_nsobject.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#import "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/compositor/layer_owner.h"
-#import "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #import "ui/views/cocoa/bridged_native_widget_owner.h"
 #import "ui/views/cocoa/cocoa_mouse_capture_delegate.h"
 #import "ui/views/focus/focus_manager.h"
@@ -235,12 +237,9 @@ class VIEWS_EXPORT BridgedNativeWidget
 
   // Overridden from ui::AcceleratedWidgetMac:
   NSView* AcceleratedWidgetGetNSView() const override;
-  bool AcceleratedWidgetShouldIgnoreBackpressure() const override;
   void AcceleratedWidgetGetVSyncParameters(
       base::TimeTicks* timebase, base::TimeDelta* interval) const override;
-  void AcceleratedWidgetSwapCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info) override;
-  void AcceleratedWidgetHitError() override;
+  void AcceleratedWidgetSwapCompleted() override;
 
   // Overridden from BridgedNativeWidgetOwner:
   NSWindow* GetNSWindow() override;

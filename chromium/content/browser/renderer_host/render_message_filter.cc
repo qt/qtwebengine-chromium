@@ -4,17 +4,22 @@
 
 #include "content/browser/renderer_host/render_message_filter.h"
 
+#include <errno.h>
+#include <string.h>
 #include <map>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
+#include "build/build_config.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -74,7 +79,6 @@
 
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/media_throttler.h"
-#include "media/base/android/webaudio_media_codec_bridge.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -84,10 +88,8 @@
 namespace content {
 namespace {
 
-const uint32 kFilteredMessageClasses[] = {
-  ChildProcessMsgStart,
-  RenderProcessMsgStart,
-  ViewMsgStart,
+const uint32_t kFilteredMessageClasses[] = {
+    ChildProcessMsgStart, RenderProcessMsgStart, ViewMsgStart,
 };
 
 #if defined(OS_WIN)
@@ -96,13 +98,6 @@ const uint32 kFilteredMessageClasses[] = {
 // object.
 base::LazyInstance<gfx::ColorProfile>::Leaky g_color_profile =
     LAZY_INSTANCE_INITIALIZER;
-#endif
-
-#if defined(OS_ANDROID)
-void CloseWebAudioFileDescriptor(int fd) {
-  if (close(fd))
-    VLOG(1) << "Couldn't close output webaudio fd: " << strerror(errno);
-}
 #endif
 
 }  // namespace
@@ -146,8 +141,6 @@ RenderMessageFilter::~RenderMessageFilter() {
 bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderMessageFilter, message)
-    IPC_MESSAGE_HANDLER(RenderProcessHostMsg_GetProcessMemorySizes,
-                        OnGetProcessMemorySizes)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GenerateRoutingID, OnGenerateRoutingID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnCreateWindow)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWidget, OnCreateWidget)
@@ -201,9 +194,6 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnGetMonitorColorProfile)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
-#if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
-#endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -211,6 +201,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
 }
 
 void RenderMessageFilter::OnDestruct() const {
+  const_cast<RenderMessageFilter*>(this)->resource_context_ = nullptr;
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
@@ -235,9 +226,7 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
 
 void RenderMessageFilter::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
-    int* route_id,
-    int* main_frame_route_id,
-    int64* cloned_session_storage_namespace_id) {
+    ViewHostMsg_CreateWindow_Reply* reply) {
   bool no_javascript_access;
 
   bool can_create_window =
@@ -259,9 +248,10 @@ void RenderMessageFilter::OnCreateWindow(
           &no_javascript_access);
 
   if (!can_create_window) {
-    *route_id = MSG_ROUTING_NONE;
-    *main_frame_route_id = MSG_ROUTING_NONE;
-    *cloned_session_storage_namespace_id = 0;
+    reply->route_id = MSG_ROUTING_NONE;
+    reply->main_frame_route_id = MSG_ROUTING_NONE;
+    reply->main_frame_widget_route_id = MSG_ROUTING_NONE;
+    reply->cloned_session_storage_namespace_id = 0;
     return;
   }
 
@@ -269,14 +259,12 @@ void RenderMessageFilter::OnCreateWindow(
   scoped_refptr<SessionStorageNamespaceImpl> cloned_namespace =
       new SessionStorageNamespaceImpl(dom_storage_context_.get(),
                                       params.session_storage_namespace_id);
-  *cloned_session_storage_namespace_id = cloned_namespace->id();
+  reply->cloned_session_storage_namespace_id = cloned_namespace->id();
 
-  render_widget_helper_->CreateNewWindow(params,
-                                         no_javascript_access,
-                                         PeerHandle(),
-                                         route_id,
-                                         main_frame_route_id,
-                                         cloned_namespace.get());
+  render_widget_helper_->CreateNewWindow(
+      params, no_javascript_access, PeerHandle(), &reply->route_id,
+      &reply->main_frame_route_id, &reply->main_frame_widget_route_id,
+      cloned_namespace.get());
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
@@ -289,24 +277,6 @@ void RenderMessageFilter::OnCreateFullscreenWidget(int opener_id,
                                                    int* route_id) {
   render_widget_helper_->CreateNewFullscreenWidget(opener_id, route_id);
 }
-
-void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
-                                                  size_t* shared_bytes) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  using base::ProcessMetrics;
-#if !defined(OS_MACOSX) || defined(OS_IOS)
-  scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
-      PeerHandle()));
-#else
-  scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
-      PeerHandle(), BrowserChildProcessHost::GetPortProvider()));
-#endif
-  if (!metrics->GetMemoryBytes(private_bytes, shared_bytes)) {
-    *private_bytes = 0;
-    *shared_bytes = 0;
-  }
-}
-
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
   *route_id = render_widget_helper_->GetNextRoutingID();
@@ -399,6 +369,9 @@ void RenderMessageFilter::DownloadUrl(int render_view_id,
                                       const Referrer& referrer,
                                       const base::string16& suggested_name,
                                       const bool use_prompt) const {
+  if (!resource_context_)
+    return;
+
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
   save_info->prompt_for_save_location = use_prompt;
@@ -407,17 +380,10 @@ void RenderMessageFilter::DownloadUrl(int render_view_id,
           url, net::DEFAULT_PRIORITY, NULL));
   RecordDownloadSource(INITIATED_BY_RENDERER);
   resource_dispatcher_host_->BeginDownload(
-      request.Pass(),
-      referrer,
+      std::move(request), referrer,
       true,  // is_content_initiated
-      resource_context_,
-      render_process_id_,
-      render_view_id,
-      render_frame_id,
-      false,
-      false,
-      save_info.Pass(),
-      DownloadItem::kInvalidId,
+      resource_context_, render_process_id_, render_view_id, render_frame_id,
+      false, false, std::move(save_info), DownloadItem::kInvalidId,
       ResourceDispatcherHostImpl::DownloadStartedCallback());
 }
 
@@ -446,7 +412,7 @@ void RenderMessageFilter::OnSaveImageFromDataURL(int render_view_id,
 }
 
 void RenderMessageFilter::AllocateSharedMemoryOnFileThread(
-    uint32 buffer_size,
+    uint32_t buffer_size,
     IPC::Message* reply_msg) {
   base::SharedMemoryHandle handle;
   ChildProcessHostImpl::AllocateSharedMemory(buffer_size, PeerHandle(),
@@ -456,7 +422,7 @@ void RenderMessageFilter::AllocateSharedMemoryOnFileThread(
   Send(reply_msg);
 }
 
-void RenderMessageFilter::OnAllocateSharedMemory(uint32 buffer_size,
+void RenderMessageFilter::OnAllocateSharedMemory(uint32_t buffer_size,
                                                  IPC::Message* reply_msg) {
   BrowserThread::PostTask(
       BrowserThread::FILE_USER_BLOCKING, FROM_HERE,
@@ -465,7 +431,7 @@ void RenderMessageFilter::OnAllocateSharedMemory(uint32 buffer_size,
 }
 
 void RenderMessageFilter::AllocateSharedBitmapOnFileThread(
-    uint32 buffer_size,
+    uint32_t buffer_size,
     const cc::SharedBitmapId& id,
     IPC::Message* reply_msg) {
   base::SharedMemoryHandle handle;
@@ -476,7 +442,7 @@ void RenderMessageFilter::AllocateSharedBitmapOnFileThread(
   Send(reply_msg);
 }
 
-void RenderMessageFilter::OnAllocateSharedBitmap(uint32 buffer_size,
+void RenderMessageFilter::OnAllocateSharedBitmap(uint32_t buffer_size,
                                                  const cc::SharedBitmapId& id,
                                                  IPC::Message* reply_msg) {
   BrowserThread::PostTask(
@@ -502,7 +468,7 @@ void RenderMessageFilter::OnDeletedSharedBitmap(const cc::SharedBitmapId& id) {
 }
 
 void RenderMessageFilter::AllocateLockedDiscardableSharedMemoryOnFileThread(
-    uint32 size,
+    uint32_t size,
     DiscardableSharedMemoryId id,
     IPC::Message* reply_msg) {
   base::SharedMemoryHandle handle;
@@ -515,7 +481,7 @@ void RenderMessageFilter::AllocateLockedDiscardableSharedMemoryOnFileThread(
 }
 
 void RenderMessageFilter::OnAllocateLockedDiscardableSharedMemory(
-    uint32 size,
+    uint32_t size,
     DiscardableSharedMemoryId id,
     IPC::Message* reply_msg) {
   BrowserThread::PostTask(
@@ -540,19 +506,6 @@ void RenderMessageFilter::OnDeletedDiscardableSharedMemory(
           this, id));
 }
 
-net::URLRequestContext* RenderMessageFilter::GetRequestContextForURL(
-    const GURL& url) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  net::URLRequestContext* context =
-      GetContentClient()->browser()->OverrideRequestContextForURL(
-          url, resource_context_);
-  if (!context)
-    context = request_context_->GetURLRequestContext();
-
-  return context;
-}
-
 void RenderMessageFilter::OnCacheableMetadataAvailable(
     const GURL& url,
     base::Time expected_response_time,
@@ -575,10 +528,14 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
                        data.size());
 }
 
-void RenderMessageFilter::OnKeygen(uint32 key_size_index,
+void RenderMessageFilter::OnKeygen(uint32_t key_size_index,
                                    const std::string& challenge_string,
                                    const GURL& url,
+                                   const GURL& top_origin,
                                    IPC::Message* reply_msg) {
+  if (!resource_context_)
+    return;
+
   // Map displayed strings indicating level of keysecurity in the <keygen>
   // menu to the key size in bits. (See SSLKeyGeneratorChromium.cpp in WebCore.)
   int key_size_in_bits;
@@ -594,6 +551,13 @@ void RenderMessageFilter::OnKeygen(uint32 key_size_index,
       RenderProcessHostMsg_Keygen::WriteReplyParams(reply_msg, std::string());
       Send(reply_msg);
       return;
+  }
+
+  if (!GetContentClient()->browser()->AllowKeygen(top_origin,
+                                                  resource_context_)) {
+    RenderProcessHostMsg_Keygen::WriteReplyParams(reply_msg, std::string());
+    Send(reply_msg);
+    return;
   }
 
   resource_context_->CreateKeygenHandler(
@@ -643,35 +607,9 @@ void RenderMessageFilter::OnMediaLogEvents(
     media_internals_->OnMediaEvents(render_process_id_, events);
 }
 
-#if defined(OS_ANDROID)
-void RenderMessageFilter::OnWebAudioMediaCodec(
-    base::SharedMemoryHandle encoded_data_handle,
-    base::FileDescriptor pcm_output,
-    uint32_t data_size) {
-  if (!MediaThrottler::GetInstance()->RequestDecoderResources()) {
-    base::WorkerPool::PostTask(
-        FROM_HERE,
-        base::Bind(&CloseWebAudioFileDescriptor, pcm_output.fd),
-        true);
-    VLOG(1) << "Cannot decode audio data due to throttling";
-  } else {
-    // Let a WorkerPool handle this request since the WebAudio
-    // MediaCodec bridge is slow and can block while sending the data to
-    // the renderer.
-    base::WorkerPool::PostTask(
-        FROM_HERE,
-        base::Bind(&media::WebAudioMediaCodecBridge::RunWebAudioMediaCodec,
-                   encoded_data_handle, pcm_output, data_size,
-                   base::Bind(&MediaThrottler::OnDecodeRequestFinished,
-                              base::Unretained(MediaThrottler::GetInstance()))),
-        true);
-  }
-}
-#endif
-
 void RenderMessageFilter::OnAllocateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
-                                                    uint32 width,
-                                                    uint32 height,
+                                                    uint32_t width,
+                                                    uint32_t height,
                                                     gfx::BufferFormat format,
                                                     gfx::BufferUsage usage,
                                                     IPC::Message* reply) {
@@ -703,11 +641,11 @@ void RenderMessageFilter::GpuMemoryBufferAllocated(
 
 void RenderMessageFilter::OnDeletedGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   DCHECK(BrowserGpuMemoryBufferManager::current());
 
   BrowserGpuMemoryBufferManager::current()->ChildProcessDeletedGpuMemoryBuffer(
-      id, PeerHandle(), render_process_id_, sync_point);
+      id, PeerHandle(), render_process_id_, sync_token);
 }
 
 }  // namespace content

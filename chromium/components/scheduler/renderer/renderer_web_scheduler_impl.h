@@ -9,24 +9,25 @@
 
 namespace scheduler {
 
-class RendererScheduler;
+class RendererSchedulerImpl;
 
 class SCHEDULER_EXPORT RendererWebSchedulerImpl : public WebSchedulerImpl {
  public:
-  explicit RendererWebSchedulerImpl(RendererScheduler* child_scheduler);
+  explicit RendererWebSchedulerImpl(RendererSchedulerImpl* renderer_scheduler);
 
   ~RendererWebSchedulerImpl() override;
 
   // blink::WebScheduler implementation:
   void suspendTimerQueue() override;
   void resumeTimerQueue() override;
-  blink::WebFrameHostScheduler* createFrameHostScheduler() override;
+  blink::WebPassOwnPtr<blink::WebViewScheduler> createWebViewScheduler(
+      blink::WebView* web_view) override;
   void addPendingNavigation() override;
   void removePendingNavigation() override;
   void onNavigationStarted() override;
 
  private:
-  RendererScheduler* renderer_scheduler_;  // NOT OWNED
+  RendererSchedulerImpl* renderer_scheduler_;  // NOT OWNED
 };
 
 }  // namespace scheduler

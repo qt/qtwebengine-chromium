@@ -52,13 +52,14 @@ public:
 
     // SVGAnimatedPropertyBase:
     SVGPropertyBase* currentValueBase() override;
+    const SVGPropertyBase& baseValueBase() const override;
     bool isAnimating() const override;
     PassRefPtrWillBeRawPtr<SVGPropertyBase> createAnimatedValue() override;
     void setAnimatedValue(PassRefPtrWillBeRawPtr<SVGPropertyBase>) override;
     void animationEnded() override;
     bool needsSynchronizeAttribute() override;
 
-    void setBaseValueAsString(const String& value, SVGParsingError& parseError);
+    SVGParsingError setBaseValueAsString(const String&);
 
     SVGStringList* value() { return m_value.get(); }
     SVGStringListTearOff* tearOff();

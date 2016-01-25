@@ -25,13 +25,13 @@
  *
  */
 
-#include "config.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScheduledAction.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8AbstractEventListener.h"
 #include "bindings/core/v8/V8CacheOptions.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/AddConsoleMessageTask.h"
@@ -74,13 +74,13 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     : m_url(url)
     , m_userAgent(userAgent)
     , m_v8CacheOptions(V8CacheOptionsDefault)
-    , m_script(WorkerScriptController::create(this, thread->isolate()))
+    , m_script(WorkerOrWorkletScriptController::create(this, thread->isolate()))
     , m_thread(thread)
     , m_workerInspectorController(adoptRefWillBeNoop(new WorkerInspectorController(this)))
     , m_closing(false)
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_workerClients(workerClients)
-    , m_timers(Platform::current()->currentThread()->scheduler()->timerTaskRunner())
+    , m_timers(Platform::current()->currentThread()->scheduler()->timerTaskRunner()->adoptClone())
     , m_timeOrigin(timeOrigin)
     , m_messageStorage(ConsoleMessageStorage::create())
     , m_workerExceptionUniqueIdentifier(0)
@@ -137,7 +137,7 @@ KURL WorkerGlobalScope::completeURL(const String& url) const
     return KURL(m_url, url);
 }
 
-String WorkerGlobalScope::userAgent(const KURL&) const
+String WorkerGlobalScope::userAgent() const
 {
     return m_userAgent;
 }
@@ -145,11 +145,6 @@ String WorkerGlobalScope::userAgent(const KURL&) const
 void WorkerGlobalScope::disableEval(const String& errorMessage)
 {
     m_script->disableEval(errorMessage);
-}
-
-double WorkerGlobalScope::timerAlignmentInterval() const
-{
-    return DOMTimer::visiblePageAlignmentInterval();
 }
 
 DOMTimerCoordinator* WorkerGlobalScope::timers()
@@ -211,6 +206,14 @@ void WorkerGlobalScope::dispose()
 
     // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,
     // which become dangling once Heap is destroyed.
+    for (auto it = m_eventListeners.begin(); it != m_eventListeners.end(); ) {
+        RefPtrWillBeRawPtr<V8AbstractEventListener> listener = *it;
+        // clearListenerObject() will unregister the listener from
+        // m_eventListeners, and invalidate the iterator, so we have to advance
+        // it first.
+        ++it;
+        listener->clearListenerObject();
+    }
     removeAllEventListeners();
 
     clearScript();
@@ -283,7 +286,7 @@ EventTarget* WorkerGlobalScope::errorEventTarget()
 void WorkerGlobalScope::logExceptionToConsole(const String& errorMessage, int, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
 {
     unsigned long exceptionId = ++m_workerExceptionUniqueIdentifier;
-    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorMessage, sourceURL, lineNumber);
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorMessage, sourceURL, lineNumber, columnNumber);
     consoleMessage->setCallStack(callStack);
     m_pendingMessages.set(exceptionId, consoleMessage);
 
@@ -297,11 +300,8 @@ void WorkerGlobalScope::reportBlockedScriptExecutionToInspector(const String& di
 
 void WorkerGlobalScope::addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleMessage)
 {
+    ASSERT(isContextThread());
     RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = prpConsoleMessage;
-    if (!isContextThread()) {
-        postTask(FROM_HERE, AddConsoleMessageTask::create(consoleMessage->source(), consoleMessage->level(), consoleMessage->message()));
-        return;
-    }
     thread()->workerReportingProxy().reportConsoleMessage(consoleMessage);
     addMessageToWorkerConsole(consoleMessage.release());
 }
@@ -325,6 +325,19 @@ bool WorkerGlobalScope::isJSExecutionForbidden() const
 WorkerEventQueue* WorkerGlobalScope::eventQueue() const
 {
     return m_eventQueue.get();
+}
+
+void WorkerGlobalScope::registerEventListener(V8AbstractEventListener* eventListener)
+{
+    bool newEntry = m_eventListeners.add(eventListener).isNewEntry;
+    RELEASE_ASSERT(newEntry);
+}
+
+void WorkerGlobalScope::deregisterEventListener(V8AbstractEventListener* eventListener)
+{
+    auto it = m_eventListeners.find(eventListener);
+    RELEASE_ASSERT(it != m_eventListeners.end());
+    m_eventListeners.remove(it);
 }
 
 void WorkerGlobalScope::countFeature(UseCounter::Feature) const
@@ -407,6 +420,7 @@ DEFINE_TRACE(WorkerGlobalScope)
     visitor->trace(m_timers);
     visitor->trace(m_messageStorage);
     visitor->trace(m_pendingMessages);
+    visitor->trace(m_eventListeners);
     HeapSupplementable<WorkerGlobalScope>::trace(visitor);
 #endif
     ExecutionContext::trace(visitor);

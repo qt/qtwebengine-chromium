@@ -65,6 +65,28 @@ extern "C" {
 #endif
 
 
+/* Default implementations of RSA operations. */
+
+extern const RSA_METHOD RSA_default_method;
+
+size_t rsa_default_size(const RSA *rsa);
+int rsa_default_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
+                        const uint8_t *in, size_t in_len, int padding);
+int rsa_default_sign_raw(RSA *rsa, size_t *out_len, uint8_t *out,
+                         size_t max_out, const uint8_t *in, size_t in_len,
+                         int padding);
+int rsa_default_decrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
+                        const uint8_t *in, size_t in_len, int padding);
+int rsa_default_verify_raw(RSA *rsa, size_t *out_len, uint8_t *out,
+                           size_t max_out, const uint8_t *in, size_t in_len,
+                           int padding);
+int rsa_default_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
+                                  size_t len);
+int rsa_default_multi_prime_keygen(RSA *rsa, int bits, int num_primes,
+                                   BIGNUM *e_value, BN_GENCB *cb);
+int rsa_default_keygen(RSA *rsa, int bits, BIGNUM *e_value, BN_GENCB *cb);
+
+
 #define RSA_PKCS1_PADDING_SIZE 11
 
 
@@ -84,8 +106,8 @@ void BN_BLINDING_set_flags(BN_BLINDING *, unsigned long);
 BN_BLINDING *BN_BLINDING_create_param(
     BN_BLINDING *b, const BIGNUM *e, BIGNUM *m, BN_CTX *ctx,
     int (*bn_mod_exp)(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
-                      const BIGNUM *m, BN_CTX *ctx, BN_MONT_CTX *m_ctx),
-    BN_MONT_CTX *m_ctx);
+                      const BIGNUM *m, BN_CTX *ctx, const BN_MONT_CTX *mont),
+    const BN_MONT_CTX *mont);
 BN_BLINDING *rsa_setup_blinding(RSA *rsa, BN_CTX *in_ctx);
 
 
@@ -128,8 +150,8 @@ typedef struct RSA_additional_prime_st {
 
   /* r is the product of all primes (including p and q) prior to this one. */
   BIGNUM *r;
-  /* method_mod is managed by the |RSA_METHOD|. */
-  BN_MONT_CTX *method_mod;
+  /* mont is a |BN_MONT_CTX| modulo |prime|. */
+  BN_MONT_CTX *mont;
 } RSA_additional_prime;
 
 void RSA_additional_prime_free(RSA_additional_prime *ap);

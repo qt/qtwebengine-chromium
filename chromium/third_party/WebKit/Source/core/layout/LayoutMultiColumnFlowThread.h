@@ -28,14 +28,13 @@
 #define LayoutMultiColumnFlowThread_h
 
 #include "core/CoreExport.h"
+#include "core/layout/FragmentationContext.h"
 #include "core/layout/LayoutFlowThread.h"
 
 namespace blink {
 
 class LayoutMultiColumnSet;
 class LayoutMultiColumnSpannerPlaceholder;
-
-enum BalancedColumnHeightCalculation { GuessFromFlowThreadPortion, StretchBySpaceShortage };
 
 // Flow thread implementation for CSS multicol. This will be inserted as an anonymous child block of
 // the actual multicol container (i.e. the LayoutBlockFlow whose style computes to non-auto
@@ -101,12 +100,11 @@ enum BalancedColumnHeightCalculation { GuessFromFlowThreadPortion, StretchBySpac
 // turn out that the calculated height wasn't enough, though. We'll notice this at end of layout. If
 // we end up with too many columns (i.e. columns overflowing the multicol container), it wasn't
 // enough. In this case we need to increase the column heights. We'll increase them by the lowest
-// amount of space that could possibly affect where the breaks occur (see
-// LayoutMultiColumnSet::recordSpaceShortage()). We'll relayout (to find new break points and the
-// new lowest amount of space increase that could affect where they occur, in case we need another
-// round) until we've reached an acceptable height (where everything fits perfectly in the number of
-// columns that we have specified). The rule of thumb is that we shouldn't have to perform more of
-// such iterations than the number of columns that we have.
+// amount of space that could possibly affect where the breaks occur. We'll relayout (to find new
+// break points and the new lowest amount of space increase that could affect where they occur, in
+// case we need another round) until we've reached an acceptable height (where everything fits
+// perfectly in the number of columns that we have specified). The rule of thumb is that we
+// shouldn't have to perform more of such iterations than the number of columns that we have.
 //
 // For each layout iteration done for column balancing, the flow thread will need a deep layout if
 // column heights changed in the previous pass, since column height changes may affect break points
@@ -115,7 +113,7 @@ enum BalancedColumnHeightCalculation { GuessFromFlowThreadPortion, StretchBySpac
 //
 // There's also some documentation online:
 // https://sites.google.com/a/chromium.org/dev/developers/design-documents/multi-column-layout
-class CORE_EXPORT LayoutMultiColumnFlowThread : public LayoutFlowThread {
+class CORE_EXPORT LayoutMultiColumnFlowThread : public LayoutFlowThread, public FragmentationContext {
 public:
     ~LayoutMultiColumnFlowThread() override;
 
@@ -163,6 +161,8 @@ public:
     void setColumnHeightAvailable(LayoutUnit available) { m_columnHeightAvailable = available; }
     bool progressionIsInline() const { return m_progressionIsInline; }
 
+    LayoutUnit tallestUnbreakableLogicalHeight(LayoutUnit offsetInFlowThread) const;
+
     LayoutSize columnOffset(const LayoutPoint&) const final;
 
     // Do we need to set a new width and lay out?
@@ -176,16 +176,21 @@ public:
 
     LayoutMultiColumnSet* columnSetAtBlockOffset(LayoutUnit) const final;
 
-    void layoutColumns(bool relayoutChildren, SubtreeLayoutScope&);
-
-    bool isInInitialLayoutPass() const { return !m_inBalancingPass; }
+    void layoutColumns(SubtreeLayoutScope&);
 
     // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
     // flow thread, since the flow thread is not in a spanner's containing block chain (since the
     // containing block is the multicol container).
     void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread);
 
-    bool recalculateColumnHeights();
+    // Returns true if at least one column got a new height after flow thread layout (during column
+    // set layout), in which case we need another layout pass. Column heights may change after flow
+    // thread layout because of balancing. We may have to do multiple layout passes, depending on
+    // how the contents is fitted to the changed column heights. In most cases, laying out again
+    // twice or even just once will suffice. Sometimes we need more passes than that, though, but
+    // the number of retries should not exceed the number of columns, unless we have a bug.
+    bool columnHeightsChanged() const { return m_columnHeightsChanged; }
+    void setColumnHeightsChanged() { m_columnHeightsChanged = true; }
 
     void columnRuleStyleDidChange();
 
@@ -193,15 +198,19 @@ public:
     bool removeSpannerPlaceholderIfNoLongerValid(LayoutBox* spannerObjectInFlowThread);
 
     LayoutMultiColumnFlowThread* enclosingFlowThread() const;
-    LayoutUnit blockOffsetInEnclosingFlowThread() const { ASSERT(enclosingFlowThread()); return m_blockOffsetInEnclosingFlowThread; }
-
-    // Return true if we have a fragmentainer group that can hold a column at the specified flow thread block offset.
-    bool hasFragmentainerGroupForColumnAt(LayoutUnit offsetInFlowThread) const;
+    FragmentationContext* enclosingFragmentationContext() const;
+    LayoutUnit blockOffsetInEnclosingFragmentationContext() const { ASSERT(enclosingFragmentationContext()); return m_blockOffsetInEnclosingFragmentationContext; }
 
     // If we've run out of columns in the last fragmentainer group (column row), we have to insert
     // another fragmentainer group in order to hold more columns. This means that we're moving to
     // the next outer column (in the enclosing fragmentation context).
     void appendNewFragmentainerGroupIfNeeded(LayoutUnit offsetInFlowThread);
+
+    // Implementing FragmentationContext:
+    bool isFragmentainerLogicalHeightKnown() final;
+    LayoutUnit fragmentainerLogicalHeightAt(LayoutUnit blockOffset) final;
+    LayoutUnit remainingLogicalHeightAt(LayoutUnit blockOffset) final;
+    LayoutMultiColumnFlowThread* associatedFlowThread() final { return this; }
 
     const char* name() const override { return "LayoutMultiColumnFlowThread"; }
 
@@ -227,9 +236,7 @@ private:
     void computePreferredLogicalWidths() override;
     void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
     void updateLogicalWidth() override;
-    void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage) override;
-    void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight) override;
-    bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) override;
+    void contentWasLaidOut(LayoutUnit logicalTopInFlowThreadAfterPagination) override;
 
     // The last set we worked on. It's not to be used as the "current set". The concept of a
     // "current set" is difficult, since layout may jump back and forth in the tree, due to wrong
@@ -239,12 +246,11 @@ private:
     unsigned m_columnCount; // The used value of column-count
     LayoutUnit m_columnHeightAvailable; // Total height available to columns, or 0 if auto.
 
-    // Cached block offset from this flow thread to the enclosing flow thread, if any. In the
-    // coordinate space of the enclosing flow thread.
-    LayoutUnit m_blockOffsetInEnclosingFlowThread;
+    // Cached block offset from this flow thread to the enclosing fragmentation context, if any. In
+    // the coordinate space of the enclosing fragmentation context.
+    LayoutUnit m_blockOffsetInEnclosingFragmentationContext;
 
-    bool m_inBalancingPass; // Set when relayouting for column balancing.
-    bool m_needsColumnHeightsRecalculation; // Set when we need to recalculate the column set heights after layout.
+    bool m_columnHeightsChanged; // Set when column heights are out of sync with actual layout.
     bool m_progressionIsInline; // Always true for regular multicol. False for paged-y overflow.
     bool m_isBeingEvacuated;
 };

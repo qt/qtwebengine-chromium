@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/fileapi/File.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -113,7 +112,7 @@ File* File::create(const HeapVector<BlobOrStringOrArrayBufferViewOrArrayBuffer>&
     return File::create(fileName, lastModified, BlobDataHandle::create(blobData.release(), fileSize));
 }
 
-File* File::create(const char* data, size_t bytes, const String& mimeType)
+File* File::create(const unsigned char* data, size_t bytes, const String& mimeType)
 {
     ASSERT(data);
 

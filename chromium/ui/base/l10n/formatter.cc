@@ -4,6 +4,8 @@
 
 #include "ui/base/l10n/formatter.h"
 
+#include <limits.h>
+
 #include <vector>
 
 #include "base/logging.h"
@@ -151,7 +153,7 @@ scoped_ptr<icu::PluralRules> BuildPluralRules() {
     rules.reset(icu::PluralRules::createRules(fallback_rules, err));
     DCHECK(U_SUCCESS(err));
   }
-  return rules.Pass();
+  return rules;
 }
 
 void FormatNumberInPlural(const icu::MessageFormat& format, int number,
@@ -242,7 +244,7 @@ scoped_ptr<icu::MessageFormat> Formatter::CreateFallbackFormat(
   scoped_ptr<icu::MessageFormat> format(
       new icu::MessageFormat(pattern, error));
   DCHECK(U_SUCCESS(error));
-  return format.Pass();
+  return format;
 }
 
 scoped_ptr<icu::MessageFormat> Formatter::InitFormat(
@@ -254,7 +256,7 @@ scoped_ptr<icu::MessageFormat> Formatter::InitFormat(
         icu::UnicodeString(FALSE, pattern.data(), pattern.length()), error));
     DCHECK(U_SUCCESS(error));
     if (format.get())
-      return format.Pass();
+      return format;
   }
 
   scoped_ptr<icu::PluralRules> rules(BuildPluralRules());

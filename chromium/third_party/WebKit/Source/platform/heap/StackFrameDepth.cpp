@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/heap/StackFrameDepth.h"
 
 #include "public/platform/Platform.h"
@@ -42,8 +41,11 @@ void StackFrameDepth::enableStackLimit()
 
     size_t stackSize = getUnderestimatedStackSize();
     if (stackSize) {
-        size_t stackBase = reinterpret_cast<size_t>(getStackStart());
-        s_stackFrameLimit = stackBase - stackSize + kStackRoomSize;
+        Address stackBase = reinterpret_cast<Address>(getStackStart());
+        RELEASE_ASSERT(stackSize > static_cast<const size_t>(kStackRoomSize));
+        size_t stackRoom = stackSize - kStackRoomSize;
+        RELEASE_ASSERT(stackBase > reinterpret_cast<Address>(stackRoom));
+        s_stackFrameLimit = reinterpret_cast<uintptr_t>(stackBase - stackRoom);
         return;
     }
 
@@ -94,18 +96,28 @@ size_t StackFrameDepth::getUnderestimatedStackSize()
 
     return 0;
 #elif OS(MACOSX)
-    // FIXME: pthread_get_stacksize_np() returns shorter size than actual stack
-    // size for the main thread on Mavericks(10.9).
-    return 0;
-#elif OS(WIN) && COMPILER(MSVC)
-    // On Windows stack limits for the current thread are available in
-    // the thread information block (TIB). Its fields can be accessed through
-    // FS segment register on x86 and GS segment register on x86_64.
-#ifdef _WIN64
-    return __readgsqword(offsetof(NT_TIB64, StackBase)) - __readgsqword(offsetof(NT_TIB64, StackLimit));
+    // pthread_get_stacksize_np() returns too low a value for the main thread on
+    // OSX 10.9, http://mail.openjdk.java.net/pipermail/hotspot-dev/2013-October/011369.html
+    //
+    // Multiple workarounds possible, adopt the one made by https://github.com/robovm/robovm/issues/274
+    // (cf. https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/Multithreading/CreatingThreads/CreatingThreads.html
+    // on why hardcoding sizes is reasonable.)
+    if (pthread_main_np()) {
+#if defined(IOS)
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        size_t guardSize = 0;
+        pthread_attr_getguardsize(&attr, &guardSize);
+        // Stack size for the main thread is 1MB on iOS including the guard page size.
+        return (1 * 1024 * 1024 - guardSize);
 #else
-    return __readfsdword(offsetof(NT_TIB, StackBase)) - __readfsdword(offsetof(NT_TIB, StackLimit));
+        // Stack size for the main thread is 8MB on OSX excluding the guard page size.
+        return (8 * 1024 * 1024);
 #endif
+    }
+    return pthread_get_stacksize_np(pthread_self());
+#elif OS(WIN) && COMPILER(MSVC)
+    return ThreadState::current()->threadStackSize();
 #else
 #error "Stack frame size estimation not supported on this platform."
     return 0;

@@ -4,12 +4,14 @@
 
 #include "content/browser/compositor/software_output_device_x11.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
 #include "content/public/browser/browser_thread.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/compositor/compositor.h"
@@ -117,20 +119,11 @@ void SoftwareOutputDeviceX11::EndPaint() {
   SkImageInfo info;
   size_t rowBytes;
   const void* addr = surface_->peekPixels(&info, &rowBytes);
-  gfx::PutARGBImage(display_,
-                    attributes_.visual,
-                    attributes_.depth,
-                    compositor_->widget(),
-                    gc_,
-                    static_cast<const uint8*>(addr),
-                    viewport_pixel_size_.width(),
-                    viewport_pixel_size_.height(),
-                    rect.x(),
-                    rect.y(),
-                    rect.x(),
-                    rect.y(),
-                    rect.width(),
-                    rect.height());
+  gfx::PutARGBImage(
+      display_, attributes_.visual, attributes_.depth, compositor_->widget(),
+      gc_, static_cast<const uint8_t*>(addr), viewport_pixel_size_.width(),
+      viewport_pixel_size_.height(), rect.x(), rect.y(), rect.x(), rect.y(),
+      rect.width(), rect.height());
 }
 
 }  // namespace content

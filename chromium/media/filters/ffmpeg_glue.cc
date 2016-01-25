@@ -6,6 +6,7 @@
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/synchronization/lock.h"
 #include "media/base/container_names.h"
@@ -27,9 +28,9 @@ static int AVIOReadOperation(void* opaque, uint8_t* buf, int buf_size) {
   return result;
 }
 
-static int64 AVIOSeekOperation(void* opaque, int64 offset, int whence) {
+static int64_t AVIOSeekOperation(void* opaque, int64_t offset, int whence) {
   FFmpegURLProtocol* protocol = reinterpret_cast<FFmpegURLProtocol*>(opaque);
-  int64 new_offset = AVERROR(EIO);
+  int64_t new_offset = AVERROR(EIO);
   switch (whence) {
     case SEEK_SET:
       if (protocol->SetPosition(offset))
@@ -37,7 +38,7 @@ static int64 AVIOSeekOperation(void* opaque, int64 offset, int whence) {
       break;
 
     case SEEK_CUR:
-      int64 pos;
+      int64_t pos;
       if (!protocol->GetPosition(&pos))
         break;
       if (protocol->SetPosition(pos + offset))
@@ -45,7 +46,7 @@ static int64 AVIOSeekOperation(void* opaque, int64 offset, int whence) {
       break;
 
     case SEEK_END:
-      int64 size;
+      int64_t size;
       if (!protocol->GetSize(&size))
         break;
       if (protocol->SetPosition(size + offset))
@@ -161,9 +162,9 @@ bool FFmpegGlue::OpenContext() {
 
   // Attempt to recognize the container by looking at the first few bytes of the
   // stream. The stream position is left unchanged.
-  scoped_ptr<std::vector<uint8> > buffer(new std::vector<uint8>(8192));
+  scoped_ptr<std::vector<uint8_t>> buffer(new std::vector<uint8_t>(8192));
 
-  int64 pos = AVIOSeekOperation(avio_context_.get()->opaque, 0, SEEK_CUR);
+  int64_t pos = AVIOSeekOperation(avio_context_.get()->opaque, 0, SEEK_CUR);
   AVIOSeekOperation(avio_context_.get()->opaque, 0, SEEK_SET);
   int numRead = AVIOReadOperation(
       avio_context_.get()->opaque, buffer.get()->data(), buffer.get()->size());

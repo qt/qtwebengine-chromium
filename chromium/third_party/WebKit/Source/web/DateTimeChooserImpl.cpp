@@ -28,10 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "web/DateTimeChooserImpl.h"
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/InputTypeNames.h"
 #include "core/frame/FrameView.h"
 #include "core/html/forms/DateTimeChooserClient.h"
@@ -58,13 +57,20 @@ DateTimeChooserImpl::DateTimeChooserImpl(ChromeClientImpl* chromeClient, DateTim
     m_popup = m_chromeClient->openPagePopup(this);
 }
 
-PassRefPtr<DateTimeChooserImpl> DateTimeChooserImpl::create(ChromeClientImpl* chromeClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<DateTimeChooserImpl> DateTimeChooserImpl::create(ChromeClientImpl* chromeClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
-    return adoptRef(new DateTimeChooserImpl(chromeClient, client, parameters));
+    return adoptRefWillBeNoop(new DateTimeChooserImpl(chromeClient, client, parameters));
 }
 
 DateTimeChooserImpl::~DateTimeChooserImpl()
 {
+}
+
+DEFINE_TRACE(DateTimeChooserImpl)
+{
+    visitor->trace(m_chromeClient);
+    visitor->trace(m_client);
+    DateTimeChooser::trace(visitor);
 }
 
 void DateTimeChooserImpl::endChooser()
@@ -77,11 +83,6 @@ void DateTimeChooserImpl::endChooser()
 AXObject* DateTimeChooserImpl::rootAXObject()
 {
     return m_popup ? m_popup->rootAXObject() : 0;
-}
-
-IntSize DateTimeChooserImpl::contentSize()
-{
-    return IntSize(0, 0);
 }
 
 static String valueToDateTimeString(double value, AtomicString type)
@@ -127,6 +128,9 @@ void DateTimeChooserImpl::writeDocument(SharedBuffer* data)
     addString("</style></head><body><div id=main>Loading...</div><script>\n"
         "window.dialogArguments = {\n", data);
     addProperty("anchorRectInScreen", m_parameters.anchorRectInScreen, data);
+    IntRect inScreen = m_chromeClient->viewportToScreen(IntRect(0, 0, 100, 0));
+    float scaleFactor = 100.f / inScreen.width();
+    addProperty("zoomFactor", zoomFactor() / scaleFactor, data);
     addProperty("min", valueToDateTimeString(m_parameters.minimum, m_parameters.type), data);
     addProperty("max", valueToDateTimeString(m_parameters.maximum, m_parameters.type), data);
     addProperty("step", stepString, data);
@@ -184,7 +188,7 @@ Locale& DateTimeChooserImpl::locale()
 
 void DateTimeChooserImpl::setValueAndClosePopup(int numValue, const String& stringValue)
 {
-    RefPtr<DateTimeChooserImpl> protector(this);
+    RefPtrWillBeRawPtr<DateTimeChooserImpl> protector(this);
     if (numValue >= 0)
         setValue(stringValue);
     endChooser();
@@ -203,7 +207,7 @@ void DateTimeChooserImpl::closePopup()
 void DateTimeChooserImpl::didClosePopup()
 {
     ASSERT(m_client);
-    m_popup = 0;
+    m_popup = nullptr;
     m_client->didEndChooser();
 }
 

@@ -29,7 +29,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/NavigationScheduler.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -57,7 +56,7 @@ namespace blink {
 unsigned NavigationDisablerForBeforeUnload::s_navigationDisableCount = 0;
 
 class ScheduledNavigation : public NoBaseWillBeGarbageCollectedFinalized<ScheduledNavigation> {
-    WTF_MAKE_NONCOPYABLE(ScheduledNavigation); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScheduledNavigation);
+    WTF_MAKE_NONCOPYABLE(ScheduledNavigation); USING_FAST_MALLOC_WILL_BE_REMOVED(ScheduledNavigation);
 public:
     ScheduledNavigation(double delay, Document* originDocument, bool replacesCurrentItem, bool isLocationChange)
         : m_delay(delay)
@@ -417,7 +416,7 @@ void NavigationScheduler::startTimer()
     WebScheduler* scheduler = Platform::current()->currentThread()->scheduler();
     scheduler->addPendingNavigation();
     scheduler->loadingTaskRunner()->postDelayedTask(
-        FROM_HERE, m_navigateTaskFactory->cancelAndCreate(), m_redirect->delay() * 1000.0);
+        BLINK_FROM_HERE, m_navigateTaskFactory->cancelAndCreate(), m_redirect->delay() * 1000.0);
 
     InspectorInstrumentation::frameScheduledNavigation(m_frame, m_redirect->delay());
 }

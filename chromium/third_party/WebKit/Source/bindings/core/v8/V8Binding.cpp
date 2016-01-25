@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "bindings/core/v8/V8Binding.h"
 
 #include "bindings/core/v8/ScriptController.h"
@@ -44,7 +43,7 @@
 #include "bindings/core/v8/V8WorkerGlobalScope.h"
 #include "bindings/core/v8/V8XPathNSResolver.h"
 #include "bindings/core/v8/WindowProxy.h"
-#include "bindings/core/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "bindings/core/v8/custom/V8CustomXPathNSResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -114,7 +113,7 @@ PassRefPtrWillBeRawPtr<NodeFilter> toNodeFilter(v8::Local<v8::Value> callback, v
 bool toBooleanSlow(v8::Isolate* isolate, v8::Local<v8::Value> value, ExceptionState& exceptionState)
 {
     ASSERT(!value->IsBoolean());
-    v8::TryCatch block;
+    v8::TryCatch block(isolate);
     bool result = false;
     if (!v8Call(value->BooleanValue(isolate->GetCurrentContext()), result, block))
         exceptionState.rethrowV8Exception(block.Exception());
@@ -702,6 +701,10 @@ LocalDOMWindow* callingDOMWindow(v8::Isolate* isolate)
     return toLocalDOMWindow(toDOMWindow(context));
 }
 
+namespace {
+ExecutionContext* (*s_toExecutionContextForModules)(v8::Local<v8::Context>) = nullptr;
+}
+
 ExecutionContext* toExecutionContext(v8::Local<v8::Context> context)
 {
     if (context.IsEmpty())
@@ -713,8 +716,13 @@ ExecutionContext* toExecutionContext(v8::Local<v8::Context> context)
     v8::Local<v8::Object> workerWrapper = V8WorkerGlobalScope::findInstanceInPrototypeChain(global, context->GetIsolate());
     if (!workerWrapper.IsEmpty())
         return V8WorkerGlobalScope::toImpl(workerWrapper)->executionContext();
-    // FIXME: Is this line of code reachable?
-    return 0;
+    ASSERT(s_toExecutionContextForModules);
+    return (*s_toExecutionContextForModules)(context);
+}
+
+void registerToExecutionContextForModules(ExecutionContext* (*toExecutionContextForModules)(v8::Local<v8::Context>))
+{
+    s_toExecutionContextForModules = toExecutionContextForModules;
 }
 
 ExecutionContext* currentExecutionContext(v8::Isolate* isolate)
@@ -722,16 +730,17 @@ ExecutionContext* currentExecutionContext(v8::Isolate* isolate)
     return toExecutionContext(isolate->GetCurrentContext());
 }
 
-ExecutionContext* callingExecutionContext(v8::Isolate* isolate)
+ExecutionContext* enteredExecutionContext(v8::Isolate* isolate)
 {
-    v8::Local<v8::Context> context = isolate->GetCallingContext();
-    if (context.IsEmpty()) {
-        // Unfortunately, when processing script from a plugin, we might not
-        // have a calling context. In those cases, we fall back to the
-        // entered context.
-        context = isolate->GetEnteredContext();
+    ExecutionContext* context = toExecutionContext(isolate->GetEnteredContext());
+    if (!context) {
+        // We don't always have an entered execution context, for example during microtask callbacks from V8
+        // (where the entered context may be the DOM-in-JS context). In that case, we fall back
+        // to the current context.
+        context = currentExecutionContext(isolate);
+        ASSERT(context);
     }
-    return toExecutionContext(context);
+    return context;
 }
 
 Frame* toFrameIfNotDetached(v8::Local<v8::Context> context)
@@ -778,7 +787,7 @@ v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld& w
         if (LocalFrame* frame = toDocument(context)->frame())
             return toV8Context(frame, world);
     } else if (context->isWorkerGlobalScope()) {
-        if (WorkerScriptController* script = toWorkerGlobalScope(context)->script()) {
+        if (WorkerOrWorkletScriptController* script = toWorkerOrWorkletGlobalScope(context)->script()) {
             if (script->scriptState()->contextIsValid())
                 return script->scriptState()->context();
         }
@@ -791,6 +800,8 @@ v8::Local<v8::Context> toV8Context(Frame* frame, DOMWrapperWorld& world)
     if (!frame)
         return v8::Local<v8::Context>();
     v8::Local<v8::Context> context = toV8ContextEvenIfDetached(frame, world);
+    if (context.IsEmpty())
+        return v8::Local<v8::Context>();
     ScriptState* scriptState = ScriptState::from(context);
     if (scriptState->contextIsValid()) {
         ASSERT(toFrameIfNotDetached(context) == frame);
@@ -802,12 +813,12 @@ v8::Local<v8::Context> toV8Context(Frame* frame, DOMWrapperWorld& world)
 v8::Local<v8::Context> toV8ContextEvenIfDetached(Frame* frame, DOMWrapperWorld& world)
 {
     ASSERT(frame);
-    return frame->windowProxy(world)->context();
+    return frame->windowProxy(world)->contextIfInitialized();
 }
 
-void crashIfV8IsDead()
+void crashIfIsolateIsDead(v8::Isolate* isolate)
 {
-    if (v8::V8::IsDead()) {
+    if (isolate->IsDead()) {
         // FIXME: We temporarily deal with V8 internal error situations
         // such as out-of-memory by crashing the renderer.
         CRASH();

@@ -24,7 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/compositing/CompositingLayerAssigner.h"
 
 #include "core/inspector/InspectorTraceEvents.h"
@@ -142,7 +141,7 @@ CompositingReasons CompositingLayerAssigner::getReasonsPreventingSquashing(const
     if (squashingWouldExceedSparsityTolerance(layer, squashingState))
         return CompositingReasonSquashingSparsityExceeded;
 
-    if (layer->layoutObject()->style()->hasBlendMode())
+    if (layer->layoutObject()->style()->hasBlendMode() || squashingLayer.layoutObject()->style()->hasBlendMode())
         return CompositingReasonSquashingBlendingIsDisallowed;
 
     // FIXME: this is not efficient, since it walks up the tree. We should store these values on the CompositingInputsCache.
@@ -175,6 +174,10 @@ CompositingReasons CompositingLayerAssigner::getReasonsPreventingSquashing(const
     if (compositingInputs.nearestFixedPositionLayer != squashingLayerCompositingInputs.nearestFixedPositionLayer)
         return CompositingReasonSquashingNearestFixedPositionMismatch;
     ASSERT(layer->layoutObject()->style()->position() != FixedPosition);
+
+    if ((squashingLayer.layoutObject()->style()->subtreeWillChangeContents() && squashingLayer.layoutObject()->style()->isRunningAnimationOnCompositor())
+        || squashingLayer.layoutObject()->style()->shouldCompositeForCurrentAnimations())
+        return CompositingReasonSquashingLayerIsAnimating;
 
     return CompositingReasonNone;
 }

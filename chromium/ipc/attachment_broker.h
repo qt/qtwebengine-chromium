@@ -7,7 +7,10 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/process/process_handle.h"
+#include "base/synchronization/lock.h"
+#include "build/build_config.h"
 #include "ipc/brokerable_attachment.h"
 #include "ipc/ipc_export.h"
 #include "ipc/ipc_listener.h"
@@ -16,15 +19,21 @@
 // compile any code that calls member functions of AttachmentBroker. This
 // prevents symbols only used by AttachmentBroker and its subclasses from
 // making it into the binary.
-#if defined(OS_WIN)
+#if defined(OS_WIN) || (defined(OS_MACOSX) && !defined(OS_IOS))
 #define USE_ATTACHMENT_BROKER 1
 #else
 #define USE_ATTACHMENT_BROKER 0
 #endif  // defined(OS_WIN)
 
+namespace base {
+class SequencedTaskRunner;
+};
+
 namespace IPC {
 
 class AttachmentBroker;
+class Endpoint;
+
 // Classes that inherit from this abstract base class are capable of
 // communicating with a broker to send and receive attachments to Chrome IPC
 // messages.
@@ -63,8 +72,9 @@ class IPC_EXPORT AttachmentBroker : public Listener {
   // IPC::Channel to communicate with the broker process. This may be the same
   // IPC::Channel that is requesting the brokering of an attachment.
   // Returns true on success and false otherwise.
-  virtual bool SendAttachmentToProcess(const BrokerableAttachment* attachment,
-                                       base::ProcessId destination_process) = 0;
+  virtual bool SendAttachmentToProcess(
+      const scoped_refptr<BrokerableAttachment>& attachment,
+      base::ProcessId destination_process) = 0;
 
   // Returns whether the attachment was available. If the attachment was
   // available, populates the output parameter |attachment|.
@@ -72,8 +82,20 @@ class IPC_EXPORT AttachmentBroker : public Listener {
                            scoped_refptr<BrokerableAttachment>* attachment);
 
   // Any given observer should only ever add itself once to the observer list.
-  void AddObserver(Observer* observer);
+  // Notifications to |observer| will be posted to |runner|.
+  // The |observer| is expected to call RemoveObserver() before being destroyed.
+  void AddObserver(Observer* observer,
+                   const scoped_refptr<base::SequencedTaskRunner>& runner);
   void RemoveObserver(Observer* observer);
+
+  // These two methods should only be called by the broker process.
+  //
+  // Each unprivileged process should have one IPC channel on which it
+  // communicates attachment information with the broker process. In the broker
+  // process, these channels must be registered and deregistered with the
+  // Attachment Broker as they are created and destroyed.
+  virtual void RegisterCommunicationChannel(Endpoint* endpoint);
+  virtual void DeregisterCommunicationChannel(Endpoint* endpoint);
 
  protected:
   using AttachmentVector = std::vector<scoped_refptr<BrokerableAttachment>>;
@@ -85,8 +107,15 @@ class IPC_EXPORT AttachmentBroker : public Listener {
   // Informs the observers that a new BrokerableAttachment has been received.
   void NotifyObservers(const BrokerableAttachment::AttachmentId& id);
 
+  // Informs the observer identified by |unique_id| that a new
+  // BrokerableAttachment has been received.
+  void NotifyObserver(int unique_id,
+                      const BrokerableAttachment::AttachmentId& id);
+
   // This method is exposed for testing only.
   AttachmentVector* get_attachments() { return &attachments_; }
+
+  base::Lock* get_lock() { return &lock_; }
 
  private:
 #if defined(OS_WIN)
@@ -103,7 +132,24 @@ class IPC_EXPORT AttachmentBroker : public Listener {
   // better performance.
   AttachmentVector attachments_;
 
-  std::vector<Observer*> observers_;
+  struct ObserverInfo {
+    ObserverInfo();
+    ~ObserverInfo();
+
+    Observer* observer;
+    int unique_id;
+
+    // Notifications must be dispatched onto |runner|.
+    scoped_refptr<base::SequencedTaskRunner> runner;
+  };
+  std::vector<ObserverInfo> observers_;
+
+  // This member holds the last id given to an ObserverInfo.
+  int last_unique_id_;
+
+  // The AttachmentBroker can be accessed from any thread, so modifications to
+  // internal state must be guarded by a lock.
+  base::Lock lock_;
   DISALLOW_COPY_AND_ASSIGN(AttachmentBroker);
 };
 

@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 
 #include "core/inspector/InjectedScript.h"
@@ -57,11 +56,6 @@ DEFINE_TRACE(WorkerDebuggerAgent)
 {
     visitor->trace(m_inspectedWorkerGlobalScope);
     InspectorDebuggerAgent::trace(visitor);
-}
-
-InjectedScript WorkerDebuggerAgent::defaultInjectedScript()
-{
-    return m_v8DebuggerAgent->injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
 }
 
 void WorkerDebuggerAgent::muteConsole()

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/build_config.h"
 #include "content/public/common/url_constants.h"
 
 namespace content {
@@ -29,9 +30,10 @@ const char kChromeUIGpuHost[] = "gpu";
 const char kChromeUIHistogramHost[] = "histograms";
 const char kChromeUIMediaInternalsHost[] = "media-internals";
 const char kChromeUINetworkViewCacheHost[] = "view-http-cache";
+const char kChromeUINetworkErrorHost[] = "network-error";
+const char kChromeUINetworkErrorsListingHost[] = "network-errors";
 const char kChromeUIResourcesHost[] = "resources";
 const char kChromeUIServiceWorkerInternalsHost[] = "serviceworker-internals";
-const char kChromeUITcmallocHost[] = "tcmalloc";
 const char kChromeUITracingHost[] = "tracing";
 const char kChromeUIWebRTCInternalsHost[] = "webrtc-internals";
 
@@ -45,6 +47,8 @@ const char kChromeUIGpuCrashURL[] = "chrome://gpucrash";
 const char kChromeUIGpuHangURL[] = "chrome://gpuhang";
 const char kChromeUIHangURL[] = "chrome://hang";
 const char kChromeUIKillURL[] = "chrome://kill";
+const char kChromeUINetworkErrorURL[] = "chrome://network-error";
+const char kChromeUINetworkErrorsListingURL[] = "chrome://network-errors";
 const char kChromeUIPpapiFlashCrashURL[] = "chrome://ppapiflashcrash";
 const char kChromeUIPpapiFlashHangURL[] = "chrome://ppapiflashhang";
 const char kChromeUIServiceWorkerInternalsURL[] =

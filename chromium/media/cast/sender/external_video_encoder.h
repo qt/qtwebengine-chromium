@@ -5,9 +5,12 @@
 #ifndef MEDIA_CAST_SENDER_EXTERNAL_VIDEO_ENCODER_H_
 #define MEDIA_CAST_SENDER_EXTERNAL_VIDEO_ENCODER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/sender/size_adaptable_video_encoder_base.h"
 #include "media/cast/sender/video_encoder.h"
@@ -30,7 +33,7 @@ class ExternalVideoEncoder : public VideoEncoder {
       const scoped_refptr<CastEnvironment>& cast_environment,
       const VideoSenderConfig& video_config,
       const gfx::Size& frame_size,
-      uint32 first_frame_id,
+      uint32_t first_frame_id,
       const StatusChangeCallback& status_change_cb,
       const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
       const CreateVideoEncodeMemoryCallback& create_video_encode_memory_cb);
@@ -44,7 +47,6 @@ class ExternalVideoEncoder : public VideoEncoder {
       const FrameEncodedCallback& frame_encoded_callback) final;
   void SetBitRate(int new_bit_rate) final;
   void GenerateKeyFrame() final;
-  void LatestFrameIdToReference(uint32 frame_id) final;
 
  private:
   class VEAClientImpl;
@@ -54,7 +56,7 @@ class ExternalVideoEncoder : public VideoEncoder {
   // |client_| holds a reference to the new VEAClientImpl.
   void OnCreateVideoEncodeAccelerator(
       const VideoSenderConfig& video_config,
-      uint32 first_frame_id,
+      uint32_t first_frame_id,
       const StatusChangeCallback& status_change_cb,
       scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner,
       scoped_ptr<media::VideoEncodeAccelerator> vea);
@@ -109,7 +111,7 @@ class SizeAdaptableExternalVideoEncoder : public SizeAdaptableVideoEncoderBase {
 class QuantizerEstimator {
  public:
   enum {
-    NO_RESULT = 0,
+    NO_RESULT = -1,
     MIN_VP8_QUANTIZER = 4,
     MAX_VP8_QUANTIZER = 63,
   };
@@ -151,7 +153,7 @@ class QuantizerEstimator {
   // A cache of a subset of rows of pixels from the last frame examined.  This
   // is used to compute the entropy of the difference between frames, which in
   // turn is used to compute the entropy and quantizer.
-  scoped_ptr<uint8[]> last_frame_pixel_buffer_;
+  scoped_ptr<uint8_t[]> last_frame_pixel_buffer_;
   gfx::Size last_frame_size_;
 
   DISALLOW_COPY_AND_ASSIGN(QuantizerEstimator);

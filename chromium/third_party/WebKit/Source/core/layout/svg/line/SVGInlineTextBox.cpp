@@ -19,7 +19,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/layout/svg/line/SVGInlineTextBox.h"
 
 #include "core/editing/Editor.h"
@@ -89,10 +88,10 @@ int SVGInlineTextBox::offsetForPositionInFragment(const SVGTextFragment& fragmen
 
     // Eventually handle lengthAdjust="spacingAndGlyphs".
     // FIXME: Handle vertical text.
-    AffineTransform fragmentTransform;
-    fragment.buildFragmentTransform(fragmentTransform);
-    if (!fragmentTransform.isIdentity())
+    if (fragment.isTransformed()) {
+        AffineTransform fragmentTransform = fragment.buildFragmentTransform();
         textRun.setHorizontalGlyphStretch(narrowPrecisionToFloat(fragmentTransform.xScale()));
+    }
 
     return fragment.characterOffset - start() + lineLayoutItem.scaledFont().offsetForPosition(textRun, position * scalingFactor, includePartialGlyphs);
 }
@@ -137,9 +136,8 @@ LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPositi
     if (startPosition >= endPosition)
         return LayoutRect();
 
-    const ComputedStyle& style = layoutObject().styleRef();
+    const ComputedStyle& style = lineLayoutItem().styleRef();
 
-    AffineTransform fragmentTransform;
     FloatRect selectionRect;
     int fragmentStartPosition = 0;
     int fragmentEndPosition = 0;
@@ -154,8 +152,8 @@ LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPositi
             continue;
 
         FloatRect fragmentRect = selectionRectForTextFragment(fragment, fragmentStartPosition, fragmentEndPosition, style);
-        fragment.buildFragmentTransform(fragmentTransform);
-        fragmentRect = fragmentTransform.mapRect(fragmentRect);
+        if (fragment.isTransformed())
+            fragmentRect = fragment.buildFragmentTransform().mapRect(fragmentRect);
 
         selectionRect.unite(fragmentRect);
     }
@@ -215,39 +213,33 @@ bool SVGInlineTextBox::mapStartEndPositionsIntoFragmentCoordinates(const SVGText
     return startPosition < endPosition;
 }
 
-void SVGInlineTextBox::paintDocumentMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool) const
+void SVGInlineTextBox::paintDocumentMarker(GraphicsContext&, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&, bool) const
 {
     // SVG does not have support for generic document markers (e.g., spellchecking, etc).
 }
 
-void SVGInlineTextBox::paintTextMatchMarker(GraphicsContext* context, const LayoutPoint& point, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
+void SVGInlineTextBox::paintTextMatchMarkerForeground(const PaintInfo& paintInfo, const LayoutPoint& point, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
 {
-    SVGInlineTextBoxPainter(*this).paintTextMatchMarker(context, point, marker, style, font);
+    SVGInlineTextBoxPainter(*this).paintTextMatchMarkerForeground(paintInfo, point, marker, style, font);
+}
+
+void SVGInlineTextBox::paintTextMatchMarkerBackground(const PaintInfo& paintInfo, const LayoutPoint& point, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
+{
+    SVGInlineTextBoxPainter(*this).paintTextMatchMarkerBackground(paintInfo, point, marker, style, font);
 }
 
 LayoutRect SVGInlineTextBox::calculateBoundaries() const
 {
-    LayoutRect textRect;
-
     LineLayoutSVGInlineText lineLayoutItem = LineLayoutSVGInlineText(this->lineLayoutItem());
-
     float scalingFactor = lineLayoutItem.scalingFactor();
     ASSERT(scalingFactor);
-
     LayoutUnit baseline = lineLayoutItem.scaledFont().fontMetrics().floatAscent() / scalingFactor;
 
-    AffineTransform fragmentTransform;
-    unsigned textFragmentsSize = m_textFragments.size();
-    for (unsigned i = 0; i < textFragmentsSize; ++i) {
-        const SVGTextFragment& fragment = m_textFragments.at(i);
-        FloatRect fragmentRect(fragment.x, fragment.y - baseline, fragment.width, fragment.height);
-        fragment.buildFragmentTransform(fragmentTransform);
-        fragmentRect = fragmentTransform.mapRect(fragmentRect);
+    LayoutRect textBoundingRect;
+    for (const SVGTextFragment& fragment : m_textFragments)
+        textBoundingRect.unite(LayoutRect(fragment.overflowBoundingBox(baseline)));
 
-        textRect.unite(LayoutRect(fragmentRect));
-    }
-
-    return textRect;
+    return textBoundingRect;
 }
 
 bool SVGInlineTextBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit, LayoutUnit)
@@ -255,21 +247,29 @@ bool SVGInlineTextBox::nodeAtPoint(HitTestResult& result, const HitTestLocation&
     // FIXME: integrate with InlineTextBox::nodeAtPoint better.
     ASSERT(!isLineBreak());
 
-    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, result.hitTestRequest(), layoutObject().style()->pointerEvents());
-    bool isVisible = layoutObject().style()->visibility() == VISIBLE;
+    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, result.hitTestRequest(), lineLayoutItem().style()->pointerEvents());
+    bool isVisible = lineLayoutItem().style()->visibility() == VISIBLE;
     if (isVisible || !hitRules.requireVisible) {
         if (hitRules.canHitBoundingBox
-            || (hitRules.canHitStroke && (layoutObject().style()->svgStyle().hasStroke() || !hitRules.requireStroke))
-            || (hitRules.canHitFill && (layoutObject().style()->svgStyle().hasFill() || !hitRules.requireFill))) {
+            || (hitRules.canHitStroke && (lineLayoutItem().style()->svgStyle().hasStroke() || !hitRules.requireStroke))
+            || (hitRules.canHitFill && (lineLayoutItem().style()->svgStyle().hasFill() || !hitRules.requireFill))) {
             LayoutPoint boxOrigin(x(), y());
             boxOrigin.moveBy(accumulatedOffset);
             LayoutRect rect(boxOrigin, size());
-            // FIXME: both calls to rawValue() below is temporary and should be removed once the transition
-            // to LayoutUnit-based types is complete (crbug.com/321237)
             if (locationInContainer.intersects(rect)) {
-                layoutObject().updateHitTestResult(result, locationInContainer.point() - toLayoutSize(accumulatedOffset));
-                if (!result.addNodeToListBasedTestResult(layoutObject().node(), locationInContainer, rect))
-                    return true;
+                LineLayoutSVGInlineText lineLayoutItem = LineLayoutSVGInlineText(this->lineLayoutItem());
+                ASSERT(lineLayoutItem.scalingFactor());
+                float baseline = lineLayoutItem.scaledFont().fontMetrics().floatAscent() / lineLayoutItem.scalingFactor();
+
+                FloatPoint floatLocation = FloatPoint(locationInContainer.point());
+                for (const SVGTextFragment& fragment : m_textFragments) {
+                    FloatQuad fragmentQuad = fragment.boundingQuad(baseline);
+                    if (fragmentQuad.containsPoint(floatLocation)) {
+                        lineLayoutItem.updateHitTestResult(result, locationInContainer.point() - toLayoutSize(accumulatedOffset));
+                        if (!result.addNodeToListBasedTestResult(lineLayoutItem.node(), locationInContainer, rect))
+                            return true;
+                    }
+                }
             }
         }
     }

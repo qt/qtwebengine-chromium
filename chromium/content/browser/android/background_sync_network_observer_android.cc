@@ -4,6 +4,7 @@
 
 #include "content/browser/android/background_sync_network_observer_android.h"
 
+#include "base/android/context_utils.h"
 #include "jni/BackgroundSyncNetworkObserver_jni.h"
 
 namespace content {
@@ -50,7 +51,7 @@ BackgroundSyncNetworkObserverAndroid::Observer::~Observer() {
 
 void BackgroundSyncNetworkObserverAndroid::Observer::
     NotifyConnectionTypeChanged(JNIEnv* env,
-                                jobject jcaller,
+                                const JavaParamRef<jobject>& jcaller,
                                 jint new_connection_type) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(

@@ -2,18 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined(COMPILER_MSVC) && defined(ARCH_CPU_32_BITS)
-#include <mmintrin.h>
-#endif
+#include <stddef.h>
 #include <stdint.h>
 
 #include <limits>
+#include <type_traits>
 
 #include "base/compiler_specific.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
 #include "base/template_util.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(COMPILER_MSVC) && defined(ARCH_CPU_32_BITS)
+#include <mmintrin.h>
+#endif
 
 using std::numeric_limits;
 using base::CheckedNumeric;
@@ -30,7 +34,6 @@ using base::internal::RANGE_INVALID;
 using base::internal::RANGE_OVERFLOW;
 using base::internal::RANGE_UNDERFLOW;
 using base::internal::SignedIntegerForSize;
-using base::enable_if;
 
 // These tests deliberately cause arithmetic overflows. If the compiler is
 // aggressive enough, it can const fold these overflows. Disable warnings about
@@ -76,9 +79,9 @@ template <typename Dst>
 static void TestSpecializedArithmetic(
     const char* dst,
     int line,
-    typename enable_if<
-        numeric_limits<Dst>::is_integer&& numeric_limits<Dst>::is_signed,
-        int>::type = 0) {
+    typename std::enable_if<numeric_limits<Dst>::is_integer &&
+                                numeric_limits<Dst>::is_signed,
+                            int>::type = 0) {
   typedef numeric_limits<Dst> DstLimits;
   TEST_EXPECTED_VALIDITY(RANGE_OVERFLOW,
                          -CheckedNumeric<Dst>(DstLimits::min()));
@@ -132,9 +135,9 @@ template <typename Dst>
 static void TestSpecializedArithmetic(
     const char* dst,
     int line,
-    typename enable_if<
-        numeric_limits<Dst>::is_integer && !numeric_limits<Dst>::is_signed,
-        int>::type = 0) {
+    typename std::enable_if<numeric_limits<Dst>::is_integer &&
+                                !numeric_limits<Dst>::is_signed,
+                            int>::type = 0) {
   typedef numeric_limits<Dst> DstLimits;
   TEST_EXPECTED_VALIDITY(RANGE_VALID, -CheckedNumeric<Dst>(DstLimits::min()));
   TEST_EXPECTED_VALIDITY(RANGE_VALID,
@@ -172,7 +175,7 @@ template <typename Dst>
 void TestSpecializedArithmetic(
     const char* dst,
     int line,
-    typename enable_if<numeric_limits<Dst>::is_iec559, int>::type = 0) {
+    typename std::enable_if<numeric_limits<Dst>::is_iec559, int>::type = 0) {
   typedef numeric_limits<Dst> DstLimits;
   TEST_EXPECTED_VALIDITY(RANGE_VALID, -CheckedNumeric<Dst>(DstLimits::min()));
 
@@ -347,7 +350,6 @@ struct TestNumericConversion<Dst, Src, SIGN_PRESERVING_VALUE_PRESERVING> {
                   "Comparison must be sign preserving and value preserving");
 
     const CheckedNumeric<Dst> checked_dst = SrcLimits::max();
-    ;
     TEST_EXPECTED_VALIDITY(RANGE_VALID, checked_dst);
     if (MaxExponent<Dst>::value > MaxExponent<Src>::value) {
       if (MaxExponent<Dst>::value >= MaxExponent<Src>::value * 2 - 1) {
@@ -664,7 +666,24 @@ TEST(SafeNumerics, CastTests) {
   EXPECT_EQ(saturated_cast<float>(-double_large), -double_infinity);
   EXPECT_EQ(numeric_limits<int>::min(), saturated_cast<int>(double_small_int));
   EXPECT_EQ(numeric_limits<int>::max(), saturated_cast<int>(double_large_int));
+
+  float not_a_number = std::numeric_limits<float>::infinity() -
+                       std::numeric_limits<float>::infinity();
+  EXPECT_TRUE(std::isnan(not_a_number));
+  EXPECT_EQ(0, saturated_cast<int>(not_a_number));
 }
+
+#if GTEST_HAS_DEATH_TEST
+
+TEST(SafeNumerics, SaturatedCastChecks) {
+  float not_a_number = std::numeric_limits<float>::infinity() -
+                       std::numeric_limits<float>::infinity();
+  EXPECT_TRUE(std::isnan(not_a_number));
+  EXPECT_DEATH((saturated_cast<int, base::SaturatedCastNaNBehaviorCheck>(
+      not_a_number)), "");
+}
+
+#endif  // GTEST_HAS_DEATH_TEST
 
 TEST(SafeNumerics, IsValueInRangeForNumericType) {
   EXPECT_TRUE(IsValueInRangeForNumericType<uint32_t>(0));

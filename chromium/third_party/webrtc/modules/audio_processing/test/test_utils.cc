@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <utility>
+
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_processing/test/test_utils.h"
 
@@ -31,6 +33,35 @@ void RawFile::WriteSamples(const float* samples, size_t num_samples) {
   fwrite(samples, sizeof(*samples), num_samples, file_handle_);
 }
 
+ChannelBufferWavReader::ChannelBufferWavReader(rtc::scoped_ptr<WavReader> file)
+    : file_(std::move(file)) {}
+
+bool ChannelBufferWavReader::Read(ChannelBuffer<float>* buffer) {
+  RTC_CHECK_EQ(file_->num_channels(), buffer->num_channels());
+  interleaved_.resize(buffer->size());
+  if (file_->ReadSamples(interleaved_.size(), &interleaved_[0]) !=
+      interleaved_.size()) {
+    return false;
+  }
+
+  FloatS16ToFloat(&interleaved_[0], interleaved_.size(), &interleaved_[0]);
+  Deinterleave(&interleaved_[0], buffer->num_frames(), buffer->num_channels(),
+               buffer->channels());
+  return true;
+}
+
+ChannelBufferWavWriter::ChannelBufferWavWriter(rtc::scoped_ptr<WavWriter> file)
+    : file_(std::move(file)) {}
+
+void ChannelBufferWavWriter::Write(const ChannelBuffer<float>& buffer) {
+  RTC_CHECK_EQ(file_->num_channels(), buffer.num_channels());
+  interleaved_.resize(buffer.size());
+  Interleave(buffer.channels(), buffer.num_frames(), buffer.num_channels(),
+             &interleaved_[0]);
+  FloatToFloatS16(&interleaved_[0], interleaved_.size(), &interleaved_[0]);
+  file_->WriteSamples(&interleaved_[0], interleaved_.size());
+}
+
 void WriteIntData(const int16_t* data,
                   size_t length,
                   WavWriter* wav_file,
@@ -44,8 +75,8 @@ void WriteIntData(const int16_t* data,
 }
 
 void WriteFloatData(const float* const* data,
-                    int samples_per_channel,
-                    int num_channels,
+                    size_t samples_per_channel,
+                    size_t num_channels,
                     WavWriter* wav_file,
                     RawFile* raw_file) {
   size_t length = num_channels * samples_per_channel;
@@ -74,8 +105,8 @@ FILE* OpenFile(const std::string& filename, const char* mode) {
   return file;
 }
 
-int SamplesFromRate(int rate) {
-  return AudioProcessing::kChunkSizeMs * rate / 1000;
+size_t SamplesFromRate(int rate) {
+  return static_cast<size_t>(AudioProcessing::kChunkSizeMs * rate / 1000);
 }
 
 void SetFrameSampleRate(AudioFrame* frame,
@@ -85,35 +116,39 @@ void SetFrameSampleRate(AudioFrame* frame,
       sample_rate_hz / 1000;
 }
 
-AudioProcessing::ChannelLayout LayoutFromChannels(int num_channels) {
+AudioProcessing::ChannelLayout LayoutFromChannels(size_t num_channels) {
   switch (num_channels) {
     case 1:
       return AudioProcessing::kMono;
     case 2:
       return AudioProcessing::kStereo;
     default:
-      assert(false);
+      RTC_CHECK(false);
       return AudioProcessing::kMono;
   }
 }
 
-std::vector<Point> ParseArrayGeometry(const std::string& mic_positions,
-                                      size_t num_mics) {
+std::vector<Point> ParseArrayGeometry(const std::string& mic_positions) {
   const std::vector<float> values = ParseList<float>(mic_positions);
-  RTC_CHECK_EQ(values.size(), 3 * num_mics)
-      << "Could not parse mic_positions or incorrect number of points.";
+  const size_t num_mics =
+      rtc::CheckedDivExact(values.size(), static_cast<size_t>(3));
+  RTC_CHECK_GT(num_mics, 0u) << "mic_positions is not large enough.";
 
   std::vector<Point> result;
   result.reserve(num_mics);
   for (size_t i = 0; i < values.size(); i += 3) {
-    double x = values[i + 0];
-    double y = values[i + 1];
-    double z = values[i + 2];
-    result.push_back(Point(x, y, z));
+    result.push_back(Point(values[i + 0], values[i + 1], values[i + 2]));
   }
 
   return result;
 }
 
+std::vector<Point> ParseArrayGeometry(const std::string& mic_positions,
+                                      size_t num_mics) {
+  std::vector<Point> result = ParseArrayGeometry(mic_positions);
+  RTC_CHECK_EQ(result.size(), num_mics)
+      << "Could not parse mic_positions or incorrect number of points.";
+  return result;
+}
 
 }  // namespace webrtc

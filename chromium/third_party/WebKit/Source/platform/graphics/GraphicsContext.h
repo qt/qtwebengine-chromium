@@ -34,13 +34,13 @@
 #include "platform/geometry/FloatRoundedRect.h"
 #include "platform/graphics/DashArray.h"
 #include "platform/graphics/DrawLooperBuilder.h"
-#include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/GraphicsContextState.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "third_party/skia/include/core/SkMetaData.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -57,26 +57,27 @@ struct SkRect;
 
 namespace blink {
 
-class DisplayItemList;
 class ImageBuffer;
 class KURL;
+class PaintController;
+class Path;
 
 class PLATFORM_EXPORT GraphicsContext {
-    WTF_MAKE_NONCOPYABLE(GraphicsContext); WTF_MAKE_FAST_ALLOCATED(GraphicsContext);
+    WTF_MAKE_NONCOPYABLE(GraphicsContext); USING_FAST_MALLOC(GraphicsContext);
 public:
     enum DisabledMode {
         NothingDisabled = 0, // Run as normal.
         FullyDisabled = 1 // Do absolutely minimal work to remove the cost of the context from performance tests.
     };
 
-    explicit GraphicsContext(DisplayItemList*, DisabledMode = NothingDisabled, SkMetaData* = 0);
+    explicit GraphicsContext(PaintController&, DisabledMode = NothingDisabled, SkMetaData* = 0);
 
     ~GraphicsContext();
 
     SkCanvas* canvas() { return m_canvas; }
     const SkCanvas* canvas() const { return m_canvas; }
 
-    DisplayItemList* displayItemList() { return m_displayItemList; }
+    PaintController& paintController() { return m_paintController; }
 
     bool contextDisabled() const { return m_disabledState; }
 
@@ -154,9 +155,6 @@ public:
     void fillRoundedRect(const FloatRoundedRect&, const Color&);
     void fillDRRect(const FloatRoundedRect&, const FloatRoundedRect&, const Color&);
 
-    void clearRect(const FloatRect&);
-
-    void strokeRect(const FloatRect&);
     void strokeRect(const FloatRect&, float lineWidth);
 
     void drawPicture(const SkPicture*);
@@ -165,9 +163,11 @@ public:
     void drawImage(Image*, const IntRect&, SkXfermode::Mode = SkXfermode::kSrcOver_Mode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
     void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode = SkXfermode::kSrcOver_Mode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
 
+    void drawTiledImage(Image*, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
+        SkXfermode::Mode = SkXfermode::kSrcOver_Mode, const FloatSize& repeatSpacing = FloatSize());
     void drawTiledImage(Image*, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
         SkXfermode::Mode = SkXfermode::kSrcOver_Mode, const IntSize& repeatSpacing = IntSize());
-    void drawTiledImage(Image*, const IntRect& destRect, const IntRect& srcRect,
+    void drawTiledImage(Image*, const FloatRect& destRect, const FloatRect& srcRect,
         const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
         SkXfermode::Mode = SkXfermode::kSrcOver_Mode);
 
@@ -179,7 +179,7 @@ public:
 
     void clip(const IntRect& rect) { clipRect(rect); }
     void clip(const FloatRect& rect) { clipRect(rect); }
-    void clipRoundedRect(const FloatRoundedRect&, SkRegion::Op = SkRegion::kIntersect_Op);
+    void clipRoundedRect(const FloatRoundedRect&, SkRegion::Op = SkRegion::kIntersect_Op, AntiAliasingMode = AntiAliased);
     void clipOut(const IntRect& rect) { clipRect(rect, NotAntiAliased, SkRegion::kDifference_Op); }
     void clipOut(const FloatRect& rect) { clipRect(rect, NotAntiAliased, SkRegion::kDifference_Op); }
     void clipOut(const Path&);
@@ -234,7 +234,9 @@ public:
         LeftEdge = 1 << 4
     };
     typedef unsigned Edges;
-    void drawInnerShadow(const FloatRoundedRect&, const Color& shadowColor, const IntSize shadowOffset, int shadowBlur, int shadowSpread, Edges clippedEdges = NoEdge);
+    void drawInnerShadow(const FloatRoundedRect&, const Color& shadowColor,
+        const FloatSize& shadowOffset, float shadowBlur, float shadowSpread,
+        Edges clippedEdges = NoEdge);
 
     const SkPaint& fillPaint() const { return immutableState()->fillPaint(); }
 
@@ -248,9 +250,16 @@ public:
 
     SkFilterQuality computeFilterQuality(Image*, const FloatRect& dest, const FloatRect& src) const;
 
-    // URL drawing
+    // Sets target URL of a clickable area.
     void setURLForRect(const KURL&, const IntRect&);
+
+    // Sets destination of a URL fragment (in a URL pointing to the same web page) of a clickable area.
+    // When the area is clicked, the page should be scrolled to the location set by setURLDestinationLocation()
+    // for the destination whose name equals the fragment.
     void setURLFragmentForRect(const String& name, const IntRect&);
+
+    // Sets location of a URL destination (a.k.a. anchor) in the page.
+    void setURLDestinationLocation(const String& name, const IntPoint&);
 
     static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
@@ -332,19 +341,12 @@ private:
 
     void fillRectWithRoundedHole(const FloatRect&, const FloatRoundedRect& roundedHoleRect, const Color&);
 
-    bool isRecording() const;
-
     const SkMetaData& metaData() const { return m_metaData; }
 
     // null indicates painting is contextDisabled. Never delete this object.
     SkCanvas* m_canvas;
 
-    // This stores the canvas object used to construct the GraphicsContext, if any. It is only
-    // used when Slimming Paint is active.
-    SkCanvas* m_originalCanvas;
-
-    // This being null indicates not to paint into a DisplayItemList, and instead directly into the canvas.
-    DisplayItemList* m_displayItemList;
+    PaintController& m_paintController;
 
     // Paint states stack. Enables local drawing state change with save()/restore() calls.
     // This state controls the appearance of drawn content.

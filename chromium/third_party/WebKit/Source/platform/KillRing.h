@@ -32,8 +32,10 @@
 namespace blink {
 
 class PLATFORM_EXPORT KillRing {
-    WTF_MAKE_FAST_ALLOCATED(KillRing);
+    USING_FAST_MALLOC(KillRing);
+    WTF_MAKE_NONCOPYABLE(KillRing);
 public:
+    KillRing() { }
     void append(const String&);
     void prepend(const String&);
     String yank();

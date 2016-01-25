@@ -5,8 +5,8 @@
 #include "third_party/mojo/src/mojo/edk/system/remote_producer_data_pipe_impl.h"
 
 #include <string.h>
-
 #include <algorithm>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -72,7 +72,7 @@ RemoteProducerDataPipeImpl::RemoteProducerDataPipeImpl(
     size_t start_index,
     size_t current_num_bytes)
     : channel_endpoint_(channel_endpoint),
-      buffer_(buffer.Pass()),
+      buffer_(std::move(buffer)),
       start_index_(start_index),
       current_num_bytes_(current_num_bytes) {
   DCHECK(buffer_ || !current_num_bytes);
@@ -109,7 +109,7 @@ bool RemoteProducerDataPipeImpl::ProcessMessagesFromIncomingEndpoint(
     }
   }
 
-  *buffer = new_buffer.Pass();
+  *buffer = std::move(new_buffer);
   *buffer_num_bytes = current_num_bytes;
   return true;
 }
@@ -132,8 +132,7 @@ MojoResult RemoteProducerDataPipeImpl::ProducerWriteData(
 
 MojoResult RemoteProducerDataPipeImpl::ProducerBeginWriteData(
     UserPointer<void*> /*buffer*/,
-    UserPointer<uint32_t> /*buffer_num_bytes*/,
-    uint32_t /*min_num_bytes_to_write*/) {
+    UserPointer<uint32_t> /*buffer_num_bytes*/) {
   NOTREACHED();
   return MOJO_RESULT_INTERNAL;
 }
@@ -249,16 +248,8 @@ MojoResult RemoteProducerDataPipeImpl::ConsumerQueryData(
 
 MojoResult RemoteProducerDataPipeImpl::ConsumerBeginReadData(
     UserPointer<const void*> buffer,
-    UserPointer<uint32_t> buffer_num_bytes,
-    uint32_t min_num_bytes_to_read) {
+    UserPointer<uint32_t> buffer_num_bytes) {
   size_t max_num_bytes_to_read = GetMaxNumBytesToRead();
-  if (min_num_bytes_to_read > max_num_bytes_to_read) {
-    // Don't return "should wait" since you can't wait for a specified amount of
-    // data.
-    return producer_open() ? MOJO_RESULT_OUT_OF_RANGE
-                           : MOJO_RESULT_FAILED_PRECONDITION;
-  }
-
   // Don't go into a two-phase read if there's no data.
   if (max_num_bytes_to_read == 0) {
     return producer_open() ? MOJO_RESULT_SHOULD_WAIT
@@ -453,7 +444,7 @@ void RemoteProducerDataPipeImpl::MarkDataAsConsumed(size_t num_bytes) {
       MessageInTransit::Type::ENDPOINT_CLIENT,
       MessageInTransit::Subtype::ENDPOINT_CLIENT_DATA_PIPE_ACK,
       static_cast<uint32_t>(sizeof(ack_data)), &ack_data));
-  if (!channel_endpoint_->EnqueueMessage(message.Pass()))
+  if (!channel_endpoint_->EnqueueMessage(std::move(message)))
     Disconnect();
 }
 

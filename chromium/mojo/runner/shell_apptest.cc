@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
@@ -10,8 +12,6 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "mojo/application/public/cpp/application_impl.h"
-#include "mojo/application/public/cpp/application_test_base.h"
 #include "mojo/common/data_pipe_utils.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "mojo/runner/kPingable.h"
@@ -20,6 +20,8 @@
 #include "mojo/services/http_server/public/interfaces/http_server.mojom.h"
 #include "mojo/services/http_server/public/interfaces/http_server_factory.mojom.h"
 #include "mojo/services/network/public/interfaces/net_address.mojom.h"
+#include "mojo/shell/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/application_test_base.h"
 
 namespace mojo {
 namespace {
@@ -124,7 +126,7 @@ TEST_F(ShellHTTPAppTest, Http) {
                    EXPECT_EQ(GetURL("app"), app_url);
                    EXPECT_EQ(GetURL("app"), connection_url);
                    EXPECT_EQ("hello", message);
-                   base::MessageLoop::current()->Quit();
+                   base::MessageLoop::current()->QuitWhenIdle();
                  });
   base::RunLoop().Run();
 }
@@ -140,7 +142,7 @@ TEST_F(ShellHTTPAppTest, Redirect) {
                    EXPECT_EQ(GetURL("app"), app_url);
                    EXPECT_EQ(GetURL("app"), connection_url);
                    EXPECT_EQ("hello", message);
-                   base::MessageLoop::current()->Quit();
+                   base::MessageLoop::current()->QuitWhenIdle();
                  });
   base::RunLoop().Run();
 }
@@ -169,7 +171,7 @@ TEST_F(ShellHTTPAppTest, MAYBE_QueryHandling) {
       EXPECT_EQ(GetURL("app?foo"), connection_url);
     } else if (num_responses == 2) {
       EXPECT_EQ(GetURL("app?bar"), connection_url);
-      base::MessageLoop::current()->Quit();
+      base::MessageLoop::current()->QuitWhenIdle();
     } else {
       CHECK(false);
     }
@@ -189,7 +191,7 @@ TEST_F(ShellAppTest, MojoURLQueryHandling) {
                                base::CompareCase::SENSITIVE));
     EXPECT_EQ(app_url.To<std::string>() + "?foo", connection_url);
     EXPECT_EQ("hello", message);
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
   };
   pingable->Ping("hello", callback);
   base::RunLoop().Run();

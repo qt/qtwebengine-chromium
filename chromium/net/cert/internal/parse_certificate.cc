@@ -4,6 +4,8 @@
 
 #include "net/cert/internal/parse_certificate.h"
 
+#include <utility>
+
 #include "net/der/input.h"
 #include "net/der/parse_values.h"
 #include "net/der/parser.h"
@@ -169,6 +171,17 @@ bool ParseValidity(const der::Input& validity_tlv,
   // notAfter, so that will not be considered a "parsing" error here. Instead it
   // will be considered an expired certificate later when testing against the
   // current timestamp.
+  return true;
+}
+
+// Returns true if every bit in |bits| is zero (including empty).
+WARN_UNUSED_RESULT bool BitStringIsAllZeros(const der::BitString& bits) {
+  // Note that it is OK to read from the unused bits, since BitString parsing
+  // guarantees they are all zero.
+  for (size_t i = 0; i < bits.bytes().Length(); ++i) {
+    if (bits.bytes().UnsafeData()[i] != 0)
+      return false;
+  }
   return true;
 }
 
@@ -348,6 +361,240 @@ bool ParseTbsCertificate(const der::Input& tbs_tlv, ParsedTbsCertificate* out) {
   // By definition the input was a single TBSCertificate, so there shouldn't be
   // unconsumed data.
   if (parser.HasMore())
+    return false;
+
+  return true;
+}
+
+// From RFC 5280:
+//
+//    Extension  ::=  SEQUENCE  {
+//            extnID      OBJECT IDENTIFIER,
+//            critical    BOOLEAN DEFAULT FALSE,
+//            extnValue   OCTET STRING
+//                        -- contains the DER encoding of an ASN.1 value
+//                        -- corresponding to the extension type identified
+//                        -- by extnID
+//            }
+bool ParseExtension(const der::Input& extension_tlv, ParsedExtension* out) {
+  der::Parser parser(extension_tlv);
+
+  //    Extension  ::=  SEQUENCE  {
+  der::Parser extension_parser;
+  if (!parser.ReadSequence(&extension_parser))
+    return false;
+
+  //            extnID      OBJECT IDENTIFIER,
+  if (!extension_parser.ReadTag(der::kOid, &out->oid))
+    return false;
+
+  //            critical    BOOLEAN DEFAULT FALSE,
+  out->critical = false;
+  bool has_critical;
+  der::Input critical;
+  if (!extension_parser.ReadOptionalTag(der::kBool, &critical, &has_critical))
+    return false;
+  if (has_critical) {
+    if (!der::ParseBool(critical, &out->critical))
+      return false;
+    if (!out->critical)
+      return false;  // DER-encoding requires DEFAULT values be omitted.
+  }
+
+  //            extnValue   OCTET STRING
+  if (!extension_parser.ReadTag(der::kOctetString, &out->value))
+    return false;
+
+  // The Extension type does not have an extension point (everything goes in
+  // extnValue).
+  if (extension_parser.HasMore())
+    return false;
+
+  // By definition the input was a single Extension sequence, so there shouldn't
+  // be unconsumed data.
+  if (parser.HasMore())
+    return false;
+
+  return true;
+}
+
+der::Input KeyUsageOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-keyUsage OBJECT IDENTIFIER ::=  { id-ce 15 }
+  //
+  // In dotted notation: 2.5.29.15
+  static const uint8_t oid[] = {0x55, 0x1d, 0x0f};
+  return der::Input(oid);
+}
+
+der::Input SubjectAltNameOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-subjectAltName OBJECT IDENTIFIER ::=  { id-ce 17 }
+  //
+  // In dotted notation: 2.5.29.17
+  static const uint8_t oid[] = {0x55, 0x1d, 0x11};
+  return der::Input(oid);
+}
+
+der::Input BasicConstraintsOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-basicConstraints OBJECT IDENTIFIER ::=  { id-ce 19 }
+  //
+  // In dotted notation: 2.5.29.19
+  static const uint8_t oid[] = {0x55, 0x1d, 0x13};
+  return der::Input(oid);
+}
+
+der::Input NameConstraintsOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-nameConstraints OBJECT IDENTIFIER ::=  { id-ce 30 }
+  //
+  // In dotted notation: 2.5.29.30
+  static const uint8_t oid[] = {0x55, 0x1d, 0x1e};
+  return der::Input(oid);
+}
+
+der::Input CertificatePoliciesOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-certificatePolicies OBJECT IDENTIFIER ::=  { id-ce 32 }
+  //
+  // In dotted notation: 2.5.29.32
+  static const uint8_t oid[] = {0x55, 0x1d, 0x20};
+  return der::Input(oid);
+}
+
+der::Input PolicyConstraintsOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-policyConstraints OBJECT IDENTIFIER ::=  { id-ce 36 }
+  //
+  // In dotted notation: 2.5.29.36
+  static const uint8_t oid[] = {0x55, 0x1d, 0x24};
+  return der::Input(oid);
+}
+
+der::Input ExtKeyUsageOid() {
+  // From RFC 5280:
+  //
+  //     id-ce-extKeyUsage OBJECT IDENTIFIER ::= { id-ce 37 }
+  //
+  // In dotted notation: 2.5.29.37
+  static const uint8_t oid[] = {0x55, 0x1d, 0x25};
+  return der::Input(oid);
+}
+
+NET_EXPORT bool ParseExtensions(
+    const der::Input& extensions_tlv,
+    std::map<der::Input, ParsedExtension>* extensions) {
+  der::Parser parser(extensions_tlv);
+
+  //    Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
+  der::Parser extensions_parser;
+  if (!parser.ReadSequence(&extensions_parser))
+    return false;
+
+  // The Extensions SEQUENCE must contains at least 1 element (otherwise it
+  // should have been omitted).
+  if (!extensions_parser.HasMore())
+    return false;
+
+  extensions->clear();
+
+  while (extensions_parser.HasMore()) {
+    ParsedExtension extension;
+
+    der::Input extension_tlv;
+    if (!extensions_parser.ReadRawTLV(&extension_tlv))
+      return false;
+
+    if (!ParseExtension(extension_tlv, &extension))
+      return false;
+
+    bool is_duplicate =
+        !extensions->insert(std::make_pair(extension.oid, extension)).second;
+
+    // RFC 5280 says that an extension should not appear more than once.
+    if (is_duplicate)
+      return false;
+  }
+
+  // By definition the input was a single Extensions sequence, so there
+  // shouldn't be unconsumed data.
+  if (parser.HasMore())
+    return false;
+
+  return true;
+}
+
+bool ParseBasicConstraints(const der::Input& basic_constraints_tlv,
+                           ParsedBasicConstraints* out) {
+  der::Parser parser(basic_constraints_tlv);
+
+  //    BasicConstraints ::= SEQUENCE {
+  der::Parser sequence_parser;
+  if (!parser.ReadSequence(&sequence_parser))
+    return false;
+
+  //         cA                      BOOLEAN DEFAULT FALSE,
+  out->is_ca = false;
+  bool has_ca;
+  der::Input ca;
+  if (!sequence_parser.ReadOptionalTag(der::kBool, &ca, &has_ca))
+    return false;
+  if (has_ca) {
+    if (!der::ParseBool(ca, &out->is_ca))
+      return false;
+    // TODO(eroman): Should reject if CA was set to false, since
+    // DER-encoding requires DEFAULT values be omitted. In
+    // practice however there are a lot of certificates that use
+    // the broken encoding.
+  }
+
+  //         pathLenConstraint       INTEGER (0..MAX) OPTIONAL }
+  der::Input encoded_path_len;
+  if (!sequence_parser.ReadOptionalTag(der::kInteger, &encoded_path_len,
+                                       &out->has_path_len)) {
+    return false;
+  }
+  if (out->has_path_len) {
+    if (!der::ParseUint8(encoded_path_len, &out->path_len))
+      return false;
+  } else {
+    // Default initialize to 0 as a precaution.
+    out->path_len = 0;
+  }
+
+  // There shouldn't be any unconsumed data in the extension.
+  if (sequence_parser.HasMore())
+    return false;
+
+  // By definition the input was a single BasicConstraints sequence, so there
+  // shouldn't be unconsumed data.
+  if (parser.HasMore())
+    return false;
+
+  return true;
+}
+
+bool ParseKeyUsage(const der::Input& key_usage_tlv, der::BitString* key_usage) {
+  der::Parser parser(key_usage_tlv);
+  if (!parser.ReadBitString(key_usage))
+    return false;
+
+  // By definition the input was a single BIT STRING.
+  if (parser.HasMore())
+    return false;
+
+  // RFC 5280 section 4.2.1.3:
+  //
+  //     When the keyUsage extension appears in a certificate, at least
+  //     one of the bits MUST be set to 1.
+  if (BitStringIsAllZeros(*key_usage))
     return false;
 
   return true;

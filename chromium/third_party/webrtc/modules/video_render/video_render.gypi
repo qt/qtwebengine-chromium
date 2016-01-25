@@ -25,8 +25,8 @@
         'external/video_render_external_impl.cc',
         'external/video_render_external_impl.h',
         'i_video_render.h',
-        'include/video_render.h',
-        'include/video_render_defines.h',
+        'video_render.h',
+        'video_render_defines.h',
         'video_render_impl.h',
       ],
     },
@@ -149,13 +149,28 @@
                 '<(directx_sdk_path)/Include',
               ],
             }],
+            ['OS=="win" and clang==1', {
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # Disable warnings failing when compiling with Clang on Windows.
+                    # https://bugs.chromium.org/p/webrtc/issues/detail?id=5366
+                    '-Wno-comment',
+                    '-Wno-reorder',
+                    '-Wno-unused-value',
+                    '-Wno-unused-private-field',
+                  ],
+                },
+              },
+            }],
           ] # conditions
         },
       ],
     }], # build_with_chromium==0
-    ['include_tests==1', {
+    ['include_tests==1 and OS!="ios"', {
       'targets': [
         {
+          # Does not compile on iOS: webrtc:4755.
           'target_name': 'video_render_tests',
           'type': 'executable',
           'dependencies': [
@@ -197,7 +212,7 @@
           ] # conditions
         }, # video_render_module_test
       ], # targets
-    }], # include_tests==1
+    }], # include_tests==1 and OS!=ios
   ], # conditions
 }
 

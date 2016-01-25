@@ -11,25 +11,6 @@
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace content {
-namespace {
-
-void GetSupportedConfigurations(
-    std::vector<GpuMemoryBufferFactory::Configuration>* configurations) {
-  if (!ui::ClientNativePixmapFactory::GetInstance()) {
-    // unittests don't have to set ClientNativePixmapFactory.
-    return;
-  }
-  std::vector<ui::ClientNativePixmapFactory::Configuration>
-      native_pixmap_configurations =
-          ui::ClientNativePixmapFactory::GetInstance()
-              ->GetSupportedConfigurations();
-  for (auto& native_pixmap_configuration : native_pixmap_configurations) {
-    configurations->push_back({native_pixmap_configuration.format,
-                               native_pixmap_configuration.usage});
-  }
-}
-
-}  // namespace
 
 GpuMemoryBufferFactoryOzoneNativePixmap::
     GpuMemoryBufferFactoryOzoneNativePixmap() {}
@@ -41,20 +22,12 @@ GpuMemoryBufferFactoryOzoneNativePixmap::
 bool GpuMemoryBufferFactoryOzoneNativePixmap::
     IsGpuMemoryBufferConfigurationSupported(gfx::BufferFormat format,
                                             gfx::BufferUsage usage) {
-  std::vector<Configuration> configurations;
-  GetSupportedConfigurations(&configurations);
-  for (auto& configuration : configurations) {
-    if (configuration.format == format && configuration.usage == usage)
-      return true;
+  if (!ui::ClientNativePixmapFactory::GetInstance()) {
+    // unittests don't have to set ClientNativePixmapFactory.
+    return false;
   }
-
-  return false;
-}
-
-void GpuMemoryBufferFactoryOzoneNativePixmap::
-    GetSupportedGpuMemoryBufferConfigurations(
-        std::vector<Configuration>* configurations) {
-  GetSupportedConfigurations(configurations);
+  return ui::ClientNativePixmapFactory::GetInstance()->IsConfigurationSupported(
+      format, usage);
 }
 
 gfx::GpuMemoryBufferHandle
@@ -70,16 +43,16 @@ GpuMemoryBufferFactoryOzoneNativePixmap::CreateGpuMemoryBuffer(
           ->GetSurfaceFactoryOzone()
           ->CreateNativePixmap(surface_handle, size, format, usage);
   if (!pixmap.get()) {
-    LOG(ERROR) << "Failed to create pixmap " << size.width() << "x"
-               << size.height() << " format " << static_cast<int>(format)
-               << ", usage " << static_cast<int>(usage);
+    DLOG(ERROR) << "Failed to create pixmap " << size.width() << "x"
+                << size.height() << " format " << static_cast<int>(format)
+                << ", usage " << static_cast<int>(usage);
     return gfx::GpuMemoryBufferHandle();
   }
 
-  gfx::GpuMemoryBufferHandle handle;
-  handle.type = gfx::OZONE_NATIVE_PIXMAP;
-  handle.id = id;
-  handle.native_pixmap_handle = pixmap->ExportHandle();
+  gfx::GpuMemoryBufferHandle new_handle;
+  new_handle.type = gfx::OZONE_NATIVE_PIXMAP;
+  new_handle.id = id;
+  new_handle.native_pixmap_handle = pixmap->ExportHandle();
 
   {
     base::AutoLock lock(native_pixmaps_lock_);
@@ -88,7 +61,38 @@ GpuMemoryBufferFactoryOzoneNativePixmap::CreateGpuMemoryBuffer(
     native_pixmaps_[key] = pixmap;
   }
 
-  return handle;
+  return new_handle;
+}
+
+gfx::GpuMemoryBufferHandle
+GpuMemoryBufferFactoryOzoneNativePixmap::CreateGpuMemoryBufferFromHandle(
+    const gfx::GpuMemoryBufferHandle& handle,
+    gfx::GpuMemoryBufferId id,
+    const gfx::Size& size,
+    gfx::BufferFormat format,
+    int client_id) {
+  scoped_refptr<ui::NativePixmap> pixmap =
+      ui::OzonePlatform::GetInstance()
+          ->GetSurfaceFactoryOzone()
+          ->CreateNativePixmapFromHandle(handle.native_pixmap_handle);
+  if (!pixmap.get()) {
+    DLOG(ERROR) << "Failed to create pixmap from handle";
+    return gfx::GpuMemoryBufferHandle();
+  }
+
+  gfx::GpuMemoryBufferHandle new_handle;
+  new_handle.type = gfx::OZONE_NATIVE_PIXMAP;
+  new_handle.id = id;
+  new_handle.native_pixmap_handle = pixmap->ExportHandle();
+
+  {
+    base::AutoLock lock(native_pixmaps_lock_);
+    NativePixmapMapKey key(id.id, client_id);
+    DCHECK(native_pixmaps_.find(key) == native_pixmaps_.end());
+    native_pixmaps_[key] = pixmap;
+  }
+
+  return new_handle;
 }
 
 void GpuMemoryBufferFactoryOzoneNativePixmap::DestroyGpuMemoryBuffer(
@@ -104,7 +108,7 @@ gpu::ImageFactory* GpuMemoryBufferFactoryOzoneNativePixmap::AsImageFactory() {
   return this;
 }
 
-scoped_refptr<gfx::GLImage>
+scoped_refptr<gl::GLImage>
 GpuMemoryBufferFactoryOzoneNativePixmap::CreateImageForGpuMemoryBuffer(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,

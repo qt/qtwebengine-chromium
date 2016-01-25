@@ -20,11 +20,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "platform/graphics/filters/FESpecularLighting.h"
 
 #include "platform/graphics/filters/LightSource.h"
 #include "platform/text/TextStream.h"
+#include "wtf/MathExtras.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -92,7 +93,7 @@ float FESpecularLighting::specularExponent() const
 
 bool FESpecularLighting::setSpecularExponent(float specularExponent)
 {
-    specularExponent = std::min(std::max(specularExponent, 1.0f), 128.0f);
+    specularExponent = clampTo(specularExponent, 1.0f, 128.0f);
     if (m_specularExponent == specularExponent)
         return false;
     m_specularExponent = specularExponent;

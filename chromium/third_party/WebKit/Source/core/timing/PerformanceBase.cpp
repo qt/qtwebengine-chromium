@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/timing/PerformanceBase.h"
 
 #include "core/dom/Document.h"
@@ -42,6 +41,7 @@
 #include "platform/network/ResourceTimingInfo.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -187,17 +187,15 @@ void PerformanceBase::setFrameTimingBufferSize(unsigned size)
 
 static bool passesTimingAllowCheck(const ResourceResponse& response, const SecurityOrigin& initiatorSecurityOrigin, const AtomicString& originalTimingAllowOrigin)
 {
-    AtomicallyInitializedStaticReference(AtomicString, timingAllowOrigin, new AtomicString("timing-allow-origin"));
-
     RefPtr<SecurityOrigin> resourceOrigin = SecurityOrigin::create(response.url());
     if (resourceOrigin->isSameSchemeHostPort(&initiatorSecurityOrigin))
         return true;
 
-    const AtomicString& timingAllowOriginString = originalTimingAllowOrigin.isEmpty() ? response.httpHeaderField(timingAllowOrigin) : originalTimingAllowOrigin;
+    const AtomicString& timingAllowOriginString = originalTimingAllowOrigin.isEmpty() ? response.httpHeaderField(HTTPNames::Timing_Allow_Origin) : originalTimingAllowOrigin;
     if (timingAllowOriginString.isEmpty() || equalIgnoringCase(timingAllowOriginString, "null"))
         return false;
 
-    if (timingAllowOriginString == starAtom)
+    if (timingAllowOriginString == "*")
         return true;
 
     const String& securityOrigin = initiatorSecurityOrigin.toString();
@@ -213,11 +211,11 @@ static bool passesTimingAllowCheck(const ResourceResponse& response, const Secur
 
 static bool allowsTimingRedirect(const Vector<ResourceResponse>& redirectChain, const ResourceResponse& finalResponse, const SecurityOrigin& initiatorSecurityOrigin)
 {
-    if (!passesTimingAllowCheck(finalResponse, initiatorSecurityOrigin, emptyAtom))
+    if (!passesTimingAllowCheck(finalResponse, initiatorSecurityOrigin, AtomicString()))
         return false;
 
     for (const ResourceResponse& response : redirectChain) {
-        if (!passesTimingAllowCheck(response, initiatorSecurityOrigin, emptyAtom))
+        if (!passesTimingAllowCheck(response, initiatorSecurityOrigin, AtomicString()))
             return false;
     }
 
@@ -382,7 +380,7 @@ bool PerformanceBase::hasObserverFor(PerformanceEntry::EntryType filterType)
 void PerformanceBase::activateObserver(PerformanceObserver& observer)
 {
     if (m_activeObservers.isEmpty())
-        m_deliverObservationsTimer.startOneShot(0, FROM_HERE);
+        m_deliverObservationsTimer.startOneShot(0, BLINK_FROM_HERE);
 
     m_activeObservers.add(&observer);
 }

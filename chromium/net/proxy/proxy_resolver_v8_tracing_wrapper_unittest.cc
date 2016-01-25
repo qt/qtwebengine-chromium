@@ -84,7 +84,7 @@ scoped_ptr<ProxyResolver> CreateResolver(
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
   EXPECT_TRUE(resolver);
-  return resolver.Pass();
+  return resolver;
 }
 
 class MockErrorObserver : public ProxyResolverErrorObserver {
@@ -774,7 +774,7 @@ class BlockableHostResolver : public HostResolver {
 
     // Indicate to the caller that a request was received.
     EXPECT_TRUE(waiting_for_resolve_);
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
 
     // This line is intentionally after action_.Run(), since one of the
     // tests does a cancellation inside of Resolve(), and it is more

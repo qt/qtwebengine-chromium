@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 
 #include "platform/graphics/GraphicsContext.h"
@@ -17,16 +16,16 @@
 
 namespace blink {
 
-void DrawingDisplayItem::replay(GraphicsContext& context)
+void DrawingDisplayItem::replay(GraphicsContext& context) const
 {
     if (m_picture)
         context.drawPicture(m_picture.get());
 }
 
-void DrawingDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void DrawingDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     if (m_picture)
-        list->appendDrawingItem(m_picture.get());
+        list->appendDrawingItem(visualRect, m_picture.get());
 }
 
 bool DrawingDisplayItem::drawsContent() const

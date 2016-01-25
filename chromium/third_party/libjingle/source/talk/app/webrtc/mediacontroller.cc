@@ -27,6 +27,7 @@
 
 #include "talk/app/webrtc/mediacontroller.h"
 
+#include "talk/session/media/channelmanager.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/call.h"
@@ -37,18 +38,19 @@ const int kMinBandwidthBps = 30000;
 const int kStartBandwidthBps = 300000;
 const int kMaxBandwidthBps = 2000000;
 
-class MediaController : public webrtc::MediaControllerInterface {
+class MediaController : public webrtc::MediaControllerInterface,
+                        public sigslot::has_slots<> {
  public:
   MediaController(rtc::Thread* worker_thread,
-                  webrtc::VoiceEngine* voice_engine)
-      : worker_thread_(worker_thread) {
+                  cricket::ChannelManager* channel_manager)
+      : worker_thread_(worker_thread), channel_manager_(channel_manager) {
     RTC_DCHECK(nullptr != worker_thread);
     worker_thread_->Invoke<void>(
-        rtc::Bind(&MediaController::Construct_w, this, voice_engine));
+        rtc::Bind(&MediaController::Construct_w, this,
+                  channel_manager_->media_engine()));
   }
   ~MediaController() override {
-    worker_thread_->Invoke<void>(
-        rtc::Bind(&MediaController::Destruct_w, this));
+    worker_thread_->Invoke<void>(rtc::Bind(&MediaController::Destruct_w, this));
   }
 
   webrtc::Call* call_w() override {
@@ -56,11 +58,16 @@ class MediaController : public webrtc::MediaControllerInterface {
     return call_.get();
   }
 
+  cricket::ChannelManager* channel_manager() const override {
+    return channel_manager_;
+  }
+
  private:
-  void Construct_w(webrtc::VoiceEngine* voice_engine)  {
+  void Construct_w(cricket::MediaEngineInterface* media_engine) {
     RTC_DCHECK(worker_thread_->IsCurrent());
+    RTC_DCHECK(media_engine);
     webrtc::Call::Config config;
-    config.voice_engine = voice_engine;
+    config.audio_state = media_engine->GetAudioState();
     config.bitrate_config.min_bitrate_bps = kMinBandwidthBps;
     config.bitrate_config.start_bitrate_bps = kStartBandwidthBps;
     config.bitrate_config.max_bitrate_bps = kMaxBandwidthBps;
@@ -68,20 +75,22 @@ class MediaController : public webrtc::MediaControllerInterface {
   }
   void Destruct_w() {
     RTC_DCHECK(worker_thread_->IsCurrent());
-    call_.reset(nullptr);
+    call_.reset();
   }
 
-  rtc::Thread* worker_thread_;
+  rtc::Thread* const worker_thread_;
+  cricket::ChannelManager* const channel_manager_;
   rtc::scoped_ptr<webrtc::Call> call_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(MediaController);
 };
-} // namespace {
+}  // namespace {
 
 namespace webrtc {
 
 MediaControllerInterface* MediaControllerInterface::Create(
-    rtc::Thread* worker_thread, webrtc::VoiceEngine* voice_engine) {
-  return new MediaController(worker_thread, voice_engine);
+    rtc::Thread* worker_thread,
+    cricket::ChannelManager* channel_manager) {
+  return new MediaController(worker_thread, channel_manager);
 }
-} // namespace webrtc
+}  // namespace webrtc

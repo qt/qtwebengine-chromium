@@ -17,13 +17,12 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/utility/interface/process_thread.h"
-#include "webrtc/modules/video_capture/include/video_capture.h"
-#include "webrtc/modules/video_capture/include/video_capture_factory.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/sleep.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
-#include "webrtc/test/testsupport/gtest_disable.h"
+#include "webrtc/modules/utility/include/process_thread.h"
+#include "webrtc/modules/video_capture/video_capture.h"
+#include "webrtc/modules/video_capture/video_capture_factory.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/sleep.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/video_frame.h"
 
 using rtc::scoped_ptr;
@@ -47,14 +46,14 @@ using webrtc::VideoCaptureModule;
       SleepMs(5); \
       res = (ex); \
     } \
-  } while (0);\
+  } while (0)
 
 #define EXPECT_TRUE_WAIT(ex, timeout) \
   do { \
     bool res; \
     WAIT_(ex, timeout, res); \
     if (!res) EXPECT_TRUE(ex); \
-  } while (0);
+  } while (0)
 
 
 static const int kTimeOut = 5000;
@@ -275,7 +274,14 @@ class VideoCaptureTest : public testing::Test {
   unsigned int number_of_devices_;
 };
 
-TEST_F(VideoCaptureTest, CreateDelete) {
+#ifdef WEBRTC_MAC
+// Currently fails on Mac 64-bit, see
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=5406
+#define MAYBE_CreateDelete DISABLED_CreateDelete
+#else
+#define MAYBE_CreateDelete CreateDelete
+#endif
+TEST_F(VideoCaptureTest, MAYBE_CreateDelete) {
   for (int i = 0; i < 5; ++i) {
     int64_t start_time = TickTime::MillisecondTimestamp();
     TestVideoCaptureCallback capture_observer;
@@ -312,7 +318,14 @@ TEST_F(VideoCaptureTest, CreateDelete) {
   }
 }
 
-TEST_F(VideoCaptureTest, Capabilities) {
+#ifdef WEBRTC_MAC
+// Currently fails on Mac 64-bit, see
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=5406
+#define MAYBE_Capabilities DISABLED_Capabilities
+#else
+#define MAYBE_Capabilities Capabilities
+#endif
+TEST_F(VideoCaptureTest, MAYBE_Capabilities) {
 #ifdef WEBRTC_MAC
   printf("Video capture capabilities are not supported on Mac.\n");
   return;
@@ -479,7 +492,12 @@ TEST_F(VideoCaptureExternalTest, TestExternalCapture) {
 
 // Test frame rate and no picture alarm.
 // Flaky on Win32, see webrtc:3270.
-TEST_F(VideoCaptureExternalTest, DISABLED_ON_WIN(FrameRate)) {
+#if defined(WEBRTC_WIN)
+#define MAYBE_FrameRate DISABLED_FrameRate
+#else
+#define MAYBE_FrameRate FrameRate
+#endif
+TEST_F(VideoCaptureExternalTest, MAYBE_FrameRate) {
   int64_t testTime = 3;
   TickTime startTime = TickTime::Now();
 

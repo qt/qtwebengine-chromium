@@ -20,6 +20,7 @@
 #include "webrtc/base/win32.h"
 #endif  // WEBRTC_WIN
 
+#include "webrtc/base/arraysize.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
@@ -27,12 +28,11 @@
 #include "webrtc/base/taskrunner.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/base/timeutils.h"
-#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 
-static int64 GetCurrentTime() {
-  return static_cast<int64>(Time()) * 10000;
+static int64_t GetCurrentTime() {
+  return static_cast<int64_t>(Time()) * 10000;
 }
 
 // feel free to change these numbers.  Note that '0' won't work, though
@@ -98,9 +98,7 @@ class HappyTask : public IdTimeoutTask {
 class MyTaskRunner : public TaskRunner {
  public:
   virtual void WakeTasks() { RunTasks(); }
-  virtual int64 CurrentTime() {
-    return GetCurrentTime();
-  }
+  virtual int64_t CurrentTime() { return GetCurrentTime(); }
 
   bool timeout_change() const {
     return timeout_change_;
@@ -410,7 +408,7 @@ TEST(start_task_test, AbortShouldWake) {
 class TimeoutChangeTest : public sigslot::has_slots<> {
  public:
   TimeoutChangeTest()
-    : task_count_(ARRAY_SIZE(stuck_tasks_)) {}
+    : task_count_(arraysize(stuck_tasks_)) {}
 
   // no need to delete any tasks; the task runner owns them
   ~TimeoutChangeTest() {}
@@ -465,7 +463,7 @@ class TimeoutChangeTest : public sigslot::has_slots<> {
 
  private:
   void OnTimeoutId(const int id) {
-    for (int i = 0; i < ARRAY_SIZE(stuck_tasks_); ++i) {
+    for (size_t i = 0; i < arraysize(stuck_tasks_); ++i) {
       if (stuck_tasks_[i] && stuck_tasks_[i]->unique_id() == id) {
         task_count_--;
         stuck_tasks_[i] = NULL;
@@ -490,9 +488,7 @@ class DeleteTestTaskRunner : public TaskRunner {
   DeleteTestTaskRunner() {
   }
   virtual void WakeTasks() { }
-  virtual int64 CurrentTime() {
-    return GetCurrentTime();
-  }
+  virtual int64_t CurrentTime() { return GetCurrentTime(); }
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(DeleteTestTaskRunner);
 };

@@ -22,11 +22,15 @@
 #ifndef MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 #define MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/threading/thread.h"
@@ -61,8 +65,10 @@ class FFmpegDemuxerStream : public DemuxerStream {
   //
   // FFmpegDemuxerStream keeps a copy of |demuxer| and initializes itself using
   // information inside |stream|. Both parameters must outlive |this|.
-  static scoped_ptr<FFmpegDemuxerStream> Create(FFmpegDemuxer* demuxer,
-                                                AVStream* stream);
+  static scoped_ptr<FFmpegDemuxerStream> Create(
+      FFmpegDemuxer* demuxer,
+      AVStream* stream,
+      const scoped_refptr<MediaLog>& media_log);
 
   ~FFmpegDemuxerStream() override;
 
@@ -144,7 +150,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   // Converts an FFmpeg stream timestamp into a base::TimeDelta.
   static base::TimeDelta ConvertStreamTimestamp(const AVRational& time_base,
-                                                int64 timestamp);
+                                                int64_t timestamp);
 
   // Resets any currently active bitstream converter.
   void ResetBitstreamConverter();
@@ -197,6 +203,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   base::Time GetTimelineOffset() const override;
   DemuxerStream* GetStream(DemuxerStream::Type type) override;
   base::TimeDelta GetStartTime() const override;
+  int64_t GetMemoryUsage() const override;
 
   // Calls |encrypted_media_init_data_cb_| with the initialization data
   // encountered in the file.

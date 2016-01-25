@@ -6,8 +6,10 @@
 #define MEDIA_BASE_MAC_COREMEDIA_GLUE_H_
 
 #include <CoreVideo/CoreVideo.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "media/base/media_export.h"
 
 // CoreMedia API is only introduced in Mac OS X > 10.6, the (potential) linking
@@ -95,6 +97,7 @@ class MEDIA_EXPORT CoreMediaGlue {
       CMSampleBufferRef sbuf,
       Boolean createIfNecessary);
   static CFStringRef kCMSampleAttachmentKey_NotSync();
+  static CMTime CMSampleBufferGetPresentationTimeStamp(CMSampleBufferRef sbuf);
 
   // Originally from CMFormatDescription.h.
   static FourCharCode CMFormatDescriptionGetMediaSubType(

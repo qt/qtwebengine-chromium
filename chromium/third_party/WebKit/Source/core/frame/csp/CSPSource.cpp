@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/frame/csp/CSPSource.h"
 
 #include "core/frame/UseCounter.h"
@@ -39,6 +38,10 @@ bool CSPSource::schemeMatches(const KURL& url) const
 {
     if (m_scheme.isEmpty())
         return m_policy->protocolMatchesSelf(url);
+    if (equalIgnoringCase(m_scheme, "http"))
+        return equalIgnoringCase(url.protocol(), "http") || equalIgnoringCase(url.protocol(), "https");
+    if (equalIgnoringCase(m_scheme, "ws"))
+        return equalIgnoringCase(url.protocol(), "ws") || equalIgnoringCase(url.protocol(), "wss");
     return equalIgnoringCase(url.protocol(), m_scheme);
 }
 

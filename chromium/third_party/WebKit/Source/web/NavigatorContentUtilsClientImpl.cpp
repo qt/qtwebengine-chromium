@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "web/NavigatorContentUtilsClientImpl.h"
 
 #include "public/web/WebFrameClient.h"
@@ -10,14 +9,20 @@
 
 namespace blink {
 
-PassOwnPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebLocalFrameImpl* webFrame)
+PassOwnPtrWillBeRawPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebLocalFrameImpl* webFrame)
 {
-    return adoptPtr(new NavigatorContentUtilsClientImpl(webFrame));
+    return adoptPtrWillBeNoop(new NavigatorContentUtilsClientImpl(webFrame));
 }
 
 NavigatorContentUtilsClientImpl::NavigatorContentUtilsClientImpl(WebLocalFrameImpl* webFrame)
     : m_webFrame(webFrame)
 {
+}
+
+DEFINE_TRACE(NavigatorContentUtilsClientImpl)
+{
+    visitor->trace(m_webFrame);
+    NavigatorContentUtilsClient::trace(visitor);
 }
 
 void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const KURL& url, const String& title)
@@ -36,4 +41,3 @@ void NavigatorContentUtilsClientImpl::unregisterProtocolHandler(const String& sc
 }
 
 } // namespace blink
-

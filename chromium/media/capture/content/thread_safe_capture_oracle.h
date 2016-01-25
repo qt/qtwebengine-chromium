@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_CAPTURE_THREAD_SAFE_CAPTURE_ORACLE_H_
-#define MEDIA_CAPTURE_THREAD_SAFE_CAPTURE_ORACLE_H_
+#ifndef MEDIA_CAPTURE_CONTENT_THREAD_SAFE_CAPTURE_ORACLE_H_
+#define MEDIA_CAPTURE_CONTENT_THREAD_SAFE_CAPTURE_ORACLE_H_
 
 #include <string>
 
@@ -13,6 +13,10 @@
 #include "media/base/video_frame.h"
 #include "media/capture/content/video_capture_oracle.h"
 #include "media/capture/video/video_capture_device.h"
+
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
 
 namespace media {
 
@@ -48,6 +52,10 @@ class MEDIA_EXPORT ThreadSafeCaptureOracle
     return oracle_.min_capture_period();
   }
 
+  base::TimeTicks last_time_animation_was_detected() const {
+    return oracle_.last_time_animation_was_detected();
+  }
+
   gfx::Size max_frame_size() const {
     return params_.requested_format.frame_size;
   }
@@ -63,7 +71,8 @@ class MEDIA_EXPORT ThreadSafeCaptureOracle
   void Stop();
 
   // Signal an error to the client.
-  void ReportError(const std::string& reason);
+  void ReportError(const tracked_objects::Location& from_here,
+                   const std::string& reason);
 
  private:
   friend class base::RefCountedThreadSafe<ThreadSafeCaptureOracle>;
@@ -98,4 +107,4 @@ class MEDIA_EXPORT ThreadSafeCaptureOracle
 
 }  // namespace media
 
-#endif  // MEDIA_CAPTURE_THREAD_SAFE_CAPTURE_ORACLE_H_
+#endif  // MEDIA_CAPTURE_CONTENT_THREAD_SAFE_CAPTURE_ORACLE_H_

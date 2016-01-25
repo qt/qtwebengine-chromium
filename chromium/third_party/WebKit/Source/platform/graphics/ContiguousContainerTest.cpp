@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/graphics/ContiguousContainer.h"
 
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/TypeTraits.h"
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 
 namespace blink {
 namespace {
@@ -234,7 +233,7 @@ TEST(ContiguousContainerTest, ForwardIteration)
     }
     EXPECT_EQ(kNumElements, count);
 
-    static_assert(WTF::IsSameType<decltype(*list.begin()), Point2D&>::value,
+    static_assert(std::is_same<decltype(*list.begin()), Point2D&>::value,
         "Non-const iteration should produce non-const references.");
 }
 
@@ -252,7 +251,7 @@ TEST(ContiguousContainerTest, ConstForwardIteration)
     }
     EXPECT_EQ(kNumElements, count);
 
-    static_assert(WTF::IsSameType<decltype(*constList.begin()), const Point2D&>::value,
+    static_assert(std::is_same<decltype(*constList.begin()), const Point2D&>::value,
         "Const iteration should produce const references.");
 }
 
@@ -269,7 +268,7 @@ TEST(ContiguousContainerTest, ReverseIteration)
     }
     EXPECT_EQ(kNumElements, count);
 
-    static_assert(WTF::IsSameType<decltype(*list.rbegin()), Point2D&>::value,
+    static_assert(std::is_same<decltype(*list.rbegin()), Point2D&>::value,
         "Non-const iteration should produce non-const references.");
 }
 

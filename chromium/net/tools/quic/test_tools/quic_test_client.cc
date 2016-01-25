@@ -46,6 +46,7 @@ class RecordingProofVerifier : public ProofVerifier {
   QuicAsyncStatus VerifyProof(const string& hostname,
                               const string& server_config,
                               const vector<string>& certs,
+                              const string& cert_sct,
                               const string& signature,
                               const ProofVerifyContext* context,
                               string* error_details,
@@ -71,19 +72,23 @@ class RecordingProofVerifier : public ProofVerifier {
     //    }
     //
     //    common_name_ = cert->subject().GetDisplayName();
+    cert_sct_ = cert_sct;
+
     return QUIC_SUCCESS;
   }
 
   const string& common_name() const { return common_name_; }
 
+  const string& cert_sct() const { return cert_sct_; }
+
  private:
   string common_name_;
+  string cert_sct_;
 };
 
 }  // anonymous namespace
 
-BalsaHeaders* MungeHeaders(const BalsaHeaders* const_headers,
-                           bool secure) {
+BalsaHeaders* MungeHeaders(const BalsaHeaders* const_headers) {
   StringPiece uri = const_headers->request_uri();
   if (uri.empty()) {
     return nullptr;
@@ -93,11 +98,9 @@ BalsaHeaders* MungeHeaders(const BalsaHeaders* const_headers,
   }
   BalsaHeaders* headers = new BalsaHeaders;
   headers->CopyFrom(*const_headers);
-  if (!uri.starts_with("https://") &&
-      !uri.starts_with("http://")) {
+  if (!uri.starts_with("https://") && !uri.starts_with("http://")) {
     // If we have a relative URL, set some defaults.
-    string full_uri = secure ? "https://www.google.com" :
-                               "http://www.google.com";
+    string full_uri = "https://www.google.com";
     full_uri.append(uri.as_string());
     headers->SetRequestUri(full_uri);
   }
@@ -109,12 +112,11 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicVersionVector& supported_versions,
     EpollServer* epoll_server)
-    : QuicClient(server_address,
-                 server_id,
-                 supported_versions,
-                 epoll_server),
-      override_connection_id_(0),
-      test_writer_(nullptr) {}
+    : MockableQuicClient(server_address,
+                         server_id,
+                         QuicConfig(),
+                         supported_versions,
+                         epoll_server) {}
 
 MockableQuicClient::MockableQuicClient(
     IPEndPoint server_address,
@@ -126,7 +128,8 @@ MockableQuicClient::MockableQuicClient(
                  server_id,
                  supported_versions,
                  config,
-                 epoll_server),
+                 epoll_server,
+                 new RecordingProofVerifier()),
       override_connection_id_(0),
       test_writer_(nullptr) {}
 
@@ -162,69 +165,47 @@ void MockableQuicClient::UseConnectionId(QuicConnectionId connection_id) {
 
 QuicTestClient::QuicTestClient(IPEndPoint server_address,
                                const string& server_hostname,
-                               bool secure,
+                               const QuicVersionVector& supported_versions)
+    : QuicTestClient(server_address,
+                     server_hostname,
+                     QuicConfig(),
+                     supported_versions) {}
+
+QuicTestClient::QuicTestClient(IPEndPoint server_address,
+                               const string& server_hostname,
+                               const QuicConfig& config,
                                const QuicVersionVector& supported_versions)
     : client_(new MockableQuicClient(server_address,
                                      QuicServerId(server_hostname,
                                                   server_address.port(),
-                                                  secure,
                                                   PRIVACY_MODE_DISABLED),
+                                     config,
                                      supported_versions,
-                                     &epoll_server_)) {
-  Initialize(secure);
+                                     &epoll_server_)),
+      allow_bidirectional_data_(false) {
+  Initialize();
 }
 
-QuicTestClient::QuicTestClient(
-    IPEndPoint server_address,
-    const string& server_hostname,
-    bool secure,
-    const QuicConfig& config,
-    const QuicVersionVector& supported_versions)
-    : client_(
-          new MockableQuicClient(server_address,
-                                 QuicServerId(server_hostname,
-                                              server_address.port(),
-                                              secure,
-                                              PRIVACY_MODE_DISABLED),
-                                 config,
-                                 supported_versions,
-                                 &epoll_server_)) {
-  Initialize(secure);
-}
-
-QuicTestClient::QuicTestClient() {
-}
+QuicTestClient::QuicTestClient() : allow_bidirectional_data_(false) {}
 
 QuicTestClient::~QuicTestClient() {
   if (stream_) {
     stream_->set_visitor(nullptr);
   }
+  client_->Disconnect();
 }
 
-void QuicTestClient::Initialize(bool secure) {
+void QuicTestClient::Initialize() {
   priority_ = 3;
   connect_attempted_ = false;
-  secure_ = secure;
   auto_reconnect_ = false;
   buffer_body_ = true;
   fec_policy_ = FEC_PROTECT_OPTIONAL;
-  proof_verifier_ = nullptr;
   ClearPerRequestState();
-  ExpectCertificates(secure_);
   // As chrome will generally do this, we want it to be the default when it's
   // not overridden.
   if (!client_->config()->HasSetBytesForConnectionIdToSend()) {
     client_->config()->SetBytesForConnectionIdToSend(0);
-  }
-}
-
-void QuicTestClient::ExpectCertificates(bool on) {
-  if (on) {
-    proof_verifier_ = new RecordingProofVerifier;
-    client_->SetProofVerifier(proof_verifier_);
-  } else {
-    proof_verifier_ = nullptr;
-    client_->SetProofVerifier(nullptr);
   }
 }
 
@@ -252,7 +233,7 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
     const BalsaHeaders* headers,
     StringPiece body,
     bool fin,
-    QuicAckNotifier::DelegateInterface* delegate) {
+    QuicAckListenerInterface* delegate) {
   // Maybe it's better just to overload this.  it's just that we need
   // for the GetOrCreateStream function to call something else...which
   // is icky and complicated, but maybe not worse than this.
@@ -263,8 +244,8 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
   ssize_t ret = 0;
 
   if (headers != nullptr) {
-    SpdyHeaderBlock spdy_headers = SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
-        *headers, stream->version());
+    SpdyHeaderBlock spdy_headers =
+        SpdyBalsaUtils::RequestHeadersToSpdyHeaders(*headers);
     if (headers->HasHeader("transfer-encoding")) {
       // We have tests which rely on sending a non-standards-compliant
       // T-E header.
@@ -272,9 +253,13 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
       headers->GetAllOfHeaderAsString("transfer-encoding", &encoding);
       spdy_headers.insert(std::make_pair("transfer-encoding", encoding));
     }
+    if (static_cast<StringPiece>(spdy_headers[":authority"]).empty()) {
+      // HTTP/2 requests should include the :authority pseudo hader.
+      spdy_headers[":authority"] = client_->server_id().host();
+    }
     ret = stream->SendRequest(spdy_headers, body, fin);
   } else {
-    stream->SendBody(body.data(), fin, delegate);
+    stream->SendBody(body.as_string(), fin, delegate);
     ret = body.length();
   }
   if (FLAGS_enable_quic_stateless_reject_support) {
@@ -297,11 +282,8 @@ ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
   if (!connected()) {
     GURL url(message.headers()->request_uri().as_string());
     if (!url.host().empty()) {
-      client_->set_server_id(
-          QuicServerId(url.host(),
-                       url.EffectiveIntPort(),
-                       url.SchemeIs("https"),
-                       PRIVACY_MODE_DISABLED));
+      client_->set_server_id(QuicServerId(url.host(), url.EffectiveIntPort(),
+                                          PRIVACY_MODE_DISABLED));
     }
   }
 
@@ -309,8 +291,7 @@ ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
   // CHECK(message.body_chunks().empty())
   //      << "HTTPMessage::body_chunks not supported";
 
-  scoped_ptr<BalsaHeaders> munged_headers(MungeHeaders(message.headers(),
-                                          secure_));
+  scoped_ptr<BalsaHeaders> munged_headers(MungeHeaders(message.headers()));
   ssize_t ret = GetOrCreateStreamAndSendRequest(
       (munged_headers.get() ? munged_headers.get() : message.headers()),
       message.body(), message.has_complete_message(), nullptr);
@@ -324,7 +305,7 @@ ssize_t QuicTestClient::SendData(const string& data, bool last_data) {
 
 ssize_t QuicTestClient::SendData(const string& data,
                                  bool last_data,
-                                 QuicAckNotifier::DelegateInterface* delegate) {
+                                 QuicAckListenerInterface* delegate) {
   return GetOrCreateStreamAndSendRequest(nullptr, StringPiece(data), last_data,
                                          delegate);
 }
@@ -337,7 +318,7 @@ int QuicTestClient::response_header_size() const {
   return response_header_size_;
 }
 
-int64 QuicTestClient::response_body_size() const {
+int64_t QuicTestClient::response_body_size() const {
   return response_body_size_;
 }
 
@@ -392,7 +373,9 @@ QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
       return nullptr;
     }
     stream_->set_visitor(this);
-    reinterpret_cast<QuicSpdyClientStream*>(stream_)->set_priority(priority_);
+    QuicSpdyClientStream* cs = reinterpret_cast<QuicSpdyClientStream*>(stream_);
+    cs->SetPriority(priority_);
+    cs->set_allow_bidirectional_data(allow_bidirectional_data_);
     // Set FEC policy on stream.
     ReliableQuicStreamPeer::SetFecPolicy(stream_, fec_policy_);
   }
@@ -404,11 +387,18 @@ QuicErrorCode QuicTestClient::connection_error() {
   return client()->connection_error();
 }
 
-MockableQuicClient* QuicTestClient::client() { return client_.get(); }
+MockableQuicClient* QuicTestClient::client() {
+  return client_.get();
+}
 
 const string& QuicTestClient::cert_common_name() const {
-  return reinterpret_cast<RecordingProofVerifier*>(proof_verifier_)
+  return reinterpret_cast<RecordingProofVerifier*>(client_->proof_verifier())
       ->common_name();
+}
+
+const string& QuicTestClient::cert_sct() const {
+  return reinterpret_cast<RecordingProofVerifier*>(client_->proof_verifier())
+      ->cert_sct();
 }
 
 QuicTagValueMap QuicTestClient::GetServerConfig() const {
@@ -464,16 +454,16 @@ void QuicTestClient::ClearPerRequestState() {
 }
 
 void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
-  int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = epoll_server()->timeout_in_us();
+  int64_t timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
+  int64_t old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
     epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
-      QuicConnectionPeer::GetHelper(client()->session()->connection())->
-          GetClock();
-  QuicTime end_waiting_time = clock->Now().Add(
-      QuicTime::Delta::FromMicroseconds(timeout_us));
+      QuicConnectionPeer::GetHelper(client()->session()->connection())
+          ->GetClock();
+  QuicTime end_waiting_time =
+      clock->Now().Add(QuicTime::Delta::FromMicroseconds(timeout_us));
   while (stream_ != nullptr &&
          !client_->session()->IsClosedStream(stream_->id()) &&
          (timeout_us < 0 || clock->Now() < end_waiting_time)) {
@@ -485,16 +475,16 @@ void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
 }
 
 void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
-  int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = epoll_server()->timeout_in_us();
+  int64_t timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
+  int64_t old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
     epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
-      QuicConnectionPeer::GetHelper(client()->session()->connection())->
-          GetClock();
-  QuicTime end_waiting_time = clock->Now().Add(
-      QuicTime::Delta::FromMicroseconds(timeout_us));
+      QuicConnectionPeer::GetHelper(client()->session()->connection())
+          ->GetClock();
+  QuicTime end_waiting_time =
+      clock->Now().Add(QuicTime::Delta::FromMicroseconds(timeout_us));
   while (stream_ != nullptr &&
          !client_->session()->IsClosedStream(stream_->id()) &&
          stream_->stream_bytes_read() == 0 &&
@@ -506,7 +496,7 @@ void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
   }
 }
 
-ssize_t QuicTestClient::Send(const void *buffer, size_t size) {
+ssize_t QuicTestClient::Send(const void* buffer, size_t size) {
   return SendData(string(static_cast<const char*>(buffer), size), false);
 }
 
@@ -519,15 +509,18 @@ bool QuicTestClient::response_headers_complete() const {
 
 const BalsaHeaders* QuicTestClient::response_headers() const {
   if (stream_ != nullptr) {
-    SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_,
-                                                 stream_->version());
+    SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_);
     return &headers_;
   } else {
     return &headers_;
   }
 }
 
-int64 QuicTestClient::response_size() const {
+const SpdyHeaderBlock& QuicTestClient::response_trailers() const {
+  return response_trailers_;
+}
+
+int64_t QuicTestClient::response_size() const {
   return bytes_read_;
 }
 
@@ -539,7 +532,7 @@ size_t QuicTestClient::bytes_written() const {
   return bytes_written_;
 }
 
-void QuicTestClient::OnClose(QuicDataStream* stream) {
+void QuicTestClient::OnClose(QuicSpdyStream* stream) {
   if (stream != nullptr) {
     // Always close the stream, regardless of whether it was the last stream
     // written.
@@ -554,8 +547,8 @@ void QuicTestClient::OnClose(QuicDataStream* stream) {
   }
   response_complete_ = true;
   response_headers_complete_ = stream_->headers_decompressed();
-  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_,
-                                               stream_->version());
+  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_);
+  response_trailers_ = stream_->trailers();
   stream_error_ = stream_->stream_error();
   bytes_read_ = stream_->stream_bytes_read() + stream_->header_bytes_read();
   bytes_written_ =
@@ -574,7 +567,7 @@ void QuicTestClient::UseConnectionId(QuicConnectionId connection_id) {
   client_->UseConnectionId(connection_id);
 }
 
-ssize_t QuicTestClient::SendAndWaitForResponse(const void *buffer,
+ssize_t QuicTestClient::SendAndWaitForResponse(const void* buffer,
                                                size_t size) {
   LOG(DFATAL) << "Not implemented";
   return 0;
@@ -602,7 +595,6 @@ void QuicTestClient::set_bind_to_address(IPAddressNumber address) {
 }
 
 const IPEndPoint& QuicTestClient::address() const {
-  LOG(DFATAL) << "Not implemented";
   return client_->server_address();
 }
 

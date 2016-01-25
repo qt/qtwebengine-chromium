@@ -18,33 +18,41 @@ class SingleThreadTaskRunner;
 
 namespace scheduler {
 
-class RendererScheduler;
+class RendererSchedulerImpl;
 class TaskQueue;
-class WebFrameHostSchedulerImpl;
 class WebTaskRunnerImpl;
+class WebViewSchedulerImpl;
 
 class SCHEDULER_EXPORT WebFrameSchedulerImpl : public blink::WebFrameScheduler {
  public:
-  WebFrameSchedulerImpl(RendererScheduler* render_scheduler,
-                        WebFrameHostSchedulerImpl* parent_frame_host_scheduler);
+  WebFrameSchedulerImpl(RendererSchedulerImpl* renderer_scheduler,
+                        WebViewSchedulerImpl* parent_web_view_scheduler);
 
   ~WebFrameSchedulerImpl() override;
 
   // blink::WebFrameScheduler implementation:
-  virtual void setFrameVisible(bool visible);
-  virtual blink::WebTaskRunner* loadingTaskRunner();
-  virtual blink::WebTaskRunner* timerTaskRunner();
-  virtual void setFrameOrigin(const blink::WebSecurityOrigin* origin);
+  void setFrameVisible(bool visible) override;
+  blink::WebTaskRunner* loadingTaskRunner() override;
+  blink::WebTaskRunner* timerTaskRunner() override;
+  void setFrameOrigin(const blink::WebSecurityOrigin& origin) override;
+
+  void SetPageInBackground(bool page_in_background);
 
  private:
+  friend class WebViewSchedulerImpl;
+
+  void DetachFromWebViewScheduler();
+  void ApplyPolicyToTimerQueue();
+
   scoped_refptr<TaskQueue> loading_task_queue_;
   scoped_refptr<TaskQueue> timer_task_queue_;
   scoped_ptr<WebTaskRunnerImpl> loading_web_task_runner_;
   scoped_ptr<WebTaskRunnerImpl> timer_web_task_runner_;
-  RendererScheduler* render_scheduler_;                     // NOT OWNED
-  WebFrameHostSchedulerImpl* parent_frame_host_scheduler_;  // NOT OWNED
+  RendererSchedulerImpl* renderer_scheduler_;        // NOT OWNED
+  WebViewSchedulerImpl* parent_web_view_scheduler_;  // NOT OWNED
   blink::WebSecurityOrigin origin_;
   bool visible_;
+  bool page_in_background_;
 
   DISALLOW_COPY_AND_ASSIGN(WebFrameSchedulerImpl);
 };

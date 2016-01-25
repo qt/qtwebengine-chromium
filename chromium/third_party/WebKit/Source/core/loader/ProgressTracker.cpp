@@ -23,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/loader/ProgressTracker.h"
 
 #include "core/fetch/ResourceFetcher.h"
@@ -54,7 +53,7 @@ static const double finalProgressValue = 0.9; // 1.0 - initialProgressValue
 static const int progressItemDefaultEstimatedLength = 1024 * 1024;
 
 struct ProgressItem {
-    WTF_MAKE_NONCOPYABLE(ProgressItem); WTF_MAKE_FAST_ALLOCATED(ProgressItem);
+    WTF_MAKE_NONCOPYABLE(ProgressItem); USING_FAST_MALLOC(ProgressItem);
 public:
     ProgressItem(long long length)
         : bytesReceived(0)

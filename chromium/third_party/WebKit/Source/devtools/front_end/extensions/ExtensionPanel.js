@@ -43,8 +43,7 @@ WebInspector.ExtensionPanel = function(server, panelName, id, pageURL)
     this._server = server;
     this._id = id;
     this.setHideOnDetach();
-    this._panelToolbar = new WebInspector.Toolbar(this.element);
-    this._panelToolbar.element.classList.add("hidden");
+    this._panelToolbar = new WebInspector.Toolbar("hidden", this.element);
 
     this._searchableView = new WebInspector.SearchableView(this);
     this._searchableView.show(this.element);
@@ -152,7 +151,7 @@ WebInspector.ExtensionButton = function(server, id, iconURL, tooltip, disabled)
 {
     this._id = id;
 
-    this._toolbarButton = new WebInspector.ToolbarButton("", "extension");
+    this._toolbarButton = new WebInspector.ToolbarButton("", "");
     this._toolbarButton.addEventListener("click", server.notifyButtonClicked.bind(server, this._id));
     this.update(iconURL, tooltip, disabled);
 }

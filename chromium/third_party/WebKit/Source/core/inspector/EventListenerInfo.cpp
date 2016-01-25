@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "core/inspector/EventListenerInfo.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
@@ -18,7 +17,7 @@ namespace blink {
 void EventListenerInfo::getEventListeners(EventTarget* target, WillBeHeapVector<EventListenerInfo>& eventInformation, bool includeAncestors)
 {
     // The Node's Ancestors including self.
-    Vector<EventTarget*> ancestors;
+    WillBeHeapVector<RawPtrWillBeMember<EventTarget>> ancestors;
     ancestors.append(target);
     if (includeAncestors) {
         Node* node = target->toNode();

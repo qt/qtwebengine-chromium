@@ -8,9 +8,12 @@
 #ifndef MEDIA_VIDEO_CAPTURE_FAKE_VIDEO_CAPTURE_DEVICE_H_
 #define MEDIA_VIDEO_CAPTURE_FAKE_VIDEO_CAPTURE_DEVICE_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #include "base/atomicops.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
@@ -32,10 +35,11 @@ class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
     TRIPLANAR,
   };
 
-  static int FakeCapturePeriodMs() { return kFakeCapturePeriodMs; }
-
   FakeVideoCaptureDevice(BufferOwnership buffer_ownership,
                          BufferPlanarity planarity);
+  FakeVideoCaptureDevice(BufferOwnership buffer_ownership,
+                         BufferPlanarity planarity,
+                         float fake_capture_rate);
   ~FakeVideoCaptureDevice() override;
 
   // VideoCaptureDevice implementation.
@@ -44,8 +48,6 @@ class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
   void StopAndDeAllocate() override;
 
  private:
-  static const int kFakeCapturePeriodMs = 50;
-
   void CaptureUsingOwnBuffers(base::TimeTicks expected_execution_time);
   void CaptureUsingClientBuffers(base::TimeTicks expected_execution_time);
   void BeepAndScheduleNextCapture(
@@ -58,11 +60,16 @@ class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
 
   const BufferOwnership buffer_ownership_;
   const BufferPlanarity planarity_;
+  // Frame rate of the fake video device.
+  const float fake_capture_rate_;
 
   scoped_ptr<VideoCaptureDevice::Client> client_;
   // |fake_frame_| is used for capturing on Own Buffers.
-  scoped_ptr<uint8[]> fake_frame_;
-  int frame_count_;
+  scoped_ptr<uint8_t[]> fake_frame_;
+  // Time when the next beep occurs.
+  base::TimeDelta beep_time_;
+  // Time since the fake video started rendering frames.
+  base::TimeDelta elapsed_time_;
   VideoCaptureFormat capture_format_;
 
   // FakeVideoCaptureDevice post tasks to itself for frame construction and

@@ -873,6 +873,8 @@
             'nss/lib/libpkix/pkix_pl_nss/system/pkix_pl_string.h',
             'nss/lib/nss/nss.h',
             'nss/lib/nss/nssinit.c',
+            'nss/lib/nss/nssoptions.c',
+            'nss/lib/nss/nssoptions.h',
             'nss/lib/nss/nssrenam.h',
             'nss/lib/nss/utilwrap.c',
             'nss/lib/pk11wrap/debug_module.c',
@@ -1037,6 +1039,7 @@
             'nss/lib/util/utilpars.h',
             'nss/lib/util/utilparst.h',
             'nss/lib/util/utilrename.h',
+            'nss/lib/util/verref.h',
           ],
           'sources!': [
             # mpi_arm.c is included by mpi_arm_mac.c.
@@ -1138,6 +1141,9 @@
               '-Wno-switch',
               # nss has some `unsigned < 0` checks.
               '-Wno-tautological-compare',
+              # nss-urandom-abort.patch removed the only call to
+              # rng_systemFromNoise
+              '-Wno-unused-function',
             ],
           },
           'conditions': [

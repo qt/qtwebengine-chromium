@@ -22,10 +22,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#if ENABLE(WEB_AUDIO)
 #include "modules/webaudio/DelayProcessor.h"
-
 #include "modules/webaudio/DelayDSPKernel.h"
 
 namespace blink {
@@ -50,4 +47,3 @@ PassOwnPtr<AudioDSPKernel> DelayProcessor::createKernel()
 
 } // namespace blink
 
-#endif // ENABLE(WEB_AUDIO)

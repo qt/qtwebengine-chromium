@@ -5,11 +5,13 @@
 #ifndef NET_BASE_NETWORK_QUALITY_ESTIMATOR_H_
 #define NET_BASE_NETWORK_QUALITY_ESTIMATOR_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <deque>
 #include <map>
 #include <string>
+#include <tuple>
 
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
@@ -159,10 +161,10 @@ class NET_EXPORT_PRIVATE NetworkQualityEstimator
       int32_t* kbps) const;
 
   // SocketPerformanceWatcherFactory implementation:
-  scoped_ptr<SocketPerformanceWatcher> CreateTCPSocketPerformanceWatcher()
-      const override;
-  scoped_ptr<SocketPerformanceWatcher> CreateUDPSocketPerformanceWatcher()
-      const override;
+  scoped_ptr<SocketPerformanceWatcher> CreateSocketPerformanceWatcher(
+      const Protocol protocol) override;
+  void OnUpdatedRTTAvailable(const Protocol protocol,
+                             const base::TimeDelta& rtt) override;
 
   // Adds |rtt_observer| to the list of round trip time observers. Must be
   // called on the IO thread.
@@ -201,7 +203,7 @@ class NET_EXPORT_PRIVATE NetworkQualityEstimator
 
     // Overloaded because NetworkID is used as key in a map.
     bool operator<(const NetworkID& other) const {
-      return type < other.type || (type == other.type && id < other.id);
+      return std::tie(type, id) < std::tie(other.type, other.id);
     }
 
     // Connection type of the network.

@@ -5,10 +5,13 @@
 #ifndef MEDIA_BLINK_ENCRYPTED_MEDIA_PLAYER_SUPPORT_H_
 #define MEDIA_BLINK_ENCRYPTED_MEDIA_PLAYER_SUPPORT_H_
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "media/base/cdm_context.h"
@@ -88,9 +91,9 @@ class EncryptedMediaPlayerSupport
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
                   MediaKeys::KeyError error_code,
-                  uint32 system_code);
+                  uint32_t system_code);
   void OnKeyMessage(const std::string& session_id,
-                    const std::vector<uint8>& message,
+                    const std::vector<uint8_t>& message,
                     const GURL& destination_url);
 
   CdmFactory* cdm_factory_;

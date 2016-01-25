@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "public/platform/WebCryptoKey.h"
 
 #include "public/platform/WebCryptoAlgorithm.h"
@@ -42,7 +41,7 @@ namespace blink {
 class WebCryptoKeyPrivate : public ThreadSafeRefCounted<WebCryptoKeyPrivate> {
 public:
     WebCryptoKeyPrivate(PassOwnPtr<WebCryptoKeyHandle> handle, WebCryptoKeyType type, bool extractable, const WebCryptoKeyAlgorithm& algorithm, WebCryptoKeyUsageMask usages)
-        : handle(handle)
+        : handle(std::move(handle))
         , type(type)
         , extractable(extractable)
         , algorithm(algorithm)

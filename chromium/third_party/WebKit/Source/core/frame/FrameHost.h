@@ -36,7 +36,7 @@
 #include "core/frame/TopControls.h"
 #include "core/frame/VisualViewport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -51,7 +51,6 @@ class PageScaleConstraintsSet;
 class Settings;
 class UseCounter;
 class Visitor;
-class WebFrameHostScheduler;
 
 // FrameHost is the set of global data shared between multiple frames
 // and is provided by the embedder to each frame when created.
@@ -63,7 +62,7 @@ class WebFrameHostScheduler;
 // Separating Page from the rest of core/ through this indirection
 // allows us to slowly refactor Page without breaking the rest of core.
 class CORE_EXPORT FrameHost final : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
-    WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FrameHost);
+    WTF_MAKE_NONCOPYABLE(FrameHost); USING_FAST_MALLOC_WILL_BE_REMOVED(FrameHost);
 public:
     static PassOwnPtrWillBeRawPtr<FrameHost> create(Page&);
     ~FrameHost();
@@ -103,8 +102,6 @@ public:
     void setDefaultPageScaleLimits(float minScale, float maxScale);
     void setUserAgentPageScaleConstraints(PageScaleConstraints newConstraints);
 
-    WebFrameHostScheduler* frameHostScheduler() const { return m_frameHostScheduler.get(); }
-
 private:
     explicit FrameHost(Page&);
 
@@ -114,7 +111,6 @@ private:
     const OwnPtrWillBeMember<VisualViewport> m_visualViewport;
     const OwnPtrWillBeMember<EventHandlerRegistry> m_eventHandlerRegistry;
     const OwnPtrWillBeMember<ConsoleMessageStorage> m_consoleMessageStorage;
-    const OwnPtr<WebFrameHostScheduler> m_frameHostScheduler;
 
     AtomicString m_overrideEncoding;
     int m_subframeCount;

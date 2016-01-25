@@ -29,7 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/frame/NavigatorID.h"
 
 #if !OS(MACOSX) && !OS(WIN)
@@ -67,7 +66,7 @@ String NavigatorID::platform()
     return "Win32";
 #else // Unix-like systems
     struct utsname osname;
-    AtomicallyInitializedStaticReference(ThreadSpecific<String>, platformName, new ThreadSpecific<String>());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<String>, platformName, new ThreadSpecific<String>());
     if (platformName->isNull()) {
         *platformName = String(uname(&osname) >= 0 ? String(osname.sysname) + String(" ") + String(osname.machine) : emptyString());
     }

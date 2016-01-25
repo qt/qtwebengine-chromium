@@ -382,7 +382,7 @@ static const arg_def_t tile_cols = ARG_DEF(
 static const arg_def_t tile_rows = ARG_DEF(
     NULL, "tile-rows", 1, "Number of tile rows to use, log2");
 static const arg_def_t lossless = ARG_DEF(
-    NULL, "lossless", 1, "Lossless mode");
+    NULL, "lossless", 1, "Lossless mode (0: false (default), 1: true)");
 static const arg_def_t frame_parallel_decoding = ARG_DEF(
     NULL, "frame-parallel", 1, "Enable frame parallel decodability features");
 static const arg_def_t aq_mode = ARG_DEF(
@@ -1996,7 +1996,7 @@ int main(int argc, const char **argv_) {
     usage_exit();
 
   /* Decide if other chroma subsamplings than 4:2:0 are supported */
-  if (global.codec->fourcc == VP9_FOURCC)
+  if (global.codec->fourcc == VP9_FOURCC || global.codec->fourcc == VP10_FOURCC)
     input.only_i420 = 0;
 
   for (pass = global.pass ? global.pass - 1 : 0; pass < global.passes; pass++) {
@@ -2060,9 +2060,11 @@ int main(int argc, const char **argv_) {
 
 #if !CONFIG_WEBM_IO
     FOREACH_STREAM({
-      stream->config.write_webm = 0;
-      warn("vpxenc was compiled without WebM container support."
-           "Producing IVF output");
+      if (stream->config.write_webm) {
+        stream->config.write_webm = 0;
+        warn("vpxenc was compiled without WebM container support."
+             "Producing IVF output");
+      }
     });
 #endif
 

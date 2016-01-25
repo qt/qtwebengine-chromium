@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "platform/heap/GCInfo.h"
 
 #include "platform/heap/Handle.h"
@@ -22,7 +21,7 @@ void GCInfoTable::ensureGCInfoIndex(const GCInfo* gcInfo, size_t* gcInfoIndexSlo
     ASSERT(gcInfo);
     ASSERT(gcInfoIndexSlot);
     // Keep a global GCInfoTable lock while allocating a new slot.
-    AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, new Mutex);
     MutexLocker locker(mutex);
 
     // If more than one thread ends up allocating a slot for

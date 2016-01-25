@@ -4,8 +4,11 @@
 
 #include "device_orientation_event_pump.h"
 
+#include <string.h>
+
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "content/common/device_sensors/device_orientation_hardware_buffer.h"

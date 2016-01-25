@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/videodev2.h>
 #include <poll.h>
+#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -134,8 +136,7 @@ bool V4L2ImageProcessor::Initialize(media::VideoPixelFormat input_format,
   // Capabilities check.
   struct v4l2_capability caps;
   memset(&caps, 0, sizeof(caps));
-  const __u32 kCapsRequired = V4L2_CAP_VIDEO_CAPTURE_MPLANE |
-                              V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_STREAMING;
+  const __u32 kCapsRequired = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QUERYCAP, &caps);
   if ((caps.capabilities & kCapsRequired) != kCapsRequired) {
     LOG(ERROR) << "Initialize(): ioctl() failed: VIDIOC_QUERYCAP: "
@@ -560,6 +561,10 @@ void V4L2ImageProcessor::Dequeue() {
             output_visible_size_,
             output_record.fds,
             job_record->frame->timestamp());
+    if (!output_frame) {
+      NOTIFY_ERROR();
+      return;
+    }
     output_frame->AddDestructionObserver(media::BindToCurrentLoop(
         base::Bind(&V4L2ImageProcessor::ReuseOutputBuffer,
                    device_weak_factory_.GetWeakPtr(),

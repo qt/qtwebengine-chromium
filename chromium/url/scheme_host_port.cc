@@ -4,7 +4,10 @@
 
 #include "url/scheme_host_port.h"
 
+#include <stdint.h>
 #include <string.h>
+
+#include <tuple>
 
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
@@ -45,7 +48,7 @@ bool IsCanonicalHost(const base::StringPiece& host) {
 
 bool IsValidInput(const base::StringPiece& scheme,
                   const base::StringPiece& host,
-                  uint16 port) {
+                  uint16_t port) {
   SchemeType scheme_type = SCHEME_WITH_PORT;
   bool is_standard = GetStandardSchemeType(
       scheme.data(),
@@ -101,7 +104,7 @@ SchemeHostPort::SchemeHostPort() : port_(0) {
 
 SchemeHostPort::SchemeHostPort(base::StringPiece scheme,
                                base::StringPiece host,
-                               uint16 port)
+                               uint16_t port)
     : port_(0) {
   if (!IsValidInput(scheme, host, port))
     return;
@@ -170,13 +173,8 @@ bool SchemeHostPort::Equals(const SchemeHostPort& other) const {
 }
 
 bool SchemeHostPort::operator<(const SchemeHostPort& other) const {
-  if (port_ != other.port_)
-    return port_ < other.port_;
-  if (scheme_ != other.scheme_)
-    return scheme_ < other.scheme_;
-  if (host_ != other.host_)
-    return host_ < other.host_;
-  return false;
+  return std::tie(port_, scheme_, host_) <
+         std::tie(other.port_, other.scheme_, other.host_);
 }
 
 }  // namespace url

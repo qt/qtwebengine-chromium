@@ -11,8 +11,9 @@
 #ifndef WEBRTC_VOICE_ENGINE_VOICE_ENGINE_IMPL_H
 #define WEBRTC_VOICE_ENGINE_VOICE_ENGINE_IMPL_H
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/engine_configurations.h"
-#include "webrtc/system_wrappers/interface/atomic32.h"
+#include "webrtc/system_wrappers/include/atomic32.h"
 #include "webrtc/voice_engine/voe_base_impl.h"
 
 #ifdef WEBRTC_VOICE_ENGINE_AUDIO_PROCESSING_API
@@ -48,6 +49,9 @@
 #endif
 
 namespace webrtc {
+namespace voe {
+class ChannelProxy;
+}  // namespace voe
 
 class VoiceEngineImpl : public voe::SharedData,  // Must be the first base class
                         public VoiceEngine,
@@ -128,8 +132,15 @@ class VoiceEngineImpl : public voe::SharedData,  // Must be the first base class
   // This implements the Release() method for all the inherited interfaces.
   int Release() override;
 
- private:
+  // Backdoor to access a voe::Channel object without a channel ID. This is only
+  // to be used while refactoring the VoE API!
+  virtual rtc::scoped_ptr<voe::ChannelProxy> GetChannelProxy(int channel_id);
+
+ // This is *protected* so that FakeVoiceEngine can inherit from the class and
+ // manipulate the reference count. See: fake_voice_engine.h.
+ protected:
   Atomic32 _ref_count;
+ private:
   rtc::scoped_ptr<const Config> own_config_;
 };
 

@@ -95,6 +95,7 @@
               'sources!' : [
                 'host/clipboard_x11.cc',
                 'host/continue_window_linux.cc',
+                'host/curtain_mode_linux.cc',
                 'host/disconnect_window_linux.cc',
                 'host/linux/x_server_clipboard.cc',
                 'host/linux/x_server_clipboard.h',
@@ -181,7 +182,6 @@
             ['enable_webrtc==1', {
               'dependencies': [
                 '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-                '../third_party/libjingle/libjingle.gyp:libpeerconnection',
               ],
               'sources': [
                 '<@(remoting_cast_sources)',
@@ -264,6 +264,7 @@
 
         # Generates native messaging manifest files.
         {
+          # GN: //remoting/host:remoting_native_messaging_manifests
           'target_name': 'remoting_native_messaging_manifests',
           'type': 'none',
           'conditions': [
@@ -339,6 +340,7 @@
           ],
         },  # end of target 'remoting_start_host'
         {
+          # GN: //remoting/host:remoting_infoplist_strings
           'target_name': 'remoting_infoplist_strings',
           'type': 'none',
           'dependencies': [
@@ -419,14 +421,8 @@
             'VERSION=<(version_full)',
           ],
           'sources': [
-            'host/curtain_mode.h',
-            'host/curtain_mode_linux.cc',
-            'host/curtain_mode_mac.cc',
-            'host/curtain_mode_win.cc',
             'host/pam_authorization_factory_posix.cc',
             'host/pam_authorization_factory_posix.h',
-            'host/posix/signal_handler.cc',
-            'host/posix/signal_handler.h',
             'host/remoting_me2me_host.cc',
           ],
           'conditions': [
@@ -557,6 +553,7 @@
           ],  # end of 'conditions'
         },  # end of target 'remoting_me2me_host'
         {
+          # GN: //remoting/host:native_messaging_host
           'target_name': 'remoting_me2me_native_messaging_host',
           'type': 'executable',
           'product_name': 'native_messaging_host',
@@ -649,6 +646,7 @@
         ['chromeos==0', {
           'targets': [
             {
+              # GN: //remoting/host/it2me:remote_assistance_host
               'target_name': 'remoting_it2me_native_messaging_host',
               'type': 'executable',
               'product_name': 'remote_assistance_host',

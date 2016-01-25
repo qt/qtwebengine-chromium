@@ -25,11 +25,14 @@ UNION_CPP_INCLUDES_BLACKLIST = frozenset([
 
 cpp_includes = set()
 header_forward_decls = set()
+header_includes = set()
 
 
 def union_context(union_types, interfaces_info):
     cpp_includes.clear()
     header_forward_decls.clear()
+    header_includes.clear()
+    header_includes.update(UNION_H_INCLUDES)
 
     # For container classes we strip nullable wrappers. For example,
     # both (A or B)? and (A? or B) will become AOrB. This should be OK
@@ -37,26 +40,21 @@ def union_context(union_types, interfaces_info):
     # distinguishing (A or B)? and (A? or B) doesn't make sense.
     container_cpp_types = set()
     union_types_for_containers = set()
-    nullable_cpp_types = set()
     for union_type in union_types:
         cpp_type = union_type.cpp_type
         if cpp_type not in container_cpp_types:
             union_types_for_containers.add(union_type)
             container_cpp_types.add(cpp_type)
-        if union_type.includes_nullable_type:
-            nullable_cpp_types.add(cpp_type)
 
     union_types_for_containers = sorted(union_types_for_containers,
                                         key=lambda union_type: union_type.cpp_type)
-    nullable_cpp_types = sorted(nullable_cpp_types)
 
     return {
         'containers': [container_context(union_type, interfaces_info)
                        for union_type in union_types_for_containers],
         'cpp_includes': sorted(cpp_includes - UNION_CPP_INCLUDES_BLACKLIST),
         'header_forward_decls': sorted(header_forward_decls),
-        'header_includes': sorted(UNION_H_INCLUDES),
-        'nullable_cpp_types': nullable_cpp_types,
+        'header_includes': sorted(header_includes),
     }
 
 
@@ -133,12 +131,31 @@ def container_context(union_type, interfaces_info):
     }
 
 
-def member_context(member, interfaces_info):
-    cpp_includes.update(member.includes_for_type())
-    interface_info = interfaces_info.get(member.name, None)
+def _update_includes_and_forward_decls(member, interface_info):
     if interface_info:
-        cpp_includes.update(interface_info.get('dependencies_include_paths', []))
-        header_forward_decls.add(member.implemented_as)
+        cpp_includes.update(interface_info.get(
+            'dependencies_include_paths', []))
+        # TODO(bashi): Workaround for http://crbug.com/524424
+        # Avoid using forward declaration for IDL dictionaries so that they
+        # aren't imcomplete types in UnionTypes.h. This enables an IDL
+        # dictionary to have a union type which has an IDL dictionary. e.g.
+        #   dictionary DictA { (boolean or DictB) member; }
+        # Note that this doesn't cover all cases. We still can't use an IDL
+        # dictionary in a union type when the dictionary contains a union type.
+        # e.g.
+        #   void foo((DOMString or DictA) arg);  // won't compile
+        if member.is_dictionary:
+            header_includes.update(member.includes_for_type())
+        else:
+            cpp_includes.update(member.includes_for_type())
+            header_forward_decls.add(member.implemented_as)
+    else:
+        cpp_includes.update(member.includes_for_type())
+
+
+def member_context(member, interfaces_info):
+    interface_info = interfaces_info.get(member.name, None)
+    _update_includes_and_forward_decls(member, interface_info)
     if member.is_nullable:
         member = member.inner_type
     return {

@@ -4,10 +4,16 @@
 
 #include "media/audio/audio_output_device.h"
 
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "base/callback_helpers.h"
+#include "base/macros.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "media/audio/audio_output_controller.h"
 #include "media/base/limits.h"
 
@@ -28,12 +34,13 @@ class AudioOutputDevice::AudioThreadCallback
   void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  void Process(uint32 pending_data) override;
+  void Process(uint32_t pending_data) override;
 
  private:
   AudioRendererSink::RenderCallback* render_callback_;
   scoped_ptr<AudioBus> output_bus_;
-  uint64 callback_num_;
+  uint64_t callback_num_;
+
   DISALLOW_COPY_AND_ASSIGN(AudioThreadCallback);
 };
 
@@ -45,7 +52,7 @@ AudioOutputDevice::AudioOutputDevice(
     const url::Origin& security_origin)
     : ScopedTaskRunnerObserver(io_task_runner),
       callback_(NULL),
-      ipc_(ipc.Pass()),
+      ipc_(std::move(ipc)),
       state_(IDLE),
       start_on_authorized_(false),
       play_on_start_(true),
@@ -53,7 +60,6 @@ AudioOutputDevice::AudioOutputDevice(
       device_id_(device_id),
       security_origin_(security_origin),
       stopping_hack_(false),
-      switch_output_device_on_start_(false),
       did_receive_auth_(true, false),
       device_status_(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL) {
   CHECK(ipc_);
@@ -81,14 +87,6 @@ AudioOutputDevice::~AudioOutputDevice() {
   // The current design requires that the user calls Stop() before deleting
   // this class.
   DCHECK(audio_thread_.IsStopped());
-
-  // The following makes it possible for |current_switch_callback_| to release
-  // its bound parameters in the correct thread instead of implicitly releasing
-  // them in the thread where this destructor runs.
-  if (!current_switch_callback_.is_null()) {
-    base::ResetAndReturn(&current_switch_callback_)
-        .Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
-  }
 }
 
 void AudioOutputDevice::RequestDeviceAuthorization() {
@@ -146,9 +144,7 @@ void AudioOutputDevice::SwitchOutputDevice(
     const std::string& device_id,
     const url::Origin& security_origin,
     const SwitchOutputDeviceCB& callback) {
-  task_runner()->PostTask(
-      FROM_HERE, base::Bind(&AudioOutputDevice::SwitchOutputDeviceOnIOThread,
-                            this, device_id, security_origin, callback));
+  NOTREACHED();
 }
 
 AudioParameters AudioOutputDevice::GetOutputParameters() {
@@ -263,29 +259,6 @@ void AudioOutputDevice::SetVolumeOnIOThread(double volume) {
     ipc_->SetVolume(volume);
 }
 
-void AudioOutputDevice::SwitchOutputDeviceOnIOThread(
-    const std::string& device_id,
-    const url::Origin& security_origin,
-    const SwitchOutputDeviceCB& callback) {
-  DCHECK(task_runner()->BelongsToCurrentThread());
-
-  // Do not allow concurrent SwitchOutputDevice requests
-  if (!current_switch_callback_.is_null()) {
-    callback.Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
-    return;
-  }
-
-  current_switch_callback_ = callback;
-  current_switch_device_id_ = device_id;
-  current_switch_security_origin_ = security_origin;
-  if (state_ >= CREATING_STREAM) {
-    ipc_->SwitchOutputDevice(current_switch_device_id_,
-                             current_switch_security_origin_);
-  } else {
-    switch_output_device_on_start_ = true;
-  }
-}
-
 void AudioOutputDevice::OnStateChanged(AudioOutputIPCDelegateState state) {
   DCHECK(task_runner()->BelongsToCurrentThread());
 
@@ -396,22 +369,6 @@ void AudioOutputDevice::OnStreamCreated(
     if (play_on_start_)
       PlayOnIOThread();
   }
-
-  if (switch_output_device_on_start_) {
-    ipc_->SwitchOutputDevice(current_switch_device_id_,
-                             current_switch_security_origin_);
-  }
-}
-
-void AudioOutputDevice::OnOutputDeviceSwitched(OutputDeviceStatus result) {
-  DCHECK(task_runner()->BelongsToCurrentThread());
-  if (result == OUTPUT_DEVICE_STATUS_OK) {
-    session_id_ = 0;  // Output device is no longer attached to an input device
-    device_id_ = current_switch_device_id_;
-    security_origin_ = current_switch_security_origin_;
-  }
-  DCHECK(!current_switch_callback_.is_null());
-  base::ResetAndReturn(&current_switch_callback_).Run(result);
 }
 
 void AudioOutputDevice::OnIPCClosed() {
@@ -445,16 +402,19 @@ AudioOutputDevice::AudioThreadCallback::~AudioThreadCallback() {
 void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
   CHECK_EQ(total_segments_, 1);
   CHECK(shared_memory_.Map(memory_length_));
-  DCHECK_EQ(memory_length_, AudioBus::CalculateMemorySize(audio_parameters_));
+  DCHECK_EQ(static_cast<size_t>(memory_length_),
+            sizeof(AudioOutputBufferParameters) +
+                AudioBus::CalculateMemorySize(audio_parameters_));
 
-  output_bus_ =
-      AudioBus::WrapMemory(audio_parameters_, shared_memory_.memory());
+  AudioOutputBuffer* buffer =
+      reinterpret_cast<AudioOutputBuffer*>(shared_memory_.memory());
+  output_bus_ = AudioBus::WrapMemory(audio_parameters_, buffer->audio);
 }
 
 // Called whenever we receive notifications about pending data.
-void AudioOutputDevice::AudioThreadCallback::Process(uint32 pending_data) {
+void AudioOutputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
   // Convert the number of pending bytes in the render buffer into milliseconds.
-  int audio_delay_milliseconds = pending_data / bytes_per_ms_;
+  uint32_t audio_delay_milliseconds = pending_data / bytes_per_ms_;
 
   callback_num_++;
   TRACE_EVENT1("audio", "AudioOutputDevice::FireRenderCallback",
@@ -467,10 +427,18 @@ void AudioOutputDevice::AudioThreadCallback::Process(uint32 pending_data) {
     TRACE_EVENT_ASYNC_END0("audio", "StartingPlayback", this);
   }
 
-  // Update the audio-delay measurement then ask client to render audio.  Since
-  // |output_bus_| is wrapping the shared memory the Render() call is writing
-  // directly into the shared memory.
-  render_callback_->Render(output_bus_.get(), audio_delay_milliseconds);
+  // Read and reset the number of frames skipped.
+  AudioOutputBuffer* buffer =
+      reinterpret_cast<AudioOutputBuffer*>(shared_memory_.memory());
+  uint32_t frames_skipped = buffer->params.frames_skipped;
+  buffer->params.frames_skipped = 0;
+
+  // Update the audio-delay measurement, inform about the number of skipped
+  // frames, and ask client to render audio.  Since |output_bus_| is wrapping
+  // the shared memory the Render() call is writing directly into the shared
+  // memory.
+  render_callback_->Render(output_bus_.get(), audio_delay_milliseconds,
+                           frames_skipped);
 }
 
-}  // namespace media.
+}  // namespace media

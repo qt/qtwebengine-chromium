@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/html/imports/HTMLImportChild.h"
 
 #include "core/css/StyleSheetList.h"
@@ -103,6 +102,7 @@ void HTMLImportChild::didFinishUpgradingCustomElements()
 
 void HTMLImportChild::dispose()
 {
+    invalidateCustomElementMicrotaskStep();
     if (parent())
         parent()->removeChild(this);
 

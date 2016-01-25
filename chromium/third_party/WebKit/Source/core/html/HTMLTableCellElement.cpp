@@ -22,7 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "config.h"
 #include "core/html/HTMLTableCellElement.h"
 
 #include "core/CSSPropertyNames.h"
@@ -39,12 +38,12 @@ using namespace std;
 
 namespace blink {
 
-// Clamp rowspan and colspan at 8k.
-// Firefox used a limit of 8190 for rowspan but they changed it to 65,534.
-// (FIXME: We should consider increasing this limit (crbug.com/78577).
-// Firefox uses a limit of 1,000 for colspan and resets the value to 1
-// but we don't discriminate between rowspan / colspan as it is artificial.
-static const unsigned maxColRowSpan = 8190;
+// Rowspan: match Firefox's limit of 65,534. Edge has a higher limit, at
+// least 2^17.
+// Colspan: Firefox uses a limit of 1,000 for colspan and resets the value to 1.
+// TODO(dgrogan): Determine Edge's colspan limit.
+static const unsigned maxColSpan = 8190;
+static const unsigned maxRowSpan = 65534;
 
 using namespace HTMLNames;
 
@@ -61,7 +60,7 @@ unsigned HTMLTableCellElement::colSpan() const
     unsigned value = 0;
     if (colSpanValue.isEmpty() || !parseHTMLNonNegativeInteger(colSpanValue, value))
         return 1;
-    return max(1u, min(value, maxColRowSpan));
+    return max(1u, min(value, maxColSpan));
 }
 
 unsigned HTMLTableCellElement::rowSpan() const
@@ -70,7 +69,7 @@ unsigned HTMLTableCellElement::rowSpan() const
     unsigned value = 0;
     if (rowSpanValue.isEmpty() || !parseHTMLNonNegativeInteger(rowSpanValue, value))
         return 1;
-    return max(1u, min(value, maxColRowSpan));
+    return max(1u, min(value, maxRowSpan));
 }
 
 int HTMLTableCellElement::cellIndex() const
@@ -113,7 +112,7 @@ void HTMLTableCellElement::collectStyleForPresentationAttribute(const QualifiedN
     }
 }
 
-void HTMLTableCellElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLTableCellElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
 {
     if (name == rowspanAttr) {
         if (layoutObject() && layoutObject()->isTableCell())
@@ -122,7 +121,7 @@ void HTMLTableCellElement::parseAttribute(const QualifiedName& name, const Atomi
         if (layoutObject() && layoutObject()->isTableCell())
             toLayoutTableCell(layoutObject())->colSpanOrRowSpanChanged();
     } else {
-        HTMLTablePartElement::parseAttribute(name, value);
+        HTMLTablePartElement::parseAttribute(name, oldValue, value);
     }
 }
 

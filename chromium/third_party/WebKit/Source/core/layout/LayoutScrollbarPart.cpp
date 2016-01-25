@@ -23,13 +23,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
 #include "core/layout/LayoutScrollbarPart.h"
 
+#include "core/frame/FrameView.h"
 #include "core/frame/UseCounter.h"
 #include "core/layout/LayoutScrollbar.h"
 #include "core/layout/LayoutScrollbarTheme.h"
 #include "core/layout/LayoutView.h"
+#include "core/paint/PaintLayerScrollableArea.h"
 #include "platform/LengthFunctions.h"
 
 namespace blink {
@@ -118,7 +119,7 @@ static int calcScrollbarThicknessUsing(SizeType sizeType, const Length& length, 
 {
     if (!length.isIntrinsicOrAuto() || (sizeType == MinSize && length.isAuto()))
         return minimumValueForLength(length, containingLength);
-    return ScrollbarTheme::theme()->scrollbarThickness();
+    return ScrollbarTheme::theme().scrollbarThickness();
 }
 
 void LayoutScrollbarPart::computeScrollbarWidth()
@@ -178,29 +179,39 @@ void LayoutScrollbarPart::styleDidChange(StyleDifference diff, const ComputedSty
     clearPositionedState();
     setFloating(false);
     setHasOverflowClip(false);
-    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsPaintInvalidation() || diff.needsLayout()))
-        m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
+    if (oldStyle && (diff.needsPaintInvalidation() || diff.needsLayout()))
+        setNeedsPaintInvalidation();
 }
 
 void LayoutScrollbarPart::imageChanged(WrappedImagePtr image, const IntRect* rect)
 {
-    if (m_scrollbar && m_part != NoPart) {
-        m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
-    } else {
-        if (FrameView* frameView = view()->frameView()) {
-            if (frameView->isFrameViewScrollCorner(this)) {
-                frameView->invalidateScrollCorner(frameView->scrollCornerRect());
-                return;
-            }
-        }
-
-        LayoutBlock::imageChanged(image, rect);
-    }
+    setNeedsPaintInvalidation();
+    LayoutBlock::imageChanged(image, rect);
 }
 
 LayoutObject* LayoutScrollbarPart::layoutObjectOwningScrollbar() const
 {
     return (!m_scrollbar) ? nullptr : m_scrollbar->owningLayoutObject();
+}
+
+void LayoutScrollbarPart::setNeedsPaintInvalidation()
+{
+    if (m_scrollbar) {
+        m_scrollbar->setNeedsPaintInvalidation(AllParts);
+        return;
+    }
+
+    // This LayoutScrollbarPart is a scroll corner or a resizer.
+    ASSERT(m_part == NoPart);
+    if (FrameView* frameView = view()->frameView()) {
+        if (frameView->isFrameViewScrollCorner(this)) {
+            frameView->setScrollCornerNeedsPaintInvalidation();
+            return;
+        }
+    }
+
+    // This LayoutScrollbarPart belongs to a PaintLayerScrollableArea.
+    toLayoutBox(parent())->scrollableArea()->setScrollCornerNeedsPaintInvalidation();
 }
 
 }
