@@ -47,7 +47,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns nullptr if the frame does not exist.
   static RenderFrameHost* FromFrameTreeNodeId(int frame_tree_node_id);
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   // Globally allows for injecting JavaScript into the main world. This feature
   // is present only to support Android WebView and must not be used in other
   // configurations.
