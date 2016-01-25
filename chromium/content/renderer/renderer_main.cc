@@ -218,9 +218,11 @@ int RendererMain(const MainFunctionParams& parameters) {
     RenderThreadImpl::Create(std::move(main_message_loop),
                              std::move(renderer_scheduler));
 #endif
+#if !defined(TOOLKIT_QT)
     RenderThreadImpl::current()->Send(
         new StartupMetricHostMsg_RecordRendererMainEntryTime(
             renderer_main_entry_time));
+#endif
 
     base::HighResolutionTimerManager hi_res_timer_manager;
 
