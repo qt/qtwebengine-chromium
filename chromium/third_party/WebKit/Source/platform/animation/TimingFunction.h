@@ -107,6 +107,9 @@ class PLATFORM_EXPORT CubicBezierTimingFunction final : public TimingFunction {
     DEFINE_STATIC_REF(
         CubicBezierTimingFunction, easeInOut,
         (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_IN_OUT))));
+    DEFINE_STATIC_REF(
+        CubicBezierTimingFunction, easeOutNatural,
+        (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_OUT_NATURAL))));
 
     switch (easeType) {
       case EaseType::EASE:
@@ -117,6 +120,8 @@ class PLATFORM_EXPORT CubicBezierTimingFunction final : public TimingFunction {
         return easeOut;
       case EaseType::EASE_IN_OUT:
         return easeInOut;
+      case EaseType::EASE_OUT_NATURAL:
+        return easeOutNatural;
       default:
         NOTREACHED();
         return nullptr;

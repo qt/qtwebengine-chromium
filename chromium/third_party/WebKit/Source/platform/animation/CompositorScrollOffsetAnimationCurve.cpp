@@ -36,7 +36,7 @@ CompositorScrollOffsetAnimationCurve::CompositorScrollOffsetAnimationCurve(
     : m_curve(cc::ScrollOffsetAnimationCurve::Create(
           gfx::ScrollOffset(targetValue.x(), targetValue.y()),
           cc::CubicBezierTimingFunction::CreatePreset(
-              CubicBezierTimingFunction::EaseType::EASE_IN_OUT),
+              CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL),
           GetDurationBehavior(durationBehavior))) {}
 
 CompositorScrollOffsetAnimationCurve::CompositorScrollOffsetAnimationCurve(
