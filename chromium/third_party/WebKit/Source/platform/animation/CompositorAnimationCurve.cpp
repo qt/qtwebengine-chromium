@@ -19,6 +19,8 @@ std::unique_ptr<cc::TimingFunction> CompositorAnimationCurve::createTimingFuncti
         return cc::EaseOutTimingFunction::Create();
     case blink::CompositorAnimationCurve::TimingFunctionTypeEaseInOut:
         return cc::EaseInOutTimingFunction::Create();
+    case blink::CompositorAnimationCurve::TimingFunctionTypeEaseOutNatural:
+        return cc::EaseOutNaturalTimingFunction::Create();
     case blink::CompositorAnimationCurve::TimingFunctionTypeLinear:
         return nullptr;
     }

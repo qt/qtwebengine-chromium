@@ -22,6 +22,7 @@ public:
         TimingFunctionTypeEaseIn,
         TimingFunctionTypeEaseOut,
         TimingFunctionTypeEaseInOut,
+        TimingFunctionTypeEaseOutNatural,
         TimingFunctionTypeLinear
     };
 

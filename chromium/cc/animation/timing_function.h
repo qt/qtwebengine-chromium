@@ -83,6 +83,14 @@ class CC_EXPORT EaseInOutTimingFunction {
   DISALLOW_IMPLICIT_CONSTRUCTORS(EaseInOutTimingFunction);
 };
 
+class CC_EXPORT EaseOutNaturalTimingFunction {
+ public:
+  static scoped_ptr<TimingFunction> Create();
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(EaseOutNaturalTimingFunction);
+};
+
 class CC_EXPORT StepsTimingFunction : public TimingFunction {
  public:
   static scoped_ptr<StepsTimingFunction> Create(int steps,

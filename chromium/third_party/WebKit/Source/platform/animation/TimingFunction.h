@@ -122,6 +122,7 @@ public:
         EaseIn,
         EaseOut,
         EaseInOut,
+        EaseOutNatural,
         Custom
     };
 
@@ -152,6 +153,11 @@ public:
             {
                 DEFINE_STATIC_REF(CubicBezierTimingFunction, easeInOut, (adoptRef(new CubicBezierTimingFunction(EaseInOut, 0.42, 0.0, 0.58, 1.0))));
                 return easeInOut;
+            }
+        case EaseOutNatural:
+            {
+                DEFINE_STATIC_REF(CubicBezierTimingFunction, easeOutNatural, (adoptRef(new CubicBezierTimingFunction(EaseOutNatural, 0.26, 0.46, 0.45, 0.94))));
+                return easeOutNatural;
             }
         default:
             ASSERT_NOT_REACHED();
