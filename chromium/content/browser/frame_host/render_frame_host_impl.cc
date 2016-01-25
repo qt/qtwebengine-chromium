@@ -252,12 +252,14 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
   return RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
 // static
 void RenderFrameHost::AllowInjectingJavaScriptForAndroidWebView() {
   g_allow_injecting_javascript = true;
 }
+#endif // defined(OS_ANDROID) || defined(TOOLKIT_QT)
 
+#if defined(OS_ANDROID)
 void CreateMediaPlayerRenderer(
     content::RenderFrameHost* render_frame_host,
     mojo::InterfaceRequest<media::mojom::Renderer> request) {
