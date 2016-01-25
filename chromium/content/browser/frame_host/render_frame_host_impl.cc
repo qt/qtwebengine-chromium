@@ -179,7 +179,7 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
   return RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
 // static
 void RenderFrameHost::AllowInjectingJavaScriptForAndroidWebView() {
   g_allow_injecting_javascript = true;
