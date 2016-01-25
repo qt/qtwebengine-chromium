@@ -128,7 +128,7 @@ class ImageTransportSurfaceOverlayMac::OverlayPlane {
     if (layer_needs_update) {
       [ca_layer setOpaque:YES];
 
-      id new_contents = static_cast<id>(io_surface.get());
+      id new_contents = (__bridge id)(io_surface.get());
       if ([ca_layer contents] == new_contents && z_order == 0)
         [ca_layer setContentsChanged];
       else
