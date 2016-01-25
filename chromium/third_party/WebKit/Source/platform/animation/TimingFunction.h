@@ -105,6 +105,7 @@ public:
         DEFINE_STATIC_REF(CubicBezierTimingFunction, easeIn, (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_IN, 0.42, 0.0, 1.0, 1.0))));
         DEFINE_STATIC_REF(CubicBezierTimingFunction, easeOut, (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_OUT, 0.0, 0.0, 0.58, 1.0))));
         DEFINE_STATIC_REF(CubicBezierTimingFunction, easeInOut, (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_IN_OUT, 0.42, 0.0, 0.58, 1.0))));
+        DEFINE_STATIC_REF(CubicBezierTimingFunction, easeOutNatural, (adoptRef(new CubicBezierTimingFunction(EaseType::EASE_OUT_NATURAL, 0.26, 0.46, 0.45, 0.94))));
 
         switch (easeType) {
         case EaseType::EASE:
@@ -115,6 +116,8 @@ public:
             return easeOut;
         case EaseType::EASE_IN_OUT:
             return easeInOut;
+        case EaseType::EASE_OUT_NATURAL:
+            return easeOutNatural;
         default:
             NOTREACHED();
             return nullptr;

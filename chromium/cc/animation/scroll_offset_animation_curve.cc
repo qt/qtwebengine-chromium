@@ -67,13 +67,12 @@ static base::TimeDelta SegmentDuration(const gfx::Vector2dF& delta,
 static std::unique_ptr<TimingFunction> EaseOutWithInitialVelocity(
     double velocity) {
   // Clamp velocity to a sane value.
-  velocity = std::min(std::max(velocity, -1000.0), 1000.0);
+  velocity = std::min(std::max(velocity, -100.0), 100.0);
 
-  // Based on CubicBezierTimingFunction::EaseType::EASE_IN_OUT preset
-  // with first control point scaled.
-  const double x1 = 0.42;
-  const double y1 = velocity * x1;
-  return CubicBezierTimingFunction::Create(x1, y1, 0.58, 1);
+  // Based on EaseOutNaturalTimingFunction::Create with first control point adjusted to initial velocity.
+  const double x1 = 0.25;
+  const double y1 = velocity * 0.25;
+  return CubicBezierTimingFunction::Create(x1, y1, 0.45, 0.94);
 }
 
 }  // namespace
