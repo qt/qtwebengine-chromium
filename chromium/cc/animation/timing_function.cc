@@ -64,6 +64,11 @@ scoped_ptr<TimingFunction> EaseInOutTimingFunction::Create() {
   return CubicBezierTimingFunction::Create(0.42, 0.0, 0.58, 1);
 }
 
+// Try to hit natural quadratic ease-out
+scoped_ptr<TimingFunction> EaseOutNaturalTimingFunction::Create() {
+  return CubicBezierTimingFunction::Create(0.26, 0.46, 0.45, 0.94);
+}
+
 scoped_ptr<StepsTimingFunction> StepsTimingFunction::Create(
     int steps,
     float steps_start_offset) {

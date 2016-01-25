@@ -19,6 +19,8 @@ scoped_ptr<cc::TimingFunction> CreateTimingFunction(
       return cc::EaseOutTimingFunction::Create();
     case blink::WebCompositorAnimationCurve::TimingFunctionTypeEaseInOut:
       return cc::EaseInOutTimingFunction::Create();
+    case blink::WebCompositorAnimationCurve::TimingFunctionTypeEaseOutNatural:
+      return cc::EaseOutNaturalTimingFunction::Create();
     case blink::WebCompositorAnimationCurve::TimingFunctionTypeLinear:
       return nullptr;
   }

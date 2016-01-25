@@ -227,7 +227,7 @@ void ScrollAnimator::updateCompositorAnimations()
             m_animationCurve = adoptPtr(Platform::current()->compositorSupport()
                 ->createScrollOffsetAnimationCurve(
                     m_targetOffset,
-                    WebCompositorAnimationCurve::TimingFunctionTypeEaseInOut,
+                    WebCompositorAnimationCurve::TimingFunctionTypeEaseOutNatural,
                     m_lastGranularity == ScrollByPixel ?
                         WebScrollOffsetAnimationCurve::ScrollDurationInverseDelta :
                         WebScrollOffsetAnimationCurve::ScrollDurationConstant));
