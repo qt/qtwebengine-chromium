@@ -35,6 +35,11 @@
 #include "base/win/windows_version.h"
 #endif
 
+#if defined(TOOLKIT_QT)
+// Used to fetch the application name
+#include "web_engine_library_info.h"
+#endif
+
 using error_page::OfflinePageStatus;
 
 // Some error pages have no details.
@@ -626,7 +631,11 @@ void LocalizedError::GetStrings(int error_code,
   summary->SetString("failedUrl", failed_url_string);
   summary->SetString("hostName", host_name);
   summary->SetString("productName",
+#if !defined(TOOLKIT_QT)
                      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+#else
+                     WebEngineLibraryInfo::getApplicationName());
+#endif
 
   error_strings->SetString(
       "details", l10n_util::GetStringUTF16(IDS_ERRORPAGE_NET_BUTTON_DETAILS));
