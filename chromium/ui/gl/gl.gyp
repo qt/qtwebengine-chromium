@@ -186,9 +186,13 @@
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
             '<(DEPTH)/ui/events/platform/events_platform.gyp:events_platform',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
+          ],
+        }],
+        ['use_x11 == 1 and use_qt == 0', {
+          'dependencies': [
             '<(DEPTH)/third_party/angle/src/angle.gyp:libEGL_ANGLE',
             '<(DEPTH)/third_party/angle/src/angle.gyp:libGLESv2_ANGLE',
-            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS=="win"', {
@@ -223,6 +227,8 @@
               '-ldwmapi.lib',
             ],
           },
+        }],
+        ['OS=="win" and use_qt == 0', {
           'dependencies': [
             '<(DEPTH)/third_party/angle/src/angle.gyp:libEGL',
             '<(DEPTH)/third_party/angle/src/angle.gyp:libGLESv2',

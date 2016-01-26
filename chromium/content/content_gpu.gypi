@@ -25,7 +25,7 @@
     '..',
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and use_qt==0', {
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
         # ANGLE libs picked up from ui/gl
@@ -35,6 +35,15 @@
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
+        ],
+      },
+    }],
+    ['qt_os=="win32" and qt_gl=="angle"', {
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+          '-l<(qt_egl_library)',
+          '-l<(qt_glesv2_library)',
         ],
       },
     }],
