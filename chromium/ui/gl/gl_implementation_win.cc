@@ -38,6 +38,14 @@ namespace {
 
 const wchar_t kD3DCompiler[] = L"D3DCompiler_47.dll";
 
+#if defined(NDEBUG) || !defined(TOOLKIT_QT)
+const wchar_t kGLESv2Library[] = L"libglesv2.dll";
+const wchar_t kEGLLibrary[] = L"libegl.dll";
+#else
+const wchar_t kGLESv2Library[] = L"libglesv2d.dll";
+const wchar_t kEGLLibrary[] = L"libegld.dll";
+#endif
+
 void GL_BINDING_CALL MarshalClearDepthToClearDepthf(GLclampd depth) {
   glClearDepthf(static_cast<GLclampf>(depth));
 }
@@ -153,18 +161,18 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       // the former and if there is another version of libglesv2.dll in the dll
       // search path, it will get loaded instead.
       base::NativeLibrary gles_library = base::LoadNativeLibrary(
-          gles_path.Append(L"libglesv2.dll"), NULL);
+          gles_path.Append(kGLESv2Library), NULL);
       if (!gles_library) {
-        DVLOG(1) << "libglesv2.dll not found";
+        DVLOG(1) << kGLESv2Library << " not found";
         return false;
       }
 
       // When using EGL, first try eglGetProcAddress and then Windows
       // GetProcAddress on both the EGL and GLES2 DLLs.
       base::NativeLibrary egl_library = base::LoadNativeLibrary(
-          gles_path.Append(L"libegl.dll"), NULL);
+          gles_path.Append(kEGLLibrary), NULL);
       if (!egl_library) {
-        DVLOG(1) << "libegl.dll not found.";
+        DVLOG(1) << kEGLLibrary << " not found.";
         base::UnloadNativeLibrary(gles_library);
         return false;
       }
