@@ -16,7 +16,7 @@
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_implementation.h"
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(TOOLKIT_QT)
 #include "ui/gl/gl_fence_egl.h"
 #endif
 
@@ -27,7 +27,7 @@ namespace {
 
 base::LazyInstance<base::Lock> g_lock = LAZY_INSTANCE_INITIALIZER;
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
 typedef std::map<SyncToken, linked_ptr<gfx::GLFence>> SyncTokenToFenceMap;
 base::LazyInstance<SyncTokenToFenceMap> g_sync_point_to_fence =
     LAZY_INSTANCE_INITIALIZER;
@@ -36,7 +36,7 @@ base::LazyInstance<std::queue<SyncTokenToFenceMap::iterator>> g_sync_points =
 #endif
 
 void CreateFenceLocked(const SyncToken& sync_token) {
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
   g_lock.Get().AssertAcquired();
   if (gfx::GetGLImplementation() == gfx::kGLImplementationMockGL)
     return;
@@ -49,8 +49,13 @@ void CreateFenceLocked(const SyncToken& sync_token) {
       sync_point_to_fence.erase(sync_points.front());
       sync_points.pop();
     }
+#if !defined(TOOLKIT_QT)
     // Need to use EGL fences since we are likely not in a single share group.
     linked_ptr<gfx::GLFence> fence(make_linked_ptr(new gfx::GLFenceEGL));
+#else
+    // Need to use a fence that is actually supported, and we use the same share group.
+    linked_ptr<gfx::GLFence> fence(make_linked_ptr(gfx::GLFence::Create()));
+#endif
     if (fence.get()) {
       std::pair<SyncTokenToFenceMap::iterator, bool> result =
           sync_point_to_fence.insert(std::make_pair(sync_token, fence));
@@ -63,7 +68,7 @@ void CreateFenceLocked(const SyncToken& sync_token) {
 }
 
 void AcquireFenceLocked(const SyncToken& sync_token) {
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
   g_lock.Get().AssertAcquired();
   SyncTokenToFenceMap::iterator fence_it =
       g_sync_point_to_fence.Get().find(sync_token);
