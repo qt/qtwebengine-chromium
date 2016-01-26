@@ -439,6 +439,13 @@ component("gl") {
   if (is_chromecast) {
     defines += [ "CHROMECAST_BUILD" ]
   }
+
+  if (use_qt && (is_win || use_x11 || ozone_platform_x11 || (is_mac && use_egl))) {
+    data_deps -= [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
+  }
 }
 
 if (is_mac && use_egl) {
