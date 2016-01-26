@@ -428,10 +428,12 @@ if (is_win || is_android || is_chromeos) {
     if (is_win) {
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-      deps += [
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
-      ]
+      if (!use_qt) {
+        deps += [
+          "//third_party/angle:libEGL",
+          "//third_party/angle:libGLESv2",
+        ]
+      }
     }
 
     if (use_x11) {
