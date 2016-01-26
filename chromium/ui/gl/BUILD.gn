@@ -387,6 +387,13 @@ jumbo_component("gl") {
 
     deps += [ ":gl_jni_headers" ]
   }
+
+  if (use_qt && (is_win || use_x11)) {
+    data_deps -= [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
+  }
 }
 
 if (is_mac && use_egl) {
