@@ -21,7 +21,6 @@
 #include "components/error_page/common/error_page_switches.h"
 #include "components/error_page/common/net_error_info.h"
 #include "components/strings/grit/components_chromium_strings.h"
-#include "components/strings/grit/components_google_chrome_strings.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/escape.h"
@@ -35,6 +34,10 @@
 
 #if defined(OS_ANDROID)
 #include "components/offline_pages/offline_page_feature.h"
+#endif
+
+#if !defined(TOOLKIT_QT)
+#include "components/strings/grit/components_google_chrome_strings.h"
 #endif
 
 namespace error_page {
