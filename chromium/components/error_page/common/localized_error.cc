@@ -40,6 +40,10 @@
 #include "components/offline_pages/core/offline_page_feature.h"
 #endif
 
+#if !defined(TOOLKIT_QT)
+#include "components/strings/grit/components_google_chrome_strings.h"
+#endif
+
 namespace error_page {
 
 namespace {
