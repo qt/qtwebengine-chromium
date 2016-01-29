@@ -100,6 +100,8 @@ declare_args() {
   # kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled.
   enable_platform_encrypted_dolby_vision = proprietary_codecs && is_win
 
+  enable_web_speech = true
+
   # Enable logging override, e.g. enable DVLOGs through level 2 at build time.
   # On Cast devices, these are logged as INFO.
   # When enabled on Fuchsia, these are logged as VLOGs.
