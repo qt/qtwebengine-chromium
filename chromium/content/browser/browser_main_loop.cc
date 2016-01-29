@@ -1527,7 +1527,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
       "BrowserMainLoop::BrowserThreadsStarted:InitMediaStreamManager");
     media_stream_manager_.reset(new MediaStreamManager(audio_system_.get()));
   }
-
+#if defined(ENABLE_WEB_SPEECH) || defined(OS_ANDROID)
   {
     TRACE_EVENT0("startup",
       "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
@@ -1535,6 +1535,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
         audio_system_.get(), audio_manager_.get(),
         media_stream_manager_.get()));
   }
+#endif
 
   {
     TRACE_EVENT0(
