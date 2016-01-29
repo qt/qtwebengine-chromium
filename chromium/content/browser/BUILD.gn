@@ -1830,11 +1830,6 @@ source_set("browser") {
     "sms/webotp_service.h",
     "speculation_rules/speculation_host_impl.cc",
     "speculation_rules/speculation_host_impl.h",
-    "speech/speech_recognition_dispatcher_host.cc",
-    "speech/speech_recognition_dispatcher_host.h",
-    "speech/speech_recognition_manager_impl.cc",
-    "speech/speech_recognition_manager_impl.h",
-    "speech/speech_recognizer.h",
     "speech/speech_synthesis_impl.cc",
     "speech/speech_synthesis_impl.h",
     "speech/tts_controller_impl.cc",
@@ -2845,21 +2840,6 @@ source_set("browser") {
       "serial/serial_service.cc",
       "serial/serial_service.h",
 
-      # Most speech code is non-Android.
-      "speech/audio_buffer.cc",
-      "speech/audio_buffer.h",
-      "speech/audio_encoder.cc",
-      "speech/audio_encoder.h",
-      "speech/endpointer/endpointer.cc",
-      "speech/endpointer/endpointer.h",
-      "speech/endpointer/energy_endpointer.cc",
-      "speech/endpointer/energy_endpointer.h",
-      "speech/endpointer/energy_endpointer_params.cc",
-      "speech/endpointer/energy_endpointer_params.h",
-      "speech/speech_recognition_engine.cc",
-      "speech/speech_recognition_engine.h",
-      "speech/speech_recognizer_impl.cc",
-      "speech/speech_recognizer_impl.h",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -2883,11 +2863,6 @@ source_set("browser") {
       "webauth/virtual_discovery.h",
       "webauth/virtual_fido_discovery_factory.cc",
       "webauth/virtual_fido_discovery_factory.h",
-    ]
-
-    deps += [
-      "//components/speech",
-      "//third_party/flac",
     ]
   }
 
@@ -2994,6 +2969,37 @@ source_set("browser") {
         "renderer_host/browser_compositor_view_mac.mm",
       ]
     }
+  }
+
+  if (enable_web_speech) {
+    sources += [
+      "speech/audio_buffer.cc",
+      "speech/audio_buffer.h",
+      "speech/audio_encoder.cc",
+      "speech/audio_encoder.h",
+      "speech/chunked_byte_buffer.cc",
+      "speech/chunked_byte_buffer.h",
+      "speech/endpointer/endpointer.cc",
+      "speech/endpointer/endpointer.h",
+      "speech/endpointer/energy_endpointer.cc",
+      "speech/endpointer/energy_endpointer.h",
+      "speech/endpointer/energy_endpointer_params.cc",
+      "speech/endpointer/energy_endpointer_params.h",
+      "speech/speech_recognition_engine.cc",
+      "speech/speech_recognition_engine.h",
+      "speech/speech_recognizer_impl.cc",
+      "speech/speech_recognizer_impl.h",
+      "speech/speech_recognition_dispatcher_host.cc",
+      "speech/speech_recognition_dispatcher_host.h",
+      "speech/speech_recognition_manager_impl.cc",
+      "speech/speech_recognition_manager_impl.h",
+      "speech/speech_recognizer.h",
+    ]
+    deps += [
+      "//components/speech",
+      "//content/browser/speech/proto",
+      "//third_party/flac",
+    ]
   }
 
   if ((is_linux || is_chromeos) && use_dbus) {
