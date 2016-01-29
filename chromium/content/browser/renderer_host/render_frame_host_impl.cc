@@ -7686,6 +7686,7 @@ RenderFrameHostImpl::GetPresentationServiceForTesting() {
 
 void RenderFrameHostImpl::GetSpeechSynthesis(
     mojo::PendingReceiver<blink::mojom::SpeechSynthesis> receiver) {
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   if (!speech_synthesis_impl_) {
     speech_synthesis_impl_ = std::make_unique<SpeechSynthesisImpl>(
         GetProcess()->GetBrowserContext(), delegate_->GetAsWebContents());
@@ -7697,6 +7698,7 @@ void RenderFrameHostImpl::GetSpeechSynthesis(
   // TODO(sreejakshetty): Make SpeechSynthesis compatible with BackForwardCache.
   OnSchedulerTrackedFeatureUsed(
       blink::scheduler::WebSchedulerTrackedFeature::kSpeechSynthesis);
+#endif
 }
 
 void RenderFrameHostImpl::GetSensorProvider(

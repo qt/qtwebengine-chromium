@@ -512,7 +512,9 @@ BrowserContext::~BrowserContext() {
   if (GetUserData(kDownloadManagerKeyName))
     GetDownloadManager(this)->Shutdown();
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   TtsControllerImpl::GetInstance()->OnBrowserContextDestroyed(this);
+#endif
 
   TRACE_EVENT_NESTABLE_ASYNC_END1(
       "shutdown", "BrowserContext::NotifyWillBeDestroyed() called.", this,
