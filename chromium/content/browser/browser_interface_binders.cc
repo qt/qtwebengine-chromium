@@ -21,7 +21,9 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/screen_enumeration/screen_enumeration_impl.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
+#endif
 #include "content/browser/wake_lock/wake_lock_service_impl.h"
 #include "content/browser/worker_host/dedicated_worker_host.h"
 #include "content/browser/worker_host/shared_worker_host.h"
@@ -64,8 +66,10 @@
 #include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom.h"
 #include "third_party/blink/public/mojom/presentation/presentation.mojom.h"
 #include "third_party/blink/public/mojom/sms/sms_receiver.mojom.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "third_party/blink/public/mojom/speech/speech_recognizer.mojom.h"
 #include "third_party/blink/public/mojom/speech/speech_synthesis.mojom.h"
+#endif
 #include "third_party/blink/public/mojom/usb/web_usb_service.mojom.h"
 #include "third_party/blink/public/mojom/wake_lock/wake_lock.mojom.h"
 #include "third_party/blink/public/mojom/webaudio/audio_context_manager.mojom.h"
@@ -174,6 +178,7 @@ void PopulateFrameBinders(RenderFrameHostImpl* host,
   map->Add<blink::mojom::PresentationService>(base::BindRepeating(
       &RenderFrameHostImpl::GetPresentationService, base::Unretained(host)));
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   map->Add<blink::mojom::SpeechRecognizer>(
       base::BindRepeating(&SpeechRecognitionDispatcherHost::Create,
                           host->GetProcess()->GetID(), host->GetRoutingID()),
@@ -181,6 +186,7 @@ void PopulateFrameBinders(RenderFrameHostImpl* host,
 
   map->Add<blink::mojom::SpeechSynthesis>(base::BindRepeating(
       &RenderFrameHostImpl::GetSpeechSynthesis, base::Unretained(host)));
+#endif
 
   map->Add<blink::mojom::ScreenEnumeration>(
       base::BindRepeating(&ScreenEnumerationImpl::Create));

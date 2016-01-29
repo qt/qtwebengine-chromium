@@ -96,7 +96,6 @@ jumbo_source_set("browser") {
     "//content/browser/payments:payment_app_proto",
     "//content/browser/process_internals:mojo_bindings",
     "//content/browser/service_worker:service_worker_proto",
-    "//content/browser/speech/proto",
     "//content/common",
     "//content/common:buildflags",
     "//content/common:mojo_bindings",
@@ -1753,25 +1752,6 @@ jumbo_source_set("browser") {
     "sms/sms_provider.h",
     "sms/sms_service.cc",
     "sms/sms_service.h",
-    "speech/speech_recognition_dispatcher_host.cc",
-    "speech/speech_recognition_dispatcher_host.h",
-    "speech/speech_recognition_manager_impl.cc",
-    "speech/speech_recognition_manager_impl.h",
-    "speech/speech_recognizer.h",
-    "speech/speech_recognizer_impl_android.cc",
-    "speech/speech_recognizer_impl_android.h",
-    "speech/speech_synthesis_impl.cc",
-    "speech/speech_synthesis_impl.h",
-    "speech/tts_android.cc",
-    "speech/tts_android.h",
-    "speech/tts_controller_impl.cc",
-    "speech/tts_controller_impl.h",
-    "speech/tts_mac.mm",
-    "speech/tts_platform_impl.cc",
-    "speech/tts_platform_impl.h",
-    "speech/tts_utterance_impl.cc",
-    "speech/tts_utterance_impl.h",
-    "speech/tts_win.cc",
     "ssl/ssl_client_auth_handler.cc",
     "ssl/ssl_client_auth_handler.h",
     "ssl/ssl_error_handler.cc",
@@ -1977,7 +1957,7 @@ jumbo_source_set("browser") {
     ]
   }
 
-  if (is_desktop_linux) {
+  if (is_desktop_linux && enable_web_speech) {
     sources += [ "speech/tts_linux.cc" ]
     deps += [ "//third_party/speech-dispatcher" ]
   }
@@ -2462,24 +2442,6 @@ jumbo_source_set("browser") {
       "sms/sms_provider_desktop.cc",
       "sms/sms_provider_desktop.h",
 
-      # Most speech code is non-Android.
-      "speech/audio_buffer.cc",
-      "speech/audio_buffer.h",
-      "speech/audio_encoder.cc",
-      "speech/audio_encoder.h",
-      "speech/chunked_byte_buffer.cc",
-      "speech/chunked_byte_buffer.h",
-      "speech/endpointer/endpointer.cc",
-      "speech/endpointer/endpointer.h",
-      "speech/endpointer/energy_endpointer.cc",
-      "speech/endpointer/energy_endpointer.h",
-      "speech/endpointer/energy_endpointer_params.cc",
-      "speech/endpointer/energy_endpointer_params.h",
-      "speech/speech_recognition_engine.cc",
-      "speech/speech_recognition_engine.h",
-      "speech/speech_recognizer_impl.cc",
-      "speech/speech_recognizer_impl.h",
-
       # Most webauth code is non-Android
       "webauth/authenticator_common.cc",
       "webauth/authenticator_common.h",
@@ -2498,8 +2460,6 @@ jumbo_source_set("browser") {
       "webauth/virtual_fido_discovery_factory.cc",
       "webauth/virtual_fido_discovery_factory.h",
     ]
-
-    deps += [ "//third_party/flac" ]
   }
 
   if (is_mac && !use_qt) {
@@ -2625,6 +2585,50 @@ jumbo_source_set("browser") {
       "//components/viz/service",
       "//ui/compositor",
       "//ui/compositor/host",
+    ]
+  }
+
+  if (enable_web_speech) {
+    sources += [
+      "speech/audio_buffer.cc",
+      "speech/audio_buffer.h",
+      "speech/audio_encoder.cc",
+      "speech/audio_encoder.h",
+      "speech/chunked_byte_buffer.cc",
+      "speech/chunked_byte_buffer.h",
+      "speech/endpointer/endpointer.cc",
+      "speech/endpointer/endpointer.h",
+      "speech/endpointer/energy_endpointer.cc",
+      "speech/endpointer/energy_endpointer.h",
+      "speech/endpointer/energy_endpointer_params.cc",
+      "speech/endpointer/energy_endpointer_params.h",
+      "speech/speech_recognition_engine.cc",
+      "speech/speech_recognition_engine.h",
+      "speech/speech_recognizer_impl.cc",
+      "speech/speech_recognizer_impl.h",
+      "speech/speech_recognition_dispatcher_host.cc",
+      "speech/speech_recognition_dispatcher_host.h",
+      "speech/speech_recognition_manager_impl.cc",
+      "speech/speech_recognition_manager_impl.h",
+      "speech/speech_recognizer.h",
+      "speech/speech_recognizer_impl_android.cc",
+      "speech/speech_recognizer_impl_android.h",
+      "speech/speech_synthesis_impl.cc",
+      "speech/speech_synthesis_impl.h",
+      "speech/tts_android.cc",
+      "speech/tts_android.h",
+      "speech/tts_controller_impl.cc",
+      "speech/tts_controller_impl.h",
+      "speech/tts_mac.mm",
+      "speech/tts_platform_impl.cc",
+      "speech/tts_platform_impl.h",
+      "speech/tts_utterance_impl.cc",
+      "speech/tts_utterance_impl.h",
+      "speech/tts_win.cc",
+    ]
+    deps += [
+      "//content/browser/speech/proto",
+      "//third_party/flac",
     ]
   }
 
