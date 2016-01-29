@@ -925,8 +925,10 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #if defined(ENABLE_PLUGINS)
   AddFilter(new PepperRendererConnection(GetID()));
 #endif
+#if defined(ENABLE_WEB_SPEECH) || defined(OS_ANDROID)
   AddFilter(new SpeechRecognitionDispatcherHost(
       GetID(), storage_partition_impl_->GetURLRequestContext()));
+#endif
   AddFilter(new FileAPIMessageFilter(
       GetID(), storage_partition_impl_->GetURLRequestContext(),
       storage_partition_impl_->GetFileSystemContext(),
