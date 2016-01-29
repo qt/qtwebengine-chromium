@@ -127,7 +127,7 @@
 #include "media/remoting/remoting_renderer_factory.h"  // nogncheck
 #endif  // BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "content/renderer/media/win/dcomp_texture_wrapper_impl.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "media/base/win/mf_feature_checks.h"
@@ -633,7 +633,7 @@ MediaFactory::CreateRendererFactorySelector(
       RendererType::kCourier, std::move(courier_factory), is_remoting_cb);
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_WEB_SPEECH)
   // Enable Media Foundation for Clear if it is supported & there are no GPU
   // workarounds enabled.
   bool use_mf_for_clear = false;
