@@ -56,6 +56,8 @@ declare_args() {
 
   enable_webrtc = !is_ios && !is_cast_audio_only
 
+  enable_web_speech = true
+
   # Enable HLS with SAMPLE-AES decryption.
   # Enabled by default on the cast desktop implementation to allow unit tests of
   # MP2TS parsing support.
