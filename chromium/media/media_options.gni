@@ -76,6 +76,8 @@ declare_args() {
   # still not supported. The actual support depends on platform capability.
   enable_platform_encrypted_dolby_vision = false
 
+  enable_web_speech = true
+
   # Enable HLS with SAMPLE-AES decryption.
   #
   # TODO(crbug.com/1329657): Remove the `is_fuchsia` condition once fuchsia
