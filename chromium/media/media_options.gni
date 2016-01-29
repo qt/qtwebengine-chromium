@@ -90,6 +90,8 @@ declare_args() {
   # which are encoded using HEVC require |enable_platform_hevc| to be enabled.
   enable_platform_dolby_vision = proprietary_codecs && is_chromecast
 
+  enable_web_speech = true
+
   # Enable HLS with SAMPLE-AES decryption.
   enable_hls_sample_aes = proprietary_codecs && (is_chromecast || is_fuchsia)
 
