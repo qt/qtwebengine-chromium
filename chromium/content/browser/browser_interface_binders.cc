@@ -42,7 +42,9 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/service_worker/service_worker_host.h"
 #include "content/browser/speculation_rules/speculation_host_impl.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
+#endif
 #include "content/browser/wake_lock/wake_lock_service_impl.h"
 #include "content/browser/web_contents/file_chooser_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -128,7 +130,9 @@
 #include "third_party/blink/public/mojom/quota/quota_manager_host.mojom.h"
 #include "third_party/blink/public/mojom/sms/webotp_service.mojom.h"
 #include "third_party/blink/public/mojom/speculation_rules/speculation_rules.mojom.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "third_party/blink/public/mojom/speech/speech_recognizer.mojom.h"
+#endif
 #include "third_party/blink/public/mojom/speech/speech_synthesis.mojom.h"
 #include "third_party/blink/public/mojom/usb/web_usb_service.mojom.h"
 #include "third_party/blink/public/mojom/wake_lock/wake_lock.mojom.h"
@@ -152,7 +156,9 @@
 #include "third_party/blink/public/mojom/unhandled_tap_notifier/unhandled_tap_notifier.mojom.h"
 #else  // !defined(OS_ANDROID)
 #include "content/browser/direct_sockets/direct_sockets_service_impl.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "media/mojo/mojom/speech_recognition_service.mojom.h"
+#endif
 #include "third_party/blink/public/mojom/hid/hid.mojom.h"
 #include "third_party/blink/public/mojom/installedapp/installed_app_provider.mojom.h"
 #include "third_party/blink/public/mojom/serial/serial.mojom.h"
@@ -709,10 +715,12 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
   map->Add<blink::mojom::SharedWorkerConnector>(
       base::BindRepeating(&BindSharedWorkerConnector, base::Unretained(host)));
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   map->Add<blink::mojom::SpeechRecognizer>(
       base::BindRepeating(&SpeechRecognitionDispatcherHost::Create,
                           host->GetProcess()->GetID(), host->GetRoutingID()),
       GetIOThreadTaskRunner({}));
+#endif
 
   map->Add<blink::mojom::SpeechSynthesis>(base::BindRepeating(
       &RenderFrameHostImpl::GetSpeechSynthesis, base::Unretained(host)));
@@ -944,12 +952,14 @@ void PopulateBinderMapWithContext(
     map->Add<blink::mojom::DirectSocketsService>(
         base::BindRepeating(&DirectSocketsServiceImpl::CreateForFrame));
   }
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   map->Add<media::mojom::SpeechRecognitionContext>(base::BindRepeating(
       &EmptyBinderForFrame<media::mojom::SpeechRecognitionContext>));
   map->Add<media::mojom::SpeechRecognitionClientBrowserInterface>(
       base::BindRepeating(
           &EmptyBinderForFrame<
               media::mojom::SpeechRecognitionClientBrowserInterface>));
+#endif
 #endif
 #if BUILDFLAG(ENABLE_UNHANDLED_TAP)
   map->Add<blink::mojom::UnhandledTapNotifier>(base::BindRepeating(
