@@ -2264,13 +2264,6 @@ source_set("browser") {
     "sms/user_consent_handler.h",
     "sms/webotp_service.cc",
     "sms/webotp_service.h",
-    "speech/speech_recognition_dispatcher_host.cc",
-    "speech/speech_recognition_dispatcher_host.h",
-    "speech/speech_recognition_manager_impl.cc",
-    "speech/speech_recognition_manager_impl.h",
-    "speech/speech_recognition_session.cc",
-    "speech/speech_recognition_session.h",
-    "speech/speech_recognizer.h",
     "speech/speech_synthesis_impl.cc",
     "speech/speech_synthesis_impl.h",
     "speech/tts_controller_impl.cc",
@@ -3468,13 +3461,6 @@ source_set("browser") {
       "service_worker/service_worker_usb_delegate_observer.cc",
       "service_worker/service_worker_usb_delegate_observer.h",
 
-      # Most speech code is non-Android.
-      "speech/network_speech_recognition_engine_impl.cc",
-      "speech/network_speech_recognition_engine_impl.h",
-      "speech/speech_recognition_engine.cc",
-      "speech/speech_recognition_engine.h",
-      "speech/speech_recognizer_impl.cc",
-      "speech/speech_recognizer_impl.h",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -3525,10 +3511,6 @@ source_set("browser") {
     deps += [
       "//components/device_event_log",
       "//components/password_manager/core/common",
-      "//components/soda",
-      "//components/soda:constants",
-      "//components/soda:utils",
-      "//components/speech",
       "//components/vector_icons",
       "//components/webauthn/json",
       "//content/browser/tracing:resources",
@@ -3607,6 +3589,30 @@ source_set("browser") {
       "renderer_host/delegated_frame_host.h",
     ]
     deps += [ "//ui/compositor" ]
+  }
+
+  if (enable_web_speech) {
+    sources += [
+      "speech/network_speech_recognition_engine_impl.cc",
+      "speech/network_speech_recognition_engine_impl.h",
+      "speech/speech_recognition_engine.cc",
+      "speech/speech_recognition_engine.h",
+      "speech/speech_recognizer_impl.cc",
+      "speech/speech_recognizer_impl.h",
+      "speech/speech_recognition_dispatcher_host.cc",
+      "speech/speech_recognition_dispatcher_host.h",
+      "speech/speech_recognition_manager_impl.cc",
+      "speech/speech_recognition_manager_impl.h",
+      "speech/speech_recognition_session.cc",
+      "speech/speech_recognition_session.h",
+      "speech/speech_recognizer.h",
+    ]
+    deps += [
+      "//components/soda",
+      "//components/soda:constants",
+      "//components/soda:utils",
+      "//components/speech",
+    ]
   }
 
   if ((is_linux || is_chromeos) && use_dbus) {
