@@ -2993,6 +2993,9 @@
       ['enable_google_now==1', {
         'defines': ['ENABLE_GOOGLE_NOW=1'],
       }],
+      ['enable_web_speech==1', {
+        'defines': ['ENABLE_WEB_SPEECH=1'],
+      }],
       ['cld_version!=0', {
         'defines': ['CLD_VERSION=<(cld_version)'],
       }],

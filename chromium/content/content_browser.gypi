@@ -2073,10 +2073,13 @@
         '../third_party/flac/flac.gyp:libflac',
         '../third_party/speex/speex.gyp:libspeex',
       ],
+    }, { # enable_web_speech==0
+      'sources/': [
+        ['exclude', '^browser/speech/'],
+      ],
     }],
     ['enable_web_speech==0 and OS=="android"', {
       'sources/': [
-        ['exclude', '^browser/speech/'],
         ['include', '^browser/speech/speech_recognition_dispatcher_host\\.(cc|h)$'],
         ['include', '^browser/speech/speech_recognition_manager_impl\\.(cc|h)$'],
         ['include', '^browser/speech/speech_recognizer\\.h$'],
