@@ -2238,24 +2238,6 @@ jumbo_source_set("browser") {
       "host_zoom_map_observer.cc",
       "host_zoom_map_observer.h",
 
-      # Most speech code is non-Android.
-      "speech/audio_buffer.cc",
-      "speech/audio_buffer.h",
-      "speech/audio_encoder.cc",
-      "speech/audio_encoder.h",
-      "speech/chunked_byte_buffer.cc",
-      "speech/chunked_byte_buffer.h",
-      "speech/endpointer/endpointer.cc",
-      "speech/endpointer/endpointer.h",
-      "speech/endpointer/energy_endpointer.cc",
-      "speech/endpointer/energy_endpointer.h",
-      "speech/endpointer/energy_endpointer_params.cc",
-      "speech/endpointer/energy_endpointer_params.h",
-      "speech/speech_recognition_engine.cc",
-      "speech/speech_recognition_engine.h",
-      "speech/speech_recognizer_impl.cc",
-      "speech/speech_recognizer_impl.h",
-
       # Most webauth code is non-Android
       "webauth/authenticator_impl.cc",
       "webauth/authenticator_impl.h",
@@ -2268,7 +2250,6 @@ jumbo_source_set("browser") {
       "webauth/virtual_discovery.cc",
       "webauth/virtual_discovery.h",
     ]
-    deps += [ "//third_party/flac" ]
   }
 
   if (is_mac && !use_qt) {
@@ -2394,6 +2375,36 @@ jumbo_source_set("browser") {
       "//components/viz/service",
       "//ui/compositor",
       "//ui/compositor/host",
+    ]
+  }
+
+  if (enable_web_speech) {
+    sources += [
+      # Most speech code is non-Android.
+      "speech/audio_buffer.cc",
+      "speech/audio_buffer.h",
+      "speech/audio_encoder.cc",
+      "speech/audio_encoder.h",
+      "speech/chunked_byte_buffer.cc",
+      "speech/chunked_byte_buffer.h",
+      "speech/endpointer/endpointer.cc",
+      "speech/endpointer/endpointer.h",
+      "speech/endpointer/energy_endpointer.cc",
+      "speech/endpointer/energy_endpointer.h",
+      "speech/endpointer/energy_endpointer_params.cc",
+      "speech/endpointer/energy_endpointer_params.h",
+      "speech/speech_recognition_engine.cc",
+      "speech/speech_recognition_engine.h",
+      "speech/speech_recognizer_impl.cc",
+      "speech/speech_recognizer_impl.h",
+    ]
+    deps += [ "//third_party/flac" ]
+  } else {
+    sources -= [
+      "speech/speech_recognition_manager_impl.cc",
+      "speech/speech_recognition_manager_impl.h",
+      "speech/speech_recognition_dispatcher_host.cc",
+      "speech/speech_recognition_dispatcher_host.h",
     ]
   }
 

@@ -3549,10 +3549,12 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
   registry_->AddInterface(base::BindRepeating(
       &QuotaDispatcherHost::CreateForFrame, GetProcess(), routing_id_));
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   registry_->AddInterface(
       base::BindRepeating(SpeechRecognitionDispatcherHost::Create,
                           GetProcess()->GetID(), routing_id_),
       BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+#endif
 }
 
 void RenderFrameHostImpl::ResetWaitingState() {
