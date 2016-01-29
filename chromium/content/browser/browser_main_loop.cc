@@ -1380,13 +1380,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     media_stream_manager_ = std::make_unique<MediaStreamManager>(
         audio_system_.get(), std::move(audio_task_runner));
   }
-
+#if defined(ENABLE_WEB_SPEECH)
   {
     TRACE_EVENT0("startup",
       "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
     speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl(
         audio_system_.get(), media_stream_manager_.get()));
   }
+#endif
 
   {
     TRACE_EVENT0(

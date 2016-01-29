@@ -3769,30 +3769,12 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
   registry_->AddInterface(base::BindRepeating(
       &QuotaDispatcherHost::CreateForFrame, GetProcess(), routing_id_));
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   registry_->AddInterface(
       base::BindRepeating(SpeechRecognitionDispatcherHost::Create,
                           GetProcess()->GetID(), routing_id_),
-      base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
-
-  file_system_manager_.reset(new FileSystemManagerImpl(
-      GetProcess()->GetID(), routing_id_,
-      GetProcess()->GetStoragePartition()->GetFileSystemContext(),
-      ChromeBlobStorageContext::GetFor(GetProcess()->GetBrowserContext())));
-  registry_->AddInterface(
-      base::BindRepeating(&FileSystemManagerImpl::BindRequest,
-                          base::Unretained(file_system_manager_.get())),
-      base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO}));
-
-  if (Portal::IsEnabled()) {
-    registry_->AddInterface(base::BindRepeating(IgnoreResult(&Portal::Create),
-                                                base::Unretained(this)));
-  }
-
-  registry_->AddInterface(base::BindRepeating(
-      &BackgroundFetchServiceImpl::CreateForFrame, GetProcess(), routing_id_));
-
-  registry_->AddInterface(base::BindRepeating(&AudioContextManagerImpl::Create,
-                                              base::Unretained(this)));
+      BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+#endif
 }
 
 void RenderFrameHostImpl::ResetWaitingState() {
