@@ -84,7 +84,9 @@
 #include "content/browser/screenlock_monitor/screenlock_monitor.h"
 #include "content/browser/screenlock_monitor/screenlock_monitor_device_source.h"
 #include "content/browser/sms/sms_provider.h"
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "content/browser/speech/speech_recognition_manager_impl.h"
+#endif
 #include "content/browser/speech/tts_controller_impl.h"
 #include "content/browser/startup_data_impl.h"
 #include "content/browser/startup_task_runner.h"
@@ -1065,12 +1067,14 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     midi_service_->Shutdown();
   }
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:SpeechRecognitionManager");
     io_thread_->task_runner()->DeleteSoon(
         FROM_HERE, speech_recognition_manager_.release());
   }
+#endif
 
   TtsControllerImpl::GetInstance()->Shutdown();
 
@@ -1334,7 +1338,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     media_stream_manager_ = std::make_unique<MediaStreamManager>(
         audio_system_.get(), std::move(audio_task_runner));
   }
-
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   {
     TRACE_EVENT0(
         "startup",
@@ -1342,6 +1346,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl(
         audio_system_.get(), media_stream_manager_.get()));
   }
+#endif
 
   {
     TRACE_EVENT0(
