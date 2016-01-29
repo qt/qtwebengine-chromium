@@ -6557,11 +6557,13 @@ RenderFrameHostImpl::GetPresentationServiceForTesting() {
 
 void RenderFrameHostImpl::GetSpeechSynthesis(
     mojo::PendingReceiver<blink::mojom::SpeechSynthesis> receiver) {
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   if (!speech_synthesis_impl_) {
     speech_synthesis_impl_ = std::make_unique<SpeechSynthesisImpl>(
         GetProcess()->GetBrowserContext());
   }
   speech_synthesis_impl_->AddReceiver(std::move(receiver));
+#endif
 }
 
 void RenderFrameHostImpl::GetFileChooser(
