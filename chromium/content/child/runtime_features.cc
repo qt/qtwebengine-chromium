@@ -465,7 +465,6 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
       {wrf::EnablePushMessaging, switches::kDisableNotifications, false},
       {wrf::EnableScriptedSpeechRecognition, switches::kDisableSpeechAPI,
        false},
-      {wrf::EnableScriptedSpeechSynthesis, switches::kDisableSpeechAPI, false},
       {wrf::EnableScriptedSpeechSynthesis, switches::kDisableSpeechSynthesisAPI,
        false},
       {wrf::EnableSharedWorker, switches::kDisableSharedWorkers, false},

@@ -367,8 +367,10 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   std::unique_ptr<midi::MidiService> midi_service_;
 
+#if defined(ENABLE_WEB_SPEECH)
   // Must be deleted on the IO thread.
   std::unique_ptr<SpeechRecognitionManagerImpl> speech_recognition_manager_;
+#endif
 
 #if BUILDFLAG(IS_WIN)
   std::unique_ptr<media::SystemMessageWindowWin> system_message_window_;
