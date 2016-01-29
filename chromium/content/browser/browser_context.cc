@@ -619,7 +619,9 @@ BrowserContext::~BrowserContext() {
   if (GetUserData(kDownloadManagerKeyName))
     GetDownloadManager(this)->Shutdown();
 
+#if BUILDFLAG(ENABLE_WEB_SPEECH)
   TtsControllerImpl::GetInstance()->OnBrowserContextDestroyed(this);
+#endif
 }
 
 void BrowserContext::ShutdownStoragePartitions() {
