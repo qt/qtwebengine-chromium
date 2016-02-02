@@ -163,7 +163,7 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       base::NativeLibrary gles_library = base::LoadNativeLibrary(
           gles_path.Append(kGLESv2Library), NULL);
       if (!gles_library) {
-        DVLOG(1) << kGLESv2Library " not found";
+        DVLOG(1) << kGLESv2Library << " not found";
         return false;
       }
 
