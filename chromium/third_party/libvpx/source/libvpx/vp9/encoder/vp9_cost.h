@@ -31,7 +31,7 @@ static INLINE unsigned int cost_branch256(const unsigned int ct[2],
   return ct[0] * vp9_cost_zero(p) + ct[1] * vp9_cost_one(p);
 }
 
-static INLINE int treed_cost(vp9_tree tree, const vp9_prob *probs,
+static INLINE int treed_cost(vp9_tree_p tree, const vp9_prob *probs,
                              int bits, int len) {
   int cost = 0;
   vp9_tree_index i = 0;
@@ -45,8 +45,8 @@ static INLINE int treed_cost(vp9_tree tree, const vp9_prob *probs,
   return cost;
 }
 
-void vp9_cost_tokens(int *costs, const vp9_prob *probs, vp9_tree tree);
-void vp9_cost_tokens_skip(int *costs, const vp9_prob *probs, vp9_tree tree);
+void vp9_cost_tokens(int *costs, const vp9_prob *probs, vp9_tree_p tree);
+void vp9_cost_tokens_skip(int *costs, const vp9_prob *probs, vp9_tree_p tree);
 
 #ifdef __cplusplus
 }  // extern "C"

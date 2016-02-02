@@ -30,7 +30,7 @@ typedef BOOL_DECODER vp8_reader;
 
 static int vp8_treed_read(
     vp8_reader *const r,        /* !!! must return a 0 or 1 !!! */
-    vp8_tree t,
+    vp8_tree_p t,
     const vp8_prob *const p
 )
 {

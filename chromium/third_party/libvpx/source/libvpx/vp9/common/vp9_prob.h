@@ -40,7 +40,7 @@ typedef int8_t vp9_tree_index;
    Index > 0 means need another bit, specification at index.
    Nonnegative indices are always even;  processing begins at node 0. */
 
-typedef const vp9_tree_index vp9_tree[];
+typedef const vp9_tree_index vp9_tree[], *vp9_tree_p;;
 
 static INLINE vp9_prob clip_prob(int p) {
   return (p > 255) ? 255 : (p < 1) ? 1 : p;

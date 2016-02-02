@@ -34,7 +34,7 @@ const unsigned int vp9_prob_cost[256] = {
   22,   21,   19,   18,   16,   15,   13,   12,   10,   9,    7,    6,
   4,    3,    1,    1};
 
-static void cost(int *costs, vp9_tree tree, const vp9_prob *probs,
+static void cost(int *costs, vp9_tree_p tree, const vp9_prob *probs,
                  int i, int c) {
   const vp9_prob prob = probs[i / 2];
   int b;
@@ -50,11 +50,11 @@ static void cost(int *costs, vp9_tree tree, const vp9_prob *probs,
   }
 }
 
-void vp9_cost_tokens(int *costs, const vp9_prob *probs, vp9_tree tree) {
+void vp9_cost_tokens(int *costs, const vp9_prob *probs, vp9_tree_p tree) {
   cost(costs, tree, probs, 0, 0);
 }
 
-void vp9_cost_tokens_skip(int *costs, const vp9_prob *probs, vp9_tree tree) {
+void vp9_cost_tokens_skip(int *costs, const vp9_prob *probs, vp9_tree_p tree) {
   assert(tree[0] <= 0 && tree[1] > 0);
 
   costs[-tree[0]] = vp9_cost_bit(probs[0], 0);

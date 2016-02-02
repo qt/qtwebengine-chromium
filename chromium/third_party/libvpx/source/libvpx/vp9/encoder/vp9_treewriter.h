@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-void vp9_tree_probs_from_distribution(vp9_tree tree,
+void vp9_tree_probs_from_distribution(vp9_tree_p tree,
                                       unsigned int branch_ct[ /* n - 1 */ ][2],
                                       const unsigned int num_events[ /* n */ ]);
 

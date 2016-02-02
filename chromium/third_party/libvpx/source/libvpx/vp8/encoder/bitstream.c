@@ -64,7 +64,7 @@ static void update_mode(
     vp8_writer *const w,
     int n,
     vp8_token tok               [/* n */],
-    vp8_tree tree,
+    vp8_tree_p tree,
     vp8_prob Pnew               [/* n-1 */],
     vp8_prob Pcur               [/* n-1 */],
     unsigned int bct            [/* n-1 */] [2],
