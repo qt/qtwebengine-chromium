@@ -1932,7 +1932,7 @@
           # path to the SDK; when set to a non-empty string, SDK detection
           # based on mac_sdk_min will be bypassed entirely.
           'conditions': [
-            ['OS=="ios"', {
+            ['OS=="ios" or use_qt==1', {
               # The iOS build can use Xcode's clang, and that will complain
               # about -stdlib=libc++ if the deployment target is not at least
               # 10.7.
@@ -2621,9 +2621,6 @@
       'clang_warning_flags': [
         '-Wheader-hygiene',
 
-        # TODO(thakis): Add -Wfor-loop-analysis to -Wall in clang, remove this:
-        '-Wfor-loop-analysis',
-
         # TODO(thakis): Consider -Wloop-analysis (turns on
         # -Wrange-loop-analysis too).
 
@@ -2672,7 +2669,7 @@
       '<(SHARED_INTERMEDIATE_DIR)',
     ],
     'conditions': [
-      ['OS=="mac"', {
+      ['OS=="mac" and use_qt==0', {
         # When compiling Objective C, warns if a method is used whose
         # availability is newer than the deployment target.
         'xcode_settings': { 'WARNING_CFLAGS': ['-Wpartial-availability']},
@@ -3111,10 +3108,11 @@
         'variables': { 'clang_warning_flags': ['-Wexit-time-destructors']},
       }],
       ['use_qt!=1', {
+        # TODO(thakis): Add -Wfor-loop-analysis to -Wall in clang, remove this:
         # TODO(thakis): Move this to the global clang_warning_flags block once
         # clang is rolled far enough that the pinned clang understands this flag
         # TODO(thakis): Enable this, crbug.com/507717
-        'variables': { 'clang_warning_flags': ['-Wno-shift-negative-value']},
+        'variables': { 'clang_warning_flags': ['-Wno-shift-negative-value', '-Wfor-loop-analysis']},
       }],
       ['chromium_code==0', {
         'variables': {
@@ -5332,7 +5330,7 @@
             # mode.  Our libc++.a contains both libc++ and libc++abi in one
             # library, so it doesn't work in that mode.
             'conditions': [
-              ['asan==0', {
+              ['asan==0 and use_qt==0', {
                 'library_dirs': [ '<(DEPTH)/third_party/libc++-static' ],
               }],
             ],
