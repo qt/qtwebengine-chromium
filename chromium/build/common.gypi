@@ -2670,7 +2670,7 @@
       '<(SHARED_INTERMEDIATE_DIR)',
     ],
     'conditions': [
-      ['OS=="mac"', {
+      ['OS=="mac" and use_qt==0', {
         # When compiling Objective C, warns if a method is used whose
         # availability is newer than the deployment target.
         'xcode_settings': { 'WARNING_CFLAGS': ['-Wpartial-availability']},
@@ -5277,7 +5277,7 @@
             # mode.  Our libc++.a contains both libc++ and libc++abi in one
             # library, so it doesn't work in that mode.
             'conditions': [
-              ['asan==0', {
+              ['asan==0 and use_qt==0', {
                 'library_dirs': [ '<(DEPTH)/third_party/libc++-static' ],
               }],
             ],
