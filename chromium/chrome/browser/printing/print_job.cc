@@ -25,7 +25,7 @@
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include "chrome/browser/printing/pdf_to_emf_converter.h"
 #include "printing/pdf_render_settings.h"
 #endif
@@ -208,7 +208,7 @@ PrintedDocument* PrintJob::document() const {
   return document_.get();
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 class PrintJob::PdfConversionState {
  public:
   PdfConversionState(const gfx::Size& page_size, const gfx::Rect& content_area)
@@ -338,7 +338,7 @@ void PrintJob::StartPdfToPostScriptConversion(
   pdf_conversion_state_->Start(
       bytes, settings, base::Bind(&PrintJob::OnPdfConversionStarted, this));
 }
-#endif  // defined(OS_WIN)
+#endif  // OS_WIN && !defined(TOOLKIT_QT)
 
 void PrintJob::UpdatePrintedDocument(PrintedDocument* new_document) {
   if (document_.get() == new_document)
@@ -388,7 +388,7 @@ void PrintJob::OnNotifyPrintJobEvent(const JobEventDetails& event_details) {
       break;
     }
     case JobEventDetails::PAGE_DONE:
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       if (pdf_conversion_state_) {
         pdf_conversion_state_->OnPageProcessed(
             base::Bind(&PrintJob::OnPdfPageConverted, this));
