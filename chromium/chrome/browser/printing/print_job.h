@@ -150,7 +150,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob>,
 
   void HoldUntilStopIsCalled();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   virtual void StartPdfToEmfConversion(
       const scoped_refptr<base::RefCountedMemory>& bytes,
       const gfx::Size& page_size,
@@ -196,11 +196,11 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob>,
   // the notified calls Cancel() again.
   bool is_canceling_;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   class PdfConversionState;
   std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<int> pdf_page_mapping_;
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
   // Task runner reference. Used to send notifications in the right
   // thread.
