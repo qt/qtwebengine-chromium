@@ -94,7 +94,7 @@ class PrintJob : public PrintJobWorkerOwner,
   // Access the current printed document. Warning: may be NULL.
   PrintedDocument* document() const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void StartPdfToEmfConversion(
       const scoped_refptr<base::RefCountedMemory>& bytes,
       const gfx::Size& page_size,
@@ -110,7 +110,7 @@ class PrintJob : public PrintJobWorkerOwner,
   void StartPdfToTextConversion(
       const scoped_refptr<base::RefCountedMemory>& bytes,
       const gfx::Size& page_size);
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
  protected:
   ~PrintJob() override;
@@ -135,7 +135,7 @@ class PrintJob : public PrintJobWorkerOwner,
 
   void HoldUntilStopIsCalled();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void OnPdfConversionStarted(int page_count);
   void OnPdfPageConverted(int page_number,
                           float scale_factor,
@@ -162,11 +162,11 @@ class PrintJob : public PrintJobWorkerOwner,
   // the notified calls Cancel() again.
   bool is_canceling_;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   class PdfConversionState;
   std::unique_ptr<PdfConversionState> pdf_conversion_state_;
   std::vector<int> pdf_page_mapping_;
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
   // Used at shutdown so that we can quit a nested run loop.
   base::WeakPtrFactory<PrintJob> quit_factory_;
