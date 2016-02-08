@@ -23,7 +23,9 @@ namespace printing {
 
 class JobEventDetails;
 class MetafilePlayer;
+#if !defined(TOOLKIT_QT)
 class PdfToEmfConverter;
+#endif // if !defined(TOOLKIT_QT)
 class PrintJobWorker;
 class PrintedDocument;
 class PrintedPage;
@@ -91,7 +93,7 @@ class PrintJob : public PrintJobWorkerOwner,
   // Access the current printed document. Warning: may be NULL.
   PrintedDocument* document() const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // Let the PrintJob know the 0-based |page_number| of a given printed page.
   void AppendPrintedPage(int page_number);
 
@@ -100,7 +102,7 @@ class PrintJob : public PrintJobWorkerOwner,
       const gfx::Size& page_size,
       const gfx::Rect& content_area,
       bool print_text_with_gdi);
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
  protected:
   ~PrintJob() override;
@@ -125,12 +127,12 @@ class PrintJob : public PrintJobWorkerOwner,
 
   void HoldUntilStopIsCalled();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void OnPdfToEmfStarted(int page_count);
   void OnPdfToEmfPageConverted(int page_number,
                                float scale_factor,
                                std::unique_ptr<MetafilePlayer> emf);
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
   content::NotificationRegistrar registrar_;
 
@@ -156,11 +158,11 @@ class PrintJob : public PrintJobWorkerOwner,
   // the notified calls Cancel() again.
   bool is_canceling_;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   class PdfToEmfState;
   std::unique_ptr<PdfToEmfState> pdf_to_emf_state_;
   std::vector<int> pdf_page_mapping_;
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(TOOLKIT_QT)
 
   // Used at shutdown so that we can quit a nested message loop.
   base::WeakPtrFactory<PrintJob> quit_factory_;
