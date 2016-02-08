@@ -24,7 +24,9 @@ namespace printing {
 
 class JobEventDetails;
 class MetafilePlayer;
+#if !defined(TOOLKIT_QT)
 class PdfToEmfConverter;
+#endif // if !defined(TOOLKIT_QT)
 class PrintJobWorker;
 class PrintedDocument;
 class PrintedPage;
@@ -91,12 +93,12 @@ class PrintJob : public PrintJobWorkerOwner,
   // Access the current printed document. Warning: may be NULL.
   PrintedDocument* document() const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void StartPdfToEmfConversion(
       const scoped_refptr<base::RefCountedMemory>& bytes,
       const gfx::Size& page_size,
       const gfx::Rect& content_area);
-#endif  // OS_WIN
+#endif  // OS_WIN && !defined(TOOLKIT_QT)
 
  protected:
   ~PrintJob() override;
@@ -121,12 +123,12 @@ class PrintJob : public PrintJobWorkerOwner,
 
   void HoldUntilStopIsCalled();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   void OnPdfToEmfStarted(int page_count);
   void OnPdfToEmfPageConverted(int page_number,
                                float scale_factor,
                                scoped_ptr<MetafilePlayer> emf);
-#endif  // OS_WIN
+#endif  // OS_WIN && !defined(TOOLKIT_QT)
 
   content::NotificationRegistrar registrar_;
 
@@ -152,10 +154,10 @@ class PrintJob : public PrintJobWorkerOwner,
   // the notified calls Cancel() again.
   bool is_canceling_;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   class PdfToEmfState;
   scoped_ptr<PdfToEmfState> ptd_to_emf_state_;
-#endif  // OS_WIN
+#endif  // OS_WIN && !defined(TOOLKIT_QT)
 
   // Used at shutdown so that we can quit a nested message loop.
   base::WeakPtrFactory<PrintJob> quit_factory_;
