@@ -329,6 +329,10 @@ void FrameLoader::replaceDocumentWhileExecutingJavaScriptURL(const String& sourc
     init.withNewRegistrationContext();
 
     stopAllLoaders();
+    // Don't allow any new child frames to load in this frame: attaching a new
+    // child frame during or after detaching children results in an attached
+    // frame on a detached DOM tree, which is bad.
+    SubframeLoadingDisabler disabler(m_frame->document());
     m_frame->detachChildren();
     m_frame->document()->detach();
     clear();
@@ -1030,6 +1034,10 @@ bool FrameLoader::prepareForCommit()
     PluginScriptForbiddenScope forbidPluginDestructorScripting;
     RefPtrWillBeRawPtr<DocumentLoader> pdl = m_provisionalDocumentLoader;
 
+    // Don't allow any new child frames to load in this frame: attaching a new
+    // child frame during or after detaching children results in an attached
+    // frame on a detached DOM tree, which is bad.
+    SubframeLoadingDisabler disabler(m_frame->document());
     if (m_documentLoader) {
         client()->dispatchWillClose();
         dispatchUnloadEvent();
