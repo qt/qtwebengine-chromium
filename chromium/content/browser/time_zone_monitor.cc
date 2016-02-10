@@ -22,7 +22,7 @@ TimeZoneMonitor::~TimeZoneMonitor() {
 
 void TimeZoneMonitor::NotifyRenderers() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-#if defined(OS_CHROMEOS) || U_ICU_VERSION_MAJOR_NUM < 54
+#if defined(OS_CHROMEOS) || U_ICU_VERSION_MAJOR_NUM < 55
   // On CrOS and older ICU versions, ICU's default tz is already set to a new zone.
   // No need to redetect it with detectHostTimeZone().
   scoped_ptr<icu::TimeZone> new_zone(icu::TimeZone::createDefault());
