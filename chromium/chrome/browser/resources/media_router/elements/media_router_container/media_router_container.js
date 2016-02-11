@@ -53,6 +53,7 @@ Polymer({
     currentView_: {
       type: String,
       value: null,
+      observer: 'updateElementPositioning_',
     },
 
     /**
@@ -261,6 +262,7 @@ Polymer({
     showFirstRunFlow: {
       type: Boolean,
       value: false,
+      observer: 'updateElementPositioning_',
     },
 
     /**
@@ -336,16 +338,16 @@ Polymer({
 
   observers: [
     'maybeUpdateStartSinkDisplayStartTime_(currentView_, sinksToShow_)',
-    'shownComponentsChanged_(showFirstRunFlow, currentView_)'
   ],
 
   ready: function() {
     this.elementReadyTimeMs_ = performance.now();
     this.showSinkList_();
-    this.updateMaxSinkListHeight(this.dialogHeight_);
   },
 
   attached: function() {
+    this.updateElementPositioning_();
+
     // Turn off the spinner after 3 seconds, then report the current number of
     // sinks.
     this.async(function() {
@@ -772,13 +774,10 @@ Polymer({
    * @private
    */
   maybeShowIssueView_: function(issue) {
-    if (!!issue && issue.isBlocking) {
+    if (!!issue && issue.isBlocking)
       this.currentView_ = media_router.MediaRouterView.ISSUE;
-    } else {
-      this.async(function() {
-        this.updateMaxSinkListHeight(this.dialogHeight_);
-      });
-    }
+    else
+      this.updateElementPositioning_();
   },
 
   /**
@@ -945,23 +944,16 @@ Polymer({
         this.startTapTimer_();
         this.resetRouteCreationProperties_(true);
       }
-    }
-
-    // If |currentRoute_| is no longer active, clear |currentRoute_|. Also
-    // switch back to the SINK_PICKER view if the user is currently in the
-    // ROUTE_DETAILS view.
-    if (!this.currentRoute_ || !this.routeMap_[this.currentRoute_.id]) {
-      if (this.currentView_ == media_router.MediaRouterView.ROUTE_DETAILS) {
-        // We may have an updated route to show for a device.
-        // We swap out |currentRoute_| (and consequently the route-details
-        // controls) to handle this.
-        this.currentRoute_ =
-            tempSinkToRouteMap[this.currentRoute_.sinkId] || null;
-
-        if (!this.currentRoute_)
-          this.showSinkList_();
-      } else {
-        this.currentRoute_ = null;
+    } else {
+      // If |currentRoute_| is no longer active, clear |currentRoute_|. Also
+      // switch back to the SINK_PICKER view if the user is currently in the
+      // ROUTE_DETAILS view.
+      if (this.currentRoute_) {
+        this.currentRoute_ = this.routeMap_[this.currentRoute_.id] || null;
+      }
+      if (!this.currentRoute_ &&
+          this.currentView_ == media_router.MediaRouterView.ROUTE_DETAILS) {
+        this.showSinkList_();
       }
     }
 
@@ -1055,31 +1047,6 @@ Polymer({
   },
 
   /**
-   * Updates the top margins of the header and sink list view depending on
-   * whether the first run flow is being shown.
-   *
-   * @param {boolean} showFirstRunFlow Whether or not to show the first run
-   *     flow.
-   * @param {!media_router.MediaRouterView} currentView The current view.
-   * @private
-   */
-  shownComponentsChanged_: function(showFirstRunFlow, currentView) {
-    var headerHeight = this.$$('#container-header').offsetHeight;
-    if (this.computeShowFirstRunFlow_(showFirstRunFlow, currentView)) {
-      // Ensures that first run flow elements have finished stamping.
-      this.async(function() {
-        var firstRunFlowHeight = this.$$('#first-run-flow').offsetHeight;
-        this.$['container-header'].style.marginTop = firstRunFlowHeight + 'px';
-        this.$['sink-list-view'].style.marginTop =
-            firstRunFlowHeight + headerHeight + 'px';
-      });
-    } else {
-      this.$['container-header'].style.marginTop = '0px';
-      this.$['sink-list-view'].style.marginTop = headerHeight + 'px';
-    }
-  },
-
-  /**
    * Creates a new route if there is no route to the |sink| . Otherwise,
    * shows the route details.
    *
@@ -1168,23 +1135,33 @@ Polymer({
    *
    * @param {number} dialogHeight The height of the Media Router dialog.
    */
-  updateMaxSinkListHeight: function(dialogHeight) {
-    this.dialogHeight_ = dialogHeight;
-    var headerHeight = this.$$('#container-header').offsetHeight;
-    var firstRunFlowHeight =
-        this.computeShowFirstRunFlow_(this.showFirstRunFlow,
-                                      this.currentView_) ?
-        this.$$('#first-run-flow').offsetHeight : 0;
-    this.$['container-header'].style.marginTop = firstRunFlowHeight + 'px';
-    this.$['sink-list-view'].style.marginTop =
-        firstRunFlowHeight + headerHeight + 'px';
+  updateElementPositioning_: function() {
+    // Ensures that conditionally templated elements have finished stamping.
+    this.async(function() {
+      var headerHeight = this.$$('#container-header').offsetHeight;
+      var firstRunFlowHeight = this.$$('#first-run-flow') &&
+          this.$$('#first-run-flow').style.display != 'none' ?
+              this.$$('#first-run-flow').offsetHeight : 0;
+      var issueHeight = this.$$('#issue-banner') &&
+          this.$$('#issue-banner').style.display != 'none' ?
+              this.$$('#issue-banner').offsetHeight : 0;
 
-    // A non-blocking issue banner may appear below the sink list.
-    var issueHeight = this.$$('#issue-banner') ?
-        this.$$('#issue-banner').offsetHeight : 0;
+      this.$['container-header'].style.marginTop = firstRunFlowHeight + 'px';
+      this.$['sink-list-view'].style.marginTop =
+          firstRunFlowHeight + headerHeight + 'px';
+      this.$['sink-list'].style.maxHeight =
+          this.dialogHeight_ - headerHeight - firstRunFlowHeight -
+              issueHeight + 'px';
+    });
+  },
 
-    this.$['sink-list'].style.maxHeight =
-        this.dialogHeight_ - headerHeight - firstRunFlowHeight -
-        issueHeight + 'px';
+  /**
+   * Update the max dialog height and update the positioning of the elements.
+   *
+   * @param {number} height The max height of the Media Router dialog.
+   */
+  updateMaxDialogHeight: function(height) {
+    this.dialogHeight_ = height;
+    this.updateElementPositioning_();
   },
 });

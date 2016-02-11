@@ -25,17 +25,17 @@ namespace startup_metric_utils {
 // An enumeration of startup temperatures. This must be kept in sync with the
 // UMA StartupType enumeration defined in histograms.xml.
 enum StartupTemperature {
-  // The startup was a cold start: nearly all of the Chrome binaries and
-  // resources were brought into memory using hard faults.
+  // The startup was a cold start: nearly all of the binaries and resources were
+  // brought into memory using hard faults.
   COLD_STARTUP_TEMPERATURE = 0,
-  // The startup was a warm start: the Chrome binaries and resources were
-  // mostly already resident in memory and effectively no hard faults were
-  // observed.
+  // The startup was a warm start: the binaries and resources were mostly
+  // already resident in memory and effectively no hard faults were observed.
   WARM_STARTUP_TEMPERATURE = 1,
   // The startup type couldn't quite be classified as warm or cold, but rather
   // was somewhere in between.
   LUKEWARM_STARTUP_TEMPERATURE = 2,
-  // This must be after all meaningful values.
+  // This must be after all meaningful values. All new values should be added
+  // above this one.
   STARTUP_TEMPERATURE_COUNT,
   // Startup temperature wasn't yet determined.
   UNDETERMINED_STARTUP_TEMPERATURE
@@ -55,8 +55,7 @@ void RegisterPrefs(PrefRegistrySimple* registry);
 // window was shown, which would invalidate any surrounding timing metrics.
 bool WasNonBrowserUIDisplayed();
 
-// Call this when displaying UI that might potentially delay the appearance
-// of the initial browser window on Chrome startup.
+// Call this when displaying UI that might potentially delay startup events.
 //
 // Note on usage: This function is idempotent and its overhead is low enough
 // in comparison with UI display that it's OK to call it on every
@@ -78,16 +77,13 @@ void RecordMainEntryPointTime(const base::Time& time);
 void RecordExeMainEntryPointTime(const base::Time& time);
 
 // Call this with the time recorded just before the message loop is started.
-// |is_first_run| - is the current launch part of a first run.
+// |is_first_run| - is the current launch part of a first run. |pref_service| is
+// an optional parameter which, if provided, will be used to store state for
+// stats that span multiple startups; in its absence those stats will not be
+// recorded.
 void RecordBrowserMainMessageLoopStart(const base::TimeTicks& ticks,
-                                       bool is_first_run);
-
-// Logs the Startup.TimeSinceLastStartup histogram. Obtains the timestamp of the
-// last startup from |pref_service| and overwrites it with the timestamp of the
-// current startup. If the startup temperature has been set by
-// RecordBrowserMainMessageLoopStart, the time since last startup is also logged
-// to an histogram suffixed with the startup temperature.
-void RecordTimeSinceLastStartup(PrefService* pref_service);
+                                       bool is_first_run,
+                                       PrefService* pref_service);
 
 // Call this with the time when the first browser window became visible.
 void RecordBrowserWindowDisplay(const base::TimeTicks& ticks);
