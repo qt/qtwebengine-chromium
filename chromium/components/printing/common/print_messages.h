@@ -70,7 +70,7 @@ struct PrintMsg_PrintPages_Params {
   std::vector<int> pages;
 };
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 struct PrintHostMsg_RequestPrintPreview_Params {
   PrintHostMsg_RequestPrintPreview_Params();
   ~PrintHostMsg_RequestPrintPreview_Params();
@@ -182,7 +182,7 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PageRange)
   IPC_STRUCT_TRAITS_MEMBER(to)
 IPC_STRUCT_TRAITS_END()
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 IPC_STRUCT_TRAITS_BEGIN(PrintHostMsg_RequestPrintPreview_Params)
   IPC_STRUCT_TRAITS_MEMBER(is_modifiable)
   IPC_STRUCT_TRAITS_MEMBER(webnode_only)
@@ -223,7 +223,7 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_PrintPages_Params)
   IPC_STRUCT_TRAITS_MEMBER(pages)
 IPC_STRUCT_TRAITS_END()
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Parameters to describe a rendered document.
 IPC_STRUCT_BEGIN(PrintHostMsg_DidPreviewDocument_Params)
   // A shared memory handle to metafile data.
@@ -315,7 +315,7 @@ IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Tells the render view to initiate print preview for the entire document.
 IPC_MESSAGE_ROUTED1(PrintMsg_InitiatePrintPreview, bool /* selection_only */)
 #endif  // defined(ENABLE_PRINT_PREVIEW)
@@ -349,7 +349,7 @@ IPC_MESSAGE_ROUTED1(PrintMsg_PrintingDone,
 IPC_MESSAGE_ROUTED1(PrintMsg_SetScriptedPrintingBlocked,
                     bool /* blocked */)
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Tells the render view to switch the CSS to print media type, renders every
 // requested pages for print preview using the given |settings|. This gets
 // called multiple times as the user updates settings.
@@ -423,7 +423,7 @@ IPC_MESSAGE_CONTROL2(PrintHostMsg_TempFileForPrintingWritten,
                      int /* fd in browser */)  // Used only by Chrome OS.
 #endif  // defined(OS_ANDROID)
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Asks the browser to do print preview.
 IPC_MESSAGE_ROUTED1(PrintHostMsg_RequestPrintPreview,
                     PrintHostMsg_RequestPrintPreview_Params /* params */)
