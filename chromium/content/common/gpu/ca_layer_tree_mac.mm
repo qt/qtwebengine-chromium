@@ -6,6 +6,8 @@
 
 #include "base/command_line.h"
 #include "base/mac/sdk_forward_declarations.h"
+#include "base/trace_event/trace_event.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/base/ui_base_switches.h"
@@ -27,8 +29,10 @@ bool CALayerTree::ScheduleCALayer(
     unsigned background_color,
     unsigned edge_aa_mask,
     float opacity) {
+  // Excessive logging to debug white screens (crbug.com/583805).
+  // TODO(ccameron): change this back to a DLOG.
   if (has_committed_) {
-    DLOG(ERROR) << "ScheduleCALayer called after CommitScheduledCALayers.";
+    LOG(ERROR) << "ScheduleCALayer called after CommitScheduledCALayers.";
     return false;
   }
   return root_layer_.AddContentLayer(is_clipped, clip_rect, sorting_context_id,
@@ -39,6 +43,7 @@ bool CALayerTree::ScheduleCALayer(
 void CALayerTree::CommitScheduledCALayers(CALayer* superlayer,
                                           scoped_ptr<CALayerTree> old_tree,
                                           float scale_factor) {
+  TRACE_EVENT0("gpu", "CALayerTree::CommitScheduledCALayers");
   RootLayer* old_root_layer = nullptr;
   if (old_tree) {
     DCHECK(old_tree->has_committed_);
@@ -117,24 +122,62 @@ CALayerTree::ContentLayer::ContentLayer(
       contents_rect(contents_rect),
       rect(rect),
       background_color(background_color),
-      edge_aa_mask(edge_aa_mask),
-      opacity(opacity) {}
+      ca_edge_aa_mask(0),
+      opacity(opacity) {
+  // Because the root layer has setGeometryFlipped:YES, there is some ambiguity
+  // about what exactly top and bottom mean. This ambiguity is resolved in
+  // different ways for solid color CALayers and for CALayers that have content
+  // (surprise!). For CALayers with IOSurface content, the top edge in the AA
+  // mask refers to what appears as the bottom edge on-screen. For CALayers
+  // without content (solid color layers), the top edge in the AA mask is the
+  // top edge on-screen.
+  // http://crbug.com/567946
+  if (edge_aa_mask & GL_CA_LAYER_EDGE_LEFT_CHROMIUM)
+    ca_edge_aa_mask |= kCALayerLeftEdge;
+  if (edge_aa_mask & GL_CA_LAYER_EDGE_RIGHT_CHROMIUM)
+    ca_edge_aa_mask |= kCALayerRightEdge;
+  if (io_surface) {
+    if (edge_aa_mask & GL_CA_LAYER_EDGE_TOP_CHROMIUM)
+      ca_edge_aa_mask |= kCALayerBottomEdge;
+    if (edge_aa_mask & GL_CA_LAYER_EDGE_BOTTOM_CHROMIUM)
+      ca_edge_aa_mask |= kCALayerTopEdge;
+  } else {
+    if (edge_aa_mask & GL_CA_LAYER_EDGE_TOP_CHROMIUM)
+      ca_edge_aa_mask |= kCALayerTopEdge;
+    if (edge_aa_mask & GL_CA_LAYER_EDGE_BOTTOM_CHROMIUM)
+      ca_edge_aa_mask |= kCALayerBottomEdge;
+  }
+
+  // Ensure that the IOSurface be in use as soon as it is added to a
+  // ContentLayer, so that, by the time that the call to SwapBuffers completes,
+  // all IOSurfaces that can be used as CALayer contents in the future will be
+  // marked as InUse.
+  if (io_surface)
+    IOSurfaceIncrementUseCount(io_surface);
+}
 
 CALayerTree::ContentLayer::ContentLayer(ContentLayer&& layer)
     : io_surface(layer.io_surface),
       contents_rect(layer.contents_rect),
       rect(layer.rect),
       background_color(layer.background_color),
-      edge_aa_mask(layer.edge_aa_mask),
+      ca_edge_aa_mask(layer.ca_edge_aa_mask),
       opacity(layer.opacity),
       ca_layer(layer.ca_layer) {
   DCHECK(!layer.ca_layer);
-  layer.io_surface.reset();
   layer.ca_layer.reset();
+  // See remarks in the non-move constructor.
+  if (io_surface)
+    IOSurfaceIncrementUseCount(io_surface);
 }
 
 CALayerTree::ContentLayer::~ContentLayer() {
   [ca_layer removeFromSuperlayer];
+  // By the time the destructor is called, the IOSurface will have been passed
+  // to the WindowServer, and will remain InUse by the WindowServer as long as
+  // is needed to avoid recycling bugs.
+  if (io_surface)
+    IOSurfaceDecrementUseCount(io_surface);
 }
 
 bool CALayerTree::RootLayer::AddContentLayer(
@@ -165,7 +208,9 @@ bool CALayerTree::RootLayer::AddContentLayer(
         current_layer.sorting_context_id == sorting_context_id &&
         (current_layer.is_clipped != is_clipped ||
          current_layer.clip_rect != clip_rect)) {
-      DLOG(ERROR) << "CALayer changed clip inside non-zero sorting context.";
+      // Excessive logging to debug white screens (crbug.com/583805).
+      // TODO(ccameron): change this back to a DLOG.
+      LOG(ERROR) << "CALayer changed clip inside non-zero sorting context.";
       return false;
     }
     if (!is_singleton_sorting_context &&
@@ -232,7 +277,11 @@ void CALayerTree::RootLayer::CommitToCA(CALayer* superlayer,
     [superlayer addSublayer:ca_layer];
     [superlayer setBorderWidth:0];
   }
-  DCHECK_EQ([ca_layer superlayer], superlayer);
+  // Excessive logging to debug white screens (crbug.com/583805).
+  // TODO(ccameron): change this back to a DCHECK.
+  if ([ca_layer superlayer] != superlayer) {
+    LOG(ERROR) << "CALayerTree root layer not attached to tree.";
+  }
 
   for (size_t i = 0; i < clip_and_sorting_layers.size(); ++i) {
     ClipAndSortingLayer* old_clip_and_sorting_layer = nullptr;
@@ -260,7 +309,11 @@ void CALayerTree::ClipAndSortingLayer::CommitToCA(
     [ca_layer setAnchorPoint:CGPointZero];
     [superlayer addSublayer:ca_layer];
   }
-  DCHECK_EQ([ca_layer superlayer], superlayer);
+  // Excessive logging to debug white screens (crbug.com/583805).
+  // TODO(ccameron): change this back to a DCHECK.
+  if ([ca_layer superlayer] != superlayer) {
+    LOG(ERROR) << "CALayerTree root layer not attached to tree.";
+  }
 
   if (update_is_clipped)
     [ca_layer setMasksToBounds:is_clipped];
@@ -333,7 +386,7 @@ void CALayerTree::ContentLayer::CommitToCA(CALayer* superlayer,
   bool update_contents_rect = true;
   bool update_rect = true;
   bool update_background_color = true;
-  bool update_edge_aa_mask = true;
+  bool update_ca_edge_aa_mask = true;
   bool update_opacity = true;
   if (old_layer) {
     DCHECK(old_layer->ca_layer);
@@ -342,7 +395,7 @@ void CALayerTree::ContentLayer::CommitToCA(CALayer* superlayer,
     update_contents_rect = old_layer->contents_rect != contents_rect;
     update_rect = old_layer->rect != rect;
     update_background_color = old_layer->background_color != background_color;
-    update_edge_aa_mask = old_layer->edge_aa_mask != edge_aa_mask;
+    update_ca_edge_aa_mask = old_layer->ca_edge_aa_mask != ca_edge_aa_mask;
     update_opacity = old_layer->opacity != opacity;
   } else {
     ca_layer.reset([[CALayer alloc] init]);
@@ -352,7 +405,7 @@ void CALayerTree::ContentLayer::CommitToCA(CALayer* superlayer,
   DCHECK_EQ([ca_layer superlayer], superlayer);
   bool update_anything = update_contents || update_contents_rect ||
                          update_rect || update_background_color ||
-                         update_edge_aa_mask || update_opacity;
+                         update_ca_edge_aa_mask || update_opacity;
 
   if (update_contents) {
     [ca_layer setContents:static_cast<id>(io_surface.get())];
@@ -378,8 +431,8 @@ void CALayerTree::ContentLayer::CommitToCA(CALayer* superlayer,
         CGColorSpaceCreateWithName(kCGColorSpaceSRGB), rgba_color_components));
     [ca_layer setBackgroundColor:srgb_background_color];
   }
-  if (update_edge_aa_mask)
-    [ca_layer setEdgeAntialiasingMask:edge_aa_mask];
+  if (update_ca_edge_aa_mask)
+    [ca_layer setEdgeAntialiasingMask:ca_edge_aa_mask];
   if (update_opacity)
     [ca_layer setOpacity:opacity];
 
