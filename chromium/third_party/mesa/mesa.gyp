@@ -765,7 +765,7 @@
         },
       ],
     }],
-    [ 'OS=="linux"', {
+    [ 'OS=="linux" and use_qt==0', {
       'targets': [
         {
           'target_name': 'wayland_drm_protocol',
