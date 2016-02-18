@@ -666,7 +666,7 @@ bool Connection::RegisterIntentToUpload() const {
   // already bad.
   base::AutoLock lock(g_sqlite_init_lock.Get());
 
-  scoped_ptr<base::Value> root;
+  scoped_ptr<base::DictionaryValue> root;
   if (!base::PathExists(breadcrumb_path)) {
     scoped_ptr<base::DictionaryValue> root_dict(new base::DictionaryValue());
     root_dict->SetInteger(kVersionKey, kVersion);
