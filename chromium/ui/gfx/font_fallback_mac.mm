@@ -57,7 +57,7 @@ std::vector<Font> GetFallbackFonts(const Font& font) {
   CFArrayRef languages_cf = base::mac::NSToCFCast(languages);
   base::ScopedCFTypeRef<CFArrayRef> cascade_list(
       CTFontCopyDefaultCascadeListForLanguagesWrapper(
-          static_cast<CTFontRef>(font.GetNativeFont()), languages_cf));
+          (__bridge CTFontRef)(font.GetNativeFont()), languages_cf));
 
   std::vector<Font> fallback_fonts;
 
@@ -69,7 +69,7 @@ std::vector<Font> GetFallbackFonts(const Font& font) {
     base::ScopedCFTypeRef<CTFontRef> font(
         CTFontCreateWithFontDescriptor(descriptor, 0.0, nullptr));
     if (font.get())
-      fallback_fonts.push_back(Font(static_cast<NSFont*>(font.get())));
+      fallback_fonts.push_back(Font((__bridge NSFont *)(font.get())));
   }
 
   if (fallback_fonts.empty())
