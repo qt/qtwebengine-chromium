@@ -70,7 +70,7 @@ skia::RefPtr<SkTypeface> CreateSkiaTypeface(const gfx::Font& font, int style) {
   if (!font_with_style.GetNativeFont())
     return nullptr;
   return skia::AdoptRef(SkCreateTypefaceFromCTFont(
-      static_cast<CTFontRef>(font_with_style.GetNativeFont())));
+      (__bridge CTFontRef)(font_with_style.GetNativeFont())));
 }
 
 }  // namespace internal
@@ -208,7 +208,7 @@ void RenderTextMac::DrawVisualText(internal::SkiaTextRenderer* renderer) {
     const TextRun& run = runs_[i];
     renderer->SetForegroundColor(run.foreground);
 
-    CTFontRef ct_font = static_cast<CTFontRef>(run.font.GetNativeFont());
+    CTFontRef ct_font = (__bridge CTFontRef)(run.font.GetNativeFont());
     renderer->SetTextSize(CTFontGetSize(ct_font));
 
     int font_style = Font::NORMAL;
@@ -413,7 +413,7 @@ void RenderTextMac::ComputeRuns() {
     CFDictionaryRef attributes = CTRunGetAttributes(ct_run);
     CTFontRef ct_font = base::mac::GetValueFromDictionary<CTFontRef>(
         attributes, kCTFontAttributeName);
-    run->font = Font(static_cast<NSFont*>(ct_font));
+    run->font = Font((__bridge NSFont *)(ct_font));
 
     const CGColorRef foreground = base::mac::GetValueFromDictionary<CGColorRef>(
         attributes, kCTForegroundColorAttributeName);
