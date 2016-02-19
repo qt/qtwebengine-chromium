@@ -118,8 +118,8 @@ void UIResourceLayer::RecreateUIResourceHolder() {
 void UIResourceLayer::SetBitmap(const SkBitmap& skbitmap) {
   bitmap_ = skbitmap;
   if (layer_tree_host() && !bitmap_.empty()) {
-    ui_resource_holder_ =
-        ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_);
+    ui_resource_holder_.reset(
+        ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_).release());
   } else {
     ui_resource_holder_ = nullptr;
   }
@@ -135,7 +135,7 @@ void UIResourceLayer::SetUIResourceId(UIResourceId resource_id) {
     bitmap_.reset();
 
   if (resource_id)
-    ui_resource_holder_ = SharedUIResourceHolder::Create(resource_id);
+    ui_resource_holder_.reset(SharedUIResourceHolder::Create(resource_id).release());
   else
     ui_resource_holder_ = nullptr;
 

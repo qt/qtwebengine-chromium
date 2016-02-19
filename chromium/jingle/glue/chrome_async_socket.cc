@@ -406,8 +406,8 @@ bool ChromeAsyncSocket::StartTls(const std::string& domain_name) {
   scoped_ptr<net::ClientSocketHandle> socket_handle(
       new net::ClientSocketHandle());
   socket_handle->SetSocket(std::move(transport_socket_));
-  transport_socket_ = resolving_client_socket_factory_->CreateSSLClientSocket(
-      std::move(socket_handle), net::HostPortPair(domain_name, 443));
+  transport_socket_ = make_scoped_ptr<net::StreamSocket>(resolving_client_socket_factory_->CreateSSLClientSocket(
+      std::move(socket_handle), net::HostPortPair(domain_name, 443)).release());
   int status = transport_socket_->Connect(
       base::Bind(&ChromeAsyncSocket::ProcessSSLConnectDone,
                  weak_ptr_factory_.GetWeakPtr()));

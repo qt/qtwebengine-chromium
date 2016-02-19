@@ -1144,7 +1144,7 @@ void MediaStreamManager::PostRequestToUI(const std::string& label,
 
     fake_ui_->SetAvailableDevices(devices);
 
-    request->ui_proxy = std::move(fake_ui_);
+    request->ui_proxy.reset(fake_ui_.release());
   } else {
     request->ui_proxy = MediaStreamUIProxy::Create();
   }
@@ -1427,7 +1427,7 @@ void MediaStreamManager::FinalizeEnumerateDevices(const std::string& label,
   if (use_fake_ui_) {
     if (!fake_ui_)
       fake_ui_.reset(new FakeMediaStreamUIProxy());
-    request->ui_proxy = std::move(fake_ui_);
+    request->ui_proxy.reset(fake_ui_.release());
   } else {
     request->ui_proxy = MediaStreamUIProxy::Create();
   }

@@ -317,7 +317,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 
   scoped_ptr<BrowserCompositorOutputSurface> surface;
   if (!create_gpu_output_surface) {
-    surface = make_scoped_ptr(new SoftwareBrowserCompositorOutputSurface(
+    surface = make_scoped_ptr<BrowserCompositorOutputSurface>(new SoftwareBrowserCompositorOutputSurface(
         CreateSoftwareOutputDevice(compositor.get()),
         compositor->vsync_manager()));
   } else {
@@ -325,7 +325,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     ContextProvider::Capabilities capabilities =
         context_provider->ContextCapabilities();
     if (!data->surface_id) {
-      surface = make_scoped_ptr(new OffscreenBrowserCompositorOutputSurface(
+      surface = make_scoped_ptr<BrowserCompositorOutputSurface>(new OffscreenBrowserCompositorOutputSurface(
           context_provider, shared_worker_context_provider_,
           compositor->vsync_manager(),
           scoped_ptr<BrowserCompositorOverlayCandidateValidator>()));
@@ -337,7 +337,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       format = GL_BGRA_EXT;
 #endif
       surface =
-          make_scoped_ptr(new GpuSurfacelessBrowserCompositorOutputSurface(
+          make_scoped_ptr<BrowserCompositorOutputSurface>(new GpuSurfacelessBrowserCompositorOutputSurface(
               context_provider, shared_worker_context_provider_,
               data->surface_id, compositor->vsync_manager(),
               CreateOverlayCandidateValidator(compositor->widget()), target,
@@ -348,7 +348,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       // Overlays are only supported on surfaceless output surfaces on Mac.
       validator = CreateOverlayCandidateValidator(compositor->widget());
 #endif
-      surface = make_scoped_ptr(new GpuBrowserCompositorOutputSurface(
+      surface = make_scoped_ptr<BrowserCompositorOutputSurface>(new GpuBrowserCompositorOutputSurface(
           context_provider, shared_worker_context_provider_,
           compositor->vsync_manager(), std::move(validator)));
     }

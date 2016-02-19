@@ -620,7 +620,7 @@ int MultiThreadedProxyResolverFactory::CreateProxyResolver(
                               CreateProxyResolverFactory(), max_num_threads_,
                               callback));
   jobs_.insert(job.get());
-  *request = std::move(job);
+  *request = make_scoped_ptr<Request>(job.release());
   return ERR_IO_PENDING;
 }
 

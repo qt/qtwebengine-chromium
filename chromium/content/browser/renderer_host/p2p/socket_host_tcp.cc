@@ -208,8 +208,8 @@ void P2PSocketHostTcpBase::StartTls() {
       net::ClientSocketFactory::GetDefaultFactory();
   DCHECK(socket_factory);
 
-  socket_ = socket_factory->CreateSSLClientSocket(
-      std::move(socket_handle), dest_host_port_pair, ssl_config, context);
+  socket_.reset(socket_factory->CreateSSLClientSocket(
+      std::move(socket_handle), dest_host_port_pair, ssl_config, context).release());
   int status = socket_->Connect(
       base::Bind(&P2PSocketHostTcpBase::ProcessTlsSslConnectDone,
                  base::Unretained(this)));

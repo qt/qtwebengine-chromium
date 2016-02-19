@@ -319,8 +319,8 @@ scoped_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   storage->set_ssl_config_service(new SSLConfigServiceDefaults);
 
   if (!http_auth_handler_factory_) {
-    http_auth_handler_factory_ =
-        HttpAuthHandlerRegistryFactory::CreateDefault(context->host_resolver());
+    http_auth_handler_factory_ = make_scoped_ptr<HttpAuthHandlerFactory>(
+        HttpAuthHandlerRegistryFactory::CreateDefault(context->host_resolver()).release());
   }
 
   storage->set_http_auth_handler_factory(std::move(http_auth_handler_factory_));

@@ -178,7 +178,7 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     *error_details = "Failed to create certificate chain. Certs are empty.";
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
-    *verify_details = std::move(verify_details_);
+    *verify_details = make_scoped_ptr<ProofVerifyDetails>(verify_details_.release());
     return QUIC_FAILURE;
   }
 
@@ -192,7 +192,7 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     *error_details = "Failed to create certificate chain";
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
-    *verify_details = std::move(verify_details_);
+    *verify_details = make_scoped_ptr<ProofVerifyDetails>(verify_details_.release());
     return QUIC_FAILURE;
   }
 
@@ -211,7 +211,7 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     *error_details = "Failed to verify signature of server config";
     DLOG(WARNING) << *error_details;
     verify_details_->cert_verify_result.cert_status = CERT_STATUS_INVALID;
-    *verify_details = std::move(verify_details_);
+    *verify_details = make_scoped_ptr<ProofVerifyDetails>(verify_details_.release());
     return QUIC_FAILURE;
   }
 
@@ -220,14 +220,14 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
   next_state_ = STATE_VERIFY_CERT;
   switch (DoLoop(OK)) {
     case OK:
-      *verify_details = std::move(verify_details_);
+      *verify_details = make_scoped_ptr<ProofVerifyDetails>(verify_details_.release());
       return QUIC_SUCCESS;
     case ERR_IO_PENDING:
       callback_.reset(callback);
       return QUIC_PENDING;
     default:
       *error_details = error_details_;
-      *verify_details = std::move(verify_details_);
+      *verify_details = make_scoped_ptr<ProofVerifyDetails>(verify_details_.release());
       return QUIC_FAILURE;
   }
 }

@@ -1082,7 +1082,7 @@ void ProxyResolverV8TracingFactoryImpl::CreateProxyResolverV8Tracing(
   scoped_ptr<CreateJob> job(
       new CreateJob(this, std::move(bindings), pac_script, resolver, callback));
   jobs_.insert(job.get());
-  *request = std::move(job);
+  request->reset(job.release());
 }
 
 void ProxyResolverV8TracingFactoryImpl::RemoveJob(

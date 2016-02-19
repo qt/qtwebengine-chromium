@@ -698,7 +698,7 @@ void VideoDecoderShim::DecoderImpl::Initialize(
     scoped_ptr<media::FFmpegVideoDecoder> ffmpeg_video_decoder(
         new media::FFmpegVideoDecoder());
     ffmpeg_video_decoder->set_decode_nalus(true);
-    decoder_ = std::move(ffmpeg_video_decoder);
+    decoder_.reset(ffmpeg_video_decoder.release());
   }
 #elif defined(MEDIA_DISABLE_LIBVPX)
   OnInitDone(false);

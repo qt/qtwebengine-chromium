@@ -305,9 +305,9 @@ void SharedMemoryDataConsumerHandle::Writer::AddData(
     scoped_ptr<RequestPeer::ThreadSafeReceivedData> data_to_pass;
     if (mode_ == kApplyBackpressure) {
       data_to_pass =
-          make_scoped_ptr(new DelegateThreadSafeReceivedData(std::move(data)));
+          make_scoped_ptr<RequestPeer::ThreadSafeReceivedData>(new DelegateThreadSafeReceivedData(std::move(data)));
     } else {
-      data_to_pass = make_scoped_ptr(new FixedReceivedData(data.get()));
+      data_to_pass = make_scoped_ptr<RequestPeer::ThreadSafeReceivedData>(new FixedReceivedData(data.get()));
     }
     context_->Push(std::move(data_to_pass));
   }

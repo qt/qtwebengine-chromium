@@ -29,12 +29,12 @@ bool URLSecurityManagerWhitelist::CanDelegate(const GURL& auth_origin) const {
 
 void URLSecurityManagerWhitelist::SetDefaultWhitelist(
     scoped_ptr<HttpAuthFilter> whitelist_default) {
-  whitelist_default_ = std::move(whitelist_default);
+  whitelist_default_ = make_scoped_ptr<const HttpAuthFilter> (whitelist_default.release());
 }
 
 void URLSecurityManagerWhitelist::SetDelegateWhitelist(
     scoped_ptr<HttpAuthFilter> whitelist_delegate) {
-  whitelist_delegate_ = std::move(whitelist_delegate);
+    whitelist_delegate_ = make_scoped_ptr<const HttpAuthFilter> (whitelist_delegate.release());
 }
 
 bool URLSecurityManagerWhitelist::HasDefaultWhitelist() const {

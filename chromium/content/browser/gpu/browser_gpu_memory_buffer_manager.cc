@@ -498,13 +498,13 @@ void BrowserGpuMemoryBufferManager::HandleCreateGpuMemoryBufferOnIO(
 
   // Note: Unretained is safe as IO thread is stopped before manager is
   // destroyed.
-  request->result = GpuMemoryBufferImplSharedMemory::Create(
+  request->result.reset(GpuMemoryBufferImplSharedMemory::Create(
       new_id, request->size, request->format,
       base::Bind(
           &GpuMemoryBufferDeleted,
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
           base::Bind(&BrowserGpuMemoryBufferManager::DestroyGpuMemoryBufferOnIO,
-                     base::Unretained(this), new_id, request->client_id)));
+                     base::Unretained(this), new_id, request->client_id))).release());
   request->event.Signal();
 }
 
@@ -554,13 +554,13 @@ void BrowserGpuMemoryBufferManager::HandleCreateGpuMemoryBufferFromHandleOnIO(
 
   // Note: Unretained is safe as IO thread is stopped before manager is
   // destroyed.
-  request->result = GpuMemoryBufferImplSharedMemory::CreateFromHandle(
+  request->result.reset(GpuMemoryBufferImplSharedMemory::CreateFromHandle(
       handle, request->size, request->format, request->usage,
       base::Bind(
           &GpuMemoryBufferDeleted,
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
           base::Bind(&BrowserGpuMemoryBufferManager::DestroyGpuMemoryBufferOnIO,
-                     base::Unretained(this), new_id, request->client_id)));
+                     base::Unretained(this), new_id, request->client_id))).release());
   request->event.Signal();
 }
 
@@ -577,13 +577,13 @@ void BrowserGpuMemoryBufferManager::HandleGpuMemoryBufferCreatedOnIO(
 
   // Note: Unretained is safe as IO thread is stopped before manager is
   // destroyed.
-  request->result = GpuMemoryBufferImpl::CreateFromHandle(
+  request->result.reset(GpuMemoryBufferImpl::CreateFromHandle(
       handle, request->size, request->format, request->usage,
       base::Bind(
           &GpuMemoryBufferDeleted,
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
           base::Bind(&BrowserGpuMemoryBufferManager::DestroyGpuMemoryBufferOnIO,
-                     base::Unretained(this), handle.id, request->client_id)));
+                     base::Unretained(this), handle.id, request->client_id))).release());
   request->event.Signal();
 }
 

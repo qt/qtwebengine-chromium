@@ -120,13 +120,13 @@ void Display::InitializeRenderer() {
         texture_mailbox_deleter_.get(), settings_.highp_threshold_min);
     if (!renderer)
       return;
-    renderer_ = std::move(renderer);
+    renderer_.reset(renderer.release());
   } else {
     scoped_ptr<SoftwareRenderer> renderer = SoftwareRenderer::Create(
         this, &settings_, output_surface_.get(), resource_provider.get());
     if (!renderer)
       return;
-    renderer_ = std::move(renderer);
+    renderer_.reset(renderer.release());
   }
 
   resource_provider_ = std::move(resource_provider);

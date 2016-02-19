@@ -727,7 +727,7 @@ class DnsTransactionImpl : public DnsTransaction,
     DnsUDPAttempt* attempt =
         new DnsUDPAttempt(server_index, std::move(lease), std::move(query));
 
-    attempts_.push_back(make_scoped_ptr(attempt));
+    attempts_.push_back(make_scoped_ptr<DnsAttempt>(attempt));
     ++attempts_count_;
 
     if (!got_socket)
@@ -772,7 +772,7 @@ class DnsTransactionImpl : public DnsTransaction,
     DnsTCPAttempt* attempt =
         new DnsTCPAttempt(server_index, std::move(socket), std::move(query));
 
-    attempts_.push_back(make_scoped_ptr(attempt));
+    attempts_.push_back(make_scoped_ptr<DnsAttempt>(attempt));
     ++attempts_count_;
     had_tcp_attempt_ = true;
 

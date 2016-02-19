@@ -1156,7 +1156,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       MaybeMarkAlternativeServiceBroken();
       return result;
     }
-    stream_ = quic_request_.ReleaseStream();
+    stream_ = make_scoped_ptr<HttpStream>(quic_request_.ReleaseStream().release());
     next_state_ = STATE_NONE;
     return OK;
   }

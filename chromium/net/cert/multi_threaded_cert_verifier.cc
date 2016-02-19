@@ -469,7 +469,7 @@ int MultiThreadedCertVerifier::Verify(X509Certificate* cert,
 
   scoped_ptr<CertVerifierRequest> request =
       job->CreateRequest(callback, verify_result, net_log);
-  *out_req = std::move(request);
+  *out_req = make_scoped_ptr<Request>(request.release());
   return ERR_IO_PENDING;
 }
 

@@ -699,7 +699,7 @@ std::vector<scoped_ptr<WebInputEvent>> CreateSimulatedWebInputEvents(
 
       *key_up_event = *web_char_event = *key_down_event;
 
-      events.push_back(std::move(key_down_event));
+      events.push_back(make_scoped_ptr<WebInputEvent>(key_down_event.release()));
 
       if (generate_char) {
         web_char_event->type = WebInputEvent::Char;
@@ -708,7 +708,7 @@ std::vector<scoped_ptr<WebInputEvent>> CreateSimulatedWebInputEvents(
       }
 
       key_up_event->type = WebInputEvent::KeyUp;
-      events.push_back(std::move(key_up_event));
+      events.push_back(make_scoped_ptr<WebInputEvent>(key_up_event.release()));
       break;
     }
 

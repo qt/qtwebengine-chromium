@@ -184,9 +184,9 @@ class BluetoothGattDescriptorServiceProviderImpl
       variant_writer.AppendObjectPath(characteristic_path_);
       writer.CloseContainer(&variant_writer);
     } else {
-      response = dbus::ErrorResponse::FromMethodCall(
+      response.reset(dbus::ErrorResponse::FromMethodCall(
           method_call, kErrorInvalidArgs,
-          "No such property: '" + property_name + "'.");
+          "No such property: '" + property_name + "'.").release());
     }
 
     response_sender.Run(std::move(response));

@@ -308,7 +308,7 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
 
   (*result).reset(new LevelDBDatabase);
   (*result)->db_ = make_scoped_ptr(db);
-  (*result)->comparator_adapter_ = std::move(comparator_adapter);
+  (*result)->comparator_adapter_.reset(comparator_adapter.release());
   (*result)->comparator_ = comparator;
   (*result)->filter_policy_ = std::move(filter_policy);
 
@@ -337,7 +337,7 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   scoped_ptr<LevelDBDatabase> result(new LevelDBDatabase);
   result->env_ = std::move(in_memory_env);
   result->db_ = make_scoped_ptr(db);
-  result->comparator_adapter_ = std::move(comparator_adapter);
+  result->comparator_adapter_.reset(comparator_adapter.release());
   result->comparator_ = comparator;
   result->filter_policy_ = std::move(filter_policy);
 

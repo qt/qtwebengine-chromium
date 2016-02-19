@@ -33,44 +33,44 @@ scoped_ptr<const RecordParsed> RecordParsed::CreateFrom(
     DnsRecordParser* parser,
     base::Time time_created) {
   DnsResourceRecord record;
-  scoped_ptr<const RecordRdata> rdata;
+  const RecordRdata *rdata = nullptr;
 
   if (!parser->ReadRecord(&record))
     return scoped_ptr<const RecordParsed>();
 
   switch (record.type) {
     case ARecordRdata::kType:
-      rdata = ARecordRdata::Create(record.rdata, *parser);
+      rdata = ARecordRdata::Create(record.rdata, *parser).release();
       break;
     case AAAARecordRdata::kType:
-      rdata = AAAARecordRdata::Create(record.rdata, *parser);
+      rdata = AAAARecordRdata::Create(record.rdata, *parser).release();
       break;
     case CnameRecordRdata::kType:
-      rdata = CnameRecordRdata::Create(record.rdata, *parser);
+      rdata = CnameRecordRdata::Create(record.rdata, *parser).release();
       break;
     case PtrRecordRdata::kType:
-      rdata = PtrRecordRdata::Create(record.rdata, *parser);
+      rdata = PtrRecordRdata::Create(record.rdata, *parser).release();
       break;
     case SrvRecordRdata::kType:
-      rdata = SrvRecordRdata::Create(record.rdata, *parser);
+      rdata = SrvRecordRdata::Create(record.rdata, *parser).release();
       break;
     case TxtRecordRdata::kType:
-      rdata = TxtRecordRdata::Create(record.rdata, *parser);
+      rdata = TxtRecordRdata::Create(record.rdata, *parser).release();
       break;
     case NsecRecordRdata::kType:
-      rdata = NsecRecordRdata::Create(record.rdata, *parser);
+      rdata = NsecRecordRdata::Create(record.rdata, *parser).release();
       break;
     default:
       DVLOG(1) << "Unknown RData type for received record: " << record.type;
       return scoped_ptr<const RecordParsed>();
   }
 
-  if (!rdata.get())
+  if (!rdata)
     return scoped_ptr<const RecordParsed>();
 
   return scoped_ptr<const RecordParsed>(
       new RecordParsed(record.name, record.type, record.klass, record.ttl,
-                       std::move(rdata), time_created));
+                       make_scoped_ptr(rdata), time_created));
 }
 
 bool RecordParsed::IsEqual(const RecordParsed* other, bool is_mdns) const {

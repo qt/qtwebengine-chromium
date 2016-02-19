@@ -2173,18 +2173,18 @@ void LayerTreeHostImpl::CreateAndSetRenderer() {
   DCHECK(resource_provider_);
 
   if (output_surface_->capabilities().delegated_rendering) {
-    renderer_ =
+    renderer_.reset(
         DelegatingRenderer::Create(this, &settings_.renderer_settings,
-                                   output_surface_, resource_provider_.get());
+                                   output_surface_, resource_provider_.get()).release());
   } else if (output_surface_->context_provider()) {
-    renderer_ = GLRenderer::Create(
+    renderer_.reset(GLRenderer::Create(
         this, &settings_.renderer_settings, output_surface_,
         resource_provider_.get(), texture_mailbox_deleter_.get(),
-        settings_.renderer_settings.highp_threshold_min);
+        settings_.renderer_settings.highp_threshold_min).release());
   } else if (output_surface_->software_device()) {
-    renderer_ =
+    renderer_.reset(
         SoftwareRenderer::Create(this, &settings_.renderer_settings,
-                                 output_surface_, resource_provider_.get());
+                                 output_surface_, resource_provider_.get()).release());
   }
   DCHECK(renderer_);
 
