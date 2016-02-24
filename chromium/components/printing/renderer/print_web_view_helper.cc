@@ -308,7 +308,7 @@ bool PrintingNodeOrPdfFrame(const blink::WebLocalFrame* frame,
   return plugin && plugin->supportsPaginatedPrint();
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Returns true if the current destination printer is PRINT_TO_PDF.
 bool IsPrintToPdfRequested(const base::DictionaryValue& job_settings) {
   bool print_to_pdf = false;
@@ -377,7 +377,7 @@ MarginType GetMarginsForPdf(blink::WebLocalFrame* frame,
 }
 #endif
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 bool FitToPageEnabled(const base::DictionaryValue& job_settings) {
   bool fit_to_paper_size = false;
   if (!job_settings.GetBoolean(kSettingFitToPageEnabled, &fit_to_paper_size)) {
@@ -920,7 +920,7 @@ bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
 #if defined(ENABLE_BASIC_PRINTING) && defined(ENABLE_PRINT_PREVIEW)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintForPrintPreview, OnPrintForPrintPreview)
 #endif
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
     IPC_MESSAGE_HANDLER(PrintMsg_InitiatePrintPreview, OnInitiatePrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintPreview, OnPrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintingDone, OnPrintingDone)
@@ -1066,7 +1066,7 @@ void PrintWebViewHelper::UpdateFrameMarginsCssInfo(
   ignore_css_margins_ = (margins_type != DEFAULT_MARGINS);
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
   if (ipc_nesting_level_ > 1)
     return;
@@ -1227,7 +1227,7 @@ bool PrintWebViewHelper::CreatePreviewDocument() {
   return true;
 }
 
-#if !defined(OS_MACOSX) && defined(ENABLE_PRINT_PREVIEW)
+#if !defined(OS_MACOSX) && (defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT))
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
     const PrintMsg_Print_Params& print_params) {
@@ -1301,7 +1301,7 @@ void PrintWebViewHelper::SetScriptedPrintBlocked(bool blocked) {
   is_scripted_printing_blocked_ = blocked;
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 void PrintWebViewHelper::OnInitiatePrintPreview(bool selection_only) {
   if (ipc_nesting_level_ > 1)
     return;
@@ -1416,7 +1416,7 @@ void PrintWebViewHelper::DidFinishPrinting(PrintingResult result) {
       }
       break;
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
     case FAIL_PREVIEW:
       int cookie =
           print_pages_params_ ? print_pages_params_->params.document_cookie : 0;
@@ -1560,7 +1560,7 @@ bool PrintWebViewHelper::CalculateNumberOfPages(blink::WebLocalFrame* frame,
   return true;
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 bool PrintWebViewHelper::SetOptionsFromPdfDocument(
     PrintHostMsg_SetOptionsFromDocument_Params* options) {
   blink::WebLocalFrame* source_frame = print_preview_context_.source_frame();
@@ -1843,7 +1843,7 @@ bool PrintWebViewHelper::CopyMetafileDataToSharedMem(
 #endif  // defined(OS_WIN)
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 void PrintWebViewHelper::ShowScriptedPrintPreview() {
   if (is_scripted_preview_delayed_) {
     is_scripted_preview_delayed_ = false;

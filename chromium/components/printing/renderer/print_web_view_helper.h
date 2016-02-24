@@ -137,7 +137,7 @@ class PrintWebViewHelper
     OK,
     FAIL_PRINT_INIT,
     FAIL_PRINT,
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
     FAIL_PREVIEW,
 #endif
   };
@@ -173,7 +173,7 @@ class PrintWebViewHelper
   void OnPrintForSystemDialog();
   void OnPrintForPrintPreview(const base::DictionaryValue& job_settings);
 #endif  // defined(ENABLE_BASIC_PRINTING)
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
   void OnInitiatePrintPreview(bool selection_only);
   void OnPrintPreview(const base::DictionaryValue& settings);
 #endif  // defined(ENABLE_PRINT_PREVIEW)
@@ -189,7 +189,7 @@ class PrintWebViewHelper
   // Update |ignore_css_margins_| based on settings.
   void UpdateFrameMarginsCssInfo(const base::DictionaryValue& settings);
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
   // Prepare frame for creating preview document.
   void PrepareFrameForPreviewDocument();
 
@@ -235,7 +235,7 @@ class PrintWebViewHelper
                               const blink::WebNode& node,
                               int* number_of_pages);
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
   // Set options for print preset from source PDF document.
   bool SetOptionsFromPdfDocument(
       PrintHostMsg_SetOptionsFromDocument_Params* options);
@@ -343,7 +343,7 @@ class PrintWebViewHelper
   bool IsScriptInitiatedPrintAllowed(blink::WebFrame* frame,
                                      bool user_initiated);
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
   // Shows scripted print preview when options from plugin are available.
   void ShowScriptedPrintPreview();
 

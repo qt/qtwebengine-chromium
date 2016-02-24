@@ -466,7 +466,7 @@ IPC_MESSAGE_ROUTED0(PrintHostMsg_ShowInvalidPrinterSettingsError)
 IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintingFailed,
                     int /* document cookie */)
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 // Tell the browser print preview failed.
 IPC_MESSAGE_ROUTED1(PrintHostMsg_PrintPreviewFailed,
                     int /* document cookie */)
