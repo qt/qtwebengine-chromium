@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_mac.h"
 
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 
 // Unlike some event APIs, Apple does not provide a way to programmatically

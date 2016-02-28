@@ -515,6 +515,8 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantDark;
 - (void)viewDidLoad;
 @end
 
+typedef NSUInteger NSEventModifierFlags;
+
 #endif  // MAC_OS_X_VERSION_10_10
 
 // Once Chrome no longer supports OSX 10.10.2, everything within this
