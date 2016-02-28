@@ -195,6 +195,8 @@ BASE_EXPORT extern NSString* const NSAppearanceNameVibrantLight;
 - (void)viewDidLoad;
 @end
 
+typedef NSUInteger NSEventModifierFlags;
+
 @interface NSWindow (YosemiteSDK)
 - (void)setTitlebarAppearsTransparent:(BOOL)flag;
 @end
