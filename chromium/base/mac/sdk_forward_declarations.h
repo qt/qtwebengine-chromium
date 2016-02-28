@@ -528,6 +528,8 @@ BASE_EXPORT extern "C" void NSAccessibilityPostNotificationWithUserInfo(
 - (void)viewDidLoad;
 @end
 
+typedef NSUInteger NSEventModifierFlags;
+
 @interface NSWindow (YosemiteSDK)
 - (void)setTitlebarAppearsTransparent:(BOOL)flag;
 @end
