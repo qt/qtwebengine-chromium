@@ -41,10 +41,12 @@
 #include "ui/base/layout.h"
 #include "ui/gl/init/gl_factory.h"
 
+#ifndef USE_APPSTORE_COMPLIANT_CODE
 extern "C" {
 void CGSSetDenyWindowServerConnections(bool);
 void CGSShutdownServerConnections();
 };
+#endif
 
 namespace content {
 namespace {
@@ -341,6 +343,7 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
   }
 
+#ifndef USE_APPSTORE_COMPLIANT_CODE
   if (sandbox_type == SANDBOX_TYPE_RENDERER) {
     // Now disconnect from WindowServer, after all objects have been warmed up.
     // Shutting down the connection requires connecting to WindowServer,
@@ -349,6 +352,7 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     CGSSetDenyWindowServerConnections(true);
     CGSShutdownServerConnections();
   }
+#endif
 }
 
 // Load the appropriate template for the given sandbox type.

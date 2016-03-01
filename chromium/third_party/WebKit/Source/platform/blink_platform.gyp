@@ -312,6 +312,14 @@
           ['include', 'geometry/cg/IntRectCG\\.cpp$'],
           ['include', 'geometry/cg/IntSizeCG\\.cpp$'],
         ],
+        'conditions': [
+          ['appstore_compliant_code==1', {
+            'sources/': [
+              ['include', 'KillRingNone\\.cpp$'],
+              ['exclude', 'mac/KillRingMac\\.mm$']
+            ]
+          }]
+        ],
       }, { # OS!="mac"
         'sources/': [
           ['exclude', 'mac/'],
