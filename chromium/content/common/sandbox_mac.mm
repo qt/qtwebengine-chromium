@@ -44,8 +44,11 @@ extern "C" {
 #include "ui/gl/gl_surface.h"
 
 extern "C" {
+
+#ifndef USE_APPSTORE_COMPLIANT_CODE
 void CGSSetDenyWindowServerConnections(bool);
 void CGSShutdownServerConnections();
+#endif
 
 int sandbox_init_with_parameters(const char* profile,
                                  uint64_t flags,
@@ -351,6 +354,7 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
   }
 
+#ifndef USE_APPSTORE_COMPLIANT_CODE
   if (sandbox_type == SANDBOX_TYPE_RENDERER &&
       base::mac::IsOSMountainLionOrLater()) {
     // Now disconnect from WindowServer, after all objects have been warmed up.
@@ -362,6 +366,7 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     CGSSetDenyWindowServerConnections(true);
     CGSShutdownServerConnections();
   }
+#endif
 }
 
 // Load the appropriate template for the given sandbox type.

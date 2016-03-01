@@ -238,6 +238,7 @@
       'child/webthemeengine_impl_android.h',
       'child/webthemeengine_impl_default.cc',
       'child/webthemeengine_impl_default.h',
+      'child/webthemeengine_impl_mac.cc',
       'child/webthemeengine_impl_mac.h',
       'child/weburlresponse_extradata_impl.cc',
       'child/weburlresponse_extradata_impl.h',
@@ -260,7 +261,14 @@
         ],
       }
     ],
-    ['OS=="android"', {
+    ['appstore_compliant_code==0',
+      {
+        'sources/': [
+          ['exclude', 'child/webthemeengine_impl_mac.cc'],
+        ],
+      }
+    ],
+   ['OS=="android"', {
       'dependencies': [
         '../build/android/ndk.gyp:cpu_features',
       ],

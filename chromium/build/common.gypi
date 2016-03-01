@@ -721,6 +721,9 @@
       # Turn on JNI generation optimizations by default.
       'optimize_jni_generation%': 1,
 
+      # By default include non-appstore-compliant code.
+      'appstore_compliant_code%': 0,
+
       'conditions': [
         # A flag for POSIX platforms
         ['OS=="win"', {
@@ -1289,6 +1292,7 @@
     'enable_service_discovery%' : '<(enable_service_discovery)',
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'proprietary_codecs%': '<(proprietary_codecs)',
+    'appstore_compliant_code%': '<(appstore_compliant_code)',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
     'use_lto%': '<(use_lto)',
@@ -2764,6 +2768,9 @@
       }],
       ['proprietary_codecs==1', {
         'defines': ['USE_PROPRIETARY_CODECS'],
+      }],
+      ['appstore_compliant_code==1', {
+        'defines': ['USE_APPSTORE_COMPLIANT_CODE'],
       }],
       ['enable_viewport==1', {
         'defines': ['ENABLE_VIEWPORT'],

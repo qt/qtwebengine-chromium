@@ -33,6 +33,11 @@
 #import "platform/mac/LocalCurrentGraphicsContext.h"
 #import "platform/mac/ThemeMac.h"
 #import "platform/mac/WebCoreNSCellExtras.h"
+#if defined(USE_APPSTORE_COMPLIANT_CODE)
+#include "platform/LayoutTestSupport.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebThemeEngine.h"
+#endif
 #import <AvailabilityMacros.h>
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
@@ -41,13 +46,38 @@
 // The methods in this file are specific to the Mac OS X platform.
 
 // Forward declare Mac SPIs.
+#ifndef USE_APPSTORE_COMPLIANT_CODE
 extern "C" {
 void _NSDrawCarbonThemeBezel(NSRect frame, BOOL enabled, BOOL flipped);
 // Request for public API: rdar://13787640
 void _NSDrawCarbonThemeListBox(NSRect frame, BOOL enabled, BOOL flipped, BOOL always_yes);
 }
+#endif
 
 namespace blink {
+
+#if defined(USE_APPSTORE_COMPLIANT_CODE)
+bool useMockTheme()
+{
+    return LayoutTestSupport::isMockThemeEnabledForTest();
+}
+
+WebThemeEngine::State getWebThemeState(const LayoutObject& o)
+{
+    if (!LayoutTheme::isEnabled(o))
+        return WebThemeEngine::StateDisabled;
+    if (useMockTheme() && LayoutTheme::isReadOnlyControl(o))
+        return WebThemeEngine::StateReadonly;
+    if (LayoutTheme::isPressed(o))
+        return WebThemeEngine::StatePressed;
+    if (useMockTheme() && LayoutTheme::isFocused(o))
+        return WebThemeEngine::StateFocused;
+    if (LayoutTheme::isHovered(o))
+        return WebThemeEngine::StateHover;
+
+    return WebThemeEngine::StateNormal;
+}
+#endif
 
 ThemePainterMac::ThemePainterMac(LayoutThemeMac& layoutTheme, Theme* platformTheme)
     : ThemePainter(platformTheme)
@@ -70,8 +100,10 @@ bool ThemePainterMac::paintTextField(const LayoutObject& o, const PaintInfo& pai
     // background. We need WebCore to paint styled backgrounds, so we'll use
     // this AppKit SPI function instead.
     if (!useNSTextFieldCell) {
+#ifndef USE_APPSTORE_COMPLIANT_CODE
         _NSDrawCarbonThemeBezel(r, LayoutTheme::isEnabled(o) && !LayoutTheme::isReadOnlyControl(o), YES);
         return false;
+#endif
     }
 #endif
 
@@ -151,7 +183,28 @@ bool ThemePainterMac::paintCapsLockIndicator(const LayoutObject&, const PaintInf
 bool ThemePainterMac::paintTextArea(const LayoutObject& o, const PaintInfo& paintInfo, const IntRect& r)
 {
     LocalCurrentGraphicsContext localContext(paintInfo.context, &paintInfo.cullRect().m_rect, r);
+#ifndef USE_APPSTORE_COMPLIANT_CODE
     _NSDrawCarbonThemeListBox(r, LayoutTheme::isEnabled(o) && !LayoutTheme::isReadOnlyControl(o), YES, YES);
+#else
+    // Copy from ThemePainterDefault.cpp.
+    // WebThemeEngine does not handle border rounded corner and background image
+    // so return true to draw CSS border and background.
+    if (o.styleRef().hasBorderRadius() || o.styleRef().hasBackgroundImage())
+        return true;
+
+    ControlPart part = o.styleRef().appearance();
+
+    WebThemeEngine::ExtraParams extraParams;
+    extraParams.textField.isTextArea = part == TextAreaPart;
+    extraParams.textField.isListbox = part == ListboxPart;
+
+    WebCanvas* canvas = paintInfo.context.canvas();
+
+    Color backgroundColor = o.resolveColor(CSSPropertyBackgroundColor);
+    extraParams.textField.backgroundColor = backgroundColor.rgb();
+
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartTextField, getWebThemeState(o), WebRect(r), &extraParams);
+#endif
     return false;
 }
 
