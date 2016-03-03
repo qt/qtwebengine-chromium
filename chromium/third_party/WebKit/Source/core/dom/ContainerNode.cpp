@@ -641,6 +641,7 @@ void ContainerNode::parserRemoveChild(Node& oldChild)
     ChildListMutationScope(*this).willRemoveChild(oldChild);
     oldChild.notifyMutationObserversNodeWillDetach();
 
+    HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
     Node* prev = oldChild.previousSibling();
     Node* next = oldChild.nextSibling();
     removeBetween(prev, next, oldChild);
