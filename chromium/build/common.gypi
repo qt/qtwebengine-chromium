@@ -2653,7 +2653,11 @@
         # http://crbug.com/255186
         '-Wno-deprecated-register',
 
+        # TODO(hans): Get this cleaned up, http://crbug.com/428099
+        '-Wno-inconsistent-missing-override',
+
         '-Wno-tautological-compare',
+        '-Wno-unknown-warning-option',
       ],
     },
     'includes': [ 'set_clang_warning_flags.gypi', ],
@@ -3108,12 +3112,11 @@
         'variables': { 'clang_warning_flags': ['-Wexit-time-destructors']},
       }],
       ['use_qt!=1', {
-        # TODO(hans): Get this cleaned up, http://crbug.com/428099
         # TODO(thakis): Add -Wfor-loop-analysis to -Wall in clang, remove this:
         # TODO(thakis): Move this to the global clang_warning_flags block once
         # clang is rolled far enough that the pinned clang understands this flag
         # TODO(thakis): Enable this, crbug.com/507717
-        'variables': { 'clang_warning_flags': ['-Wno-shift-negative-value', '-Wfor-loop-analysis', '-Wno-inconsistent-missing-override']},
+        'variables': { 'clang_warning_flags': ['-Wno-shift-negative-value', '-Wfor-loop-analysis']},
       }],
       ['chromium_code==0', {
         'variables': {
