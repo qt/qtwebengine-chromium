@@ -69,7 +69,7 @@ void PrintWebViewHelper::PrintPageInternal(
   Send(new PrintHostMsg_DidPrintPage(routing_id(), page_params));
 }
 
-#if defined(ENABLE_PRINT_PREVIEW)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
     const PrintMsg_Print_Params& print_params) {
@@ -110,7 +110,7 @@ bool PrintWebViewHelper::RenderPreviewPage(
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
-#endif  // defined(ENABLE_PRINT_PREVIEW)
+#endif  // defined(ENABLE_PRINT_PREVIEW) || defined(TOOLKIT_QT)
 
 void PrintWebViewHelper::RenderPage(const PrintMsg_Print_Params& params,
                                     int page_number,
