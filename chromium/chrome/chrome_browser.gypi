@@ -2417,7 +2417,6 @@
       'browser/printing/print_preview_message_handler.h',
       'browser/printing/print_view_manager.cc',
       'browser/printing/print_view_manager.h',
-      'browser/printing/print_view_manager_observer.h',
       'browser/printing/printer_manager_dialog.h',
       'browser/printing/printer_manager_dialog_linux.cc',
       'browser/printing/printer_manager_dialog_mac.mm',
@@ -3179,6 +3178,9 @@
         '../components/components.gyp:signin_core_browser',
         '../components/components.gyp:startup_metric_utils_browser',
         '../components/components.gyp:startup_metric_utils_browser_message_filter',
+        # TODO(fdoray): Remove this once the PreRead field trial has expired.
+        # crbug.com/577698
+        '../components/components.gyp:startup_metric_utils_common',
         '../components/components.gyp:sync_bookmarks',
         '../components/components.gyp:sync_driver',
         '../components/components.gyp:sync_sessions',
@@ -3822,6 +3824,7 @@
             '../chrome_elf/chrome_elf.gyp:dll_hash',
             '../components/components.gyp:browser_watcher',
             '../components/components.gyp:browser_watcher_client',
+            '../components/components.gyp:startup_metric_utils_common',
             '../google_update/google_update.gyp:google_update',
             '../third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
             '../third_party/isimpledom/isimpledom.gyp:isimpledom',

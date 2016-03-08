@@ -108,6 +108,26 @@ Polymer({
     },
 
     /**
+     * The text for the learn more link about cloud services in the first run
+     * flow.
+     * @private {string}
+     */
+    firstRunFlowLearnMore_: {
+      type: String,
+      readOnly: true,
+      value: loadTimeData.getString('learnMoreText'),
+    },
+
+    /**
+     * The URL to open when the first run flow learn more link is clicked.
+     * @type {string}
+     */
+    firstRunFlowLearnMoreUrl: {
+      type: String,
+      value: '',
+    },
+
+    /**
      * The text description for the first run flow.
      * @private {string}
      */
@@ -774,10 +794,13 @@ Polymer({
    * @private
    */
   maybeShowIssueView_: function(issue) {
-    if (!!issue && issue.isBlocking)
+    if (!!issue && issue.isBlocking) {
       this.currentView_ = media_router.MediaRouterView.ISSUE;
-    else
-      this.updateElementPositioning_();
+    } else {
+      this.async(function() {
+        this.updateElementPositioning_();
+      });
+    }
   },
 
   /**
@@ -1131,9 +1154,9 @@ Polymer({
   },
 
   /**
-   * Compute the new maximum height of the sink list and update the style.
+   * Update the position-related styling of some elements.
    *
-   * @param {number} dialogHeight The height of the Media Router dialog.
+   * @private
    */
   updateElementPositioning_: function() {
     // Ensures that conditionally templated elements have finished stamping.

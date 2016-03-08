@@ -2959,7 +2959,7 @@
 <translation id="5299682071747318445">Усі дані шифруються за допомогою вашої парольної фрази для синхронізації</translation>
 <translation id="5300589172476337783">Показати</translation>
 <translation id="5301751748813680278">Вхід у режимі гостя.</translation>
-<translation id="5301954838959518834">Зрозуміло</translation>
+<translation id="5301954838959518834">OK</translation>
 <translation id="5302048478445481009">Мова</translation>
 <translation id="5305688511332277257">Не встановлено жодного</translation>
 <translation id="5308380583665731573">Під’єднатися</translation>
@@ -3020,6 +3020,7 @@
 <translation id="5390284375844109566">Проіндексована база даних</translation>
 <translation id="5392544185395226057">Увімкнути підтримку для Native Client.</translation>
 <translation id="5393125431335030955">Цей плагін працює лише на комп’ютері.</translation>
+<translation id="5393559999218790205">Вимкнути часові шкали для скомпонованих анімацій інтерфейсу</translation>
 <translation id="5396126354477659676">Плагін <ph name="PEPPER_PLUGIN_NAME" /> у домені <ph name="PEPPER_PLUGIN_DOMAIN" /> хоче отримати доступ до вашого комп’ютера.</translation>
 <translation id="539755880180803351">Додає примітки до веб-форм за допомогою передбачень типу поля автозаповнення як тексту заповнювача.</translation>
 <translation id="5397578532367286026">Менеджер (<ph name="MANAGER_EMAIL" />) може переглядати дії й історію цього користувача на chrome.com.</translation>
@@ -3044,6 +3045,7 @@
 <translation id="5423849171846380976">Активовано</translation>
 <translation id="5425470845862293575">Увімкнути використання експерементальної системи обробки шрифтів DirectWrite.</translation>
 <translation id="5425722269016440406">Щоб вимкнути Smart Lock, потрібно мати доступ до Інтернету, оскільки це налаштування синхронізується з вашим телефоном та іншими пристроями. Під’єднайтеся до мережі.</translation>
+<translation id="5426623592374109001">Використовувати стару підсистему анімацій для скомпонованих анімацій інтерфейсу.</translation>
 <translation id="5427459444770871191">Повернути &amp;за годинниковою стрілкою</translation>
 <translation id="5428105026674456456">Іспанська</translation>
 <translation id="542872847390508405">Ви переглядаєте в гостьовому режимі</translation>
@@ -3511,6 +3513,7 @@
 <translation id="6111974609785983504">Дозволено за умовчанням</translation>
 <translation id="6113134669445407638">Вимкнути Delay Agnostic AEC у WebRTC. Поставте прапорець, якщо ви довіряєте повідомленням про затримки системи або якщо інші користувачі чують відлуння з вашого пристрою.</translation>
 <translation id="6116921718742659598">Змінити налаштування мови та введення</translation>
+<translation id="6117536376248197233">Вимкнути часові шкали скомпонованих анімацій в інструментах візуалізації.</translation>
 <translation id="6120205520491252677">Закріпити цю сторінку на екрані запуску...</translation>
 <translation id="6120816415558830169">Завантажено за допомогою розширення &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">Ваше з’єднання з Інтернетом контролюється</translation>
@@ -3612,6 +3615,7 @@
 <translation id="6277105963844135994">Час очікування мережі минув</translation>
 <translation id="6277518330158259200">З&amp;робити знімок екрана</translation>
 <translation id="6279183038361895380">Натисніть |<ph name="ACCELERATOR" />|, щоб побачити курсор</translation>
+<translation id="6281743458679673853">Увімкнути експеримент, під час якого всі API відображатимуть область перегляду макета. Властивості window.scroll застосовуватимуться до області перегляду макета.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{Новий принтер у вашій мережі}one{Нові принтери у вашій мережі}few{Нові принтери у вашій мережі}many{Нові принтери у вашій мережі}other{Нові принтери у вашій мережі}}</translation>
 <translation id="6285395082104474418">Панель статусу показує поточний стан мережі, акумулятора тощо.</translation>
 <translation id="6286684120317096255">Відстежується використання трафіку</translation>
@@ -4284,7 +4288,7 @@
 <translation id="7343116142376328522">Заборонити всім сайтам генерувати ключі у формах (рекомендується)</translation>
 <translation id="7345706641791090287">Підтвердьте пароль</translation>
 <translation id="734651947642430719">Метод введення тамільської мови (InScript)</translation>
-<translation id="7346909386216857016">Зрозуміло</translation>
+<translation id="7346909386216857016">OK</translation>
 <translation id="7347751611463936647">Щоб користуватися цим розширенням, введіть "<ph name="EXTENSION_KEYWORD" />", потім TAB, а потім свою команду чи пошук.</translation>
 <translation id="7348093485538360975">Екранна клавіатура</translation>
 <translation id="7348749398828259943">Міжнародна клавіатура US Workman</translation>
@@ -4475,7 +4479,7 @@
 <translation id="7626009897377900107">Генерування пароля</translation>
 <translation id="7627262197844840899">Цей сайт не приймає картки MasterCard.</translation>
 <translation id="7627790789328695202">Файл "<ph name="FILE_NAME" />" вже існує. Перейменуйте його та повторіть спробу.</translation>
-<translation id="7628079021897738671">Зрозуміло</translation>
+<translation id="7628079021897738671">OK</translation>
 <translation id="762917759028004464">Наразі переглядачем за умовчанням є <ph name="BROWSER_NAME" />.</translation>
 <translation id="7629536005696009600">Дозволити вводити облікові дані додатків Android на відповідних веб-сайтах.</translation>
 <translation id="7629827748548208700">Вкладка: <ph name="TAB_NAME" /></translation>
@@ -4734,6 +4738,7 @@
 Зберігайте свій файл ключа в безпечному місці. Він знадобиться вам для створення нових версій вашого розширення.</translation>
 <translation id="799923393800005025">Може переглядати</translation>
 <translation id="7999338963698132743">Новий диспетчер завдань</translation>
+<translation id="8000004253404706714">Використовувати стару підсистему анімацій для скомпонованих анімацій в інструментах візуалізації.</translation>
 <translation id="8004582292198964060">Переглядач</translation>
 <translation id="8007030362289124303">Низький заряд батареї</translation>
 <translation id="8008356846765065031">Утрачено з’єднання з Інтернетом. Перевірте з’єднання.</translation>
@@ -5226,6 +5231,7 @@
 <translation id="872537912056138402">Хорватська</translation>
 <translation id="8726206820263995930">Помилка під час отримання налаштувань політики із сервера: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">Показувати параметри розширення як вбудований елемент на сторінці chrome://extensions, а не відкривати нову вкладку.</translation>
+<translation id="8727142376512517020">Більше не показувати</translation>
 <translation id="8728672262656704056">Ви перейшли в режим анонімного перегляду</translation>
 <translation id="8730621377337864115">Готово</translation>
 <translation id="8731332457891046104">Скасувати реєстрацію <ph name="DEVICE_TYPE" /></translation>
@@ -5295,6 +5301,7 @@
 <translation id="8830796635868321089">Помилка перевірки наявності оновлень за допомогою поточних налаштувань проксі-сервера. Змініть <ph name="PROXY_SETTINGS_LINK_START" />налаштування проксі-сервера<ph name="PROXY_SETTINGS_LINK_END" />.</translation>
 <translation id="8831623914872394308">Налаштування курсора</translation>
 <translation id="8837103518490433332">Зберегти пароль для <ph name="ORIGIN" /> у <ph name="PASSWORD_MANAGER_BRAND" />?</translation>
+<translation id="8841142799574815336">Неактивна візуальна область перегляду.</translation>
 <translation id="884264119367021077">Адреса доставки</translation>
 <translation id="8844238624737526720">Використовувати нову оптимізовану версію диспетчера завдань Chrome.</translation>
 <translation id="8846141544112579928">Пошук клавіатури…</translation>

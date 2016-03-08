@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "components/startup_metric_utils/browser/pre_read_field_trial_utils_win.h"
+#include "components/startup_metric_utils/common/pre_read_field_trial_utils_win.h"
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
@@ -25,15 +25,22 @@ const char kPreReadFieldTrialName[] = "PreRead";
 // annotated with the pre-read group that is actually used during this startup.
 const char kPreReadSyntheticFieldTrialName[] = "SyntheticPreRead";
 
-// Variation names for the PreRead field trial.
+// Variation names for the PreRead field trial. All variations change the
+// default behavior, i.e. the default is the inverse of the variation. Thus,
+// variations that cancel something that is done by default have a negative
+// name.
 const base::char16 kNoPreReadVariationName[] = L"NoPreRead";
 const base::char16 kHighPriorityVariationName[] = L"HighPriority";
-const base::char16 kOnlyIfColdVariationName[] = L"OnlyIfCold";
 const base::char16 kPrefetchVirtualMemoryVariationName[] =
     L"PrefetchVirtualMemory";
+const base::char16 kNoPrefetchArgumentVariationName[] = L"NoPrefetchArgument";
 
 // Registry key in which the PreRead field trial group is stored.
 const base::char16 kPreReadFieldTrialRegistryKey[] = L"\\PreReadFieldTrial";
+
+// Pre-read options to use for the current process. This is initialized by
+// InitializePreReadOptions().
+PreReadOptions g_pre_read_options = {false, false, false, false};
 
 // Returns the registry path in which the PreRead group is stored.
 base::string16 GetPreReadRegistryPath(
@@ -41,18 +48,16 @@ base::string16 GetPreReadRegistryPath(
   return product_registry_path + kPreReadFieldTrialRegistryKey;
 }
 
+// Returns true if |key| has a value named |name| which is not zero.
+bool ReadBool(const base::win::RegKey& key, const base::char16* name) {
+  DWORD value = 0;
+  return key.ReadValueDW(name, &value) == ERROR_SUCCESS && value != 0;
+}
+
 }  // namespace
 
-void GetPreReadOptions(const base::string16& product_registry_path,
-                       bool* no_pre_read,
-                       bool* high_priority,
-                       bool* only_if_cold,
-                       bool* prefetch_virtual_memory) {
+void InitializePreReadOptions(const base::string16& product_registry_path) {
   DCHECK(!product_registry_path.empty());
-  DCHECK(no_pre_read);
-  DCHECK(high_priority);
-  DCHECK(only_if_cold);
-  DCHECK(prefetch_virtual_memory);
 
   // Open the PreRead field trial's registry key.
   const base::string16 registry_path =
@@ -61,23 +66,16 @@ void GetPreReadOptions(const base::string16& product_registry_path,
                               KEY_QUERY_VALUE);
 
   // Set the PreRead field trial's options.
-  struct VariationMapping {
-    const base::char16* name;
-    bool* variable;
-  } const variations_mappings[] = {
-      {kNoPreReadVariationName, no_pre_read},
-      {kHighPriorityVariationName, high_priority},
-      {kOnlyIfColdVariationName, only_if_cold},
-      {kPrefetchVirtualMemoryVariationName, prefetch_virtual_memory},
-  };
+  g_pre_read_options.pre_read = !ReadBool(key, kNoPreReadVariationName);
+  g_pre_read_options.high_priority = ReadBool(key, kHighPriorityVariationName);
+  g_pre_read_options.prefetch_virtual_memory =
+      ReadBool(key, kPrefetchVirtualMemoryVariationName);
+  g_pre_read_options.use_prefetch_argument =
+      !ReadBool(key, kNoPrefetchArgumentVariationName);
+}
 
-  for (const auto& mapping : variations_mappings) {
-    // Set the option variable to true if the corresponding value is found in
-    // the registry. Set to false otherwise (default behavior).
-    DWORD value = 0;
-    *mapping.variable = key.ReadValueDW(mapping.name, &value) == ERROR_SUCCESS;
-    DCHECK(!*mapping.variable || value == 1);
-  }
+PreReadOptions GetPreReadOptions() {
+  return g_pre_read_options;
 }
 
 void UpdatePreReadOptions(const base::string16& product_registry_path) {

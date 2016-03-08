@@ -745,6 +745,8 @@ class CONTENT_EXPORT WebContentsImpl
                            LoadResourceFromMemoryCacheWithBadSecurityInfo);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
                            LoadResourceFromMemoryCacheWithEmptySecurityInfo);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
+                           ResetJavaScriptDialogOnUserNavigate);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest, PageDoesBackAndReload);
@@ -816,6 +818,12 @@ class CONTENT_EXPORT WebContentsImpl
   // Traverses all the RenderFrameHosts in the FrameTree and creates a set
   // all the unique RenderWidgetHostViews.
   std::set<RenderWidgetHostView*> GetRenderWidgetHostViewsInTree();
+
+  // Called with the result of a DownloadImage() request.
+  void OnDidDownloadImage(const ImageDownloadCallback& callback,
+                          int id,
+                          const GURL& image_url,
+                          image_downloader::DownloadResultPtr result);
 
   // Callback function when showing JavaScript dialogs.  Takes in a routing ID
   // pair to identify the RenderFrameHost that opened the dialog, because it's
@@ -1013,6 +1021,9 @@ class CONTENT_EXPORT WebContentsImpl
   // corresponds to the name of a frame that the WebUI should be created for (or
   // the main frame if empty).
   WebUI* CreateWebUI(const GURL& url, const std::string& frame_name);
+
+  void SetJavaScriptDialogManagerForTesting(
+      JavaScriptDialogManager* dialog_manager);
 
   // Data for core operation ---------------------------------------------------
 
@@ -1304,6 +1315,7 @@ class CONTENT_EXPORT WebContentsImpl
   bool page_scale_factor_is_one_;
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
+  base::WeakPtrFactory<WebContentsImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsImpl);
 };

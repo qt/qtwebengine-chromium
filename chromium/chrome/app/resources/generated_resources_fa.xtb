@@ -267,7 +267,7 @@
 <translation id="1395730723686586365">به‌روزرسان شروع شد</translation>
 <translation id="139591007336427101">بررسی پیوند</translation>
 <translation id="1398853756734560583">بزرگ کردن</translation>
-<translation id="1399648040768741453">صفحه‌کلید تلوگویی (آوایی)</translation>
+<translation id="1399648040768741453">صفحه‌کلید تلوگو (آوایی)</translation>
 <translation id="1401874662068168819">Gin Yieh</translation>
 <translation id="140240131475089220">رفع اشکال بدون صدا</translation>
 <translation id="140250605646987970">‏تلفنتان پیدا شد. اما Smart Lock فقط روی دستگاه‌های دارای Android نسخه ۵٫۰ و بالاتر کار می‌کند. &lt;a&gt;بیشتر بدانید&lt;/a&gt;</translation>
@@ -476,7 +476,7 @@
 <translation id="166179487779922818">گذرواژه بیش از حد کوتاه است.</translation>
 <translation id="16620462294541761">متأسفانه، گذرواژه شما تأیید نشد. لطفاً دوباره امتحان کنید.</translation>
 <translation id="166278006618318542">الگوریتم کلید عمومی موضوع</translation>
-<translation id="1662837784918284394">(هیچکدام)</translation>
+<translation id="1662837784918284394">(هیچ‌کدام)</translation>
 <translation id="1663298465081438178">قابلیت‌های خوب بدون دردسر.</translation>
 <translation id="1664310274171851702">فقط اتصال‌های اول‌شخص ایمن</translation>
 <translation id="1665611772925418501">امکان تغییر این فایل وجود نداشت.</translation>
@@ -650,7 +650,7 @@
 <translation id="1947424002851288782">صفحه‌کلید آلمانی</translation>
 <translation id="1950295184970569138">‏* عکس نمایهٔ Google (در حال بارگیری)</translation>
 <translation id="1951615167417147110">یک صفحه بالا بروید</translation>
-<translation id="1956050014111002555">این فایل دارای چندین مجوز است، هیچکدام وارد نشده است:</translation>
+<translation id="1956050014111002555">این فایل دارای چندین مجوز است، هیچ‌کدام وارد نشده است:</translation>
 <translation id="1957988341423158185">برچسب رد برای ردیابی پیمایش</translation>
 <translation id="1962233722219655970">‏این صفحه از برنامه Native Client استفاده می‌کند که روی رایانه شما کار نمی‌کند.</translation>
 <translation id="1965328510789761112">حافظه خصوصی</translation>
@@ -875,7 +875,7 @@
 <translation id="2276503375879033601">افزودن برنامه‌های بیشتر</translation>
 <translation id="2278098630001018905">استفاده از آدرس ارسال متفاوت</translation>
 <translation id="2278562042389100163">باز کردن پنجرهٔ مرورگر</translation>
-<translation id="2278988676849463018">صفحه‌کلید کانادا (آوایی)</translation>
+<translation id="2278988676849463018">صفحه‌کلید کانارا (آوایی)</translation>
 <translation id="2279874276457403668">هر بار فقط می‌توان یک جلسه ایجاد کرد.</translation>
 <translation id="2280486287150724112">حاشیه راست</translation>
 <translation id="2282146716419988068">‏پردازش GPU</translation>
@@ -1926,7 +1926,7 @@
 <translation id="3704162925118123524">شاید شبکه‌ای که استفاده می‌کنید، بازدید از صفحه ورود به سیستم خودش را برای شما ضروری کرده باشد.</translation>
 <translation id="3704331259350077894">توقف عملیات</translation>
 <translation id="3705722231355495246">-</translation>
-<translation id="370665806235115550">در حال بارگیری...</translation>
+<translation id="370665806235115550">در حال بارکردن…</translation>
 <translation id="3706919628594312718">تنظیمات موشواره</translation>
 <translation id="3707020109030358290">یک ارائه دهنده مجوز نیست.</translation>
 <translation id="3709244229496787112">مرور قبل از اتمام دانلود بسته شد.</translation>
@@ -3017,6 +3017,7 @@
 <translation id="5390284375844109566">پایگاه داده فهرست‌بندی شده</translation>
 <translation id="5392544185395226057">‏پشتیبانی برای Native Client فعال شود.</translation>
 <translation id="5393125431335030955">این افزایه فقط در رایانه عمل می‌کند.</translation>
+<translation id="5393559999218790205">غیرفعال کردن خط‌های زمان پویانمایی ترکیب‌کننده رابط کاربری</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_NAME" /> در <ph name="PEPPER_PLUGIN_DOMAIN" /> می‌خواهد به رایانه شما دسترسی پیدا کند.</translation>
 <translation id="539755880180803351">فرم‌های وب را با پیش بینی‌های نوع تکمیل خودکار قسمت به‌عنوان یک متن نگهدارنده مکان حاشیه‌نویسی می‌کند.</translation>
 <translation id="5397578532367286026">‏میزان مصرف و سابقه این کاربر می‌تواند توسط مدیر (<ph name="MANAGER_EMAIL" />) در chrome.com بازبینی شود.</translation>
@@ -3041,6 +3042,7 @@
 <translation id="5423849171846380976">فعال شد</translation>
 <translation id="5425470845862293575">‏استفاده از سیستم تولید تصویر قلم آزمایشی DirectWrite را فعال می‌کند.</translation>
 <translation id="5425722269016440406">‏برای خاموش کردن Smart Lock باید آنلاین باشید زیرا این تنظیم با تلفن و سایر دستگاه‌های شما همگام‌سازی می‌شود. لطفاً اول به شبکه متصل شوید.</translation>
+<translation id="5426623592374109001">استفاده از سیستم فرعی پویانمایی نفوذی قدیمی برای پویانمایی‌های ترکیبی در رابط کاربری.</translation>
 <translation id="5427459444770871191">چرخاندن در جهت &amp;عقربه‌های ساعت</translation>
 <translation id="5428105026674456456">اسپانیایی</translation>
 <translation id="542872847390508405">به عنوان مهمان مرور می‌کنید</translation>
@@ -3508,6 +3510,7 @@
 <translation id="6111974609785983504">مجاز شده به صورت ‌پیش‌فرض</translation>
 <translation id="6113134669445407638">‏Delay Agnostic AEC را در WebRTC غیرفعال می‌کند. اگر تأخیرهای گزارش شده سیستم خیلی قابل اعتماد است، یا اگر دیگران از دستگاهتان انعکاس صدا را می‌شنوند از این گزینه استفاده کنید.</translation>
 <translation id="6116921718742659598">تغییر تنظیمات زبان و ورودی</translation>
+<translation id="6117536376248197233">غیرفعال کردن خط‌های زمان پویانمایی ترکیبی در تولیدکننده‌های تصویر.</translation>
 <translation id="6120205520491252677">این صفحه به صفحه شروع پین شود…</translation>
 <translation id="6120816415558830169">‏با استفاده از &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt; بارگیری شده</translation>
 <translation id="6122081475643980456">اتصال اینترنت شما کنترل می‌شود</translation>
@@ -3609,6 +3612,7 @@
 <translation id="6277105963844135994">مهلت زمانی شبکه</translation>
 <translation id="6277518330158259200">گرفتن عکس صفحه‌نمایش</translation>
 <translation id="6279183038361895380">برای نمایش نشان‌گر |<ph name="ACCELERATOR" />| را فشار دهید</translation>
+<translation id="6281743458679673853">‏آزمایشی برای انعکاس بخش قابل مشاهده طرح‌بندی همه فایل‌های API. این کار ویژگی‌های window.scroll را به بخش قابل مشاهده طرح‌بندی مربوط می‌کند.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{چاپگر جدید در شبکه شما}one{چاپگر جدید در شبکه شما}other{چاپگر جدید در شبکه شما}}</translation>
 <translation id="6285395082104474418">سینی وضعیت، وضعیت فعلی شبکه، باتری و موارد دیگر را به شما نشان می‌دهد.</translation>
 <translation id="6286684120317096255">درحال اندازه‌گیری میزان مصرف داده</translation>
@@ -4731,6 +4735,7 @@
 فایل کلید خود را در جای امن نگه دارید. برای ایجاد نسخه‌های جدید برنامهٔ افزودنی خود به آن نیاز دارید.</translation>
 <translation id="799923393800005025">می‌تواند مشاهده کند</translation>
 <translation id="7999338963698132743">مدیر فعالیت‌ جدید</translation>
+<translation id="8000004253404706714">استفاده از سیستم فرعی پویانمایی نفوذی قدیمی برای پویانمایی‌های ترکیبی در تولیدکننده‌های تصویر.</translation>
 <translation id="8004582292198964060">مرورگر</translation>
 <translation id="8007030362289124303">باتری ضعیف است</translation>
 <translation id="8008356846765065031">اینترنت قطع است. لطفاً اتصال اینترنتتان را بررسی کنید.</translation>
@@ -5223,6 +5228,7 @@
 <translation id="872537912056138402">کرواسی</translation>
 <translation id="8726206820263995930">خطا هنگام واکشی تنظیمات خط‌مشی از سرور: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">‏به‌جای باز کردن برگه جدید، گزینه‌های برنامه‌ افزودنی را به صورت عنصر جاسازی‌شده در chrome://extensions نشان دهید.</translation>
+<translation id="8727142376512517020">دیگر نشان داده نشود</translation>
 <translation id="8728672262656704056">به صورت ناشناس وارد شدید</translation>
 <translation id="8730621377337864115">تمام</translation>
 <translation id="8731332457891046104">لغو ثبت <ph name="DEVICE_TYPE" /></translation>
@@ -5276,7 +5282,7 @@
 <translation id="8803496343472038847">صفحه‌کلید آوایی روسی</translation>
 <translation id="8804398419035066391">ارتباط با وب‌سایت‌های همکار</translation>
 <translation id="8807208382546568628">‏استفاده از بزرگ‌نمایی Blink برای فاکتور مقیاس دستگاه.</translation>
-<translation id="8807632654848257479">ثابت</translation>
+<translation id="8807632654848257479">پایدار</translation>
 <translation id="8808478386290700967">Web Store</translation>
 <translation id="8811462119186190367">‏زبانChrome بعد از همگام‌سازی تنظیمات از "<ph name="FROM_LOCALE" />" به "<ph name="TO_LOCALE" />" تغییر کرده است.</translation>
 <translation id="8813811964357448561">صفحه کاغذ</translation>
@@ -5292,6 +5298,7 @@
 <translation id="8830796635868321089">با تنظیمات پراکسی کنونی، بررسی برای به‌روزرسانی ناموفق بود. لطفاً <ph name="PROXY_SETTINGS_LINK_START" />تنظیمات پراکسی<ph name="PROXY_SETTINGS_LINK_END" />تان را تغییر دهید.</translation>
 <translation id="8831623914872394308">تنظیمات اشاره‌گر</translation>
 <translation id="8837103518490433332">می‌خواهید <ph name="PASSWORD_MANAGER_BRAND" /> گذرواژه شما را برای <ph name="ORIGIN" /> ذخیره کند؟</translation>
+<translation id="8841142799574815336">بخش قابل مشاهده بی‌اثر.</translation>
 <translation id="884264119367021077">اطلاعات ارسال</translation>
 <translation id="8844238624737526720">‏استفاده از اجرای جدید و بهبودیافته مدیر فعالیت‌های Chrome.</translation>
 <translation id="8846141544112579928">در حال جستجو برای صفحه‌کلید...</translation>
