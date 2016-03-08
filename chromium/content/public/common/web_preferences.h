@@ -120,6 +120,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool unified_textchecker_enabled;
   bool accelerated_2d_canvas_enabled;
   int minimum_accelerated_2d_canvas_size;
+  bool disable_2d_canvas_copy_on_write;
   bool antialiased_2d_canvas_disabled;
   bool antialiased_clips_2d_canvas_enabled;
   int accelerated_2d_canvas_msaa_sample_count;
@@ -174,6 +175,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
   V8CacheOptions v8_cache_options;
+  bool inert_visual_viewport;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly

@@ -167,6 +167,7 @@ extern const char kGpuVendorID[];
 CONTENT_EXPORT extern const char kHostResolverRules[];
 CONTENT_EXPORT extern const char kIgnoreCertificateErrors[];
 CONTENT_EXPORT extern const char kIgnoreGpuBlacklist[];
+CONTENT_EXPORT extern const char kInertVisualViewport[];
 CONTENT_EXPORT extern const char kInProcessGPU[];
 CONTENT_EXPORT extern const char kIPCConnectionTimeout[];
 CONTENT_EXPORT extern const char kJavaScriptFlags[];
@@ -290,6 +291,11 @@ extern const char kDisableThreadedEventHandlingMac[];
 #endif
 
 #if defined(OS_WIN)
+CONTENT_EXPORT extern const char kPrefetchArgumentRenderer[];
+CONTENT_EXPORT extern const char kPrefetchArgumentGpu[];
+CONTENT_EXPORT extern const char kPrefetchArgumentPpapi[];
+CONTENT_EXPORT extern const char kPrefetchArgumentPpapiBroker[];
+CONTENT_EXPORT extern const char kPrefetchArgumentOther[];
 // This switch contains the device scale factor passed to certain processes
 // like renderers, etc.
 CONTENT_EXPORT extern const char kDeviceScaleFactor[];

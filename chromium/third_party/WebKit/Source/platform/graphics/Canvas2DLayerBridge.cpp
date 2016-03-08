@@ -25,6 +25,7 @@
 
 #include "platform/graphics/Canvas2DLayerBridge.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/CanvasMetrics.h"
 #include "platform/graphics/ExpensiveCanvasHeuristicParameters.h"
@@ -431,7 +432,8 @@ void Canvas2DLayerBridge::setIsHidden(bool hidden)
         m_softwareRenderingWhileHidden = false;
         SkSurface* newSurface = getOrCreateSurface(PreferAccelerationAfterVisibilityChange);
         if (newSurface) {
-            oldSurface->draw(newSurface->getCanvas(), 0, 0, &copyPaint);
+            if (oldSurface)
+                oldSurface->draw(newSurface->getCanvas(), 0, 0, &copyPaint);
             if (m_imageBuffer && !m_isDeferralEnabled) {
                 m_imageBuffer->resetCanvas(m_surface->getCanvas());
             }
@@ -520,6 +522,8 @@ bool Canvas2DLayerBridge::checkSurfaceValid()
     ASSERT(!m_destructionInProgress);
     if (m_destructionInProgress)
         return false;
+    if (isHibernating())
+        return true;
     if (!m_layer)
         return true;
     if (!m_surface)
@@ -582,11 +586,11 @@ bool Canvas2DLayerBridge::prepareMailbox(WebExternalTextureMailbox* outMailbox, 
         // 4. Here.
         return false;
     }
-    ASSERT(isAccelerated() || isHibernating());
+    ASSERT(isAccelerated() || isHibernating() || m_softwareRenderingWhileHidden);
 
     // if hibernating but not hidden, we want to wake up from
     // hibernation
-    if (isHibernating() && isHidden())
+    if ((isHibernating() || m_softwareRenderingWhileHidden) && isHidden())
         return false;
 
     if (bitmap) {
@@ -600,7 +604,7 @@ bool Canvas2DLayerBridge::prepareMailbox(WebExternalTextureMailbox* outMailbox, 
     }
 
     RefPtr<SkImage> image = newImageSnapshot(PreferAcceleration);
-    if (!image)
+    if (!image || !image->getTexture())
         return false;
 
     WebGraphicsContext3D* webContext = context();
@@ -626,10 +630,11 @@ bool Canvas2DLayerBridge::prepareMailbox(WebExternalTextureMailbox* outMailbox, 
     if (!grContext)
         return true; // for testing: skip gl stuff when using a mock graphics context.
 
+    if (RuntimeEnabledFeatures::forceDisable2dCanvasCopyOnWriteEnabled())
+        m_surface->notifyContentWillChange(SkSurface::kRetain_ContentChangeMode);
+
     // Need to flush skia's internal queue because texture is about to be accessed directly
     grContext->flush();
-
-    ASSERT(image->getTexture());
 
     // Because of texture sharing with the compositor, we must invalidate
     // the state cached in skia so that the deferred copy on write

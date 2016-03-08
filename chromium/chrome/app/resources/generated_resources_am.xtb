@@ -3020,6 +3020,7 @@
 <translation id="5390284375844109566">በመረጃ ጠቋሚ የተሰናዳ የውሂብ ጎታ</translation>
 <translation id="5392544185395226057">የቤተኛ ደንበኛ ድጋፍን ያነቃል።</translation>
 <translation id="5393125431335030955">ይህ ተሰኪ በዴስክቶፑ ላይ ብቻ ነው የሚሰራው።</translation>
+<translation id="5393559999218790205">የበይነገጽ ጥንቅር እነማ የጊዜ መስመሮችን አሰናክል</translation>
 <translation id="5396126354477659676">በ<ph name="PEPPER_PLUGIN_DOMAIN" /> ላይ ያለው <ph name="PEPPER_PLUGIN_NAME" /> ኮምፒውተርዎን ሊደርስበት ይፈልጋል።</translation>
 <translation id="539755880180803351">የራስ-ሙላ መስክ ትየባ ግምቶች ያላቸው የድር ቅጾችን እንደ ቦታ ያዥ ጽሑፍ ያብራራቸዋል።</translation>
 <translation id="5397578532367286026">የዚህ ተጠቃሚ አጠቃቀም እና ታሪክ በchrome.com ላይ በአስተዳዳሪ (<ph name="MANAGER_EMAIL" />) ሊገመገም ይችላል።</translation>
@@ -3044,6 +3045,7 @@
 <translation id="5423849171846380976">ገብሯል</translation>
 <translation id="5425470845862293575">የሙከራ የDirectWrite ቅርጸ ቁምፊ የመስጠት ስርዓት መጠቀምን ያነቃል።</translation>
 <translation id="5425722269016440406">ይህ ቅንብር በስልኩ ላይ እና በሌሎች መሣሪያዎች ላይ እንዲመሳሰል ስለተደረገ Smart Lockን ለማጥፋት መስመር ላይ መሆን አለብዎት። በመጀመሪያ እባክዎ ወደ አውታረ መረብ ያገናኙ።</translation>
+<translation id="5426623592374109001">በበይነገጽ ውስጥ ላሉ የተጠናቀሩ እነማዎች የድሮ ሰርጎ-ገብ እነማ ንዑስ ሥርዓቱን ይጠቀሙ።</translation>
 <translation id="5427459444770871191">በ&amp;ሰዓት መዞሪያ አቅጣጫ አሽከርክር</translation>
 <translation id="5428105026674456456">ስፓኒሽ</translation>
 <translation id="542872847390508405">እያሰሱ ያለው እንደ እንግዳ ነው</translation>
@@ -3514,6 +3516,7 @@ nil</translation>
 <translation id="6111974609785983504">በነባሪነት የተፈቀደ</translation>
 <translation id="6113134669445407638">በWebRTC ውስጥ Delay Agnostic AECን ያሰናክሉ። ሪፖርት የተደረጉ የስርዓት መዘግየቶች የታመኑ ከሆኑ ወይም ሌሎች ከእርስዎ ማሽን ተሞክሮ የገደል ማሚቶ ካስተጋቡ ይጠቀሙ።</translation>
 <translation id="6116921718742659598">የቋንቋ እና ግቤት ቅንብሮችን ይቀይሩ</translation>
+<translation id="6117536376248197233">በምስል ሰሪዎች ውስጥ የተጠናቀሩ እነማ የጊዜ መስመሮችን አሰናክል</translation>
 <translation id="6120205520491252677">ይህን ገጽ የመነሻ ገጹ ላይ ይሰኩት...</translation>
 <translation id="6120816415558830169">ወርዷል በ&lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">የበይነመረብ ግንኙነትዎ ቁጥጥር እየተደረገበት ነው</translation>
@@ -3615,6 +3618,7 @@ nil</translation>
 <translation id="6277105963844135994">የአውታረ መረብ ጊዜ ማብቂያ</translation>
 <translation id="6277518330158259200">ቅጽበታዊ ገጽ እይታ ፎቶ አን&amp;ሳ</translation>
 <translation id="6279183038361895380">የእርስዎን ጠቋሚ ለማሳየት |<ph name="ACCELERATOR" />| ይጫኑ</translation>
+<translation id="6281743458679673853">ሁሉም ኤፒአይዎች የአቀማመጥ መመልከቻውን እንዲያንጸባርቁ ሙከራ ያድርጉ። ይህ የwindow.scroll ባሕሪያት ከአቀማመጥ መመልከቻው ጋር ተዛማጅና ተመጣጣኝ እንዲሆኑ ያደርጋል።</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{በእርስዎ አውታረ መረብ ላይ ያለ አዲስ አታሚ}one{በእርስዎ አውታረ መረብ ላይ ያሉ አዲስ አታሚዎች}other{በእርስዎ አውታረ መረብ ላይ ያሉ አዲስ አታሚዎች}}</translation>
 <translation id="6285395082104474418">የሁኔታ ትሪው የአሁኑን የእርስዎ አውታረ መረብ፣ ባትሪ እና ሌሎች ነገሮች ሁኔታ ያሳየዎታል።</translation>
 <translation id="6286684120317096255">የውሂብ አጠቃቀም በመለካት ላይ ነው</translation>
@@ -4744,6 +4748,7 @@ nil
 nil</translation>
 <translation id="799923393800005025">ማየት ይችላሉ</translation>
 <translation id="7999338963698132743">አዲስ የተግባር አስተዳዳሪ</translation>
+<translation id="8000004253404706714">በምስል ሰሪዎች ላሉ የተጠናቀሩ እነማዎች የድሮ ሰርጎ-ገብ እነማ ንዑስ ሥርዓቱን ይጠቀሙ።</translation>
 <translation id="8004582292198964060">አሳሽ</translation>
 <translation id="8007030362289124303">ባትሪ አንሷል</translation>
 <translation id="8008356846765065031">የበይነመረብ ግንኙነት ተቋርጧል። እባክዎ የበይነመረብዎን ግንኙነት ይፈትሹ።</translation>
@@ -5238,6 +5243,7 @@ nil</translation>
 <translation id="872537912056138402">ክሮሽያንኛ</translation>
 <translation id="8726206820263995930">የመምሪያ ቅንብሮች ከዚህ አገልጋይ በማምጣት ላይ ሳለ ስህተት፦ <ph name="CLIENT_ERROR" />።</translation>
 <translation id="8726888928275282477">የቅጥያ አማራጮች በአዲስ ትር ውስጥ ከመክፈት ይልቅ በchrome://extensions ውስጥ እንደ አንድ የተካተተ አባል ያሳያል።</translation>
+<translation id="8727142376512517020">ይህን ዳግም አታሳይ</translation>
 <translation id="8728672262656704056">ማንነት የማያሳውቅ ሁነታ ውስጥ ገብተዋል</translation>
 <translation id="8730621377337864115">ተከናውኗል</translation>
 <translation id="8731332457891046104"><ph name="DEVICE_TYPE" />ን ከምዝገባ አውጣ</translation>
@@ -5307,6 +5313,7 @@ nil</translation>
 <translation id="8830796635868321089">የአሁኑ ተኪ ቅንብሮችን ተጠቅሞ የዝማኔ ፍተሻ አልተሳካም። እባክዎ <ph name="PROXY_SETTINGS_LINK_START" />የተኪ ቅንብሮችዎ<ph name="PROXY_SETTINGS_LINK_END" />ን ያስተካክሉ።</translation>
 <translation id="8831623914872394308">የጠቋሚ ቅንብሮች</translation>
 <translation id="8837103518490433332"><ph name="PASSWORD_MANAGER_BRAND" /> የእርስዎን የይለፍ ቃል ለ<ph name="ORIGIN" /> እንዲያስቀምጥ ይፈልጋሉ?</translation>
+<translation id="8841142799574815336">Inert ምስላዊ መመልከቻ።</translation>
 <translation id="884264119367021077">የመላኪያ አድራሻ</translation>
 <translation id="8844238624737526720">የአዲሱን የተመቻቸውን የchrome ተግባር መሪን ትግበራ አጠቃቀም።</translation>
 <translation id="8846141544112579928">የቁልፍ ሰሌዳን በመፈለግ ላይ...</translation>

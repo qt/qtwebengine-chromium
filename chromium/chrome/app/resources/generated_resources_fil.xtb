@@ -3025,6 +3025,7 @@ Pumindot ng anumang key upang magpatuloy sa pagtuklas.</translation>
 <translation id="5390284375844109566">Naka-index na database</translation>
 <translation id="5392544185395226057">Paganahin ang suporta para sa Native Client.</translation>
 <translation id="5393125431335030955">Gumagana lang ang plugin na ito sa desktop.</translation>
+<translation id="5393559999218790205">I-disable ang mga timeline sa animation ng compositor ng UI</translation>
 <translation id="5396126354477659676">Gustong i-access ng <ph name="PEPPER_PLUGIN_NAME" /> sa <ph name="PEPPER_PLUGIN_DOMAIN" /> ang iyong computer.</translation>
 <translation id="539755880180803351">Ina-annotate ang mga web form na may mga hula sa uri ng field ng Autofill bilang teksto na placeholder.</translation>
 <translation id="5397578532367286026">Ang paggamit at kasaysayan ng user na ito ay maaaring suriin ng manager (<ph name="MANAGER_EMAIL" />) sa chrome.com.</translation>
@@ -3049,6 +3050,7 @@ Pumindot ng anumang key upang magpatuloy sa pagtuklas.</translation>
 <translation id="5423849171846380976">Na-activate</translation>
 <translation id="5425470845862293575">Ine-enable ang paggamit ng pang-eksperimentong sistema sa pag-render ng font ng DirectWrite.</translation>
 <translation id="5425722269016440406">Online ka dapat upang i-off ang Smart Lock dahil naka-sync ang setting na ito sa iyong telepono at iba pang mga device. Mangyaring kumonekta muna sa isang network.</translation>
+<translation id="5426623592374109001">Gumamit ng luma at mapanghimasok na animation subsystem para sa mga composited na animation sa UI.</translation>
 <translation id="5427459444770871191">I-rotate &amp;Pakanan</translation>
 <translation id="5428105026674456456">Espanyol</translation>
 <translation id="542872847390508405">Nagba-browse ka bilang isang Bisita</translation>
@@ -3518,6 +3520,7 @@ Maaaring hindi available ang ilang tampok.  Mangyaring suriin na umiiral ang pro
 <translation id="6111974609785983504">Pinapayagan bilang default</translation>
 <translation id="6113134669445407638">I-disable ang Delay Agnostic AEC sa WebRTC. Gamitin kung ang mga naiulat na pagkaantala sa system ay lubos na pinagkakatiwalaan, o kung nakakarinig ang ibang tao ng echo mula sa iyong makina.</translation>
 <translation id="6116921718742659598">Baguhin ang mga setting ng wika at input</translation>
+<translation id="6117536376248197233">I-disable ang mga timeline sa animation ng compositor sa mga tagapag-render.</translation>
 <translation id="6120205520491252677">I-pin ang pahinang ito screen ng Simula...</translation>
 <translation id="6120816415558830169">Na-download ng &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">Kinokontrol ang iyong koneksyon sa Internet</translation>
@@ -3619,6 +3622,7 @@ Maaaring hindi available ang ilang tampok.  Mangyaring suriin na umiiral ang pro
 <translation id="6277105963844135994">Nag-timeout ang network</translation>
 <translation id="6277518330158259200">Kumuha ng Screenshot</translation>
 <translation id="6279183038361895380">Pindutin ang |<ph name="ACCELERATOR" />| upang ipakita ang iyong cursor</translation>
+<translation id="6281743458679673853">Mag-eksperimento upang lumabas sa lahat ng API ang layout viewport. Gagawin nitong nauugnay ang mga property ng window.scroll sa layout viewport.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{Bagong printer sa iyong network}one{Mga bagong printer sa iyong network}other{Mga bagong printer sa iyong network}}</translation>
 <translation id="6285395082104474418">Ipinapakita sa iyo ng status tray ang kasalukuyang estado ng iyong network, baterya at higit pa.</translation>
 <translation id="6286684120317096255">Sinusukat ang paggamit ng data</translation>
@@ -4744,6 +4748,7 @@ Key File: <ph name="KEY_FILE" />
 Ilagay ang iyong key file sa ligtas na lugar. Kailangan mo ito upang lumikha ng mga bagong bersyon ng iyong extension.</translation>
 <translation id="799923393800005025">Makakatingin</translation>
 <translation id="7999338963698132743">Bagong task manager</translation>
+<translation id="8000004253404706714">Gumamit ng luma at mapanghimasok na animation subsystem para sa mga composited na animation sa mga tagapag-render.</translation>
 <translation id="8004582292198964060">Browser</translation>
 <translation id="8007030362289124303">Mahina na ang Baterya</translation>
 <translation id="8008356846765065031">Nadiskonekta ang Internet. Pakisuri ang iyong koneksyon sa internet.</translation>
@@ -5240,6 +5245,7 @@ Kinakalkula ang oras hanggang sa mapuno</translation>
 <translation id="872537912056138402">Croatian</translation>
 <translation id="8726206820263995930">Error kapag kumukuha ng mga setting ng patakaran mula sa server: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">Ipakita ang mga opsyon sa extension bilang naka-embed na elemento sa chrome://extensions sa halip na magbukas ng bagong tab.</translation>
+<translation id="8727142376512517020">Huwag na itong ipakitang muli</translation>
 <translation id="8728672262656704056">Naging incognito ka</translation>
 <translation id="8730621377337864115">Tapos na</translation>
 <translation id="8731332457891046104">I-unenroll ang <ph name="DEVICE_TYPE" /></translation>
@@ -5309,6 +5315,7 @@ Kinakalkula ang oras hanggang sa mapuno</translation>
 <translation id="8830796635868321089">Nabigo ang pagsusuri sa update gamit ang mga kasalukuyang setting ng proxy. Mangyaring isaayos ang iyong <ph name="PROXY_SETTINGS_LINK_START" />mga setting ng proxy<ph name="PROXY_SETTINGS_LINK_END" />.</translation>
 <translation id="8831623914872394308">Mga setting ng pointer</translation>
 <translation id="8837103518490433332">Gusto mo bang i-save ng <ph name="PASSWORD_MANAGER_BRAND" /> ang iyong password para sa <ph name="ORIGIN" />?</translation>
+<translation id="8841142799574815336">Maglagay ng visual na viewport.</translation>
 <translation id="884264119367021077">Shipping address</translation>
 <translation id="8844238624737526720">Gamitin ang bago at naka-optimize na pagpapatupad ng chrome task manager.</translation>
 <translation id="8846141544112579928">Naghahanap ng keyboard...</translation>

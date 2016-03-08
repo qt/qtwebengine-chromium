@@ -5318,6 +5318,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_IGNORE_GPU_BLACKLIST_DESCRIPTION" desc="Description of the 'Ignore GPU blacklist' lab.">
         Overrides the built-in software rendering list and enables GPU-acceleration on unsupported system configurations.
       </message>
+      <message name="IDS_FLAGS_INERT_VISUAL_VIEWPORT_NAME" desc="Title of the flag to enable the inert visual viewport experiment.">
+        Inert visual viewport.
+      </message>
+      <message name="IDS_FLAGS_INERT_VISUAL_VIEWPORT_DESCRIPTION" desc="Description of the flag to enable the inert visual viewport experiment.">
+        Experiment to have all APIs reflect the layout viewport. This will make window.scroll properties relative to the layout viewport.
+      </message>
       <message name="IDS_FLAGS_THREADED_COMPOSITING_MODE_NAME" desc="Name of the 'Threaded compositing mode' lab.">
         Threaded compositing
       </message>
@@ -14619,6 +14625,21 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
     <message name="IDS_FLAGS_ENABLE_WEBFONTS_INTERVENTION_DESCRIPTION" desc="Description for the flag to enable WebFonts User Agent Intervention.">
       Enable User Agent Intervention for WebFonts loading.
     </message>
+
+    <message name="IDS_FLAGS_DISABLE_COMPOSITOR_ANIMATION_TIMELINES" desc="Name of the 'Disable Compositor animation timelines' lab.">
+      Disable compositor animation timelines in renderers.
+    </message>
+    <message name="IDS_FLAGS_DISABLE_COMPOSITOR_ANIMATION_TIMELINES_DESCRIPTION" desc="Description of the 'Disable Compositor animation timelines' lab.">
+      Use old intrusive animation subsystem for composited animations in renderers.
+    </message>
+    <if expr="not is_android">
+      <message name="IDS_FLAGS_DISABLE_UI_COMPOSITOR_ANIMATION_TIMELINES" desc="Name of the 'Disable UI Compositor animation timelines' lab.">
+        Disable UI compositor animation timelines
+      </message>
+      <message name="IDS_FLAGS_DISABLE_UI_COMPOSITOR_ANIMATION_TIMELINES_DESCRIPTION" desc="Description of the 'Disable UI Compositor animation timelines' lab.">
+        Use old intrusive animation subsystem for composited animations in UI.
+      </message>
+    </if>
 
     </messages>
   </release>

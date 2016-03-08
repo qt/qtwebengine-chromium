@@ -972,6 +972,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   // Disable antialiasing for 2d canvas if requested on the command line.
   settings->setAntialiased2dCanvasEnabled(
       !prefs.antialiased_2d_canvas_disabled);
+  WebRuntimeFeatures::forceDisable2dCanvasCopyOnWrite(
+      prefs.disable_2d_canvas_copy_on_write);
 
   // Enabled antialiasing of clips for 2d canvas if requested on the command
   // line.
@@ -1034,6 +1036,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       static_cast<WebSettings::EditingBehavior>(prefs.editing_behavior));
 
   settings->setSupportsMultipleWindows(prefs.supports_multiple_windows);
+
+  settings->setInertVisualViewport(prefs.inert_visual_viewport);
 
   settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
 

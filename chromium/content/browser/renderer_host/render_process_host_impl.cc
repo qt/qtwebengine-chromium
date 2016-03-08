@@ -1293,6 +1293,11 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   command_line->AppendSwitchASCII(switches::kProcessType,
                                   switches::kRendererProcess);
 
+#if defined(OS_WIN)
+  if (GetContentClient()->browser()->ShouldUseWindowsPrefetchArgument())
+    command_line->AppendArg(switches::kPrefetchArgumentRenderer);
+#endif  // defined(OS_WIN)
+
   // Now send any options from our own command line we want to propagate.
   const base::CommandLine& browser_command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -1432,6 +1437,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kForceDisplayList2dCanvas,
     switches::kForceOverlayFullscreenVideo,
     switches::kFullMemoryCrashReport,
+    switches::kInertVisualViewport,
     switches::kIPCConnectionTimeout,
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,

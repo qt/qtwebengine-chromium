@@ -3020,6 +3020,7 @@ Az összes felhasználónak ki kell jelentkeznie a folytatáshoz.</translation>
 <translation id="5390284375844109566">Indexelt adatbázis</translation>
 <translation id="5392544185395226057">Natív kliens támogatásának engedélyezése.</translation>
 <translation id="5393125431335030955">Ez a beépülő modul csak az asztalon működik.</translation>
+<translation id="5393559999218790205">A kezelőfelület összeállított animációihoz tartozó idővonalak kikapcsolása</translation>
 <translation id="5396126354477659676">A(z) <ph name="PEPPER_PLUGIN_NAME" /> webhelyen található <ph name="PEPPER_PLUGIN_DOMAIN" /> bővítmény hozzá akar férni a számítógéphez.</translation>
 <translation id="539755880180803351">Az internetes űrlapokat automatikus kitöltési következtetésekkel mint helyőrző szöveggel látja el.</translation>
 <translation id="5397578532367286026">A felhasználó használati adatait és előzményeit a kezelő (<ph name="MANAGER_EMAIL" />) a chrome.com webhelyen tekintheti meg.</translation>
@@ -3044,6 +3045,7 @@ Az összes felhasználónak ki kell jelentkeznie a folytatáshoz.</translation>
 <translation id="5423849171846380976">Aktiválva</translation>
 <translation id="5425470845862293575">Letiltja a kísérleti DirectWrite betűmegjelenítő rendszert.</translation>
 <translation id="5425722269016440406">Online állapotban kell lennie a Smart Lock kikapcsolásához, mivel ezt a beállítást a rendszer szinkronizálja telefonjával és egyéb eszközeivel. Előbb csatlakozzon egy hálózathoz.</translation>
+<translation id="5426623592374109001">A régi, tolakodó animált alrendszer használata az összeállított animációknál a kezelőfelületen.</translation>
 <translation id="5427459444770871191">Forgatás &amp;jobbra</translation>
 <translation id="5428105026674456456">spanyol</translation>
 <translation id="542872847390508405">Vendégként böngészik</translation>
@@ -3512,6 +3514,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="6111974609785983504">Alapértelmezés szerint engedélyezett</translation>
 <translation id="6113134669445407638">Agnosztikus AEC-késleltetés kikapcsolása a WebRTC-ben. Akkor használja, ha a jelentett rendszerkésések teljesen megbízhatók, vagy ha mások visszhangot hallanak az Ön gépéből.</translation>
 <translation id="6116921718742659598">Nyelvi és beviteli beállítások módosítása</translation>
+<translation id="6117536376248197233">Az összeállított animációk idővonalainak kikapcsolása a megjelenítőkben.</translation>
 <translation id="6120205520491252677">Az oldal rögzítése a kezdőképernyőn...</translation>
 <translation id="6120816415558830169">Letöltötte: &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">Internetkapcsolata felett más vette át az irányítást</translation>
@@ -3613,6 +3616,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="6277105963844135994">Hálózati időtúllépés</translation>
 <translation id="6277518330158259200">&amp;Képernyőkép készítése</translation>
 <translation id="6279183038361895380">Az egérmutató megjelenítéséhez nyomja meg a következő billentyűt: |<ph name="ACCELERATOR" />|</translation>
+<translation id="6281743458679673853">Arra irányuló kísérlet, hogy valamennyi API az elrendezés látható területét tükrözze – ennek hatására a window.scroll tulajdonságok az elrendezés látható területéhez fognak viszonyulni.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{Új nyomtató a hálózaton}other{Új nyomtatók a hálózaton}}</translation>
 <translation id="6285395082104474418">Az állapottálca megjeleníti a hálózat, az akkumulátor és egyebek aktuális állapotát.</translation>
 <translation id="6286684120317096255">Az adathasználat mérése folyamatban van</translation>
@@ -4734,6 +4738,7 @@ Kulcsfájl: <ph name="KEY_FILE" />
 A kulcsfájlt tartsa biztonságos helyen. Szüksége lesz rá ahhoz, hogy új verziókat készítsen bővítményéből.</translation>
 <translation id="799923393800005025">Megtekinthető</translation>
 <translation id="7999338963698132743">Új feladatkezelő</translation>
+<translation id="8000004253404706714">A régi, tolakodó animált alrendszer használata az összeállított animációknál a megjelenítőkben.</translation>
 <translation id="8004582292198964060">Böngésző</translation>
 <translation id="8007030362289124303">Alacsony töltöttségi szint</translation>
 <translation id="8008356846765065031">Az internetkapcsolat megszűnt. Kérjük, ellenőrizze az internetkapcsolatot.</translation>
@@ -5227,6 +5232,7 @@ letiltásához nyomja le a Ctrl+Alt+Z billentyűkombinációt.</translation>
 <translation id="872537912056138402">horvát</translation>
 <translation id="8726206820263995930">Hiba a kiszolgálóról származó irányelv-beállítások fogadásakor: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">A bővítménylehetőségek beágyazott elemként jelennek meg a chrome://extensions oldalon, nem pedig új lapon nyílnak meg.</translation>
+<translation id="8727142376512517020">Ez ne jelenjen meg többé</translation>
 <translation id="8728672262656704056">Ön inkognitómódra váltott</translation>
 <translation id="8730621377337864115">Kész</translation>
 <translation id="8731332457891046104">A(z) <ph name="DEVICE_TYPE" /> regisztrációjának törlése</translation>
@@ -5296,6 +5302,7 @@ letiltásához nyomja le a Ctrl+Alt+Z billentyűkombinációt.</translation>
 <translation id="8830796635868321089">Nem sikerült a frissítés ellenőrzése a jelenlegi proxybeállítások használatával. Kérjük, módosítsa a <ph name="PROXY_SETTINGS_LINK_START" />proxybeállításait<ph name="PROXY_SETTINGS_LINK_END" />.</translation>
 <translation id="8831623914872394308">Mutató beállításai</translation>
 <translation id="8837103518490433332">Szeretné, hogy a(z) <ph name="PASSWORD_MANAGER_BRAND" /> mentse a(z) <ph name="ORIGIN" /> webhelyhez tartozó jelszót?</translation>
+<translation id="8841142799574815336">Semleges vizuális látható terület</translation>
 <translation id="884264119367021077">Szállítási cím</translation>
 <translation id="8844238624737526720">A Chrome-feladatkezelő új és optimalizált megvalósításának használata.</translation>
 <translation id="8846141544112579928">Billentyűzet keresése…</translation>

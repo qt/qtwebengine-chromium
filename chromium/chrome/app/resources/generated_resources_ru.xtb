@@ -3022,6 +3022,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="5390284375844109566">Индексированная база данных</translation>
 <translation id="5392544185395226057">Включить поддержку Native Client.</translation>
 <translation id="5393125431335030955">Этот плагин поддерживается только на ПК.</translation>
+<translation id="5393559999218790205">Отключить временную шкалу для анимации элементов интерфейса</translation>
 <translation id="5396126354477659676">Плагин <ph name="PEPPER_PLUGIN_NAME" /> в домене <ph name="PEPPER_PLUGIN_DOMAIN" /> пытается получить доступ к вашему компьютеру.</translation>
 <translation id="539755880180803351">Добавляет подсказки автозаполнения в веб-формы в виде текста-заполнителя.</translation>
 <translation id="5397578532367286026">Менеджер (<ph name="MANAGER_EMAIL" />) может просматривать данные об использовании и историю этого профиля на сайте chrome.com.</translation>
@@ -3046,6 +3047,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="5423849171846380976">Активировано</translation>
 <translation id="5425470845862293575">Включает экспериментальную систему обработки шрифтов DirectWrite.</translation>
 <translation id="5425722269016440406">Чтобы отключить Smart Lock, войдите в Интернет. Функция настроена на нескольких устройствах, поэтому необходима синхронизация.</translation>
+<translation id="5426623592374109001">Использовать старую подсистему анимации элементов интерфейса</translation>
 <translation id="5427459444770871191">Повернуть &amp;по часовой стрелке</translation>
 <translation id="5428105026674456456">Испанский</translation>
 <translation id="542872847390508405">Вы вошли в гостевом режиме</translation>
@@ -3513,6 +3515,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="6111974609785983504">Разрешено по умолчанию</translation>
 <translation id="6113134669445407638">Отключает в WebRTC эхоподавление, независимое от задержек. Рекомендуется, если сообщения о задержках в системе достоверны или эхо от вашего устройства мешает другим пользователям.</translation>
 <translation id="6116921718742659598">Изменение настроек языка и метода ввода</translation>
+<translation id="6117536376248197233">Отключит временную шкалу в средствах обработки изображения</translation>
 <translation id="6120205520491252677">Прикрепить эту страницу к экрану запуска…</translation>
 <translation id="6120816415558830169">Скачано расширением &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">С вашим интернет-соединением все не так просто</translation>
@@ -3614,6 +3617,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="6277105963844135994">Время ожидания сети истекло</translation>
 <translation id="6277518330158259200">С&amp;делать снимок экрана</translation>
 <translation id="6279183038361895380">Чтобы показать курсор, нажмите |<ph name="ACCELERATOR" />|</translation>
+<translation id="6281743458679673853">Экспериментальная функция. Позволяет всем API учитывать размер области просмотра, вследствие чего свойства window.scroll будут соотноситься с областью просмотра макета.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{Новый принтер в сети}one{Новые принтеры в сети}few{Новые принтеры в сети}many{Новые принтеры в сети}other{Новые принтеры в сети}}</translation>
 <translation id="6285395082104474418">В строке состояния отображаются статус подключения к сети, уровень заряда батареи и другие сведения.</translation>
 <translation id="6286684120317096255">Расход трафика отслеживается</translation>
@@ -4736,6 +4740,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 Храните файл ключей в надежном месте. Он потребуется для создания новых версий расширения.</translation>
 <translation id="799923393800005025">Чтение</translation>
 <translation id="7999338963698132743">Новый диспетчер задач</translation>
+<translation id="8000004253404706714">Использовать старую подсистему анимации в средствах обработки изображения</translation>
 <translation id="8004582292198964060">Браузер</translation>
 <translation id="8007030362289124303">Низкий заряд батареи</translation>
 <translation id="8008356846765065031">Не удалось установить соединение. Проверьте подключение к Интернету.</translation>
@@ -5228,6 +5233,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="872537912056138402">Хорватский</translation>
 <translation id="8726206820263995930">Ошибка при получении настроек политики с сервера: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">Показывать настройки расширения не в новой вкладке, а в виде встроенного элемента на странице chrome://extensions.</translation>
+<translation id="8727142376512517020">Больше не показывать</translation>
 <translation id="8728672262656704056">Вы перешли в режим инкогнито</translation>
 <translation id="8730621377337864115">Готово</translation>
 <translation id="8731332457891046104">Отмена регистрации устройства <ph name="DEVICE_TYPE" /></translation>
@@ -5297,6 +5303,7 @@ http://www.chromium.org/chromium-os/how-tos-and-troubleshooting/debugging-featur
 <translation id="8830796635868321089">Не удалось выполнить проверку обновлений. Проверьте <ph name="PROXY_SETTINGS_LINK_START" />настройки прокси-сервера<ph name="PROXY_SETTINGS_LINK_END" />.</translation>
 <translation id="8831623914872394308">Настройки указателя</translation>
 <translation id="8837103518490433332">Сохранить пароль для сайта <ph name="ORIGIN" /> в <ph name="PASSWORD_MANAGER_BRAND" />?</translation>
+<translation id="8841142799574815336">Отражать область просмотра</translation>
 <translation id="884264119367021077">Адрес доставки</translation>
 <translation id="8844238624737526720">Использовать новую и оптимизированную версию диспетчера задач Chrome.</translation>
 <translation id="8846141544112579928">Поиск клавиатуры…</translation>

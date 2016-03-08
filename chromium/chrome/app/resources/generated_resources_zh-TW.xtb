@@ -3014,6 +3014,7 @@
 <translation id="5390284375844109566">索引資料庫</translation>
 <translation id="5392544185395226057">啟用 Native Client 支援。</translation>
 <translation id="5393125431335030955">這個外掛程式只能在電腦上執行。</translation>
+<translation id="5393559999218790205">停用使用者介面撰寫器動畫時間軸</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN" /> 上的 <ph name="PEPPER_PLUGIN_NAME" /> 外掛程式要求存取您的電腦。</translation>
 <translation id="539755880180803351">使用自動填入的欄位類型建議為網路表單加上註解，做為預留位置文字。</translation>
 <translation id="5397578532367286026">管理員 (<ph name="MANAGER_EMAIL" />) 可以在 chrome.com 瞭解這名使用者的使用情形和紀錄。</translation>
@@ -3038,6 +3039,7 @@
 <translation id="5423849171846380976">已啟用</translation>
 <translation id="5425470845862293575">允許使用實驗性 DirectWrite 字型轉譯系統。</translation>
 <translation id="5425722269016440406">您必須上網才能關閉 Smart Lock，因為這項設定會同步到您的手機和其他裝置上。請先連線至網路。</translation>
+<translation id="5426623592374109001">針對使用者介面中的撰寫式動畫使用舊版干擾型動畫子系統。</translation>
 <translation id="5427459444770871191">順時針旋轉(&amp;C)</translation>
 <translation id="5428105026674456456">西班牙文</translation>
 <translation id="542872847390508405">您目前是以訪客身分瀏覽</translation>
@@ -3505,6 +3507,7 @@
 <translation id="6111974609785983504">預設允許</translation>
 <translation id="6113134669445407638">在 WebRTC 中停用 Delay Agnostic AEC。使用時機：非常信任回報的系統延遲時，或其他人收到您裝置的回應時。</translation>
 <translation id="6116921718742659598">變更語言和輸入設定</translation>
+<translation id="6117536376248197233">在轉譯器中停用撰寫器動畫時間軸。</translation>
 <translation id="6120205520491252677">將這個網頁固定到開始畫面...</translation>
 <translation id="6120816415558830169">由「&lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;」下載</translation>
 <translation id="6122081475643980456">您的網際網路連線目前受到控制</translation>
@@ -3606,6 +3609,7 @@
 <translation id="6277105963844135994">網路逾時</translation>
 <translation id="6277518330158259200">擷取螢幕畫面(&amp;A)</translation>
 <translation id="6279183038361895380">按下 |<ph name="ACCELERATOR" />| 即可顯示游標</translation>
+<translation id="6281743458679673853">這個實驗會讓所有 API 都反映版面配置檢視區。這會讓 window.scroll 屬性與版面配置檢視區關聯。</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{您的網路上有一台新印表機}other{您的網路上有多台新印表機}}</translation>
 <translation id="6285395082104474418">狀態匣會顯示目前的網路狀態、電池狀態和其他項目的狀態。</translation>
 <translation id="6286684120317096255">正在監測數據用量</translation>
@@ -4723,6 +4727,7 @@
 請妥善保管您的金鑰檔案；建立新版本的擴充功能時將需要使用該金鑰檔案。</translation>
 <translation id="799923393800005025">可以檢視</translation>
 <translation id="7999338963698132743">新版工作管理員</translation>
+<translation id="8000004253404706714">針對轉譯器中的撰寫式動畫使用舊版干擾型動畫子系統。</translation>
 <translation id="8004582292198964060">瀏覽器</translation>
 <translation id="8007030362289124303">電池電量不足</translation>
 <translation id="8008356846765065031">網路連線中斷，請檢查您的網際網路連線。</translation>
@@ -5215,6 +5220,7 @@
 <translation id="872537912056138402">克羅埃西亞文</translation>
 <translation id="8726206820263995930">從伺服器擷取政策設定時發生錯誤：<ph name="CLIENT_ERROR" />。</translation>
 <translation id="8726888928275282477">在 chrome://extensions 中嵌入元素來顯示擴充功能選項，而非開啟新分頁。</translation>
+<translation id="8727142376512517020">不要再顯示這個對話方塊</translation>
 <translation id="8728672262656704056">您已啟用無痕模式。</translation>
 <translation id="8730621377337864115">完成</translation>
 <translation id="8731332457891046104">取消註冊 <ph name="DEVICE_TYPE" /></translation>
@@ -5284,6 +5290,7 @@
 <translation id="8830796635868321089">無法以目前的 Proxy 設定啟動更新檢查，請調整 <ph name="PROXY_SETTINGS_LINK_START" />Proxy 設定<ph name="PROXY_SETTINGS_LINK_END" />。</translation>
 <translation id="8831623914872394308">指標設定</translation>
 <translation id="8837103518490433332">您要讓 <ph name="PASSWORD_MANAGER_BRAND" /> 儲存您在 <ph name="ORIGIN" /> 設定的密碼嗎？</translation>
+<translation id="8841142799574815336">插入畫面檢視區</translation>
 <translation id="884264119367021077">運送地址</translation>
 <translation id="8844238624737526720">使用經過最佳化處理的新版 Chrome 工作管理員。</translation>
 <translation id="8846141544112579928">正在搜尋鍵盤...</translation>

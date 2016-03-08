@@ -3022,6 +3022,7 @@
 <translation id="5390284375844109566">Indexed Database</translation>
 <translation id="5392544185395226057">ネイティブ クライアントに対応できるようにします。</translation>
 <translation id="5393125431335030955">このプラグインは、デスクトップでのみ使用できます。</translation>
+<translation id="5393559999218790205">UI の合成アニメーション タイムラインを無効にする</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_DOMAIN" /> の <ph name="PEPPER_PLUGIN_NAME" /> がお使いのパソコンへのアクセスを求めています。</translation>
 <translation id="539755880180803351">自動入力欄型の予測機能をプレースホルダ テキストとしてウェブ フォームに追加します。</translation>
 <translation id="5397578532367286026">このユーザーの利用状況や履歴は、chrome.com で管理者（<ph name="MANAGER_EMAIL" />）によって確認されます。</translation>
@@ -3046,6 +3047,7 @@
 <translation id="5423849171846380976">有効</translation>
 <translation id="5425470845862293575">試験運用版の DirectWrite フォント レンダリング システムの使用を有効にします。</translation>
 <translation id="5425722269016440406">Smart Lock 設定はスマートフォンおよび他のデバイスと同期しているため、オフにするにはインターネットに接続する必要があります。まずネットワークに接続してください。</translation>
+<translation id="5426623592374109001">UI の合成アニメーションで滑らかさに欠ける旧式のアニメーション サブシステムを使用します。</translation>
 <translation id="5427459444770871191">時計回りに回転(&amp;C)</translation>
 <translation id="5428105026674456456">スペイン語</translation>
 <translation id="542872847390508405">ゲスト モードでブラウジング中</translation>
@@ -3513,6 +3515,7 @@
 <translation id="6111974609785983504">デフォルトで許可</translation>
 <translation id="6113134669445407638">Delay Agnostic AEC in WebRTC を無効にします。この設定は、報告されたシステムの遅延が信頼できるものである場合、または自分のマシンでの反響音が他のユーザーに影響を及ぼす場合に使用します。</translation>
 <translation id="6116921718742659598">言語と入力の設定を変更</translation>
+<translation id="6117536376248197233">レンダラの合成アニメーション タイムラインを無効にする</translation>
 <translation id="6120205520491252677">このページを起動画面に固定...</translation>
 <translation id="6120816415558830169">&lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt; によりダウンロード</translation>
 <translation id="6122081475643980456">インターネット接続が制限されています</translation>
@@ -3614,6 +3617,7 @@
 <translation id="6277105963844135994">ネットワークがタイムアウトしました</translation>
 <translation id="6277518330158259200">スクリーンショットを撮る(&amp;A)</translation>
 <translation id="6279183038361895380">カーソルを表示するには |<ph name="ACCELERATOR" />| を押します</translation>
+<translation id="6281743458679673853">すべての API でレイアウト ビューポートを反映するようにした試験運用版の機能です。この場合、window.scroll プロパティはレイアウト ビューポートを基準とした相対的な値に設定されます。</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{ネットワーク上の新しいプリンタ}other{ネットワーク上の新しいプリンタ}}</translation>
 <translation id="6285395082104474418">ステータス トレイには、ネットワーク、バッテリーなどの現在の状態が表示されます。</translation>
 <translation id="6286684120317096255">データ使用量が測定されます</translation>
@@ -4738,6 +4742,7 @@
 鍵ファイルは安全な場所に保管してください。拡張機能の新しいバージョンの作成時に必要となります。</translation>
 <translation id="799923393800005025">閲覧者</translation>
 <translation id="7999338963698132743">新しいタスク マネージャ</translation>
+<translation id="8000004253404706714">レンダラの合成アニメーションで滑らかさに欠ける旧式のアニメーション サブシステムを使用します。</translation>
 <translation id="8004582292198964060">ブラウザ</translation>
 <translation id="8007030362289124303">バッテリー残量が少なくなりました</translation>
 <translation id="8008356846765065031">インターネットが切断されました。インターネット接続を確認してください。</translation>
@@ -5230,6 +5235,7 @@
 <translation id="872537912056138402">クロアチア語</translation>
 <translation id="8726206820263995930">サーバーからポリシー設定を取得するときにエラーが発生しました: <ph name="CLIENT_ERROR" />。</translation>
 <translation id="8726888928275282477">拡張機能のオプションを、新しいタブを開いたときではなく chrome://extensions の埋め込み要素として表示します。</translation>
+<translation id="8727142376512517020">今後このメッセージを表示しない</translation>
 <translation id="8728672262656704056">シークレット モードです</translation>
 <translation id="8730621377337864115">完了</translation>
 <translation id="8731332457891046104"><ph name="DEVICE_TYPE" /> の登録解除</translation>
@@ -5299,6 +5305,7 @@
 <translation id="8830796635868321089">現在のプロキシ設定を使用してアップデートをチェックできませんでした。<ph name="PROXY_SETTINGS_LINK_START" />プロキシ設定<ph name="PROXY_SETTINGS_LINK_END" />を調整してください。</translation>
 <translation id="8831623914872394308">ポインタの設定</translation>
 <translation id="8837103518490433332"><ph name="PASSWORD_MANAGER_BRAND" /> で <ph name="ORIGIN" /> のパスワードを保存しますか？</translation>
+<translation id="8841142799574815336">停止中のビジュアル ビューポート</translation>
 <translation id="884264119367021077">配送先住所</translation>
 <translation id="8844238624737526720">新しい最適化版 Chrome タスク マネージャを使用します。</translation>
 <translation id="8846141544112579928">キーボードを探しています...</translation>

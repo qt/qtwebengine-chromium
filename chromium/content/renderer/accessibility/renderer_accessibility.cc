@@ -271,7 +271,11 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
     AccessibilityHostMsg_EventParams event_msg;
     event_msg.event_type = event.event_type;
     event_msg.id = event.id;
-    serializer_.SerializeChanges(obj, &event_msg.update);
+    if (!serializer_.SerializeChanges(obj, &event_msg.update)) {
+      LOG(ERROR) << "Failed to serialize one accessibility event.";
+      continue;
+    }
+
     event_msgs.push_back(event_msg);
 
     // For each node in the update, set the location in our map from
@@ -296,10 +300,15 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
 void RendererAccessibility::SendLocationChanges() {
   std::vector<AccessibilityHostMsg_LocationChangeParams> messages;
 
+  // Update layout on the root of the tree.
+  WebAXObject root = tree_source_.GetRoot();
+  if (!root.updateLayoutAndCheckValidity())
+    return;
+
   // Do a breadth-first explore of the whole blink AX tree.
   base::hash_map<int, gfx::Rect> new_locations;
   std::queue<WebAXObject> objs_to_explore;
-  objs_to_explore.push(tree_source_.GetRoot());
+  objs_to_explore.push(root);
   while (objs_to_explore.size()) {
     WebAXObject obj = objs_to_explore.front();
     objs_to_explore.pop();

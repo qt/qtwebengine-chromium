@@ -3023,6 +3023,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="5390284375844109566">Cơ sở dữ liệu được lập chỉ mục</translation>
 <translation id="5392544185395226057">Bật hỗ trợ cho Native Client.</translation>
 <translation id="5393125431335030955">Plugin này chỉ hoạt động trên máy tính để bàn.</translation>
+<translation id="5393559999218790205">Vô hiệu hóa dòng thời gian hoạt ảnh bộ sắp xếp giao diện người dùng</translation>
 <translation id="5396126354477659676"><ph name="PEPPER_PLUGIN_NAME" /> trên <ph name="PEPPER_PLUGIN_DOMAIN" /> muốn truy cập máy tính của bạn.</translation>
 <translation id="539755880180803351">Chú thích biểu mẫu web với dự đoán loại trường Tự động điền là văn bản giữ chỗ.</translation>
 <translation id="5397578532367286026">Người quản lý (<ph name="MANAGER_EMAIL" />) trên chrome.com có thể xem lại mức sử dụng và lịch sử của người dùng này.</translation>
@@ -3047,6 +3048,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 <translation id="5423849171846380976">Đã kích hoạt</translation>
 <translation id="5425470845862293575">Cho phép sử dụng hệ thống hiển thị phông chữ DirectWrite thử nghiệm.</translation>
 <translation id="5425722269016440406">Bạn phải trực tuyến để tắt Smart Lock vì cài đặt này được đồng bộ hóa với điện thoại và các thiết bị khác của bạn. Trước tiên, vui lòng kết nối mạng.</translation>
+<translation id="5426623592374109001">Sử dụng hệ thống phụ hoạt ảnh xâm nhập cũ cho hoạt ảnh phức hợp trong giao diện người dùng.</translation>
 <translation id="5427459444770871191">Xoay &amp;theo chiều kim đồng hồ</translation>
 <translation id="5428105026674456456">Tiếng Tây Ban Nha</translation>
 <translation id="542872847390508405">Bạn đang duyệt với tư cách khách</translation>
@@ -3516,6 +3518,7 @@ Một số tính năng có thể không có sẵn. Hãy kiểm tra xem hồ sơ 
 <translation id="6111974609785983504">Được cho phép theo mặc định</translation>
 <translation id="6113134669445407638">Tắt Delay Agnostic AEC trong WebRTC. Sử dụng nếu độ trễ hệ thống được báo cáo là rất đáng tin cậy hoặc nếu người khác gặp tiếng vọng từ máy tính của bạn.</translation>
 <translation id="6116921718742659598">Thay đổi cài đặt ngôn ngữ và phương thức nhập</translation>
+<translation id="6117536376248197233">Vô hiệu hóa dòng thời gian hoạt ảnh bộ sắp xếp trong kết xuất đồ họa.</translation>
 <translation id="6120205520491252677">Ghim trang này vào màn hình Bắt đầu...</translation>
 <translation id="6120816415558830169">Tải xuống bởi &lt;a&gt;<ph name="EXTENSION" />&lt;/a&gt;</translation>
 <translation id="6122081475643980456">Kết nối Internet của bạn đang bị kiểm soát</translation>
@@ -3617,6 +3620,7 @@ Một số tính năng có thể không có sẵn. Hãy kiểm tra xem hồ sơ 
 <translation id="6277105963844135994">Hết thời gian chờ mạng</translation>
 <translation id="6277518330158259200">Chụp ảnh màn hình</translation>
 <translation id="6279183038361895380">Nhấn |<ph name="ACCELERATOR" />| để hiển thị con trỏ của bạn</translation>
+<translation id="6281743458679673853">Hãy thử nghiệm để tất cả các API phản ánh chế độ xem bố cục. Điều này sẽ giúp thuộc tính window.scroll tương ứng với chế độ xem bố cục.</translation>
 <translation id="6285120908535925801">{NUM_PRINTER,plural, =1{Máy in mới trên mạng của bạn}other{Máy in mới trên mạng của bạn}}</translation>
 <translation id="6285395082104474418">Khay trạng thái hiển thị cho bạn trạng thái hiện tại của mạng, pin và các thông tin khác.</translation>
 <translation id="6286684120317096255">Đang đo lường mức sử dụng dữ liệu</translation>
@@ -4740,6 +4744,7 @@ Tệp Khoá: <ph name="KEY_FILE" />
 Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa để tạo phiên bản tiện ích mới của mình.</translation>
 <translation id="799923393800005025">Có thể xem</translation>
 <translation id="7999338963698132743">Trình quản lý tác vụ mới</translation>
+<translation id="8000004253404706714">Sử dụng hệ thống phụ hoạt ảnh xâm nhập cũ cho hoạt ảnh phức hợp trong kết xuất đồ họa.</translation>
 <translation id="8004582292198964060">Trình duyệt</translation>
 <translation id="8007030362289124303">Pin Yếu</translation>
 <translation id="8008356846765065031">Internet đã bị ngắt kết nối. Vui lòng kiểm tra kết nối Internet của bạn.</translation>
@@ -5232,6 +5237,7 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="872537912056138402">Tiếng Croatia</translation>
 <translation id="8726206820263995930">Lỗi khi tìm nạp cài đặt chính sách từ máy chủ: <ph name="CLIENT_ERROR" />.</translation>
 <translation id="8726888928275282477">Hiển thị các tùy chọn tiện ích ở dạng phần tử được nhúng trong chrome://extensions thay vì mở tab mới.</translation>
+<translation id="8727142376512517020">Không hiển thị lại hộp thoại này</translation>
 <translation id="8728672262656704056">Bạn đã truy cập ẩn danh</translation>
 <translation id="8730621377337864115">Hoàn tất</translation>
 <translation id="8731332457891046104">Hủy đăng ký <ph name="DEVICE_TYPE" /></translation>
@@ -5301,6 +5307,7 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="8830796635868321089">Kiểm tra cập nhật không thành công khi sử dụng cài đặt proxy hiện tại. Vui lòng điều chỉnh <ph name="PROXY_SETTINGS_LINK_START" />cài đặt proxy<ph name="PROXY_SETTINGS_LINK_END" /> của bạn.</translation>
 <translation id="8831623914872394308">Cài đặt con trỏ</translation>
 <translation id="8837103518490433332">Bạn có muốn <ph name="PASSWORD_MANAGER_BRAND" /> lưu mật khẩu của bạn cho <ph name="ORIGIN" /> không?</translation>
+<translation id="8841142799574815336">Chế độ xem hình ảnh tĩnh.</translation>
 <translation id="884264119367021077">Ðịa chỉ giao hàng</translation>
 <translation id="8844238624737526720">Sử dụng triển khai mới và tối ưu hóa của trình quản lý tác vụ Chrome.</translation>
 <translation id="8846141544112579928">Đang tìm kiếm bàn phím...</translation>
