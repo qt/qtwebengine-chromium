@@ -1941,7 +1941,7 @@
               'mac_deployment_target%': '10.6',
             }],
           ],
-          'mac_sdk_min': '10.10',
+          'mac_sdk_min%': '10.10',
           'mac_sdk_path%': '',
         },
 
