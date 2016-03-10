@@ -5676,6 +5676,11 @@
           # the RTM release in the /W4 set.
           4456, 4457, 4458, 4459,
 
+          # TODO(brucedawson): http://crbug.com/593448 4334 is a 'suspicious
+          # shift' warning and 4595 is an 'illegal inline operator new' warning
+          # Both are new in VS 2015 Update 2 and can safely be deferred for now.
+          4334, 4595,
+
           # Further added for MSVC 2015 support of Qt WebEngine
           4302, # 'reinterpret_cast': truncation from 'BYTE *' to 'unsigned int'
           4311, # 'reinterpret_cast': pointer truncation from 'BYTE *' to 'unsigned int'

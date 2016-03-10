@@ -671,6 +671,15 @@ config("runtime_library") {
     ]
 
     lib_dirs += [ "$android_libcpp_root/libs/$android_app_abi" ]
+    if (visual_studio_version == "2015") {
+      cflags += [
+        # TODO(brucedawson): http://crbug.com/593448 4334 is a 'suspicious
+        # shift' warning and 4595 is an 'illegal inline operator new' warning
+        # Both are new in VS 2015 Update 2 and can safely be deferred for now.
+        "/wd4334",
+        "/wd4595",
+      ]
+    }
 
     if (component_mode == "shared_library") {
       android_libcpp_library = "c++_shared"
