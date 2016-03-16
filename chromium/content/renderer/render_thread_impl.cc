@@ -960,7 +960,8 @@ void RenderThreadImpl::Shutdown() {
 
   media_thread_.reset();
 
-  blink_platform_impl_->SetCompositorThread(nullptr);
+  if (blink_platform_impl_)
+    blink_platform_impl_->SetCompositorThread(nullptr);
 
   compositor_thread_.reset();
 
@@ -2211,7 +2212,8 @@ RenderThreadImpl::SharedCompositorWorkerContextProvider() {
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
-  blink_platform_impl_->sampleGamepads(*data);
+  if (blink_platform_impl_)
+    blink_platform_impl_->sampleGamepads(*data);
 }
 
 bool RenderThreadImpl::RendererIsHidden() const {
