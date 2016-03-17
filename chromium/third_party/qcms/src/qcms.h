@@ -39,17 +39,17 @@ typedef int qcms_bool;
 
 /* ICC Section 6.1.5 Color Space Signatures (abridged) */
 typedef enum {
-	XYZData		/* ‘XYZ ’ */ = 0x58595A20,
-	labData		/* ‘Lab ’ */ = 0x4C616220,
-	luvData		/* ‘Luv ’ */ = 0x4C757620,
-	YCbCrData	/* ‘YCbr' */ = 0x59436272,
-	YxyData		/* ‘Yxy ’ */ = 0x59787920,
-	rgbData		/* ‘RGB ’ */ = 0x52474220,
-	grayData	/* ‘GRAY’ */ = 0x47524159,
-	hsvData		/* ‘HSV ’ */ = 0x48535620,
-	hlsData		/* ‘HLS ’ */ = 0x484C5320,
-	cmykData	/* ‘CMYK’ */ = 0x434D594B,
-	cmyData		/* ‘CMY ’ */ = 0x434D5920,
+	XYZData		/* 'XYZ'  */ = 0x58595A20,
+	labData		/* 'Lab'  */ = 0x4C616220,
+	luvData		/* 'Luv'  */ = 0x4C757620,
+	YCbCrData	/* 'YCbr' */ = 0x59436272,
+	YxyData		/* 'Yxy'  */ = 0x59787920,
+	rgbData		/* 'RGB'  */ = 0x52474220,
+	grayData	/* 'GRAY' */ = 0x47524159,
+	hsvData		/* 'HSV'  */ = 0x48535620,
+	hlsData		/* 'HLS'  */ = 0x484C5320,
+	cmykData	/* 'CMYK' */ = 0x434D594B,
+	cmyData		/* 'CMY'  */ = 0x434D5920,
 } qcms_color_space;
 
 /* ICC Section 6.1.11 Rendering Intents */
