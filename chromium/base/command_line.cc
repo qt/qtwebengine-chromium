@@ -196,7 +196,7 @@ void CommandLine::set_slash_is_not_a_switch() {
 #endif
 
 // static
-bool CommandLine::Init(int argc, const char* const* argv) {
+bool CommandLine::CreateEmpty() {
   if (current_process_commandline_) {
     // If this is intentional, Reset() must be called first. If we are using
     // the shared build mode, we have to share a single object across multiple
@@ -205,6 +205,14 @@ bool CommandLine::Init(int argc, const char* const* argv) {
   }
 
   current_process_commandline_ = new CommandLine(NO_PROGRAM);
+  return true;
+}
+
+// static
+bool CommandLine::Init(int argc, const char* const* argv) {
+  if (!CreateEmpty())
+      return false;
+
 #if defined(OS_WIN)
   current_process_commandline_->ParseFromString(::GetCommandLineW());
 #elif defined(OS_POSIX)
