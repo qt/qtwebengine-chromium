@@ -71,6 +71,8 @@ class BASE_EXPORT CommandLine {
   static void set_slash_is_not_a_switch();
 #endif
 
+  static bool CreateEmpty();
+
   // Initialize the current process CommandLine singleton. On Windows, ignores
   // its arguments (we instead parse GetCommandLineW() directly) because we
   // don't trust the CRT's parsing of the command line, but it still must be
