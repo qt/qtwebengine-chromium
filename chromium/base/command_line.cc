@@ -212,7 +212,7 @@ void CommandLine::InitUsingArgvForTesting(int argc, const char* const* argv) {
 #endif  // BUILDFLAG(IS_WIN)
 
 // static
-bool CommandLine::Init(int argc, const char* const* argv) {
+bool CommandLine::CreateEmpty() {
   if (current_process_commandline_) {
     // If this is intentional, Reset() must be called first. If we are using
     // the shared build mode, we have to share a single object across multiple
@@ -221,6 +221,14 @@ bool CommandLine::Init(int argc, const char* const* argv) {
   }
 
   current_process_commandline_ = new CommandLine(NO_PROGRAM);
+  return true;
+}
+
+// static
+bool CommandLine::Init(int argc, const char* const* argv) {
+  if (!CreateEmpty())
+      return false;
+
 #if BUILDFLAG(IS_WIN)
   current_process_commandline_->ParseFromString(::GetCommandLineW());
 #elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
