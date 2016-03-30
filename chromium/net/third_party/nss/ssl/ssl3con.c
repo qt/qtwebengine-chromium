@@ -45,16 +45,18 @@
  * headers. */
 #ifndef CKM_NSS_CHACHA20_POLY1305
 #define CKM_NSS_CHACHA20_POLY1305               (CKM_NSS + 26)
+#endif
 
-typedef struct CK_NSS_AEAD_PARAMS {
+typedef struct CK_NSS_AEAD_PARAMS_COMPAT {
     CK_BYTE_PTR  pIv;  /* This is the nonce. */
     CK_ULONG     ulIvLen;
     CK_BYTE_PTR  pAAD;
     CK_ULONG     ulAADLen;
     CK_ULONG     ulTagLen;
-} CK_NSS_AEAD_PARAMS;
+} CK_NSS_AEAD_PARAMS_COMPAT;
 
-#endif
+// NSS 3.23 has renamed pIv and ulIvLen to pNonce and ulNonceLen
+#define CK_NSS_AEAD_PARAMS CK_NSS_AEAD_PARAMS_COMPAT
 
 #include <stdio.h>
 #ifdef NSS_ENABLE_ZLIB
