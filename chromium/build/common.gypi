@@ -3534,8 +3534,8 @@
                 # with _FORTIFY_SOURCE. Also, fortified build may fail
                 # when optimizations are disabled, so only do that for Release
                 # build.
-                'defines': [
-                  '_FORTIFY_SOURCE=2',
+                'cflags' :['-U_FORTIFY_SOURCE',
+                           '-D_FORTIFY_SOURCE=2',
                 ],
               }],
             ],
