@@ -102,6 +102,7 @@ std::string GetSpellCheckLanguageRegion(base::StringPiece input_language) {
 
 base::FilePath GetVersionedFileName(base::StringPiece input_language,
                                     const base::FilePath& dict_dir) {
+#if !defined(TOOLKIT_QT)
   // The default dictionary version is 3-0. This version indicates that the bdic
   // file contains a checksum.
   static const char kDefaultVersionString[] = "-3-0";
@@ -148,6 +149,10 @@ base::FilePath GetVersionedFileName(base::StringPiece input_language,
     }
   }
   std::string versioned_bdict_file_name(language + version + ".bdic");
+#else
+  std::string language = GetSpellCheckLanguageRegion(input_language);
+  std::string versioned_bdict_file_name(language + ".bdic");
+#endif
   return dict_dir.AppendASCII(versioned_bdict_file_name);
 }
 
