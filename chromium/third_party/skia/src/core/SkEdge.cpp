@@ -228,7 +228,7 @@ int SkQuadraticEdge::setQuadratic(const SkPoint pts[3], int shift)
 
     fWinding    = SkToS8(winding);
     //fCubicDShift only set for cubics
-    fCurveCount = SkToS8(1 << shift);
+    fCurveCount = SkToS8(INTMAX_C(1) << shift);
 
     /*
      *  We want to reformulate into polynomial form, to make it clear how we

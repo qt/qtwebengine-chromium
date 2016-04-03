@@ -52,7 +52,7 @@ SkVarAlloc::~SkVarAlloc() {
 void SkVarAlloc::makeSpace(size_t bytes, unsigned flags) {
     SkASSERT(SkIsAlignPtr(bytes));
 
-    size_t alloc = 1<<fLgSize++;
+    size_t alloc = size_t(1)<<fLgSize++;
     while (alloc < bytes + sizeof(Block)) {
         alloc *= 2;
     }
