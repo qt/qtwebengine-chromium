@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
@@ -387,6 +388,19 @@ void NavigatorImpl::DidNavigate(
       // Run tasks that must execute just before the commit.
       bool is_navigation_within_page = controller_->IsURLInPageNavigation(
           params.url, params.was_within_same_page, render_frame_host);
+
+      // If a frame claims it navigated within page, it must be the current frame,
+      // not a pending one.
+      if (is_navigation_within_page &&
+          render_frame_host !=
+              render_frame_host->frame_tree_node()
+                  ->render_manager()
+                  ->current_frame_host()) {
+          bad_message::ReceivedBadMessage(render_frame_host->GetProcess(),
+                                          bad_message::NC_IN_PAGE_NAVIGATION);
+          is_navigation_within_page = false;
+      }
+
       delegate_->DidNavigateMainFramePreCommit(is_navigation_within_page);
     }
 
