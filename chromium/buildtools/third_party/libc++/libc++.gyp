@@ -4,7 +4,7 @@
 
 {
   'variables': {
-    'libcxx_root': '../../buildtools/third_party/libc++',
+    'libcxx_root': '<(chromium_src_dir)/buildtools/third_party/libc++',
   },
   'targets': [
     {
