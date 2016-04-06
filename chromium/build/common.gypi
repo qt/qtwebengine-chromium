@@ -465,7 +465,7 @@
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/addresssanitizer
       'asan%': 0,
-      'asan_blacklist%': '<(PRODUCT_DIR)/../../tools/memory/asan/blacklist.txt',
+      'asan_blacklist%': '<(chromium_src_dir)/tools/memory/asan/blacklist.txt',
       # Enable coverage gathering instrumentation in sanitizer tools. This flag
       # also controls coverage granularity (1 for function-level coverage, 2
       # for block-level coverage).
@@ -499,13 +499,13 @@
       # -fsanitize=thread only works with clang, but tsan=1 implies clang=1
       # See http://clang.llvm.org/docs/ThreadSanitizer.html
       'tsan%': 0,
-      'tsan_blacklist%': '<(PRODUCT_DIR)/../../tools/memory/tsan_v2/ignores.txt',
+      'tsan_blacklist%': '<(chromium_src_dir)/tools/memory/tsan_v2/ignores.txt',
 
       # Enable building with MSan (Clang's -fsanitize=memory option).
       # MemorySanitizer only works with clang, but msan=1 implies clang=1
       # See http://clang.llvm.org/docs/MemorySanitizer.html
       'msan%': 0,
-      'msan_blacklist%': '<(PRODUCT_DIR)/../../tools/msan/blacklist.txt',
+      'msan_blacklist%': '<(chromium_src_dir)/tools/msan/blacklist.txt',
       # Track where uninitialized memory originates from. From fastest to
       # slowest: 0 - no tracking, 1 - track only the initial allocation site, 2
       # - track the chain of stores leading from allocation site to use site.
@@ -515,8 +515,8 @@
       # -fsanitize=undefined only works with clang, but ubsan=1 implies clang=1
       # See http://clang.llvm.org/docs/UsersManual.html
       'ubsan%': 0,
-      'ubsan_blacklist%': '<(PRODUCT_DIR)/../../tools/ubsan/blacklist.txt',
-      'ubsan_vptr_blacklist%': '<(PRODUCT_DIR)/../../tools/ubsan/vptr_blacklist.txt',
+      'ubsan_blacklist%':  '<(chromium_src_dir)/tools/ubsan/blacklist.txt',
+      'ubsan_vptr_blacklist%': '<(chromium_src_dir)/tools/ubsan/vptr_blacklist.txt',
 
       # Enable building with UBsan's vptr (Clang's -fsanitize=vptr option).
       # -fsanitize=vptr only works with clang, but ubsan_vptr=1 implies clang=1
@@ -2677,7 +2677,7 @@
         # availability is newer than the deployment target.
         'xcode_settings': { 'WARNING_CFLAGS': ['-Wpartial-availability']},
       }],
-      ['(OS=="mac" or OS=="ios") and asan==1', {
+      ['(OS=="mac" or OS=="ios") and asan==1 and use_qt!=1', {
         'dependencies': [
           '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
         ],
