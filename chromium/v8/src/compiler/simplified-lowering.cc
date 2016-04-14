@@ -835,11 +835,18 @@ class RepresentationSelector {
         // check, because we may need to return undefined then.
         MachineType output_type;
         if (use & kRepTagged) {
+          // TODO(bmeurer): See comment on abort_compilation_.
+          if (lower()) lowering->abort_compilation_ = true;
+
           output_type = kMachAnyTagged;
         } else if (use & kRepFloat64) {
           if (access.machine_type() & kRepFloat32) {
             output_type = access.machine_type();
           } else {
+            if (!(access.machine_type() & kRepFloat64)) {
+              // TODO(bmeurer): See comment on abort_compilation_.
+              if (lower()) lowering->abort_compilation_ = true;
+            }
             output_type = kMachFloat64;
           }
         } else if (use & kRepFloat32) {
