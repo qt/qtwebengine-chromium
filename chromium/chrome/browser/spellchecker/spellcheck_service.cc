@@ -327,8 +327,13 @@ void SpellcheckService::OnSpellCheckDictionariesChanged() {
   for (const base::Value* dictionary_value : *dictionary_values) {
     std::string dictionary;
     dictionary_value->GetAsString(&dictionary);
+#if !defined(TOOLKIT_QT)
     hunspell_dictionaries_.push_back(new SpellcheckHunspellDictionary(
         dictionary, context_->GetRequestContext(), this));
+#else
+    hunspell_dictionaries_.push_back(new SpellcheckHunspellDictionary(
+        dictionary, 0, this));
+#endif
     hunspell_dictionaries_.back()->AddObserver(this);
     hunspell_dictionaries_.back()->Load();
   }
