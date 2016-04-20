@@ -691,7 +691,11 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
   // this does not increase the amount of data downloaded.  The default value
   // is 5 AV_TIME_BASE units (1 second each), which prevents some oddly muxed
   // streams from being detected properly; this value was chosen arbitrarily.
+#if FF_API_PROBESIZE_32
   format_context->max_analyze_duration2 = 60 * AV_TIME_BASE;
+#else
+  format_context->max_analyze_duration = 60 * AV_TIME_BASE;
+#endif
 
   // Open the AVFormatContext using our glue layer.
   CHECK(blocking_thread_.Start());

@@ -532,20 +532,20 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
   }
 }
 
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
+VideoFrame::Format PixelFormatToVideoFormat(AVPixelFormat pixel_format) {
   // The YUVJ alternatives are FFmpeg's (deprecated, but still in use) way to
   // specify a pixel format and full range color combination
   switch (pixel_format) {
-    case PIX_FMT_YUV422P:
-    case PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
       return VideoFrame::YV16;
-    case PIX_FMT_YUV444P:
-    case PIX_FMT_YUVJ444P:
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
       return VideoFrame::YV24;
-    case PIX_FMT_YUV420P:
-    case PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
       return VideoFrame::YV12;
-    case PIX_FMT_YUVA420P:
+    case AV_PIX_FMT_YUVA420P:
       return VideoFrame::YV12A;
     default:
       DVLOG(1) << "Unsupported PixelFormat: " << pixel_format;
@@ -553,20 +553,20 @@ VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
   return VideoFrame::UNKNOWN;
 }
 
-PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
+AVPixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
   switch (video_format) {
     case VideoFrame::YV16:
-      return PIX_FMT_YUV422P;
+      return AV_PIX_FMT_YUV422P;
     case VideoFrame::YV12:
-      return PIX_FMT_YUV420P;
+      return AV_PIX_FMT_YUV420P;
     case VideoFrame::YV12A:
-      return PIX_FMT_YUVA420P;
+      return AV_PIX_FMT_YUVA420P;
     case VideoFrame::YV24:
-      return PIX_FMT_YUV444P;
+      return AV_PIX_FMT_YUV444P;
     default:
       DVLOG(1) << "Unsupported VideoFrame::Format: " << video_format;
   }
-  return PIX_FMT_NONE;
+  return AV_PIX_FMT_NONE;
 }
 
 bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out) {

@@ -123,10 +123,10 @@ MEDIA_EXPORT SampleFormat
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
 MEDIA_EXPORT VideoFrame::Format PixelFormatToVideoFormat(
-    PixelFormat pixel_format);
+    AVPixelFormat pixel_format);
 
 // Converts video formats to its corresponding FFmpeg's pixel formats.
-PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
+AVPixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
 
 // Convert FFmpeg UTC representation (YYYY-MM-DD HH:MM:SS) to base::Time.
 // Returns true and sets |*out| if |date_utc| contains a valid
