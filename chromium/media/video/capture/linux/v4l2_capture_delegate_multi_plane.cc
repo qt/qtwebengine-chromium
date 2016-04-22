@@ -4,6 +4,8 @@
 
 #include "media/video/capture/linux/v4l2_capture_delegate_multi_plane.h"
 
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
+
 #include <sys/mman.h>
 
 namespace media {
@@ -104,3 +106,5 @@ bool V4L2CaptureDelegateMultiPlane::BufferTrackerMPlane::Init(
 }
 
 }  // namespace media
+
+#endif  // V4L2_TYPE_IS_MULTIPLANAR
