@@ -8,6 +8,7 @@
 #include <sys/videoio.h>
 #else
 #include <linux/videodev2.h>
+#include <linux/version.h>
 #endif
 
 #include <list>
@@ -140,8 +141,12 @@ int VideoCaptureDeviceLinux::TranslatePowerLineFrequencyToV4L2(int frequency) {
     case kPowerLine60Hz:
       return V4L2_CID_POWER_LINE_FREQUENCY_60HZ;
     default:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
       // If we have no idea of the frequency, at least try and set it to AUTO.
       return V4L2_CID_POWER_LINE_FREQUENCY_AUTO;
+#else
+      return V4L2_CID_POWER_LINE_FREQUENCY_60HZ;
+#endif
   }
 }
 
