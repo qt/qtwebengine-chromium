@@ -15,6 +15,8 @@
 #error "OpenBSD does not support MPlane capture API."
 #endif
 
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
+
 namespace base {
 class SingleThreadTaskRunner;
 }  // namespace base
@@ -61,4 +63,5 @@ class V4L2CaptureDelegateMultiPlane final : public V4L2CaptureDelegate {
 
 }  // namespace media
 
+#endif  // V4L2_TYPE_IS_MULTIPLANAR
 #endif  // MEDIA_VIDEO_CAPTURE_LINUX_V4L2_CAPTURE_DELEGATE_SINGLE_PLANE_H_

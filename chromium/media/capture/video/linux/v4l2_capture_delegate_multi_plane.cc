@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <sys/mman.h>
 
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
+
 namespace media {
 
 V4L2CaptureDelegateMultiPlane::V4L2CaptureDelegateMultiPlane(
@@ -98,3 +100,5 @@ bool V4L2CaptureDelegateMultiPlane::BufferTrackerMPlane::Init(
 }
 
 }  // namespace media
+
+#endif  // V4L2_TYPE_IS_MULTIPLANAR

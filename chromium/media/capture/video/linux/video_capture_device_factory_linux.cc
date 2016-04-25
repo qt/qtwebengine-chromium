@@ -36,7 +36,10 @@ static bool HasUsableFormats(int fd, uint32_t capabilities) {
     v4l2_buf_type buf_type;
   } kCapabilityAndBufferTypes[] = {
       {V4L2_CAP_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_CAPTURE},
-      {V4L2_CAP_VIDEO_CAPTURE_MPLANE, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE}};
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
+      , {V4L2_CAP_VIDEO_CAPTURE_MPLANE, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE}
+#endif
+  };
 
   for (const auto& capability_and_buffer_type : kCapabilityAndBufferTypes) {
     v4l2_fmtdesc fmtdesc = {};
@@ -181,6 +184,7 @@ void VideoCaptureDeviceFactoryLinux::GetDeviceNames(
     // capabilities at the same time are memory-to-memory and are skipped, see
     // http://crbug.com/139356.
     v4l2_capability cap;
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
     if ((HANDLE_EINTR(ioctl(fd.get(), VIDIOC_QUERYCAP, &cap)) == 0) &&
         ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE ||
           cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE) &&
@@ -193,6 +197,16 @@ void VideoCaptureDeviceFactoryLinux::GetDeviceNames(
               ? VideoCaptureDevice::Name::V4L2_MULTI_PLANE
               : VideoCaptureDevice::Name::V4L2_SINGLE_PLANE));
     }
+#else
+    if ((HANDLE_EINTR(ioctl(fd.get(), VIDIOC_QUERYCAP, &cap)) == 0) &&
+        ((cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) &&
+         !(cap.capabilities & V4L2_CAP_VIDEO_OUTPUT)) &&
+        HasUsableFormats(fd.get(), cap.capabilities)) {
+      device_names->push_back(VideoCaptureDevice::Name(
+          reinterpret_cast<char*>(cap.card), unique_id,
+              VideoCaptureDevice::Name::V4L2_SINGLE_PLANE));
+    }
+#endif // V4L2_TYPE_IS_MULTIPLANAR
   }
 }
 
@@ -209,10 +223,14 @@ void VideoCaptureDeviceFactoryLinux::GetDeviceSupportedFormats(
 
   DCHECK_NE(device.capture_api_type(),
             VideoCaptureDevice::Name::API_TYPE_UNKNOWN);
+#ifdef V4L2_TYPE_IS_MULTIPLANAR
   const v4l2_buf_type buf_type =
       (device.capture_api_type() == VideoCaptureDevice::Name::V4L2_MULTI_PLANE)
           ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE
           : V4L2_BUF_TYPE_VIDEO_CAPTURE;
+#else
+  const v4l2_buf_type buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+#endif
   GetSupportedFormatsForV4L2BufferType(fd.get(), buf_type, supported_formats);
 
   return;
