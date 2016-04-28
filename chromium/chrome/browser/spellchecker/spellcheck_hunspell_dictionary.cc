@@ -360,7 +360,9 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(const base::FilePath& path) {
     dictionary.file.Initialize(dictionary.path,
                                base::File::FLAG_READ | base::File::FLAG_OPEN);
   } else {
+#ifndef TOOLKIT_QT
     base::DeleteFile(dictionary.path, false);
+#endif
   }
 
   return dictionary;
@@ -391,7 +393,7 @@ void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
     DictionaryFile file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   dictionary_file_ = std::move(file);
-
+#ifndef TOOLKIT_QT
   if (!dictionary_file_.file.IsValid()) {
     // Notify browser tests that this dictionary is corrupted. Skip downloading
     // the dictionary in browser tests.
@@ -410,6 +412,13 @@ void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
   }
 
   InformListenersOfInitialization();
+#else
+  if (!dictionary_file_.file.IsValid())
+      // We never download, so safe to reuse this handler
+      InformListenersOfDownloadFailure();
+  else
+      InformListenersOfInitialization();
+#endif
 }
 #endif  // !defined(OS_ANDROID)
 

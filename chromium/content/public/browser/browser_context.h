@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -353,6 +354,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // have similar decode performance and stats are not exposed to the web
   // directly, so privacy is not compromised.
   virtual media::VideoDecodePerfHistory* GetVideoDecodePerfHistory();
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+#endif
 
   // Returns a LearningSession associated with |this|. Used as the central
   // source from which to retrieve LearningTaskControllers for media machine
