@@ -17,6 +17,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/linked_ptr.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_build_features.h"
 #include "content/common/content_export.h"
 #include "content/public/common/push_event_payload.h"
 #include "content/public/common/push_messaging_status.h"
@@ -280,6 +281,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // 1) The embedder needs to use a new salt, and
   // 2) The embedder saves its salt across restarts.
   static std::string CreateRandomMediaDeviceIDSalt();
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+#endif
 
  private:
   const std::string media_device_id_salt_;
