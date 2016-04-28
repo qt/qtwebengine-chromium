@@ -17,6 +17,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -370,6 +371,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns a random salt string that is used for creating media device IDs.
   // Default implementation uses the BrowserContext's UniqueId.
   virtual std::string GetMediaDeviceIDSalt();
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+#endif
 
   // Returns the FileSystemAccessPermissionContext associated with this context
   // if any, nullptr otherwise.
