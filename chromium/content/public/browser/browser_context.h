@@ -403,6 +403,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // called once per context. It's valid to return nullptr.
   virtual BrowsingDataRemoverDelegate* GetBrowsingDataRemoverDelegate() = 0;
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language);
+#endif
+
   // Returns the FileSystemAccessPermissionContext associated with this context
   // if any, nullptr otherwise.
   virtual FileSystemAccessPermissionContext*
