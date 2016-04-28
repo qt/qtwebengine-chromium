@@ -16,6 +16,7 @@
 #include "base/callback_forward.h"
 #include "base/containers/hash_tables.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/common/content_export.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory.h"
@@ -328,6 +329,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // have similar decode performance and stats are not exposed to the web
   // directly, so privacy is not compromised.
   virtual media::VideoDecodePerfHistory* GetVideoDecodePerfHistory();
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+#endif
 
  private:
   const std::string unique_id_;
