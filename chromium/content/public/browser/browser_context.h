@@ -17,6 +17,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/k_anonymity_service_delegate.h"
 #include "content/public/browser/zoom_level_delegate.h"
@@ -395,6 +396,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the BrowsingDataRemoverDelegate for this context. This will be
   // called once per context. It's valid to return nullptr.
   virtual BrowsingDataRemoverDelegate* GetBrowsingDataRemoverDelegate() = 0;
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void FailedToLoadDictionary(const std::string& language) = 0;
+#endif
 
   // Returns the FileSystemAccessPermissionContext associated with this context
   // if any, nullptr otherwise.
