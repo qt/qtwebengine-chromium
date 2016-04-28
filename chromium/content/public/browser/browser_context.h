@@ -197,6 +197,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the BackgroundSyncController associated with that context if any,
   // nullptr otherwise.
   virtual BackgroundSyncController* GetBackgroundSyncController() = 0;
+
+#if defined(TOOLKIT_QT) && defined(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void failedToLoadDictionary(const std::string& language) = 0;
+#endif
 };
 
 }  // namespace content
