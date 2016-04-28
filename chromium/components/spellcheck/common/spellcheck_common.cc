@@ -165,8 +165,7 @@ base::FilePath GetVersionedFileName(std::string_view input_language,
   }
   std::string versioned_bdict_file_name(language + version + ".bdic");
 #else
-  std::string language = GetSpellCheckLanguageRegion(input_language);
-  std::string versioned_bdict_file_name(language + ".bdic");
+  std::string versioned_bdict_file_name(input_language + ".bdic");
 #endif
   return dict_dir.AppendASCII(versioned_bdict_file_name);
 }
