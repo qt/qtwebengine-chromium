@@ -282,6 +282,10 @@ void SpellcheckService::OnHunspellDictionaryDownloadSuccess(
 
 void SpellcheckService::OnHunspellDictionaryDownloadFailure(
     const std::string& language) {
+#ifdef TOOLKIT_QT
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    context_->failedToLoadDictionary(language);
+#endif
 }
 
 // static

@@ -16,6 +16,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/linked_ptr.h"
 #include "base/supports_user_data.h"
+#include "components/spellcheck/spellcheck_build_features.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/zoom_level_delegate.h"
 #include "content/public/common/push_event_payload.h"
@@ -244,6 +245,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       CreateMediaRequestContextForStoragePartition(
           const base::FilePath& partition_path,
           bool in_memory) = 0;
+
+#if defined(TOOLKIT_QT) && BUILDFLAG(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void failedToLoadDictionary(const std::string& language) = 0;
+#endif
+
 };
 
 }  // namespace content
