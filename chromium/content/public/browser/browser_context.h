@@ -244,6 +244,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
       CreateMediaRequestContextForStoragePartition(
           const base::FilePath& partition_path,
           bool in_memory) = 0;
+
+#if defined(TOOLKIT_QT) && defined(ENABLE_SPELLCHECK)
+  // Inform about not working dictionary for given language
+  virtual void failedToLoadDictionary(const std::string& language) = 0;
+#endif
+
 };
 
 }  // namespace content
