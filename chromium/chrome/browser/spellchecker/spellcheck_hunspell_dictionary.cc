@@ -22,7 +22,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "build/build_config.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
-#ifndef TOOLKIT_QT
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/common/chrome_paths.h"
 #endif
 #include "components/spellcheck/browser/spellcheck_platform.h"
@@ -377,8 +377,10 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(base::TaskRunner* task_runner,
   data.resize(dictionary.file.GetLength());
   if (!dictionary.file.ReadAndCheck(0, data) ||
       !hunspell::BDict::Verify(data)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     dictionary.file.Close();
     base::DeleteFile(dictionary.path);
+#endif
   }
 
   return dictionary;
@@ -409,7 +411,7 @@ void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
     DictionaryFile file) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   dictionary_file_ = std::move(file);
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!dictionary_file_.file.IsValid()) {
     // Notify browser tests that this dictionary is corrupted. Skip downloading
     // the dictionary in browser tests.
@@ -428,6 +430,13 @@ void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
   }
 
   InformListenersOfInitialization();
+#else
+  if (!dictionary_file_.file.IsValid())
+      // We never download, so safe to reuse this handler
+      InformListenersOfDownloadFailure();
+  else
+      InformListenersOfInitialization();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
