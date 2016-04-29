@@ -37,7 +37,7 @@ static bool HasUsableFormats(int fd, uint32_t capabilities) {
   } kCapabilityAndBufferTypes[] = {
       {V4L2_CAP_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_CAPTURE},
 #ifdef V4L2_TYPE_IS_MULTIPLANAR
-      , {V4L2_CAP_VIDEO_CAPTURE_MPLANE, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE}
+      {V4L2_CAP_VIDEO_CAPTURE_MPLANE, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE}
 #endif
   };
 
