@@ -49,7 +49,11 @@ static bool isOriginAccessibleFromDOMWindow(SecurityOrigin* targetOrigin, LocalD
 static bool canAccessFrame(v8::Isolate* isolate, SecurityOrigin* targetFrameOrigin, DOMWindow* targetWindow, ExceptionState& exceptionState)
 {
     LocalDOMWindow* callingWindow = callingDOMWindow(isolate);
-    if (isOriginAccessibleFromDOMWindow(targetFrameOrigin, callingWindow))
+    // It's important to check that targetWindow is a LocalDOMWindow: it's
+    // possible for a remote frame and local frame to have the same security
+    // origin, depending on the model being used to allocate Frames between
+    // processes. See https://crbug.com/601629.
+    if (targetWindow && targetWindow->isLocalDOMWindow() && isOriginAccessibleFromDOMWindow(targetFrameOrigin, callingWindow))
         return true;
 
     if (targetWindow)
@@ -60,7 +64,11 @@ static bool canAccessFrame(v8::Isolate* isolate, SecurityOrigin* targetFrameOrig
 static bool canAccessFrame(v8::Isolate* isolate, SecurityOrigin* targetFrameOrigin, DOMWindow* targetWindow, SecurityReportingOption reportingOption = ReportSecurityError)
 {
     LocalDOMWindow* callingWindow = callingDOMWindow(isolate);
-    if (isOriginAccessibleFromDOMWindow(targetFrameOrigin, callingWindow))
+    // It's important to check that targetWindow is a LocalDOMWindow: it's
+    // possible for a remote frame and local frame to have the same security
+    // origin, depending on the model being used to allocate Frames between
+    // processes. See https://crbug.com/601629.
+    if (targetWindow->isLocalDOMWindow() && isOriginAccessibleFromDOMWindow(targetFrameOrigin, callingWindow))
         return true;
 
     if (reportingOption == ReportSecurityError && targetWindow)

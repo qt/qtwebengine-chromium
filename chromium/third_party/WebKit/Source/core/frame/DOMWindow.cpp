@@ -248,7 +248,10 @@ String DOMWindow::crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow)
     // FIXME: This message, and other console messages, have extra newlines. Should remove them.
     SecurityOrigin* activeOrigin = callingWindow->document()->securityOrigin();
     SecurityOrigin* targetOrigin = frame()->securityContext()->securityOrigin();
-    ASSERT(!activeOrigin->canAccessCheckSuborigins(targetOrigin));
+    // It's possible for a remote frame to be same origin with respect to a
+    // local frame, but it must still be treated as a disallowed cross-domain
+    // access. See https://crbug.com/601629.
+    ASSERT(frame()->isRemoteFrame() || !activeOrigin->canAccessCheckSuborigins(targetOrigin));
 
     String message = "Blocked a frame with origin \"" + activeOrigin->toString() + "\" from accessing a frame with origin \"" + targetOrigin->toString() + "\". ";
 
