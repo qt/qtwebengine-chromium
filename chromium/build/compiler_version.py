@@ -55,8 +55,8 @@ def GetVersion(compiler, tool):
     # Note that compiler could be something tricky like "distcc g++".
     if tool == "compiler":
       compiler = compiler + " -dumpversion"
-      # 4.6
-      version_re = re.compile(r"(\d+)\.(\d+)")
+      # 4.6 or just 5
+      version_re = re.compile(r"(\d+)\.?(\d+)?")
     elif tool == "assembler":
       compiler = compiler + " -Xassembler --version -x assembler -c /dev/null"
       # Unmodified: GNU assembler (GNU Binutils) 2.24
@@ -88,7 +88,12 @@ def GetVersion(compiler, tool):
       raise subprocess.CalledProcessError(pipe.returncode, compiler)
 
     parsed_output = version_re.match(tool_output)
-    result = parsed_output.group(1) + parsed_output.group(2)
+    result = parsed_output.group(1)
+    if parsed_output.group(2) != None:
+      result += parsed_output.group(2)
+    else:
+      result += "0"
+
     compiler_version_cache[cache_key] = result
     return result
   except Exception, e:
